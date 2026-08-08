@@ -44,7 +44,7 @@ for test/QA-only hardening.
 | **Non-goals** | Architecture redesign, live-trading changes, credential changes without approval, booting app in parallel worktrees |
 | **Inputs** | Fresh `main`, user approval for L-class items, host-supported model routes per track |
 | **Outputs** | Findings report, integrated S/M fixes, L-item proposals, PR triage with merge order, quality-gate verification, PRs opened |
-| **Token constraint** | All `route-subagents` calls for this skill must use **free models only** (no paid provider routes) |
+| **Token constraint** | All `route-subagents` calls for this skill must use **free models only** (no paid provider routes), except when a worker is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the capability requirement |
 | **Side effects** | Worktrees created, branches created, files edited, quality gates run, PR opened, GitHub issues for L items |
 | **Stop condition** | All tracks report, S/M fixes applied and verified, gates green, PR opened. L items deferred as proposals/issues. |
 
@@ -60,7 +60,7 @@ gates.
 | `wt-docs` | Documentation | `documentation-review`, `changelog-and-docs-sync`, `user-guide` | reviewer-b |
 | `wt-skills` | Skills, rules, agent guidance | `rules-and-skills-audit`, `skill-reviewer`, `ai-slop-detector` (skills/rules/docs scope) | reviewer-a |
 | `wt-tests` | Tests, QA, security, deps | `continuous-quality`, `write-kotest`, `dependency-upgrade`, `ai-slop-detector` (test + build/security scope) | reviewer-b |
-| `wt-arch` | Architecture & product | `architecture-review`, `product-opportunity-review`, `ui-visual-review` | reviewer-a |
+| `wt-arch` | Architecture & product | `architecture-review`, `product-opportunity-review` | reviewer-a |
 
 Each worktree agent is **autonomous within its worktree**. Agents may edit
 files, run skill workflows, commit to uniquely named branches, push/PR those
@@ -294,11 +294,14 @@ Report format: defect class or dependency, current vs latest, breaking changes, 
 
 1. `architecture-review` — fresh-eyes critique; discover meaningful alternative architectures, stacks, module boundaries. **Recommend only; do not implement.**
 2. `product-opportunity-review` — feature ideation, underserved user needs, workflow gaps, differentiation opportunities. **Recommend only; do not implement.**
-3. `ui-visual-review` — live Dashboard / Settings / History visual critique in simulation mode. **Recommend only; do not implement.**
 
-All findings from these three skills are classified as **L** and require
+All findings from these two skills are classified as **L** and require
 explicit user approval before any implementation. They run in parallel with
 tracks A–D as exploratory discovery, not as implementation tracks.
+
+`ui-visual-review` is excluded from parallel worktrees because it requires
+booting the application. Run it serially by the parent after discovery if
+desired.
 
 ### Step 2 — Collect and triage findings
 
@@ -316,7 +319,7 @@ unified findings table. Classify every item:
 small. Architecture redesign and product feature recommendations are always
 **L** (recommend-only unless user approves implementation).
 
-### Step 4 — PR triage — candidate PRs with merge recommendation
+### Step 3 — PR triage — candidate PRs with merge recommendation
 
 After all tracks report, group every finding into a **candidate PR** and produce
 a judgment plan for the user. The goal is a broad set of reviewable PRs, not a
@@ -382,7 +385,7 @@ Then a **judgment summary**:
 Present the full triage report to the user. Do not open any PRs until the user
 approves the plan or explicitly asks you to proceed.
 
-### Step 9 — Commit, push, open PRs (iterative per triage)
+### Step 4 — Commit, push, open PRs (iterative per triage)
 
 After the user approves the triage plan, iterate through the PRs in the
 recommended order. For each PR:
@@ -468,6 +471,3 @@ small. Architecture redesign and product feature recommendations are always
 - [ ] GitHub issues created for deferred L items
 - [ ] PRs opened with adversarial PR review where required
 - [ ] Overhaul report delivered
-
-Base directory for this skill: file:///Users/charlesv/Projects/new-kraken-rebalancer/.agents/skills/comprehensive-quality-overhaul
-Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.
