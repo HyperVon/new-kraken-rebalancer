@@ -34,7 +34,7 @@ for test/QA-only hardening.
 - Does not run concurrent Gradle builds in a single clone.
 - Does not boot the application inside parallel worktrees (port conflicts,
   orphan processes). App-boot skills run serially by the parent after
-  read-only discovery.
+  read-only discovery and coordination.
 
 ## Contracts
 
@@ -44,6 +44,7 @@ for test/QA-only hardening.
 | **Non-goals** | Architecture redesign, live-trading changes, credential changes without approval, booting app in parallel worktrees |
 | **Inputs** | Fresh `main`, user approval for L-class items, host-supported model routes per track |
 | **Outputs** | Findings report, integrated S/M fixes, L-item proposals, PR triage with merge order, quality-gate verification, PRs opened |
+| **Token constraint** | All `route-subagents` calls for this skill must use **free models only** (no paid provider routes) |
 | **Side effects** | Worktrees created, branches created, files edited, quality gates run, PR opened, GitHub issues for L items |
 | **Stop condition** | All tracks report, S/M fixes applied and verified, gates green, PR opened. L items deferred as proposals/issues. |
 
@@ -61,8 +62,129 @@ gates.
 | `wt-tests` | Tests, QA, security, deps | `continuous-quality`, `write-kotest`, `dependency-upgrade`, `ai-slop-detector` (test + build/security scope) | reviewer-b |
 | `wt-arch` | Architecture & product | `architecture-review`, `product-opportunity-review`, `ui-visual-review` | reviewer-a |
 
-Each worktree agent is **read-only discovery** only. No agent edits files,
-runs Gradle, starts servers, inspects secrets, or loads unrelated skills.
+Each worktree agent is **autonomous within its worktree**. Agents may edit
+files, run skill workflows, commit to uniquely named branches, push/PR those
+branches, and write to the shared coordination layer. The parent owns
+integration, cross-track coordination, and merge-order enforcement; workers
+own their own branch and PR lifecycle.
+
+### Coordination layer
+
+All tracks share a lightweight coordination surface under the parent worktree:
+
+```text.worktrees/.coordination/
+agent-status/
+  wt-code.json
+  wt-docs.json
+  wt-skills.json
+  wt-tests.json
+  wt-arch.json
+findings/
+  wt-code/
+  wt-docs/
+  wt-skills/
+  wt-tests/
+  wt-arch/
+topics/
+questions/
+```
+
+Each worker writes a heartbeat JSON to `agent-status/<worktree>.json` at least
+every 60 seconds:
+
+```json
+{
+  "track": "wt-code",
+  "status": "running|blocked|done|error",
+  "current_skill": "code-review",
+  "progress": "auditing PortfolioAnalyzerImpl",
+  "findings_count": 3,
+  "blockers": [],
+  "warnings": ["Found circular dep between X and Y"],
+  "questions": ["Should FQN cleanup include test files?"]
+}
+```
+
+Workers also append incremental findings to `findings/<worktree>/<finding-id>.json`
+as soon as they have evidence, instead of waiting until the end. This lets the
+parent and other tracks see partial results in near-real time.
+
+The parent polls this directory and can:
+
+- Read any track's status, warnings, blockers, or questions
+- Publish guidance to `topics/<track>.txt` for a specific worker
+- Start a cross-track topic in `topics/` when multiple workers should weigh in
+
+#### Orchestrator heartbeat to user
+
+While tracks are running, the parent **must** emit a status update to the user
+at least every 30 seconds. Use a compact one-line-per-track format:
+
+```text
+[overhaul] wt-code: code-review @ PortfolioAnalyzerImpl — 3 findings, 1 warning
+[overhaul] wt-docs: documentation-review @ README — 1 finding
+[overhaul] wt-skills: rules-and-skills-audit — 0 findings, blocked on X
+[overhaul] wt-tests: continuous-quality — 2 findings
+[overhaul] wt-arch: architecture-review — running
+[overhaul] cross-track: wt-code → wt-skills "symbol X removed?" (open)
+```
+
+Rules:
+
+- Never go silent for more than 30s during active discovery.
+- If a track is blocked or errored, surface it immediately, not on the next
+  scheduled tick.
+- When a cross-track topic is opened or answered, include it in the next
+  heartbeat: `cross-track: <from> → <to> "<topic>" (<status>)`.
+- Keep each line under 120 chars. Do not paste raw findings or file contents
+  into the heartbeat; reference them by count and path.
+
+#### Cross-track discovery
+
+If a worker notices another track is working on a related area, it may open a
+topic for discussion. Examples:
+
+- `wt-code` finds a symbol used in docs → opens `topics/symbol-usage.md` for
+  `wt-docs` to confirm
+- `wt-skills` discovers a skill teaches a removed API → opens `topics/skill-drift.md`
+  for `wt-code` to verify in source
+
+Topics are **optional** and **advisory only**. The parent owns integration and
+decides whether to act on cross-track discussion. Workers must not block on
+another track’s response.
+
+#### What to share / what not to share
+
+| Share | Do NOT share |
+| :--- | :--- |
+| Finding title, severity, path, evidence anchor | Full file contents or raw diffs |
+| Questions and warnings | Secrets, credentials, API keys |
+| Current skill name and progress | Resolved credentials or live account data |
+| Topic proposals for cross-track discussion | Full repository context or unrelated skill text |
+
+Keep every coordination artifact under a few hundred bytes. If a worker needs to
+share more context, it should write a compact summary, not a full report.
+
+#### File locking for shared coordination files
+
+Shared coordination files (`topics/*`, `questions/*`, and any future shared
+state) may be written by multiple agents. Use lockfiles to avoid torn writes:
+
+- Lock file name: `<target-file>.lockfile`
+- Lock content: agent identifier, timestamp, pid — e.g.
+  `track=wt-code ts=2026-08-08T00:30:00Z pid=12345`
+- Acquisition:
+  1. Check if `<target-file>.lockfile` exists.
+  2. If it exists, wait 1–2s and retry.
+  3. If it still exists after ~10s, treat the holder as stalled.
+- Release: delete the lockfile immediately after the write completes.
+- The orchestrator **must** monitor lockfiles during discovery. If a lockfile
+  is held longer than 60s, the orchestrator removes it and emits a warning
+  identifying the stale holder:
+  `[overhaul] WARNING: removed stale lockfile from wt-code (held 90s)`
+
+Per-track files (`agent-status/wt-*.json`, `findings/wt-<track>/*`) do not need
+locking because each track owns its own directory.
 
 ### Recommend-only tracks (no parallel worktree)
 
@@ -96,6 +218,9 @@ integrated. Never run them inside a parallel worktree.
 3. Select a host-supported route for each track. Record primary route, effort
    when exposed, fallback, and availability evidence. See
    [parallel-multi-agent](../parallel-multi-agent/SKILL.md) § Native model-selection gate.
+   **This skill routes only through free models.** When invoking
+   `.kilo/model-router/route-subagents`, pass `--free-only` or set the router
+   config to exclude paid providers so all parallel tracks use free-tier routes.
 4. Create worktrees. Each worktree gets its own isolated directory:
 
 ```bash
@@ -108,6 +233,11 @@ git worktree add .worktrees/wt-arch -b improve/overhaul-YYYYMMDD-wt-arch main
 
 1. Copy `.kilo/` and `.agents/` into each worktree so skills resolve. Do not
    copy `.env`, `rebalancer-config.json`, `*.db`, or `.gradle`.
+2. Create the shared coordination directory in the **parent** worktree:
+
+```bash
+mkdir -p .worktrees/.coordination/{agent-status,findings,topics,questions}
+```
 
 ### Step 1 — Fan-out 5 read-only tracks
 
@@ -115,6 +245,12 @@ Launch all five tracks concurrently. Each track runs its assigned skills in
 discovery mode and returns at most 12 report lines and 5 findings per skill.
 Workers do not edit files, run Gradle, start servers, inspect secrets, or load
 unrelated skills.
+
+Workers write a heartbeat JSON to `.worktrees/.coordination/agent-status/<track>.json`
+at least every 60 seconds, and append incremental findings to
+`.worktrees/.coordination/findings/<track>/` as soon as they have evidence.
+The parent polls this directory for live status, warnings, blockers, and
+cross-track questions.
 
 **Track A — Code quality** (`wt-code`)
 
@@ -315,6 +451,7 @@ small. Architecture redesign and product feature recommendations are always
   not automatic merges
 - Bundling unrelated concerns into one PR just to reduce PR count
 - Adding unsolicited ARIA attributes during UI work
+- Using paid provider routes for this skill’s subagents (must stay on free routes)
 
 ## Checklist
 
