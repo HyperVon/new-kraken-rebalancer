@@ -38,76 +38,133 @@ import java.math.BigDecimal
 import java.util.Base64
 
 internal fun EvaluationScenariosTest.registerScenarios35To38() {
-    "Scenario 35: PENDING→UNCERTAIN batch abort via cl_ord_id" {
+    "Scenario 39: PENDING→UNCERTAIN batch abort via cl_ord_id" {
         runTest {
-            val fakeKraken = FakeKrakenService()
-            val mockConfig = mockk<ConfigService>(relaxed = true)
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            val mockStats = mockk<PortfolioStatsRepository>(relaxed = true)
-
+            val cycleId = "test-cycle-35"
             val appConfig = TestFixtures.config(
                 settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, minimumOrderSizeUSD = 2.0),
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
                     Allocation(Asset.ETH, 50.0),
+                    Allocation(Asset.SOL, 50.0),
                 ),
             )
-            every { mockConfig.getConfig() } returns appConfig
+            // Deterministic ids the executor must use (ALGORITHM.md 84 / OrderExecutorImpl:65)
+            val expectedBtcSellId = OrderExecutorImpl.clientOrderId(cycleId, Asset.BTC, "sell")!!
+            val expectedEthSellId = OrderExecutorImpl.clientOrderId(cycleId, Asset.ETH, "sell")!!
+            val expectedSolSellId = OrderExecutorImpl.clientOrderId(cycleId, Asset.SOL, "sell")!!
 
-            // First order succeeds, second throws ambiguous failure -> UNCERTAIN and abort remaining
             var callCount = 0
-            fakeKraken.executeOrderAction = { pair, _, side, volume ->
-                callCount++
-                if (callCount == 1) {
-                    // success with txid
-                } else {
-                    throw java.io.IOException("Simulated transport failure for $pair $side")
+            val fakeKraken = FakeKrakenService().apply {
+                executeOrderAction = { _, _, _, _ ->
+                    callCount++
+                    if (callCount == 1) {
+                        // first sell succeeds — allow FakeKrakenService to return success
+                    } else {
+                        throw java.io.IOException("Simulated transport failure #$callCount")
+                    }
                 }
             }
-            // Need to capture PENDING and UNCERTAIN writes
-            val saved = mutableListOf<com.gemini.krakenbot.model.TradeRecord>()
-            coEvery { mockHistory.saveTrade(any()) } answers {
-                100 + saved.size + 1
-                saved.add(firstArg())
-                100 + saved.size
-            } // simplified
-            coEvery { mockHistory.updateTrade(any(), any()) } returns Unit
-            coEvery { mockHistory.hasPendingSubmissions() } returns false
-            coEvery { mockHistory.addSnapshot(any()) } returns Unit
 
-            // Use OrderExecutor directly to test PENDING→UNCERTAIN
+            val pendingSlots = mutableListOf<com.gemini.krakenbot.model.TradeRecord>()
+            val updateSlots =
+                mutableListOf<Pair<com.gemini.krakenbot.model.TradeRecord, com.gemini.krakenbot.model.TradeRecord>>()
+            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
+            var nextId = 100
+            coEvery { mockHistory.saveTrade(any()) } answers {
+                val rec = firstArg<com.gemini.krakenbot.model.TradeRecord>()
+                pendingSlots.add(rec)
+                nextId++
+            }
+            coEvery { mockHistory.updateTrade(any(), any()) } answers {
+                updateSlots.add(firstArg<com.gemini.krakenbot.model.TradeRecord>() to secondArg())
+            }
+            coEvery { mockHistory.hasPendingSubmissions() } returns false
+
             val executor = OrderExecutorImpl(fakeKraken, mockHistory)
             val actionLog = mutableListOf<String>()
-            // Two sells: first succeeds, second throws -> should be UNCERTAIN and abort
+            var thrown: Throwable? = null
             try {
                 executor.executeOrders(
                     buyOrders = emptyMap(),
-                    sellOrders = mapOf(Asset.BTC to BigDecimal("10.00"), Asset.ETH to BigDecimal("10.00")),
+                    // 3 sells: first succeeds, second throws ambiguous, third must be aborted (batch abort)
+                    sellOrders = mapOf(
+                        Asset.BTC to BigDecimal("10.00"),
+                        Asset.ETH to BigDecimal("10.00"),
+                        Asset.SOL to BigDecimal("10.00"),
+                    ),
                     currentValuesUSD = mapOf(
                         Asset.BTC to BigDecimal("100.00"),
                         Asset.ETH to BigDecimal("100.00"),
+                        Asset.SOL to BigDecimal("100.00"),
                         Asset.USD to BigDecimal("100.00"),
                     ),
                     prices = mapOf(
                         Asset.BTC to BigDecimal("1000.00"),
                         Asset.ETH to BigDecimal("1000.00"),
+                        Asset.SOL to BigDecimal("1000.00"),
                     ),
                     settings = appConfig.settings,
                     actionLog = actionLog,
-                    cycleId = "test-cycle-35",
+                    cycleId = cycleId,
                 )
-            } catch (_: Exception) {
-                // OrderExecutor rethrows after persisting UNCERTAIN; we swallow for scenario
+            } catch (e: Exception) {
+                thrown = e
             }
 
-            // Verify at least one PENDING was saved and one UNCERTAIN update happened
-            val hasPending = saved.isNotEmpty()
-            // For this scenario, success is that the executor attempted batch and handled ambiguous failure
-            val evidence = "callCount=$callCount hasPending=$hasPending actionLog=$actionLog savedSize=${saved.size}"
-            // We consider PASS if it either saved PENDING or handled the exception path
-            (callCount >= 1).shouldBeTrue()
+            // PENDING persisted before each attempt (at least 2: BTC success + ETH failure)
+            (pendingSlots.size shouldBe 2)
+            pendingSlots[0].submissionState shouldBe OrderSubmissionState.PENDING
+            pendingSlots[0].clientOrderId shouldBe expectedBtcSellId
+            pendingSlots[1].submissionState shouldBe OrderSubmissionState.PENDING
+            pendingSlots[1].clientOrderId shouldBe expectedEthSellId
+
+            // cl_ord_id determinism: same cycleId|symbol|side yields same UUID; SOL never reached so no id observed
+            val observedClOrdIds = fakeKraken.executedOrders.map { it.clOrdId }
+            observedClOrdIds shouldBe listOf(expectedBtcSellId, expectedEthSellId)
+            OrderExecutorImpl.clientOrderId(cycleId, Asset.BTC, "sell") shouldBe expectedBtcSellId
+            (expectedSolSellId != expectedBtcSellId).shouldBeTrue()
+            (expectedSolSellId != expectedEthSellId).shouldBeTrue()
+
+            // First trade resolved to success (no UNCERTAIN), second to UNCERTAIN
+            updateSlots.size shouldBe 2
+            updateSlots[0].second.submissionState shouldBe null
+            updateSlots[0].second.success.shouldBeTrue()
+            updateSlots[1].second.submissionState shouldBe OrderSubmissionState.UNCERTAIN
+            updateSlots[1].second.success shouldBe false
+
+            // Batch abort: only 2 backend calls, SOL never attempted
+            callCount shouldBe 2
+            // OrderExecutorImpl rethrows the IOException after persisting UNCERTAIN
+            (thrown != null).shouldBeTrue()
+            (thrown is java.io.IOException).shouldBeTrue()
+            thrown!!.message shouldBe "Simulated transport failure #2"
+
+            // Blocking: a subsequent live cycle must be refused while UNCERTAIN persists
+            // Simulate persisted UNCERTAIN gate
+            coEvery { mockHistory.hasPendingSubmissions() } returns true
+            val blockedKraken = FakeKrakenService()
+            val blockedExecutor = OrderExecutorImpl(blockedKraken, mockHistory)
+            val blockedLog = mutableListOf<String>()
+            blockedExecutor.executeOrders(
+                buyOrders = mapOf(Asset.BTC to BigDecimal("10.00")),
+                sellOrders = emptyMap(),
+                currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                settings = appConfig.settings,
+                actionLog = blockedLog,
+                cycleId = "blocked-cycle",
+            )
+            blockedKraken.executedOrders.size shouldBe 0
+            blockedLog.any { it.contains("Live orders blocked") || it.contains("manual Kraken verification") } shouldBe
+                true
+
+            val evidence =
+                "pending=${pendingSlots.map { it.clientOrderId to it.submissionState }} " +
+                    "updates=${updateSlots.map { it.second.submissionState }} " +
+                    "clOrdIds=$observedClOrdIds callCount=$callCount blockedSize=${blockedKraken.executedOrders.size}"
             EvaluationScenariosTest.recordResult(
-                "Scenario 35",
+                "Scenario 39",
                 "PENDING→UNCERTAIN batch abort via cl_ord_id",
                 TestFixtures.PASS,
                 evidence,

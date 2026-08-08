@@ -1,6 +1,6 @@
 # Scenario Evaluation Suite
 
-The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 38 highly realistic market scenarios and operational conditions.
+The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 39 highly realistic market scenarios and operational conditions.
 
 Implemented in [EvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
 
@@ -49,7 +49,7 @@ FakeKraken exact-math cases:
 
 ## Scenarios & Outcomes
 
-Below is the report of the current 38 scenarios run by the suite and their results.
+Below is the report of the current 39 scenarios run by the suite and their results.
 Refresh this table from `build/reports/scenarios_evaluation_report.md` after
 suite changes (redact absolute paths to `.../` and temp ids to `scenarioN-*.json`).
 
@@ -93,3 +93,4 @@ suite changes (redact absolute paths to `.../` and temp ids to `scenarioN-*.json
 | Scenario 36 | retryWithFlow Handles 429/503 And Lockout | 🟢 **PASS** | Rate-limit (429/EAPI) and lockout (503/EGeneral) retries succeed on second attempt via KrakenServiceImpl; see KrakenRetryAndRateLimitTest for exhaustive backoff coverage |
 | Scenario 37 | withStableBackend Pins Config Across Rebalance | 🟢 **PASS** | DynamicKrakenService withStableBackend pins backend/config across nested execution; verified via PortfolioManager consecutive cycles |
 | Scenario 38 | Ledgers Sync Recovery Uses 96d Bound | 🟢 **PASS** | Interrupted Ledgers seed restarts from 96-day bound (not null/full history); LedgersSyncServiceTest covers watermark recovery |
+| Scenario 39 | PENDING→UNCERTAIN Batch Abort via cl_ord_id | 🟢 **PASS** | Live PENDING→UNCERTAIN (deterministic cl_ord_id per cycleId\|symbol\|side) aborts remaining batch (BTC success, ETH IOException→UNCERTAIN, SOL not attempted; 2 calls), then blocks next live cycle via hasPendingSubmissions gate until reconciliation |

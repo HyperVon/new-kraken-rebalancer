@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.35] - 2026-08-08
+
+### Added
+
+- **Scenario 39 (CQ-19-14)**: Hardened evaluation scenario `PENDING→UNCERTAIN batch abort via cl_ord_id` — verifies deterministic `cl_ord_id` UUID per `cycleId|symbol|side`, `PENDING` journal write, `IOException` → `UNCERTAIN` transition, batch abort (3 sells → 2 calls, SOL not attempted), and subsequent live cycle blocking via `hasPendingSubmissions` gate until reconciliation (ALGORITHM.md 84 / OrderExecutorImpl:65).
+
 ## [6.16.34] - 2026-08-07
 
 ### Changed
