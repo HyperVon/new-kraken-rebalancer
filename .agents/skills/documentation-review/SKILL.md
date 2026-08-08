@@ -202,7 +202,7 @@ High-risk mismatch examples:
 - `dryRun` confused with `simulation`
 - Rate limiting described as “Mutex only” without call-counter `RateLimiter`
 - Algorithm missing fiat deployment / fiat correction / dust / 99% buy / 95% settle
-- Coverage stated as vague “75%+ JS” instead of Karma 90/90/90/75
+- Coverage stated as vague “75%+ JS” instead of Karma 90/80/90/75
 - Lint paths pointing at root `AGENTS.md` (file is `.agents/AGENTS.md`)
 - Evaluation suite tables out of sync with `EvaluationScenariosTest` or
   `SimulationEvaluationScenariosTest`

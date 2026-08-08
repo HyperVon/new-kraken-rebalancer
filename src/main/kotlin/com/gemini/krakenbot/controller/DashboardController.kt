@@ -366,13 +366,22 @@ class DashboardController(
     }
 
     private suspend fun RoutingContext.handlePostPause() {
+        if (!requireCsrf()) return
         portfolioManager.pauseLoop()
         respondJson(mapOf("paused" to true))
     }
 
     private suspend fun RoutingContext.handlePostResume() {
+        if (!requireCsrf()) return
         portfolioManager.resumeLoop()
         respondJson(mapOf("paused" to false))
+    }
+
+    private suspend fun RoutingContext.requireCsrf(): Boolean {
+        val params = call.receiveParameters()
+        if (CsrfProtection.isValid(call, params)) return true
+        call.respond(HttpStatusCode.Forbidden)
+        return false
     }
 
     private suspend fun RoutingContext.handleGetHealth() {

@@ -58,17 +58,18 @@ class PortfolioManagerImpl(
     private var applicationScope: CoroutineScope? = null
 
     override fun stopRebalancingLoop() {
-        val job = synchronized(lifecycleLock) {
+        synchronized(lifecycleLock) {
             isRunning = false
-            workerJob
+            isPaused = false
+            workerJob?.cancel()
         }
-        job?.cancel()
         log.info("Rebalancing loop stopped.")
     }
 
     override fun startRebalancingLoop() {
         synchronized(lifecycleLock) {
             isRunning = true
+            isPaused = false
         }
         log.info("Rebalancing loop started.")
     }
@@ -77,6 +78,7 @@ class PortfolioManagerImpl(
         val job = synchronized(lifecycleLock) {
             applicationScope = scope
             isRunning = true
+            isPaused = false
             val staleJob = workerJob
             if (staleJob != null && staleJob.isActive) {
                 staleJob
@@ -102,18 +104,14 @@ class PortfolioManagerImpl(
         synchronized(lifecycleLock) {
             isRunning = false
             isPaused = true
+            workerJob?.cancel()
         }
-        workerJob?.cancel()
         log.info("Rebalancing loop paused by operator.")
     }
 
     override fun resumeLoop() {
         val scope = applicationScope
             ?: throw IllegalStateException("Cannot resume without an active application scope")
-        synchronized(lifecycleLock) {
-            isRunning = true
-            isPaused = false
-        }
         startRebalancingLoop(scope)
         log.info("Rebalancing loop resumed.")
     }

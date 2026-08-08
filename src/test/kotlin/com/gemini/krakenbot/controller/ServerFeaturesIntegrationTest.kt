@@ -26,9 +26,13 @@ import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.formUrlEncode
+import io.ktor.http.parametersOf
 import io.ktor.server.application.install
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -36,9 +40,13 @@ import io.ktor.server.sse.SSE
 import io.ktor.server.testing.testApplication
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
+
+private const val TEST_CSRF_TOKEN = "test-token"
+private const val TEST_CSRF_COOKIE = "rebalancer-csrf=$TEST_CSRF_TOKEN"
 
 class ServerFeaturesIntegrationTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -165,7 +173,11 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     install(SSE)
                     dashboardRouting()
                 }
-                val pauseResponse = client.post("/api/pause")
+                val pauseResponse = client.post("/api/pause") {
+                    setBody(parametersOf("csrfToken", TEST_CSRF_TOKEN).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
+                }
                 pauseResponse.status shouldBe HttpStatusCode.OK
                 pauseResponse.bodyAsText() shouldContain "true"
 
@@ -180,13 +192,43 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     install(SSE)
                     dashboardRouting()
                 }
-                client.post("/api/pause")
-                val resumeResponse = client.post("/api/resume")
+                client.post("/api/pause") {
+                    setBody(parametersOf("csrfToken", TEST_CSRF_TOKEN).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
+                }
+                val resumeResponse = client.post("/api/resume") {
+                    setBody(parametersOf("csrfToken", TEST_CSRF_TOKEN).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
+                }
                 resumeResponse.status shouldBe HttpStatusCode.OK
                 resumeResponse.bodyAsText() shouldContain "false"
 
                 val healthAfterResume = client.get("/api/health")
                 healthAfterResume.bodyAsText() shouldContain "\"paused\":false"
+            }
+        }
+
+        "pause and resume endpoints reject requests without CSRF" {
+            testApplication {
+                application {
+                    install(SSE)
+                    dashboardRouting()
+                }
+                val pauseResponse = client.post("/api/pause") {
+                    setBody(parametersOf().formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+                val resumeResponse = client.post("/api/resume") {
+                    setBody(parametersOf().formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+
+                pauseResponse.status shouldBe HttpStatusCode.Forbidden
+                resumeResponse.status shouldBe HttpStatusCode.Forbidden
+                verify(exactly = 0) { portfolioManager.pauseLoop() }
+                verify(exactly = 0) { portfolioManager.resumeLoop() }
             }
         }
     }

@@ -476,7 +476,24 @@ class PortfolioManagerLoopTest : StringSpec() {
                 every { configService.getConfig() } returns config
                 krakenService.balanceSupplier = { emptyMap() }
 
-                portfolioManager.startRebalancingLoop(this)
+                val firstWorkerStarted = CompletableDeferred<Unit>()
+                val secondWorkerStarted = CompletableDeferred<Unit>()
+                var startupSyncCalls = 0
+                coEvery { tradeHistoryService.syncLedgersFromKraken() } coAnswers {
+                    startupSyncCalls++
+                    when (startupSyncCalls) {
+                        1 -> {
+                            firstWorkerStarted.complete(Unit)
+                            awaitCancellation()
+                        }
+
+                        2 -> secondWorkerStarted.complete(Unit)
+                    }
+                }
+
+                val initialWorker = portfolioManager.startRebalancingLoop(this)
+                runCurrent()
+                firstWorkerStarted.isCompleted shouldBe true
                 portfolioManager.pauseLoop()
                 portfolioManager.isLoopPaused() shouldBe true
 
@@ -484,7 +501,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                 runCurrent()
 
                 portfolioManager.isLoopPaused() shouldBe false
+                secondWorkerStarted.isCompleted shouldBe true
                 portfolioManager.stopRebalancingLoop()
+                initialWorker.join()
             }
         }
 

@@ -107,13 +107,13 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
 | **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                               |
 | **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.1                                                   |
-| **Database**    | SQLite (via JetBrains Exposed ORM 1.3.1)                                                                     |
+| **Database**    | SQLite (via JetBrains Exposed ORM 1.4.0)                                                                     |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                              |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS                |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
-| **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo (95% instr/95% line/95% method/90% branch), Karma/Istanbul (90/90/90/75) |
-| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.7.1                                                     |
+| **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo 95/95/95/90, Karma/Istanbul 90/80/90/75                                  |
+| **Build**       | Gradle 9.7.0 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.8.0                                                     |
 | **Codegen**     | JVM-only module with KSP processors for API mappers and YAML string catalogs                                 |
 | **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable      |
 
@@ -233,12 +233,12 @@ with a wide range of tools and paradigms:
 | **Languages**          | Kotlin 2.4 (current), Kotlin 2.x, Java 25, Go 1.26, TypeScript (all phases documented in CHANGELOG)                                   |
 | **Backend Frameworks** | Ktor 3.5.2 (current), Spring Boot 4, Ktor 2.3, NestJS, Express, Go `net/http`                                                         |
 | **DI / IoC**           | Koin 4.2.2 (current), Spring IoC (`@Autowired`), Koin 3.5, NestJS modules                                                             |
-| **Build Systems**      | Gradle 9.6.1 Kotlin DSL (current), Maven, npm / yarn, Go modules                                                                      |
+| **Build Systems**      | Gradle 9.7.0 Kotlin DSL (current), Maven, npm / yarn, Go modules                                                                      |
 | **Frontend**           | Kotlin/JS + kotlinx.html + HTMX (current), React, Angular (explored), Tailwind CSS v4, Chart.js                                       |
 | **HTTP Clients**       | Ktor CIO Client (current), OkHttp, Node.js native `fetch`, Go `net/http`                                                              |
 | **Concurrency**        | Kotlin Coroutines (current), Java `ScheduledExecutorService`, Go goroutines, Node.js event loop                                       |
 | **Testing**            | Kotest 6 + MockK + Karma/Istanbul (current), JUnit 5, Mockito, Vitest, Go `testing`                                                   |
-| **Coverage**           | JaCoCo 95%+ (Kotlin JVM), Karma/Istanbul 90/90/90/75 (Kotlin/JS) (current); Vitest, Go per-package gates (historical)                 |
+| **Coverage**           | JaCoCo 95%+ (Kotlin JVM), Karma/Istanbul 90/80/90/75 (Kotlin/JS) (current); Vitest, Go per-package gates (historical)                 |
 | **Serialization**      | Jackson 2.22.1, Go `encoding/json`, Zod schema validation                                                                             |
 | **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (config changes + snapshot broadcasts), HTMX SSE extension                         |
 | **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL Java/Kotlin analysis enabled on `main` |
@@ -756,6 +756,8 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET`  | `/fragments/dashboard`       | Dashboard fragment (HTMX)                                                |
 | `GET`  | `/api/status/stream`         | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 | `GET`  | `/api/health`                | Public health check endpoint returning app status and metrics (JSON)     |
+| `POST` | `/api/pause`                 | Pause loop (CSRF-protected)                                              |
+| `POST` | `/api/resume`                | Resume loop (CSRF-protected)                                             |
 | `GET`  | `/api/history/snapshots`     | Portfolio snapshots for History charts (JSON, `?range=`)                 |
 | `GET`  | `/api/history/trades`        | Trade log for History page (JSON, `?range=`)                             |
 | `GET`  | `/api/history/stats`         | History summary-card aggregates (JSON, `?range=`)                        |
@@ -799,7 +801,7 @@ To run JVM tests only:
 
 ### Frontend Kotlin/JS Tests
 
-The client-side browser logic is tested via Chrome Headless using Karma and verified with Istanbul code coverage check thresholds (**90% statements, 90% lines, 90% functions, 75% branches**).
+The client-side browser logic is tested via Chrome Headless using Karma and verified with Istanbul code coverage check thresholds (**90% statements, 80% functions, 90% lines, 75% branches**).
 
 To run JS browser tests only:
 
