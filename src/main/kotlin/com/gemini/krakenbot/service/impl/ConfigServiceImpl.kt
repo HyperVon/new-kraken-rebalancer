@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -175,15 +176,18 @@ class ConfigServiceImpl(
     }
 
     private fun normalizeLegacyKeys(content: String): String {
-        if (!content.contains("\"$LEGACY_DUST_THRESHOLD_KEY\"")) return content
-        val hasNew = content.contains("\"$NEW_MINIMUM_ORDER_SIZE_KEY\"")
-        return if (hasNew) {
-            var out = content.replace(Regex(",\\s*\"$LEGACY_DUST_THRESHOLD_KEY\"\\s*:\\s*[^,\\n}]+"), "")
-            out = out.replace(Regex("\"$LEGACY_DUST_THRESHOLD_KEY\"\\s*:\\s*[^,\\n}]+,?\\s*"), "")
-            out
-        } else {
-            content.replace(Regex("\"$LEGACY_DUST_THRESHOLD_KEY\"(\\s*:)"), "\"$NEW_MINIMUM_ORDER_SIZE_KEY\"$1")
+        val tree = objectMapper.readTree(content)
+        val settings = tree.get("settings") as? ObjectNode ?: return content
+        val legacy = settings.get(LEGACY_DUST_THRESHOLD_KEY)
+        val current = settings.get(NEW_MINIMUM_ORDER_SIZE_KEY)
+        when {
+            legacy != null && current != null -> settings.remove(LEGACY_DUST_THRESHOLD_KEY)
+            legacy != null -> {
+                settings.remove(LEGACY_DUST_THRESHOLD_KEY)
+                settings.set(NEW_MINIMUM_ORDER_SIZE_KEY, legacy)
+            }
         }
+        return objectMapper.writeValueAsString(tree)
     }
 
     private fun resolveEnvVars(content: String): String = ENV_VAR_PATTERN.replace(content) { matchResult ->

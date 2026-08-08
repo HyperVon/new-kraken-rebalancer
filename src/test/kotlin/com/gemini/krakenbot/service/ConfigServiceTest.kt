@@ -812,5 +812,54 @@ class ConfigServiceTest : StringSpec() {
                 service.getConfig().settings.loopDelaySeconds shouldBe 120L
             }
         }
+        "loadConfig renames legacy dustThresholdUSD to minimumOrderSizeUSD when only legacy exists" {
+            tempFile.writeText(
+                """
+                {
+                  "kraken": { "apiKey": "k", "privateKey": "s" },
+                  "settings": {
+                    "loopDelaySeconds": 60,
+                    "deviationTriggerPercent": 2.0,
+                    "dustThresholdUSD": 5.0,
+                    "dryRun": true
+                  },
+                  "allocations": [{"symbol": "USD", "targetPercent": 100.0}]
+                }
+                """.trimIndent(),
+            )
+
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            service.getConfig().settings.minimumOrderSizeUSD shouldBe 5.0
+        }
+
+        "loadConfig removes legacy dustThresholdUSD when minimumOrderSizeUSD already exists" {
+            tempFile.writeText(
+                """
+                {
+                  "kraken": { "apiKey": "k", "privateKey": "s" },
+                  "settings": {
+                    "loopDelaySeconds": 60,
+                    "deviationTriggerPercent": 2.0,
+                    "minimumOrderSizeUSD": 5.0,
+                    "dustThresholdUSD": 3.0,
+                    "dryRun": true
+                  },
+                  "allocations": [{"symbol": "USD", "targetPercent": 100.0}]
+                }
+                """.trimIndent(),
+            )
+
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            service.getConfig().settings.minimumOrderSizeUSD shouldBe 5.0
+        }
+
+        "loadConfig leaves config unchanged when no legacy dustThresholdUSD key is present" {
+            createValidConfig(tempFile)
+            val originalContent = tempFile.readText()
+
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            service.getConfig().settings.minimumOrderSizeUSD shouldBe 5.0
+            tempFile.readText() shouldBe originalContent
+        }
     }
 }
