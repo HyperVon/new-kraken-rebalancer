@@ -687,6 +687,31 @@ def aa_matches_cache_path() -> Path:
     return Path.home() / ".cache" / "kilo" / "model-router" / "aa-matches.json"
 
 
+# Bump when the matching inputs or algorithm change so cached negative matches
+# from an older, weaker matcher are recomputed instead of pinned forever.
+AA_MATCHER_VERSION = "v2"
+
+# Trailing free-tier marker in a catalog id or display name.
+FREE_MARKER = re.compile(r"[\s:_-]*\(?\bfree\b\)?\s*$", re.IGNORECASE)
+
+
+def aa_creator_variants(model: Mapping[str, Any]) -> list[str]:
+    """Creator-qualified spellings of an AA row.
+
+    Provider catalogs identify a model as ``tencent/hy3`` / ``Tencent: Hy3``
+    while AA stores the bare ``hy3`` / ``Hy3`` plus a separate creator field.
+    For short model names the creator affix dominates similarity scoring, so
+    the correct row scores below the match threshold and the route ends up
+    with no capability data — which makes it permanently ineligible. Emitting
+    the creator-qualified forms lets those routes match on their real name.
+    """
+    creator = model.get("model_creator")
+    name = str(creator.get("name", "")) if isinstance(creator, Mapping) else str(creator or "")
+    if not name:
+        return []
+    return [f"{name}/{model.get('slug', '')}", f"{name}: {model.get('name', '')}"]
+
+
 _AUTO_MATCH_CACHE: dict[str, dict[str, str | None]] = {}
 _AUTO_MATCH_WRITTEN: set[str] = set()
 
@@ -724,6 +749,24 @@ def _save_auto_match_cache(fingerprint: str, matches: dict[str, str | None]) -> 
         pass
 
 
+def route_match_values(candidate: Candidate) -> list[str]:
+    """Spellings of a catalog route to match against AA rows.
+
+    A trailing free-tier marker (``tencent/hy3:free``, ``Tencent: Hy3 (free)``)
+    is packaging, not identity, but it is long enough to swing similarity
+    scoring onto a neighbouring row: the ``:free`` noise made ``hy3:free``
+    score 0.839 against ``hy3-preview`` and only 0.833 against ``hy3``.
+    Matching the stripped form too keeps a free variant on the same AA row as
+    its paid twin.
+    """
+    values = [candidate.model, candidate.name]
+    for value in (candidate.model, candidate.name):
+        stripped = FREE_MARKER.sub("", value).strip()
+        if stripped and stripped != value:
+            values.append(stripped)
+    return values
+
+
 def match_artificial_analysis(
     candidate: Candidate,
     model_config: Mapping[str, Any],
@@ -733,7 +776,7 @@ def match_artificial_analysis(
     if override and str(override) in aa_models:
         return aa_models[str(override)], "configured"
 
-    fingerprint = "|".join(sorted(aa_models)) if aa_models else ""
+    fingerprint = f"{AA_MATCHER_VERSION}|" + "|".join(sorted(aa_models)) if aa_models else ""
     if fingerprint not in _AUTO_MATCH_CACHE:
         _load_auto_match_cache(fingerprint)
     cache = _AUTO_MATCH_CACHE[fingerprint]
@@ -744,12 +787,13 @@ def match_artificial_analysis(
             "automatic" if cached_slug in aa_models else "none"
         )
 
-    route_values = [candidate.model, candidate.name]
+    route_values = route_match_values(candidate)
     route_normalized = [normalize(value) for value in route_values]
     route_tokens = set().union(*(tokens(value) for value in route_values))
     best: tuple[float, dict[str, Any]] | None = None
     for model in aa_models.values():
         aa_values = [str(model.get("slug", "")), str(model.get("name", ""))]
+        aa_values.extend(aa_creator_variants(model))
         aa_normalized = [normalize(value) for value in aa_values]
         aa_tokens = set().union(*(tokens(value) for value in aa_values))
         score = max(SequenceMatcher(None, left, right).ratio() for left in route_normalized for right in aa_normalized)
@@ -1408,10 +1452,15 @@ def select_candidate(
         raise RouterError(f"no candidate satisfies the current capability, cost, and privacy policy{detail}")
 
     def sort_key(candidate: Candidate) -> tuple[float, float, int, float, int]:
-        # Lowest effective cost wins; among (near-)equal-cost routes the profile
-        # minimum is the difficulty bar, so prefer the model with the SMALLEST
-        # capability headroom above it — a just-sufficient small/fast model for
-        # trivial tasks, yet a genuinely strong model where the bar is high.
+        # Lowest effective cost wins. Within an equal-cost group the second key
+        # depends on whether that group costs anything:
+        #   cost > 0  -> smallest capability headroom above the profile minimum,
+        #                so spend buys a just-sufficient model rather than the
+        #                most expensive one that merely clears the bar.
+        #   cost == 0 -> highest quality, because "just sufficient" only exists
+        #                to avoid paying for headroom. A free route has no
+        #                marginal cost, so deliberately picking the weaker of two
+        #                free models buys nothing and loses capability.
         # Then an already-paid subscription over PAYG, then higher quota headroom
         # as a load-spread tiebreak. Free models are not quota-metered (report
         # 'unknown'), so an unknown free quota never blocks them — free cost 0.0
@@ -1421,12 +1470,12 @@ def select_candidate(
         cost = candidate.effective_cost if candidate.effective_cost is not None else float("inf")
         quality = candidate.quality if candidate.quality is not None else 0.0
         minimum = effective_minimum(profile)
-        headroom = quality - minimum
+        capability = -quality if cost == 0.0 else quality - minimum
         # Prefer an already-paid subscription/account-priced route over PAYG when
-        # cost and headroom tie (avoid marginal spend).
+        # cost and capability rank tie (avoid marginal spend).
         subscription = candidate.billing in {"subscription", "subscription/account-priced", "account-priced"}
         quota = candidate.quota_percent if candidate.quota_percent is not None else 0.0
-        return cost, headroom, 0 if subscription else 1, -quota, unknown_quota
+        return cost, capability, 0 if subscription else 1, -quota, unknown_quota
 
     selected = min(usable, key=sort_key)
     select_variant(selected, profile)

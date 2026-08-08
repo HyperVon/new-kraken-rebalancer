@@ -214,6 +214,70 @@ and an artifact path. Workers must not block on the result; they reference
 the request id in their findings and the parent folds the outcome into the
 Step 2 triage.
 
+### Launcher mechanics for implementer workers (verified 2026-08-08)
+
+Implementer tracks are **not** the launcher's default read-only shape. Three
+observed behaviours change how the fan-out must be configured; each one killed
+tracks in a live run before it was accounted for.
+
+**1. `--timeout` defaults to 900s and is too short.** `subagents.py`
+`DEFAULT_TIMEOUT = 900`. An implementer track that reads a skill, audits a
+domain, and writes code routinely exceeds 15 minutes. In the first live wave,
+2 of 5 tracks died at exactly 900.0s with partial, undocumented edits still in
+their worktrees. Pass `--timeout 1800` (or higher) for every implementer wave.
+
+Distinguish the two failure shapes in the status snapshot:
+
+| `exit_code` | Meaning |
+| :--- | :--- |
+| `None` with `elapsed_seconds` == the timeout | Timed out — raise `--timeout` and retry |
+| `1` | Worker process errored — retry with a narrower, incremental prompt |
+
+**2. `--allow-edits` forces every worker's cwd to the parent repo root.**
+`worker_workspace(read_only)` yields a temporary copy of the repo only when
+`read_only` is true; when false it yields the repo root itself, and
+`--allow-edits` sets `read_only=False` for **all** tracks globally. Workers
+therefore cannot be given a worktree as their working directory.
+
+Workaround, required in every implementer manifest:
+
+- Set `read_only: false` per track and scope each track's owned `files` to
+  `.worktrees/wt-<track>/...` plus the coordination directory.
+- State a **working-directory rule** at the top of every task string: the cwd is
+  the parent repo root, and all source edits must be written inside
+  `.worktrees/wt-<track>/` only; `.worktrees/.coordination/` is the sole
+  exception.
+- After each wave, the parent verifies with `git status --porcelain` in the
+  parent worktree and reverts any stray edit that escaped a worktree.
+
+**3. Workers die without writing findings.** A worker that fails or times out
+mid-task leaves implemented code with no record of what it did. Require an
+incremental contract in every prompt: implement one fix, write its findings
+JSON immediately, heartbeat, then start the next. Never batch findings to the
+end of the run.
+
+### Finalize-only retry
+
+When a track fails but has left a substantial partial diff, discarding the work
+and re-running from scratch is worse than finishing it. Use a narrowly scoped
+finalize-only retry instead of a normal retry:
+
+1. Build a manifest containing only that track.
+2. Append a retry note that embeds the track's real `git status --porcelain`
+   output and its already-written findings ids (so it neither re-discovers nor
+   duplicates them).
+3. **Forbid all new work.** The worker may only make the existing diff
+   self-consistent — symbols exist, imports resolve, no dangling references,
+   new config fields have defaults so existing config still parses.
+4. Require findings JSON describing what the diff does, plus a final `done`
+   heartbeat.
+5. Give it a hard budget (~15 min) and an explicit escape hatch: if the diff
+   cannot be made self-consistent, say so in a findings file with
+   `implemented: false` rather than inventing more changes.
+
+This retry does not count against the normal one-retry allowance because it
+adds no new scope — it only closes out work already on disk.
+
 ### Architecture & product tracks (implemented in overhaul mode)
 
 `architecture-review` and `product-opportunity-review` are **recommend-only**
@@ -232,14 +296,14 @@ candidate PRs. The user decides which to merge.
 
 `ui-visual-review`, `ui-visual-implement`, `ui-manual-qa`, `post-deploy-ui-smoke`,
 and `docs-screenshot-refresh` require booting the application. Run these
-**serially by the parent** after all read-only tracks and S/M fixes are
+**serially by the parent** after all implementer tracks and S/M fixes are
 integrated. Never run them inside a parallel worktree.
 
 ## Workflow
 
 ```text
 - [ ] Step 0: Clean leftover state, branch, model routes, and worktree setup
-- [ ] Step 1: Fan-out 5 read-only tracks
+- [ ] Step 1: Fan-out 5 implementer tracks
 - [ ] Step 2: Collect and triage findings (S/M/L classification)
 - [ ] Step 3: PR triage — candidate PRs with merge recommendation
 - [ ] Step 4: Commit, push, open PRs (iterative per triage)
@@ -337,7 +401,7 @@ mkdir -p .worktrees/.coordination/{agent-status,findings,topics,questions,reques
    relative path would resolve to a nested, nonexistent directory inside the
    worker worktree.
 
-### Step 1 — Fan-out 5 read-only tracks
+### Step 1 — Fan-out 5 implementer tracks
 
 Launch all five tracks concurrently via a single
 `.kilo/model-router/route-subagents` invocation with a **custom manifest**
@@ -346,10 +410,31 @@ mandatory in Kilo CLI sessions because it selects and records a per-track
 exact route. Fall back to a one-message parallel `Task` fan-out with an
 explicit free-route instruction in every prompt only when the launcher
 cannot run (non-Kilo host, no network, launcher failure). Do not start workers one at a time sequentially; the whole
-fan-out launches at once. Each track runs its assigned skills in discovery
-mode and returns at most 12 report lines and 5 findings per skill. Workers do
-not edit repository files, run Gradle, start servers, inspect secrets,
-create GitHub issues, commit, push, or open PRs.
+fan-out launches at once. Each track runs its assigned skills, implements its
+findings inside its own worktree, and returns at most 12 report lines and 5
+findings per skill. Workers edit source **only** under
+`.worktrees/wt-<track>/`; they do not run Gradle, start servers, inspect
+secrets, create GitHub issues, commit, push, or open PRs.
+
+Launch from a script (Kilo's shell wrapper mangles long inline `--task`
+strings), with the implementer flags from § Launcher mechanics:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+cd <parent-repo-root>
+exec ./.kilo/model-router/route-subagents \
+  --manifest .worktrees/.coordination/manifest.json \
+  --config .worktrees/.coordination/free-only-config.json \
+  --max-workers 5 \
+  --timeout 1800 \
+  --allow-edits \
+  --run \
+  --auto
+```
+
+Verify the printed route plan before workers start: every route must be free
+billing and none may match `blacklist.models`.
 
 Workers write a heartbeat JSON to the **parent-absolute**
 `<parent>/.worktrees/.coordination/agent-status/<track>.json` at least every
@@ -362,7 +447,11 @@ blockers, and cross-track questions.
 **Retry policy:** if a track produces no heartbeat for ~3 minutes, mark it
 stalled and retry it once from scratch. If the retry also fails, surface the
 failure in the next heartbeat, proceed with the remaining tracks, and mark
-the run as a partial run in the final report.
+the run as a partial run in the final report. A track that failed but left a
+substantial partial diff gets a **finalize-only retry** instead (see § Finalize-only
+retry); that does not consume the one-retry allowance. Every retry manifest
+must carry the same `--timeout 1800` and `--allow-edits` flags as the first
+wave — a retry launched on the 900s default will die the same way.
 
 **Track A — Code quality** (`wt-code`)
 
@@ -613,6 +702,15 @@ small. Architecture redesign and product feature recommendations are always
   override without the blacklist re-enables blacklisted models
 - Falling back to direct `Task` fan-out when `route-subagents` is available —
   in Kilo CLI sessions the launcher with a free-only override is mandatory, not optional
+- Launching implementer tracks on the launcher's default 900s `--timeout` —
+  implementer work routinely exceeds 15 minutes and dies mid-edit
+- Assuming `--allow-edits` puts each worker in its own worktree — it forces
+  cwd to the parent repo root for every track, so owned paths must be
+  worktree-scoped and the prompt must state the working-directory rule
+- Letting workers batch findings to the end of the run — a worker that dies
+  mid-task then leaves implemented code with no record of what it changed
+- Discarding a substantial partial diff from a failed track instead of running
+  a finalize-only retry
 
 ## Checklist
 
@@ -621,11 +719,12 @@ small. Architecture redesign and product feature recommendations are always
 - [ ] Fresh branch created from up-to-date main
 - [ ] Model routes selected and recorded per track
 - [ ] Fan-out launched via `.kilo/model-router/route-subagents` with custom manifest + free-only `--config` override carrying the full `blacklist` verbatim (direct `Task` only as documented fallback)
+- [ ] Launcher run with `--timeout 1800` and `--allow-edits`; manifest tracks are `read_only: false` with worktree-scoped owned paths
 - [ ] Five worktrees created with isolated state
 - [ ] Worker prompts gave the parent-absolute coordination path and granted .coordination read/write
 - [ ] Worker contract enforced: implementer role, free-only routes, no issues/commits/PRs
 - [ ] Request channel (worker app/q screenshot requests → parent results) worked
-- [ ] All 5 read-only tracks completed discovery (compact reports returned)
+- [ ] All 5 implementer tracks completed (compact reports returned, findings written incrementally)
 - [ ] Findings triaged S/M/L with evidence anchors
 - [ ] PR triage report delivered with candidate PRs, readiness status, and merge recommendation
 - [ ] User reviewed triage and approved which PRs to proceed with

@@ -290,13 +290,24 @@ Ranking only considers candidates that satisfy every eligibility gate: sufficien
 qualified (quality must be assessable and meet the profile minimum — routes whose
 capability is unknown or cannot be assessed are never considered), accessible and
 useable (active, tool-capable, quota not exhausted, policy-permitted and
-available). Profile inference classifies deliberation tasks (review, audit,
+available). Because an unassessable route is silently unusable, benchmark
+matching normalizes catalog spellings before comparing: a creator-prefixed
+display name (`Tencent: Hy3`) is matched against creator-qualified benchmark
+spellings, and a trailing free-tier marker (`tencent/hy3:free`) is stripped so a
+free variant lands on the same benchmark row as its paid twin instead of a
+neighbouring preview row. Bump `AA_MATCHER_VERSION` when changing that matching
+so cached negative matches are recomputed rather than pinned.
+ Profile inference classifies deliberation tasks (review, audit,
 documentation, analysis, workflow, delegation) as a `review` profile rather
 than `coding`, so a code review is held to a higher intelligence minimum.
-Among the eligible set, routes are ordered by lowest effective cost, then by
-smallest capability headroom above the profile minimum (so a just-sufficient
-small/fast model wins a trivial task, yet a genuinely strong model wins where
-the minimum is high), then by an already-paid subscription over PAYG, then by
+Among the eligible set, routes are ordered by lowest effective cost, then by a
+capability rank that depends on whether the tied group costs anything: paid
+groups prefer the **smallest** capability headroom above the profile minimum (so
+a just-sufficient small/fast model wins a trivial task, yet a genuinely strong
+model wins where the minimum is high), while zero-cost (free) groups prefer the
+**highest** quality — headroom-minimizing only exists to avoid paying for
+capability, so among free routes the strongest qualifying model always wins.
+Then by an already-paid subscription over PAYG, then by
 higher available quota (to prefer headroom and spread load), then by unknown
 quota deprioritized. High-risk profiles (`detailed-review`, `critical`) add a
 margin above their minimum, so security/money work never routes to a barely

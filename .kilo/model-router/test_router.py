@@ -220,7 +220,7 @@ class RouterTests(unittest.TestCase):
         matched, kind = MODULE.match_artificial_analysis(c, {}, aa)
         self.assertEqual("automatic", kind)
         self.assertEqual("alpha", matched["slug"])
-        fingerprint = "|".join(sorted(aa))
+        fingerprint = f"{MODULE.AA_MATCHER_VERSION}|" + "|".join(sorted(aa))
         key = "alpha-7b|Alpha 7B"
         self.assertEqual("alpha", MODULE._AUTO_MATCH_CACHE[fingerprint][key])
         path = MODULE.aa_matches_cache_path()
@@ -234,6 +234,38 @@ class RouterTests(unittest.TestCase):
             MODULE._AUTO_MATCH_CACHE.clear()
             MODULE._AUTO_MATCH_WRITTEN.clear()
 
+
+    def test_creator_prefixed_catalog_name_matches_aa_row(self):
+        aa = {
+            "hy3": {"slug": "hy3", "name": "Hy3", "model_creator": {"name": "Tencent"}},
+            "gpt-6": {"slug": "gpt-6", "name": "GPT-6", "model_creator": {"name": "OpenAI"}},
+        }
+        MODULE._AUTO_MATCH_CACHE.clear()
+        MODULE._AUTO_MATCH_WRITTEN.clear()
+        c = candidate("kilo/tencent/hy3")
+        c.model, c.name = "tencent/hy3", "Tencent: Hy3"
+        matched, kind = MODULE.match_artificial_analysis(c, {}, aa)
+        MODULE._AUTO_MATCH_CACHE.clear()
+        self.assertEqual("automatic", kind)
+        self.assertEqual("hy3", matched["slug"])
+
+    def test_free_suffix_does_not_match_neighbouring_preview_row(self):
+        aa = {
+            "hy3": {"slug": "hy3", "name": "Hy3", "model_creator": {"name": "Tencent"}},
+            "hy3-preview": {
+                "slug": "hy3-preview",
+                "name": "Hy3-preview (Reasoning)",
+                "model_creator": {"name": "Tencent"},
+            },
+        }
+        MODULE._AUTO_MATCH_CACHE.clear()
+        MODULE._AUTO_MATCH_WRITTEN.clear()
+        c = candidate("kilo/tencent/hy3:free", billing="free")
+        c.model, c.name = "tencent/hy3:free", "Tencent: Hy3 (free)"
+        matched, kind = MODULE.match_artificial_analysis(c, {}, aa)
+        MODULE._AUTO_MATCH_CACHE.clear()
+        self.assertEqual("automatic", kind)
+        self.assertEqual("hy3", matched["slug"])
 
     def test_paid_routes_use_lower_benchmark_task_cost(self):
         cheap = candidate("openrouter/cheap", quality=30, aa_cost=0.02)
@@ -377,6 +409,24 @@ class RouterTests(unittest.TestCase):
         config = {"policy": {"allowPaid": True, "allowFree": True}}
         selected = MODULE.select_candidate([unknown_paid, known_paid], profile, config, False)
         self.assertEqual("openai/known-paid", selected.route)
+
+    def test_free_tier_selects_highest_quality_not_just_sufficient(self):
+        weaker = candidate("nvidia/weaker-free", billing="free", quality=38.3)
+        stronger = candidate("kilo/stronger-free", billing="free", quality=42.2)
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 30}
+        config = {"policy": {"allowPaid": False, "allowFree": True}}
+        selected = MODULE.select_candidate([weaker, stronger], profile, config, False)
+        self.assertEqual("kilo/stronger-free", selected.route)
+
+    def test_paid_tier_still_prefers_just_sufficient_over_strongest(self):
+        just_enough = candidate("openrouter/just-enough", quality=35, aa_cost=0.10)
+        just_enough.quota_state = "sufficient"
+        overkill = candidate("openrouter/overkill", quality=80, aa_cost=0.10)
+        overkill.quota_state = "sufficient"
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 30}
+        config = {"policy": {"allowPaid": True, "allowFree": True, "useAaCostPerTask": True}}
+        selected = MODULE.select_candidate([overkill, just_enough], profile, config, False)
+        self.assertEqual("openrouter/just-enough", selected.route)
 
     def test_subscription_uses_real_cost_smaller_model_wins_over_large(self):
         small = candidate("opencode-go/small", billing="subscription/account-priced", quality=40, aa_cost=0.02)

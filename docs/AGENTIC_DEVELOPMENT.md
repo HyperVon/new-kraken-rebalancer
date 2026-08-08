@@ -391,10 +391,14 @@ The default policy selects the lowest-cost route that satisfies the selected
 profile's capability, reasoning, tool, context, quota, and privacy requirements.
 A route is only considered when its capability is assessable and meets the
 profile minimum — models whose capability is unknown or cannot be assessed are
-never selected. Among eligible routes, effective cost decides, then smallest
-capability headroom above the profile minimum (so a just-sufficient small/fast
-model wins a trivial task, yet a genuinely strong model wins where the minimum
-is high), then an already-paid subscription over PAYG, then higher available
+never selected. Among eligible routes, effective cost decides, then a capability
+rank that depends on whether the tied group costs anything: paid groups prefer
+the smallest capability headroom above the profile minimum (so a just-sufficient
+small/fast model wins a trivial task, yet a genuinely strong model wins where the
+minimum is high), while zero-cost (free) groups prefer the highest quality —
+headroom-minimizing exists only to avoid paying for capability, so the strongest
+qualifying free model always wins. Then an already-paid subscription over PAYG,
+then higher available
 quota (headroom / load spreading) as a tiebreak. High-risk profiles
 (`detailed-review`, `critical`) add a margin above their minimum, so security
 and money work never routes to a barely adequate model. Eligible free routes
