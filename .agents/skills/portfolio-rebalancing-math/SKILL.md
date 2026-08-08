@@ -85,7 +85,7 @@ dust gate).
 - Positive → overweight → **SELL**.
 - Order generation requires **both**:
   - `|Deviation%| ≥ deviationTriggerPercent`, and
-  - `|DeviationUSD| ≥ dustThresholdUSD` (`AssetMetrics.isSignificant`).
+  - `|DeviationUSD| ≥ minimumOrderSizeUSD` (`AssetMetrics.isSignificant`).
 - Missing or zero non-USD ticker price aborts the cycle before orders
   (`calculatePortfolioValues` → `Result.Failure`).
 
@@ -101,7 +101,7 @@ dust gate).
 ### Fiat correction (USD-only trigger)
 
 When **only** USD passes both gates (`|Deviation%| ≥ deviationTriggerPercent`
-and `|DeviationUSD| ≥ dustThresholdUSD`; deposit/withdrawal):
+and `|DeviationUSD| ≥ minimumOrderSizeUSD`; deposit/withdrawal):
 
 - **Surplus**: buy underweight crypto proportional to USD deficits.
 - **Shortage**: sell overweight crypto proportional to USD surpluses.
@@ -145,11 +145,11 @@ effectively than spreading across all pairs.
    **cycle-level 99%** budget of settled USD
    (`PrecisionConstants.CASH_RESERVE_FACTOR` / `CASH_RESERVE_FACTOR_DOUBLE`), then
    cap each buy by remaining budget.
-4. **Dust** — skip orders with USD notional `< dustThresholdUSD`.
+4. **Dust** — skip orders with USD notional `< minimumOrderSizeUSD`.
    - **Pre-flight order guards** (`OrderExecutorImpl.executeSingleOrder`): after
      the dust check, abort when `usdAmount.signum() <= 0` or the computed
      `volume.signum() <= 0` — return `null`; do not call `executeOrder`.
-   - Applies when `dustThresholdUSD = 0`, or when a buy is trimmed to $0 by the
+   - Applies when `minimumOrderSizeUSD = 0`, or when a buy is trimmed to $0 by the
      99% cycle budget.
    - Anti-pattern: relying on Kraken to reject zero volume — the app would still
      persist a `TradeRecord`.
@@ -180,7 +180,7 @@ effectively than spreading across all pairs.
 | Setting | Role |
 | :--- | :--- |
 | `deviationTriggerPercent` | Absolute relative deviation gate |
-| `dustThresholdUSD` | Significance gate (`isSignificant`) **and** min order notional |
+| `minimumOrderSizeUSD` | Significance gate (`isSignificant`) **and** min order notional |
 | `fiatMaxDrawdown` / `fiatDeploymentExponent` | Deployment curve |
 | `dryRun` / `simulation` | Distinct safety / emulator flags |
 | `loopDelaySeconds` | Cycle sleep |

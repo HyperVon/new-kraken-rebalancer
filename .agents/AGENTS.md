@@ -119,10 +119,10 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 
 - **ATH → drawdown → fiat deployment**: `Deploy% = (DD / MaxDD)^exponent` (capped 100%); effective USD target reduced and redistributed to crypto. Math lives in `RebalancerEngine` (via `PortfolioAnalyzerImpl`).
 - **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`
-  **and** `|DeviationUSD| ≥ dustThresholdUSD` (`isSignificant`).
+  **and** `|DeviationUSD| ≥ minimumOrderSizeUSD` (`isSignificant`).
 - **Price safety**: missing/zero non-USD ticker aborts the cycle before orders.
 - **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
-- **Dust**: also skips execution of orders below `dustThresholdUSD`.
+- **Dust**: also skips execution of orders below `minimumOrderSizeUSD`.
 - **Sell then buy**: sell overweight first; after **≥1 successful sell** (and not
   dry-run), settle USD (fill-confirmed proceeds preferred; balance-poll
   fallback), fail-closed abort if unsettleable, then buys under a **99%** cycle

@@ -79,7 +79,7 @@ Gather facts from code/build (do not trust docs yet):
    `DashboardRoutes` / `DashboardController`, view components).
 3. **Config surface** — `Settings`, `AppConfig`, `Allocation`,
    `rebalancer-config-template.json` keys (`dryRun`, `simulation`,
-   `fiatMaxDrawdown`, `dustThresholdUSD`, etc.).
+    `fiatMaxDrawdown`, `minimumOrderSizeUSD`, etc.).
 4. **HTTP / UI** — `Routes` / `FormFields` in `:common`; SSE path; History
    summary cards contract.
 5. **Algorithm** — `PortfolioCalculations`, `PortfolioAnalyzerImpl`,
