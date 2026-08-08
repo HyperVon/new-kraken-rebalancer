@@ -45,7 +45,7 @@ for test/QA-only hardening.
 | **Non-goals** | Architecture redesign, live-trading changes, credential changes without approval, booting app in parallel worktrees |
 | **Inputs** | Fresh `main`, user approval for L-class items, host-supported model routes per track |
 | **Outputs** | Findings report, integrated S/M fixes, L-item proposals, PR triage with merge order, quality-gate verification, PRs opened |
-| **Token constraint** | All model routing for this skill must use **free models only** (no paid provider routes), except when an agent is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the capability requirement. Fan-out may use direct `Task` subagents or the `.kilo/model-router/route-subagents` launcher (`--free-only`) — whichever the host supports — because each track runs multiple skills sequentially inside an isolated worktree. |
+| **Token constraint** | All model routing for this skill must use **free models only** (no paid provider routes), except when an agent is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the capability requirement. In Kilo CLI sessions, fan-out **must** use the `.kilo/model-router/route-subagents` launcher with `--free-only` — it is the only mechanism that selects and records a per-track exact route. Direct `Task` subagents with an explicit free-route instruction in every prompt are a fallback only when the launcher cannot run (non-Kilo host, no network, launcher failure) — not a parallel option. |
 | **Side effects** | Worktrees created, branches created, files edited, quality gates run, PR opened, GitHub issues for L items |
 | **Stop condition** | All tracks report, S/M fixes applied and verified, gates green, PR opened. L items deferred as proposals/issues. |
 
@@ -273,10 +273,13 @@ rmdir .worktrees 2>/dev/null || true
     [parallel-multi-agent](../parallel-multi-agent/SKILL.md) § Native model-selection gate.
     **This skill routes only through free models** (no paid provider routes),
     except the single adversarial-review carve-out in the Contracts table.
-    Launch the fan-out either through `.kilo/model-router/route-subagents`
-    with `--free-only` or via direct `Task` subagents with an explicit
-    free-route instruction in every prompt — whichever the host supports.
-    If the host exposes only pinned roles with no route choice, record that
+    In Kilo CLI sessions, launch the fan-out through
+    `.kilo/model-router/route-subagents` with `--free-only` — this is the
+    mandatory path; it selects and records a per-track exact route. Fall back
+    to direct `Task` subagents with an explicit free-route instruction in
+    every prompt **only** when the launcher cannot run (non-Kilo host, no
+    network, launcher failure) — never as the default; if the host exposes
+    only pinned roles with no route choice, record that
     limitation and the actual model instead of claiming a route selection.
 5. Create worktrees. Each worktree gets its own isolated directory:
 
@@ -306,10 +309,12 @@ mkdir -p .worktrees/.coordination/{agent-status,findings,topics,questions,reques
 
 ### Step 1 — Fan-out 5 read-only tracks
 
-Launch all five tracks concurrently — either a single
-`.kilo/model-router/route-subagents` invocation with `--free-only`, or a
-one-message parallel `Task` fan-out with an explicit free-route instruction
-in every prompt. Do not start workers one at a time sequentially; the whole
+Launch all five tracks concurrently via a single
+`.kilo/model-router/route-subagents` invocation with `--free-only` —
+mandatory in Kilo CLI sessions because it selects and records a per-track
+exact route. Fall back to a one-message parallel `Task` fan-out with an
+explicit free-route instruction in every prompt only when the launcher
+cannot run (non-Kilo host, no network, launcher failure). Do not start workers one at a time sequentially; the whole
 fan-out launches at once. Each track runs its assigned skills in discovery
 mode and returns at most 12 report lines and 5 findings per skill. Workers do
 not edit repository files, run Gradle, start servers, inspect secrets,
@@ -586,6 +591,8 @@ small. Architecture redesign and product feature recommendations are always
   (record them; Step 2 dedupes)
 - Calling `route-subagents` without `--free-only` — every worker route must
   stay free unless it is the parent's adversarial high-risk carve-out
+- Falling back to direct `Task` fan-out when `route-subagents` is available —
+  in Kilo CLI sessions the launcher with `--free-only` is mandatory, not optional
 
 ## Checklist
 
@@ -593,6 +600,7 @@ small. Architecture redesign and product feature recommendations are always
 - [ ] `.worktrees/` added to `.gitignore` so parent `git add -A` never stages worktrees
 - [ ] Fresh branch created from up-to-date main
 - [ ] Model routes selected and recorded per track
+- [ ] Fan-out launched via `.kilo/model-router/route-subagents --free-only` (direct `Task` only as documented fallback)
 - [ ] Five worktrees created with isolated state
 - [ ] Worker prompts gave the parent-absolute coordination path and granted .coordination read/write
 - [ ] Worker contract enforced: read-only discovery, free-only routes, no issues/commits/PRs

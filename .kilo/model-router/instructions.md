@@ -44,10 +44,13 @@ selection satisfies the model-selection gate.
 **Exception — `comprehensive-quality-overhaul`.** The overhaul skill fan-out
 runs composite multi-skill tracks inside isolated worktrees with a shared
 coordination layer, so it does not fit a single workflow preset. Its own
-SEPARATE._file_ — `.agents/skills/comprehensive-quality-overhaul/SKILL.md` —
-governs its fan-out: it may use either this launcher (`--free-only`) or direct
-`Task` subagents, with the free-only constraint and its single adversarial
-carve-out. When that skill is active, its instructions take precedence over
+separate file — `.agents/skills/comprehensive-quality-overhaul/SKILL.md` —
+governs its fan-out: in Kilo CLI sessions it MUST use this launcher with
+`--free-only` (the only mechanism that records a per-track exact route);
+direct `Task` subagents are the fallback only when the launcher cannot run
+(non-Kilo host, no network, launcher failure), never a parallel option —
+with the same free-only constraint and its single adversarial carve-out.
+When that skill is active, its instructions take precedence over
 this section.
 
 When a named workflow reaches its parallel-discovery step:
