@@ -3,13 +3,18 @@ package com.gemini.krakenbot
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSubmissionState
+import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
+import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
@@ -17,6 +22,7 @@ import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -34,7 +40,9 @@ import io.mockk.slot
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import java.io.IOException
 import java.math.BigDecimal
+import java.time.Instant
 import java.util.Base64
 
 internal fun EvaluationScenariosTest.registerScenarios35To38() {
@@ -61,23 +69,23 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
                     if (callCount == 1) {
                         // first sell succeeds — allow FakeKrakenService to return success
                     } else {
-                        throw java.io.IOException("Simulated transport failure #$callCount")
+                        throw IOException("Simulated transport failure #$callCount")
                     }
                 }
             }
 
-            val pendingSlots = mutableListOf<com.gemini.krakenbot.model.TradeRecord>()
+            val pendingSlots = mutableListOf<TradeRecord>()
             val updateSlots =
-                mutableListOf<Pair<com.gemini.krakenbot.model.TradeRecord, com.gemini.krakenbot.model.TradeRecord>>()
+                mutableListOf<Pair<TradeRecord, TradeRecord>>()
             val mockHistory = mockk<TradeHistoryService>(relaxed = true)
             var nextId = 100
             coEvery { mockHistory.saveTrade(any()) } answers {
-                val rec = firstArg<com.gemini.krakenbot.model.TradeRecord>()
+                val rec = firstArg<TradeRecord>()
                 pendingSlots.add(rec)
                 nextId++
             }
             coEvery { mockHistory.updateTrade(any(), any()) } answers {
-                updateSlots.add(firstArg<com.gemini.krakenbot.model.TradeRecord>() to secondArg())
+                updateSlots.add(firstArg<TradeRecord>() to secondArg())
             }
             coEvery { mockHistory.hasPendingSubmissions() } returns false
 
@@ -137,7 +145,7 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
             callCount shouldBe 2
             // OrderExecutorImpl rethrows the IOException after persisting UNCERTAIN
             (thrown != null).shouldBeTrue()
-            (thrown is java.io.IOException).shouldBeTrue()
+            (thrown is IOException).shouldBeTrue()
             thrown!!.message shouldBe "Simulated transport failure #2"
 
             // Blocking: a subsequent live cycle must be refused while UNCERTAIN persists
@@ -289,9 +297,9 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
         runTest {
             // This scenario validates the fix for CQ-19-06: recovery should use 96d bound
             // We test via direct service instantiation as done in LedgersSyncServiceTest
-            val db = com.gemini.krakenbot.config.DatabaseConfig.init(TestFixtures.MEMORY_)
-            val repo = com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl(db)
-            val kraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
+            val db = DatabaseConfig.init(TestFixtures.MEMORY_)
+            val repo = SqliteLedgerRepositoryImpl(db)
+            val kraken = mockk<KrakenService>(relaxed = true)
             val config = mockk<ConfigService>(relaxed = true)
             val appConfig = TestFixtures.config(
                 settings = TestFixtures.settings(simulation = false, dryRun = false, loopDelaySeconds = 60L),
@@ -299,16 +307,16 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
             )
             every { config.getConfig() } returns appConfig
             coEvery {
-                kraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
+                kraken.withStableBackend(any<suspend (KrakenService) -> Any?>())
             } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
+                val block = firstArg<suspend (KrakenService) -> Any?>()
                 block(kraken)
             }
-            repo.setSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_OFFSET, "50")
+            repo.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, "50")
             coEvery { kraken.getLedgers(any(), any(), any(), any()) } returns emptyList()
             coEvery { kraken.getLastLedgerTotalCount() } returns 0
-            val fixedNow = java.time.Instant.parse("2026-07-01T12:00:00Z")
-            val service = com.gemini.krakenbot.service.impl.history.LedgersSyncService(
+            val fixedNow = Instant.parse("2026-07-01T12:00:00Z")
+            val service = LedgersSyncService(
                 repo,
                 kraken,
                 config,
@@ -317,7 +325,7 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
             service.syncLedgersFromKraken()
             // Recovery should complete without calling full-history (null start) and should set watermark.
             val watermark = repo.getSyncMetadata(
-                com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
             )
             val evidence = "recovery completed, watermark=$watermark"
             EvaluationScenariosTest.recordResult(
