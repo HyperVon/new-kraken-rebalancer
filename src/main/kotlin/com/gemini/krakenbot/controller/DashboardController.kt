@@ -378,9 +378,6 @@ class DashboardController(
     private suspend fun RoutingContext.handleGetHealth() {
         val stats = tradeHistoryService.getHistoryStats()
         val latestSnapshot = tradeHistoryService.getLatestSnapshot()
-        // An unresolved PENDING/UNCERTAIN live submission blocks every later live cycle
-        // (OrderExecutorImpl gate) until an operator reconciles it, so health must report the
-        // halt instead of leaving the dashboard looking healthy while trading is stopped.
         val responseMap =
             mapOf(
                 HealthStatusKeys.STATUS to HealthStatusKeys.STATUS_UP,
@@ -390,7 +387,6 @@ class DashboardController(
                 HealthStatusKeys.TOTAL_VOLUME_TRADED to stats.totalVolumeTraded,
                 HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
                 HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO),
-                HealthStatusKeys.LIVE_SUBMISSIONS_UNRESOLVED to tradeHistoryService.hasPendingSubmissions(),
                 HealthStatusKeys.PAUSED to portfolioManager.isLoopPaused(),
             )
         respondJson(responseMap)

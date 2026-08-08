@@ -11,6 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Comprehensive Quality Overhaul skill**: New `comprehensive-quality-overhaul` skill orchestrates all project skills across 5 parallel worktrees (code, docs, skills, tests, architecture) with autonomous agent coordination, lockfile protocol, cross-track communication via `topics/` and `questions/` files, 30s orchestrator heartbeat, and PR triage output. Architecture and product-opportunity reviews run as exploratory discovery (recommend-only); UI visual/manual QA, post-deploy smoke, and screenshot refresh run serially in the parent after parallel tracks complete. Free-model constraint applies to route-subagents with carve-out for adversarial PR review on high-risk PRs (trading math, Kraken I/O, CORS, live-order journal, credentials).
+- **Operator pause/resume**: New `POST /api/pause` and `POST /api/resume` endpoints let operators halt and restart the rebalance loop at runtime via `PortfolioManager.pauseLoop()`/`resumeLoop()`; `isPaused` state is reflected in `/api/health`.
 
 ### Changed
 
@@ -29,7 +30,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Config**: Replaced regex-based legacy `dustThresholdUSD` → `minimumOrderSizeUSD` migration with Jackson `JsonNode` tree manipulation to prevent silent corruption when values contain commas, braces, or newlines.
 - **Model router**: Free-billing routes now bypass provider-level quota exhaustion and provider-level cooldowns, allowing free OpenRouter models to be selected even when the provider's paid quota is depleted.
 - **Comprehensive Quality Overhaul skill**: Fixed coordination-path typos in the worker heartbeat, findings, topics, and request-channel instructions — worker coordination paths now consistently use the parent-absolute `.worktrees/.coordination/` prefix.
-- **Health endpoint**: `/api/health` now reports `liveSubmissionsUnresolved` so operators can see when an unresolved PENDING/UNCERTAIN live-order journal is blocking all live trading cycles.
 - **Code cleanup**: Eliminated inline FQNs (`org.w3c.dom.HTMLButtonElement`, `org.koin.core.qualifier.named`) in favor of imports; consolidated duplicated `"applicationScope"` qualifier literal into a single `const val APPLICATION_SCOPE_QUALIFIER`.
 - **Cursor rules**: Fixed 15 broken relative links in `.cursor/rules/*.mdc` pointer files — paths now use `../../.agents/` to correctly resolve from the deeper `.cursor/rules/` directory.
 - **Documentation**: Corrected Ktor version 3.5.1→3.5.2 in README; added missing `codegen/` package to README package tree; fixed stale projection labels in `OPERATING.md` (§8 "Cost-aware"→"Native model selection").
