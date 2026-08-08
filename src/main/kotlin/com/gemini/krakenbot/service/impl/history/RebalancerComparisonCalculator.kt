@@ -259,11 +259,13 @@ object RebalancerComparisonCalculator {
                 val usdCost = trade.usdAmount.add(trade.fee)
                 balances[Asset.USD] = usdBalance.subtract(usdCost)
             }
+
             "SELL" -> {
                 balances[symbol] = assetBalance.subtract(trade.volume)
                 val usdProceeds = trade.usdAmount.subtract(trade.fee)
                 balances[Asset.USD] = usdBalance.add(usdProceeds)
             }
+
             else -> return false
         }
         return true

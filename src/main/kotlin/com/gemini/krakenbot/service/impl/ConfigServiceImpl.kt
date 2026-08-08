@@ -182,6 +182,7 @@ class ConfigServiceImpl(
         val current = settings.get(NEW_MINIMUM_ORDER_SIZE_KEY)
         when {
             legacy != null && current != null -> settings.remove(LEGACY_DUST_THRESHOLD_KEY)
+
             legacy != null -> {
                 settings.remove(LEGACY_DUST_THRESHOLD_KEY)
                 settings.set(NEW_MINIMUM_ORDER_SIZE_KEY, legacy)

@@ -47,6 +47,7 @@ internal fun krakenPrivateEndpointCost(path: String): Double = when {
     path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) ||
         path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) ||
         path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 2.0
+
     else -> 1.0
 }
 
@@ -138,10 +139,12 @@ class KrakenServiceImpl(
                                 (currentLockoutBackoff * 2).coerceAtMost(maxLockoutBackoffMs)
                             lockoutAttempt++
                         }
+
                         isRateLimit -> {
                             currentRateLimitBackoff *= 2
                             attempt++
                         }
+
                         else -> {
                             currentBackoff *= 2
                             attempt++

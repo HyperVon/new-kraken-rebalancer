@@ -246,6 +246,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                                 volume = volume,
                                 errorMessage = "simulated BTC sell failure",
                             )
+
                         else ->
                             OrderResult(success = true, pair = pair, side = side, volume = volume)
                     }
@@ -563,8 +564,10 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 krakenService.tradeHistorySupplier = { _, offset ->
                     when (offset ?: 0) {
                         0 -> listOf(duplicateFill) + padding
+
                         KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE ->
                             listOf(duplicateFill, idLessLeg, idLessLeg.copy())
+
                         else -> emptyList()
                     }
                 }

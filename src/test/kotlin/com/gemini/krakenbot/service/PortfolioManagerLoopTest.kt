@@ -367,10 +367,12 @@ class PortfolioManagerLoopTest : StringSpec() {
                             firstCycleSyncStarted.complete(Unit)
                             withContext(NonCancellable) { firstWorkerGate.await() }
                         }
+
                         2 -> {
                             restartedCycleSyncStarted.complete(Unit)
                             withContext(NonCancellable) { restartedWorkerGate.await() }
                         }
+
                         else -> throw AssertionError("unexpected sync call #$syncCalls")
                     }
                 }

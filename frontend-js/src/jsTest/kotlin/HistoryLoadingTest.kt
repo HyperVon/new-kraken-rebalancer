@@ -47,14 +47,18 @@ class HistoryLoadingTest : StringSpec() {
                                     ),
                                 ),
                             )
+
                         url.contains("trades") ->
                             arrayOf(
                                 tradeRecordToDynamic(
                                     mockTradeRecord(symbol = Asset.BTC, volume = "1", usdAmount = "100"),
                                 ),
                             )
+
                         url.contains("comparison") -> rebalancerComparisonToDynamic(mockAvailableComparison())
+
                         url.contains("sync-progress") -> json("seeded" to false, "offset" to "5", "total" to "10")
+
                         else ->
                             historyStatsToDynamic(
                                 mockPortfolioStatsRecord(
@@ -333,8 +337,11 @@ class HistoryLoadingTest : StringSpec() {
                 val suffix = if (url.contains("range=${TimeRange.ALL.key}")) "1" else "2"
                 when {
                     url.contains("snapshots") -> arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))
+
                     url.contains("trades") -> arrayOf(tradeRecordToDynamic(mockTradeRecord()))
+
                     url.contains("comparison") -> rebalancerComparisonToDynamic(mockAvailableComparison())
+
                     else -> historyStatsToDynamic(
                         mockPortfolioStatsRecord(
                             allTimeHigh = "100$suffix",
@@ -424,8 +431,11 @@ class HistoryLoadingTest : StringSpec() {
                                 json("seeded" to true)
                             }
                         }
+
                         url.contains("snapshots") -> emptyArray<dynamic>()
+
                         url.contains("trades") -> emptyArray<dynamic>()
+
                         else -> json()
                     }
                 }
