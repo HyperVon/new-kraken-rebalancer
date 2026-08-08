@@ -202,6 +202,7 @@ harnesses.
 | [`autonomous-code-optimizer`](../.agents/skills/autonomous-code-optimizer/SKILL.md) | Multi-pass repository cleanup until a clean audit cycle |
 | [`continuous-improvement`](../.agents/skills/continuous-improvement/SKILL.md) | Discovery, backlog management, bounded fixes, quality gates, and pull requests |
 | [`continuous-quality`](../.agents/skills/continuous-quality/SKILL.md) | QA, edge-case invention, regression tests, fixes, and quality backlog |
+| [`comprehensive-quality-overhaul`](../.agents/skills/comprehensive-quality-overhaul/SKILL.md) | Full-repository parallel quality sweep across all skills, producing candidate PRs for user review |
 | Native Kilo Auto model selection | `.kilo/kilo.json` selects the provider-qualified Auto tier; Kilo owns per-request model selection and fallback |
 | [`parallel-multi-agent`](../.agents/skills/parallel-multi-agent/SKILL.md) | Disjoint workstreams, file ownership, integration, and build coordination |
 

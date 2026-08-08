@@ -16,7 +16,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Refactor(codegen)**: Centralized repeated string literals in `ConfigServiceImpl` companion object (`LEGACY_DUST_THRESHOLD_KEY`, `NEW_MINIMUM_ORDER_SIZE_KEY`) and extracted `colorForSymbol()` helper from three near-identical `when` blocks in `ChartProps` via a private `SymbolColors` holder, matching constant-centralization and method-extraction patterns from the `refactor/Manual` branch.
 
-  ### Fixed
+### Fixed
 
 - **Documentation drift**: Completed the `dustThresholdUSD` → `minimumOrderSizeUSD` rename across `.agents/AGENTS.md`, README scenario count, and `.agents/skills/portfolio-rebalancing-math`, `.agents/skills/koin-di-and-config`, and `.agents/skills/documentation-review` skill files. Updated historical backlog references in `.agents/skill-content-backlog.md` and `.agents/quality-backlog.md`.
 - **Config**: Replaced regex-based legacy `dustThresholdUSD` → `minimumOrderSizeUSD` migration with Jackson `JsonNode` tree manipulation to prevent silent corruption when values contain commas, braces, or newlines.
