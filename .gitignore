@@ -30,6 +30,7 @@ portfolio-stats.json
 /bin/
 .kotlin/
 .playwright-mcp/
+.worktrees/
 
 
 .junie/

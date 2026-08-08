@@ -14,7 +14,8 @@ description: >-
 # Comprehensive Quality Overhaul
 
 **Orchestrator skill.** Runs every applicable project skill in parallel across
-multiple worktrees, then integrates findings and ships a single quality PR.
+multiple worktrees, then integrates findings into a set of candidate PRs for
+the user to judge, not a single merged outcome.
 
 This skill does **not** replace individual skills — it sequences them. Each
 child skill owns its own contract, severity rubric, and stop conditions; this
@@ -44,13 +45,13 @@ for test/QA-only hardening.
 | **Non-goals** | Architecture redesign, live-trading changes, credential changes without approval, booting app in parallel worktrees |
 | **Inputs** | Fresh `main`, user approval for L-class items, host-supported model routes per track |
 | **Outputs** | Findings report, integrated S/M fixes, L-item proposals, PR triage with merge order, quality-gate verification, PRs opened |
-| **Token constraint** | All `route-subagents` calls for this skill must use **free models only** (no paid provider routes), except when a worker is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the capability requirement. **This skill does not use `route-subagents`** because each track runs multiple skills sequentially inside an isolated worktree. Use direct `Task` subagent fan-out with free routes instead. |
+| **Token constraint** | All model routing for this skill must use **free models only** (no paid provider routes), except when an agent is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the capability requirement. Fan-out may use direct `Task` subagents or the `.kilo/model-router/route-subagents` launcher (`--free-only`) — whichever the host supports — because each track runs multiple skills sequentially inside an isolated worktree. |
 | **Side effects** | Worktrees created, branches created, files edited, quality gates run, PR opened, GitHub issues for L items |
 | **Stop condition** | All tracks report, S/M fixes applied and verified, gates green, PR opened. L items deferred as proposals/issues. |
 
 ## Worktree topology
 
-Four isolated worktrees. Each gets its own `build/`, lock, and disposable
+Five isolated worktrees. Each gets its own `build/`, lock, and disposable
 runtime state. The parent owns integration, app-boot verification, and final
 gates.
 
@@ -62,11 +63,14 @@ gates.
 | `wt-tests` | Tests, QA, security, deps | `continuous-quality`, `write-kotest`, `dependency-upgrade`, `ai-slop-detector` (test + build/security scope) | reviewer-b |
 | `wt-arch` | Architecture & product | `architecture-review`, `product-opportunity-review` | reviewer-a |
 
-Each worktree agent is **autonomous within its worktree**. Agents may edit
-files, run skill workflows, commit to uniquely named branches, push/PR those
-branches, and write to the shared coordination layer. The parent owns
-integration, cross-track coordination, and merge-order enforcement; workers
-own their own branch and PR lifecycle.
+Each worktree agent is a **read-only discovery scout for repository files**.
+Agents do not edit source files, run Gradle, start servers, create GitHub
+issues, commit, push, or open PRs. Their only file writes are coordination
+artifacts under `.worktrees/.coordination/` (heartbeats, findings, topics,
+questions, requests). Worker prompts must explicitly grant read/write
+filesystem access to the worktree and the parent `.worktrees/.coordination/`
+directory; the parent owns every code edit, branch, commit, PR, and GitHub
+issue, and performs them only after the user approves the triage plan.
 
 ### Coordination layer
 
@@ -87,6 +91,8 @@ findings/
   wt-arch/
 topics/
 questions/
+requests/
+results/
 ```
 
 Each worker writes a heartbeat JSON to `agent-status/<worktree>.json` at least
@@ -167,8 +173,9 @@ share more context, it should write a compact summary, not a full report.
 
 #### File locking for shared coordination files
 
-Shared coordination files (`topics/*`, `questions/*`, and any future shared
-state) may be written by multiple agents. Use lockfiles to avoid torn writes:
+Shared coordination files (`topics/*`, `questions/*`, `requests/*`, and any
+other shared state) may be written by multiple agents. Use lockfiles to avoid
+torn writes:
 
 - Lock file name: `<target-file>.lockfile`
 - Lock content: agent identifier, timestamp, pid — e.g.
@@ -186,12 +193,35 @@ state) may be written by multiple agents. Use lockfiles to avoid torn writes:
 Per-track files (`agent-status/wt-*.json`, `findings/wt-<track>/*`) do not need
 locking because each track owns its own directory.
 
-### Recommend-only tracks (no parallel worktree)
+#### Request channel (worker → parent)
+
+Workers never boot the application themselves. When a skill needs an app boot
+(screenshot capture, viewport verification, UI interaction), the worker
+writes a small request to `requests/<track>-<n>.json`:
+
+```json
+{
+  "track": "wt-docs",
+  "request": "capture screenshot",
+  "details": "Settings page at ~1280 for docs/images/settings.png",
+  "ret_id": "wt-docs-1"
+}
+```
+
+The parent polls `requests/`, performs each task **serially** (never inside a
+parallel worktree, never concurrently), and writes the outcome to
+`results/<track>-<n>.json` with a status (`done`/`failed`), a short summary,
+and an artifact path. Workers must not block on the result; they reference
+the request id in their findings and the parent folds the outcome into the
+Step 2 triage.
+
+### Recommend-only tracks
 
 `architecture-review` and `product-opportunity-review` are **recommend-only**
-skills. Run them **serially by the parent** after read-only tracks complete,
-or include them in a follow-up session. Their findings are always classified
-as **L** and require explicit user approval before any implementation.
+skills. They run as **Track E** in `wt-arch` in **parallel** with tracks A–D
+as exploratory discovery; their findings are always classified as **L** and
+require explicit user approval before any implementation. The parent
+implements them serially after approval — never inside a worktree.
 
 ### App-boot skills (serial parent only)
 
@@ -220,27 +250,34 @@ integrated. Never run them inside a parallel worktree.
    skipped teardown, remove its remains so runs do not accumulate:
 
 ```bash
+shopt -s nullglob
 for wt in .worktrees/wt-*; do git worktree remove --force "$wt"; done
+shopt -u nullglob
 git worktree prune
-rm -rf .worktrees
+rm -rf .worktrees/.coordination
+rmdir .worktrees 2>/dev/null || true
 ```
 
-   Only `.worktrees/wt-*` paths are touched — other repository worktrees are
-   never removed. If a leftover worktree holds uncommitted work you need,
-   commit it to its branch first: removal discards uncommitted changes.
-   Branches survive worktree removal; clean up `improve/overhaul-*` branches
-   only when their PRs are merged or abandoned.
+   Only `.worktrees/wt-*` worktrees and the skill-owned
+   `.worktrees/.coordination/` are touched — other repository worktrees and
+   any other `.worktrees/` content are never removed. If a leftover worktree
+   holds uncommitted work you need, commit it to its branch first: removal
+   discards uncommitted changes. Branches survive worktree removal; clean up
+   `improve/overhaul-*` branches only when their PRs are merged or abandoned.
 2. **Start from `main`.** Run `git checkout main && git pull origin main` before doing anything else. Never start this skill from any other branch.
-3. Create a dedicated branch: `improve/overhaul-YYYYMMDD`.
-4. Select a host-supported route for each track. Record primary route, effort
-    when exposed, fallback, and availability evidence. See
+3. Create a dedicated branch: `improve/overhaul-YYYYMMDD`. On a same-day
+   rerun (branch name already exists), append a numeric suffix
+   (`improve/overhaul-YYYYMMDD-2`) instead of reusing the branch.
+4. **Route selection — free models only.** Record primary route, effort,
+    fallback, and availability evidence for each track. See
     [parallel-multi-agent](../parallel-multi-agent/SKILL.md) § Native model-selection gate.
-    **This skill routes only through free models.** Do NOT invoke
-    `.kilo/model-router/route-subagents` for this skill — each track runs
-    multiple skills sequentially inside an isolated worktree, which does not
-    fit the single-task-per-track workflow model. Instead, launch each track
-    as a direct `Task` subagent with an explicit free-route instruction and
-    verify the actual provider/model in the parent before/during launch.
+    **This skill routes only through free models** (no paid provider routes),
+    except the single adversarial-review carve-out in the Contracts table.
+    Launch the fan-out either through `.kilo/model-router/route-subagents`
+    with `--free-only` or via direct `Task` subagents with an explicit
+    free-route instruction in every prompt — whichever the host supports.
+    If the host exposes only pinned roles with no route choice, record that
+    limitation and the actual model instead of claiming a route selection.
 5. Create worktrees. Each worktree gets its own isolated directory:
 
 ```bash
@@ -251,26 +288,45 @@ git worktree add .worktrees/wt-tests -b improve/overhaul-YYYYMMDD-wt-tests main
 git worktree add .worktrees/wt-arch -b improve/overhaul-YYYYMMDD-wt-arch main
 ```
 
-1. Copy `.kilo/` and `.agents/` into each worktree so skills resolve. Do not
-   copy `.env`, `rebalancer-config.json`, `*.db`, or `.gradle`.
-2. Create the shared coordination directory in the **parent** worktree:
+1. Copy `.kilo/` and `.agents/` into each worktree so skills resolve. Both
+   directories are already git-tracked, so this copy is a harmless safety net
+   for hosts that resolve skills from the worktree root. Do not copy `.env`,
+   `rebalancer-config.json`, `*.db`, or `.gradle`.
+2. Create the shared coordination directory in the **parent** worktree
+   (including the request channel):
 
 ```bash
-mkdir -p .worktrees/.coordination/{agent-status,findings,topics,questions}
+mkdir -p .worktrees/.coordination/{agent-status,findings,topics,questions,requests,results}
 ```
+
+   Every worker runs inside `.worktrees/wt-*`, so **always give workers the
+   parent worktree's absolute path** to `.worktrees/.coordination/`; a
+   relative path would resolve to a nested, nonexistent directory inside the
+   worker worktree.
 
 ### Step 1 — Fan-out 5 read-only tracks
 
-Launch all five tracks concurrently as direct `Task` subagents (not via
-`route-subagents`). Each track runs its assigned skills in discovery mode and
-returns at most 12 report lines and 5 findings per skill. Workers do not edit
-files, run Gradle, start servers, inspect secrets, or load unrelated skills.
+Launch all five tracks concurrently — either a single
+`.kilo/model-router/route-subagents` invocation with `--free-only`, or a
+one-message parallel `Task` fan-out with an explicit free-route instruction
+in every prompt. Do not start workers one at a time sequentially; the whole
+fan-out launches at once. Each track runs its assigned skills in discovery
+mode and returns at most 12 report lines and 5 findings per skill. Workers do
+not edit repository files, run Gradle, start servers, inspect secrets,
+create GitHub issues, commit, push, or open PRs.
 
-Workers write a heartbeat JSON to `.worktrees/.coordination/agent-status/<track>.json`
-at least every 60 seconds, and append incremental findings to
-`.worktrees/.coordination/findings/<track>/` as soon as they have evidence.
-The parent polls this directory for live status, warnings, blockers, and
-cross-track questions.
+Workers write a heartbeat JSON to the **parent-absolute**
+`<parent>/worktrees/.coordination/agent-status/<track>.json` at least every
+60 seconds, append incremental findings to
+`<parent>/worktrees/.coordination/findings/<track>/` as soon as they have
+evidence, and check `<parent>/topics/<track>.txt` at each heartbeat for
+parent guidance. The parent polls this directory for live status, warnings,
+blockers, and cross-track questions.
+
+**Retry policy:** if a track produces no heartbeat for ~3 minutes, mark it
+stalled and retry it once from scratch. If the retry also fails, surface the
+failure in the next heartbeat, proceed with the remaining tracks, and mark
+the run as a partial run in the final report.
 
 **Track A — Code quality** (`wt-code`)
 
@@ -323,6 +379,31 @@ tracks A–D as exploratory discovery, not as implementation tracks.
 booting the application. Run it serially by the parent after discovery if
 desired.
 
+#### Worker contract
+
+Every worker prompt must state this contract:
+
+- **Effect of "read-only discovery"**: workers audit, form findings, and
+  report. They do not edit source files, run race/build tests, start
+  servers, open GitHub issues, commit, push, or open PRs. The parent owns
+  every mutation step after user approval of the triage plan.
+- **Write scope**: workers write only coordination artifacts (heartbeats,
+  findings, topics/questions responses, `requests/` entries) under the
+  parent's absolute `.worktrees/.coordination/` path. Grant each worker
+  read/write filesystem access to that directory; everything else stays
+  read-only.
+- **Models**: workers may fan out only on **free routes** (`--free-only`).
+  The paid adversarial-review carve-out applies only to the parent's own
+  review of a high-risk PR, never to worker fan-out.
+- **Topics**: check `<parent>/topics/<track>.txt` at every heartbeat and
+  answer or acknowledge what the parent asks at the next heartbeat.
+- **Overlap**: if another track's work overlaps a finding, record it with
+  its own path and evidence; do not attempt to resolve or deduplicate in
+  parallel — Step 2 consolidates.
+- **Requests**: never boot the application; if skill instructions require
+  an app boot or screenshot, write a `requests/<track>-<n>.json` and keep
+  going.
+
 ### Step 2 — Collect and triage findings
 
 After all tracks complete, the parent reads each compact report and builds a
@@ -330,8 +411,8 @@ unified findings table. Classify every item:
 
 | Size | Criteria | Action |
 | :--- | :--- | :--- |
-| **S** — Small | Spotless/ktlint, dead imports, `:common` string moves, doc typos, single-test fix, broken link | Auto-apply |
-| **M** — Medium | Localized refactor (one module), polish within existing design system, checklist/skill sync, non-breaking API tidy | Auto-apply if gates stay green |
+| **S** — Small | Spotless/ktlint, dead imports, `:common` string moves, doc typos, single-test fix, broken link | Apply after triage approval (Step 3/4) |
+| **M** — Medium | Localized refactor (one module), polish within existing design system, checklist/skill sync, non-breaking API tidy | Apply after triage approval (Step 3/4) if gates stay green |
 | **L** — Large / high-impact | Multi-package changes, trading-math / order-path changes, live-trading safety, dependency major bumps, new product surfaces, "restyle whole dashboard", architecture redesign, product feature additions | **Stop and ask** — present proposal, wait for approval |
 
 **Impact override:** anything that can change live order behavior, `dryRun` /
@@ -407,8 +488,11 @@ approves the plan or explicitly asks you to proceed.
 
 ### Step 4 — Commit, push, open PRs (iterative per triage)
 
-After the user approves the triage plan, iterate through the PRs in the
-recommended order. For each PR:
+For each approved PR, create a dedicated branch from the newest `main` named
+`improve/overhaul-YYYYMMDD-<slug>` (or rebase the existing overhaul branch
+onto the newest `main` first). Do not reuse the discovery worktree branches
+(`improve/overhaul-YYYYMMDD-wt-*`) for PRs — they only carry the read-only
+scout state. Then for each PR:
 
 1. Ensure the branch is up to date with `main` (rebase if needed).
 2. Commit changes for this PR only with a conventional commit message.
@@ -462,8 +546,8 @@ before ending the session, and note in the report that cleanup was performed.
 
 | Size | Examples | Action |
 | :--- | :--- | :--- |
-| **S** | Spotless/ktlint, dead imports, `:common` string moves, doc typos, single-test fix, broken link | Auto-apply |
-| **M** | Localized refactor (one module), polish within existing design system, checklist/skill sync, non-breaking API tidy | Auto-apply if gates stay green |
+| **S** — Small | Spotless/ktlint, dead imports, `:common` string moves, doc typos, single-test fix, broken link | Apply after triage approval (Step 3/4) |
+| **M** — Medium | Localized refactor (one module), polish within existing design system, checklist/skill sync, non-breaking API tidy | Apply after triage approval (Step 3/4) if gates stay green |
 | **L** | Multi-package redesign, trading-math / order-path changes, live-trading safety UX changes, dependency major bumps, new product surfaces, "restyle whole dashboard", architecture redesign, product feature additions | **Stop and ask** |
 
 **Impact override:** anything that can change live order behavior, `dryRun` /
@@ -490,19 +574,28 @@ small. Architecture redesign and product feature recommendations are always
   not automatic merges
 - Bundling unrelated concerns into one PR just to reduce PR count
 - Adding unsolicited ARIA attributes during UI work
-- Using paid provider routes for this skill's subagents (must stay on free routes)
+- Using paid provider routes for this skill's workers (free-only; paid is
+  allowed only for the single adversarial high-risk carve-out in the
+  Contracts table)
 - Leaving `.worktrees/` or `.coordination/` behind at the end of a run — always
   run Step 6 teardown so the next launch starts clean
-- Invoking `route-subagents` for this skill — each track runs multiple skills
-  sequentially inside an isolated worktree, which does not fit the single-task
-  workflow model. Use direct `Task` subagent fan-out instead.
+- Workers writing or committing outside their coordination artifacts (no
+  source edits, no commits, no GitHub issues, no PRs from inside workers)
+- Workers resolving overlapping findings against each other in parallel
+  (record them; Step 2 dedupes)
+- Calling `route-subagents` without `--free-only` — every worker route must
+  stay free unless it is the parent's adversarial high-risk carve-out
 
 ## Checklist
 
 - [ ] Leftover `.worktrees/` from previous runs cleaned up (Step 0 cleanup)
+- [ ] `.worktrees/` added to `.gitignore` so parent `git add -A` never stages worktrees
 - [ ] Fresh branch created from up-to-date main
 - [ ] Model routes selected and recorded per track
 - [ ] Five worktrees created with isolated state
+- [ ] Worker prompts gave the parent-absolute coordination path and granted .coordination read/write
+- [ ] Worker contract enforced: read-only discovery, free-only routes, no issues/commits/PRs
+- [ ] Request channel (worker app/q screenshot requests → parent results) worked
 - [ ] All 5 read-only tracks completed discovery (compact reports returned)
 - [ ] Findings triaged S/M/L with evidence anchors
 - [ ] PR triage report delivered with candidate PRs, readiness status, and merge recommendation

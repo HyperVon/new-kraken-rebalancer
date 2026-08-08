@@ -41,6 +41,15 @@ or any in-process parallel scan instead of the script. A role label or Kilo Auto
 tier does not select a provider/model route; only the script's exact-route
 selection satisfies the model-selection gate.
 
+**Exception — `comprehensive-quality-overhaul`.** The overhaul skill fan-out
+runs composite multi-skill tracks inside isolated worktrees with a shared
+coordination layer, so it does not fit a single workflow preset. Its own
+SEPARATE._file_ — `.agents/skills/comprehensive-quality-overhaul/SKILL.md` —
+governs its fan-out: it may use either this launcher (`--free-only`) or direct
+`Task` subagents, with the free-only constraint and its single adversarial
+carve-out. When that skill is active, its instructions take precedence over
+this section.
+
 When a named workflow reaches its parallel-discovery step:
 
 1. Invoke the matching `route-subagents --workflow <preset> --task "<request>" --run`
