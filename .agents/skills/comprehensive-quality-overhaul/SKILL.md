@@ -364,12 +364,30 @@ rmdir .worktrees 2>/dev/null || true
         `nvidia/z-ai/glm-5.2` and `nvidia/minimaxai/minimax-m3`, both on
         `blacklist.models`).
       - `policy.allowPaid=false` alone is insufficient: subscription/account-
-        priced providers (`kilo`, `opencode-go`, `openai`) are not gated by it.
-        They must be disabled explicitly with `providers.<name>.enabled: false`
-        in the override. Keep free providers (`nvidia` and openrouter `:free`
+        priced providers (`opencode-go`, `openai`) are not gated by it. They
+        must be disabled explicitly with `providers.<name>.enabled: false` in
+        the override. Keep free providers (`nvidia` and openrouter `:free`
         variants) enabled with `policy.allowFree: true`.
-      - Override shape used successfully:
-        `{"providers":{"kilo":{"enabled":false},"opencode-go":{"enabled":false},"openai":{"enabled":false}},"policy":{"allowPaid":false,"allowFree":true,"denyFreeForSensitive":false},"blacklist":{...copied verbatim from tracked config...}}`
+      - **`kilo` gateway exception — read carefully.** The `kilo` provider is
+        account-priced for its auto tiers (`kilo-auto/efficient`), but it also
+        surfaces **free** routes such as `kilo/tencent/hy3:free` through the
+        Kilo gateway. The router's `billing_class` auto-detects a `:free` suffix
+        as free billing, so `allowPaid:false` already excludes the account-priced
+        `kilo-auto/*` and paid `tencent/hy3` routes — but only if `kilo` is
+        **enabled** and its `include` glob admits the free route. The tracked
+        config ships `kilo.include: ["kilo-auto/efficient"]`, which rejects
+        `tencent/hy3:free`; **if your chosen free route is served via the `kilo`
+        gateway, enable it and widen include**, e.g.
+        `{"providers":{"kilo":{"enabled":true,"include":["*"]}, ...}}`. Do NOT
+        disable `kilo` when targeting a `kilo/*:free` route, or the router can
+        never select it. (`reasoning` capability is advertised on
+        `kilo/tencent/hy3:free`, so it also clears the `agentic` profile's
+        `requiresReasoning` gate.)
+      - Override shapes used successfully:
+        - Target routes via `openrouter`/`nvidia` only:
+          `{"providers":{"kilo":{"enabled":false},"opencode-go":{"enabled":false},"openai":{"enabled":false}},"policy":{"allowPaid":false,"allowFree":true,"denyFreeForSensitive":false},"blacklist":{...copied verbatim from tracked config...}}`
+        - Target a `kilo/*:free` route (e.g. `kilo/tencent/hy3:free`):
+          `{"providers":{"kilo":{"enabled":true,"include":["*"]},"opencode-go":{"enabled":false},"openai":{"enabled":false}},"policy":{"allowPaid":false,"allowFree":true,"denyFreeForSensitive":false},"blacklist":{...copied verbatim from tracked config...}}`
       - **Verify the route plan printed before workers launch**: every route
         must be a free route and none may appear on `blacklist.models`. Abort
         and fix the override if a blacklisted or paid route is selected.
