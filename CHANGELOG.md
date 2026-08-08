@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.38] - 2026-08-08
+
+### Added
+
+- **Comprehensive Quality Overhaul skill**: New `comprehensive-quality-overhaul` skill orchestrates all project skills across 5 parallel worktrees (code, docs, skills, tests, architecture) with autonomous agent coordination, lockfile protocol, cross-track communication via `topics/` and `questions/` files, 30s orchestrator heartbeat, and PR triage output. Architecture and product-opportunity reviews run as exploratory discovery (recommend-only); UI visual/manual QA, post-deploy smoke, and screenshot refresh run serially in the parent after parallel tracks complete. Free-model constraint applies to route-subagents with carve-out for adversarial PR review on high-risk PRs (trading math, Kraken I/O, CORS, live-order journal, credentials).
+
+### Changed
+
+- **Refactor(codegen)**: Centralized repeated string literals in `ConfigServiceImpl` companion object (`LEGACY_DUST_THRESHOLD_KEY`, `NEW_MINIMUM_ORDER_SIZE_KEY`) and extracted `colorForSymbol()` helper from three near-identical `when` blocks in `ChartProps` via a private `SymbolColors` holder, matching constant-centralization and method-extraction patterns from the `refactor/Manual` branch.
+
+### Fixed
+
+- **Documentation drift**: Completed the `dustThresholdUSD` → `minimumOrderSizeUSD` rename across `.agents/AGENTS.md`, README scenario count, and `.agents/skills/portfolio-rebalancing-math`, `.agents/skills/koin-di-and-config`, and `.agents/skills/documentation-review` skill files. Updated historical backlog references in `.agents/skill-content-backlog.md` and `.agents/quality-backlog.md`.
+- **Config**: Replaced regex-based legacy `dustThresholdUSD` → `minimumOrderSizeUSD` migration with Jackson `JsonNode` tree manipulation to prevent silent corruption when values contain commas, braces, or newlines.
+- **Model router**: Free-billing routes now bypass provider-level quota exhaustion and provider-level cooldowns, allowing free OpenRouter models to be selected even when the provider's paid quota is depleted.
+
 ## [6.16.37] - 2026-08-08
 
 ### Changed

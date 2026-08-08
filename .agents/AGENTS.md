@@ -72,6 +72,7 @@ Canonical deep docs:
 | Native Antigravity subagent fan-out vs Kilo routed subagents | [AGENTIC_DEVELOPMENT.md](../docs/AGENTIC_DEVELOPMENT.md#models-and-adaptive-multi-agent-review) and [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
 | Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) *(writes `.agents/improvement-backlog.md`)* |
 | Continuous quality (QA loop) | [continuous-quality](skills/continuous-quality/SKILL.md) *(writes `.agents/quality-backlog.md`)* |
+| Full-repository parallel quality sweep (all skills) | [comprehensive-quality-overhaul](skills/comprehensive-quality-overhaul/SKILL.md) |
 
 **Always-on norms** — full text in [OPERATING.md](OPERATING.md). Cursor and Cline
 rule files (`.cursor/rules/*.mdc`, `.clinerules/*.md`) are thin pointers to its
