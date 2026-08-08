@@ -121,3 +121,4 @@ HealthStatusKeys:
   LAST_SNAPSHOT_TIME: "lastSnapshotTime"
   LAST_SNAPSHOT_TOTAL_VALUE_USD: "lastSnapshotTotalValueUSD"
   LIVE_SUBMISSIONS_UNRESOLVED: "liveSubmissionsUnresolved"
+  PAUSED: "paused"

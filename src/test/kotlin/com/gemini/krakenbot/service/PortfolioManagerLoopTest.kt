@@ -452,5 +452,50 @@ class PortfolioManagerLoopTest : StringSpec() {
                 coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
             }
         }
+
+        "pauseLoop_SetsPausedFlagAndCancelsWorker" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { emptyMap() }
+
+                portfolioManager.startRebalancingLoop()
+                portfolioManager.pauseLoop()
+
+                portfolioManager.isLoopPaused() shouldBe true
+            }
+        }
+
+        "resumeLoop_AfterPause_RestartsWorker" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { emptyMap() }
+
+                portfolioManager.startRebalancingLoop(this)
+                portfolioManager.pauseLoop()
+                portfolioManager.isLoopPaused() shouldBe true
+
+                portfolioManager.resumeLoop()
+                runCurrent()
+
+                portfolioManager.isLoopPaused() shouldBe false
+                portfolioManager.stopRebalancingLoop()
+            }
+        }
+
+        "resumeLoop_WithoutScope_Throws" {
+            runTest {
+                val pm = PortfolioManagerImpl(
+                    configService = configService,
+                    tradeHistoryService = tradeHistoryService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor,
+                )
+                shouldThrow<IllegalStateException> { pm.resumeLoop() }
+            }
+        }
     }
 }

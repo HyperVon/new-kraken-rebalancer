@@ -11,4 +11,10 @@ interface PortfolioManager {
     fun startRebalancingLoop(scope: CoroutineScope): Job
 
     suspend fun runLoop()
+
+    fun isLoopPaused(): Boolean
+
+    fun pauseLoop()
+
+    fun resumeLoop()
 }

@@ -12,6 +12,8 @@ Routes:
   API_HISTORY_COMPARISON: "/api/history/comparison"
   API_HISTORY_REWARDS: "/api/history/rewards"
   API_HEALTH: "/api/health"
+  API_PAUSE: "/api/pause"
+  API_RESUME: "/api/resume"
   STATIC_STYLE_CSS: "/static/style.css"
   STATIC_REBALANCER_JS: "/static/rebalancer.js"
   STATIC_PREFIX: "/static"

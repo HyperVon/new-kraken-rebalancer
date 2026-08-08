@@ -12,6 +12,7 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.DashboardView
@@ -59,6 +60,7 @@ class DashboardController(
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
     private val dashboardView: DashboardView,
+    private val portfolioManager: PortfolioManager,
 ) {
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
 
@@ -127,6 +129,14 @@ class DashboardController(
 
             get(Routes.API_HEALTH) {
                 handleGetHealth()
+            }
+
+            post(Routes.API_PAUSE) {
+                handlePostPause()
+            }
+
+            post(Routes.API_RESUME) {
+                handlePostResume()
             }
 
             route(Routes.API_ROUTE_PREFIX) {
@@ -355,6 +365,16 @@ class DashboardController(
         respondJson(tradeHistoryService.getRewardsOverTime(from, to).toApiDto())
     }
 
+    private suspend fun RoutingContext.handlePostPause() {
+        portfolioManager.pauseLoop()
+        respondJson(mapOf("paused" to true))
+    }
+
+    private suspend fun RoutingContext.handlePostResume() {
+        portfolioManager.resumeLoop()
+        respondJson(mapOf("paused" to false))
+    }
+
     private suspend fun RoutingContext.handleGetHealth() {
         val stats = tradeHistoryService.getHistoryStats()
         val latestSnapshot = tradeHistoryService.getLatestSnapshot()
@@ -371,6 +391,7 @@ class DashboardController(
                 HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
                 HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO),
                 HealthStatusKeys.LIVE_SUBMISSIONS_UNRESOLVED to tradeHistoryService.hasPendingSubmissions(),
+                HealthStatusKeys.PAUSED to portfolioManager.isLoopPaused(),
             )
         respondJson(responseMap)
     }
