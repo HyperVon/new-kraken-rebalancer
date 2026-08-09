@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -234,6 +235,7 @@ class PortfolioManagerImpl(
     }
 
     internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
+        coroutineContext.ensureActive()
         configService.beginExecutionSession()
         val cycleId = UUID.randomUUID().toString()
         MDC.put(CYCLE_ID_MDC_KEY, cycleId)
@@ -310,6 +312,7 @@ class PortfolioManagerImpl(
             )
         actionLog.addAll(cycleActions)
 
+        coroutineContext.ensureActive()
         try {
             orderExecutor.executeOrders(
                 buyOrders = buyOrders,

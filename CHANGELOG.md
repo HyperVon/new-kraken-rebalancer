@@ -38,6 +38,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Cursor rules**: Fixed 15 broken relative links in `.cursor/rules/*.mdc` pointer files — paths now use `../../.agents/` to correctly resolve from the deeper `.cursor/rules/` directory.
 - **Documentation**: Corrected Ktor version 3.5.1→3.5.2 in README; added missing `codegen/` package to README package tree; fixed stale projection labels in `OPERATING.md` (§8 "Cost-aware"→"Native model selection").
 - **OHLC price corruption**: `KrakenServiceImpl.getOHLC` now skips candle entries with unparseable close prices (logging a warning) instead of silently substituting `BigDecimal.ZERO`, which previously corrupted historical price reconstruction and ATH/drawdown calculations.
+- **Rebalance cancellation**: Added admission and pre-execution cancellation checkpoints so cancelled cycles cannot open execution sessions or submit orders, while admitted sessions still close during cancellation.
 
 ## [6.16.37] - 2026-08-08
 

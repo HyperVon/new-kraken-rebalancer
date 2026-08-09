@@ -373,14 +373,13 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 job.cancel()
                 job.join()
 
-                // `stopRebalancingLoop()` is NOT called here — only `job.cancel()`. `isRunning`
-                // stays true at the moment the collectLatest body checks it, so one cycle runs to
-                // completion and publishes a snapshot before the `delay(60s)` is cancelled. The
-                // observed post-state: one snapshot, no orders placed (default allocations have
-                // nothing to do), and the `finally` released `workerJob` so the manager is
-                // restartable.
+                // `stopRebalancingLoop()` is NOT called here — only `job.cancel()`. The cycle
+                // admission checkpoint observes cancellation before opening an execution session,
+                // so no snapshot or order work is performed and the manager remains restartable.
                 krakenService.executedOrders.isEmpty().shouldBeTrue()
-                coVerify(exactly = 1) { tradeHistoryService.addSnapshot(any()) }
+                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
+                coVerify(exactly = 0) { configService.beginExecutionSession() }
+                coVerify(exactly = 0) { configService.endExecutionSession() }
                 readWorkerJob() shouldBe null
             }
         }

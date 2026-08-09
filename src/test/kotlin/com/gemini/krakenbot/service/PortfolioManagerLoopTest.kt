@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
@@ -24,6 +25,7 @@ import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -452,6 +454,57 @@ class PortfolioManagerLoopTest : StringSpec() {
                 coVerify(exactly = 1) { configService.beginExecutionSession() }
                 coVerify(exactly = 1) { configService.endExecutionSession() }
                 coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
+            }
+        }
+
+        "cancellation after analysis prevents order execution" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+
+                val analyzer = mockk<PortfolioAnalyzer>()
+                val executor = mockk<OrderExecutor>(relaxed = true)
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    tradeHistoryService = tradeHistoryService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = executor,
+                    krakenService = null,
+                )
+                val balances = emptyMap<String, BigDecimal>()
+                val prices = emptyMap<String, BigDecimal>()
+                coEvery { analyzer.fetchBalances() } returns balances
+                coEvery { analyzer.fetchPrices() } returns prices
+                every { analyzer.calculatePortfolioValues(any(), any()) } returns Result.Success(
+                    PortfolioValues(
+                        totalValueUSD = BigDecimal("100.00"),
+                        currentValuesUSD = mapOf(TestFixtures.A to BigDecimal("100.00")),
+                    ),
+                )
+                coEvery { analyzer.updateAthAndCalculateDrawdown(any()) } returns BigDecimal.ZERO
+                every { analyzer.calculateFiatDeployment(any(), any()) } returns BigDecimal.ZERO
+                every { analyzer.calculateEffectiveUsdTarget(any()) } returns BigDecimal.ZERO
+                every { analyzer.calculateCryptoScaleFactor(any()) } returns BigDecimal.ONE
+
+                lateinit var cycleJob: Job
+                every { analyzer.analyzeDeviations(any(), any(), any(), any()) } answers {
+                    cycleJob.cancel()
+                    AnalysisResult(
+                        buyOrders = mapOf(TestFixtures.A to BigDecimal("10.00")),
+                        sellOrders = emptyMap(),
+                        actionLog = emptyList(),
+                    )
+                }
+
+                cycleJob = launch { manager.performRebalanceCycle() }
+                cycleJob.join()
+
+                coVerify(exactly = 0) {
+                    executor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                }
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
