@@ -11,6 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Comprehensive Quality Overhaul skill**: New `comprehensive-quality-overhaul` skill orchestrates all project skills across 5 parallel worktrees (code, docs, skills, tests, architecture) with autonomous agent coordination, lockfile protocol, cross-track communication via `topics/` and `questions/` files, 30s orchestrator heartbeat, and PR triage output. Architecture and product-opportunity reviews run as exploratory discovery (recommend-only); UI visual/manual QA, post-deploy smoke, and screenshot refresh run serially in the parent after parallel tracks complete. Free-model constraint applies to route-subagents with carve-out for adversarial PR review on high-risk PRs (trading math, Kraken I/O, CORS, live-order journal, credentials).
+- **UI visual guidance**: Added `ui-visual-guidance-and-aesthetics`, a portable design contract for operator-first hierarchy, Refined Glass evolution, state clarity, responsive behavior, accessibility, data visualization, and visual handoffs.
 - **Operator pause/resume**: New `POST /api/pause` and `POST /api/resume` endpoints let operators halt and restart the rebalance loop at runtime via `PortfolioManager.pauseLoop()`/`resumeLoop()`; `isPaused` state is reflected in `/api/health`.
 
 ### Changed

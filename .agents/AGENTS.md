@@ -48,6 +48,7 @@ Canonical deep docs:
 | Resolve actionable source-code TODO comments | [todo-resolution](skills/todo-resolution/SKILL.md) |
 | README screenshot PNGs (sim UI) | [docs-screenshot-refresh](skills/docs-screenshot-refresh/SKILL.md) |
 | End-user User Guide (visual) | [user-guide](skills/user-guide/SKILL.md) |
+| UI visual guidance and aesthetics | [ui-visual-guidance-and-aesthetics](skills/ui-visual-guidance-and-aesthetics/SKILL.md) |
 | UI visual critique (recommend) | [ui-visual-review](skills/ui-visual-review/SKILL.md) |
 | UI visual apply + verify | [ui-visual-implement](skills/ui-visual-implement/SKILL.md) |
 | UI manual QA (click-through) | [ui-manual-qa](skills/ui-manual-qa/SKILL.md) |

@@ -176,6 +176,7 @@ harnesses.
 | [`documentation-review`](../.agents/skills/documentation-review/SKILL.md) | Full documentation audits against current source and build truth |
 | [`post-deploy-ui-smoke`](../.agents/skills/post-deploy-ui-smoke/SKILL.md) | Hard-refresh smoke testing after deployment |
 | [`ui-manual-qa`](../.agents/skills/ui-manual-qa/SKILL.md) | Click-through testing of Dashboard, Settings, and History |
+| [`ui-visual-guidance-and-aesthetics`](../.agents/skills/ui-visual-guidance-and-aesthetics/SKILL.md) | Design principles, hierarchy, aesthetics, responsive behavior, accessibility expectations, and visual acceptance criteria |
 | [`ui-visual-implement`](../.agents/skills/ui-visual-implement/SKILL.md) | Implementation and screenshot verification of approved visual changes |
 | [`ui-visual-review`](../.agents/skills/ui-visual-review/SKILL.md) | Screenshot-based visual critique without implementation |
 | [`user-guide`](../.agents/skills/user-guide/SKILL.md) | Maintenance of the end-user walkthrough and embedded images |
