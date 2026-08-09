@@ -8,7 +8,6 @@ import kotlinx.css.GridTemplateColumns
 import kotlinx.css.Padding
 import kotlinx.css.TextAlign
 import kotlinx.css.WhiteSpace
-import kotlinx.css.alignItems
 import kotlinx.css.background
 import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
@@ -17,10 +16,8 @@ import kotlinx.css.display
 import kotlinx.css.fontFamily
 import kotlinx.css.fontSize
 import kotlinx.css.fontWeight
-import kotlinx.css.gap
 import kotlinx.css.gridTemplateColumns
 import kotlinx.css.padding
-import kotlinx.css.px
 import kotlinx.css.rem
 import kotlinx.css.textAlign
 import kotlinx.css.whiteSpace

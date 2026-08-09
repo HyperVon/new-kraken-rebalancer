@@ -10,7 +10,6 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.util.PrecisionConstants
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
