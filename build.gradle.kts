@@ -214,13 +214,41 @@ tasks.check {
     dependsOn(":frontend-js:jsBrowserTest")
 }
 
+val nettySecurityFloor = "4.2.17.Final"
+val nettyVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)\.Final""")
+val (nettySecurityMajor, nettySecurityMinor, nettySecurityPatch) =
+    nettyVersionPattern.matchEntire(nettySecurityFloor)!!.destructured
+
 configurations.all {
     resolutionStrategy.eachDependency {
         if (requested.group == "io.netty") {
-            useVersion("4.1.136.Final")
-            because(
-                "Fixes Netty security vulnerabilities including HTTP/2 continuation frame flood (CVE-2026-33871) and newer vulnerabilities (CVE-2026-45536, CVE-2026-45416, CVE-2026-44249)",
-            )
+            val requestedVersion = requested.version
+                ?.let(nettyVersionPattern::matchEntire)
+                ?.destructured
+            if (requestedVersion != null) {
+                val (major, minor, patch) = requestedVersion
+                val majorNumber = major.toInt()
+                val minorNumber = minor.toInt()
+                val patchNumber = patch.toInt()
+                val isBelowSecurityFloor =
+                    majorNumber < nettySecurityMajor.toInt() ||
+                        (
+                            majorNumber == nettySecurityMajor.toInt() &&
+                                (
+                                    minorNumber < nettySecurityMinor.toInt() ||
+                                        (
+                                            minorNumber == nettySecurityMinor.toInt() &&
+                                                patchNumber < nettySecurityPatch.toInt()
+                                            )
+                                    )
+                            )
+                if (isBelowSecurityFloor) {
+                    useVersion(nettySecurityFloor)
+                    because(
+                        "Keep Netty at the 4.2.17.Final security floor without downgrading Ktor's Netty 4.2 line",
+                    )
+                }
+            }
         }
     }
 }
