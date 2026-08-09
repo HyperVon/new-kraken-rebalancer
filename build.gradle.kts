@@ -215,7 +215,9 @@ tasks.check {
 }
 
 val nettySecurityFloor = "4.2.17.Final"
-val nettyVersionPattern = Regex("""4\.(\d+)\.(\d+)\.Final""")
+val nettyVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)\.Final""")
+val (nettySecurityMajor, nettySecurityMinor, nettySecurityPatch) =
+    nettyVersionPattern.matchEntire(nettySecurityFloor)!!.destructured
 
 configurations.all {
     resolutionStrategy.eachDependency {
@@ -224,10 +226,23 @@ configurations.all {
                 ?.let(nettyVersionPattern::matchEntire)
                 ?.destructured
             if (requestedVersion != null) {
-                val (minor, patch) = requestedVersion
+                val (major, minor, patch) = requestedVersion
+                val majorNumber = major.toInt()
                 val minorNumber = minor.toInt()
                 val patchNumber = patch.toInt()
-                if (minorNumber < 2 || (minorNumber == 2 && patchNumber < 17)) {
+                val isBelowSecurityFloor =
+                    majorNumber < nettySecurityMajor.toInt() ||
+                        (
+                            majorNumber == nettySecurityMajor.toInt() &&
+                                (
+                                    minorNumber < nettySecurityMinor.toInt() ||
+                                        (
+                                            minorNumber == nettySecurityMinor.toInt() &&
+                                                patchNumber < nettySecurityPatch.toInt()
+                                            )
+                                    )
+                            )
+                if (isBelowSecurityFloor) {
                     useVersion(nettySecurityFloor)
                     because(
                         "Keep Netty at the 4.2.17.Final security floor without downgrading Ktor's Netty 4.2 line",
