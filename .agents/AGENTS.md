@@ -308,7 +308,8 @@ the standard Gradle/README workflows and the shared guidance in `.agents/`.
 - **Scope:** these hooks are for Kilo Code's Agent Manager only. They do not
   define or require a general agent protocol.
 
-- **Setup:** `.kilo/setup-script` prepares Gradle classes in the selected
+- **Setup:** an optional local `.kilo/setup-script` (untracked; absent from a
+  fresh clone or worktree) prepares Gradle classes in the selected
   worktree without reading `.env`, application config, databases, logs, or
   runtime data.
 - **Run:** `.kilo/run-script` builds the fat JAR and starts an isolated local

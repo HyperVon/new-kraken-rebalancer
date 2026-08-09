@@ -29,7 +29,8 @@ stop condition.
 The parent owns the full diff and final coverage matrix; each worker receives
 only its assigned paths and minimum dependencies.
 
-- **Independent** → parallel Task agents (same parent turn).
+- **Independent** → parallel workers launched in the same parent turn (routed
+  launcher under Kilo CLI, native `invoke_subagent` under Antigravity).
 - **Coupled** → one agent or the parent.
 
 ### Native model-selection gate
@@ -43,7 +44,11 @@ model route for each track:
   the first material or parallel worker launch.
 - Treat `subagent_type` as the worker role, not as route evidence from its name.
 - In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute `.kilo/model-router/route-subagents` or `subagents.py`.
-- If running under Kilo CLI and the Task wrapper exposes only a role and no usable model route, `.kilo/model-router/route-subagents` can be used for bounded cross-provider tracks. Do not claim that a role or profile changed the model when launching a raw Task.
+- Under Kilo CLI, every read-only discovery or review fan-out MUST go through
+  `.kilo/model-router/route-subagents` (see `.kilo/model-router/instructions.md`);
+  a raw role-only `Task` call is not a substitute because it selects no
+  provider/model route. Direct `Task` subagents are the fallback only when the
+  launcher cannot run (non-Kilo host, no network, launcher failure).
 - Native Auto owns its model mappings and fallbacks; it does not need a
   repository-side inventory or probe.
 - For a broad read-only named workflow under Antigravity, perform discovery fan-out natively via `invoke_subagent`. Under Kilo CLI, use the routed preset.
@@ -169,9 +174,10 @@ final gates.
 Treat a worktree as an isolated code workspace, not a place to duplicate
 credentials or runtime state:
 
-- For this repository’s Agent Manager workflow, use `.kilo/setup-script` and
-  `.kilo/run-script`. The run path forces `simulation=true` and `dryRun=true`
-  and uses a private temporary database.
+- For this repository’s Agent Manager workflow, use `.kilo/run-script` (tracked)
+  and, when present, an optional local `.kilo/setup-script` (untracked, so it
+  does not exist in a fresh clone or worktree). The run path forces
+  `simulation=true` and `dryRun=true` and uses a private temporary database.
 - Never copy `.env`, `rebalancer-config.json`, databases, logs, or runtime state
   into another worktree. Keep configuration placeholder-only and use disposable
   ignored state for tests or local runs.
