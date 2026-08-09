@@ -535,12 +535,12 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
 ├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
 │   ├── src/commonMain/kotlin/com/gemini/krakenbot/
-│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, RewardsOverTime, SyncProgressResponse
+│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, RewardsOverTime, RewardsOverTimePoint, SyncProgressResponse
 │       ├── codegen/                       # GenerateStringConstants and shared codegen sources
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
 │       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, TradeSource, generated SyncMetadataKeys
 │       ├── util/                          # PrecisionConstants
-│       ├── view/util/                     # Generated YAML string catalogs, Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps
+│       ├── view/util/                     # Generated YAML string catalogs (StringConstantSchemas), Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps, AllocationEditor
 │   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs
 ├── codegen/                                # JVM-only module with KSP processors for API mappers and YAML string catalogs
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
