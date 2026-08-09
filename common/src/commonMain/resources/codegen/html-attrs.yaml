@@ -36,11 +36,13 @@ HtmxAttrs:
   HX_SWAP: "hx-swap"
   HX_SWAP_OOB: "hx-swap-oob"
   HX_TARGET: "hx-target"
+  HX_INCLUDE: "hx-include"
   HX_TRIGGER: "hx-trigger"
   SSE_CONNECT: "sse-connect"
 HtmxValues:
   BODY: "body"
   INNER_HTML: "innerHTML"
+  NONE: "none"
   "TRUE": "true"
   EXT_SSE: "sse"
   TRIGGER_LOAD_SSE_MESSAGE: "load, sse:message"
@@ -75,7 +77,9 @@ HtmlTags:
   OPTION: "option"
   LABEL: "label"
 HtmlIds:
+  CSRF_TOKEN: "csrf-token"
   SAVE_BUTTON: "save-button"
+  LOOP_CONTROL: "loop-control"
   TOTAL_ALLOCATED_DISPLAY: "total-allocated-display"
   ALLOCATIONS_CONTAINER: "allocations-container"
   NEW_SYMBOL_INPUT: "new-symbol-input"

@@ -44,18 +44,54 @@ readiness waits, and scroll position. Current set:
 | File | Capture |
 | :--- | :--- |
 | `dashboard.png` | `/` — overview cards + allocation chart |
-| `dashboard-bottom.png` | `/` — asset table + recent activity |
+| `dashboard-performance.png` | `/` — Asset Performance table and deviation legend |
+| `dashboard-bottom.png` | `/` — recent activity feed |
 | `settings.png` | `/settings` — full settings form |
 | `history.png` | `/history` (30d) — summary cards, comparison, rewards, and first charts |
 | `history-portfolio-charts.png` | `/history` (30d) — portfolio value + asset holdings |
 | `history-charts.png` | `/history` (30d) — allocation deviation + cumulative net cash flow |
 | `history-bottom.png` | `/history` (30d) — trade log |
 
-Canonical PNGs are **2880×1800** (1440×900 @2×). This closely frames the app's
-`80rem` (1280 px) max-width container without triggering responsive layouts.
+The default `desktop` profile produces canonical PNGs at **2880×1800**
+(1440×900 @2×). This closely frames the app's `80rem` (1280 px) max-width
+container without triggering responsive layouts.
+
+The capture script also owns these reusable review profiles:
+
+| Profile | CSS viewport | DPR | PNG size | Use |
+| :--- | :--- | :---: | :---: | :--- |
+| `phone` | 390×844 | 2 | 780×1688 | narrow phone reflow |
+| `tablet` | 768×1024 | 2 | 1536×2048 | tablet layout |
+| `laptop` | 1280×800 | 2 | 2560×1600 | laptop density / breakpoint regressions |
+| `desktop` | 1440×900 | 2 | 2880×1800 | canonical README/User Guide images |
+| `wide` | 1920×1080 | 2 | 3840×2160 | wide-desktop spacing and max-width behavior |
+
+Run multiple profiles in one command with `--profile laptop,tablet,phone` (or
+`--profile all`). Explicit profiles are written below one directory per
+profile, for example `$REVIEW_DIR/laptop/dashboard.png`; a no-argument run
+keeps the historical flat `docs/images/dashboard.png` layout.
 
 **This list is not fixed.** As the app grows, add targets rather than
 reproducing only the existing files — see [Step 5](#step-5-adapt-targets-as-the-app-grows).
+
+## Documentation presentation policy
+
+The capture matrix and the documentation gallery serve different purposes.
+Keep all five DPR 2 profiles for visual verification, but curate what is shown
+in each document:
+
+- README: normally four representative images only — the canonical desktop
+  dashboard, a phone dashboard preview, Settings, and History.
+- User Guide: the full responsive dashboard gallery plus the page-specific
+  Settings and History captures.
+- Embed screenshots with linked HTML `<img width="...">` elements. Use the
+  intended CSS-viewport width or a deliberate capped width rather than the
+  native 2x PNG width. Do not use unbounded Markdown image syntax for DPR 2
+  captures.
+- After updating images, render or inspect both Markdown documents at normal
+  100% browser zoom. Check that the phone image reads as a phone preview, that
+  the README remains scannable, and that links still open the full-resolution
+  assets.
 
 ---
 
@@ -143,6 +179,9 @@ Useful flags:
 - `--only history.png,history-bottom.png` — recapture a subset
 - `--out-dir /tmp/ui-review` — write elsewhere (UI review / verify; leave
   `docs/images/` alone)
+- `--profile laptop,tablet,phone` — capture the same targets at several common sizes
+- `--profile all` — capture every named profile into separate subdirectories
+- `--list-profiles` — print profile dimensions without opening Chrome
 - `--discover` — report pages/sections with no target (Step 5)
 - `--base-url`, `--chrome`, `--manifest` — override defaults
 
@@ -150,21 +189,25 @@ Target fields in `targets.json`: `file`, `path`, optional `click_button`,
 `await_text`, `await_charts`, `position` (`top`/`bottom`), `anchor` (heading
 scrolled to start), `ensure_visible` (substring scrolled with
 `block: 'nearest'` so a trailing caption stays in frame after the anchor), and
-optional `viewport` height/width overrides when a section is taller than the
-default 900px frame (keep `deviceScaleFactor` at 2).
+optional `viewport` height/width overrides when a section is taller than its
+profile's default frame. The profile owns `deviceScaleFactor`, so all targets
+within one profile remain comparable.
 
-Do not use the embedded Cursor browser for these assets: its panel dimensions
-crop the UI, and CDP device emulation can tile the page on Retina displays. The
-Playwright helper is tested at the canonical output size.
+Use this helper for static screenshot evidence instead of taking direct browser
+screenshots. Do not use the embedded Cursor browser for these assets: its panel
+dimensions crop the UI, and CDP device emulation can tile the page on Retina
+displays. The helper creates a fresh browser context for each profile.
 
 ### Step 4: Verify
 
-**Read** every regenerated PNG and check the basics:
+**Read** every regenerated PNG under every requested profile and check the basics:
 
 - Cards, tables, and charts are populated — no empty states or error banners
 - Charts show a continuous series without long flat gaps or vertical stacks
 - Nothing is clipped at the right edge
 - No credentials, personal hostnames, or OS chrome in frame
+- The same target remains comparable across profiles; differences should come
+  from intentional responsive reflow, not capture setup
 
 Then confirm the current UI semantics survived the capture:
 
@@ -199,10 +242,11 @@ references. Cross-check against `Routes` in `:common`. When a new page or major
 section appears:
 
 1. Add a target to `scripts/targets.json` (readiness waits + anchor heading).
-2. Capture it.
-3. Add the image to the README **Screenshots** section **and** embed it in
-   [`docs/USER_GUIDE.md`](../../../docs/USER_GUIDE.md) with a short caption
-   (see [user-guide](../user-guide/SKILL.md)).
+2. Capture it with the relevant profile set.
+3. Embed the relevant final images in [`docs/USER_GUIDE.md`](../../../docs/USER_GUIDE.md)
+   with an explicit display width and short caption. Add an image to the README
+   only when it fits the curated four-image overview; do not mirror the full
+   gallery there (see [user-guide](../user-guide/SKILL.md)).
 4. Note the addition in `CHANGELOG.md`.
 
 Conversely, remove targets and README references for pages that no longer exist.
@@ -212,9 +256,12 @@ Conversely, remove targets and README references for pages that no longer exist.
 1. Stop the Java process.
 2. `rm -rf "$RUN_DIR"` — nothing to restore, since the real config and DB were
    never touched.
-3. Update README captions if the asset set changed.
-4. Add a brief `CHANGELOG` entry (`### Changed` — updated documentation
-   screenshots).
+3. After all UI/code iterations are complete, run the final profile set and
+   update README/User Guide image references and captions together.
+4. Inspect the rendered README and User Guide at 100% zoom, including the
+   phone preview and the links to full-resolution images.
+5. Add a brief `CHANGELOG` entry (`### Changed` — updated documentation
+   screenshots and responsive viewport coverage).
 
 ---
 
@@ -228,4 +275,7 @@ Conversely, remove targets and README references for pages that no longer exist.
 - [ ] Hero, activity feed, safety cards, history headers/caption, and trade
       table details present in the canonical PNGs
 - [ ] `--discover` reviewed; new pages/sections captured and added to README
+- [ ] README uses a curated image set with explicit HTML display widths
+- [ ] User Guide uses explicit widths and includes the full responsive gallery
+- [ ] README and User Guide checked at 100% zoom
 - [ ] App stopped, run directory removed, CHANGELOG updated

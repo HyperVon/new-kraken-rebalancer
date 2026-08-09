@@ -6,6 +6,7 @@ import kotlinx.css.CssBuilder
 import kotlinx.css.Cursor
 import kotlinx.css.Display
 import kotlinx.css.FontWeight
+import kotlinx.css.GridTemplateColumns
 import kotlinx.css.Padding
 import kotlinx.css.Position
 import kotlinx.css.alignItems
@@ -19,6 +20,7 @@ import kotlinx.css.fontFamily
 import kotlinx.css.fontSize
 import kotlinx.css.fontWeight
 import kotlinx.css.gap
+import kotlinx.css.gridTemplateColumns
 import kotlinx.css.height
 import kotlinx.css.marginBottom
 import kotlinx.css.marginTop
@@ -34,11 +36,10 @@ object HistoryChartStyles {
     fun CssBuilder.applyHistoryChartStyles() {
         // HIST-2: single ~44px chart header row (title + compact zoom; caveats go in caption).
         ".${CssClass.History.ChartHeader.value}" {
-            display = Display.flex
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr) auto")
             alignItems = Align.center
-            justifyContentRaw("space-between")
             gap = 0.75.rem
-            flexWrapRaw("wrap")
             minHeightRaw("2.25rem")
             marginBottom = 0.5.rem
         }
@@ -55,7 +56,8 @@ object HistoryChartStyles {
             alignItems = Align.center
             gap = 0.25.rem
             justifyContentRaw("flex-end")
-            flexWrapRaw("wrap")
+            flexWrapRaw("nowrap")
+            whiteSpaceRaw("nowrap")
         }
 
         ".${CssClass.History.ZoomBtn}" {
@@ -95,6 +97,10 @@ object HistoryChartStyles {
 
         ".${CssClass.History.ChartScrubber}" {
             padding = Padding(0.75.rem, 0.5.rem, 0.125.rem)
+        }
+
+        ".${CssClass.History.ChartScrubber.value}:has(.${CssClass.History.ChartScrubberInput.value}:disabled)" {
+            display = Display.none
         }
 
         ".${CssClass.History.ChartScrubberInput}" {

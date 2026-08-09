@@ -123,10 +123,13 @@ Use the **cursor-ide-browser** MCP (navigate → lock → snapshot/screenshot):
    look like default browser buttons (`STYLE-1`).
 4. Wait until Dashboard shows portfolio hero / tiles (not empty seed flash) —
    poll health / snapshot / screenshot until data age is recent.
-5. For header/status and `REGRESSION-*` cases, set viewport to **~1280–1440px**
-   width (desktop/laptop), not only ~375px mobile.
-6. Prefer `browser_snapshot` for structure + refs; `browser_take_screenshot`
-   when asserting chart/visual state after an interaction.
+5. For header/status and `REGRESSION-*` cases, use the screenshot helper's
+   `laptop` profile (1280px) in addition to `phone` when static visual evidence
+   is needed; do not rely on mobile-only evidence.
+6. Prefer `browser_snapshot` for structure + refs. For standalone page captures,
+   use `capture_screenshots.py --profile laptop,phone --out-dir "$QA_DIR"`;
+   use `browser_take_screenshot` only when asserting a visual state immediately
+   after an interaction that the capture script cannot reproduce.
 7. Unlock only when **all** cases for this run are finished.
 
 If a control has no stable accessibility name, use DOM ids from

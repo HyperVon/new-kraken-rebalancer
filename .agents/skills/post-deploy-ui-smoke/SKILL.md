@@ -17,6 +17,11 @@ Related: [ui-manual-qa](../ui-manual-qa/SKILL.md),
 [ui-visual-review](../ui-visual-review/SKILL.md),
 [dry-run-and-simulation](../dry-run-and-simulation/SKILL.md).
 
+For static screenshot evidence on a controllable simulation host, use the
+shared [capture helper](../docs-screenshot-refresh/SKILL.md) with the `laptop`
+and `phone` profiles. Keep browser screenshots for interaction-specific state
+only.
+
 ---
 
 ## Preconditions

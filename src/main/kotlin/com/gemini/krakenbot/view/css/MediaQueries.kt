@@ -1,23 +1,53 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.css.Align
+import kotlinx.css.BorderStyle
 import kotlinx.css.CssBuilder
+import kotlinx.css.Display
 import kotlinx.css.FlexDirection
+import kotlinx.css.FontWeight
 import kotlinx.css.GridTemplateColumns
+import kotlinx.css.Overflow
 import kotlinx.css.Padding
+import kotlinx.css.QuotedString
+import kotlinx.css.TextAlign
 import kotlinx.css.alignItems
+import kotlinx.css.background
+import kotlinx.css.borderBottomStyle
+import kotlinx.css.borderRadius
+import kotlinx.css.color
+import kotlinx.css.columnGap
+import kotlinx.css.content
+import kotlinx.css.display
 import kotlinx.css.flexDirection
+import kotlinx.css.flexGrow
+import kotlinx.css.flexShrink
 import kotlinx.css.fontSize
+import kotlinx.css.fontWeight
 import kotlinx.css.gap
 import kotlinx.css.gridTemplateColumns
 import kotlinx.css.header
 import kotlinx.css.marginBottom
+import kotlinx.css.marginLeft
+import kotlinx.css.marginRight
+import kotlinx.css.marginTop
+import kotlinx.css.minHeight
+import kotlinx.css.minWidth
+import kotlinx.css.overflowX
 import kotlinx.css.padding
 import kotlinx.css.paddingBottom
+import kotlinx.css.paddingLeft
+import kotlinx.css.paddingRight
+import kotlinx.css.paddingTop
 import kotlinx.css.pct
 import kotlinx.css.px
 import kotlinx.css.rem
+import kotlinx.css.rowGap
+import kotlinx.css.textAlign
+import kotlinx.css.width
 
 object MediaQueries {
     fun CssBuilder.applyMediaQueries() {
@@ -38,9 +68,9 @@ object MediaQueries {
                 padding = Padding(1.5.rem, 1.5.rem, 4.rem, 1.5.rem)
             }
             header {
-                flexDirection = FlexDirection.row
-                justifyContentRaw("space-between")
-                alignItems = Align.center
+                flexDirection = FlexDirection.column
+                justifyContentRaw("flex-start")
+                alignItems = Align.stretch
                 paddingBottom = 1.5.rem
                 marginBottom = 1.75.rem
             }
@@ -87,8 +117,59 @@ object MediaQueries {
             }
         }
 
+        // DASH-2: tablet headers use named grid areas instead of relying on a
+        // flex item wrapping at whichever word happens to be next.
+        "@media (min-width: 768px) and (max-width: 1023px)" {
+            ".${CssClass.Layout.HeaderTitleSection}" {
+                display = Display.grid
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr) auto")
+                rowGap = 0.5.rem
+            }
+            ".${CssClass.Layout.HeaderWithStream}" {
+                put("grid-template-areas", "\"identity status\" \"loop loop\"")
+            }
+            ".${CssClass.Layout.HeaderWithoutStream}" {
+                put("grid-template-areas", "\"identity loop\"")
+            }
+            ".${CssClass.Layout.HeaderIdentity}" { put("grid-area", "identity") }
+            ".${CssClass.Layout.HeaderStatus}" {
+                put("grid-area", "status")
+                put("justify-self", "end")
+            }
+            ".${CssClass.Layout.LoopControl}" {
+                put("grid-area", "loop")
+                put("justify-self", "end")
+            }
+        }
+
+        "@media (min-width: 1024px)" {
+            // DASH-2: wide headers separate page identity from the right-side
+            // operational status and control cluster.
+            ".${CssClass.Layout.HeaderWithStream} > .${CssClass.Layout.HeaderStatus}" {
+                marginLeftRaw("auto")
+            }
+            ".${CssClass.Layout.HeaderWithoutStream} > .${CssClass.Layout.LoopControl}" {
+                marginLeftRaw("auto")
+            }
+        }
+
         // CI-11-UI6: tighten History 9-col trade log at laptop widths (~1280).
         "@media (max-width: 1280px)" {
+            header {
+                columnGap = 0.5.rem
+            }
+            ".${CssClass.Layout.HeaderTitleSection}" {
+                gap = 0.5.rem
+            }
+            ".${CssClass.Layout.HeaderActions}" {
+                gap = 0.5.rem
+            }
+            ".${CssClass.Layout.LoopControl}" {
+                gap = 0.375.rem
+            }
+            ".${CssClass.Layout.LoopState}" {
+                padding = Padding(0.3125.rem, 0.5.rem)
+            }
             ".${CssClass.History.TradeLog} table" {
                 fontSize = 0.8125.rem
             }
@@ -100,5 +181,221 @@ object MediaQueries {
                 padding = Padding(0.45.rem, 0.3.rem)
             }
         }
+
+        "@media (max-width: 767px)" {
+            header {
+                flexDirection = FlexDirection.column
+                alignItems = Align.center
+                rowGap = 0.75.rem
+            }
+            ".${CssClass.Layout.HeaderTitleSection}" {
+                width = 100.pct
+                display = Display.grid
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr)")
+                rowGap = 0.5.rem
+            }
+            ".${CssClass.Layout.HeaderWithStream}" {
+                put("grid-template-areas", "\"identity\" \"status\" \"loop\"")
+            }
+            ".${CssClass.Layout.HeaderWithoutStream}" {
+                put("grid-template-areas", "\"identity\" \"loop\"")
+            }
+            ".${CssClass.Layout.HeaderIdentity}" {
+                put("grid-area", "identity")
+                justifyContentRaw("center")
+                gap = 0.5.rem
+            }
+            ".${CssClass.Layout.HeaderTitleSection} h1, .${CssClass.Layout.BrandMark}" {
+                fontSize = 1.35.rem
+            }
+            ".${CssClass.Mode.Plate.value}" {
+                padding = Padding(0.25.rem, 0.5.rem)
+                fontSize = 0.6.rem
+            }
+            ".${CssClass.Layout.HeaderStatus}" {
+                put("grid-area", "status")
+                put("justify-self", "center")
+            }
+            ".${CssClass.Layout.LoopControl}" {
+                put("grid-area", "loop")
+                put("justify-self", "center")
+            }
+            ".${CssClass.Layout.HeaderActions}" {
+                display = Display.flex
+                width = 100.pct
+                justifyContentRaw("center")
+                gap = 0.5.rem
+                rowGap = 0.5.rem
+                flexDirection = FlexDirection.column
+                alignItems = Align.center
+            }
+            ".${CssClass.Layout.HeaderActions} > #${HtmlIds.SAVE_BUTTON}" {
+                marginLeftRaw("0")
+            }
+            ".${CssClass.Layout.GlassPanel}" {
+                padding = Padding(1.rem)
+            }
+            ".${CssClass.History.ToolbarRow}" {
+                flexDirection = FlexDirection.column
+                alignItems = Align.stretch
+            }
+            ".${CssClass.History.TimeRangeSelector}" {
+                width = 100.pct
+                justifyContentRaw("center")
+            }
+            ".${CssClass.History.ViewsToolbar}" {
+                width = 100.pct
+                justifyContentRaw("center")
+            }
+            ".${CssClass.History.ViewsActions}" {
+                width = 100.pct
+                justifyContentRaw("center")
+            }
+            ".${CssClass.History.ChartHeader}" {
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr)")
+                alignItems = Align.start
+            }
+            ".${CssClass.History.ChartTools}" {
+                justifyContentRaw("flex-start")
+            }
+            ".${CssClass.History.ComparisonHeader}" {
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr) auto")
+            }
+            ".${CssClass.History.ComparisonHeader} > .${CssClass.History.ChartHeaderTitle}" {
+                put("grid-column", "1 / -1")
+            }
+            ".hero-card" {
+                flexDirection = FlexDirection.column
+                gap = 0.75.rem
+            }
+            ".hero-card > .hero-card-text" {
+                flexShrink = 1.0
+            }
+            ".${CssClass.Hero.Spark.value}" {
+                width = 100.pct
+                minWidth = 0.px
+                minHeight = 4.rem
+                flexGrow = 0.0
+            }
+            ".${CssClass.Form.AddAssetBox}" {
+                flexDirection = FlexDirection.column
+            }
+            ".${CssClass.Form.AddAssetBox} > .btn" {
+                width = 100.pct
+                justifyContentRaw("center")
+            }
+        }
+
+        "@media (max-width: 639px)" {
+            // DASH-MOBILE-1: keep the operator's most useful performance columns visible.
+            listOf(2, 4, 5).forEach { column ->
+                ".${CssClass.Layout.DetailGrid} table th:nth-child($column)" {
+                    display = Display.none
+                }
+                ".${CssClass.Layout.DetailGrid} table td:nth-child($column)" {
+                    display = Display.none
+                }
+            }
+
+            // HIST-MOBILE-1: turn each dense trade row into a contained detail card.
+            ".${CssClass.History.TradeLogHeader}" {
+                flexDirection = FlexDirection.column
+                alignItems = Align.stretch
+                gap = 0.75.rem
+            }
+            ".${CssClass.History.TradeLog} .${CssClass.Form.CheckboxContainer}" {
+                justifyContentRaw("flex-start")
+            }
+            ".${CssClass.History.TradeLog} .${CssClass.Table.Wrapper}" {
+                overflowX = Overflow.visible
+                marginLeft = 0.px
+                marginRight = 0.px
+                paddingLeft = 0.px
+                paddingRight = 0.px
+            }
+            ".${CssClass.History.TradeLog} table" {
+                display = Display.block
+                width = 100.pct
+            }
+            ".${CssClass.History.TradeLog} thead" {
+                display = Display.none
+            }
+            ".${CssClass.History.TradeLog} tbody" {
+                display = Display.grid
+                gap = 0.75.rem
+            }
+            ".${CssClass.History.TradeLog} tr" {
+                display = Display.grid
+                gridTemplateColumns = GridTemplateColumns("repeat(2, minmax(0, 1fr))")
+                rowGap = 0.25.rem
+                columnGap = 0.75.rem
+                padding = Padding(0.75.rem)
+                background = CssTheme.colorSurface2.value
+                borderRadius = CssTheme.radiusMd
+                solidBorder(CssTheme.colorSurface1Border)
+            }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard}" {
+                rowGap = 0.125.rem
+            }
+            ".${CssClass.History.TradeLog} td" {
+                display = Display.flex
+                alignItems = Align.center
+                justifyContentRaw("space-between")
+                gap = 0.5.rem
+                minWidth = 0.px
+                padding = Padding(0.25.rem, 0.px)
+                borderBottomStyle = BorderStyle.none
+                textAlign = TextAlign.right
+                fontSize = 0.75.rem
+            }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(1)" {
+                put("grid-column", "1 / -1")
+                paddingBottom = 0.5.rem
+                marginBottom = 0.125.rem
+                put("border-bottom", "1px solid ${CssTheme.colorBorderFaint.value}")
+                textAlign = TextAlign.left
+            }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(2)" {
+                justifyContentRaw("flex-start")
+                textAlign = TextAlign.left
+                fontWeight = FontWeight.w700
+            }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(3)" {
+                justifyContentRaw("flex-end")
+            }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(9)" {
+                put("grid-column", "1 / -1")
+                marginTop = 0.25.rem
+                paddingTop = 0.5.rem
+                put("border-top", "1px solid ${CssTheme.colorBorderFaint.value}")
+                justifyContentRaw("flex-start")
+                textAlign = TextAlign.left
+            }
+            ".${CssClass.History.TradeLog} td:not(.${CssClass.History.EmptyTableCell})::before" {
+                flexShrink = 0.0
+                color = CssTheme.colorTextMuted
+                fontSize = 0.625.rem
+                fontWeight = FontWeight.w600
+                letterSpacingRaw("0.05em")
+                textTransformRaw("uppercase")
+                textAlign = TextAlign.left
+            }
+            ".${CssClass.History.TradeLog} td:nth-child(1)::before" { content = quoted(ViewText.HEADER_TIME) }
+            ".${CssClass.History.TradeLog} td:nth-child(2)::before" { content = quoted(ViewText.HEADER_PAIR) }
+            ".${CssClass.History.TradeLog} td:nth-child(3)::before" { content = quoted(ViewText.HEADER_SIDE) }
+            ".${CssClass.History.TradeLog} td:nth-child(4)::before" { content = quoted(ViewText.HEADER_VOLUME) }
+            ".${CssClass.History.TradeLog} td:nth-child(5)::before" {
+                content = quoted(ViewText.HEADER_USD_AMOUNT)
+            }
+            ".${CssClass.History.TradeLog} td:nth-child(6)::before" { content = quoted(ViewText.HEADER_PRICE) }
+            ".${CssClass.History.TradeLog} td:nth-child(7)::before" { content = quoted(ViewText.HEADER_FEE) }
+            ".${CssClass.History.TradeLog} td:nth-child(8)::before" { content = quoted(ViewText.HEADER_SLIPPAGE) }
+            ".${CssClass.History.TradeLog} td:nth-child(9)::before" { content = quoted(ViewText.HEADER_STATUS) }
+            ".${CssClass.History.TradeLog} .${CssClass.History.EmptyTableCell}" {
+                put("grid-column", "1 / -1")
+            }
+        }
     }
+
+    private fun quoted(value: String) = QuotedString(value)
 }

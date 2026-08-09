@@ -120,6 +120,8 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 val response = client.get("/history")
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "History - Kraken Rebalancer"
+                response.bodyAsText() shouldContain "id=\"loop-control\""
+                response.bodyAsText() shouldContain "hx-post=\"/api/pause\""
             }
         }
 

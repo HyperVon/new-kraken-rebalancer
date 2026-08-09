@@ -17,6 +17,15 @@ fun formatPctTick(v: Double, includePlus: Boolean = true): String {
     return sign + d.asDynamic().toLocaleString(EN_US, options) + "%"
 }
 
+internal fun formatCompactTradeTime(timestamp: String): String {
+    val options: dynamic = kotlin.js.json()
+    options.month = "short"
+    options.day = "numeric"
+    options.hour = "numeric"
+    options.minute = "2-digit"
+    return kotlin.js.Date(timestamp).asDynamic().toLocaleString(EN_US, options)
+}
+
 internal fun usdOptionsToLocale(value: Double, minDigits: Int, maxDigits: Int): String {
     val options: dynamic = kotlin.js.json()
     options.minimumFractionDigits = minDigits

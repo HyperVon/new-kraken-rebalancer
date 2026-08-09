@@ -184,6 +184,7 @@ internal fun clearChart(canvasId: String) {
     if (scrubber != null) {
         scrubber.disabled = true
         scrubber.value = "0"
+        scrubber.parentElement?.classList?.add(CssClass.Utility.Hidden.value)
     }
     try {
         HistorySessionState.save()

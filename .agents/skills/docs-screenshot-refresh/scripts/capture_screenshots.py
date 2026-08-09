@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Capture README screenshots from a running local simulation instance.
+"""Capture screenshots from a running local simulation instance.
 
 Capture targets live in targets.json so new pages and sections can be added
 without touching this script. Use --discover to list pages and sections the
-running app exposes that no target covers yet.
+running app exposes that no target covers yet. Named viewport profiles make
+the same target set reusable for desktop, laptop, tablet, and phone review.
 """
 
 from __future__ import annotations
@@ -14,15 +15,10 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-try:
-    from playwright.sync_api import Page, sync_playwright
-except ImportError:
-    sys.exit(
-        "Playwright is required. Install it with:\n"
-        "  python3 -m venv /tmp/kraken-screenshots\n"
-        "  /tmp/kraken-screenshots/bin/pip install playwright\n"
-    )
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 # scripts/ → skill/ → skills/ → .agents/ → project root
@@ -30,6 +26,7 @@ PROJECT_ROOT = SCRIPT_DIR.parents[3]
 IMAGE_DIR = PROJECT_ROOT / "docs" / "images"
 MANIFEST = SCRIPT_DIR / "targets.json"
 CHART_SETTLE_MS = 1_000
+DEFAULT_PROFILE = "desktop"
 
 
 def find_chrome(explicit: Path | None) -> Path:
@@ -47,6 +44,60 @@ def find_chrome(explicit: Path | None) -> Path:
         if candidate and candidate.is_file():
             return candidate
     sys.exit("Chrome/Chromium not found. Pass --chrome PATH or set CHROME_PATH.")
+
+
+def load_viewport_profiles(manifest: dict) -> tuple[str, dict[str, dict]]:
+    """Load named profiles, retaining compatibility with the old single viewport."""
+    profiles = manifest.get("viewportProfiles")
+    if profiles is None:
+        legacy_viewport = manifest.get("viewport")
+        if legacy_viewport is None:
+            sys.exit("Manifest must define viewportProfiles or viewport.")
+        return "default", {"default": legacy_viewport}
+
+    default_profile = manifest.get("defaultViewportProfile", DEFAULT_PROFILE)
+    if default_profile not in profiles:
+        sys.exit(f"Default viewport profile is not defined: {default_profile}")
+
+    for name, viewport in profiles.items():
+        for key in ("width", "height", "deviceScaleFactor"):
+            if key not in viewport or viewport[key] <= 0:
+                sys.exit(f"Viewport profile {name!r} must define a positive {key}.")
+    return default_profile, profiles
+
+
+def select_profiles(
+    raw_profiles: list[str] | None,
+    profiles: dict[str, dict],
+    default: str,
+) -> tuple[list[str], bool]:
+    """Resolve repeated/comma-separated profile names and the special ``all`` name."""
+    if not raw_profiles:
+        return [default], False
+
+    selected: list[str] = []
+    for raw_value in raw_profiles:
+        for name in raw_value.split(","):
+            name = name.strip()
+            names = list(profiles) if name == "all" else [name]
+            for selected_name in names:
+                if selected_name not in profiles:
+                    available = ", ".join([*profiles, "all"])
+                    sys.exit(f"Unknown viewport profile {selected_name!r}. Available: {available}")
+                if selected_name not in selected:
+                    selected.append(selected_name)
+    return selected, True
+
+
+def print_profiles(profiles: dict[str, dict]) -> None:
+    print("Available viewport profiles:")
+    for name, viewport in profiles.items():
+        png_width = viewport["width"] * viewport["deviceScaleFactor"]
+        png_height = viewport["height"] * viewport["deviceScaleFactor"]
+        print(
+            f"  {name}: {viewport['width']}x{viewport['height']} CSS px, "
+            f"DPR {viewport['deviceScaleFactor']} -> {png_width}x{png_height} PNG px"
+        )
 
 
 def prepare(page: Page, base_url: str, target: dict) -> None:
@@ -126,6 +177,38 @@ def discover(page: Page, base_url: str, targets: list[dict]) -> None:
     )
 
 
+def capture_profile(
+    browser,
+    base_url: str,
+    targets: list[dict],
+    profile_name: str,
+    viewport: dict,
+    out_dir: Path,
+) -> None:
+    context = browser.new_context(
+        viewport={"width": viewport["width"], "height": viewport["height"]},
+        device_scale_factor=viewport["deviceScaleFactor"],
+        color_scheme="dark",
+    )
+    try:
+        page = context.new_page()
+        profile_dir = out_dir / profile_name
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        for target in targets:
+            # Optional per-target viewport changes height/width only; the profile
+            # owns device scale so every image in a set remains comparable.
+            target_vp = {**viewport, **(target.get("viewport") or {})}
+            page.set_viewport_size(
+                {"width": target_vp["width"], "height": target_vp["height"]}
+            )
+            prepare(page, base_url, target)
+            output = profile_dir / target["file"]
+            page.screenshot(path=output)
+            print(f"Captured {output}")
+    finally:
+        context.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://localhost:8080")
@@ -137,6 +220,19 @@ def main() -> None:
         default=None,
         help="Write PNGs here instead of docs/images/ (for UI review / verify runs)",
     )
+    parser.add_argument(
+        "--profile",
+        "--profiles",
+        dest="profiles",
+        action="append",
+        metavar="NAME[,NAME...]",
+        help="Viewport profile(s); repeat or comma-separate names, or use all",
+    )
+    parser.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="List available viewport profiles without opening Chrome",
+    )
     parser.add_argument("--only", help="Comma-separated subset of target filenames")
     parser.add_argument(
         "--discover",
@@ -146,8 +242,17 @@ def main() -> None:
     args = parser.parse_args()
 
     manifest = json.loads(args.manifest.read_text())
-    viewport = manifest["viewport"]
+    default_profile, viewport_profiles = load_viewport_profiles(manifest)
+    profile_names, explicit_profiles = select_profiles(
+        args.profiles,
+        viewport_profiles,
+        default_profile,
+    )
     targets = manifest["targets"]
+
+    if args.list_profiles:
+        print_profiles(viewport_profiles)
+        return
 
     if args.only:
         wanted = {name.strip() for name in args.only.split(",")}
@@ -159,38 +264,44 @@ def main() -> None:
     out_dir = (args.out_dir or IMAGE_DIR).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        sys.exit(
+            "Playwright is required for capture. Install it with:\n"
+            "  python3 -m venv /tmp/kraken-screenshots\n"
+            "  /tmp/kraken-screenshots/bin/pip install playwright\n"
+        )
+
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             executable_path=str(chrome),
             headless=True,
             args=["--hide-scrollbars"],
         )
-        context = browser.new_context(
-            viewport={"width": viewport["width"], "height": viewport["height"]},
-            device_scale_factor=viewport["deviceScaleFactor"],
-            color_scheme="dark",
-        )
-        page = context.new_page()
-
         if args.discover:
-            discover(page, args.base_url, manifest["targets"])
+            context = browser.new_context(
+                viewport={
+                    "width": viewport_profiles[profile_names[0]]["width"],
+                    "height": viewport_profiles[profile_names[0]]["height"],
+                },
+                device_scale_factor=viewport_profiles[profile_names[0]]["deviceScaleFactor"],
+                color_scheme="dark",
+            )
+            try:
+                discover(context.new_page(), args.base_url, manifest["targets"])
+            finally:
+                context.close()
         else:
-            for target in targets:
-                # Optional per-target viewport (e.g. taller frame so a chart
-                # header + trailing caption both fit). Device scale stays global.
-                target_vp = {**viewport, **(target.get("viewport") or {})}
-                page.set_viewport_size(
-                    {"width": target_vp["width"], "height": target_vp["height"]}
+            for profile_name in profile_names:
+                capture_profile(
+                    browser,
+                    args.base_url,
+                    targets,
+                    profile_name if explicit_profiles else "",
+                    viewport_profiles[profile_name],
+                    out_dir,
                 )
-                # device_scale_factor is fixed on the context; recreate if needed
-                prepare(page, args.base_url, target)
-                output = out_dir / target["file"]
-                page.screenshot(path=output)
-                try:
-                    shown = output.relative_to(PROJECT_ROOT)
-                except ValueError:
-                    shown = output
-                print(f"Captured {shown}")
 
         browser.close()
 

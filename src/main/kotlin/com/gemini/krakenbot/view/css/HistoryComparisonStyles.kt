@@ -1,10 +1,10 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
-import kotlinx.css.Align
 import kotlinx.css.CssBuilder
 import kotlinx.css.Display
 import kotlinx.css.FontWeight
+import kotlinx.css.GridTemplateColumns
 import kotlinx.css.Padding
 import kotlinx.css.TextAlign
 import kotlinx.css.WhiteSpace
@@ -18,6 +18,7 @@ import kotlinx.css.fontFamily
 import kotlinx.css.fontSize
 import kotlinx.css.fontWeight
 import kotlinx.css.gap
+import kotlinx.css.gridTemplateColumns
 import kotlinx.css.padding
 import kotlinx.css.px
 import kotlinx.css.rem
@@ -27,11 +28,8 @@ import kotlinx.css.whiteSpace
 object HistoryComparisonStyles {
     fun CssBuilder.applyHistoryComparisonStyles() {
         ".${CssClass.History.ComparisonHeader}" {
-            display = Display.flex
-            alignItems = Align.center
-            justifyContentRaw("flex-start")
-            gap = 0.75.rem
-            flexWrapRaw("wrap")
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr) auto auto")
         }
 
         ".${CssClass.History.ComparisonDelta}" {

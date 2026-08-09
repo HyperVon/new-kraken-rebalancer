@@ -293,7 +293,7 @@ class SettingsTest : StringSpec() {
                 targetInput.dispatchEvent(inputEvent)
                 totalDisplay.textContent shouldBe "Total: 25.00%"
 
-                val removeBtn = row.querySelector(".btn.btn-danger") as HTMLButtonElement
+                val removeBtn = row.querySelector(".btn.btn-danger-ghost") as HTMLButtonElement
                 removeBtn.click()
                 symContainer.querySelectorAll(".allocation-edit-row").length shouldBe 0
                 totalDisplay.textContent shouldBe "Total: 0.00%"

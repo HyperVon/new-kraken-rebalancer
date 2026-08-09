@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlIds
 import kotlinx.css.Align
 import kotlinx.css.BackgroundAttachment
 import kotlinx.css.BorderStyle
@@ -27,7 +28,6 @@ import kotlinx.css.borderStyle
 import kotlinx.css.borderWidth
 import kotlinx.css.boxSizing
 import kotlinx.css.color
-import kotlinx.css.columnGap
 import kotlinx.css.display
 import kotlinx.css.flexDirection
 import kotlinx.css.flexShrink
@@ -44,6 +44,7 @@ import kotlinx.css.marginBottom
 import kotlinx.css.marginTop
 import kotlinx.css.maxWidth
 import kotlinx.css.minHeight
+import kotlinx.css.minWidth
 import kotlinx.css.padding
 import kotlinx.css.paddingBottom
 import kotlinx.css.pct
@@ -90,15 +91,12 @@ object LayoutStyles {
             padding = Padding(1.rem, 1.rem, 3.rem, 1.rem)
         }
 
-        // DASH-2: one standardized header row across every page (brand · status · nav · action).
+        // DASH-2: every page keeps identity/status/actions on top and navigation below.
         header {
             display = Display.flex
-            flexDirection = FlexDirection.row
-            alignItems = Align.center
-            justifyContentRaw("space-between")
-            flexWrap = FlexWrap.wrap
+            flexDirection = FlexDirection.column
+            alignItems = Align.stretch
             rowGap = 0.75.rem
-            columnGap = 1.rem
             minHeightRaw("3rem")
             paddingBottom = 1.25.rem
             borderBottomWidth = 1.px
@@ -111,7 +109,20 @@ object LayoutStyles {
             display = Display.flex
             alignItems = Align.center
             gap = 0.75.rem
-            flexWrap = FlexWrap.wrap
+            flexWrap = FlexWrap.nowrap
+            width = 100.pct
+        }
+
+        ".${CssClass.Layout.HeaderIdentity}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.75.rem
+            minWidth = 0.px
+            flexShrink = 1.0
+        }
+
+        ".${CssClass.Layout.HeaderIdentity} .${CssClass.Layout.BrandMark}" {
+            whiteSpaceRaw("nowrap")
         }
 
         ".${CssClass.Layout.HeaderTitleSection} h1, .${CssClass.Layout.BrandMark}" {
@@ -132,12 +143,81 @@ object LayoutStyles {
         }
 
         ".${CssClass.Layout.HeaderActions}" {
-            display = Display.flex
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("1fr auto 1fr")
             alignItems = Align.center
             gap = 1.rem
-            flexWrap = FlexWrap.wrap
-            justifyContentRaw("flex-end")
+            width = 100.pct
             marginBottom = 0.rem
+        }
+
+        ".${CssClass.Layout.HeaderActions} > .${CssClass.Navigation.Bar.value}" {
+            put("grid-column", "2")
+            put("justify-self", "center")
+        }
+
+        ".${CssClass.Layout.HeaderActions} > #${HtmlIds.SAVE_BUTTON}" {
+            marginLeftRaw("0")
+            put("grid-column", "3")
+            put("justify-self", "end")
+        }
+
+        ".${CssClass.Layout.LoopControl}" {
+            display = Display.inlineFlex
+            alignItems = Align.center
+            gap = 0.5.rem
+            flexWrap = FlexWrap.nowrap
+            flexShrink = 0.0
+        }
+
+        ".${CssClass.Layout.LoopState}" {
+            display = Display.inlineFlex
+            alignItems = Align.center
+            gap = 0.375.rem
+            padding = Padding(0.375.rem, 0.625.rem)
+            borderRadius = CssTheme.radiusPill
+            fontSize = 0.6875.rem
+            fontWeight = FontWeight.w700
+            letterSpacingRaw("0.08em")
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            whiteSpaceRaw("nowrap")
+        }
+
+        ".${CssClass.Layout.LoopRunning}" {
+            color = CssTheme.colorSuccess
+            backgroundColor = CssTheme.colorSuccessMuted
+            borderColor = CssTheme.colorSuccessBorder
+        }
+
+        ".${CssClass.Layout.LoopPaused}" {
+            color = CssTheme.colorWarning
+            backgroundColor = CssTheme.colorWarningMuted
+            borderColor = CssTheme.colorWarningBorder
+        }
+
+        ".${CssClass.Layout.LoopDot}" {
+            width = 0.4375.rem
+            height = 0.4375.rem
+            borderRadius = 50.pct
+            backgroundColorRaw("currentColor")
+            flexShrink = 0.0
+        }
+
+        ".${CssClass.Layout.LoopControl} > .btn" {
+            justifyContentRaw("center")
+            padding = Padding(0.4375.rem, 0.75.rem)
+            whiteSpaceRaw("nowrap")
+        }
+
+        ".${CssClass.Layout.LoopControl} > .btn svg" {
+            display = Display.block
+            width = 0.875.rem
+            height = 0.875.rem
+        }
+
+        ".${CssClass.Layout.LoopActionLabel}" {
+            fontSize = 0.8125.rem
         }
 
         ".${CssClass.DataAge.Value}" {
@@ -235,6 +315,10 @@ object LayoutStyles {
             alignItems = Align.stretch
         }
 
+        ".${CssClass.Layout.HeroGrid.value} > *" {
+            minWidth = 0.px
+        }
+
         ".${CssClass.Layout.HeroSide.value}" {
             display = Display.grid
             gridTemplateColumns = GridTemplateColumns("1fr")
@@ -250,6 +334,7 @@ object LayoutStyles {
             boxShadowRaw(CssTheme.shadowSurface1)
             borderRadius = CssTheme.radiusXl
             padding = Padding(1.5.rem)
+            minWidth = 0.px
             transitionRaw("border-color 0.25s ease, box-shadow 0.25s ease")
         }
 
@@ -283,6 +368,10 @@ object LayoutStyles {
             gridTemplateColumns = GridTemplateColumns("1fr")
             gap = 1.25.rem
             marginBottom = 1.25.rem
+        }
+
+        ".${CssClass.Layout.DetailGrid} > *" {
+            minWidth = 0.px
         }
     }
 }

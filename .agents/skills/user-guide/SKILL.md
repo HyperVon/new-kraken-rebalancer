@@ -48,6 +48,13 @@ Keep the guide:
 4. **Screenshot-honest** — captions may note that images were taken in
    simulation; do not present emulator numbers as a user’s live book.
 
+For DPR 2 screenshots, use a linked HTML `<img>` with an explicit `width`
+instead of unbounded Markdown image syntax. The width should reflect the
+intended CSS viewport or a deliberate documentation cap, while the link keeps
+the full-resolution asset available. The User Guide carries the full phone,
+tablet, laptop, desktop, and wide gallery; the README remains a curated visual
+overview. Inspect both documents at 100% browser zoom after refresh.
+
 Suggested section order (match the live nav):
 
 1. Safety modes
@@ -65,7 +72,8 @@ Suggested section order (match the live nav):
 | Image | Typical guide use |
 | :--- | :--- |
 | `docs/images/dashboard.png` | Dashboard overview / hero KPI + Cash·Crypto tiles |
-| `docs/images/dashboard-bottom.png` | Allocation, performance table, cycle activity feed |
+| `docs/images/dashboard-performance.png` | Dashboard Asset Performance table and deviation legend |
+| `docs/images/dashboard-bottom.png` | Cycle-grouped activity feed |
 | `docs/images/settings.png` | Global parameters + allocations + safety cards |
 | `docs/images/history.png` | Range pills, six summary cards, value/holdings charts |
 | `docs/images/history-portfolio-charts.png` | Portfolio value + holdings charts (History charts region) |
@@ -81,6 +89,8 @@ embed it in USER_GUIDE (and README Screenshots if appropriate).
 
 - [ ] USER_GUIDE sections match current Dashboard / Settings / History UI
 - [ ] Every major section embeds a current screenshot under `docs/images/`
+- [ ] DPR 2 screenshots use explicit linked display widths
+- [ ] Responsive gallery is complete in the User Guide and curated in README
 - [ ] dryRun vs simulation explained without collapsing the flags
 - [ ] README links to the guide; guide links back to Getting Started / ALGORITHM
 - [ ] Screenshots refreshed if visuals changed

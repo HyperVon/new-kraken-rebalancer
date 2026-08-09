@@ -35,6 +35,13 @@ Related:
   `apply …`, or an explicit “implement all / these IDs” message.
 - Prefer `simulation: true` for all visual verify runs
   ([dry-run-and-simulation](../dry-run-and-simulation/SKILL.md)).
+- Use the current repository contract in
+  [ui-visual-guidance-and-aesthetics](../ui-visual-guidance-and-aesthetics/SKILL.md),
+  including explicit phone/tablet header composition, labeled neutral loop
+  actions, right-aligned wide-screen operational controls, centered page
+  navigation, human data precision, lightweight activity rows, mobile trade
+  cards, and the screenshot documentation policy. Do not rely on an older
+  cached copy of that skill.
 
 ---
 
@@ -125,15 +132,18 @@ cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
 AFTER_DIR=$(mktemp -d /tmp/ui-visual-after.XXXXXX)
 /tmp/kraken-screenshots/bin/python \
   .agents/skills/docs-screenshot-refresh/scripts/capture_screenshots.py \
+  --profile desktop,laptop,phone \
   --out-dir "$AFTER_DIR"
 ```
 
 Capture only the pages touched if faster (`--only …`), but prefer full set
-when Global / nav / theme tokens changed.
+when Global / nav / theme tokens changed. The helper writes profile-specific
+directories such as `$AFTER_DIR/laptop/dashboard.png`; do not use direct
+embedded-browser screenshots for static before/after evidence.
 
 ### Step 6: Visual verification (mandatory)
 
-For each acceptance criterion:
+For each acceptance criterion and requested profile:
 
 1. **Read** the relevant after PNG(s) with the image tool.
 2. Mark the SHORT-ID **done** only if the criterion is visibly met.
@@ -177,10 +187,14 @@ on the same ID, stop, report what still fails, and ask the user how to proceed
 
 When shipping visual changes users will see in README / User Guide:
 
-1. Run [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) to update
-   `docs/images/*.png` (overwrite canonical assets — not the `/tmp` verify dir).
+1. After all implementation iterations are complete, run
+   [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) to update
+   `docs/images/*.png` (overwrite canonical assets — not the `/tmp` verify dir)
+   and capture the documented responsive profile images.
 2. Update [docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) if meaning/layout of
    controls changed ([user-guide](../user-guide/SKILL.md)).
+   Use linked HTML images with explicit widths; keep README coverage curated and
+   put the full responsive gallery in the User Guide. Inspect both at 100% zoom.
 3. CHANGELOG `### Changed` (and `### Added` if new UI).
 4. Point skills/AGENTS only if invariants or workflows changed.
 

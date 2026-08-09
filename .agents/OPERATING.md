@@ -214,6 +214,10 @@ When editing dashboard HTML/CSS/HTMX (`view/**`), dashboard HTTP/static serving
 Complete these checks **before** opening a PR (see §2) — not after merge.
 
 1. **Viewport** — Judge layout at **laptop ~1280–1440px**, not only mobile.
+   For repeatable static evidence, use
+   `.agents/skills/docs-screenshot-refresh/scripts/capture_screenshots.py`
+   with `--profile laptop,phone` (add `tablet` or `wide` when relevant) rather
+   than taking one-off browser screenshots.
 2. **Cache** — Stylesheet must stay cache-busted (`/static/style.css?v=…`).
    Native-looking white OS buttons usually mean stale CSS.
 3. **Interactions** — Prefer `ui-manual-qa` (STYLE/REGRESSION cases) after

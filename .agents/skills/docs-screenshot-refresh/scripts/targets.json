@@ -1,4 +1,32 @@
 {
+  "defaultViewportProfile": "desktop",
+  "viewportProfiles": {
+    "phone": {
+      "width": 390,
+      "height": 844,
+      "deviceScaleFactor": 2
+    },
+    "tablet": {
+      "width": 768,
+      "height": 1024,
+      "deviceScaleFactor": 2
+    },
+    "laptop": {
+      "width": 1280,
+      "height": 800,
+      "deviceScaleFactor": 2
+    },
+    "desktop": {
+      "width": 1440,
+      "height": 900,
+      "deviceScaleFactor": 2
+    },
+    "wide": {
+      "width": 1920,
+      "height": 1080,
+      "deviceScaleFactor": 2
+    }
+  },
   "viewport": {
     "width": 1440,
     "height": 900,
@@ -22,6 +50,12 @@
       "path": "/",
       "await_text": ["Recent Activity"],
       "position": "bottom"
+    },
+    {
+      "file": "dashboard-performance.png",
+      "path": "/",
+      "await_text": ["Asset Performance", "Over target", "Under target"],
+      "anchor": "Asset Performance"
     },
     {
       "file": "settings.png",

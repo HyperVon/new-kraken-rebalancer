@@ -2,9 +2,12 @@ package com.gemini.krakenbot.view.util
 
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.util.Icons.icon
+import kotlinx.html.ButtonType
 import kotlinx.html.DIV
 import kotlinx.html.FlowContent
+import kotlinx.html.InputType
 import kotlinx.html.id
+import kotlinx.html.input
 
 fun FlowContent.glassPanel(title: String, iconSvg: String? = null, block: DIV.() -> Unit) {
     div(CssClass.Layout.GlassPanel) {
@@ -90,14 +93,54 @@ fun FlowContent.streamStatusPlaceholder() {
 /**
  * Standard header brand + mode plate group used across all pages (DASH-2).
  * Pass [includeStreamSlot] on the Dashboard shell so STREAM sits beside the
- * mode plate (not on a separate right-aligned row).
+ * mode plate (not on a separate right-aligned row). [trailingContent] remains
+ * in the same top-line cluster for controls such as the loop state/action.
  */
-fun FlowContent.brandWithMode(settings: Settings, includeStreamSlot: Boolean = false) {
-    div(CssClass.Layout.HeaderTitleSection) {
-        brandMark()
-        modePlate(settings)
+fun FlowContent.brandWithMode(
+    settings: Settings,
+    includeStreamSlot: Boolean = false,
+    trailingContent: FlowContent.() -> Unit = {},
+) {
+    val titleClass =
+        CssClass.Layout.HeaderTitleSection +
+            if (includeStreamSlot) CssClass.Layout.HeaderWithStream else CssClass.Layout.HeaderWithoutStream
+    div(titleClass) {
+        div(CssClass.Layout.HeaderIdentity) {
+            brandMark()
+            modePlate(settings)
+        }
         if (includeStreamSlot) {
             streamStatusPlaceholder()
+        }
+        trailingContent()
+    }
+}
+
+fun FlowContent.loopControl(paused: Boolean, csrfToken: String? = null) {
+    div(CssClass.Layout.LoopControl) {
+        if (csrfToken != null) {
+            input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) {
+                value = csrfToken
+                id = HtmlIds.CSRF_TOKEN
+            }
+        }
+        div(
+            CssClass.Layout.LoopState +
+                if (paused) CssClass.Layout.LoopPaused else CssClass.Layout.LoopRunning,
+        ) {
+            span(CssClass.Layout.LoopDot) {}
+            +(if (paused) ViewText.LOOP_PAUSED else ViewText.LOOP_RUNNING)
+        }
+        button(CssClass.Button.Secondary, type = ButtonType.button) {
+            id = HtmlIds.LOOP_CONTROL
+            attributes[HtmxAttrs.HX_POST] = if (paused) Routes.API_RESUME else Routes.API_PAUSE
+            attributes[HtmxAttrs.HX_INCLUDE] = HtmlQueries.CSRF_TOKEN
+            attributes[HtmxAttrs.HX_SWAP] = HtmxValues.NONE
+            attributes[HtmlAttrs.TITLE] = if (paused) ViewText.LOOP_RESUME_TITLE else ViewText.LOOP_PAUSE_TITLE
+            icon(if (paused) Icons.PLAY else Icons.PAUSE)
+            span(CssClass.Layout.LoopActionLabel) {
+                +(if (paused) ViewText.LOOP_RESUME_ACTION else ViewText.LOOP_PAUSE_ACTION)
+            }
         }
     }
 }

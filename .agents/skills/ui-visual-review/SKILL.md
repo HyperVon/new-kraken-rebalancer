@@ -38,9 +38,12 @@ Also note empty/error/loading states if you can trigger them safely in simulatio
 (e.g. before seed finishes — usually skip; prefer seeded happy path + obvious
 clutter).
 
-Capture at **desktop/laptop width (~1280–1440px)** in addition to any narrow
-viewport shots — recent production regressions (header status cluster density,
-History toolbar styling) only show at laptop breakpoints, not mobile-only QA.
+Capture through the shared screenshot helper at **desktop**, **laptop**, and
+**phone** profiles (add **tablet** and **wide** when the layout is a focus).
+Recent production regressions such as header status density and History toolbar
+styling only show at laptop breakpoints, while mobile-only captures miss narrow
+reflow failures. Do not take direct embedded-browser screenshots for static
+evidence.
 
 **Out of scope for this skill:** implementing CSS/HTML/JS, changing trading
 math, rewriting docs (except quoting findings).
@@ -85,10 +88,13 @@ python3 -m venv /tmp/kraken-screenshots
 /tmp/kraken-screenshots/bin/pip install -q playwright
 /tmp/kraken-screenshots/bin/python \
   .agents/skills/docs-screenshot-refresh/scripts/capture_screenshots.py \
+  --profile desktop,laptop,phone \
   --out-dir "$REVIEW_DIR"
 ```
 
-Also run `--discover` once and note uncovered pages/sections in the report.
+The helper writes `$REVIEW_DIR/<profile>/<target>.png`; read every PNG in each
+requested profile. Also run `--discover` once and note uncovered pages/sections
+in the report.
 
 ### Step 3: Visual analysis (mandatory)
 

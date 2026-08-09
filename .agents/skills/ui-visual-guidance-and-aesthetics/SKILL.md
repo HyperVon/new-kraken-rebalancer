@@ -617,6 +617,12 @@ Evaluate at minimum:
 - ~1440px desktop,
 - wider desktop.
 
+For repeatable evidence, use the shared
+[`capture_screenshots.py`](../docs-screenshot-refresh/scripts/capture_screenshots.py)
+profiles: `phone` (390px), `tablet` (768px), `laptop` (1280px), `desktop`
+(1440px), and `wide` (1920px). A visual claim should name the profile(s) that
+support it rather than relying on a one-off browser viewport.
+
 ### Responsive priority
 
 When width decreases:
@@ -929,6 +935,67 @@ Unless the user explicitly approves a redesign that changes them:
 
 Any proposed violation must be labeled an explicit **redesign**, with rationale
 and migration scope.
+
+## 21A. Current responsive and documentation contract
+
+This repository-specific contract is the controlling guidance for the current
+responsive UI and screenshot work. It refines the general principles above; do
+not substitute generic framework defaults for these decisions.
+
+### Header composition
+
+- Keep the identity, mode plate, stream health, loop state, and loop action as
+  deliberate groups. Use explicit grid areas at phone and tablet widths.
+- Do not rely on generic `flex-wrap` to decide where a header control lands.
+- On phones, keep the brand and mode plate compact on one identity row, then
+  place stream health and the labeled loop action in a predictable second row.
+- At tablet widths, keep identity and stream health on the first row and place
+  the loop action in an intentional trailing row; on pages without stream
+  health, keep identity and loop action on one row.
+- At laptop and desktop widths, keep identity on the left and right-align the
+  Stream, loop state, and loop action as one operational cluster. Center the
+  Dashboard / History / Settings selector group in the row below; on Settings,
+  keep Save Configuration independently right-aligned.
+- Pause and Resume are neutral operator actions. Use visible labels alongside
+  icons and reserve semantic danger styling for actual destructive risk.
+
+### Data display
+
+- Format values for human scanning, not source precision: currency uses two
+  decimals, percentages trim insignificant zeroes, quantities retain meaningful
+  crypto precision without padded zeroes, and prices/fees adapt precision to
+  magnitude while preserving sub-cent values.
+- Use compact local timestamps in dense trade and activity views. Preserve the
+  full timestamp in a title or equivalent hover affordance when useful.
+- Keep zero or unavailable economics represented by an em dash, and keep plain
+  successful trades quieter than failed or estimated states.
+
+### History and activity
+
+- Mobile trade rows are contained detail cards with a clear time/pair/side
+  header, readable economics, and a distinct status line. Do not fall back to
+  page-level horizontal scrolling or long raw timestamps.
+- Recent Activity remains cycle-grouped, but a cycle is a lightweight feed row,
+  not a nested glass card. Do not repeat a `Cycle` badge on every row or an
+  `INFO` badge on ordinary notes. Show at most one concise informational note
+  per cycle before trade actions, and keep the View all history link.
+- Use one consistent chart header pattern: title on the left, controls in a
+  stable trailing slot, and a deliberate stacked arrangement only below the
+  phone breakpoint. Hide a scrubber while it cannot pan a zoomed chart.
+- Repetitive Settings Remove actions are quiet ghost controls until hovered.
+
+### Screenshot documentation
+
+- Keep DPR 2 captures for visual fidelity, but never embed their native pixel
+  width without an explicit display width.
+- Use linked HTML `<img width="...">` elements for README and User Guide
+  screenshots. The link preserves access to the full-resolution capture while
+  the width communicates the intended CSS-viewport scale.
+- Keep README visual coverage curated: normally one desktop dashboard, one
+  phone preview, one Settings view, and one History view. Put the full phone,
+  tablet, laptop, desktop, and wide gallery in the User Guide.
+- Verify both documents at normal 100% browser zoom after screenshot refresh;
+  a high-DPI source must not visually dominate the page by accident.
 
 ---
 
