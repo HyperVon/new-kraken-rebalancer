@@ -952,6 +952,10 @@ not substitute generic framework defaults for these decisions.
 - At tablet widths, keep identity and stream health on the first row and place
   the loop action in an intentional trailing row; on pages without stream
   health, keep identity and loop action on one row.
+- At laptop and desktop widths, keep identity on the left and right-align the
+  Stream, loop state, and loop action as one operational cluster. Center the
+  Dashboard / History / Settings selector group in the row below; on Settings,
+  keep Save Configuration independently right-aligned.
 - Pause and Resume are neutral operator actions. Use visible labels alongside
   icons and reserve semantic danger styling for actual destructive risk.
 

@@ -143,17 +143,23 @@ object LayoutStyles {
         }
 
         ".${CssClass.Layout.HeaderActions}" {
-            display = Display.flex
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("1fr auto 1fr")
             alignItems = Align.center
             gap = 1.rem
-            flexWrap = FlexWrap.nowrap
-            justifyContentRaw("flex-start")
             width = 100.pct
             marginBottom = 0.rem
         }
 
+        ".${CssClass.Layout.HeaderActions} > .${CssClass.Navigation.Bar.value}" {
+            put("grid-column", "2")
+            put("justify-self", "center")
+        }
+
         ".${CssClass.Layout.HeaderActions} > #${HtmlIds.SAVE_BUTTON}" {
-            marginLeftRaw("auto")
+            marginLeftRaw("0")
+            put("grid-column", "3")
+            put("justify-self", "end")
         }
 
         ".${CssClass.Layout.LoopControl}" {

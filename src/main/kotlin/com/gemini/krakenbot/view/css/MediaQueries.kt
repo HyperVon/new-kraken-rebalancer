@@ -142,13 +142,14 @@ object MediaQueries {
             }
         }
 
-        "@media (min-width: 768px) and (max-width: 1160px)" {
-            ".${CssClass.Layout.HeaderActions}" {
-                width = 100.pct
-                justifyContentRaw("center")
+        "@media (min-width: 1024px)" {
+            // DASH-2: wide headers separate page identity from the right-side
+            // operational status and control cluster.
+            ".${CssClass.Layout.HeaderWithStream} > .${CssClass.Layout.HeaderStatus}" {
+                marginLeftRaw("auto")
             }
-            ".${CssClass.Layout.HeaderActions} > #${HtmlIds.SAVE_BUTTON}" {
-                marginLeftRaw("0")
+            ".${CssClass.Layout.HeaderWithoutStream} > .${CssClass.Layout.LoopControl}" {
+                marginLeftRaw("auto")
             }
         }
 
@@ -220,6 +221,7 @@ object MediaQueries {
                 put("justify-self", "center")
             }
             ".${CssClass.Layout.HeaderActions}" {
+                display = Display.flex
                 width = 100.pct
                 justifyContentRaw("center")
                 gap = 0.5.rem

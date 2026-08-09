@@ -56,9 +56,11 @@ safety on unless you intend to trade live.
 ## Navigation
 
 Dashboard, History, and Settings share the same top nav tabs (active page is
-highlighted). The header brand reads **Kraken** + **Rebalancer**, and right next
-to it a **persistent mode plate** shows the current trading mode on **every**
-page: **SIMULATION** (blue), **DRY RUN** (amber), or **LIVE TRADING** (red).
+highlighted and centered below the header identity on wider screens). The header
+brand reads **Kraken** + **Rebalancer**, and the Stream/loop status cluster sits
+to its right on wider screens. A **persistent mode plate** shows the current
+trading mode on **every** page: **SIMULATION** (blue), **DRY RUN** (amber), or
+**LIVE TRADING** (red).
 Precedence is simulation first (even if dry run is also on), then dry run, then
 live. The plate reflects your Settings, and hovering it reveals a tooltip
 explaining the consequence (e.g. "Live trading — real orders execute with real

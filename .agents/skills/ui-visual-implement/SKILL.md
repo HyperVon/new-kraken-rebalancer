@@ -38,9 +38,10 @@ Related:
 - Use the current repository contract in
   [ui-visual-guidance-and-aesthetics](../ui-visual-guidance-and-aesthetics/SKILL.md),
   including explicit phone/tablet header composition, labeled neutral loop
-  actions, human data precision, lightweight activity rows, mobile trade cards,
-  and the screenshot documentation policy. Do not rely on an older cached copy
-  of that skill.
+  actions, right-aligned wide-screen operational controls, centered page
+  navigation, human data precision, lightweight activity rows, mobile trade
+  cards, and the screenshot documentation policy. Do not rely on an older
+  cached copy of that skill.
 
 ---
 
