@@ -47,13 +47,18 @@ internal object CsrfProtection {
             }
         }
 
-        val cookieToken = call.request.cookies[COOKIE_NAME] ?: return false
+        // A blank cookie value must never authorise a mutation: any other service on the same
+        // host can set a host-scoped `rebalancer-csrf=` cookie (cookies ignore the port), and a
+        // page served from another local port passes the origin gate above.
+        val cookieToken = call.request.cookies[COOKIE_NAME]?.takeIf { it.isNotBlank() } ?: return false
         val formTokens = parameters.getAll(FormFields.CSRF_TOKEN) ?: return false
         if (formTokens.size != 1) return false
+        val formToken = formTokens.single()
+        if (formToken.isBlank()) return false
 
         return MessageDigest.isEqual(
             cookieToken.toByteArray(Charsets.UTF_8),
-            formTokens.single().toByteArray(Charsets.UTF_8),
+            formToken.toByteArray(Charsets.UTF_8),
         )
     }
 
