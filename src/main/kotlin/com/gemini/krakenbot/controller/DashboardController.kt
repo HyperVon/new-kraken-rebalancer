@@ -73,8 +73,13 @@ class DashboardController(
 
             get(Routes.ROOT) {
                 val settings = configService.getConfig().settings
+                val csrfToken = CsrfProtection.issueToken(call)
                 call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderDashboardShell(settings)
+                    dashboardView.renderDashboardShell(
+                        settings = settings,
+                        csrfToken = csrfToken,
+                        paused = portfolioManager.isLoopPaused(),
+                    )
                 }
             }
 
@@ -82,7 +87,12 @@ class DashboardController(
                 val config = configService.getConfig()
                 val csrfToken = CsrfProtection.issueToken(call)
                 call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderSettingsPage(config, null, csrfToken)
+                    dashboardView.renderSettingsPage(
+                        config = config,
+                        errorMessage = null,
+                        csrfToken = csrfToken,
+                        paused = portfolioManager.isLoopPaused(),
+                    )
                 }
             }
 
@@ -98,8 +108,14 @@ class DashboardController(
                 val config = configService.getConfig()
                 val settings = config.settings
                 val symbolColorMap = config.allocations.symbolColorMap()
+                val csrfToken = CsrfProtection.issueToken(call)
                 call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderHistoryPage(settings, symbolColorMap)
+                    dashboardView.renderHistoryPage(
+                        settings = settings,
+                        symbolColorMap = symbolColorMap,
+                        csrfToken = csrfToken,
+                        paused = portfolioManager.isLoopPaused(),
+                    )
                 }
             }
 
@@ -158,6 +174,7 @@ class DashboardController(
                 config = configService.getConfig(),
                 message = ViewText.CSRF_SESSION_EXPIRED,
                 csrfToken = token,
+                paused = portfolioManager.isLoopPaused(),
                 status = HttpStatusCode.Forbidden,
             )
             return
@@ -170,6 +187,7 @@ class DashboardController(
                 config = currentConfig,
                 message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
                 csrfToken = CsrfProtection.currentToken(call),
+                paused = portfolioManager.isLoopPaused(),
                 status = HttpStatusCode.UnprocessableEntity,
             )
             return
@@ -184,6 +202,7 @@ class DashboardController(
                 config = updatedConfig,
                 message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
                 csrfToken = CsrfProtection.currentToken(call),
+                paused = portfolioManager.isLoopPaused(),
                 status = HttpStatusCode.UnprocessableEntity,
             )
         }
@@ -259,11 +278,12 @@ class DashboardController(
         config: AppConfig,
         message: String,
         csrfToken: String,
+        paused: Boolean,
         status: HttpStatusCode,
     ) {
         val errHtml =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderSettingsFormFragment(this, config, message, csrfToken)
+                dashboardView.renderSettingsFormFragment(this, config, message, csrfToken, paused)
             }
         call.respondText(errHtml, ContentType.Text.Html, status)
     }
@@ -368,12 +388,14 @@ class DashboardController(
     private suspend fun RoutingContext.handlePostPause() {
         if (!requireCsrf()) return
         portfolioManager.pauseLoop()
+        call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
         respondJson(mapOf("paused" to true))
     }
 
     private suspend fun RoutingContext.handlePostResume() {
         if (!requireCsrf()) return
         portfolioManager.resumeLoop()
+        call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
         respondJson(mapOf("paused" to false))
     }
 

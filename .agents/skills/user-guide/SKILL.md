@@ -65,7 +65,8 @@ Suggested section order (match the live nav):
 | Image | Typical guide use |
 | :--- | :--- |
 | `docs/images/dashboard.png` | Dashboard overview / hero KPI + Cash·Crypto tiles |
-| `docs/images/dashboard-bottom.png` | Allocation, performance table, cycle activity feed |
+| `docs/images/dashboard-performance.png` | Dashboard Asset Performance table and deviation legend |
+| `docs/images/dashboard-bottom.png` | Cycle-grouped activity feed |
 | `docs/images/settings.png` | Global parameters + allocations + safety cards |
 | `docs/images/history.png` | Range pills, six summary cards, value/holdings charts |
 | `docs/images/history-portfolio-charts.png` | Portfolio value + holdings charts (History charts region) |

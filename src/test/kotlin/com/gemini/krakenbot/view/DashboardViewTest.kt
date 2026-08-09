@@ -98,7 +98,9 @@ class DashboardViewTest : StringSpec() {
 
     init {
         "renderDashboardShell_containsExpectedContent" {
-            val html = createHTML().html { view.renderDashboardShell(baseConfig.settings) }
+            val html = createHTML().html {
+                view.renderDashboardShell(baseConfig.settings, csrfToken = testCsrfToken)
+            }
             html shouldContain "title>Kraken Rebalancer"
             html shouldContain "link href=\"/static/style.css?v="
             html shouldContain "script src=\"https://unpkg.com/htmx.org@2.0.4\""
@@ -110,12 +112,31 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "DRY RUN"
             html shouldContain "id=\"header-status\""
             html shouldContain "STREAM"
+            html shouldContain "id=\"loop-control\""
+            html shouldContain "hx-post=\"/api/pause\""
+            html shouldContain "fill=\"currentColor\""
+            html shouldContain "id=\"csrf-token\""
+            html shouldContain "value=\"$testCsrfToken\""
         }
 
         "renderDashboardShell_simulationMode_rendersSimulationPlate" {
             val simSettings = baseConfig.settings.copy(simulation = true)
             val html = createHTML().html { view.renderDashboardShell(simSettings) }
             html shouldContain "SIMULATION"
+        }
+
+        "renderDashboardShell_pausedState_rendersResumeControl" {
+            val html = createHTML().html {
+                view.renderDashboardShell(
+                    baseConfig.settings,
+                    csrfToken = testCsrfToken,
+                    paused = true,
+                )
+            }
+            html shouldContain "PAUSED"
+            html shouldContain "hx-post=\"/api/resume\""
+            html shouldContain "fill=\"currentColor\""
+            html shouldContain "Resume loop"
         }
 
         "renderSettingsPage_withNoError_containsForm" {
@@ -139,6 +160,8 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "value=\"2.0\""
             html shouldContain "name=\"csrfToken\""
             html shouldContain "value=\"$testCsrfToken\""
+            html shouldContain "id=\"csrf-token\""
+            html shouldContain "hx-post=\"/api/pause\""
             html shouldContain "Safety Modes"
             html shouldContain "safety-state-on"
             html shouldContain "safety-state-off"

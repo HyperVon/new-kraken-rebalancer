@@ -21,7 +21,7 @@ class HistoryPageComponentTest : StringSpec() {
             val component = HistoryPageComponent(jacksonObjectMapper())
             val settings = TestFixtures.settings(loopDelaySeconds = 60L, minimumOrderSizeUSD = 5.0)
             val htmlString = createHTML().html {
-                component.render(settings)
+                component.render(settings, csrfToken = "test-csrf-token", paused = true)
             }
 
             // Raw values keep this boundary test independent from the shared catalog.
@@ -52,6 +52,10 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain ViewText.HEADER_FEE
             htmlString shouldContain ViewText.HEADER_SLIPPAGE
             htmlString shouldContain "rebalancer.js"
+            htmlString shouldContain "id=\"loop-control\""
+            htmlString shouldContain "hx-post=\"/api/resume\""
+            htmlString shouldContain "id=\"csrf-token\""
+            htmlString shouldContain "https://unpkg.com/htmx.org@2.0.4"
             htmlString shouldContain "Rebalancer vs Buy &amp; Hold"
             htmlString shouldContain "comparison-latest-difference"
             htmlString shouldContain "comparison-chart-content"

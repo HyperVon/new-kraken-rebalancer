@@ -278,6 +278,7 @@ with a wide range of tools and paradigms:
 - **Recent Activity** — per-cycle action feed (deviations, trades, dry-run intents) with BUY/SELL badges; not the full trade log on the `/history` page
 - STREAM/STALE SSE stream-health indicator with relative age/time (separate from trading mode)
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
+- Header loop control on Dashboard, History, and Settings showing RUNNING/PAUSED with pause (`||`) and play (`▶`) actions
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
 - **Staking Rewards History** — displays cumulative staking rewards in USD, split
   by asset, from synchronized Kraken ledger entries. `dividend` entries (Kraken
@@ -379,11 +380,31 @@ chart, and a sortable asset performance table.
 
 ### Asset Performance & Recent Cycle Activity
 
-The lower section shows detailed per-asset metrics (price, value, target %,
-current %, deviation) and recent rebalance-cycle activity (not the full History
+The lower section separates detailed per-asset metrics (price, value, target %,
+current %, deviation) from recent rebalance-cycle activity (not the full History
 page trade log).
 
-![Dashboard Bottom](docs/images/dashboard-bottom.png)
+![Dashboard Asset Performance](docs/images/dashboard-performance.png)
+
+![Dashboard Recent Activity](docs/images/dashboard-bottom.png)
+
+### Responsive layouts
+
+The same seeded simulation is captured at the common viewport profiles used by
+the UI review workflow. The phone layout condenses the performance table and
+trade log into readable, contained surfaces instead of relying on page-level
+horizontal scrolling.
+
+| Profile | Dashboard capture |
+| :--- | :--- |
+| Phone (390px) | ![Phone dashboard](docs/images/dashboard-phone.png) |
+| Tablet (768px) | ![Tablet dashboard](docs/images/dashboard-tablet.png) |
+| Laptop (1280px) | ![Laptop dashboard](docs/images/dashboard-laptop.png) |
+| Wide (1920px) | ![Wide dashboard](docs/images/dashboard-wide.png) |
+
+![Phone Asset Performance](docs/images/dashboard-performance-phone.png)
+
+![Phone Trade History](docs/images/history-trade-log-phone.png)
 
 ### Settings
 

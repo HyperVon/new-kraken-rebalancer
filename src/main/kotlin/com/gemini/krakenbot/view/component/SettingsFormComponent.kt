@@ -22,6 +22,7 @@ import com.gemini.krakenbot.view.util.formSection
 import com.gemini.krakenbot.view.util.h3
 import com.gemini.krakenbot.view.util.input
 import com.gemini.krakenbot.view.util.label
+import com.gemini.krakenbot.view.util.loopControl
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.rebalancerJsSrc
@@ -88,12 +89,18 @@ class SettingsFormComponent {
     )
 
     context(body: BODY)
-    fun render(config: AppConfig, errorMessage: String?, csrfToken: String) {
-        renderForm(body, config, errorMessage, csrfToken)
+    fun render(config: AppConfig, errorMessage: String?, csrfToken: String, paused: Boolean = false) {
+        renderForm(body, config, errorMessage, csrfToken, paused)
         renderSettingsScript()
     }
 
-    fun renderForm(parent: FlowContent, config: AppConfig, errorMessage: String?, csrfToken: String) {
+    fun renderForm(
+        parent: FlowContent,
+        config: AppConfig,
+        errorMessage: String?,
+        csrfToken: String,
+        paused: Boolean = false,
+    ) {
         parent.div(CssClass.Layout.Container) {
             form {
                 attributes[HtmxAttrs.HX_POST] = Routes.SETTINGS
@@ -101,10 +108,13 @@ class SettingsFormComponent {
                 attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
                 input(type = hidden, name = FormFields.CSRF_TOKEN) {
                     value = csrfToken
+                    id = HtmlIds.CSRF_TOKEN
                 }
 
                 header {
-                    brandWithMode(config.settings)
+                    brandWithMode(config.settings) {
+                        loopControl(paused)
+                    }
                     div(CssClass.Layout.HeaderActions) {
                         primaryNav(ActiveNav.SETTINGS)
                         button(

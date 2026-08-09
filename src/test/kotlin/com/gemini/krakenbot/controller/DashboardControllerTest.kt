@@ -97,6 +97,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain ViewText.APP_TITLE
                 response.bodyAsText() shouldContain "sse-connect=\"${Routes.API_STATUS_STREAM}\""
                 response.bodyAsText() shouldContain ViewText.MODE_DRY_RUN
+                response.bodyAsText() shouldContain "id=\"loop-control\""
+                response.bodyAsText() shouldContain "hx-post=\"/api/pause\""
             }
         }
 

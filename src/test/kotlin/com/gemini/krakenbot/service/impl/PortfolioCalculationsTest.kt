@@ -7,6 +7,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
 class PortfolioCalculationsTest : StringSpec() {
@@ -78,6 +79,10 @@ class PortfolioCalculationsTest : StringSpec() {
                 cryptoScaleFactor = BigDecimal.ONE,
                 minimumOrderSizeUSD = 1.0,
             )
+            metrics.symbol shouldBe Asset(Asset.BTC)
+            metrics.baseTargetPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            metrics.currentPercent.shouldBeEqualComparingTo(BigDecimal("0.05"))
+            metrics.targetValueUSD.shouldBeEqualComparingTo(BigDecimal.ZERO)
             metrics.deviationPercent.shouldBeEqualComparingTo(BigDecimal("100"))
             metrics.isSignificant.shouldBeFalse()
             metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("0.50"))

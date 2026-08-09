@@ -179,6 +179,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
                 }
                 pauseResponse.status shouldBe HttpStatusCode.OK
+                pauseResponse.headers["HX-Refresh"] shouldBe "true"
                 pauseResponse.bodyAsText() shouldContain "true"
 
                 val healthAfterPause = client.get("/api/health")
@@ -203,6 +204,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
                 }
                 resumeResponse.status shouldBe HttpStatusCode.OK
+                resumeResponse.headers["HX-Refresh"] shouldBe "true"
                 resumeResponse.bodyAsText() shouldContain "false"
 
                 val healthAfterResume = client.get("/api/health")

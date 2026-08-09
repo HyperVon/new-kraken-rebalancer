@@ -22,6 +22,7 @@ import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h2
 import com.gemini.krakenbot.view.util.label
+import com.gemini.krakenbot.view.util.loopControl
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.rebalancerJsSrc
@@ -55,10 +56,16 @@ import kotlinx.html.unsafe
 class HistoryPageComponent(private val objectMapper: ObjectMapper) {
 
     context(html: HTML)
-    fun render(settings: Settings, symbolColorMap: Map<String, String> = emptyMap()) {
+    fun render(
+        settings: Settings,
+        symbolColorMap: Map<String, String> = emptyMap(),
+        csrfToken: String? = null,
+        paused: Boolean = false,
+    ) {
         html.head {
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
+            cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
             cdnScript(CdnUrls.CHART_JS, CdnIntegrity.CHART_JS)
             cdnScript(CdnUrls.CHART_JS_DATE_FNS, CdnIntegrity.CHART_JS_DATE_FNS)
             cdnScript(CdnUrls.HAMMER_JS, CdnIntegrity.HAMMER_JS)
@@ -66,7 +73,7 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
         }
         html.body {
             div(CssClass.Layout.Container) {
-                renderHeader(settings)
+                renderHeader(settings, csrfToken, paused)
                 renderSyncProgressBanner()
                 renderToolbar()
                 renderStatsGrid()
@@ -89,10 +96,14 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
         }
     }
 
-    private fun DIV.renderHeader(settings: Settings) {
+    private fun DIV.renderHeader(settings: Settings, csrfToken: String?, paused: Boolean) {
         header {
-            brandWithMode(settings)
-            primaryNav(ActiveNav.HISTORY)
+            brandWithMode(settings) {
+                loopControl(paused, csrfToken)
+            }
+            div(CssClass.Layout.HeaderActions) {
+                primaryNav(ActiveNav.HISTORY)
+            }
         }
     }
 

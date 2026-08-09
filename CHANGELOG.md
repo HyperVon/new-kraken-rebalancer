@@ -26,7 +26,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Build/toolchain upgrades**: Updated Exposed `1.3.1` → `1.4.0`, ktlint `1.7.1` → `1.8.0`, kotlin-css-jvm `2026.7.7` → `2026.8.0`, and the Gradle wrapper `9.6.1` → `9.7.0`.
 - **CSS organization**: Split the monolithic navigation stylesheet into focused view/css modules while retaining the ordered `CssStyles` aggregator and existing cascade.
 - **Documentation screenshots**: Refreshed Dashboard, Settings, and History PNGs from an isolated simulation run so the captured controls and labels match the current UI.
+- **Screenshot workflow**: Added reusable `phone`, `tablet`, `laptop`, `desktop`, and `wide` capture profiles with isolated output directories for repeatable responsive review.
 - **Health response**: Removed the unused `liveSubmissionsUnresolved` field; the operator-visible `paused` state remains available through `/api/health`.
+- **Loop control UI**: Added a CSRF-protected pause/play control with a RUNNING/PAUSED state to the shared Dashboard, History, and Settings headers.
+- **Responsive navigation**: Reworked the shared header into a status/control row followed by a left-aligned page navigation row on wide screens, with centered stacking and intrinsic-width fixes for phone and tablet layouts.
 - **Refactor(codegen)**: Centralized repeated string literals in `ConfigServiceImpl` companion object (`LEGACY_DUST_THRESHOLD_KEY`, `NEW_MINIMUM_ORDER_SIZE_KEY`) and extracted `colorForSymbol()` helper from three near-identical `when` blocks in `ChartProps` via a private `SymbolColors` holder, matching constant-centralization and method-extraction patterns from the `refactor/Manual` branch.
 
 ### Fixed

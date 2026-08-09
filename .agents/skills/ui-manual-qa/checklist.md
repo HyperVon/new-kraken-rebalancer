@@ -43,9 +43,10 @@ cached **24h**; stale CSS makes new controls look like default browser buttons.
 | GLOBAL-3 | Click **Dashboard** nav | URL `/`; hero / summary visible |
 | GLOBAL-4 | Confirm brand wordmark | Header shows **Kraken** + **Rebalancer** on each page |
 | GLOBAL-5 | Dashboard status cluster | Chip reads **STREAM** or **STALE** (never **LIVE** / **DELAYED**) plus a relative age (e.g. `12s`) and clock time |
-| GLOBAL-6 | Resize viewport to **~1280–1440px** width; reload `/` | Header + mode plate + stream/age stay readable (see REGRESSION-1) |
+| GLOBAL-6 | Use the capture helper's `laptop` profile (1280px) and reload `/` | Header + mode plate + stream/age stay readable (see REGRESSION-1) |
 | GLOBAL-7 | Visit `/`, `/history`, `/settings` | Brand-adjacent mode plate on **every** page; sim QA shows **SIMULATION** |
 | GLOBAL-8 | Hover / inspect mode-plate `title` on Dashboard | Tooltip explains the active mode (simulation / dry-run / live consequence copy) |
+| GLOBAL-9 | On each page, click the pause icon, then the play icon | State changes RUNNING → PAUSED → RUNNING; the state pill stays grouped with its action icon |
 
 Mode-plate precedence (assert when mode is known): **SIMULATION** if
 simulation is on (even if dry-run is also on); else **DRY RUN**; else
@@ -55,12 +56,13 @@ simulation is on (even if dry-run is also on); else **DRY RUN**; else
 
 ## Production regression guardrails (`REGRESSION-*`)
 
-Explicit checks for recent production UI regressions. Run on **desktop/laptop**
-width (~1280–1440px), not only narrow mobile.
+Explicit checks for recent production UI regressions. Run on the capture
+helper's **laptop** profile (1280px), not only narrow mobile; add `desktop`
+when checking the canonical wide header.
 
 | ID | Steps | Expected |
 | :--- | :--- | :--- |
-| REGRESSION-1 | Dashboard at ~1280–1440px (`GLOBAL-6`) | Mode plate + **STREAM**/**STALE** + relative age/time not vertically squished, clipped, or stacked illegibly |
+| REGRESSION-1 | Dashboard at the `laptop` profile (`GLOBAL-6`) | Mode plate + **STREAM**/**STALE** + relative age/time not vertically squished, clipped, or stacked illegibly |
 | REGRESSION-2 | Dashboard → Asset Performance deviation legend | **Over target** and **Under target** each with amber/blue dot; labels spaced — not concatenated run-on text |
 | REGRESSION-3 | History chart legends (Portfolio Value, Asset Holdings, Allocation Deviation, Cumulative Net Cash Flow) | Legend swatches use line/point markers; not heavy bordered box chips around every label |
 

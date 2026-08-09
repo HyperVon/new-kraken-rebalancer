@@ -13,6 +13,7 @@ import com.gemini.krakenbot.view.util.brandWithMode
 import com.gemini.krakenbot.view.util.cdnScript
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
+import com.gemini.krakenbot.view.util.loopControl
 import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import kotlinx.html.HTML
@@ -26,7 +27,7 @@ import kotlinx.html.title
 class DashboardShellComponent {
 
     context(html: HTML)
-    fun render(settings: Settings) {
+    fun render(settings: Settings, csrfToken: String? = null, paused: Boolean = false) {
         html.head {
             commonMetadataAndStyles()
             title(ViewText.APP_TITLE)
@@ -38,8 +39,12 @@ class DashboardShellComponent {
                 // Mode plate + nav live outside the HTMX fragment so the trading mode
                 // is visible during the initial load (and if the fragment request fails).
                 header {
-                    brandWithMode(settings, includeStreamSlot = true)
-                    primaryNav(ActiveNav.DASHBOARD)
+                    brandWithMode(settings, includeStreamSlot = true) {
+                        loopControl(paused, csrfToken)
+                    }
+                    div(CssClass.Layout.HeaderActions) {
+                        primaryNav(ActiveNav.DASHBOARD)
+                    }
                 }
                 div {
                     attributes[HtmxAttrs.HX_EXT] = HtmxValues.EXT_SSE

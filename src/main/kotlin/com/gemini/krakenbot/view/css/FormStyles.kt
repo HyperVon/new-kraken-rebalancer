@@ -43,6 +43,7 @@ import kotlinx.css.margin
 import kotlinx.css.marginBottom
 import kotlinx.css.marginTop
 import kotlinx.css.maxWidth
+import kotlinx.css.minWidth
 import kotlinx.css.opacity
 import kotlinx.css.overflow
 import kotlinx.css.padding
@@ -277,6 +278,7 @@ object FormStyles {
             display = Display.flex
             alignItems = Align.center
             gap = 0.75.rem
+            minWidth = 0.px
             background = CssTheme.colorSurface2.value
             padding = Padding(0.5.rem, 0.75.rem)
             borderRadius = CssTheme.radiusLg
@@ -320,6 +322,7 @@ object FormStyles {
         ".${CssClass.Form.AllocationEditInputWrapper}" {
             position = Position.relative
             flexGrow = 1.0
+            minWidth = 0.px
         }
 
         ".${CssClass.Form.AllocationEditInputWrapper} input" {
@@ -375,6 +378,7 @@ object FormStyles {
         ".${CssClass.Form.SafetyCard.value}" {
             display = Display.block
             position = Position.relative
+            minWidth = 0.px
             cursor = Cursor.pointer
             userSelectRaw("none")
         }
@@ -383,6 +387,7 @@ object FormStyles {
             display = Display.flex
             alignItems = Align.flexStart
             gap = 1.rem
+            minWidth = 0.px
             padding = Padding(1.25.rem)
             borderRadius = CssTheme.radiusXl
             background = CssTheme.glassSurfaceGradient
@@ -446,6 +451,7 @@ object FormStyles {
             flexDirection = FlexDirection.column
             gap = 0.25.rem
             flexGrow = 1.0
+            minWidth = 0.px
         }
 
         ".${CssClass.Form.SafetyCardTitleRow.value}" {

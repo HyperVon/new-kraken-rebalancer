@@ -31,29 +31,40 @@ class DashboardView(
 ) {
 
     context(html: HTML)
-    fun renderDashboardShell(settings: Settings) {
-        shellComponent.render(settings)
+    fun renderDashboardShell(settings: Settings, csrfToken: String? = null, paused: Boolean = false) {
+        shellComponent.render(settings, csrfToken, paused)
     }
 
     context(html: HTML)
-    fun renderSettingsPage(config: AppConfig, errorMessage: String?, csrfToken: String) {
+    fun renderSettingsPage(config: AppConfig, errorMessage: String?, csrfToken: String, paused: Boolean = false) {
         html.head {
             commonMetadataAndStyles()
             title("$SETTINGS_TITLE - $APP_TITLE")
             cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
         }
         html.body {
-            settingsFormComponent.render(config, errorMessage, csrfToken)
+            settingsFormComponent.render(config, errorMessage, csrfToken, paused)
         }
     }
 
-    fun renderSettingsFormFragment(parent: FlowContent, config: AppConfig, errorMessage: String?, csrfToken: String) {
-        settingsFormComponent.renderForm(parent, config, errorMessage, csrfToken)
+    fun renderSettingsFormFragment(
+        parent: FlowContent,
+        config: AppConfig,
+        errorMessage: String?,
+        csrfToken: String,
+        paused: Boolean = false,
+    ) {
+        settingsFormComponent.renderForm(parent, config, errorMessage, csrfToken, paused)
     }
 
     context(html: HTML)
-    fun renderHistoryPage(settings: Settings, symbolColorMap: Map<String, String> = emptyMap()) {
-        historyPageComponent.render(settings, symbolColorMap)
+    fun renderHistoryPage(
+        settings: Settings,
+        symbolColorMap: Map<String, String> = emptyMap(),
+        csrfToken: String? = null,
+        paused: Boolean = false,
+    ) {
+        historyPageComponent.render(settings, symbolColorMap, csrfToken, paused)
     }
 
     context(div: DIV)

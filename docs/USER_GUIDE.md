@@ -64,6 +64,12 @@ live. The plate reflects your Settings, and hovering it reveals a tooltip
 explaining the consequence (e.g. "Live trading — real orders execute with real
 funds").
 
+The header also includes a loop control on every page. Its state pill shows
+**RUNNING** or **PAUSED**; choose the **pause** (`||`) icon to stop new rebalance
+cycles or the **play** (`▶`) icon to start them again. This is separate from the
+trading-mode plate: pausing the loop does not change Simulation, Dry Run, or
+Live Trading settings.
+
 | Page | Route | Purpose |
 | :--- | :--- | :--- |
 | **Dashboard** | `/` | Live portfolio snapshot, allocation bars, performance table, recent activity |
@@ -98,9 +104,20 @@ The top of the Dashboard is a hero card plus two tiles:
 | **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, plus **effective** target % after drawdown-based fiat deployment (and the configured **Base** target when they differ) and deviation. |
 | **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
 
+### Loop control
+
+The header's loop control is the quickest way to stop trading activity without
+changing the saved configuration. When the state reads **RUNNING**, click the
+pause (`||`) icon; the active loop is cancelled safely and the state changes to
+**PAUSED**. Click the play (`▶`) icon when you want the configured cycle schedule
+to start again. The control does not alter credentials, allocations, Simulation,
+Dry Run, or Live Trading mode.
+
 ### Allocation & performance
 
 ![Dashboard allocation, table, and activity](images/dashboard-bottom.png)
+
+![Dashboard Asset Performance](images/dashboard-performance.png)
 
 - **Portfolio Allocation (Top Assets)** — Horizontal bars for the largest
   holdings by USD value (and cash), showing up to the **top 15**. Bar lengths are
@@ -122,6 +139,24 @@ The top of the Dashboard is a hero card plus two tiles:
   - A **View all history** link at the bottom jumps to `/history`.
 
 Use this page as your “is the bot healthy right now?” view.
+
+### Responsive layouts
+
+The dashboard is checked at the same common viewport profiles used by the visual
+review workflow. On phones, Asset Performance keeps Asset, Value, and Dev % in
+view, while History trade rows become labeled detail cards so price, fee, and
+status remain readable.
+
+| Profile | Dashboard |
+| :--- | :--- |
+| Phone (390px) | ![Phone dashboard](images/dashboard-phone.png) |
+| Tablet (768px) | ![Tablet dashboard](images/dashboard-tablet.png) |
+| Laptop (1280px) | ![Laptop dashboard](images/dashboard-laptop.png) |
+| Wide (1920px) | ![Wide dashboard](images/dashboard-wide.png) |
+
+![Phone Asset Performance](images/dashboard-performance-phone.png)
+
+![Phone trade log](images/history-trade-log-phone.png)
 
 ---
 

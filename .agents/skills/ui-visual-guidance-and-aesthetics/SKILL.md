@@ -617,6 +617,12 @@ Evaluate at minimum:
 - ~1440px desktop,
 - wider desktop.
 
+For repeatable evidence, use the shared
+[`capture_screenshots.py`](../docs-screenshot-refresh/scripts/capture_screenshots.py)
+profiles: `phone` (390px), `tablet` (768px), `laptop` (1280px), `desktop`
+(1440px), and `wide` (1920px). A visual claim should name the profile(s) that
+support it rather than relying on a one-off browser viewport.
+
 ### Responsive priority
 
 When width decreases:

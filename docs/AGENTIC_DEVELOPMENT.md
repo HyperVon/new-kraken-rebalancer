@@ -573,8 +573,9 @@ request.
 
 Some changes require evidence beyond the consolidated script:
 
-- UI changes may need a simulation boot, click-through QA, laptop-width visual
-  inspection, and updated screenshots.
+- UI changes may need a simulation boot, click-through QA, repeatable visual
+  inspection with the screenshot helper's `laptop` / `phone` profiles, and
+  updated screenshots.
 - Rebalancing and exchange changes may need focused evaluation scenarios and
   verification of Kraken semantics against official documentation.
 - Documentation changes need link checks, catalog consistency, and Markdown
