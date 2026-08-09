@@ -5,6 +5,7 @@ import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.sessionStorage
+import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
 import kotlin.js.Json
@@ -97,13 +98,13 @@ object HistorySessionState {
                 store.views.firstOrNull { it.id == data.selectedViewId }?.let {
                     val deleteBtn = document.getElementById(
                         HtmlIds.HISTORY_DELETE_VIEW_BTN,
-                    ) as? org.w3c.dom.HTMLButtonElement
+                    ) as? HTMLButtonElement
                     if (deleteBtn != null) {
                         deleteBtn.disabled = it.builtIn
                     }
                     val defaultBtn = document.getElementById(
                         HtmlIds.HISTORY_SET_DEFAULT_BTN,
-                    ) as? org.w3c.dom.HTMLButtonElement
+                    ) as? HTMLButtonElement
                     if (defaultBtn != null) defaultBtn.disabled = false
                 }
                 HistoryViewPrefs.setHasUserInteracted(true)

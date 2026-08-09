@@ -136,10 +136,15 @@ private class ApiMapperProcessor(private val codeGenerator: CodeGenerator, priva
         val sourceClass = sourceType.declaration as? KSClassDeclaration
         return when {
             sourceName == BIG_DECIMAL_NAME && targetName == STRING_NAME -> "$expression.toPlainString()"
+
             sourceName == INSTANT_NAME && targetName == STRING_NAME -> "$expression.toString()"
+
             sourceName == ASSET_NAME && targetName == STRING_NAME -> "$expression.value"
+
             sourceClass?.classKind == ClassKind.ENUM_CLASS && targetName == STRING_NAME -> "$expression.name"
+
             mappingsBySource[sourceName]?.qualifiedNameString() == targetName -> "$expression.toApiDto()"
+
             sourceName == LIST_NAME && targetName == LIST_NAME -> mapList(
                 sourceType,
                 targetType,
@@ -147,6 +152,7 @@ private class ApiMapperProcessor(private val codeGenerator: CodeGenerator, priva
                 path,
                 mappingsBySource,
             )
+
             sourceName == MAP_NAME && targetName == MAP_NAME -> mapMap(
                 sourceType,
                 targetType,
@@ -154,6 +160,7 @@ private class ApiMapperProcessor(private val codeGenerator: CodeGenerator, priva
                 path,
                 mappingsBySource,
             )
+
             else -> fail("Unsupported mapping at $path: ${typeKey(sourceType)} -> ${typeKey(targetType)}")
         }
     }

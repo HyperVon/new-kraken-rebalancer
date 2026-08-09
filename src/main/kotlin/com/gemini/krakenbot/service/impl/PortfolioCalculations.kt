@@ -74,7 +74,9 @@ object PortfolioCalculations {
                 .multiply(PrecisionConstants.HUNDRED)
                 .divide(targetValueUSD, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
         }
+
         currentValueUSD > BigDecimal.ZERO -> PrecisionConstants.HUNDRED
+
         else -> BigDecimal.ZERO
     }
 

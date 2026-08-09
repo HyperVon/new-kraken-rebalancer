@@ -378,14 +378,13 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
             }
         }
 
-        "getOHLC_InvalidEntries" {
+        "getOHLC_SkipsUnparseableClosePrice" {
             runTest {
                 val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":[\"not-an-array\", " +
                     "[1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"invalid-price\",\"52200.0\",\"100.5\",1234]]}}"
                 val service = createService(responseJson) as KrakenServiceImpl
                 val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
-                ohlc.size shouldBe 1
-                ohlc[0].second.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                ohlc.isEmpty().shouldBeTrue()
             }
         }
 

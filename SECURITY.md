@@ -103,11 +103,12 @@ localhost, IPv4 and IPv6 loopback, `.local` hostnames, RFC1918 private ranges,
 and the `169.254.0.0/16` link-local range. This CORS policy is not a substitute
 for network access control.
 
-The settings mutation also uses a double-submit CSRF token. The Settings page
-issues an `HttpOnly`, `SameSite=Strict` cookie and embeds the matching token in
-the form; POST requests without both values are rejected. The cookie is not
-marked `Secure` because the intended private-network deployment supports HTTP
-LAN access. This reduces cross-site form submission risk without requiring
+Settings and operator loop-control mutations use a double-submit CSRF token. The
+Settings page issues an `HttpOnly`, `SameSite=Strict` cookie and embeds the
+matching token in forms; POST requests without both values are rejected. This
+covers `/settings`, `/api/pause`, and `/api/resume`. The cookie is not marked
+`Secure` because the intended private-network deployment supports HTTP LAN
+access. This reduces cross-site form submission risk without requiring
 authentication or restricting trusted LAN clients from opening the Settings
 page.
 

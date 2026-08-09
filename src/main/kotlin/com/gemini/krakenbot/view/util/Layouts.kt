@@ -48,11 +48,13 @@ fun FlowContent.modePlate(settings: Settings) {
             label = ViewText.MODE_SIMULATION
             plateTitle = ViewText.MODE_SIMULATION_TITLE
         }
+
         settings.dryRun -> {
             cssClass = CssClass.Mode.DryRun
             label = ViewText.MODE_DRY_RUN
             plateTitle = ViewText.MODE_DRY_RUN_TITLE
         }
+
         else -> {
             cssClass = CssClass.Mode.Live
             label = ViewText.MODE_LIVE

@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
 import com.gemini.krakenbot.config.configureCompression
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.AllocationChartComponent
@@ -24,27 +25,44 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.formUrlEncode
+import io.ktor.http.parametersOf
 import io.ktor.server.application.install
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
 import io.ktor.server.testing.testApplication
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
+
+private const val TEST_CSRF_TOKEN = "test-token"
+private const val TEST_CSRF_COOKIE = "rebalancer-csrf=$TEST_CSRF_TOKEN"
 
 class ServerFeaturesIntegrationTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
+        var isPaused = false
+        val portfolioManager = mockk<PortfolioManager>(relaxed = true)
+        every { portfolioManager.isLoopPaused() } answers { isPaused }
+        every { portfolioManager.pauseLoop() } answers { isPaused = true }
+        every { portfolioManager.resumeLoop() } answers { isPaused = false }
+
         val testModule =
             module {
                 single { mockk<TradeHistoryService>(relaxed = true) }
                 single { mockk<ConfigService>(relaxed = true) }
+                single { portfolioManager }
                 single { jacksonObjectMapper().registerModule(JavaTimeModule()) }
                 single { DashboardShellComponent() }
                 single { SettingsFormComponent() }
@@ -69,7 +87,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                         historyPageComponent = get(),
                     )
                 }
-                single { DashboardController(get(), get(), get(), get()) }
+                single { DashboardController(get(), get(), get(), get(), get()) }
             }
 
         beforeTest {
@@ -134,6 +152,83 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                 val invalidRequest = client.get("/test/invalid-request")
                 invalidRequest.status shouldBe HttpStatusCode.BadRequest
                 invalidRequest.bodyAsText() shouldContain "Allocation total must equal 100%"
+            }
+        }
+
+        "health endpoint reports paused state as false initially" {
+            testApplication {
+                application {
+                    install(SSE)
+                    dashboardRouting()
+                }
+                val response = client.get("/api/health")
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "\"paused\":false"
+            }
+        }
+
+        "pause endpoint sets the rebalancer loop to paused" {
+            testApplication {
+                application {
+                    install(SSE)
+                    dashboardRouting()
+                }
+                val pauseResponse = client.post("/api/pause") {
+                    setBody(parametersOf("csrfToken", TEST_CSRF_TOKEN).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
+                }
+                pauseResponse.status shouldBe HttpStatusCode.OK
+                pauseResponse.bodyAsText() shouldContain "true"
+
+                val healthAfterPause = client.get("/api/health")
+                healthAfterPause.bodyAsText() shouldContain "\"paused\":true"
+            }
+        }
+
+        "resume endpoint clears the paused state" {
+            testApplication {
+                application {
+                    install(SSE)
+                    dashboardRouting()
+                }
+                client.post("/api/pause") {
+                    setBody(parametersOf("csrfToken", TEST_CSRF_TOKEN).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
+                }
+                val resumeResponse = client.post("/api/resume") {
+                    setBody(parametersOf("csrfToken", TEST_CSRF_TOKEN).formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, TEST_CSRF_COOKIE)
+                }
+                resumeResponse.status shouldBe HttpStatusCode.OK
+                resumeResponse.bodyAsText() shouldContain "false"
+
+                val healthAfterResume = client.get("/api/health")
+                healthAfterResume.bodyAsText() shouldContain "\"paused\":false"
+            }
+        }
+
+        "pause and resume endpoints reject requests without CSRF" {
+            testApplication {
+                application {
+                    install(SSE)
+                    dashboardRouting()
+                }
+                val pauseResponse = client.post("/api/pause") {
+                    setBody(parametersOf().formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+                val resumeResponse = client.post("/api/resume") {
+                    setBody(parametersOf().formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+
+                pauseResponse.status shouldBe HttpStatusCode.Forbidden
+                resumeResponse.status shouldBe HttpStatusCode.Forbidden
+                verify(exactly = 0) { portfolioManager.pauseLoop() }
+                verify(exactly = 0) { portfolioManager.resumeLoop() }
             }
         }
     }

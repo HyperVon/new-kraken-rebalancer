@@ -47,6 +47,7 @@ internal fun krakenPrivateEndpointCost(path: String): Double = when {
     path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) ||
         path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) ||
         path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 2.0
+
     else -> 1.0
 }
 
@@ -138,10 +139,12 @@ class KrakenServiceImpl(
                                 (currentLockoutBackoff * 2).coerceAtMost(maxLockoutBackoffMs)
                             lockoutAttempt++
                         }
+
                         isRateLimit -> {
                             currentRateLimitBackoff *= 2
                             attempt++
                         }
+
                         else -> {
                             currentBackoff *= 2
                             attempt++
@@ -542,8 +545,13 @@ class KrakenServiceImpl(
                 val closePrice =
                     try {
                         BigDecimal(entry.get(4).asText())
-                    } catch (_: Exception) {
-                        BigDecimal.ZERO
+                    } catch (e: Exception) {
+                        log.warn(
+                            "Skipping OHLC entry for {} with unparseable close price: {}",
+                            pair,
+                            entry.get(4).asText(),
+                        )
+                        return@forEach
                     }
                 priceList.add(Pair(time, closePrice))
             }

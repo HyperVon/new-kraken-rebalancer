@@ -3,6 +3,7 @@ package com.gemini.krakenbot.controller
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.AllocationChartComponent
@@ -47,6 +48,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
 
     protected val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     protected val configService = mockk<ConfigService>(relaxed = true)
+    protected val portfolioManager = mockk<PortfolioManager>(relaxed = true)
     protected val objectMapper =
         jacksonObjectMapper().registerModule(JavaTimeModule())
 
@@ -62,6 +64,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
             module {
                 single { tradeHistoryService }
                 single { configService }
+                single { portfolioManager }
                 single { objectMapper }
                 single { DashboardShellComponent() }
                 single { SettingsFormComponent() }
@@ -86,7 +89,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
                         historyPageComponent = get(),
                     )
                 }
-                single { DashboardController(get(), get(), get(), get()) }
+                single { DashboardController(get(), get(), get(), get(), get()) }
             }
 
         beforeTest {

@@ -88,11 +88,11 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 - **Language**: Kotlin **2.4.10** (KMP: JVM + JS)
 - **JDK**: **25** (`java.toolchain`)
 - **Backend**: Ktor **3.5.2** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
-- **Database**: SQLite via JetBrains Exposed **1.3.1**
+- **Database**: SQLite via JetBrains Exposed **1.4.0**
 - **Concurrency**: `kotlinx.coroutines` **1.11.0** — prefer `Dispatchers.IO` for DB/network; no `GlobalScope`
 - **Frontend/codegen**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.11** is required for Kotlin/JS Kotest discovery and the experimental JVM/common catalog processors
 - **Testing**: Kotest **6.2.3**, MockK **1.14.11**, Karma/Istanbul
-- **Formatting**: Spotless **8.9.0** + ktlint **1.7.1**, **120**-char line length; `allWarningsAsErrors` in all modules
+- **Formatting**: Spotless **8.9.0** + ktlint **1.8.0**, **120**-char line length; `allWarningsAsErrors` in all modules
 
 ### Architecture names (SRP)
 
@@ -181,7 +181,7 @@ See [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md).
 | Gate | Thresholds |
 | :--- | :--- |
 | JVM JaCoCo | Line / method / instruction **95%**; branch **90%** |
-| JS Istanbul (Karma) | Statements / functions / lines **90%**; branches **75%** |
+| JS Istanbul (Karma) | Statements / lines **90%**; functions **80%**; branches **75%** |
 
 Before declaring work done, run the verify commands in
 [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md) (build + JaCoCo,

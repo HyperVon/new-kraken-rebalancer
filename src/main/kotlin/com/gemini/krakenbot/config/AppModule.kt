@@ -48,7 +48,11 @@ import kotlinx.coroutines.SupervisorJob
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
+import org.koin.core.qualifier.named
 import org.koin.dsl.module
+
+// Koin qualifier shared with the application entrypoint, which resolves the same scope by name.
+const val APPLICATION_SCOPE_QUALIFIER = "applicationScope"
 
 val coreModule =
     module {
@@ -147,7 +151,7 @@ val coreModule =
                 krakenService = get(),
             )
         }
-        single<CoroutineScope>(qualifier = org.koin.core.qualifier.named("applicationScope")) {
+        single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {
             CoroutineScope(SupervisorJob() + Dispatchers.Default)
         }
     }

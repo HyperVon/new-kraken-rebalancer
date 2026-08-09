@@ -115,8 +115,11 @@ object DatabaseConfig {
             val dbName = UUID.randomUUID().toString()
             "jdbc:sqlite:file:$dbName?mode=memory&cache=shared&foreign_keys=true"
         }
+
         dbPath.startsWith("jdbc:sqlite:") -> dbPath
+
         dbPath.contains("?") -> "jdbc:sqlite:$dbPath&foreign_keys=true"
+
         else -> "jdbc:sqlite:$dbPath?foreign_keys=true"
     }
 

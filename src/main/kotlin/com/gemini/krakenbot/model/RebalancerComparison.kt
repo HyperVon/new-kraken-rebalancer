@@ -53,6 +53,7 @@ data class RebalancerComparison(
                     }
                 }
             }
+
             ComparisonAvailability.UNAVAILABLE -> {
                 require(confidence == null) { "Unavailable comparison must not have confidence" }
                 require(points.isEmpty()) { "Unavailable comparison must have no points" }

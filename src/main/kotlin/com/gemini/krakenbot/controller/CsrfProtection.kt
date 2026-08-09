@@ -11,7 +11,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 
-/** Double-submit protection for the unauthenticated, LAN-accessible settings form. */
+/** Double-submit protection for unauthenticated, LAN-accessible mutations. */
 internal object CsrfProtection {
     private const val COOKIE_NAME = "rebalancer-csrf"
     private const val TOKEN_BYTES = 32

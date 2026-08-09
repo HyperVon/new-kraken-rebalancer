@@ -398,7 +398,7 @@ benefits from read-time diagnostics.
 | No blocking long processes | `.cursor/rules/no-blocking-long-processes.mdc` (`alwaysApply`) |
 | Complex-code comments | `.cursor/rules/complex-code-comments.mdc` (`alwaysApply`) |
 | Lean, contract-aware code | `.cursor/rules/lean-contract-aware-code.mdc` (`alwaysApply`) |
-| Cost-aware model selection | `.cursor/rules/cost-aware-model-selection.mdc` (`alwaysApply`) |
+| Native model selection | `.cursor/rules/cost-aware-model-selection.mdc` (`alwaysApply`) |
 | UI change verification | `.cursor/rules/ui-change-verification.mdc` (path globs) |
 
 Each `.cursor/rules/*.mdc` is a thin pointer to the portable section above; the
@@ -421,7 +421,7 @@ pointers automatically and other harnesses still have a single portable source.
 | No blocking long processes | `.clinerules/no-blocking-long-processes.md` (universal) |
 | Complex-code comments | `.clinerules/complex-code-comments.md` (universal) |
 | Lean, contract-aware code | `.clinerules/lean-contract-aware-code.md` (universal) |
-| Cost-aware model selection | `.clinerules/cost-aware-model-selection.md` (universal) |
+| Native model selection | `.clinerules/cost-aware-model-selection.md` (universal) |
 | UI change verification | `.clinerules/ui-change-verification.md` (path-scoped) |
 
 Each `.clinerules/*.md` is a thin pointer to the portable section above; the

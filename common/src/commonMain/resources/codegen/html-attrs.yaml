@@ -120,3 +120,4 @@ HealthStatusKeys:
   TOTAL_VOLUME_TRADED: "totalVolumeTraded"
   LAST_SNAPSHOT_TIME: "lastSnapshotTime"
   LAST_SNAPSHOT_TOTAL_VALUE_USD: "lastSnapshotTotalValueUSD"
+  PAUSED: "paused"

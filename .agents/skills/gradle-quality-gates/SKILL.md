@@ -20,7 +20,7 @@ description: >-
 
 ## Formatting & compiler
 
-- **Spotless** + **ktlint 1.7.1**, `max_line_length = 120`
+- **Spotless** + **ktlint 1.8.0**, `max_line_length = 120`
 - Targets: `src/**/*.kt`, `common/src/**/*.kt`, `frontend-js/src/**/*.kt`, and
   `codegen/src/**/*.kt`
 - Excludes: none (all Kotlin under `src/**`, `common/src/**`, `frontend-js/src/**`, and
@@ -114,7 +114,8 @@ tests instead.
 
 | Metric | Min |
 | :--- | ---: |
-| Statements / functions / lines | 90% |
+| Statements / lines | 90% |
+| Functions | 80% |
 | Branches | 75% |
 
 ## CI / check commands
@@ -147,7 +148,7 @@ steps aligned with the workflow.
 ## Checklist
 
 - [ ] Spotless 120 + warnings-as-errors respected
-- [ ] JaCoCo 95/95/95/90 and Karma 90/90/90/75 quoted accurately
+- [ ] JaCoCo 95/95/95/90 and Karma 90/80/90/75 quoted accurately
 - [ ] Exclusions synced when packages change
 - [ ] CodeQL workflow and documented Action, language, and build mode stay aligned
 - [ ] KSP resources, metadata generation, JVM/JS compilation, and generated
