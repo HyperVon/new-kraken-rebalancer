@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.39] - 2026-08-09
+
+### Fixed
+
+- **Netty security resolution**: Keep resolved Netty modules at `4.2.17.Final` or newer without downgrading Ktor's Netty 4.2 dependency line.
+
 ## [6.16.38] - 2026-08-08
 
 ### Added

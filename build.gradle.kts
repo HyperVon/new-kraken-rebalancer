@@ -214,13 +214,26 @@ tasks.check {
     dependsOn(":frontend-js:jsBrowserTest")
 }
 
+val nettySecurityFloor = "4.2.17.Final"
+val nettyVersionPattern = Regex("""4\.(\d+)\.(\d+)\.Final""")
+
 configurations.all {
     resolutionStrategy.eachDependency {
         if (requested.group == "io.netty") {
-            useVersion("4.1.136.Final")
-            because(
-                "Fixes Netty security vulnerabilities including HTTP/2 continuation frame flood (CVE-2026-33871) and newer vulnerabilities (CVE-2026-45536, CVE-2026-45416, CVE-2026-44249)",
-            )
+            val requestedVersion = requested.version
+                ?.let(nettyVersionPattern::matchEntire)
+                ?.destructured
+            if (requestedVersion != null) {
+                val (minor, patch) = requestedVersion
+                val minorNumber = minor.toInt()
+                val patchNumber = patch.toInt()
+                if (minorNumber < 2 || (minorNumber == 2 && patchNumber < 17)) {
+                    useVersion(nettySecurityFloor)
+                    because(
+                        "Keep Netty at the 4.2.17.Final security floor without downgrading Ktor's Netty 4.2 line",
+                    )
+                }
+            }
         }
     }
 }
