@@ -74,6 +74,25 @@ keeps the historical flat `docs/images/dashboard.png` layout.
 **This list is not fixed.** As the app grows, add targets rather than
 reproducing only the existing files — see [Step 5](#step-5-adapt-targets-as-the-app-grows).
 
+## Documentation presentation policy
+
+The capture matrix and the documentation gallery serve different purposes.
+Keep all five DPR 2 profiles for visual verification, but curate what is shown
+in each document:
+
+- README: normally four representative images only — the canonical desktop
+  dashboard, a phone dashboard preview, Settings, and History.
+- User Guide: the full responsive dashboard gallery plus the page-specific
+  Settings and History captures.
+- Embed screenshots with linked HTML `<img width="...">` elements. Use the
+  intended CSS-viewport width or a deliberate capped width rather than the
+  native 2x PNG width. Do not use unbounded Markdown image syntax for DPR 2
+  captures.
+- After updating images, render or inspect both Markdown documents at normal
+  100% browser zoom. Check that the phone image reads as a phone preview, that
+  the README remains scannable, and that links still open the full-resolution
+  assets.
+
 ---
 
 ## Workflow
@@ -224,9 +243,10 @@ section appears:
 
 1. Add a target to `scripts/targets.json` (readiness waits + anchor heading).
 2. Capture it with the relevant profile set.
-3. Add the final images to the README **Screenshots** section **and** embed them in
-   [`docs/USER_GUIDE.md`](../../../docs/USER_GUIDE.md) with a short caption
-   (see [user-guide](../user-guide/SKILL.md)).
+3. Embed the relevant final images in [`docs/USER_GUIDE.md`](../../../docs/USER_GUIDE.md)
+   with an explicit display width and short caption. Add an image to the README
+   only when it fits the curated four-image overview; do not mirror the full
+   gallery there (see [user-guide](../user-guide/SKILL.md)).
 4. Note the addition in `CHANGELOG.md`.
 
 Conversely, remove targets and README references for pages that no longer exist.
@@ -238,7 +258,9 @@ Conversely, remove targets and README references for pages that no longer exist.
    never touched.
 3. After all UI/code iterations are complete, run the final profile set and
    update README/User Guide image references and captions together.
-4. Add a brief `CHANGELOG` entry (`### Changed` — updated documentation
+4. Inspect the rendered README and User Guide at 100% zoom, including the
+   phone preview and the links to full-resolution images.
+5. Add a brief `CHANGELOG` entry (`### Changed` — updated documentation
    screenshots and responsive viewport coverage).
 
 ---
@@ -253,4 +275,7 @@ Conversely, remove targets and README references for pages that no longer exist.
 - [ ] Hero, activity feed, safety cards, history headers/caption, and trade
       table details present in the canonical PNGs
 - [ ] `--discover` reviewed; new pages/sections captured and added to README
+- [ ] README uses a curated image set with explicit HTML display widths
+- [ ] User Guide uses explicit widths and includes the full responsive gallery
+- [ ] README and User Guide checked at 100% zoom
 - [ ] App stopped, run directory removed, CHANGELOG updated

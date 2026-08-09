@@ -49,7 +49,7 @@ then **Dry Run Mode** — each with an **ON** / **OFF** state pill and a short l
 of consequence prose (e.g. "No real funds are ever touched"). Keep at least one
 safety on unless you intend to trade live.
 
-![Settings — Safety modes and targets](images/settings.png)
+<p><a href="images/settings.png"><img src="images/settings.png" alt="Settings - safety modes and targets" width="720"></a></p>
 
 ---
 
@@ -65,8 +65,8 @@ explaining the consequence (e.g. "Live trading — real orders execute with real
 funds").
 
 The header also includes a loop control on every page. Its state pill shows
-**RUNNING** or **PAUSED**; choose the **pause** (`||`) icon to stop new rebalance
-cycles or the **play** (`▶`) icon to start them again. This is separate from the
+**RUNNING** or **PAUSED**; choose the labeled **Pause** action to stop new rebalance
+cycles or **Resume** to start them again. This is separate from the
 trading-mode plate: pausing the loop does not change Simulation, Dry Run, or
 Live Trading settings.
 
@@ -92,7 +92,7 @@ that.
 
 ## Dashboard
 
-![Dashboard overview](images/dashboard.png)
+<p><a href="images/dashboard.png"><img src="images/dashboard.png" alt="Dashboard overview" width="720"></a></p>
 
 ### Portfolio overview
 
@@ -107,17 +107,17 @@ The top of the Dashboard is a hero card plus two tiles:
 ### Loop control
 
 The header's loop control is the quickest way to stop trading activity without
-changing the saved configuration. When the state reads **RUNNING**, click the
-pause (`||`) icon; the active loop is cancelled safely and the state changes to
-**PAUSED**. Click the play (`▶`) icon when you want the configured cycle schedule
-to start again. The control does not alter credentials, allocations, Simulation,
+changing the saved configuration. When the state reads **RUNNING**, click
+**Pause**; the active loop is cancelled safely and the state changes to
+**PAUSED**. Click **Resume** when you want the configured cycle schedule to
+start again. The control does not alter credentials, allocations, Simulation,
 Dry Run, or Live Trading mode.
 
 ### Allocation & performance
 
-![Dashboard allocation, table, and activity](images/dashboard-bottom.png)
+<p><a href="images/dashboard-bottom.png"><img src="images/dashboard-bottom.png" alt="Dashboard allocation, table, and activity" width="720"></a></p>
 
-![Dashboard Asset Performance](images/dashboard-performance.png)
+<p><a href="images/dashboard-performance.png"><img src="images/dashboard-performance.png" alt="Dashboard asset performance" width="720"></a></p>
 
 - **Portfolio Allocation (Top Assets)** — Horizontal bars for the largest
   holdings by USD value (and cash), showing up to the **top 15**. Bar lengths are
@@ -130,11 +130,10 @@ Dry Run, or Live Trading mode.
   Amber = over target, blue = under target (not profit/loss green/red); a small
   legend sits above the table.
 - **Recent Activity** — A **cycle-grouped feed** of the most recent rebalance
-  cycles (up to 6). Each cycle is headed by a **Cycle** badge, an action summary
-  (e.g. `3 actions`, or **No trades — portfolio within tolerance**), and both a
-  relative and an absolute timestamp. Cycles with trades expand to the individual
-  actions beneath:
-  - Blue **INFO** — compact deviation notes (e.g. `Deviation: BTC 5.2%`)
+  cycles (up to 6). Each cycle is a lightweight row with an action summary (e.g.
+  `3 actions`, or **No trades — portfolio within tolerance**) and a compact
+  relative/absolute timestamp. Cycles with trades show at most one concise note
+  followed by the individual actions:
   - Red **SELL** / green **BUY** — orders with USD to 2 decimals
   - A **View all history** link at the bottom jumps to `/history`.
 
@@ -147,16 +146,23 @@ review workflow. On phones, Asset Performance keeps Asset, Value, and Dev % in
 view, while History trade rows become labeled detail cards so price, fee, and
 status remain readable.
 
-| Profile | Dashboard |
-| :--- | :--- |
-| Phone (390px) | ![Phone dashboard](images/dashboard-phone.png) |
-| Tablet (768px) | ![Tablet dashboard](images/dashboard-tablet.png) |
-| Laptop (1280px) | ![Laptop dashboard](images/dashboard-laptop.png) |
-| Wide (1920px) | ![Wide dashboard](images/dashboard-wide.png) |
+<p><strong>Phone (390px CSS viewport)</strong><br>
+<a href="images/dashboard-phone.png"><img src="images/dashboard-phone.png" alt="Phone dashboard" width="390"></a></p>
 
-![Phone Asset Performance](images/dashboard-performance-phone.png)
+<p><strong>Tablet (768px CSS viewport)</strong><br>
+<a href="images/dashboard-tablet.png"><img src="images/dashboard-tablet.png" alt="Tablet dashboard" width="512"></a></p>
 
-![Phone trade log](images/history-trade-log-phone.png)
+<p><strong>Laptop (1280px CSS viewport)</strong><br>
+<a href="images/dashboard-laptop.png"><img src="images/dashboard-laptop.png" alt="Laptop dashboard" width="720"></a></p>
+
+<p><strong>Wide (1920px CSS viewport)</strong><br>
+<a href="images/dashboard-wide.png"><img src="images/dashboard-wide.png" alt="Wide dashboard" width="720"></a></p>
+
+<p><strong>Phone asset performance</strong><br>
+<a href="images/dashboard-performance-phone.png"><img src="images/dashboard-performance-phone.png" alt="Phone asset performance" width="390"></a></p>
+
+<p><strong>Phone trade log</strong><br>
+<a href="images/history-trade-log-phone.png"><img src="images/history-trade-log-phone.png" alt="Phone trade log" width="390"></a></p>
 
 ---
 
@@ -164,7 +170,7 @@ status remain readable.
 
 Open **Settings** from the shared top nav, or go to `/settings`.
 
-![Settings page](images/settings.png)
+<p><a href="images/settings.png"><img src="images/settings.png" alt="Settings page" width="720"></a></p>
 
 ### Global parameters
 
@@ -268,7 +274,7 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 
 ### Rebalancer vs Buy & Hold
 
-![History — rebalancer vs buy & hold comparison](images/history.png)
+<p><a href="images/history.png"><img src="images/history.png" alt="History - rebalancer vs buy and hold comparison" width="720"></a></p>
 
 The first chart below the summary cards compares what the rebalancer actually
 achieved against a **hypothetical buy-and-hold** strategy:
@@ -314,7 +320,7 @@ are excluded.*
 
 ### Portfolio Value & Asset Holdings
 
-![History — portfolio value and asset holdings](images/history-portfolio-charts.png)
+<p><a href="images/history-portfolio-charts.png"><img src="images/history-portfolio-charts.png" alt="History - portfolio value and asset holdings" width="720"></a></p>
 
 - **Portfolio Value Over Time** — Total portfolio (blue) plus per-asset USD
   values using the same configured per-asset colors as Settings / Dashboard.
@@ -327,7 +333,7 @@ tooltips.
 
 ### Allocation deviation & net cash flow
 
-![History — allocation deviation and cumulative net cash flow](images/history-charts.png)
+<p><a href="images/history-charts.png"><img src="images/history-charts.png" alt="History - allocation deviation and cumulative net cash flow" width="720"></a></p>
 
 - **Allocation Deviation from Target** — Each series shows signed relative
   deviation from that asset’s target. **0%** means on target, positive values
@@ -346,7 +352,7 @@ tooltips.
 
 ### Trade log
 
-![History — trade log](images/history-bottom.png)
+<p><a href="images/history-bottom.png"><img src="images/history-bottom.png" alt="History - trade log" width="720"></a></p>
 
 | Column | Meaning |
 | :--- | :--- |

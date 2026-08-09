@@ -259,13 +259,13 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "$10,000.00"
             html shouldContain "Cash (USD)"
             html shouldContain "$1,000.00"
-            html shouldContain "Target: 7.50%"
-            html shouldContain "(Base: 10.00%)"
-            html shouldContain "Dev: 0.00%"
-            html shouldContain "Drawdown: 5.00%"
+            html shouldContain "Target: 7.5%"
+            html shouldContain "(Base: 10%)"
+            html shouldContain "Dev: 0%"
+            html shouldContain "Drawdown: 5%"
             html shouldContain "Crypto Assets"
             html shouldContain "$9,000.00"
-            html shouldContain "Target: 90.00% | 2 Assets"
+            html shouldContain "Target: 90% | 2 Assets"
 
             html shouldContain "allocation-bar-label\">BTC"
             html shouldContain "allocation-bar-label\">ETH"
@@ -353,7 +353,8 @@ class DashboardViewTest : StringSpec() {
             }
 
             html shouldContain "No USD Data"
-            html shouldContain "badge badge-info\">INFO"
+            html shouldContain "INFO Rebalancer initialized"
+            html shouldNotContain "badge badge-info\">INFO"
             html shouldContain "No trades — portfolio within tolerance"
         }
 
@@ -381,7 +382,7 @@ class DashboardViewTest : StringSpec() {
                 view.renderDashboardFragment(latest, emptyList())
             }
 
-            html shouldContain "Target: 10.00%"
+            html shouldContain "Target: 10%"
             html shouldNotContain "(Base: 10.00%)"
         }
 

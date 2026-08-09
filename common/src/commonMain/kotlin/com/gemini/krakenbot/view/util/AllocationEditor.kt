@@ -49,7 +49,7 @@ object AllocationEditor {
                   value="${escapeHtml(targetPercent)}" oninput="$UPDATE_TOTAL_JS">
                 <span class="${CssClass.Form.PercentSuffix}">%</span>
             </div>
-            <button class="${CssClass.Button.Danger}" type="button" onclick="$removeRowJs">${ViewText.REMOVE}</button>
+            <button class="${CssClass.Button.DangerGhost}" type="button" onclick="$removeRowJs">${ViewText.REMOVE}</button>
         </div>
         """.trimIndent()
 

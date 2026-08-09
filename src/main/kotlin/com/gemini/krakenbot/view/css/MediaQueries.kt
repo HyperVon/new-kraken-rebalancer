@@ -33,6 +33,7 @@ import kotlinx.css.header
 import kotlinx.css.marginBottom
 import kotlinx.css.marginLeft
 import kotlinx.css.marginRight
+import kotlinx.css.marginTop
 import kotlinx.css.minHeight
 import kotlinx.css.minWidth
 import kotlinx.css.overflowX
@@ -40,6 +41,7 @@ import kotlinx.css.padding
 import kotlinx.css.paddingBottom
 import kotlinx.css.paddingLeft
 import kotlinx.css.paddingRight
+import kotlinx.css.paddingTop
 import kotlinx.css.pct
 import kotlinx.css.px
 import kotlinx.css.rem
@@ -115,6 +117,31 @@ object MediaQueries {
             }
         }
 
+        // DASH-2: tablet headers use named grid areas instead of relying on a
+        // flex item wrapping at whichever word happens to be next.
+        "@media (min-width: 768px) and (max-width: 1023px)" {
+            ".${CssClass.Layout.HeaderTitleSection}" {
+                display = Display.grid
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr) auto")
+                rowGap = 0.5.rem
+            }
+            ".${CssClass.Layout.HeaderWithStream}" {
+                put("grid-template-areas", "\"identity status\" \"loop loop\"")
+            }
+            ".${CssClass.Layout.HeaderWithoutStream}" {
+                put("grid-template-areas", "\"identity loop\"")
+            }
+            ".${CssClass.Layout.HeaderIdentity}" { put("grid-area", "identity") }
+            ".${CssClass.Layout.HeaderStatus}" {
+                put("grid-area", "status")
+                put("justify-self", "end")
+            }
+            ".${CssClass.Layout.LoopControl}" {
+                put("grid-area", "loop")
+                put("justify-self", "end")
+            }
+        }
+
         "@media (min-width: 768px) and (max-width: 1160px)" {
             ".${CssClass.Layout.HeaderActions}" {
                 width = 100.pct
@@ -162,15 +189,43 @@ object MediaQueries {
             }
             ".${CssClass.Layout.HeaderTitleSection}" {
                 width = 100.pct
-                flexDirection = FlexDirection.column
-                alignItems = Align.center
+                display = Display.grid
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr)")
+                rowGap = 0.5.rem
+            }
+            ".${CssClass.Layout.HeaderWithStream}" {
+                put("grid-template-areas", "\"identity\" \"status\" \"loop\"")
+            }
+            ".${CssClass.Layout.HeaderWithoutStream}" {
+                put("grid-template-areas", "\"identity\" \"loop\"")
+            }
+            ".${CssClass.Layout.HeaderIdentity}" {
+                put("grid-area", "identity")
+                justifyContentRaw("center")
                 gap = 0.5.rem
+            }
+            ".${CssClass.Layout.HeaderTitleSection} h1, .${CssClass.Layout.BrandMark}" {
+                fontSize = 1.35.rem
+            }
+            ".${CssClass.Mode.Plate.value}" {
+                padding = Padding(0.25.rem, 0.5.rem)
+                fontSize = 0.6.rem
+            }
+            ".${CssClass.Layout.HeaderStatus}" {
+                put("grid-area", "status")
+                put("justify-self", "center")
+            }
+            ".${CssClass.Layout.LoopControl}" {
+                put("grid-area", "loop")
+                put("justify-self", "center")
             }
             ".${CssClass.Layout.HeaderActions}" {
                 width = 100.pct
                 justifyContentRaw("center")
                 gap = 0.5.rem
                 rowGap = 0.5.rem
+                flexDirection = FlexDirection.column
+                alignItems = Align.center
             }
             ".${CssClass.Layout.HeaderActions} > #${HtmlIds.SAVE_BUTTON}" {
                 marginLeftRaw("0")
@@ -193,6 +248,19 @@ object MediaQueries {
             ".${CssClass.History.ViewsActions}" {
                 width = 100.pct
                 justifyContentRaw("center")
+            }
+            ".${CssClass.History.ChartHeader}" {
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr)")
+                alignItems = Align.start
+            }
+            ".${CssClass.History.ChartTools}" {
+                justifyContentRaw("flex-start")
+            }
+            ".${CssClass.History.ComparisonHeader}" {
+                gridTemplateColumns = GridTemplateColumns("minmax(0, 1fr) auto")
+            }
+            ".${CssClass.History.ComparisonHeader} > .${CssClass.History.ChartHeaderTitle}" {
+                put("grid-column", "1 / -1")
             }
             ".hero-card" {
                 flexDirection = FlexDirection.column
@@ -264,6 +332,9 @@ object MediaQueries {
                 borderRadius = CssTheme.radiusMd
                 solidBorder(CssTheme.colorSurface1Border)
             }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard}" {
+                rowGap = 0.125.rem
+            }
             ".${CssClass.History.TradeLog} td" {
                 display = Display.flex
                 alignItems = Align.center
@@ -274,6 +345,29 @@ object MediaQueries {
                 borderBottomStyle = BorderStyle.none
                 textAlign = TextAlign.right
                 fontSize = 0.75.rem
+            }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(1)" {
+                put("grid-column", "1 / -1")
+                paddingBottom = 0.5.rem
+                marginBottom = 0.125.rem
+                put("border-bottom", "1px solid ${CssTheme.colorBorderFaint.value}")
+                textAlign = TextAlign.left
+            }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(2)" {
+                justifyContentRaw("flex-start")
+                textAlign = TextAlign.left
+                fontWeight = FontWeight.w700
+            }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(3)" {
+                justifyContentRaw("flex-end")
+            }
+            ".${CssClass.History.TradeLog} tr.${CssClass.History.TradeCard} td:nth-child(9)" {
+                put("grid-column", "1 / -1")
+                marginTop = 0.25.rem
+                paddingTop = 0.5.rem
+                put("border-top", "1px solid ${CssTheme.colorBorderFaint.value}")
+                justifyContentRaw("flex-start")
+                textAlign = TextAlign.left
             }
             ".${CssClass.History.TradeLog} td:not(.${CssClass.History.EmptyTableCell})::before" {
                 flexShrink = 0.0

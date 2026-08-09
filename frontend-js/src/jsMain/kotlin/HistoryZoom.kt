@@ -2,6 +2,7 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.ZoomActions
@@ -45,6 +46,7 @@ internal fun setupChartScrubbers() {
             val canvasId = scrubber.getAttribute(HtmlAttrs.DATA_CHART_ID) ?: return@addEventListener
             panChartToScrubberPosition(canvasId, dynamicNumber(scrubber.value) ?: 0.0)
         })
+        scrubber.getAttribute(HtmlAttrs.DATA_CHART_ID)?.let(::syncChartScrubber)
     }
 }
 
@@ -69,6 +71,7 @@ internal fun syncChartScrubber(canvasId: String) {
     val state = chartScrubberState(charts[canvasId], originalChartRanges[canvasId])
     scrubber.disabled = state?.enabled != true
     scrubber.value = if (state?.enabled == true) state.position.toString() else "0"
+    scrubber.parentElement?.classList?.toggle(CssClass.Utility.Hidden, state?.enabled != true)
 }
 
 internal fun panChartToScrubberPosition(canvasId: String, position: Double) {

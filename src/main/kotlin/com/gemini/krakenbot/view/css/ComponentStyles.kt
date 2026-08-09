@@ -503,28 +503,26 @@ object ComponentStyles {
         ".${CssClass.Activity.Feed.value}" {
             display = Display.flex
             flexDirection = FlexDirection.column
-            gap = 0.75.rem
+            gap = 0.px
             marginTop = 0.5.rem
         }
 
         ".${CssClass.Activity.Cycle.value}" {
-            borderRadius = CssTheme.radiusLg
-            background = CssTheme.glassSurfaceGradient
-            solidBorder(CssTheme.colorSurface2Border)
-            overflow = Overflow.hidden
-            put(
-                "box-shadow",
-                "0 6px 16px rgba(0,0,0,0.4), 0 0 16px rgba(56,189,248,0.05), " +
-                    "inset 0 1px 0 rgba(147,197,253,0.12)",
-            )
+            background = "transparent"
+            borderTopWidth = 1.px
+            borderTopStyle = BorderStyle.solid
+            borderTopColor = CssTheme.colorBorderFaint
+        }
+
+        ".${CssClass.Activity.Cycle.value}:first-child" {
+            borderTopStyle = BorderStyle.none
         }
 
         ".${CssClass.Activity.CycleHeader.value}" {
             display = Display.flex
             alignItems = Align.center
             gap = 0.75.rem
-            padding = Padding(0.625.rem, 0.875.rem)
-            flexWrapRaw("wrap")
+            padding = Padding(0.75.rem, 0.px)
         }
 
         ".${CssClass.Activity.CycleTime.value}" {
@@ -543,7 +541,7 @@ object ComponentStyles {
         ".${CssClass.Activity.CycleBody.value}" {
             display = Display.flex
             flexDirection = FlexDirection.column
-            padding = Padding(0.px, 0.875.rem, 0.5.rem)
+            padding = Padding(0.px, 0.px, 0.5.rem)
         }
 
         ".${CssClass.Activity.Item.value}" {
@@ -561,7 +559,7 @@ object ComponentStyles {
             borderLeftWidth = 3.px
             borderLeftStyle = BorderStyle.solid
             borderLeftColor = CssTheme.colorBlueAccent
-            marginLeftRaw("-0.625rem")
+            marginLeftRaw("0")
         }
 
         ".${CssClass.Activity.ItemText.value}" {

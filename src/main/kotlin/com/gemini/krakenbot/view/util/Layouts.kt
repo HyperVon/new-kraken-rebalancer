@@ -101,9 +101,14 @@ fun FlowContent.brandWithMode(
     includeStreamSlot: Boolean = false,
     trailingContent: FlowContent.() -> Unit = {},
 ) {
-    div(CssClass.Layout.HeaderTitleSection) {
-        brandMark()
-        modePlate(settings)
+    val titleClass =
+        CssClass.Layout.HeaderTitleSection +
+            if (includeStreamSlot) CssClass.Layout.HeaderWithStream else CssClass.Layout.HeaderWithoutStream
+    div(titleClass) {
+        div(CssClass.Layout.HeaderIdentity) {
+            brandMark()
+            modePlate(settings)
+        }
         if (includeStreamSlot) {
             streamStatusPlaceholder()
         }
@@ -126,16 +131,16 @@ fun FlowContent.loopControl(paused: Boolean, csrfToken: String? = null) {
             span(CssClass.Layout.LoopDot) {}
             +(if (paused) ViewText.LOOP_PAUSED else ViewText.LOOP_RUNNING)
         }
-        button(
-            if (paused) CssClass.Button.Primary else CssClass.Button.Danger,
-            type = ButtonType.button,
-        ) {
+        button(CssClass.Button.Secondary, type = ButtonType.button) {
             id = HtmlIds.LOOP_CONTROL
             attributes[HtmxAttrs.HX_POST] = if (paused) Routes.API_RESUME else Routes.API_PAUSE
             attributes[HtmxAttrs.HX_INCLUDE] = HtmlQueries.CSRF_TOKEN
             attributes[HtmxAttrs.HX_SWAP] = HtmxValues.NONE
             attributes[HtmlAttrs.TITLE] = if (paused) ViewText.LOOP_RESUME_TITLE else ViewText.LOOP_PAUSE_TITLE
             icon(if (paused) Icons.PLAY else Icons.PAUSE)
+            span(CssClass.Layout.LoopActionLabel) {
+                +(if (paused) ViewText.LOOP_RESUME_ACTION else ViewText.LOOP_PAUSE_ACTION)
+            }
         }
     }
 }

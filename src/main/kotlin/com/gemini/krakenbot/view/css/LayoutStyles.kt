@@ -109,8 +109,20 @@ object LayoutStyles {
             display = Display.flex
             alignItems = Align.center
             gap = 0.75.rem
-            flexWrap = FlexWrap.wrap
+            flexWrap = FlexWrap.nowrap
             width = 100.pct
+        }
+
+        ".${CssClass.Layout.HeaderIdentity}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.75.rem
+            minWidth = 0.px
+            flexShrink = 1.0
+        }
+
+        ".${CssClass.Layout.HeaderIdentity} .${CssClass.Layout.BrandMark}" {
+            whiteSpaceRaw("nowrap")
         }
 
         ".${CssClass.Layout.HeaderTitleSection} h1, .${CssClass.Layout.BrandMark}" {
@@ -134,7 +146,7 @@ object LayoutStyles {
             display = Display.flex
             alignItems = Align.center
             gap = 1.rem
-            flexWrap = FlexWrap.wrap
+            flexWrap = FlexWrap.nowrap
             justifyContentRaw("flex-start")
             width = 100.pct
             marginBottom = 0.rem
@@ -187,16 +199,19 @@ object LayoutStyles {
         }
 
         ".${CssClass.Layout.LoopControl} > .btn" {
-            width = 2.25.rem
-            height = 2.25.rem
             justifyContentRaw("center")
-            padding = Padding(0.px)
+            padding = Padding(0.4375.rem, 0.75.rem)
+            whiteSpaceRaw("nowrap")
         }
 
         ".${CssClass.Layout.LoopControl} > .btn svg" {
             display = Display.block
             width = 0.875.rem
             height = 0.875.rem
+        }
+
+        ".${CssClass.Layout.LoopActionLabel}" {
+            fontSize = 0.8125.rem
         }
 
         ".${CssClass.DataAge.Value}" {

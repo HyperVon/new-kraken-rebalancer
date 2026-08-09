@@ -45,9 +45,10 @@ internal fun renderTradeTable(trades: List<TradeRecord>) {
 
 private fun renderTradeRow(t: TradeRecord): HTMLTableRowElement {
     val tr = document.createElement(HtmlTags.TR) as HTMLTableRowElement
-    tr.className = CssClass.Table.Hoverable.toString()
+    tr.className = (CssClass.Table.Hoverable + CssClass.History.TradeCard).toString()
 
-    val time = Date(t.timestamp).asDynamic().toLocaleString()
+    val time = formatCompactTradeTime(t.timestamp)
+    val fullTime = Date(t.timestamp).asDynamic().toLocaleString().toString()
     val side = t.side.uppercase()
     val sideClass =
         when (side) {
@@ -84,13 +85,12 @@ private fun renderTradeRow(t: TradeRecord): HTMLTableRowElement {
 
     val isPlainSuccess = success && !dryRun
 
-    tr.appendChild(createCell(time, CssClass.Table.MonoCol))
+    tr.appendChild(createCell(time, CssClass.Table.MonoCol, fullTime))
     tr.appendChild(createCell(formatPair(t), CssClass.Table.SymbolCol))
     tr.appendChild(createBadgeCell(side, sideClass))
-    tr.appendChild(createCell(vol.toFixed(PrecisionConstants.SCALE_CRYPTO), CssClass.Table.MonoCol))
+    tr.appendChild(createCell(formatQuantity(vol), CssClass.Table.MonoCol))
     tr.appendChild(createCell(formatUSD(amt), CssClass.Table.MonoCol))
-    // HIST-3: price keeps crypto precision (4-8dp) and fee keeps up to 4dp; zero/missing
-    // economics show a muted em-dash, not 0.00000000.
+    // Keep ordinary prices and fees calm while preserving meaningful sub-cent precision.
     tr.appendChild(createCell(formatPriceOrDash(price), CssClass.Table.MonoCol, estimatedTitle))
     tr.appendChild(createCell(formatFeeOrDash(fee), CssClass.Table.MonoCol, estimatedTitle))
     tr.appendChild(createSlippageCell(slippage, estimatedTitle))
@@ -106,11 +106,26 @@ private fun usdCellOrDash(value: Double, min: Int, max: Int): String {
 
 /** HIST-3: format a trade price at crypto precision, or a muted em-dash when it is zero/absent. */
 private fun formatPriceOrDash(value: Double): String =
-    usdCellOrDash(value, PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES, PrecisionConstants.SCALE_CRYPTO)
+    usdCellOrDash(value, PrecisionConstants.SCALE_USD, priceDigits(value))
 
-/** HIST-3: format a trade fee at up to 4dp, or a muted em-dash when it is zero/absent. */
 private fun formatFeeOrDash(value: Double): String =
-    usdCellOrDash(value, PrecisionConstants.SCALE_USD, PrecisionConstants.SCALE_FEE)
+    usdCellOrDash(value, PrecisionConstants.SCALE_USD, feeDigits(value))
+
+private fun formatQuantity(value: Double): String =
+    usdOptionsToLocale(value, minDigits = 0, maxDigits = PrecisionConstants.SCALE_CRYPTO)
+
+private fun priceDigits(value: Double): Int {
+    val absolute = kotlin.math.abs(value)
+    return when {
+        absolute >= 100.0 -> PrecisionConstants.SCALE_USD
+        absolute >= 1.0 -> 4
+        absolute >= 0.01 -> 6
+        else -> PrecisionConstants.SCALE_CRYPTO
+    }
+}
+
+private fun feeDigits(value: Double): Int =
+    if (kotlin.math.abs(value) >= 1.0) PrecisionConstants.SCALE_USD else PrecisionConstants.SCALE_FEE
 
 private fun slippageBadgeClass(value: Double): CssClass = when {
     value > 0.0 -> CssClass.Badge.SlippageAdverse

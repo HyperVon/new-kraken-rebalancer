@@ -35,6 +35,12 @@ Related:
   `apply …`, or an explicit “implement all / these IDs” message.
 - Prefer `simulation: true` for all visual verify runs
   ([dry-run-and-simulation](../dry-run-and-simulation/SKILL.md)).
+- Use the current repository contract in
+  [ui-visual-guidance-and-aesthetics](../ui-visual-guidance-and-aesthetics/SKILL.md),
+  including explicit phone/tablet header composition, labeled neutral loop
+  actions, human data precision, lightweight activity rows, mobile trade cards,
+  and the screenshot documentation policy. Do not rely on an older cached copy
+  of that skill.
 
 ---
 
@@ -186,6 +192,8 @@ When shipping visual changes users will see in README / User Guide:
    and capture the documented responsive profile images.
 2. Update [docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) if meaning/layout of
    controls changed ([user-guide](../user-guide/SKILL.md)).
+   Use linked HTML images with explicit widths; keep README coverage curated and
+   put the full responsive gallery in the User Guide. Inspect both at 100% zoom.
 3. CHANGELOG `### Changed` (and `### Added` if new UI).
 4. Point skills/AGENTS only if invariants or workflows changed.
 

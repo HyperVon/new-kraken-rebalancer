@@ -58,6 +58,8 @@ ViewText:
   MODE_LIVE_TITLE: "Live trading — real orders execute with real funds"
   LOOP_RUNNING: "RUNNING"
   LOOP_PAUSED: "PAUSED"
+  LOOP_PAUSE_ACTION: "Pause"
+  LOOP_RESUME_ACTION: "Resume"
   LOOP_PAUSE_TITLE: "Pause loop - stop new rebalance cycles"
   LOOP_RESUME_TITLE: "Resume loop - start new rebalance cycles"
   NO_USD_DATA: "No USD Data"
