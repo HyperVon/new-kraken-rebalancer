@@ -29,7 +29,6 @@ import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.statusCard
 import com.gemini.krakenbot.view.util.td
-import kotlinx.html.BUTTON
 import kotlinx.html.ButtonType
 import kotlinx.html.DIV
 import kotlinx.html.HTML

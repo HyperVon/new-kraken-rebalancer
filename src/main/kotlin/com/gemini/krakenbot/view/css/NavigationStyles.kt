@@ -13,13 +13,11 @@ import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
 import kotlinx.css.color
 import kotlinx.css.display
-import kotlinx.css.fontFamily
 import kotlinx.css.fontSize
 import kotlinx.css.fontWeight
 import kotlinx.css.gap
 import kotlinx.css.padding
 import kotlinx.css.properties.TextDecoration
-import kotlinx.css.px
 import kotlinx.css.rem
 import kotlinx.css.textDecoration
 

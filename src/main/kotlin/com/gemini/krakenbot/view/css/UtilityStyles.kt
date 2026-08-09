@@ -6,7 +6,6 @@ import kotlinx.css.Display
 import kotlinx.css.FontWeight
 import kotlinx.css.Padding
 import kotlinx.css.backgroundColor
-import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
 import kotlinx.css.color
 import kotlinx.css.display
