@@ -378,7 +378,7 @@ internal fun buildRewardsChart(rewards: RewardsOverTime) {
         perAsset?.entries?.map { entry ->
             val amount = dynamicNumber(entry.value) ?: 0.0
             "${entry.key}: ${formatUSD(amount)}"
-        }?.toTypedArray() ?: emptyArray<String>()
+        }?.toTypedArray() ?: emptyArray()
     }
     createOrUpdate(HtmlIds.REWARDS_CHART, createLineChartConfig(datasets, options))
 }

@@ -295,7 +295,7 @@ class ConfigServiceImpl(
             settings.deviationTriggerPercent.isFinite() to "Deviation trigger percent must be finite.",
             (settings.deviationTriggerPercent >= 0) to "Deviation trigger percent must be non-negative.",
             settings.minimumOrderSizeUSD.isFinite() to "Minimum order size USD must be finite.",
-            (settings.minimumOrderSizeUSD >= 2.0) to "Minimum order size USD must be at least \$2.",
+            (settings.minimumOrderSizeUSD >= 2.0) to $$"Minimum order size USD must be at least $2.",
             settings.fiatMaxDrawdown.isFinite() to "Fiat max drawdown must be finite.",
             (settings.fiatMaxDrawdown in MIN_PERCENT..MAX_PERCENT) to
                 "Fiat max drawdown must be between 0% and 100%.",

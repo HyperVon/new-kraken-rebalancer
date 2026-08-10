@@ -39,11 +39,6 @@ import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
-private val ERROR_LIVE_ORDERS_BLOCKED = ViewText.ERROR_LIVE_ORDERS_BLOCKED
-private val ORDER_SUBMISSION_PENDING = ViewText.ORDER_SUBMISSION_PENDING
-private val ORDER_SUBMISSION_FAILED = ViewText.ORDER_SUBMISSION_FAILED
-private val ORDER_SUBMISSION_FAILED_UNCERTAIN = ViewText.ORDER_SUBMISSION_FAILED_UNCERTAIN
-
 class OrderExecutorImpl(
     private val krakenService: KrakenService,
     private val tradeHistoryService: TradeHistoryService,
@@ -85,7 +80,7 @@ class OrderExecutorImpl(
     ) {
         if (!settings.dryRun && !settings.simulation && tradeHistoryService.hasPendingSubmissions()) {
             log.error("Refusing live orders while an unresolved submission intent exists")
-            actionLog.add(ERROR_LIVE_ORDERS_BLOCKED)
+            actionLog.add(ViewText.ERROR_LIVE_ORDERS_BLOCKED)
             return
         }
         // Pin live vs simulation for the whole sell→buy sequence; pass settings.dryRun into
@@ -272,7 +267,14 @@ class OrderExecutorImpl(
         ).copy(id = id, clientOrderId = clOrdId, submissionState = submissionState)
 
         val pending = createJournalRecord(
-            result = OrderResult(false, pair, side.apiValue, volume, settings.dryRun, ORDER_SUBMISSION_PENDING),
+            result = OrderResult(
+                false,
+                pair,
+                side.apiValue,
+                volume,
+                settings.dryRun,
+                ViewText.ORDER_SUBMISSION_PENDING,
+            ),
             submissionState = if (isLiveSubmission) OrderSubmissionState.PENDING else null,
         )
         val pendingId = tradeHistoryService.saveTrade(pending)
@@ -302,7 +304,7 @@ class OrderExecutorImpl(
                 side = result.side,
                 volume = result.volume,
                 dryRun = result.dryRun,
-                errorMessage = ORDER_SUBMISSION_FAILED_UNCERTAIN,
+                errorMessage = ViewText.ORDER_SUBMISSION_FAILED_UNCERTAIN,
                 submissionUncertain = true,
             )
         } else {
@@ -338,9 +340,9 @@ class OrderExecutorImpl(
             pending.copy(
                 id = id,
                 errorMessage = message ?: if (pending.submissionState == null) {
-                    ORDER_SUBMISSION_FAILED
+                    ViewText.ORDER_SUBMISSION_FAILED
                 } else {
-                    ORDER_SUBMISSION_FAILED_UNCERTAIN
+                    ViewText.ORDER_SUBMISSION_FAILED_UNCERTAIN
                 },
                 submissionState = pending.submissionState?.let { OrderSubmissionState.UNCERTAIN },
             ),

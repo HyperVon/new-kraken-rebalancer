@@ -14,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
@@ -132,7 +133,7 @@ class PortfolioManagerImpl(
             return
         }
 
-        val currentJob = coroutineContext[Job]
+        val currentJob = currentCoroutineContext()[Job]
         try {
             val admitted = synchronized(lifecycleLock) {
                 if (!isRunning) {
@@ -235,7 +236,7 @@ class PortfolioManagerImpl(
     }
 
     internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
-        coroutineContext.ensureActive()
+        currentCoroutineContext().ensureActive()
         configService.beginExecutionSession()
         val cycleId = UUID.randomUUID().toString()
         MDC.put(CYCLE_ID_MDC_KEY, cycleId)
@@ -312,7 +313,7 @@ class PortfolioManagerImpl(
             )
         actionLog.addAll(cycleActions)
 
-        coroutineContext.ensureActive()
+        currentCoroutineContext().ensureActive()
         try {
             orderExecutor.executeOrders(
                 buyOrders = buyOrders,

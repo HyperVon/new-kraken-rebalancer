@@ -243,6 +243,13 @@ domain skills.
 ## 7. Code quality invariants
 
 - **No FQNs** unless resolving a name collision — use imports.
+- **Use canonical constants directly**: production code must reference shared
+  `:common` catalogs such as `ViewText`, `CssClass`, `HtmlIds`, `HtmlAttrs`,
+  `Routes`, and `PrecisionConstants` at the use site. Do not create a local
+  `val` or `const val` that merely aliases one of those constants. In tests,
+  use independent raw expected strings for contract assertions so a test cannot
+  pass just because the implementation and expectation share the same catalog
+  entry; typed catalogs remain fine for non-assertion setup.
 - **No ARIA attributes**: Do not introduce `aria-*` attributes (`aria-hidden`, `aria-sort`, `aria-label`, etc.) into HTML DSL templates, `:common` attribute catalogs, or client Kotlin/JS. Rely on standard semantic HTML elements.
 - **No absolute user paths** or machine-specific hostnames in source/tests.
 - Markdown: lint per [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md)

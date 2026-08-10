@@ -9,12 +9,12 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
 import com.gemini.krakenbot.service.getTradeHistoryUntil
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.coroutineContext
 
 class DynamicKrakenService(
     private val realService: KrakenServiceImpl,
@@ -38,7 +38,7 @@ class DynamicKrakenService(
     }
 
     private suspend fun currentBackend(): KrakenService =
-        coroutineContext[PinnedBackend]?.service ?: resolveFromConfig()
+        currentCoroutineContext()[PinnedBackend]?.service ?: resolveFromConfig()
 
     /** Cached after [getTradeHistory] so progress metadata need not downcast the port. */
     private val lastTradeHistoryTotalCount = AtomicInteger(0)
@@ -53,7 +53,7 @@ class DynamicKrakenService(
      * each capture their own entry-time backend.
      */
     override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T {
-        val existing = coroutineContext[PinnedBackend]?.service
+        val existing = currentCoroutineContext()[PinnedBackend]?.service
         if (existing != null) {
             return block(existing)
         }

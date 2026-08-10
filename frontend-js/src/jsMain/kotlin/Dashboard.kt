@@ -23,7 +23,7 @@ internal var currentSortDir: String = CssClass.Utility.Asc.toString()
 // Currency/percent decoration plus formatting whitespace (regular, non-breaking, and narrow
 // non-breaking spaces) is stripped before numeric parsing; JS Number("3,000.00") would otherwise
 // be NaN and sort as 0.0.
-private val CURRENCY_CLEANUP_REGEX = Regex("[\\$,%\\s\\u00A0\\u202F]")
+private val CURRENCY_CLEANUP_REGEX = Regex("[$,%\\s\\u00A0\\u202F]")
 
 fun registerDashboardGlobals() {
     window.asDynamic().sortTable = { header: HTMLElement, colIdx: Int ->
@@ -129,7 +129,7 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     )
 
     val headersList = table.querySelectorAll(SORTABLE_TH_QUERY)
-    for (i in 0 until headersList.length) {
+    repeat(headersList.length) { i ->
         (headersList.item(i) as? HTMLElement)?.apply {
             classList.remove(CssClass.Utility.Asc, CssClass.Utility.Desc)
             setAttribute(HtmlAttrs.DATA_SORT, DataSort.NONE)
