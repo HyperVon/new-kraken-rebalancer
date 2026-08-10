@@ -7,11 +7,13 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
@@ -61,6 +63,7 @@ class DashboardController(
     private val objectMapper: ObjectMapper,
     private val dashboardView: DashboardView,
     private val portfolioManager: PortfolioManager,
+    private val orderIntentService: OrderIntentService,
 ) {
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
 
@@ -145,6 +148,18 @@ class DashboardController(
 
             get(Routes.API_HEALTH) {
                 handleGetHealth()
+            }
+
+            get(Routes.API_READINESS) {
+                handleGetReadiness()
+            }
+
+            get(Routes.API_ORDER_INTENTS) {
+                handleGetOrderIntents()
+            }
+
+            post("${Routes.API_ORDER_INTENTS}/{id}/resolve") {
+                handlePostOrderIntentResolution()
             }
 
             post(Routes.API_PAUSE) {
@@ -315,9 +330,9 @@ class DashboardController(
         call.respondText(html, ContentType.Text.Html)
     }
 
-    private suspend fun RoutingContext.respondJson(data: Any) {
+    private suspend fun RoutingContext.respondJson(data: Any, status: HttpStatusCode = HttpStatusCode.OK) {
         val json = objectMapper.writeValueAsString(data)
-        call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+        call.respondText(json, ContentType.Application.Json, status)
     }
 
     private suspend fun RoutingContext.handleGetHistorySnapshots() {
@@ -407,20 +422,115 @@ class DashboardController(
     }
 
     private suspend fun RoutingContext.handleGetHealth() {
+        val (responseMap, _) = buildHealthResponse()
+        respondJson(responseMap)
+    }
+
+    private suspend fun RoutingContext.handleGetReadiness() {
+        val (responseMap, ready) = buildHealthResponse()
+        respondJson(responseMap, if (ready) HttpStatusCode.OK else HttpStatusCode.ServiceUnavailable)
+    }
+
+    private suspend fun RoutingContext.handleGetOrderIntents() {
+        respondJson(orderIntentService.getUnresolvedIntents())
+    }
+
+    private suspend fun RoutingContext.handlePostOrderIntentResolution() {
+        val params = call.receiveParameters()
+        if (!CsrfProtection.isValid(call, params)) {
+            call.respond(HttpStatusCode.Forbidden)
+            return
+        }
+
+        val id = call.parameters["id"]?.toIntOrNull()
+        if (id == null) {
+            respondJson(mapOf("error" to "Order intent id must be an integer."), HttpStatusCode.BadRequest)
+            return
+        }
+
+        val state = try {
+            OrderIntentState.valueOf(params[FormFields.ORDER_INTENT_STATE].orEmpty().uppercase())
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+        if (state == null) {
+            respondJson(
+                mapOf("error" to "Resolution state must be CONFIRMED or REJECTED."),
+                HttpStatusCode.UnprocessableEntity,
+            )
+            return
+        }
+
+        try {
+            orderIntentService.resolve(
+                id = id,
+                state = state,
+                evidence = params[FormFields.ORDER_INTENT_EVIDENCE].orEmpty(),
+            )
+            respondJson(mapOf("resolved" to true, "id" to id, "state" to state.name))
+        } catch (e: IllegalArgumentException) {
+            respondJson(
+                mapOf("error" to (e.message ?: "Invalid order intent resolution.")),
+                HttpStatusCode.UnprocessableEntity,
+            )
+        } catch (e: IllegalStateException) {
+            respondJson(mapOf("error" to (e.message ?: "Order intent could not be resolved.")), HttpStatusCode.Conflict)
+        }
+    }
+
+    private suspend fun buildHealthResponse(): Pair<Map<String, Any>, Boolean> {
         val stats = tradeHistoryService.getHistoryStats()
         val latestSnapshot = tradeHistoryService.getLatestSnapshot()
-        val responseMap =
-            mapOf(
-                HealthStatusKeys.STATUS to HealthStatusKeys.STATUS_UP,
-                HealthStatusKeys.TIMESTAMP to Instant.now().toString(),
-                HealthStatusKeys.UPTIME_SECONDS to ManagementFactory.getRuntimeMXBean().uptime / 1000,
-                HealthStatusKeys.TOTAL_TRADES_EXECUTED to stats.totalTradesExecuted,
-                HealthStatusKeys.TOTAL_VOLUME_TRADED to stats.totalVolumeTraded,
-                HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
-                HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO),
-                HealthStatusKeys.PAUSED to portfolioManager.isLoopPaused(),
-            )
-        respondJson(responseMap)
+        val paused = portfolioManager.isLoopPaused()
+        val loopRunning = portfolioManager.isLoopRunning()
+        val cycleStatus = portfolioManager.getOperationalStatus()
+        val unresolvedOrderIntents = orderIntentService.countUnresolvedIntents()
+        val legacyUnresolvedSubmissions = tradeHistoryService.hasPendingSubmissions()
+        val settings = try {
+            configService.getConfig().settings
+        } catch (_: Exception) {
+            null
+        }
+        val syncTime = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+            ?.toLongOrNull()
+            ?.let { Instant.ofEpochSecond(it).toString() }
+            ?: "N/A"
+        val readinessReason = when {
+            paused -> "PAUSED"
+            !loopRunning -> HealthStatusKeys.LOOP_NOT_RUNNING
+            unresolvedOrderIntents > 0 || legacyUnresolvedSubmissions -> "UNRESOLVED_ORDER_INTENT"
+            latestSnapshot == null -> "NO_SNAPSHOT"
+            cycleStatus.lastCycleError != null -> "LAST_CYCLE_FAILED"
+            else -> "READY"
+        }
+        val ready = readinessReason == "READY"
+        val responseMap = mapOf(
+            HealthStatusKeys.STATUS to HealthStatusKeys.STATUS_UP,
+            HealthStatusKeys.TIMESTAMP to Instant.now().toString(),
+            HealthStatusKeys.UPTIME_SECONDS to ManagementFactory.getRuntimeMXBean().uptime / 1000,
+            HealthStatusKeys.TOTAL_TRADES_EXECUTED to stats.totalTradesExecuted,
+            HealthStatusKeys.TOTAL_VOLUME_TRADED to stats.totalVolumeTraded,
+            HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
+            HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO),
+            HealthStatusKeys.PAUSED to paused,
+            HealthStatusKeys.READINESS to
+                if (ready) HealthStatusKeys.STATUS_READY else HealthStatusKeys.STATUS_NOT_READY,
+            HealthStatusKeys.READINESS_REASON to readinessReason,
+            HealthStatusKeys.ACTIVE_MODE to when {
+                settings?.simulation == true -> "SIMULATION"
+                settings?.dryRun == true -> "DRY_RUN"
+                settings != null -> "LIVE"
+                else -> "UNKNOWN"
+            },
+            HealthStatusKeys.LOOP_RUNNING to loopRunning,
+            HealthStatusKeys.LAST_CYCLE_STARTED_AT to (cycleStatus.lastCycleStartedAt?.toString() ?: "N/A"),
+            HealthStatusKeys.LAST_CYCLE_COMPLETED_AT to (cycleStatus.lastCycleCompletedAt?.toString() ?: "N/A"),
+            HealthStatusKeys.LAST_CYCLE_ERROR to (cycleStatus.lastCycleError ?: "N/A"),
+            HealthStatusKeys.LAST_TRADE_SYNC_TIME to syncTime,
+            HealthStatusKeys.UNRESOLVED_ORDER_INTENTS to unresolvedOrderIntents,
+            HealthStatusKeys.LEGACY_UNRESOLVED_SUBMISSIONS to legacyUnresolvedSubmissions,
+        )
+        return responseMap to ready
     }
 }
 

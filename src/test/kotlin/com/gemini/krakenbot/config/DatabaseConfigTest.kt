@@ -27,6 +27,66 @@ class DatabaseConfigTest : StringSpec() {
             db shouldNotBe null
         }
 
+        "records the current schema version and creates the order intent journal" {
+            val databaseUrl = "jdbc:sqlite:file:schema-version-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("SELECT MAX(version) FROM schema_migrations").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 3
+                    }
+                    statement.executeQuery(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'order_intents'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                    }
+                }
+            }
+        }
+
+        "imports legacy pending trade guards into the operator journal" {
+            val databaseUrl = "jdbc:sqlite:file:legacy-guard-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 3")
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES (
+                            1700000000000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'timeout', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            'cycle-legacy', NULL, NULL, 'client-legacy', 'PENDING'
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT COUNT(*) FROM order_intents WHERE state = 'PENDING'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 1
+                    }
+                    statement.executeQuery("SELECT submission_state FROM trades").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString(1) shouldBe null
+                    }
+                }
+            }
+        }
+
         "migrates a genuine pre-provenance schema and preserves ambiguous provenance" {
             runTest {
                 val databaseUrl =

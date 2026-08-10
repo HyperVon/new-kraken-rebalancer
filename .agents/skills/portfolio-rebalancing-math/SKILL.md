@@ -154,13 +154,16 @@ effectively than spreading across all pairs.
    - Anti-pattern: relying on Kraken to reject zero volume — the app would still
      persist a `TradeRecord`.
 5. **Live submission journal** — when `!dryRun && !simulation`, persist a
-   `PENDING` row with deterministic `cl_ord_id` (`cycleId|symbol|side` → UUID)
-   before AddOrder. AddOrder has one attempt. A transport/response ambiguity or
-   missing txid becomes `UNCERTAIN`, aborts the batch, and blocks future live
-   orders while any unresolved row remains. Such rows are excluded from sync
-   reconciliation, duplicate cleanup, and pruning; only an operator may resolve
-   them after checking Kraken open orders, closed orders, and fills. `cl_ord_id`
-   is open-order uniqueness, not full idempotency; `userref` is not uniqueness.
+   `PENDING` row in `order_intents` with deterministic `cl_ord_id`
+   (`cycleId|symbol|side` → UUID) before AddOrder. AddOrder has one attempt. A
+   transport/response ambiguity or missing txid becomes `UNCERTAIN`, aborts the
+   batch, and blocks future live orders while any unresolved row remains. Such
+   rows are excluded from sync reconciliation, duplicate cleanup, and pruning;
+   only an operator may resolve them through the operator API after checking
+   Kraken open orders, closed orders, and fills. Legacy trade `PENDING`/
+   `UNCERTAIN` guards are imported into this journal during schema migration.
+   `cl_ord_id` is open-order uniqueness, not full idempotency; `userref` is not
+   uniqueness.
    Backend exceptions and cancellation persist `UNCERTAIN` before propagating;
    cancellation uses `NonCancellable` only for that durability update. A
    persistence failure never masks the original placement exception; attach it

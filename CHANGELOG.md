@@ -13,6 +13,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Skill Optimizer**: Added `skill-optimizer` to measure agent-guidance
   context cost and identify evidence-backed, approval-gated compression while
   preserving routing, safety, and verification behavior.
+- **Live-order recovery journal**: Persisted `order_intents` records each real
+  AddOrder attempt before submission, exposes unresolved intents through
+  `/api/order-intents`, and provides a CSRF-protected operator resolution route.
+- **Operational readiness**: `/api/health` now reports active mode, loop/cycle
+  timestamps, sync watermark, and unresolved-order counts; `/api/readiness`
+  returns HTTP 503 until the service is safe to serve live work.
+- **Versioned SQLite migrations**: Added schema version records and a
+  pre-migration database backup for file-backed databases.
+- **Typed rebalance plans**: The math engine now emits typed domain events and
+  adapts them to the existing snapshot action-log strings at the presentation
+  boundary.
+
+### Changed
+
+- **Consistent history reads**: Historical snapshot reconstruction captures one
+  execution-session configuration and one pinned exchange backend for the full
+  reconstruction pass.
+- **Trusted-LAN deployment**: The dashboard remains intentionally unauthenticated
+  for the documented single-operator/private-network trust model; CSRF still
+  protects browser-originated mutations.
 
 ## [6.16.39] - 2026-08-09
 

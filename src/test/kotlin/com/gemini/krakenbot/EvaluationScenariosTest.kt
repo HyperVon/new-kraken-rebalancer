@@ -5,6 +5,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
@@ -44,6 +45,7 @@ class EvaluationScenariosTest : StringSpec() {
     internal val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     internal val configService = mockk<ConfigService>(relaxed = true)
     internal val portfolioManager = mockk<PortfolioManager>(relaxed = true)
+    internal val orderIntentService = mockk<OrderIntentService>(relaxed = true)
     internal val objectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
 
     internal fun Application.configureTestEnv() {
@@ -169,6 +171,7 @@ class EvaluationScenariosTest : StringSpec() {
                 single { tradeHistoryService }
                 single { configService }
                 single { portfolioManager }
+                single { orderIntentService }
                 single { objectMapper }
                 single { DashboardShellComponent() }
                 single { SettingsFormComponent() }
@@ -193,7 +196,7 @@ class EvaluationScenariosTest : StringSpec() {
                         historyPageComponent = get(),
                     )
                 }
-                single { DashboardController(get(), get(), get(), get(), get()) }
+                single { DashboardController(get(), get(), get(), get(), get(), get()) }
             }
 
         beforeTest {

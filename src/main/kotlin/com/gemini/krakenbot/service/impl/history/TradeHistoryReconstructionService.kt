@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl.history
 
+import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -9,6 +10,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.service.withExecutionSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
@@ -34,18 +36,37 @@ class TradeHistoryReconstructionService(
 
     suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded()
 
-    suspend fun reconstructHistoricalSnapshots() = reconstructHistoricalSnapshots(replaceExisting = false)
+    suspend fun reconstructHistoricalSnapshots() = configService.withExecutionSession {
+        val config = configService.getConfig()
+        krakenService.withStableBackend { backend ->
+            reconstructHistoricalSnapshots(config, backend, replaceExisting = false)
+        }
+    }
 
-    suspend fun rebuildHistoricalSnapshots() {
+    suspend fun reconstructHistoricalSnapshots(config: AppConfig, backend: KrakenService) =
+        reconstructHistoricalSnapshots(config, backend, replaceExisting = false)
+
+    suspend fun rebuildHistoricalSnapshots() = configService.withExecutionSession {
+        val config = configService.getConfig()
+        krakenService.withStableBackend { backend ->
+            rebuildHistoricalSnapshots(config, backend)
+        }
+    }
+
+    suspend fun rebuildHistoricalSnapshots(config: AppConfig, backend: KrakenService) {
         check(ledgerRepository.isLedgersSeeded()) {
             "Cannot rebuild historical snapshots before ledger synchronization completes"
         }
-        reconstructHistoricalSnapshots(replaceExisting = true)
+        reconstructHistoricalSnapshots(config, backend, replaceExisting = true)
     }
 
-    private suspend fun reconstructHistoricalSnapshots(replaceExisting: Boolean) {
+    private suspend fun reconstructHistoricalSnapshots(
+        config: AppConfig,
+        backend: KrakenService,
+        replaceExisting: Boolean,
+    ) {
         log.info("Starting historical snapshots reconstruction...")
-        val allocations = configService.getConfig().allocations
+        val allocations = config.allocations
         val reconstructionNow = nowProvider()
 
         // load() is newest-first (DESC); lastOrNull() is the oldest retained snapshot.
@@ -56,7 +77,7 @@ class TradeHistoryReconstructionService(
 
         val fetchedLiveBalances =
             try {
-                krakenService.getBalances()
+                backend.getBalances()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -89,7 +110,7 @@ class TradeHistoryReconstructionService(
                 }
             val prices =
                 try {
-                    krakenService.getTickerPrices(pairsStr)
+                    backend.getTickerPrices(pairsStr)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -112,7 +133,7 @@ class TradeHistoryReconstructionService(
             if (symbolU == Asset.USD) continue
             val pair = Asset.tradingPair(symbolU)
             try {
-                val prices = krakenService.getOHLC(pair, interval = 1440, since = sinceSec)
+                val prices = backend.getOHLC(pair, interval = 1440, since = sinceSec)
                 ohlcData[symbolU] = prices
                 log.info("Fetched {} OHLC close prices for {}", prices.size, symbolU)
             } catch (e: CancellationException) {
@@ -151,7 +172,7 @@ class TradeHistoryReconstructionService(
                 now = reconstructionNow,
             )
 
-        val settings = configService.getConfig().settings
+        val settings = config.settings
         val currentAth =
             try {
                 portfolioStatsRepository?.load()?.allTimeHigh ?: BigDecimal.ZERO

@@ -2,6 +2,8 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.RebalanceEvent
+import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.service.AnalysisResult
@@ -12,9 +14,9 @@ import com.gemini.krakenbot.service.MutableRebalanceOrders
 import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
-import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.util.HUNDRED // extension import for PrecisionConstants.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.util.RebalanceEventFormatter
 import com.gemini.krakenbot.util.resolveBalance
 import com.gemini.krakenbot.util.toUsdScale
 import com.gemini.krakenbot.view.util.ViewText
@@ -170,10 +172,26 @@ object RebalancerEngine {
         cryptoScaleFactor: BigDecimal,
         allocations: List<Allocation>,
         settings: Settings,
-    ): AnalysisResult {
+    ): AnalysisResult = analyzeDeviationsPlan(
+        totalPortfolioValueUSD = totalPortfolioValueUSD,
+        currentValuesUSD = currentValuesUSD,
+        effectiveUsdTarget = effectiveUsdTarget,
+        cryptoScaleFactor = cryptoScaleFactor,
+        allocations = allocations,
+        settings = settings,
+    ).toAnalysisResult()
+
+    fun analyzeDeviationsPlan(
+        totalPortfolioValueUSD: BigDecimal,
+        currentValuesUSD: AssetValues,
+        effectiveUsdTarget: BigDecimal,
+        cryptoScaleFactor: BigDecimal,
+        allocations: List<Allocation>,
+        settings: Settings,
+    ): RebalancePlan {
         val buyOrders = mutableMapOf<String, BigDecimal>()
         val sellOrders = mutableMapOf<String, BigDecimal>()
-        val actionLog = mutableListOf<String>()
+        val events = mutableListOf<RebalanceEvent>()
         var usdTriggered = false
         var usdDeviationAmount = BigDecimal.ZERO
         val allDeviations = mutableMapOf<String, BigDecimal>()
@@ -209,8 +227,11 @@ object RebalancerEngine {
                 metrics.deviationPercent.abs() >= triggerThreshold && metrics.isSignificant
 
             if (isTriggered) {
-                actionLog.add(
-                    ActionLogFormatter.formatDeviationTrigger(symbolVal, metrics.deviationPercent),
+                events.add(
+                    RebalanceEvent.DeviationTriggered(
+                        symbol = symbolVal,
+                        deviationPercent = metrics.deviationPercent,
+                    ),
                 )
             }
 
@@ -253,18 +274,24 @@ object RebalancerEngine {
                 "USD Deviation triggered but no individual asset triggers. " +
                     "Enforcing fiat correction.",
             )
-            actionLog.add(ActionLogFormatter.formatFiatCorrectionEnforced())
-            distributeFiatCorrection(
+            events.add(RebalanceEvent.FiatCorrectionEnforced)
+            distributeFiatCorrectionPlan(
                 usdDev = usdDeviationAmount,
                 allDevs = allDeviations,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = actionLog,
+                events = events,
             )
         }
 
-        return AnalysisResult(buyOrders, sellOrders, actionLog)
+        return RebalancePlan(buyOrders, sellOrders, events)
     }
+
+    private fun RebalancePlan.toAnalysisResult(): AnalysisResult = AnalysisResult(
+        buyOrders = buyOrders,
+        sellOrders = sellOrders,
+        actionLog = events.map(RebalanceEventFormatter::format),
+    )
 
     fun distributeFiatCorrection(
         usdDev: BigDecimal,
@@ -272,6 +299,18 @@ object RebalancerEngine {
         buyOrders: MutableRebalanceOrders,
         sellOrders: MutableRebalanceOrders,
         actionLog: MutableList<String>,
+    ) {
+        val events = mutableListOf<RebalanceEvent>()
+        distributeFiatCorrectionPlan(usdDev, allDevs, buyOrders, sellOrders, events)
+        actionLog.addAll(events.map(RebalanceEventFormatter::format))
+    }
+
+    fun distributeFiatCorrectionPlan(
+        usdDev: BigDecimal,
+        allDevs: AssetDeviations,
+        buyOrders: MutableRebalanceOrders,
+        sellOrders: MutableRebalanceOrders,
+        events: MutableList<RebalanceEvent>,
     ) {
         // Positive USD DevUSD = surplus cash (deposit) → buy underweights; negative = shortage → sell overweights.
         val deviationAbs = usdDev.abs()
@@ -296,7 +335,7 @@ object RebalancerEngine {
                 "Fiat correction required but no suitable " +
                     "counter-balancing assets found.",
             )
-            actionLog.add("Fiat correction: no counter-balancing candidates")
+            events.add(RebalanceEvent.NoCounterBalancingAssets)
             return
         }
 
@@ -313,7 +352,12 @@ object RebalancerEngine {
                 )
             }",
         )
-        actionLog.add(ActionLogFormatter.formatFiatCorrectionDistribution(deviationAbs, candidates.size))
+        events.add(
+            RebalanceEvent.FiatCorrectionDistributed(
+                usdAmount = deviationAbs,
+                candidateCount = candidates.size,
+            ),
+        )
 
         // Truncate rather than round the budget so the shares can never sum above the
         // deviation we are actually correcting (CQ-3-26 / #76).

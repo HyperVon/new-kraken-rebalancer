@@ -4,22 +4,33 @@ import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.LedgerTable
+import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
+import com.gemini.krakenbot.repository.table.SchemaMigrationTable
 import com.gemini.krakenbot.repository.table.TradeTable
+import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.exists
+import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import org.slf4j.LoggerFactory
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.sql.Connection
 import java.sql.DriverManager
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 object DatabaseConfig {
     private val log = LoggerFactory.getLogger(DatabaseConfig::class.java)
+    private const val CURRENT_SCHEMA_VERSION = 3
 
     // A shared in-memory SQLite database disappears when its last connection closes.
     // Retain one connection per URL until JVM shutdown so pooled test connections share stable state.
@@ -42,8 +53,9 @@ object DatabaseConfig {
         )
     }
 
-    private val tables =
+    private val baseTables =
         arrayOf(
+            SchemaMigrationTable,
             PortfolioSnapshotTable,
             AssetSnapshotTable,
             TradeTable,
@@ -53,7 +65,10 @@ object DatabaseConfig {
             HistorySyncMetadataTable,
         )
 
+    private val allTables = baseTables + OrderIntentTable
+
     fun init(dbPath: String = System.getProperty("kraken.db.path", "kraken-rebalancer.db")): Database {
+        backupBeforeMigrationIfNeeded(dbPath)
         val url = buildSqliteUrl(dbPath)
         maintainMemoryDatabase(url)
 
@@ -63,7 +78,7 @@ object DatabaseConfig {
             transaction(database) {
                 currentDialectMetadata.resetCaches()
 
-                val (tablesToCreate, tablesToAlter) = tables.partition { !it.exists() }
+                val (tablesToCreate, tablesToAlter) = baseTables.partition { !it.exists() }
                 val createStatements = SchemaUtils.createStatements(*tablesToCreate.toTypedArray())
                 createStatements.forEach { exec(it) }
 
@@ -89,10 +104,12 @@ object DatabaseConfig {
                     """.trimIndent(),
                 )
 
+                applySchemaMigrations()
+
                 val executedStatements = createStatements + alterStatements
                 val mappingStatements =
                     SchemaUtils
-                        .checkMappingConsistence(tables = tables, withLogs = false)
+                        .checkMappingConsistence(tables = allTables, withLogs = false)
                         .filter { it !in executedStatements }
                 mappingStatements.forEach { exec(it) }
 
@@ -100,6 +117,110 @@ object DatabaseConfig {
             }
             log.info("Database initialized successfully.")
         }
+    }
+
+    private fun JdbcTransaction.applySchemaMigrations() {
+        val appliedVersion =
+            SchemaMigrationTable
+                .select(SchemaMigrationTable.version)
+                .orderBy(SchemaMigrationTable.version, SortOrder.DESC)
+                .limit(1)
+                .firstOrNull()
+                ?.get(SchemaMigrationTable.version)
+                ?: 0
+
+        if (appliedVersion < 1) {
+            SchemaMigrationTable.insert {
+                it[version] = 1
+                it[name] = "baseline"
+                it[appliedAt] = Instant.now().toEpochMilli()
+            }
+        }
+
+        if (!OrderIntentTable.exists()) {
+            currentDialectMetadata.resetCaches()
+            SchemaUtils.createStatements(OrderIntentTable).forEach { exec(it) }
+            currentDialectMetadata.resetCaches()
+        }
+
+        if (appliedVersion < 2) {
+            SchemaMigrationTable.insert {
+                it[version] = 2
+                it[name] = "order-intent-journal"
+                it[appliedAt] = Instant.now().toEpochMilli()
+            }
+        }
+
+        if (appliedVersion < 3) {
+            // Preserve legacy PENDING/UNCERTAIN rows in the operator-facing journal before
+            // clearing the old guard column. The whole migration is transactional, so a failed
+            // import leaves the legacy rows blocking live trading rather than losing the guard.
+            exec(
+                """
+                INSERT INTO order_intents (
+                    cycle_id, client_order_id, pair, symbol, side, volume, usd_amount,
+                    expected_price, created_at, state, order_txid, error_message,
+                    resolved_at, resolution_evidence
+                )
+                SELECT cycle_id, client_order_id, pair, symbol, side, volume, usd_amount,
+                       expected_price, timestamp, submission_state, order_txid, error_message,
+                       NULL, NULL
+                FROM trades
+                WHERE dry_run = 0
+                  AND submission_state IN ('PENDING', 'UNCERTAIN')
+                """.trimIndent(),
+            )
+            exec(
+                """
+                UPDATE trades
+                SET submission_state = NULL
+                WHERE dry_run = 0
+                  AND submission_state IN ('PENDING', 'UNCERTAIN')
+                """.trimIndent(),
+            )
+            SchemaMigrationTable.insert {
+                it[version] = 3
+                it[name] = "legacy-submission-guard-import"
+                it[appliedAt] = Instant.now().toEpochMilli()
+            }
+        }
+    }
+
+    private fun backupBeforeMigrationIfNeeded(dbPath: String) {
+        if (dbPath == ":memory:" || dbPath.startsWith("jdbc:sqlite:")) return
+
+        val databaseFile = File(dbPath)
+        if (!databaseFile.isFile || databaseFile.length() == 0L || !requiresMigrationBackup(databaseFile)) return
+
+        val source = databaseFile.toPath()
+        val backup = source.resolveSibling(
+            "${source.fileName}.pre-migration-${Instant.now().toEpochMilli()}.bak",
+        )
+        try {
+            Files.copy(source, backup, StandardCopyOption.COPY_ATTRIBUTES)
+            log.warn("Created pre-migration database backup at {}", backup)
+        } catch (e: Exception) {
+            throw IllegalStateException("Cannot create pre-migration database backup for $dbPath", e)
+        }
+    }
+
+    private fun requiresMigrationBackup(databaseFile: File): Boolean = try {
+        DriverManager.getConnection("jdbc:sqlite:${databaseFile.path}").use { connection ->
+            connection.createStatement().use { statement ->
+                val version = statement.executeQuery(
+                    "SELECT MAX(version) FROM schema_migrations",
+                ).use { resultSet ->
+                    if (resultSet.next()) resultSet.getInt(1) else 0
+                }
+                val orderIntentTableExists = statement.executeQuery(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'order_intents' LIMIT 1",
+                ).use { resultSet -> resultSet.next() }
+                version < CURRENT_SCHEMA_VERSION || !orderIntentTableExists
+            }
+        }
+    } catch (_: Exception) {
+        // Missing schema_migrations on an existing database is the first migration boundary.
+        true
     }
 
     /**

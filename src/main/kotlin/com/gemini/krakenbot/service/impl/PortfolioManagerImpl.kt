@@ -7,6 +7,7 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RawBalances
+import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.util.toPercentScale
 import com.gemini.krakenbot.util.toUsdScale
@@ -24,6 +25,7 @@ import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.io.IOException
 import java.math.BigDecimal
+import java.time.Instant
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration.Companion.seconds
@@ -58,6 +60,9 @@ class PortfolioManagerImpl(
 
     @Volatile
     private var applicationScope: CoroutineScope? = null
+
+    @Volatile
+    private var operationalStatus = RebalanceOperationalStatus()
 
     override fun stopRebalancingLoop() {
         synchronized(lifecycleLock) {
@@ -101,6 +106,10 @@ class PortfolioManagerImpl(
     }
 
     override fun isLoopPaused(): Boolean = isPaused
+
+    override fun isLoopRunning(): Boolean = isRunning
+
+    override fun getOperationalStatus(): RebalanceOperationalStatus = operationalStatus
 
     override fun pauseLoop() {
         synchronized(lifecycleLock) {
@@ -237,16 +246,30 @@ class PortfolioManagerImpl(
 
     internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
         currentCoroutineContext().ensureActive()
+        val startedAt = Instant.now()
+        operationalStatus = operationalStatus.copy(
+            lastCycleStartedAt = startedAt,
+            lastCycleError = null,
+        )
         configService.beginExecutionSession()
         val cycleId = UUID.randomUUID().toString()
         MDC.put(CYCLE_ID_MDC_KEY, cycleId)
         try {
             val ks = krakenService
-            return if (ks != null) {
+            val snapshot = if (ks != null) {
                 ks.withStableBackend { performRebalanceCyclePinned(cycleId) }
             } else {
                 performRebalanceCyclePinned(cycleId)
             }
+            operationalStatus = operationalStatus.copy(lastCycleCompletedAt = Instant.now())
+            return snapshot
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            operationalStatus = operationalStatus.copy(
+                lastCycleError = e::class.simpleName ?: "CycleFailure",
+            )
+            throw e
         } finally {
             MDC.remove(CYCLE_ID_MDC_KEY)
             configService.endExecutionSession()

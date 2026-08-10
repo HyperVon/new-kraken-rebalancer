@@ -144,6 +144,9 @@ sequenceDiagram
   heuristic fill reconciliation, duplicate cleanup, and retention pruning: an operator must verify
   Kraken open orders, closed orders, and fills before clearing its state in SQLite. Absence from
   trade history alone is never treated as proof of rejection.
+- Historical reconstruction uses the same nested-safe execution-session boundary and pins one
+  exchange backend for the entire pass, so balances, ticker/OHLC prices, and derived snapshots
+  cannot mix settings or live/simulation backends.
 
 ---
 
@@ -259,6 +262,44 @@ sequenceDiagram
   backpressure.
 - Being cold means pagination only runs when `syncTradesFromKraken()` collects —
   nothing polls Kraken for trades in the background.
+
+---
+
+## Flow 6 — Live-Order Intent Journal and Readiness
+
+**Path:** `OrderExecutorImpl` → SQLite `order_intents` → operator API
+
+```mermaid
+sequenceDiagram
+    participant Cycle as Rebalance cycle
+    participant Executor as OrderExecutorImpl
+    participant Journal as SQLite order_intents
+    participant Kraken as Kraken AddOrder
+    participant Operator as Trusted LAN operator
+
+    Cycle->>Executor: execute live order
+    Executor->>Journal: INSERT PENDING + deterministic cl_ord_id
+    Executor->>Kraken: AddOrder (one attempt)
+    alt definite response
+        Kraken-->>Executor: txid or definite rejection
+        Executor->>Journal: CONFIRMED or REJECTED
+    else ambiguous transport/response
+        Kraken--xExecutor: timeout, exception, or missing txid
+        Executor->>Journal: UNCERTAIN
+        Executor-->>Cycle: abort remaining order batch
+    end
+    Operator->>Journal: GET /api/order-intents
+    Operator->>Kraken: verify open/closed order and fills
+    Operator->>Journal: POST /api/order-intents/{id}/resolve + evidence
+    Journal-->>Operator: terminal outcome
+```
+
+The journal is the live-order safety boundary. Any `PENDING` or `UNCERTAIN`
+intent blocks later live batches and makes `/api/readiness` return `503`.
+`/api/health` remains a `200` liveness/diagnostic response. Resolution requires
+the normal double-submit CSRF token, an explicit terminal state, and evidence;
+there is no automatic retry, reconciliation, deduplication, or age-based prune
+for unresolved intents.
 
 ---
 
@@ -402,3 +443,4 @@ The choice between hot and cold flows in this application is deliberate and maps
 | Paginated API sync | **Cold** | Fetching is always triggered on-demand for a specific reason. The caller owns the full lifecycle. Backpressure is critical for memory safety with large histories. |
 | Paginated ledger sync | **Cold** | Ledger pages are fetched only during startup/cycle sync, with insert-only identity dedupe and durable seed progress. |
 | USD settle (fill / balance) | **Cold** | One-shot after sells. Fill-confirm or balance poll only makes sense in that context; the caller only needs the final settled cash. |
+| Live-order journal | **Durable state** | A database row survives process failure and blocks ambiguous live retries until an operator verifies the exchange outcome. |
