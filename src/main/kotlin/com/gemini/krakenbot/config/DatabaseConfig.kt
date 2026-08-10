@@ -42,7 +42,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 object DatabaseConfig {
     private val log = LoggerFactory.getLogger(DatabaseConfig::class.java)
-    private const val CURRENT_SCHEMA_VERSION = 4
+    private const val CURRENT_SCHEMA_VERSION = 5
+    private const val AMBIGUOUS_LEGACY_CLIENT_ORDER_ID_PREFIX = "Ambiguous legacy client_order_id '"
 
     // A shared in-memory SQLite database disappears when its last connection closes.
     // Retain one connection per URL until JVM shutdown so pooled test connections share stable state.
@@ -110,11 +111,12 @@ object DatabaseConfig {
         ExpectedIndex("asset_snapshots", "idx_assetsnapshots_snapshot_id", false, listOf("snapshot_id")),
     )
 
-    private data class LegacyCandidate(val key: String, val id: Int)
+    private data class LegacyCandidate(val exactKey: String, val relaxedKey: String, val id: Int)
 
     private data class TerminalIntent(
         val localTradeId: Int,
         val clientOrderId: String?,
+        val clientOrderIdAmbiguous: Boolean,
         val createdAt: Long,
         val pair: String,
         val symbol: String,
@@ -169,10 +171,13 @@ object DatabaseConfig {
                 )
                 orderIntentAlterStatements.forEach { exec(it) }
                 currentDialectMetadata.resetCaches()
+                markLegacyAmbiguousClientOrderIds()
                 backfillLegacyTradeIds()
                 reconcileTerminalOrderIntents()
                 reconcileLegacySubmissionGuards()
                 recoverPendingOrderIntents()
+                repairInvalidIndexes()
+                currentDialectMetadata.resetCaches()
 
                 val executedStatements = createStatements + alterStatements + orderIntentAlterStatements
                 val mappingStatements =
@@ -234,6 +239,32 @@ object DatabaseConfig {
                 it[appliedAt] = Instant.now().toEpochMilli()
             }
         }
+
+        if (appliedVersion < 5) {
+            SchemaMigrationTable.insert {
+                it[version] = 5
+                it[name] = "ambiguous-legacy-client-order-id"
+                it[appliedAt] = Instant.now().toEpochMilli()
+            }
+        }
+    }
+
+    private fun JdbcTransaction.markLegacyAmbiguousClientOrderIds() {
+        OrderIntentTable
+            .select(OrderIntentTable.id, OrderIntentTable.errorMessage)
+            .where {
+                OrderIntentTable.clientOrderId.isNull() and
+                    (OrderIntentTable.clientOrderIdAmbiguous eq false)
+            }
+            .map { it[OrderIntentTable.id] to it[OrderIntentTable.errorMessage] }
+            .filter { (_, errorMessage) ->
+                errorMessage?.startsWith(AMBIGUOUS_LEGACY_CLIENT_ORDER_ID_PREFIX) == true
+            }
+            .forEach { (id, _) ->
+                OrderIntentTable.update({ OrderIntentTable.id eq id }) {
+                    it[OrderIntentTable.clientOrderIdAmbiguous] = true
+                }
+            }
     }
 
     private fun JdbcTransaction.backfillLegacyTradeIds() {
@@ -241,22 +272,20 @@ object DatabaseConfig {
             .select(OrderIntentTable.localTradeId)
             .where { OrderIntentTable.localTradeId.isNotNull() }
             .map { it[OrderIntentTable.localTradeId]!! }
-            .toSet()
+            .toMutableSet()
         val intentCandidates = OrderIntentTable
             .selectAll()
             .where { OrderIntentTable.localTradeId.isNull() }
             .orderBy(OrderIntentTable.id, SortOrder.ASC)
             .map { row ->
-                LegacyCandidate(
-                    key = legacyIdentityKey(
-                        clientOrderId = row[OrderIntentTable.clientOrderId],
-                        timestamp = row[OrderIntentTable.createdAt],
-                        pair = row[OrderIntentTable.pair],
-                        symbol = row[OrderIntentTable.symbol],
-                        side = row[OrderIntentTable.side],
-                        volume = row[OrderIntentTable.volume].toPlainString(),
-                        usdAmount = row[OrderIntentTable.usdAmount].toPlainString(),
-                    ),
+                legacyCandidate(
+                    clientOrderId = row[OrderIntentTable.clientOrderId],
+                    timestamp = row[OrderIntentTable.createdAt],
+                    pair = row[OrderIntentTable.pair],
+                    symbol = row[OrderIntentTable.symbol],
+                    side = row[OrderIntentTable.side],
+                    volume = row[OrderIntentTable.volume].toPlainString(),
+                    usdAmount = row[OrderIntentTable.usdAmount].toPlainString(),
                     id = row[OrderIntentTable.id],
                 )
             }
@@ -276,37 +305,52 @@ object DatabaseConfig {
                 if (tradeId in assignedTradeIds) {
                     null
                 } else {
-                    LegacyCandidate(
-                        key = legacyIdentityKey(
-                            clientOrderId = row[TradeTable.clientOrderId],
-                            timestamp = row[TradeTable.timestamp],
-                            pair = row[TradeTable.pair],
-                            symbol = row[TradeTable.symbol],
-                            side = row[TradeTable.side],
-                            volume = row[TradeTable.volume].toPlainString(),
-                            usdAmount = row[TradeTable.usdAmount].toPlainString(),
-                        ),
+                    legacyCandidate(
+                        clientOrderId = row[TradeTable.clientOrderId],
+                        timestamp = row[TradeTable.timestamp],
+                        pair = row[TradeTable.pair],
+                        symbol = row[TradeTable.symbol],
+                        side = row[TradeTable.side],
+                        volume = row[TradeTable.volume].toPlainString(),
+                        usdAmount = row[TradeTable.usdAmount].toPlainString(),
                         id = tradeId,
                     )
                 }
             }
-        val tradesByKey = tradeCandidates.groupBy(LegacyCandidate::key)
-        intentCandidates
-            .groupBy(LegacyCandidate::key)
-            .forEach { (key, intents) ->
-                val trades = tradesByKey[key].orEmpty()
-                if (intents.size != 1 || trades.size != 1) return@forEach
-                intents.sortedBy(LegacyCandidate::id)
-                    .zip(trades.sortedBy(LegacyCandidate::id))
-                    .forEach { (intent, trade) ->
-                        OrderIntentTable.update({ OrderIntentTable.id eq intent.id }) {
-                            it[OrderIntentTable.localTradeId] = trade.id
-                        }
+        val assignedIntentIds = mutableSetOf<Int>()
+
+        fun assignBy(keySelector: (LegacyCandidate) -> String) {
+            val tradesByKey = tradeCandidates
+                .filter { it.id !in assignedTradeIds }
+                .groupBy(keySelector)
+            intentCandidates
+                .filter { it.id !in assignedIntentIds }
+                .groupBy(keySelector)
+                .forEach { (key, intents) ->
+                    val trades = tradesByKey[key].orEmpty()
+                    if (intents.size != 1 || trades.size != 1) return@forEach
+                    val intent = intents.single()
+                    val trade = trades.single()
+                    val updatedRows = OrderIntentTable.update({
+                        (OrderIntentTable.id eq intent.id) and OrderIntentTable.localTradeId.isNull()
+                    }) {
+                        it[OrderIntentTable.localTradeId] = trade.id
                     }
-            }
+                    check(updatedRows == 1) {
+                        "Expected to link one legacy order intent, but updated $updatedRows for intent ${intent.id}."
+                    }
+                    assignedIntentIds += intent.id
+                    assignedTradeIds += trade.id
+                }
+        }
+
+        // Exact matching is preferred. The relaxed pass supports the merged journal's original
+        // separate Instant.now() calls while still requiring a unique immutable identity.
+        assignBy(LegacyCandidate::exactKey)
+        assignBy(LegacyCandidate::relaxedKey)
     }
 
-    private fun legacyIdentityKey(
+    private fun legacyCandidate(
         clientOrderId: String?,
         timestamp: Long,
         pair: String,
@@ -314,9 +358,42 @@ object DatabaseConfig {
         side: String,
         volume: String,
         usdAmount: String,
-    ): String {
-        val fingerprint = "$timestamp:$pair:$symbol:$side:$volume:$usdAmount"
-        return clientOrderId?.let { "CLIENT:$it:$fingerprint" } ?: "LEGACY:$fingerprint"
+        id: Int,
+    ): LegacyCandidate {
+        val common = LegacyIdentity(
+            clientOrderId = clientOrderId,
+            pair = pair,
+            symbol = symbol,
+            side = side,
+            volume = volume,
+            usdAmount = usdAmount,
+        )
+        return LegacyCandidate(
+            exactKey = legacyIdentityKey(common, timestamp),
+            relaxedKey = legacyIdentityKey(common, null),
+            id = id,
+        )
+    }
+
+    private data class LegacyIdentity(
+        val clientOrderId: String?,
+        val pair: String,
+        val symbol: String,
+        val side: String,
+        val volume: String,
+        val usdAmount: String,
+    )
+
+    private fun legacyIdentityKey(identity: LegacyIdentity, timestamp: Long?): String {
+        val fingerprint = listOfNotNull(
+            timestamp?.toString(),
+            identity.pair,
+            identity.symbol,
+            identity.side,
+            identity.volume,
+            identity.usdAmount,
+        ).joinToString(":")
+        return identity.clientOrderId?.let { "CLIENT:$it:$fingerprint" } ?: "LEGACY:$fingerprint"
     }
 
     private fun JdbcTransaction.reconcileTerminalOrderIntents() {
@@ -334,6 +411,7 @@ object DatabaseConfig {
                 TerminalIntent(
                     localTradeId = row[OrderIntentTable.localTradeId]!!,
                     clientOrderId = row[OrderIntentTable.clientOrderId],
+                    clientOrderIdAmbiguous = row[OrderIntentTable.clientOrderIdAmbiguous],
                     createdAt = row[OrderIntentTable.createdAt],
                     pair = row[OrderIntentTable.pair],
                     symbol = row[OrderIntentTable.symbol],
@@ -353,9 +431,11 @@ object DatabaseConfig {
                     "Multiple terminal order intents reference local trade $localTradeId."
                 }
                 val resolvedIntent = intents.single()
-                val clientOrderIdentity = resolvedIntent.clientOrderId?.let { clientOrderId ->
-                    TradeTable.clientOrderId eq clientOrderId
-                } ?: TradeTable.clientOrderId.isNull()
+                val clientOrderIdentity = when {
+                    resolvedIntent.clientOrderId != null -> TradeTable.clientOrderId eq resolvedIntent.clientOrderId
+                    resolvedIntent.clientOrderIdAmbiguous -> TradeTable.id eq TradeTable.id
+                    else -> TradeTable.clientOrderId.isNull()
+                }
                 val tradeIdentity = clientOrderIdentity and
                     (TradeTable.timestamp eq resolvedIntent.createdAt) and
                     (TradeTable.pair eq resolvedIntent.pair) and
@@ -386,17 +466,42 @@ object DatabaseConfig {
                     it[TradeTable.submissionState] = null
                 }
                 if (updatedRows == 0) {
-                    val currentSubmissionState = TradeTable
-                        .select(TradeTable.submissionState)
+                    val currentTrade = TradeTable
+                        .selectAll()
                         .where { TradeTable.id eq resolvedIntent.localTradeId }
                         .firstOrNull()
-                        ?.get(TradeTable.submissionState)
+                    check(currentTrade != null) {
+                        "Cannot reconcile terminal order intent for missing local trade " +
+                            resolvedIntent.localTradeId
+                    }
+                    val clientOrderMatches = when {
+                        resolvedIntent.clientOrderIdAmbiguous -> true
+
+                        resolvedIntent.clientOrderId != null ->
+                            currentTrade[TradeTable.clientOrderId] == resolvedIntent.clientOrderId
+
+                        else -> currentTrade[TradeTable.clientOrderId] == null
+                    }
+                    val immutableIdentityMatches = clientOrderMatches &&
+                        currentTrade[TradeTable.timestamp] == resolvedIntent.createdAt &&
+                        currentTrade[TradeTable.pair] == resolvedIntent.pair &&
+                        currentTrade[TradeTable.symbol] == resolvedIntent.symbol &&
+                        currentTrade[TradeTable.side] == resolvedIntent.side &&
+                        currentTrade[TradeTable.volume].compareTo(resolvedIntent.volume) == 0 &&
+                        currentTrade[TradeTable.usdAmount].compareTo(resolvedIntent.usdAmount) == 0 &&
+                        !currentTrade[TradeTable.dryRun] &&
+                        currentTrade[TradeTable.tradeSource] in listOf(null, TradeSource.LOCAL_ESTIMATE.name)
+                    check(immutableIdentityMatches) {
+                        "Cannot reconcile terminal order intent for local trade " +
+                            "${resolvedIntent.localTradeId}: immutable trade identity changed."
+                    }
+                    val currentSubmissionState = currentTrade[TradeTable.submissionState]
                     check(
                         currentSubmissionState != OrderSubmissionState.PENDING.name &&
                             currentSubmissionState != OrderSubmissionState.UNCERTAIN.name,
                     ) {
                         "Cannot reconcile terminal order intent for local trade " +
-                            "${resolvedIntent.localTradeId}: immutable trade identity changed."
+                            "${resolvedIntent.localTradeId}: submission is still unresolved."
                     }
                 }
             }
@@ -462,15 +567,61 @@ object DatabaseConfig {
                 .select(OrderIntentTable.id)
                 .where { OrderIntentTable.localTradeId eq tradeId }
                 .any()
-            if (!alreadyImported) {
-                val ambiguityMessage = if (ambiguousClientOrderId) {
-                    "Ambiguous legacy client_order_id '$clientOrderId'; verify this trade before resolution. "
-                } else {
-                    ""
+            val ambiguityMessage = if (ambiguousClientOrderId) {
+                "$AMBIGUOUS_LEGACY_CLIENT_ORDER_ID_PREFIX$clientOrderId'; " +
+                    "verify this trade before resolution. "
+            } else {
+                ""
+            }
+            val reusableIntent = clientOrderId?.takeIf { ambiguousClientOrderId }?.let { ambiguousClientId ->
+                OrderIntentTable
+                    .select(OrderIntentTable.id, OrderIntentTable.errorMessage)
+                    .where {
+                        (
+                            (OrderIntentTable.clientOrderId eq ambiguousClientId) or
+                                (
+                                    OrderIntentTable.clientOrderId.isNull() and
+                                        (OrderIntentTable.clientOrderIdAmbiguous eq true)
+                                    )
+                            ) and
+                            OrderIntentTable.localTradeId.isNull() and
+                            (OrderIntentTable.pair eq row[TradeTable.pair]) and
+                            (OrderIntentTable.symbol eq row[TradeTable.symbol]) and
+                            (OrderIntentTable.side eq row[TradeTable.side]) and
+                            (OrderIntentTable.volume eq row[TradeTable.volume]) and
+                            (OrderIntentTable.usdAmount eq row[TradeTable.usdAmount])
+                    }
+                    .orderBy(OrderIntentTable.id, SortOrder.ASC)
+                    .firstOrNull()
+            }
+            val unlinkedConflictingIntent = clientOrderId != null && OrderIntentTable
+                .select(OrderIntentTable.id)
+                .where {
+                    (OrderIntentTable.clientOrderId eq clientOrderId) and
+                        OrderIntentTable.localTradeId.isNull()
                 }
+                .any()
+            check(!unlinkedConflictingIntent || reusableIntent != null) {
+                "Cannot safely migrate legacy client_order_id '$clientOrderId' for trade $tradeId."
+            }
+            if (reusableIntent != null) {
+                val updatedRows = OrderIntentTable.update({
+                    OrderIntentTable.id eq reusableIntent[OrderIntentTable.id]
+                }) {
+                    it[OrderIntentTable.clientOrderId] = null
+                    it[OrderIntentTable.clientOrderIdAmbiguous] = true
+                    it[OrderIntentTable.localTradeId] = tradeId
+                    it[OrderIntentTable.errorMessage] = ambiguityMessage +
+                        (reusableIntent[OrderIntentTable.errorMessage] ?: row[TradeTable.errorMessage] ?: "")
+                }
+                check(updatedRows == 1) {
+                    "Expected to update one ambiguous legacy order intent, but updated $updatedRows."
+                }
+            } else if (!alreadyImported) {
                 OrderIntentTable.insert {
                     it[OrderIntentTable.cycleId] = row[TradeTable.cycleId]
                     it[OrderIntentTable.clientOrderId] = if (ambiguousClientOrderId) null else clientOrderId
+                    it[OrderIntentTable.clientOrderIdAmbiguous] = ambiguousClientOrderId
                     it[OrderIntentTable.pair] = row[TradeTable.pair]
                     it[OrderIntentTable.symbol] = row[TradeTable.symbol]
                     it[OrderIntentTable.side] = row[TradeTable.side]
@@ -493,6 +644,36 @@ object DatabaseConfig {
         }
     }
 
+    private fun JdbcTransaction.readIndexDefinition(index: ExpectedIndex): Pair<Boolean, List<String>>? {
+        val unique = exec("PRAGMA index_list('${index.tableName}')") { resultSet ->
+            var value: Boolean? = null
+            while (resultSet.next()) {
+                if (resultSet.getString("name") == index.name) {
+                    value = resultSet.getInt("unique") != 0
+                    break
+                }
+            }
+            value
+        } ?: return null
+        val columns = exec("PRAGMA index_info('${index.name}')") { resultSet ->
+            buildList {
+                while (resultSet.next()) {
+                    add(resultSet.getString("name") ?: "")
+                }
+            }
+        } ?: emptyList()
+        return unique to columns
+    }
+
+    private fun JdbcTransaction.repairInvalidIndexes() {
+        expectedIndexes.forEach { expectedIndex ->
+            val actualDefinition = readIndexDefinition(expectedIndex)
+            if (actualDefinition != null && actualDefinition != (expectedIndex.unique to expectedIndex.columns)) {
+                exec("DROP INDEX IF EXISTS ${expectedIndex.name}")
+            }
+        }
+    }
+
     private fun backupBeforeMigrationIfNeeded(dbPath: String) {
         val databaseFile = resolveFileBackedDatabase(dbPath) ?: return
         if (!databaseFile.isFile || databaseFile.length() == 0L || !requiresMigrationBackup(databaseFile)) return
@@ -502,6 +683,11 @@ object DatabaseConfig {
             "${source.fileName}.pre-migration-${Instant.now().toEpochMilli()}.bak",
         )
         try {
+            DriverManager.getConnection("jdbc:sqlite:${databaseFile.path}").use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                }
+            }
             Files.copy(source, backup, StandardCopyOption.COPY_ATTRIBUTES)
             log.warn("Created pre-migration database backup at {}", backup)
         } catch (e: Exception) {

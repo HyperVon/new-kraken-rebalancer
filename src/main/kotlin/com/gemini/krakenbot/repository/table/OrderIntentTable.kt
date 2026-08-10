@@ -6,6 +6,7 @@ object OrderIntentTable : Table("order_intents") {
     val id = integer("id").autoIncrement()
     val cycleId = varchar("cycle_id", 36).nullable()
     val clientOrderId = varchar("client_order_id", 36).nullable()
+    val clientOrderIdAmbiguous = bool("client_order_id_ambiguous").default(false)
     val pair = varchar("pair", 16)
     val symbol = varchar("symbol", 16)
     val side = varchar("side", 4)

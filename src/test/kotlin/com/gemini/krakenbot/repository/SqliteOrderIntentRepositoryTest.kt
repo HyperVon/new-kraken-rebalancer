@@ -129,6 +129,41 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
+        "reconciles an explicitly ambiguous client ID through its linked trade" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val legacyIntent = newIntent().copy(clientOrderId = null)
+                val tradeId = tradeRepository.saveTrade(
+                    legacyIntent.toPendingTrade().copy(clientOrderId = "duplicate-client"),
+                )
+                val intentId = service.savePending(
+                    legacyIntent.copy(
+                        clientOrderIdAmbiguous = true,
+                        localTradeId = tradeId,
+                    ),
+                )
+
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Success(
+                        pair = legacyIntent.pair,
+                        side = legacyIntent.side,
+                        volume = legacyIntent.volume,
+                        orderTxid = "O-AMBIGUOUS",
+                    ),
+                ) shouldBe true
+
+                tradeRepository
+                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                    .single()
+                    .also { trade ->
+                        trade.success shouldBe true
+                        trade.orderTxid shouldBe "O-AMBIGUOUS"
+                        trade.submissionState shouldBe null
+                    }
+            }
+        }
+
         "maps a stored resolution timestamp on an unresolved intent" {
             runTest {
                 val intentId = savePendingWithTrade(newIntent())

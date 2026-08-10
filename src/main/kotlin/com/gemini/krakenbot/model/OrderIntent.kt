@@ -8,6 +8,7 @@ data class OrderIntent(
     val id: Int? = null,
     val cycleId: String?,
     val clientOrderId: String?,
+    val clientOrderIdAmbiguous: Boolean = false,
     val pair: String,
     val symbol: String,
     val side: String,

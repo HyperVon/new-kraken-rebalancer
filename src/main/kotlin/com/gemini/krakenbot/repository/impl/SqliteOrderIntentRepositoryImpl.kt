@@ -30,6 +30,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
             OrderIntentTable.insert {
                 it[cycleId] = intent.cycleId
                 it[clientOrderId] = intent.clientOrderId
+                it[clientOrderIdAmbiguous] = intent.clientOrderIdAmbiguous
                 it[pair] = intent.pair
                 it[symbol] = intent.symbol
                 it[side] = intent.side
@@ -151,9 +152,11 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         errorMessage: String?,
     ) {
         val effectiveOrderTxid = orderTxid ?: intent.orderTxid
-        val clientOrderIdentity = intent.clientOrderId?.let { clientOrderId ->
-            TradeTable.clientOrderId eq clientOrderId
-        } ?: TradeTable.clientOrderId.isNull()
+        val clientOrderIdentity = when {
+            intent.clientOrderId != null -> TradeTable.clientOrderId eq intent.clientOrderId
+            intent.clientOrderIdAmbiguous -> TradeTable.id eq TradeTable.id
+            else -> TradeTable.clientOrderId.isNull()
+        }
         val tradeIdentity = clientOrderIdentity and
             (TradeTable.timestamp eq intent.createdAt.toEpochMilli()) and
             (TradeTable.pair eq intent.pair) and
@@ -209,6 +212,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         id = row[OrderIntentTable.id],
         cycleId = row[OrderIntentTable.cycleId],
         clientOrderId = row[OrderIntentTable.clientOrderId],
+        clientOrderIdAmbiguous = row[OrderIntentTable.clientOrderIdAmbiguous],
         pair = row[OrderIntentTable.pair],
         symbol = row[OrderIntentTable.symbol],
         side = row[OrderIntentTable.side],

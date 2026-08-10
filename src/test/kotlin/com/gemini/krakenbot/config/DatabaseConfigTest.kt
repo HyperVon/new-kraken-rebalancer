@@ -37,12 +37,36 @@ class DatabaseConfigTest : StringSpec() {
                 connection.createStatement().use { statement ->
                     statement.executeQuery("SELECT MAX(version) FROM schema_migrations").use { resultSet ->
                         resultSet.next() shouldBe true
-                        resultSet.getInt(1) shouldBe 4
+                        resultSet.getInt(1) shouldBe 5
                     }
                     statement.executeQuery(
                         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'order_intents'",
                     ).use { resultSet ->
                         resultSet.next() shouldBe true
+                    }
+                }
+            }
+        }
+
+        "repairs a malformed same-name order intent index" {
+            val databaseUrl = "jdbc:sqlite:file:malformed-index-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP INDEX idx_order_intents_state")
+                    statement.executeUpdate("CREATE INDEX idx_order_intents_state ON order_intents(created_at)")
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA index_info('idx_order_intents_state')").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("name") shouldBe "state"
+                        resultSet.next() shouldBe false
                     }
                 }
             }
@@ -54,7 +78,7 @@ class DatabaseConfigTest : StringSpec() {
 
             DriverManager.getConnection(databaseUrl).use { connection ->
                 connection.createStatement().use { statement ->
-                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 4")
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 5")
                     statement.executeUpdate(
                         """
                         INSERT INTO trades (
@@ -180,11 +204,13 @@ class DatabaseConfigTest : StringSpec() {
             DriverManager.getConnection(databaseUrl).use { connection ->
                 connection.createStatement().use { statement ->
                     statement.executeQuery(
-                        "SELECT client_order_id, local_trade_id, error_message FROM order_intents ORDER BY local_trade_id",
+                        "SELECT client_order_id, client_order_id_ambiguous, local_trade_id, error_message " +
+                            "FROM order_intents ORDER BY local_trade_id",
                     ).use { resultSet ->
                         repeat(2) {
                             resultSet.next() shouldBe true
                             resultSet.getString("client_order_id") shouldBe null
+                            resultSet.getBoolean("client_order_id_ambiguous") shouldBe true
                             val expectedError =
                                 "Ambiguous legacy client_order_id 'duplicate-client'; " +
                                     "verify this trade before resolution. timeout-${it + 1}"
@@ -192,6 +218,57 @@ class DatabaseConfigTest : StringSpec() {
                                 expectedError
                         }
                         resultSet.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "backfills an upstream journal intent when only its timestamp differs" {
+            val databaseUrl = "jdbc:sqlite:file:upstream-timestamp-skew-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES (
+                            1700000015000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'response lost', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            'upstream-cycle', NULL, NULL, 'upstream-client', 'UNCERTAIN'
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO order_intents (
+                            cycle_id, client_order_id, client_order_id_ambiguous, pair, symbol, side,
+                            volume, usd_amount, expected_price, created_at, state, order_txid,
+                            error_message, resolved_at, resolution_evidence, local_trade_id
+                        ) VALUES (
+                            'upstream-cycle', 'upstream-client', 0, 'XBTUSD', 'BTC', 'BUY',
+                            '0.01000000', '500.00', '50000.00000000', 1700000015042, 'UNCERTAIN', NULL,
+                            'response lost', NULL, NULL, NULL
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT COUNT(*), MIN(local_trade_id), MIN(client_order_id_ambiguous) FROM order_intents",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 1
+                        resultSet.getInt(2) shouldNotBe 0
+                        resultSet.getInt(3) shouldBe 0
                     }
                 }
             }
@@ -319,7 +396,7 @@ class DatabaseConfigTest : StringSpec() {
                         )
                         """.trimIndent(),
                     )
-                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 4")
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 5")
                 }
             }
 
@@ -354,7 +431,7 @@ class DatabaseConfigTest : StringSpec() {
 
                 DriverManager.getConnection(databaseUrl).use { connection ->
                     connection.createStatement().use { statement ->
-                        statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 4")
+                        statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 5")
                     }
                 }
 

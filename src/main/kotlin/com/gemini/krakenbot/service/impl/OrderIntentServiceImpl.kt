@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.service.OrderIntentService
+import java.io.IOException
 import java.time.Instant
 
 class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : OrderIntentService {
@@ -39,8 +40,16 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
         }
         require(evidence.isNotBlank()) { "Resolution evidence is required." }
         val normalizedOrderTxid = orderTxid?.trim()?.takeIf(String::isNotEmpty)
-        check(repository.resolve(id, state, evidence.trim(), Instant.now(), normalizedOrderTxid)) {
-            "Order intent $id is missing or already resolved."
+        try {
+            check(repository.resolve(id, state, evidence.trim(), Instant.now(), normalizedOrderTxid)) {
+                "Order intent $id is missing or already resolved."
+            }
+        } catch (e: IOException) {
+            val reconciliationFailure = e.cause as? IllegalStateException
+            if (reconciliationFailure != null) {
+                throw reconciliationFailure
+            }
+            throw e
         }
     }
 }
