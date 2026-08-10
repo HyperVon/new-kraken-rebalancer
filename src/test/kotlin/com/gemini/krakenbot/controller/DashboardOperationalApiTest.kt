@@ -105,7 +105,12 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
         "valid CSRF resolves an order intent with exchange evidence" {
             every { configService.getConfig() } returns TestFixtures.config()
             coEvery {
-                orderIntentService.resolve(7, OrderIntentState.CONFIRMED, "Kraken txid O-123")
+                orderIntentService.resolve(
+                    7,
+                    OrderIntentState.CONFIRMED,
+                    "Kraken txid O-123",
+                    "O-123",
+                )
             } returns Unit
 
             testApplication {
@@ -119,6 +124,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                             FormFields.CSRF_TOKEN to listOf(csrf.value),
                             FormFields.ORDER_INTENT_STATE to listOf("CONFIRMED"),
                             FormFields.ORDER_INTENT_EVIDENCE to listOf("Kraken txid O-123"),
+                            FormFields.ORDER_INTENT_ORDER_TXID to listOf("O-123"),
                         ).formUrlEncode(),
                     )
                 }
@@ -128,7 +134,14 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain "\"state\":\"CONFIRMED\""
             }
 
-            coVerify { orderIntentService.resolve(7, OrderIntentState.CONFIRMED, "Kraken txid O-123") }
+            coVerify {
+                orderIntentService.resolve(
+                    7,
+                    OrderIntentState.CONFIRMED,
+                    "Kraken txid O-123",
+                    "O-123",
+                )
+            }
         }
 
         "order-intent resolution validates the path, terminal state, evidence, and conflicts" {

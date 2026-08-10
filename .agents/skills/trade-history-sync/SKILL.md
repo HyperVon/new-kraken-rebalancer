@@ -61,7 +61,8 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   reconcile.
 - Rows with `submissionState` (`PENDING` / `UNCERTAIN`) are legacy unresolved
   live guards, not reconciliation candidates. Schema migration imports them
-  into the durable `order_intents` journal before clearing the legacy column;
+  into the durable `order_intents` journal while retaining the legacy column
+  until the intent is resolved;
   new live attempts use `order_intents` directly. Both forms are excluded from
   duplicate cleanup and age-based trade pruning. Never infer rejection from an
   empty history response or clear them automatically.

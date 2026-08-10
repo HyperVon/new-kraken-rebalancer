@@ -142,7 +142,7 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   trade IDs across shifted settle pages count once.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 - **Operational readiness**: `/api/health` is liveness/diagnostic; `/api/readiness` is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while new or legacy unresolved live-order state remains. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
-- **Schema safety**: `DatabaseConfig` records schema versions, backs up file-backed databases before migration, and imports legacy `TradeRecord.submissionState` guards into `order_intents` before clearing the legacy blocking column.
+- **Schema safety**: `DatabaseConfig` records schema versions, backs up file-backed databases before migration, and idempotently imports legacy `TradeRecord.submissionState` guards into `order_intents` while retaining the legacy blocking column until resolution.
 
 ---
 

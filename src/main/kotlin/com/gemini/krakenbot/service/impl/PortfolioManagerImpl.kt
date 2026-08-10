@@ -107,7 +107,8 @@ class PortfolioManagerImpl(
 
     override fun isLoopPaused(): Boolean = isPaused
 
-    override fun isLoopRunning(): Boolean = isRunning
+    override fun isLoopRunning(): Boolean = isRunning &&
+        (workerJob?.isActive ?: (applicationScope == null))
 
     override fun getOperationalStatus(): RebalanceOperationalStatus = operationalStatus
 
@@ -143,6 +144,7 @@ class PortfolioManagerImpl(
         }
 
         val currentJob = currentCoroutineContext()[Job]
+        var cancellationObserved = false
         try {
             val admitted = synchronized(lifecycleLock) {
                 if (!isRunning) {
@@ -159,11 +161,19 @@ class PortfolioManagerImpl(
             }
             if (!admitted) return
 
-            runLoopBody()
+            try {
+                runLoopBody()
+            } catch (e: CancellationException) {
+                cancellationObserved = true
+                throw e
+            }
         } finally {
             synchronized(lifecycleLock) {
                 if (workerJob === currentJob) {
                     workerJob = null
+                    if (applicationScope == null && (cancellationObserved || currentJob?.isCancelled == true)) {
+                        isRunning = false
+                    }
                 }
             }
             runLoopMutex.unlock()

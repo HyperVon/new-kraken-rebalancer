@@ -759,7 +759,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |
 | `GET` | `/api/readiness` | Readiness status; returns `503` until safe to operate (JSON) |
 | `GET` | `/api/order-intents` | Unresolved live-order intents for operator review (JSON) |
-| `POST` | `/api/order-intents/{id}/resolve` | Resolve an intent as `CONFIRMED` or `REJECTED` with evidence (CSRF-protected) |
+| `POST` | `/api/order-intents/{id}/resolve` | Resolve an intent as `CONFIRMED` or `REJECTED` with evidence and optional `orderTxid` (CSRF-protected) |
 | `POST` | `/api/pause` | Pause loop (CSRF-protected) |
 | `POST` | `/api/resume` | Resume loop (CSRF-protected) |
 | `GET` | `/api/history/snapshots` | Portfolio snapshots for History charts (JSON, `?range=`) |

@@ -16,5 +16,5 @@ interface OrderIntentService {
 
     suspend fun getUnresolvedIntents(): List<OrderIntent>
 
-    suspend fun resolve(id: Int, state: OrderIntentState, evidence: String)
+    suspend fun resolve(id: Int, state: OrderIntentState, evidence: String, orderTxid: String? = null)
 }

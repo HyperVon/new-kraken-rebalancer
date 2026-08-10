@@ -18,10 +18,12 @@ object OrderIntentTable : Table("order_intents") {
     val errorMessage = text("error_message").nullable()
     val resolvedAt = long("resolved_at").nullable()
     val resolutionEvidence = text("resolution_evidence").nullable()
+    val localTradeId = integer("local_trade_id").nullable()
 
     init {
         index("idx_order_intents_state", false, state)
         index("idx_order_intents_created_at", false, createdAt)
+        index("idx_order_intents_local_trade_id", false, localTradeId)
         index("ux_order_intents_client_order_id", true, clientOrderId)
     }
 

@@ -12,6 +12,8 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
@@ -40,6 +42,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 it[errorMessage] = null
                 it[resolvedAt] = null
                 it[resolutionEvidence] = null
+                it[localTradeId] = intent.localTradeId
             }[OrderIntentTable.id]
         }
 
@@ -111,29 +114,35 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
             .map(::buildIntent)
     }
 
-    override suspend fun resolve(id: Int, state: OrderIntentState, evidence: String, resolvedAt: Instant): Boolean =
-        database.safeTransactionIO(log, "Failed to resolve order intent") {
-            val intent = OrderIntentTable
-                .selectAll()
-                .where {
-                    (OrderIntentTable.id eq id) and
-                        (OrderIntentTable.state eq OrderIntentState.UNCERTAIN.name)
-                }
-                .firstOrNull()
-                ?.let(::buildIntent)
-            val resolved = OrderIntentTable.update({
+    override suspend fun resolve(
+        id: Int,
+        state: OrderIntentState,
+        evidence: String,
+        resolvedAt: Instant,
+        orderTxid: String?,
+    ): Boolean = database.safeTransactionIO(log, "Failed to resolve order intent") {
+        val intent = OrderIntentTable
+            .selectAll()
+            .where {
                 (OrderIntentTable.id eq id) and
                     (OrderIntentTable.state eq OrderIntentState.UNCERTAIN.name)
-            }) {
-                it[OrderIntentTable.state] = state.name
-                it[OrderIntentTable.resolutionEvidence] = evidence
-                it[OrderIntentTable.resolvedAt] = resolvedAt.toEpochMilli()
-            } == 1
-            if (resolved) {
-                intent?.let { updateLocalTrade(it, state, it.orderTxid, evidence) }
             }
-            resolved
+            .firstOrNull()
+            ?.let(::buildIntent)
+        val resolved = OrderIntentTable.update({
+            (OrderIntentTable.id eq id) and
+                (OrderIntentTable.state eq OrderIntentState.UNCERTAIN.name)
+        }) {
+            it[OrderIntentTable.state] = state.name
+            it[OrderIntentTable.resolutionEvidence] = evidence
+            it[OrderIntentTable.resolvedAt] = resolvedAt.toEpochMilli()
+            it[OrderIntentTable.orderTxid] = orderTxid ?: intent?.orderTxid
+        } == 1
+        if (resolved) {
+            intent?.let { updateLocalTrade(it, state, orderTxid ?: it.orderTxid, evidence) }
         }
+        resolved
+    }
 
     private fun updateLocalTrade(
         intent: OrderIntent,
@@ -141,12 +150,42 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         orderTxid: String?,
         errorMessage: String?,
     ) {
-        val clientOrderId = intent.clientOrderId ?: return
         val effectiveOrderTxid = orderTxid ?: intent.orderTxid
-        TradeTable.update({
-            (TradeTable.clientOrderId eq clientOrderId) and
-                (TradeTable.dryRun eq false) and
-                (TradeTable.tradeSource eq TradeSource.LOCAL_ESTIMATE.name)
+        val clientOrderIdentity = intent.clientOrderId?.let { clientOrderId ->
+            TradeTable.clientOrderId eq clientOrderId
+        } ?: TradeTable.clientOrderId.isNull()
+        val tradeIdentity = clientOrderIdentity and
+            (TradeTable.timestamp eq intent.createdAt.toEpochMilli()) and
+            (TradeTable.pair eq intent.pair) and
+            (TradeTable.symbol eq intent.symbol) and
+            (TradeTable.side eq intent.side) and
+            (TradeTable.volume eq intent.volume) and
+            (TradeTable.usdAmount eq intent.usdAmount) and
+            (TradeTable.dryRun eq false) and
+            ((TradeTable.tradeSource eq TradeSource.LOCAL_ESTIMATE.name) or TradeTable.tradeSource.isNull()) and
+            (
+                TradeTable.submissionState inList listOf(
+                    OrderIntentState.PENDING.name,
+                    OrderIntentState.UNCERTAIN.name,
+                )
+                )
+        val localTradeId = intent.localTradeId ?: run {
+            val candidateIds = TradeTable
+                .select(TradeTable.id)
+                .where { tradeIdentity }
+                .orderBy(TradeTable.id, SortOrder.ASC)
+                .limit(2)
+                .map { it[TradeTable.id] }
+            check(candidateIds.size <= 1) {
+                "Cannot reconcile order intent ${intent.id}: multiple local trade candidates exist."
+            }
+            candidateIds.singleOrNull()
+        }
+        if (localTradeId == null) {
+            error("Cannot reconcile order intent ${intent.id}: no matching local trade exists.")
+        }
+        val updatedRows = TradeTable.update({
+            (TradeTable.id eq localTradeId) and tradeIdentity
         }) {
             it[TradeTable.success] = state == OrderIntentState.CONFIRMED
             it[TradeTable.errorMessage] = if (state == OrderIntentState.CONFIRMED) null else errorMessage
@@ -160,6 +199,9 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 OrderIntentState.REJECTED,
                 -> null
             }
+        }
+        check(updatedRows == 1) {
+            "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing."
         }
     }
 
@@ -179,6 +221,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         errorMessage = row[OrderIntentTable.errorMessage],
         resolvedAt = row[OrderIntentTable.resolvedAt]?.let(Instant::ofEpochMilli),
         resolutionEvidence = row[OrderIntentTable.resolutionEvidence],
+        localTradeId = row[OrderIntentTable.localTradeId],
     )
 
     private fun unresolvedStates(): List<String> = listOf(

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSubmissionState
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -18,6 +19,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
+import java.time.Instant
 import kotlin.coroutines.cancellation.CancellationException
 
 class OrderExecutorSubmissionSafetyTest : StringSpec() {
@@ -336,7 +338,11 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                 val orderIntentService = mockk<OrderIntentService>(relaxed = true)
                 val journaledExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
                 val events = mutableListOf<String>()
-                coEvery { tradeHistoryService.saveTrade(any()) } returns 70
+                var pendingTimestamp: Instant? = null
+                coEvery { tradeHistoryService.saveTrade(any()) } coAnswers {
+                    pendingTimestamp = firstArg<TradeRecord>().timestamp
+                    70
+                }
                 coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
                 coEvery { orderIntentService.hasUnresolvedIntents() } returns false
                 coEvery { orderIntentService.savePending(any()) } coAnswers {
@@ -373,7 +379,9 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                         match {
                             it.cycleId == "journaled-success" &&
                                 it.state == OrderIntentState.PENDING &&
-                                it.side == "BUY"
+                                it.side == "BUY" &&
+                                it.localTradeId == 70 &&
+                                it.createdAt == pendingTimestamp
                         },
                     )
                     orderIntentService.recordOutcome(

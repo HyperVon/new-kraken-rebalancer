@@ -33,12 +33,13 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
 
     override suspend fun getUnresolvedIntents(): List<OrderIntent> = repository.loadUnresolvedIntents()
 
-    override suspend fun resolve(id: Int, state: OrderIntentState, evidence: String) {
+    override suspend fun resolve(id: Int, state: OrderIntentState, evidence: String, orderTxid: String?) {
         require(state == OrderIntentState.CONFIRMED || state == OrderIntentState.REJECTED) {
             "Only CONFIRMED or REJECTED outcomes can resolve an order intent."
         }
         require(evidence.isNotBlank()) { "Resolution evidence is required." }
-        check(repository.resolve(id, state, evidence.trim(), Instant.now())) {
+        val normalizedOrderTxid = orderTxid?.trim()?.takeIf(String::isNotEmpty)
+        check(repository.resolve(id, state, evidence.trim(), Instant.now(), normalizedOrderTxid)) {
             "Order intent $id is missing or already resolved."
         }
     }
