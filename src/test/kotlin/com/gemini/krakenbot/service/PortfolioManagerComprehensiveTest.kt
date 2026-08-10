@@ -17,6 +17,7 @@ import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.every
 import kotlinx.coroutines.test.runTest
+import java.io.IOException
 import java.math.BigDecimal
 
 class PortfolioManagerComprehensiveTest : StringSpec() {
@@ -273,6 +274,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 krakenService.executedOrders.size shouldBe 0
+                portfolioManager.getOperationalStatus().lastCycleError shouldBe "Cycle produced no snapshot"
             }
         }
 
@@ -343,6 +345,23 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 snapshots.single().actions.any {
                     it.startsWith("FAILED BUY A")
                 }.shouldBeTrue()
+            }
+        }
+
+        "Scenario: Order Execution Exception - Snapshot Retained and Cycle Marked Failed" {
+            runTest {
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation(TestFixtures.A, 100.0),
+                    Allocation(Asset.USD, 0.0),
+                )
+                krakenService.pricesSupplier = { mapOf(TestFixtures.AUSD to 100.0) }
+                krakenService.balanceSupplier = { mapOf(TestFixtures.A to 0.0, Asset.USD to 1000.0) }
+                val original = IOException("exchange unavailable")
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+
+                portfolioManager.performRebalanceCycle()
+
+                portfolioManager.getOperationalStatus().lastCycleError shouldBe "Order execution failed"
             }
         }
     }

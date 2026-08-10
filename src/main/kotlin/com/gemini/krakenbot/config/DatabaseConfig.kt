@@ -105,6 +105,7 @@ object DatabaseConfig {
                 )
 
                 applySchemaMigrations()
+                recoverPendingOrderIntents()
 
                 val executedStatements = createStatements + alterStatements
                 val mappingStatements =
@@ -152,9 +153,9 @@ object DatabaseConfig {
         }
 
         if (appliedVersion < 3) {
-            // Preserve legacy PENDING/UNCERTAIN rows in the operator-facing journal before
-            // clearing the old guard column. The whole migration is transactional, so a failed
-            // import leaves the legacy rows blocking live trading rather than losing the guard.
+            // Preserve legacy PENDING/UNCERTAIN rows in the operator-facing journal. Keep the
+            // original guard column too: retention and duplicate cleanup must not delete local
+            // evidence while an imported intent remains unresolved.
             exec(
                 """
                 INSERT INTO order_intents (
@@ -170,14 +171,6 @@ object DatabaseConfig {
                   AND submission_state IN ('PENDING', 'UNCERTAIN')
                 """.trimIndent(),
             )
-            exec(
-                """
-                UPDATE trades
-                SET submission_state = NULL
-                WHERE dry_run = 0
-                  AND submission_state IN ('PENDING', 'UNCERTAIN')
-                """.trimIndent(),
-            )
             SchemaMigrationTable.insert {
                 it[version] = 3
                 it[name] = "legacy-submission-guard-import"
@@ -186,10 +179,22 @@ object DatabaseConfig {
         }
     }
 
-    private fun backupBeforeMigrationIfNeeded(dbPath: String) {
-        if (dbPath == ":memory:" || dbPath.startsWith("jdbc:sqlite:")) return
+    private fun JdbcTransaction.recoverPendingOrderIntents() {
+        exec(
+            """
+            UPDATE order_intents
+            SET state = 'UNCERTAIN',
+                error_message = COALESCE(
+                    error_message,
+                    'Recovered pending intent after restart; verify Kraken before resolution.'
+                )
+            WHERE state = 'PENDING'
+            """.trimIndent(),
+        )
+    }
 
-        val databaseFile = File(dbPath)
+    private fun backupBeforeMigrationIfNeeded(dbPath: String) {
+        val databaseFile = resolveFileBackedDatabase(dbPath) ?: return
         if (!databaseFile.isFile || databaseFile.length() == 0L || !requiresMigrationBackup(databaseFile)) return
 
         val source = databaseFile.toPath()
@@ -202,6 +207,20 @@ object DatabaseConfig {
         } catch (e: Exception) {
             throw IllegalStateException("Cannot create pre-migration database backup for $dbPath", e)
         }
+    }
+
+    private fun resolveFileBackedDatabase(dbPath: String): File? {
+        val sqlitePath = dbPath.removePrefix("jdbc:sqlite:")
+        val querylessPath = sqlitePath.substringBefore('?')
+        if (dbPath == ":memory:" ||
+            querylessPath == ":memory:" ||
+            sqlitePath.contains("mode=memory", ignoreCase = true)
+        ) {
+            return null
+        }
+
+        val filePath = querylessPath.removePrefix("file:")
+        return filePath.takeIf { it.isNotBlank() }?.let(::File)
     }
 
     private fun requiresMigrationBackup(databaseFile: File): Boolean = try {

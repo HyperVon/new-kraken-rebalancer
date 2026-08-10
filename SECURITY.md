@@ -148,6 +148,9 @@ blocks later live submissions. If this occurs:
    unresolved rows with `GET /api/order-intents`, then submit
    `POST /api/order-intents/{id}/resolve` with `state=CONFIRMED` or
    `state=REJECTED`, a concise evidence note, and the normal CSRF token.
+   A `PENDING` row remains protected while its AddOrder may still be in flight;
+   wait for it to become `UNCERTAIN` (or for restart recovery to mark it
+   uncertain) before resolving it.
 
 The recommended **Query Closed Orders & Trades** permission covers ClosedOrders
 and TradesHistory. Direct REST verification through OpenOrders additionally
@@ -161,9 +164,10 @@ order. Unresolved intents are deliberately excluded from heuristic
 reconciliation, duplicate cleanup, and age-based pruning.
 
 `GET /api/readiness` returns `503` while an unresolved intent exists, while the
-loop is paused or stopped, before a snapshot has been produced, or after a cycle
-failure. `/api/health` remains a `200` liveness/diagnostic endpoint so monitoring
-can still report the reason for non-readiness.
+loop is paused or stopped, before a snapshot has been produced, after a cycle
+failure, or when configuration is unavailable. `/api/health` remains a `200`
+liveness/diagnostic endpoint so monitoring can still report the reason for
+non-readiness.
 
 ## Security scope and limitations
 

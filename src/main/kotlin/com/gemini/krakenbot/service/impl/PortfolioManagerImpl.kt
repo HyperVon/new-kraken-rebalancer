@@ -261,7 +261,18 @@ class PortfolioManagerImpl(
             } else {
                 performRebalanceCyclePinned(cycleId)
             }
-            operationalStatus = operationalStatus.copy(lastCycleCompletedAt = Instant.now())
+            if (snapshot == null) {
+                operationalStatus = operationalStatus.copy(
+                    lastCycleError = operationalStatus.lastCycleError ?: "Cycle produced no snapshot",
+                )
+            } else if (operationalStatus.lastCycleError == null) {
+                operationalStatus = operationalStatus.copy(lastCycleCompletedAt = Instant.now())
+            } else {
+                log.warn(
+                    "Rebalance cycle produced a snapshot with an operational error: {}",
+                    operationalStatus.lastCycleError,
+                )
+            }
             return snapshot
         } catch (e: CancellationException) {
             throw e
@@ -352,6 +363,7 @@ class PortfolioManagerImpl(
             throw e
         } catch (e: Exception) {
             log.error("Order execution failed; continuing with a snapshot", e)
+            markCycleError("Order execution failed")
             actionLog.add("ERROR: Order execution failed: ${e.message ?: e.javaClass.simpleName}")
         }
 
@@ -365,6 +377,7 @@ class PortfolioManagerImpl(
                             RebalanceState(postBalances, postPrices, values, total)
                         },
                         onFailure = {
+                            markCycleError("Post-trade valuation failed")
                             RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
                         },
                     )
@@ -375,6 +388,7 @@ class PortfolioManagerImpl(
                         "Failed to fetch post-trade balances/prices for snapshot, falling back to pre-trade values",
                         e,
                     )
+                    markCycleError("Post-trade state refresh failed")
                     RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
                 }
             } else {
@@ -398,11 +412,16 @@ class PortfolioManagerImpl(
             tradeHistoryService.addSnapshot(snapshot)
         } catch (e: IOException) {
             log.error("Failed to persist trade history snapshot", e)
+            markCycleError("Trade history persistence failed")
             actionLog.add("$ERROR_PERSIST_TRADE_HISTORY_PREFIX${e.message}")
         }
 
         log.info("--- Cycle Complete ---")
         return snapshot
+    }
+
+    private fun markCycleError(error: String) {
+        operationalStatus = operationalStatus.copy(lastCycleError = error)
     }
 }
 

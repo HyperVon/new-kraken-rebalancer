@@ -10,6 +10,7 @@ import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
 import com.gemini.krakenbot.config.configureCompression
 import com.gemini.krakenbot.config.configureSerialization
 import com.gemini.krakenbot.controller.dashboardRouting
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
 import io.ktor.client.HttpClient
@@ -36,13 +37,14 @@ private val log = LoggerFactory.getLogger("KrakenRebalancerApplication")
 internal suspend fun joinRebalancingWorker(
     workerJob: Job?,
     hasPendingSubmissions: suspend () -> Boolean = { false },
+    hasUnresolvedOrderIntents: suspend () -> Boolean = { false },
 ): Boolean {
     val joinedWithinBudget = withTimeoutOrNull(REBALANCING_SHUTDOWN_TIMEOUT_MILLIS) {
         workerJob?.join()
         true
     } ?: false
     if (joinedWithinBudget) return true
-    if (hasPendingSubmissions()) {
+    if (hasPendingSubmissions() || hasUnresolvedOrderIntents()) {
         // A live submission (or its journal write) may still be in flight. Releasing the HTTP client
         // and Koin graph now could strand a PENDING/UNCERTAIN record, so extend the wait instead.
         log.warn(
@@ -63,6 +65,7 @@ fun main() {
     val koin = GlobalContext.get()
     val portfolioManager = koin.get<PortfolioManager>()
     val tradeHistoryService = koin.get<TradeHistoryService>()
+    val orderIntentService = koin.get<OrderIntentService>()
     val httpClient = koin.get<HttpClient>()
     val objectMapper = koin.get<ObjectMapper>()
 
@@ -81,7 +84,11 @@ fun main() {
             portfolioManager.stopRebalancingLoop()
             val workerJoined =
                 runBlocking {
-                    joinRebalancingWorker(workerJob) { tradeHistoryService.hasPendingSubmissions() }
+                    joinRebalancingWorker(
+                        workerJob = workerJob,
+                        hasPendingSubmissions = { tradeHistoryService.hasPendingSubmissions() },
+                        hasUnresolvedOrderIntents = { orderIntentService.hasUnresolvedIntents() },
+                    )
                 }
             if (!workerJoined) {
                 log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")

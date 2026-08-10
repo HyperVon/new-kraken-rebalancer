@@ -12,13 +12,13 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
         intent.copy(state = OrderIntentState.PENDING),
     )
 
-    override suspend fun recordOutcome(id: Int, result: OrderResult) {
+    override suspend fun recordOutcome(id: Int, result: OrderResult): Boolean {
         val state = when {
             result.submissionUncertain -> OrderIntentState.UNCERTAIN
             result.success -> OrderIntentState.CONFIRMED
             else -> OrderIntentState.REJECTED
         }
-        repository.recordOutcome(
+        return repository.recordOutcome(
             id = id,
             state = state,
             orderTxid = result.orderTxid,

@@ -335,11 +335,18 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
             runTest {
                 val orderIntentService = mockk<OrderIntentService>(relaxed = true)
                 val journaledExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
+                val events = mutableListOf<String>()
                 coEvery { tradeHistoryService.saveTrade(any()) } returns 70
                 coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
                 coEvery { orderIntentService.hasUnresolvedIntents() } returns false
-                coEvery { orderIntentService.savePending(any()) } returns 700
-                coEvery { orderIntentService.recordOutcome(any(), any()) } returns Unit
+                coEvery { orderIntentService.savePending(any()) } coAnswers {
+                    events += "journal-pending"
+                    700
+                }
+                coEvery { orderIntentService.recordOutcome(any(), any()) } coAnswers {
+                    events += "journal-outcome"
+                    true
+                }
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
                         success = true,
@@ -349,6 +356,7 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                         orderTxid = "O-700",
                     )
                 }
+                krakenService.executeOrderAction = { _, _, _, _ -> events += "exchange" }
 
                 journaledExecutor.executeOrders(
                     buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
@@ -373,6 +381,154 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                         match { it.success && it.orderTxid == "O-700" },
                     )
                 }
+                coVerify(exactly = 0) { tradeHistoryService.updateTrade(any(), any()) }
+                events shouldBe listOf("journal-pending", "exchange", "journal-outcome")
+            }
+        }
+
+        "durable outcome persistence preserves a backend exception without a second local write" {
+            runTest {
+                val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+                val journaledExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
+                val original = IOException("response lost after durable submission")
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 74
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                coEvery { orderIntentService.hasUnresolvedIntents() } returns false
+                coEvery { orderIntentService.savePending(any()) } returns 704
+                coEvery { orderIntentService.recordOutcome(any(), any()) } returns true
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+
+                shouldThrow<IOException> {
+                    journaledExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings = TestFixtures.settings(dryRun = false),
+                        actionLog = mutableListOf(),
+                        cycleId = "journaled-exception",
+                    )
+                } shouldBe original
+
+                coVerify(exactly = 0) { tradeHistoryService.updateTrade(any(), any()) }
+            }
+        }
+
+        "late terminal resolution aborts the rest of the live batch" {
+            runTest {
+                val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+                val journaledExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
+                val attemptedSymbols = mutableListOf<String>()
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 77
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                coEvery { orderIntentService.hasUnresolvedIntents() } returns false
+                coEvery { orderIntentService.savePending(any()) } returns 707
+                coEvery { orderIntentService.recordOutcome(any(), any()) } returns false
+                krakenService.executeOrderAction = { pair, _, _, _ -> attemptedSymbols += pair }
+
+                journaledExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("25.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(Asset.BTC to BigDecimal("1000.00"), Asset.ETH to BigDecimal("1000.00")),
+                    settings = TestFixtures.settings(dryRun = false),
+                    actionLog = mutableListOf(),
+                    cycleId = "journaled-late-resolution",
+                )
+
+                attemptedSymbols shouldBe listOf(Asset.BTC_USD_PAIR)
+            }
+        }
+
+        "durable cancellation preserves an operator resolution without a second local write" {
+            runTest {
+                val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+                val journaledExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
+                val original = CancellationException("placement cancelled after durable submission")
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 75
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                coEvery { orderIntentService.hasUnresolvedIntents() } returns false
+                coEvery { orderIntentService.savePending(any()) } returns 705
+                coEvery { orderIntentService.recordOutcome(any(), any()) } returns false
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+
+                shouldThrow<CancellationException> {
+                    journaledExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings = TestFixtures.settings(dryRun = false),
+                        actionLog = mutableListOf(),
+                        cycleId = "journaled-cancellation",
+                    )
+                } shouldBe original
+
+                coVerify(exactly = 0) { tradeHistoryService.updateTrade(any(), any()) }
+            }
+        }
+
+        "durable cancellation persists an uncertain outcome without a legacy fallback write" {
+            runTest {
+                val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+                val journaledExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
+                val original = CancellationException("placement cancelled after durable journal write")
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 76
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                coEvery { orderIntentService.hasUnresolvedIntents() } returns false
+                coEvery { orderIntentService.savePending(any()) } returns 706
+                coEvery { orderIntentService.recordOutcome(any(), any()) } returns true
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+
+                shouldThrow<CancellationException> {
+                    journaledExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings = TestFixtures.settings(dryRun = false),
+                        actionLog = mutableListOf(),
+                        cycleId = "journaled-cancellation-applied",
+                    )
+                } shouldBe original
+
+                coVerify(exactly = 0) { tradeHistoryService.updateTrade(any(), any()) }
+            }
+        }
+
+        "durable cancellation persistence failure keeps a legacy uncertain guard" {
+            runTest {
+                val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+                val journaledExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
+                val original = CancellationException("placement cancelled before durable outcome")
+                val persistenceFailure = IllegalStateException("order intent outcome unavailable")
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 77
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                coEvery { orderIntentService.hasUnresolvedIntents() } returns false
+                coEvery { orderIntentService.savePending(any()) } returns 707
+                coEvery { orderIntentService.recordOutcome(any(), any()) } throws persistenceFailure
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+
+                val thrown = shouldThrow<CancellationException> {
+                    journaledExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings = TestFixtures.settings(dryRun = false),
+                        actionLog = mutableListOf(),
+                        cycleId = "journaled-cancellation-failed",
+                    )
+                }
+
+                thrown shouldBe original
+                thrown.suppressed.single() shouldBe persistenceFailure
+                coVerify {
+                    tradeHistoryService.updateTrade(
+                        any(),
+                        match { it.submissionState == OrderSubmissionState.UNCERTAIN },
+                    )
+                }
             }
         }
 
@@ -380,11 +536,15 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
             runTest {
                 val orderIntentService = mockk<OrderIntentService>(relaxed = true)
                 val journaledExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
+                var unresolved = false
                 coEvery { tradeHistoryService.saveTrade(any()) } returns 71
                 coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
-                coEvery { orderIntentService.hasUnresolvedIntents() } returnsMany listOf(false, true)
+                coEvery { orderIntentService.hasUnresolvedIntents() } coAnswers { unresolved }
                 coEvery { orderIntentService.savePending(any()) } returns 701
-                coEvery { orderIntentService.recordOutcome(any(), any()) } returns Unit
+                coEvery { orderIntentService.recordOutcome(any(), any()) } coAnswers {
+                    unresolved = true
+                    true
+                }
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(success = true, pair = pair, side = side, volume = volume)
                 }
@@ -417,6 +577,31 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                         match { it.submissionUncertain },
                     )
                 }
+            }
+        }
+
+        "live journaling refuses placement without a stable cycle id" {
+            runTest {
+                val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+                val journaledExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 73
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                coEvery { orderIntentService.hasUnresolvedIntents() } returns false
+
+                shouldThrow<IllegalStateException> {
+                    journaledExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings = TestFixtures.settings(dryRun = false),
+                        actionLog = mutableListOf(),
+                        cycleId = "",
+                    )
+                }
+
+                krakenService.executedOrders.size shouldBe 0
+                coVerify(exactly = 0) { orderIntentService.savePending(any()) }
             }
         }
 

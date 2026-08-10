@@ -8,8 +8,10 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.test.runTest
+import java.nio.file.Files
 import java.sql.DriverManager
 import java.time.Instant
+import java.util.Comparator
 import java.util.UUID
 
 class DatabaseConfigTest : StringSpec() {
@@ -59,10 +61,15 @@ class DatabaseConfigTest : StringSpec() {
                             timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
                             error_message, price, fee, slippage_percent, expected_price, source,
                             cycle_id, order_txid, trade_id, client_order_id, submission_state
-                        ) VALUES (
+                        ) VALUES
+                        (
                             1700000000000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
                             'timeout', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
                             'cycle-legacy', NULL, NULL, 'client-legacy', 'PENDING'
+                        ), (
+                            1700000001000, 'XBTUSD', 'SELL', 'BTC', '0.00500000', '250.00', 0, 0,
+                            'connection reset', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            'cycle-legacy-uncertain', NULL, NULL, 'client-legacy-uncertain', 'UNCERTAIN'
                         )
                         """.trimIndent(),
                     )
@@ -77,13 +84,44 @@ class DatabaseConfigTest : StringSpec() {
                         "SELECT COUNT(*) FROM order_intents WHERE state = 'PENDING'",
                     ).use { resultSet ->
                         resultSet.next() shouldBe true
-                        resultSet.getInt(1) shouldBe 1
+                        resultSet.getInt(1) shouldBe 0
+                    }
+                    statement.executeQuery(
+                        "SELECT COUNT(*) FROM order_intents WHERE state = 'UNCERTAIN'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 2
                     }
                     statement.executeQuery("SELECT submission_state FROM trades").use { resultSet ->
                         resultSet.next() shouldBe true
-                        resultSet.getString(1) shouldBe null
+                        resultSet.getString(1) shouldBe "PENDING"
+                        resultSet.next() shouldBe true
+                        resultSet.getString(1) shouldBe "UNCERTAIN"
                     }
                 }
+            }
+        }
+
+        "creates a backup for a file-backed JDBC URL before migration" {
+            val directory = Files.createTempDirectory("kraken-db-backup-")
+            try {
+                val databasePath = directory.resolve("rebalancer.db")
+                val databaseUrl = "jdbc:sqlite:$databasePath"
+                DatabaseConfig.init(databaseUrl)
+
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 3")
+                    }
+                }
+
+                DatabaseConfig.init(databaseUrl)
+
+                Files.list(directory).use { files ->
+                    files.anyMatch { it.fileName.toString().startsWith("rebalancer.db.pre-migration-") } shouldBe true
+                }
+            } finally {
+                Files.walk(directory).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
             }
         }
 

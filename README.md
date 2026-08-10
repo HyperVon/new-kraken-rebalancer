@@ -342,8 +342,11 @@ with a wide range of tools and paradigms:
   persists a `PENDING` intent with its deterministic `cl_ord_id`. Ambiguous
   transport/response failures become `UNCERTAIN`, abort the remaining batch,
   and block later live orders until an operator verifies Kraken and resolves
-  the SQLite row through `/api/order-intents`; unresolved intents are not
-  reconciled, deduplicated, or pruned automatically
+  the SQLite row with `POST /api/order-intents/{id}/resolve` using explicit
+  evidence. `PENDING` rows cannot be manually resolved while an AddOrder may
+  still be in flight; abandoned PENDING rows are recovered as UNCERTAIN on
+  restart. Unresolved intents are not reconciled, deduplicated, or pruned
+  automatically
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
@@ -812,7 +815,7 @@ To run JS browser tests only:
 
 Tests cover:
 
-- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **39 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 39 scenarios.
+- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **40 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 40 scenarios.
 - **Simulation Evaluation Suite** (`SimulationEvaluationScenariosTest`) — 6 invariant cases against the production `SimulatedKrakenService` emulator with real TradeHistory + in-memory SQLite. See **[EVALUATION.md](docs/EVALUATION.md)** for case descriptions.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing

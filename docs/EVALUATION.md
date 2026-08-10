@@ -49,8 +49,8 @@ FakeKraken exact-math cases:
 
 ## Scenarios & Outcomes
 
-Below is the report of the current 39 scenarios run by the suite and their results.
-The latest run recorded 39/39 PASS. Generated order-client UUIDs are omitted
+Below is the report of the current 40 scenarios run by the suite and their results.
+The latest run recorded 40/40 PASS. Generated order-client UUIDs are omitted
 from this stable summary; refresh it from
 `build/reports/scenarios_evaluation_report.md` after suite changes and redact
 absolute paths or temporary identifiers.
@@ -96,3 +96,4 @@ absolute paths or temporary identifiers.
 | Scenario 37 | withStableBackend pins config across rebalance | 🟢 **PASS** | Config values were 100 outside and inside the pinned block, then 999 afterward; pinning verified. |
 | Scenario 38 | Ledgers sync recovery uses 96d bound not full history | 🟢 **PASS** | Interrupted ledgers recovery completed from the 96-day bound with a null prior watermark. |
 | Scenario 39 | PENDING→UNCERTAIN batch abort via cl_ord_id | 🟢 **PASS** | Two intents were created; the second became UNCERTAIN, the remaining batch was not attempted, and the next live cycle was blocked until reconciliation. Generated client-order UUIDs omitted. |
+| Scenario 40 | Zero Total Portfolio Value / 100% Drawdown | 🟢 **PASS** | Zero balances handled without exception; 0 orders verified. |

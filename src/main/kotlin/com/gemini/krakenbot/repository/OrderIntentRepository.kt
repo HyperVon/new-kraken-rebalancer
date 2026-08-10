@@ -13,7 +13,7 @@ interface OrderIntentRepository {
         orderTxid: String?,
         errorMessage: String?,
         resolvedAt: Instant?,
-    )
+    ): Boolean
 
     suspend fun hasUnresolvedIntents(): Boolean
 

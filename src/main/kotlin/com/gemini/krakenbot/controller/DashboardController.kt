@@ -54,6 +54,7 @@ import kotlinx.html.stream.createHTML
 import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.math.BigDecimal
+import java.time.DateTimeException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -478,29 +479,61 @@ class DashboardController(
         }
     }
 
-    private suspend fun buildHealthResponse(): Pair<Map<String, Any>, Boolean> {
-        val stats = tradeHistoryService.getHistoryStats()
-        val latestSnapshot = tradeHistoryService.getLatestSnapshot()
-        val paused = portfolioManager.isLoopPaused()
-        val loopRunning = portfolioManager.isLoopRunning()
-        val cycleStatus = portfolioManager.getOperationalStatus()
-        val unresolvedOrderIntents = orderIntentService.countUnresolvedIntents()
-        val legacyUnresolvedSubmissions = tradeHistoryService.hasPendingSubmissions()
-        val settings = try {
-            configService.getConfig().settings
-        } catch (_: Exception) {
+    private suspend fun buildHealthResponse(): Pair<Map<String, Any?>, Boolean> {
+        var diagnosticsAvailable = true
+        suspend fun <T> readDiagnostic(name: String, block: suspend () -> T): T? = try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            diagnosticsAvailable = false
+            log.warn("Health diagnostic failed: {}", name, e)
             null
         }
-        val syncTime = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+
+        val stats = readDiagnostic("history stats") { tradeHistoryService.getHistoryStats() }
+        val latestSnapshot = readDiagnostic("latest snapshot") { tradeHistoryService.getLatestSnapshot() }
+        val paused = readDiagnostic("loop pause state") { portfolioManager.isLoopPaused() } ?: false
+        val loopRunning = readDiagnostic("loop running state") { portfolioManager.isLoopRunning() } ?: false
+        val cycleStatus = readDiagnostic("cycle status") { portfolioManager.getOperationalStatus() }
+            ?: com.gemini.krakenbot.service.RebalanceOperationalStatus()
+        val unresolvedOrderIntents = readDiagnostic("order intent status") {
+            orderIntentService.countUnresolvedIntents()
+        }
+        val legacyUnresolvedSubmissions = readDiagnostic("legacy submission status") {
+            tradeHistoryService.hasPendingSubmissions()
+        }
+        val settings = readDiagnostic("configuration") { configService.getConfig().settings }
+        val syncTime = readDiagnostic("trade sync watermark") {
+            tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+        }
             ?.toLongOrNull()
-            ?.let { Instant.ofEpochSecond(it).toString() }
+            ?.let { epochSecond ->
+                try {
+                    Instant.ofEpochSecond(epochSecond).toString()
+                } catch (_: DateTimeException) {
+                    "N/A"
+                }
+            }
             ?: "N/A"
         val readinessReason = when {
             paused -> "PAUSED"
+
             !loopRunning -> HealthStatusKeys.LOOP_NOT_RUNNING
+
+            settings == null -> HealthStatusKeys.CONFIG_UNAVAILABLE
+
+            !diagnosticsAvailable -> HealthStatusKeys.DIAGNOSTICS_UNAVAILABLE
+
+            unresolvedOrderIntents == null || legacyUnresolvedSubmissions == null ->
+                HealthStatusKeys.DIAGNOSTICS_UNAVAILABLE
+
             unresolvedOrderIntents > 0 || legacyUnresolvedSubmissions -> "UNRESOLVED_ORDER_INTENT"
+
             latestSnapshot == null -> "NO_SNAPSHOT"
+
             cycleStatus.lastCycleError != null -> "LAST_CYCLE_FAILED"
+
             else -> "READY"
         }
         val ready = readinessReason == "READY"
@@ -508,8 +541,8 @@ class DashboardController(
             HealthStatusKeys.STATUS to HealthStatusKeys.STATUS_UP,
             HealthStatusKeys.TIMESTAMP to Instant.now().toString(),
             HealthStatusKeys.UPTIME_SECONDS to ManagementFactory.getRuntimeMXBean().uptime / 1000,
-            HealthStatusKeys.TOTAL_TRADES_EXECUTED to stats.totalTradesExecuted,
-            HealthStatusKeys.TOTAL_VOLUME_TRADED to stats.totalVolumeTraded,
+            HealthStatusKeys.TOTAL_TRADES_EXECUTED to (stats?.totalTradesExecuted ?: 0L),
+            HealthStatusKeys.TOTAL_VOLUME_TRADED to (stats?.totalVolumeTraded ?: BigDecimal.ZERO),
             HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
             HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO),
             HealthStatusKeys.PAUSED to paused,

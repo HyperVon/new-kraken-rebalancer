@@ -279,5 +279,36 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain "\"readinessReason\":\"UNRESOLVED_ORDER_INTENT\""
             }
         }
+
+        "readiness fails closed for unavailable config and invalid sync watermark" {
+            val snapshot = TestFixtures.emptySnapshot(Instant.parse("2026-08-09T12:00:00Z"), BigDecimal("1000.00"))
+            coEvery { tradeHistoryService.getHistoryStats() } returns HistoryStats(
+                allTimeHigh = BigDecimal.ZERO,
+                totalTradesExecuted = 0L,
+                totalVolumeTraded = BigDecimal.ZERO,
+                totalFeesPaid = BigDecimal.ZERO,
+                latestSnapshotTime = snapshot.timestamp,
+            )
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot
+            coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+            coEvery { tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) } returns
+                Long.MAX_VALUE.toString()
+            coEvery { orderIntentService.countUnresolvedIntents() } returns 0L
+            every { portfolioManager.isLoopPaused() } returns false
+            every { portfolioManager.isLoopRunning() } returns true
+            every { portfolioManager.getOperationalStatus() } returns RebalanceOperationalStatus(
+                lastCycleCompletedAt = snapshot.timestamp,
+            )
+            every { configService.getConfig() } throws IllegalStateException("config unavailable")
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val response = client.get("/api/readiness")
+                response.status shouldBe HttpStatusCode.ServiceUnavailable
+                response.bodyAsText() shouldContain "\"readinessReason\":\"CONFIG_UNAVAILABLE\""
+                response.bodyAsText() shouldContain "\"lastTradeSyncTime\":\"N/A\""
+            }
+        }
     }
 }

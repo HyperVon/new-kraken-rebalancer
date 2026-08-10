@@ -2,8 +2,10 @@ package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.table.OrderIntentTable
+import com.gemini.krakenbot.repository.table.TradeTable
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
@@ -47,16 +49,42 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         orderTxid: String?,
         errorMessage: String?,
         resolvedAt: Instant?,
-    ) {
-        database.safeTransactionIO(log, "Failed to record order intent outcome") {
-            val updatedRows = OrderIntentTable.update({ OrderIntentTable.id eq id }) {
-                it[OrderIntentTable.state] = state.name
-                it[OrderIntentTable.orderTxid] = orderTxid
-                it[OrderIntentTable.errorMessage] = errorMessage
-                it[OrderIntentTable.resolvedAt] = resolvedAt?.toEpochMilli()
+    ): Boolean = database.safeTransactionIO(log, "Failed to record order intent outcome") {
+        val intent = OrderIntentTable
+            .selectAll()
+            .where {
+                (OrderIntentTable.id eq id) and
+                    (OrderIntentTable.state eq OrderIntentState.PENDING.name)
             }
-            check(updatedRows == 1) { "Expected to update one order intent, but updated $updatedRows for intent $id" }
+            .firstOrNull()
+            ?.let(::buildIntent)
+        val updatedRows = OrderIntentTable.update({
+            (OrderIntentTable.id eq id) and
+                (OrderIntentTable.state eq OrderIntentState.PENDING.name)
+        }) {
+            it[OrderIntentTable.state] = state.name
+            it[OrderIntentTable.orderTxid] = orderTxid
+            it[OrderIntentTable.errorMessage] = errorMessage
+            it[OrderIntentTable.resolvedAt] = resolvedAt?.toEpochMilli()
         }
+        if (updatedRows != 1) {
+            val currentState = OrderIntentTable
+                .select(OrderIntentTable.state)
+                .where { OrderIntentTable.id eq id }
+                .firstOrNull()
+                ?.get(OrderIntentTable.state)
+            check(
+                currentState == OrderIntentState.CONFIRMED.name ||
+                    currentState == OrderIntentState.REJECTED.name,
+            ) {
+                "Expected to update one pending order intent, but updated $updatedRows for intent $id"
+            }
+            // An operator resolution won the race. Preserve its evidence and terminal outcome.
+        }
+        if (updatedRows == 1) {
+            intent?.let { updateLocalTrade(it, state, orderTxid, errorMessage) }
+        }
+        updatedRows == 1
     }
 
     override suspend fun hasUnresolvedIntents(): Boolean = database.readTransactionIO {
@@ -85,15 +113,55 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
 
     override suspend fun resolve(id: Int, state: OrderIntentState, evidence: String, resolvedAt: Instant): Boolean =
         database.safeTransactionIO(log, "Failed to resolve order intent") {
-            OrderIntentTable.update({
+            val intent = OrderIntentTable
+                .selectAll()
+                .where {
+                    (OrderIntentTable.id eq id) and
+                        (OrderIntentTable.state eq OrderIntentState.UNCERTAIN.name)
+                }
+                .firstOrNull()
+                ?.let(::buildIntent)
+            val resolved = OrderIntentTable.update({
                 (OrderIntentTable.id eq id) and
-                    (OrderIntentTable.state inList unresolvedStates())
+                    (OrderIntentTable.state eq OrderIntentState.UNCERTAIN.name)
             }) {
                 it[OrderIntentTable.state] = state.name
                 it[OrderIntentTable.resolutionEvidence] = evidence
                 it[OrderIntentTable.resolvedAt] = resolvedAt.toEpochMilli()
             } == 1
+            if (resolved) {
+                intent?.let { updateLocalTrade(it, state, it.orderTxid, evidence) }
+            }
+            resolved
         }
+
+    private fun updateLocalTrade(
+        intent: OrderIntent,
+        state: OrderIntentState,
+        orderTxid: String?,
+        errorMessage: String?,
+    ) {
+        val clientOrderId = intent.clientOrderId ?: return
+        val effectiveOrderTxid = orderTxid ?: intent.orderTxid
+        TradeTable.update({
+            (TradeTable.clientOrderId eq clientOrderId) and
+                (TradeTable.dryRun eq false) and
+                (TradeTable.tradeSource eq TradeSource.LOCAL_ESTIMATE.name)
+        }) {
+            it[TradeTable.success] = state == OrderIntentState.CONFIRMED
+            it[TradeTable.errorMessage] = if (state == OrderIntentState.CONFIRMED) null else errorMessage
+            it[TradeTable.orderTxid] = effectiveOrderTxid
+            it[TradeTable.submissionState] = when (state) {
+                OrderIntentState.UNCERTAIN -> OrderIntentState.UNCERTAIN.name
+
+                OrderIntentState.PENDING -> OrderIntentState.PENDING.name
+
+                OrderIntentState.CONFIRMED,
+                OrderIntentState.REJECTED,
+                -> null
+            }
+        }
+    }
 
     private fun buildIntent(row: ResultRow): OrderIntent = OrderIntent(
         id = row[OrderIntentTable.id],

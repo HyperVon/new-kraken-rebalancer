@@ -298,7 +298,9 @@ The journal is the live-order safety boundary. Any `PENDING` or `UNCERTAIN`
 intent blocks later live batches and makes `/api/readiness` return `503`.
 `/api/health` remains a `200` liveness/diagnostic response. Resolution requires
 the normal double-submit CSRF token, an explicit terminal state, and evidence;
-there is no automatic retry, reconciliation, deduplication, or age-based prune
+only UNCERTAIN intents are eligible for manual resolution while PENDING denotes
+an in-flight AddOrder. There is no automatic retry, reconciliation,
+deduplication, or age-based prune
 for unresolved intents.
 
 ---

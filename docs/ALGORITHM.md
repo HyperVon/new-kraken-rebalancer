@@ -284,9 +284,11 @@ failure.
       clearing the SQLite state; missing trade history alone is not proof that
       Kraken rejected the order.
     - Operators review unresolved rows with `GET /api/order-intents` and clear
-      them only through `POST /api/order-intents/{id}/resolve` using an explicit
-      `CONFIRMED` or `REJECTED` outcome and evidence. `GET /api/readiness`
-      remains `503` while any unresolved row exists.
+      only `UNCERTAIN` rows through `POST /api/order-intents/{id}/resolve` using
+      an explicit `CONFIRMED` or `REJECTED` outcome and evidence. `PENDING`
+      rows cannot be terminalized while AddOrder may still be in flight;
+      restart recovery converts abandoned PENDING rows to UNCERTAIN. `GET
+      /api/readiness` remains `503` while any unresolved row exists.
     - "Dust" orders (below the configured `minimumOrderSizeUSD`) are skipped to
       avoid API errors.
     - USD intents are converted to crypto volumes at 8 decimal places with
