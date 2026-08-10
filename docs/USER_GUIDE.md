@@ -141,6 +141,24 @@ Dry Run, or Live Trading mode.
 
 Use this page as your “is the bot healthy right now?” view.
 
+### Operational status and readiness
+
+The JSON endpoints are intentionally unauthenticated for this application's
+single-operator/private-LAN deployment model. Treat every device that can reach
+the server as trusted. `GET /api/health` is a liveness and diagnostic check; it
+includes the active mode, loop state, last cycle timestamps/error, latest trade
+sync watermark, and unresolved live-order counts. `GET /api/readiness` returns
+`200` only when the loop is running, configuration is available, a snapshot
+exists, the latest cycle is not failed, and no ambiguous live-order intent is
+waiting for review. It returns `503` with a `readinessReason` otherwise.
+
+If an ambiguous live order occurs, stop changing modes, inspect
+`GET /api/order-intents`, verify the order and fills in Kraken, then resolve the
+intent with `POST /api/order-intents/{id}/resolve` as `CONFIRMED` or `REJECTED`
+with evidence. Wait for a `PENDING` intent to become `UNCERTAIN`; PENDING means
+the AddOrder may still be in flight and cannot be manually resolved. The route
+uses the same CSRF token issued by the Settings page.
+
 ### Responsive layouts
 
 The dashboard is checked at the same common viewport profiles used by the visual
@@ -406,7 +424,8 @@ badges instead.
    fills.
 4. If logs report an uncertain live submission, stop changing modes or
    retrying manually. Verify Kraken open orders, closed orders, and fills before
-   resolving the durable pending intent; the bot blocks further live orders to
+   resolving the durable pending intent with
+   `POST /api/order-intents/{id}/resolve`; the bot blocks further live orders to
    avoid a duplicate submission.
 
 ---

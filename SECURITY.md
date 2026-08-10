@@ -103,10 +103,12 @@ localhost, IPv4 and IPv6 loopback, `.local` hostnames, RFC1918 private ranges,
 and the `169.254.0.0/16` link-local range. This CORS policy is not a substitute
 for network access control.
 
-Settings and operator loop-control mutations use a double-submit CSRF token. The
+Settings, operator loop-control, and live-order-resolution mutations use a
+double-submit CSRF token. The
 Settings page issues an `HttpOnly`, `SameSite=Strict` cookie and embeds the
 matching token in forms; POST requests without both values are rejected. This
-covers `/settings`, `/api/pause`, and `/api/resume`. The cookie is not marked
+covers `/settings`, `/api/pause`, `/api/resume`, and
+`/api/order-intents/{id}/resolve`. The cookie is not marked
 `Secure` because the intended private-network deployment supports HTTP LAN
 access. This reduces cross-site form submission risk without requiring
 authentication or restricting trusted LAN clients from opening the Settings
@@ -129,7 +131,7 @@ For safe operation:
 ### Ambiguous live order submissions
 
 Before a real AddOrder request, the application records a durable `PENDING`
-intent. The request is attempted once because a network failure can happen after
+row in the SQLite `order_intents` journal. The request is attempted once because a network failure can happen after
 Kraken has already accepted the order. An automatic retry could duplicate a
 filled or already-closed order.
 
@@ -142,7 +144,13 @@ blocks later live submissions. If this occurs:
    matching open or closed order and obtain its Kraken order transaction ID.
 4. Use that order transaction ID to check TradesHistory fills, which expose
    `ordertxid` rather than `cl_ord_id`.
-5. Resolve the stored state only after the exchange outcome is known.
+5. Resolve the stored state only after the exchange outcome is known. Review
+   unresolved rows with `GET /api/order-intents`, then submit
+   `POST /api/order-intents/{id}/resolve` with `state=CONFIRMED` or
+   `state=REJECTED`, a concise evidence note, and the normal CSRF token.
+   A `PENDING` row remains protected while its AddOrder may still be in flight;
+   wait for it to become `UNCERTAIN` (or for restart recovery to mark it
+   uncertain) before resolving it.
 
 The recommended **Query Closed Orders & Trades** permission covers ClosedOrders
 and TradesHistory. Direct REST verification through OpenOrders additionally
@@ -154,6 +162,12 @@ permission after reconciliation.
 An empty trade-history response is not sufficient proof that Kraken rejected the
 order. Unresolved intents are deliberately excluded from heuristic
 reconciliation, duplicate cleanup, and age-based pruning.
+
+`GET /api/readiness` returns `503` while an unresolved intent exists, while the
+loop is paused or stopped, before a snapshot has been produced, after a cycle
+failure, or when configuration is unavailable. `/api/health` remains a `200`
+liveness/diagnostic endpoint so monitoring can still report the reason for
+non-readiness.
 
 ## Security scope and limitations
 

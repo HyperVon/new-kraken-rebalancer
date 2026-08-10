@@ -342,8 +342,11 @@ with a wide range of tools and paradigms:
   persists a `PENDING` intent with its deterministic `cl_ord_id`. Ambiguous
   transport/response failures become `UNCERTAIN`, abort the remaining batch,
   and block later live orders until an operator verifies Kraken and resolves
-  the SQLite row; unresolved intents are not reconciled, deduplicated, or
-  pruned automatically
+  the SQLite row with `POST /api/order-intents/{id}/resolve` using explicit
+  evidence. `PENDING` rows cannot be manually resolved while an AddOrder may
+  still be in flight; abandoned PENDING rows are recovered as UNCERTAIN on
+  restart. Unresolved intents are not reconciled, deduplicated, or pruned
+  automatically
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
@@ -356,11 +359,13 @@ with a wide range of tools and paradigms:
   accepted order
 - **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`, link-local `169.254.x.x`) to permit local Wi-Fi access from other devices while blocking public web threats
 - **No dashboard user auth** — trust model is local/private network; see [SECURITY.md](SECURITY.md)
-- **Database Indexing & Auto Migrations** — schemas index timestamp columns; on startup
-  `DatabaseConfig` runs non-deprecated Exposed builders in one transaction
-  (`SchemaUtils.createStatements`, `addMissingColumnsStatements`, then
-  `checkMappingConsistence`) instead of the deprecated
-  `createMissingTablesAndColumns`
+- **Database Indexing & Versioned Migrations** — schemas index timestamp
+  columns; on startup `DatabaseConfig` records applied schema versions, runs
+  non-deprecated Exposed builders in one transaction, and creates a
+  pre-migration backup for an existing file-backed database
+- **Operational Readiness** — `/api/health` is a liveness/diagnostic endpoint;
+  `/api/readiness` reports whether the loop, snapshot history, and live-order
+  journal are safe for continued operation
 - Dust threshold filtering to avoid minimum order size errors
 - Automatic error recovery — API failures don't crash the rebalancing loop
 - Price validation — aborts cycle if any asset price is unavailable
@@ -574,17 +579,19 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
 │   ├── api/                               # Generated history mappers + custom sync-progress response mapping
 │   ├── codegen/                           # @GenerateApiMapper annotations for generated API mappers
-│   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, LedgerEvent, RewardsOverTime, TradeSource, HistoryStats, RebalancerComparison, PortfolioStats
-│   ├── repository/                        # TradeRepository, LedgerRepository, PortfolioStatsRepository
+│   ├── domain/                             # Typed RebalancePlan and RebalanceEvent values
+│   ├── model/                             # PortfolioSnapshot, OrderIntent, OrderResult, TradeRecord, LedgerEvent, RewardsOverTime, TradeSource, HistoryStats, RebalancerComparison, PortfolioStats
+│   ├── repository/                        # TradeRepository, OrderIntentRepository, LedgerRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
-│   │   └── table/                         # TradeTable, LedgerTable, PortfolioSnapshotTable, AssetSnapshotTable, PortfolioStatsTable, HistorySyncMetadataTable, ActionLogTable
-│   ├── service/                           # Interfaces, ServiceUtils, and AssetColorAssigner
+│   │   └── table/                         # Trade/OrderIntent tables, SchemaMigrationTable, snapshot/stat/history tables
+│   ├── service/                           # Interfaces, OrderIntentService, ServiceUtils, and AssetColorAssigner
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
 │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
 │   │       ├── RebalancerEngine.kt       # Domain rebalance math (no network/DB)
 │   │       ├── PortfolioCalculations.kt  # Shared target/deviation math
 │   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
+│   │       ├── OrderIntentServiceImpl.kt # Durable ambiguous-order lifecycle
 │   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
 │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
 │   │       ├── KrakenApiConstants.kt     # Kraken REST path/cost constants
@@ -741,24 +748,27 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 
 ## API Endpoints
 
-| Method | Path                         | Description                                                              |
-|--------|------------------------------|--------------------------------------------------------------------------|
-| `GET`  | `/`                          | Main dashboard shell (HTML)                                              |
-| `GET`  | `/settings`                  | Settings page (HTML)                                                     |
-| `POST` | `/settings`                  | Submit settings form (HTMX)                                              |
-| `GET`  | `/history`                   | History page (HTML charts + trade log)                                   |
-| `GET`  | `/fragments/dashboard`       | Dashboard fragment (HTMX)                                                |
-| `GET`  | `/api/status/stream`         | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
-| `GET`  | `/api/health`                | Public health check endpoint returning app status and metrics (JSON)     |
-| `POST` | `/api/pause`                 | Pause loop (CSRF-protected)                                              |
-| `POST` | `/api/resume`                | Resume loop (CSRF-protected)                                             |
-| `GET`  | `/api/history/snapshots`     | Portfolio snapshots for History charts (JSON, `?range=`)                 |
-| `GET`  | `/api/history/trades`        | Trade log for History page (JSON, `?range=`)                             |
-| `GET`  | `/api/history/stats`         | History summary-card aggregates (JSON, `?range=`)                        |
-| `GET`  | `/api/history/comparison`    | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`)    |
-| `GET`  | `/api/history/rewards`       | Cumulative staking rewards by asset (JSON, `?range=`)                    |
-| `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)             |
-| `GET`  | `/static/*`                  | Static assets (JS, dynamically compiled CSS via kotlinx-css)             |
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/` | Main dashboard shell (HTML) |
+| `GET` | `/settings` | Settings page (HTML) |
+| `POST` | `/settings` | Submit settings form (HTMX) |
+| `GET` | `/history` | History page (HTML charts + trade log) |
+| `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
+| `GET` | `/api/status/stream` | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
+| `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |
+| `GET` | `/api/readiness` | Readiness status; returns `503` until safe to operate (JSON) |
+| `GET` | `/api/order-intents` | Unresolved live-order intents for operator review (JSON) |
+| `POST` | `/api/order-intents/{id}/resolve` | Resolve an intent as `CONFIRMED` or `REJECTED` with evidence (CSRF-protected) |
+| `POST` | `/api/pause` | Pause loop (CSRF-protected) |
+| `POST` | `/api/resume` | Resume loop (CSRF-protected) |
+| `GET` | `/api/history/snapshots` | Portfolio snapshots for History charts (JSON, `?range=`) |
+| `GET` | `/api/history/trades` | Trade log for History page (JSON, `?range=`) |
+| `GET` | `/api/history/stats` | History summary-card aggregates (JSON, `?range=`) |
+| `GET` | `/api/history/comparison` | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`) |
+| `GET` | `/api/history/rewards` | Cumulative staking rewards by asset (JSON, `?range=`) |
+| `GET` | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON) |
+| `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 
 ---
 
@@ -805,7 +815,7 @@ To run JS browser tests only:
 
 Tests cover:
 
-- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **39 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 39 scenarios.
+- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **40 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 40 scenarios.
 - **Simulation Evaluation Suite** (`SimulationEvaluationScenariosTest`) — 6 invariant cases against the production `SimulatedKrakenService` emulator with real TradeHistory + in-memory SQLite. See **[EVALUATION.md](docs/EVALUATION.md)** for case descriptions.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing

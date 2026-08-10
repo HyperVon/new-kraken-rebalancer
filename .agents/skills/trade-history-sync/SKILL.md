@@ -59,10 +59,12 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   exact ID match wins before newest-first economics heuristics. ID-less and
   legacy rows retain the tolerance fallback, but conflicting nonblank IDs never
   reconcile.
-- Rows with `submissionState` (`PENDING` / `UNCERTAIN`) are unresolved live
-  intents, not reconciliation candidates. They are also excluded from duplicate
-  cleanup and age-based trade pruning. Never infer rejection from an empty
-  history response or clear them automatically.
+- Rows with `submissionState` (`PENDING` / `UNCERTAIN`) are legacy unresolved
+  live guards, not reconciliation candidates. Schema migration imports them
+  into the durable `order_intents` journal before clearing the legacy column;
+  new live attempts use `order_intents` directly. Both forms are excluded from
+  duplicate cleanup and age-based trade pruning. Never infer rejection from an
+  empty history response or clear them automatically.
 - Kraken's response-entry trade ID is persisted separately from `ordertxid` and
   is the primary identity for a fill. Only legacy rows without that ID use the
   complete economics fingerprint (timestamp, pair, side, volume, USD, price,
@@ -129,6 +131,9 @@ uses **95** days so daily closes cover the full reconstruction window.
 - After sync, when `!simulation && totalTrades > 0 && snapshots.size <= 1`, call
   `TradeHistoryReconstructionService.reconstructHistoricalSnapshots()`
   (OHLC ~95 days; prune span 90 days).
+- Reconstruction captures one `AppConfig` and one `KrakenService` backend for
+  the full pass inside a nested-safe execution session; sync callers pass their
+  already-pinned values so one sync cannot mix settings or live/simulation data.
 - Simulation seeding is separate (~15 days of snapshots / ~15 fills) and only
   when the DB is empty with `simulation = true`.
 - Reconcile updates preserve local `cycleId`, prefer API `orderTxid`, and retain

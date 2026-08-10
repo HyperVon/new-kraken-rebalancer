@@ -104,8 +104,10 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Orchestrator | `PortfolioManagerImpl` |
 | Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` (REST + ATH I/O) |
 | Domain rebalance math | `RebalancerEngine` (no network/DB) |
+| Typed planning events | `domain/RebalancePlan` + presentation action-log adapter |
 | Shared math | `PortfolioCalculations` |
 | Brawn (execution) | `OrderExecutorImpl` (sell/buy sequencing + durable live submission journal) |
+| Live-order recovery | `OrderIntentService` → `SqliteOrderIntentRepositoryImpl` / `order_intents` |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |
 | History reconstruction | `SnapshotHistoryCalculator` (`service/impl/history/`) |
@@ -139,6 +141,8 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   Sell volumes are capped to cycle-entry holdings; repeated nonblank Kraken
   trade IDs across shifted settle pages count once.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
+- **Operational readiness**: `/api/health` is liveness/diagnostic; `/api/readiness` is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while new or legacy unresolved live-order state remains. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
+- **Schema safety**: `DatabaseConfig` records schema versions, backs up file-backed databases before migration, and imports legacy `TradeRecord.submissionState` guards into `order_intents` before clearing the legacy blocking column.
 
 ---
 

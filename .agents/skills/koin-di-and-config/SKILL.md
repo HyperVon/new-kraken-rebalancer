@@ -44,6 +44,11 @@ single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
 
 Koin version in `build.gradle.kts`: **4.2.2** — keep `.agents/AGENTS.md` in sync.
 
+`OrderIntentRepository` and `OrderIntentService` are singleton bindings.
+Production `OrderExecutorImpl` receives the service explicitly so live attempts
+use the durable journal; compatibility constructors without the optional
+service remain for legacy/unit doubles.
+
 ---
 
 ## Config models in `:common`
