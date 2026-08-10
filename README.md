@@ -343,7 +343,8 @@ with a wide range of tools and paradigms:
   transport/response failures become `UNCERTAIN`, abort the remaining batch,
   and block later live orders until an operator verifies Kraken and resolves
   the SQLite row with `POST /api/order-intents/{id}/resolve` using explicit
-  evidence. `PENDING` rows cannot be manually resolved while an AddOrder may
+  evidence and the optional Kraken `orderTxid` when known. `PENDING` rows cannot
+  be manually resolved while an AddOrder may
   still be in flight; abandoned PENDING rows are recovered as UNCERTAIN on
   restart. Unresolved intents are not reconciled, deduplicated, or pruned
   automatically
