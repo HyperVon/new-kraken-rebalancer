@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.40] - 2026-08-09
+
+### Added
+
+- **Skill Optimizer**: Added `skill-optimizer` to measure agent-guidance
+  context cost and identify evidence-backed, approval-gated compression while
+  preserving routing, safety, and verification behavior.
+
 ## [6.16.39] - 2026-08-09
 
 ### Fixed

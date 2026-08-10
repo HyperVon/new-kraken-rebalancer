@@ -96,6 +96,8 @@ choice provides several benefits to human maintainers:
 | [`.agents/AGENTS.md`](../.agents/AGENTS.md) | Current stack, architecture map, safety invariants, quality thresholds, and skill index |
 | [`.agents/OPERATING.md`](../.agents/OPERATING.md) | Harness-neutral working conventions shared across AI tools |
 | [`.agents/skills/`](../.agents/skills/) | Focused workflows for particular domains and development tasks |
+| [`.agents/HARNESS_INTEGRATIONS.md`](../.agents/HARNESS_INTEGRATIONS.md) | Conditional Cursor Cloud and Kilo Agent Manager details |
+| [`AGENTS.md`](../AGENTS.md) | Thin universal entrypoint into the canonical project guidance |
 | [`.agents/improvement-backlog.md`](../.agents/improvement-backlog.md) | Product and engineering improvements discovered during iterative cycles |
 | [`.agents/quality-backlog.md`](../.agents/quality-backlog.md) | QA findings, test gaps, defects, and deferred quality work |
 | [`.agents/skill-content-backlog.md`](../.agents/skill-content-backlog.md) | Proposed and completed improvements to the agent playbook |
@@ -104,8 +106,8 @@ choice provides several benefits to human maintainers:
 | [`.github/copilot-instructions.md`](../.github/copilot-instructions.md) | GitHub Copilot entrypoint linking to the portable guidance |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Human contribution, test, pull-request, and agent-assisted development guidance |
 
-There is no root `AGENTS.md`. The canonical project file is
-[`.agents/AGENTS.md`](../.agents/AGENTS.md). This layout keeps the portable
+The root `AGENTS.md` is a thin universal entrypoint; the canonical project file
+is [`.agents/AGENTS.md`](../.agents/AGENTS.md). This layout keeps the portable
 instruction system together under one directory instead of spreading full
 copies among several harness-specific files.
 
@@ -195,6 +197,7 @@ harnesses.
 | [`rules-and-skills-audit`](../.agents/skills/rules-and-skills-audit/SKILL.md) | Structural conflicts, redundancy, stale guidance, and consolidation |
 | [`skill-authoring`](../.agents/skills/skill-authoring/SKILL.md) | Approved creation and modification of project skills, routing, safety, and validation |
 | [`skill-reviewer`](../.agents/skills/skill-reviewer/SKILL.md) | Content improvements for the project agent playbook |
+| [`skill-optimizer`](../.agents/skills/skill-optimizer/SKILL.md) | Context-cost measurement and safe compression of agent guidance |
 
 ### Orchestration and continuous work
 
@@ -643,7 +646,7 @@ needs an update:
 | :--- | :--- |
 | Project fact, architecture boundary, or safety invariant | `.agents/AGENTS.md` |
 | Convention shared by every harness | `.agents/OPERATING.md` and the matching Cursor projection |
-| Detailed repeatable workflow | `.agents/skills/<name>/SKILL.md` |
+| Detailed repeatable workflow | `.agents/skills/<name>/SKILL.md` and directly linked sibling references |
 | Cursor-only integration detail | The relevant `.cursor/rules/*.mdc` file or skill, with a portable explanation retained |
 | Human explanation of the overall system | This document |
 | Skill routing | The skill frontmatter and `.agents/AGENTS.md` index |
