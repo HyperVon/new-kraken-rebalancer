@@ -6,6 +6,7 @@ object OrderIntentTable : Table("order_intents") {
     val id = integer("id").autoIncrement()
     val cycleId = varchar("cycle_id", 36).nullable()
     val clientOrderId = varchar("client_order_id", 36).nullable()
+    val clientOrderIdAmbiguous = bool("client_order_id_ambiguous").default(false)
     val pair = varchar("pair", 16)
     val symbol = varchar("symbol", 16)
     val side = varchar("side", 4)
@@ -18,10 +19,12 @@ object OrderIntentTable : Table("order_intents") {
     val errorMessage = text("error_message").nullable()
     val resolvedAt = long("resolved_at").nullable()
     val resolutionEvidence = text("resolution_evidence").nullable()
+    val localTradeId = integer("local_trade_id").nullable()
 
     init {
         index("idx_order_intents_state", false, state)
         index("idx_order_intents_created_at", false, createdAt)
+        index("idx_order_intents_local_trade_id", false, localTradeId)
         index("ux_order_intents_client_order_id", true, clientOrderId)
     }
 

@@ -147,7 +147,8 @@ blocks later live submissions. If this occurs:
 5. Resolve the stored state only after the exchange outcome is known. Review
    unresolved rows with `GET /api/order-intents`, then submit
    `POST /api/order-intents/{id}/resolve` with `state=CONFIRMED` or
-   `state=REJECTED`, a concise evidence note, and the normal CSRF token.
+   `state=REJECTED`, a concise evidence note, the optional `orderTxid`, and the
+   normal CSRF token.
    A `PENDING` row remains protected while its AddOrder may still be in flight;
    wait for it to become `UNCERTAIN` (or for restart recovery to mark it
    uncertain) before resolving it.

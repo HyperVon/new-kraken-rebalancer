@@ -262,6 +262,7 @@ class OrderExecutorImpl(
             result: OrderResult,
             id: Int? = null,
             submissionState: OrderSubmissionState? = null,
+            timestamp: Instant = Instant.now(),
         ): TradeRecord = TradeCalculator.createTradeRecord(
             result = result,
             symbol = symbol,
@@ -270,9 +271,11 @@ class OrderExecutorImpl(
             volume = volume,
             usdAmount = effectiveUsdAmount,
             prices = prices,
+            timestamp = timestamp,
             cycleId = cycleId.ifBlank { null },
         ).copy(id = id, clientOrderId = clOrdId, submissionState = submissionState)
 
+        val pendingTimestamp = Instant.now()
         val pending = createJournalRecord(
             result = OrderResult(
                 false,
@@ -287,6 +290,7 @@ class OrderExecutorImpl(
             } else {
                 null
             },
+            timestamp = pendingTimestamp,
         )
         val pendingId = tradeHistoryService.saveTrade(pending)
         if (isLiveSubmission && orderIntentService != null && clOrdId == null) {
@@ -304,8 +308,9 @@ class OrderExecutorImpl(
                 volume = volume,
                 usdAmount = effectiveUsdAmount,
                 expectedPrice = prices[symbol],
-                createdAt = Instant.now(),
+                createdAt = pending.timestamp,
                 state = OrderIntentState.PENDING,
+                localTradeId = pendingId,
             )
             try {
                 orderIntentService?.savePending(intent)

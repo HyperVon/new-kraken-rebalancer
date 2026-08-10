@@ -285,7 +285,8 @@ failure.
       Kraken rejected the order.
     - Operators review unresolved rows with `GET /api/order-intents` and clear
       only `UNCERTAIN` rows through `POST /api/order-intents/{id}/resolve` using
-      an explicit `CONFIRMED` or `REJECTED` outcome and evidence. `PENDING`
+      an explicit `CONFIRMED` or `REJECTED` outcome, evidence, and the optional
+      Kraken `orderTxid` when known. `PENDING`
       rows cannot be terminalized while AddOrder may still be in flight;
       restart recovery converts abandoned PENDING rows to UNCERTAIN. `GET
       /api/readiness` remains `503` while any unresolved row exists.

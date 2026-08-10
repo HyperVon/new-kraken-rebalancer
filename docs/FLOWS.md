@@ -265,7 +265,7 @@ sequenceDiagram
 
 ---
 
-## Flow 6 — Live-Order Intent Journal and Readiness
+## Flow 4 — Live-Order Intent Journal and Readiness
 
 **Path:** `OrderExecutorImpl` → SQLite `order_intents` → operator API
 
@@ -290,14 +290,15 @@ sequenceDiagram
     end
     Operator->>Journal: GET /api/order-intents
     Operator->>Kraken: verify open/closed order and fills
-    Operator->>Journal: POST /api/order-intents/{id}/resolve + evidence
+    Operator->>Journal: POST resolve + evidence + optional orderTxid
     Journal-->>Operator: terminal outcome
 ```
 
 The journal is the live-order safety boundary. Any `PENDING` or `UNCERTAIN`
 intent blocks later live batches and makes `/api/readiness` return `503`.
-`/api/health` remains a `200` liveness/diagnostic response. Resolution requires
-the normal double-submit CSRF token, an explicit terminal state, and evidence;
+`/api/health` remains a `200` liveness/diagnostic response. Resolution may
+include the Kraken order transaction ID when known. It requires the normal
+double-submit CSRF token, an explicit terminal state, and evidence;
 only UNCERTAIN intents are eligible for manual resolution while PENDING denotes
 an in-flight AddOrder. There is no automatic retry, reconciliation,
 deduplication, or age-based prune
@@ -305,7 +306,7 @@ for unresolved intents.
 
 ---
 
-## Flow 4 — USD Settle after sells (Cold Flow)
+## Flow 5 — USD Settle after sells (Cold Flow)
 
 **Path:** After **≥1 successful sell** and when **not** dry-run →
 `settleUsdAfterSells()`:
@@ -345,11 +346,11 @@ sequenceDiagram
         OE->>Bal: peekUsdBalance (once)
         note over OE: min(fillConfirmed, balance) when balance > 0<br/>else min(fillConfirmed, projectedCash)
     else "no txids or fillConfirmed = 0"
-        OE->>OE: pollUsdBalanceAfterSells (Flow 4b)
+        OE->>OE: pollUsdBalanceAfterSells (Flow 5b)
     end
 ```
 
-### Flow 4b — USD Balance Polling fallback (Cold Flow)
+### Flow 5b — USD Balance Polling fallback (Cold Flow)
 
 **Path:** `pollUsdBalanceAfterSells().last()` →
 Kraken balances API (with backoff). Used when sell txids are missing (e.g. some
@@ -404,7 +405,7 @@ sequenceDiagram
 
 ---
 
-## Flow 5 - Paginated Ledger Sync (Cold Flow)
+## Flow 6 - Paginated Ledger Sync (Cold Flow)
 
 **Path:** `TradeHistoryServiceImpl.syncLedgersFromKraken()` ->
 `LedgersSyncService` -> `getLedgersPaginated()` -> Kraken `/0/private/Ledgers`

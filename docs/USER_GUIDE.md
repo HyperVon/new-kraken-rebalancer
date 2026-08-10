@@ -155,7 +155,8 @@ waiting for review. It returns `503` with a `readinessReason` otherwise.
 If an ambiguous live order occurs, stop changing modes, inspect
 `GET /api/order-intents`, verify the order and fills in Kraken, then resolve the
 intent with `POST /api/order-intents/{id}/resolve` as `CONFIRMED` or `REJECTED`
-with evidence. Wait for a `PENDING` intent to become `UNCERTAIN`; PENDING means
+with evidence and, when known, the optional Kraken `orderTxid`. Wait for a
+`PENDING` intent to become `UNCERTAIN`; PENDING means
 the AddOrder may still be in flight and cannot be manually resolved. The route
 uses the same CSRF token issued by the Settings page.
 

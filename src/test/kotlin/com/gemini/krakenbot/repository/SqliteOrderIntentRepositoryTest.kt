@@ -32,9 +32,14 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
     private val service = OrderIntentServiceImpl(repository)
 
     init {
+        "reports no unresolved intents for a fresh database" {
+            service.countUnresolvedIntents() shouldBe 0L
+            service.hasUnresolvedIntents() shouldBe false
+        }
+
         "persists pending intent and keeps uncertain outcome unresolved" {
             runTest {
-                val intentId = service.savePending(newIntent())
+                val intentId = savePendingWithTrade(newIntent())
 
                 service.countUnresolvedIntents() shouldBe 1L
                 val pending = service.getUnresolvedIntents().single()
@@ -60,7 +65,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
 
         "loads nullable intent fields and rejects updates for missing rows" {
             runTest {
-                val intentId = service.savePending(
+                val intentId = savePendingWithTrade(
                     newIntent().copy(
                         cycleId = null,
                         clientOrderId = null,
@@ -99,9 +104,69 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
+        "fails closed when a legacy intent has multiple local trade candidates" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val legacyIntent = newIntent().copy(cycleId = null, clientOrderId = null)
+                tradeRepository.saveTrade(legacyIntent.toPendingTrade())
+                tradeRepository.saveTrade(legacyIntent.toPendingTrade())
+                val intentId = service.savePending(legacyIntent)
+
+                shouldThrow<IOException> {
+                    service.recordOutcome(
+                        intentId,
+                        OrderResult.Failure(
+                            pair = legacyIntent.pair,
+                            side = legacyIntent.side,
+                            volume = legacyIntent.volume,
+                            errorMessage = "response lost",
+                            submissionUncertain = true,
+                        ),
+                    )
+                }
+
+                service.getUnresolvedIntents().single().state shouldBe OrderIntentState.PENDING
+            }
+        }
+
+        "reconciles an explicitly ambiguous client ID through its linked trade" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val legacyIntent = newIntent().copy(clientOrderId = null)
+                val tradeId = tradeRepository.saveTrade(
+                    legacyIntent.toPendingTrade().copy(clientOrderId = "duplicate-client"),
+                )
+                val intentId = service.savePending(
+                    legacyIntent.copy(
+                        clientOrderIdAmbiguous = true,
+                        localTradeId = tradeId,
+                    ),
+                )
+
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Success(
+                        pair = legacyIntent.pair,
+                        side = legacyIntent.side,
+                        volume = legacyIntent.volume,
+                        orderTxid = "O-AMBIGUOUS",
+                    ),
+                ) shouldBe true
+
+                tradeRepository
+                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                    .single()
+                    .also { trade ->
+                        trade.success shouldBe true
+                        trade.orderTxid shouldBe "O-AMBIGUOUS"
+                        trade.submissionState shouldBe null
+                    }
+            }
+        }
+
         "maps a stored resolution timestamp on an unresolved intent" {
             runTest {
-                val intentId = service.savePending(newIntent())
+                val intentId = savePendingWithTrade(newIntent())
                 val resolvedAt = Instant.parse("2026-08-09T12:34:56Z")
 
                 repository.recordOutcome(
@@ -118,7 +183,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
 
         "resolves an uncertain intent only with an explicit terminal outcome and evidence" {
             runTest {
-                val intentId = service.savePending(newIntent())
+                val intentId = savePendingWithTrade(newIntent())
                 service.recordOutcome(
                     intentId,
                     OrderResult.Failure(
@@ -137,19 +202,107 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                     service.resolve(intentId, OrderIntentState.CONFIRMED, "")
                 }
 
-                service.resolve(intentId, OrderIntentState.CONFIRMED, "Kraken query returned txid=O-123")
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Kraken query returned txid=O-123",
+                    orderTxid = "O-123",
+                )
 
                 service.countUnresolvedIntents() shouldBe 0L
                 service.getUnresolvedIntents() shouldBe emptyList()
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement("SELECT order_txid FROM order_intents WHERE id = ?").use { statement ->
+                        statement.setInt(1, intentId)
+                        statement.executeQuery().use { resultSet ->
+                            resultSet.next() shouldBe true
+                            resultSet.getString(1) shouldBe "O-123"
+                        }
+                    }
+                }
                 shouldThrow<IllegalStateException> {
                     service.resolve(intentId, OrderIntentState.REJECTED, "duplicate resolution")
                 }
             }
         }
 
+        "normalizes a blank manual order txid to null" {
+            runTest {
+                val intentId = savePendingWithTrade(newIntent())
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = "XBTUSD",
+                        side = "BUY",
+                        volume = BigDecimal("0.01000000"),
+                        errorMessage = "transport closed",
+                        submissionUncertain = true,
+                    ),
+                )
+
+                service.resolve(intentId, OrderIntentState.REJECTED, "No matching fill", orderTxid = "   ")
+
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement("SELECT order_txid FROM order_intents WHERE id = ?").use { statement ->
+                        statement.setInt(1, intentId)
+                        statement.executeQuery().use { resultSet ->
+                            resultSet.next() shouldBe true
+                            resultSet.getString(1) shouldBe null
+                        }
+                    }
+                }
+            }
+        }
+
+        "preserves a previously recorded order txid during manual resolution" {
+            runTest {
+                val intentId = savePendingWithTrade(newIntent())
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = "XBTUSD",
+                        side = "BUY",
+                        volume = BigDecimal("0.01000000"),
+                        errorMessage = "response uncertain",
+                        orderTxid = "O-PREVIOUSLY-KNOWN",
+                        submissionUncertain = true,
+                    ),
+                )
+
+                service.resolve(intentId, OrderIntentState.CONFIRMED, "Verified in Kraken")
+
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement("SELECT order_txid FROM order_intents WHERE id = ?").use { statement ->
+                        statement.setInt(1, intentId)
+                        statement.executeQuery().use { resultSet ->
+                            resultSet.next() shouldBe true
+                            resultSet.getString(1) shouldBe "O-PREVIOUSLY-KNOWN"
+                        }
+                    }
+                }
+            }
+        }
+
+        "accepts a repository-level pending outcome without terminalizing the trade" {
+            runTest {
+                val intent = newIntent()
+                val intentId = savePendingWithTrade(intent)
+
+                repository.recordOutcome(
+                    id = intentId,
+                    state = OrderIntentState.PENDING,
+                    orderTxid = null,
+                    errorMessage = "still in flight",
+                    resolvedAt = null,
+                ) shouldBe true
+
+                service.getUnresolvedIntents().single().state shouldBe OrderIntentState.PENDING
+            }
+        }
+
         "a late exchange outcome cannot overwrite an operator resolution" {
             runTest {
-                val intentId = service.savePending(newIntent())
+                val intentId = savePendingWithTrade(newIntent())
                 service.recordOutcome(
                     intentId,
                     OrderResult.Failure(
@@ -185,6 +338,33 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                         }
                     }
                 }
+            }
+        }
+
+        "a late outcome cannot overwrite a confirmed journal entry" {
+            runTest {
+                val intentId = savePendingWithTrade(newIntent())
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Success(
+                        pair = "XBTUSD",
+                        side = "BUY",
+                        volume = BigDecimal("0.01000000"),
+                        orderTxid = "O-CONFIRMED-FIRST",
+                    ),
+                )
+
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = "XBTUSD",
+                        side = "BUY",
+                        volume = BigDecimal("0.01000000"),
+                        errorMessage = "late failure",
+                    ),
+                )
+
+                service.getUnresolvedIntents() shouldBe emptyList()
             }
         }
 
@@ -233,6 +413,96 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 rejectedTrade.success shouldBe false
                 rejectedTrade.submissionState shouldBe null
                 rejectedTrade.errorMessage shouldBe "No matching Kraken fill"
+
+                val legacyIntent = newIntent().copy(cycleId = null, clientOrderId = null)
+                tradeRepository.saveTrade(legacyIntent.toPendingTrade())
+                val legacyId = service.savePending(legacyIntent)
+                service.recordOutcome(
+                    legacyId,
+                    OrderResult.Failure(
+                        pair = legacyIntent.pair,
+                        side = legacyIntent.side,
+                        volume = legacyIntent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                )
+                service.resolve(legacyId, OrderIntentState.REJECTED, "No matching legacy fill")
+
+                val legacyTrade = tradeRepository
+                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                    .single { it.clientOrderId == null }
+                legacyTrade.submissionState shouldBe null
+                legacyTrade.errorMessage shouldBe "No matching legacy fill"
+            }
+        }
+
+        "uses the persisted local trade id when reconciling a live intent" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent()
+                val tradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = tradeId))
+
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Success(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        orderTxid = "O-LINKED-ID",
+                    ),
+                )
+
+                tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                    .single { it.id == tradeId }
+                    .submissionState shouldBe null
+            }
+        }
+
+        "rejects reconciliation when a linked trade identity has changed" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent()
+                val tradeId = tradeRepository.saveTrade(
+                    intent.toPendingTrade().copy(volume = BigDecimal("0.02000000")),
+                )
+                val intentId = service.savePending(intent.copy(localTradeId = tradeId))
+
+                shouldThrow<IOException> {
+                    service.recordOutcome(
+                        intentId,
+                        OrderResult.Success(
+                            pair = intent.pair,
+                            side = intent.side,
+                            volume = intent.volume,
+                            orderTxid = "O-IDENTITY-MISMATCH",
+                        ),
+                    )
+                }
+
+                service.getUnresolvedIntents().single().state shouldBe OrderIntentState.PENDING
+            }
+        }
+
+        "rejects reconciliation when a legacy intent has no matching trade" {
+            runTest {
+                val intentId = service.savePending(newIntent())
+
+                shouldThrow<IOException> {
+                    service.recordOutcome(
+                        intentId,
+                        OrderResult.Failure(
+                            pair = "XBTUSD",
+                            side = "BUY",
+                            volume = BigDecimal("0.01000000"),
+                            errorMessage = "response lost",
+                            submissionUncertain = true,
+                        ),
+                    )
+                }
+
+                service.getUnresolvedIntents().single().state shouldBe OrderIntentState.PENDING
             }
         }
 
@@ -249,7 +519,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
 
         "records successful outcome as resolved without manual intervention" {
             runTest {
-                val intentId = service.savePending(newIntent())
+                val intentId = savePendingWithTrade(newIntent())
                 service.recordOutcome(
                     intentId,
                     OrderResult.Success(
@@ -282,7 +552,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
 
         "records a definite exchange failure as rejected" {
             runTest {
-                val intentId = service.savePending(newIntent())
+                val intentId = savePendingWithTrade(newIntent())
                 service.recordOutcome(
                     intentId,
                     OrderResult.Failure(
@@ -296,6 +566,11 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 service.countUnresolvedIntents() shouldBe 0L
             }
         }
+    }
+
+    private suspend fun savePendingWithTrade(intent: OrderIntent): Int {
+        SqliteTradeRepositoryImpl(database).saveTrade(intent.toPendingTrade())
+        return service.savePending(intent)
     }
 
     private fun newIntent() = OrderIntent(

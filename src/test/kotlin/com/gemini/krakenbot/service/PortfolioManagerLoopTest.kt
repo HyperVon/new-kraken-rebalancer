@@ -239,6 +239,7 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 // Swallowing cancellation here would log it and start rebalancing anyway.
                 krakenService.getBalancesCallCount shouldBe 0
+                portfolioManager.isLoopRunning() shouldBe false
             }
         }
 
@@ -451,6 +452,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 manager.stopRebalancingLoop()
                 worker.join()
 
+                manager.isLoopRunning() shouldBe false
                 coVerify(exactly = 1) { configService.beginExecutionSession() }
                 coVerify(exactly = 1) { configService.endExecutionSession() }
                 coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }

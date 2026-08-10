@@ -33,6 +33,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Trusted-LAN deployment**: The dashboard remains intentionally unauthenticated
   for the documented single-operator/private-network trust model; CSRF still
   protects browser-originated mutations.
+- **Live-order recovery hardening**: Legacy journal/trade links now migrate with
+  bounded immutable-identity matching, explicit duplicate-client ambiguity, and
+  fail-closed stale-link handling; manual resolution can persist the verified
+  Kraken `orderTxid`.
 
 ## [6.16.39] - 2026-08-09
 

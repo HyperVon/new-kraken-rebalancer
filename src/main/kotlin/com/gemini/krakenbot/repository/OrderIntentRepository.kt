@@ -21,5 +21,11 @@ interface OrderIntentRepository {
 
     suspend fun loadUnresolvedIntents(): List<OrderIntent>
 
-    suspend fun resolve(id: Int, state: OrderIntentState, evidence: String, resolvedAt: Instant): Boolean
+    suspend fun resolve(
+        id: Int,
+        state: OrderIntentState,
+        evidence: String,
+        resolvedAt: Instant,
+        orderTxid: String? = null,
+    ): Boolean
 }

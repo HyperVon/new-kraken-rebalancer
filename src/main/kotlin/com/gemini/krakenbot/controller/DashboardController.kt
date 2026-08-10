@@ -463,11 +463,18 @@ class DashboardController(
         }
 
         try {
-            orderIntentService.resolve(
-                id = id,
-                state = state,
-                evidence = params[FormFields.ORDER_INTENT_EVIDENCE].orEmpty(),
-            )
+            val evidence = params[FormFields.ORDER_INTENT_EVIDENCE].orEmpty()
+            val orderTxid = params[FormFields.ORDER_INTENT_ORDER_TXID]?.trim()?.takeIf(String::isNotEmpty)
+            if (orderTxid == null) {
+                orderIntentService.resolve(id = id, state = state, evidence = evidence)
+            } else {
+                orderIntentService.resolve(
+                    id = id,
+                    state = state,
+                    evidence = evidence,
+                    orderTxid = orderTxid,
+                )
+            }
             respondJson(mapOf("resolved" to true, "id" to id, "state" to state.name))
         } catch (e: IllegalArgumentException) {
             respondJson(

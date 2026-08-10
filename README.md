@@ -343,7 +343,8 @@ with a wide range of tools and paradigms:
   transport/response failures become `UNCERTAIN`, abort the remaining batch,
   and block later live orders until an operator verifies Kraken and resolves
   the SQLite row with `POST /api/order-intents/{id}/resolve` using explicit
-  evidence. `PENDING` rows cannot be manually resolved while an AddOrder may
+  evidence and the optional Kraken `orderTxid` when known. `PENDING` rows cannot
+  be manually resolved while an AddOrder may
   still be in flight; abandoned PENDING rows are recovered as UNCERTAIN on
   restart. Unresolved intents are not reconciled, deduplicated, or pruned
   automatically
@@ -759,7 +760,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |
 | `GET` | `/api/readiness` | Readiness status; returns `503` until safe to operate (JSON) |
 | `GET` | `/api/order-intents` | Unresolved live-order intents for operator review (JSON) |
-| `POST` | `/api/order-intents/{id}/resolve` | Resolve an intent as `CONFIRMED` or `REJECTED` with evidence (CSRF-protected) |
+| `POST` | `/api/order-intents/{id}/resolve` | Resolve an intent as `CONFIRMED` or `REJECTED` with evidence and optional `orderTxid` (CSRF-protected) |
 | `POST` | `/api/pause` | Pause loop (CSRF-protected) |
 | `POST` | `/api/resume` | Resume loop (CSRF-protected) |
 | `GET` | `/api/history/snapshots` | Portfolio snapshots for History charts (JSON, `?range=`) |

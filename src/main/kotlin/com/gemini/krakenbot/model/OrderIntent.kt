@@ -8,6 +8,7 @@ data class OrderIntent(
     val id: Int? = null,
     val cycleId: String?,
     val clientOrderId: String?,
+    val clientOrderIdAmbiguous: Boolean = false,
     val pair: String,
     val symbol: String,
     val side: String,
@@ -20,6 +21,7 @@ data class OrderIntent(
     val errorMessage: String? = null,
     val resolvedAt: Instant? = null,
     val resolutionEvidence: String? = null,
+    val localTradeId: Int? = null,
 )
 
 enum class OrderIntentState {

@@ -102,7 +102,7 @@ override suspend fun loadAll(): List<TradeRecord> =
   migration steps + `checkMappingConsistence` in one transaction (Exposed 1.x
   — no deprecated `createMissingTablesAndColumns`). File-backed migrations
   receive a pre-migration backup; legacy submission guards migrate into the
-  `order_intents` journal before the old trade column is cleared.
+  `order_intents` journal while the old trade column is retained until resolution.
 
 ## Primary Key Targeting
 
