@@ -290,3 +290,15 @@ Optional Cursor Cloud and Kilo Agent Manager details are conditional, not
 always-on project invariants. Load [HARNESS_INTEGRATIONS.md](HARNESS_INTEGRATIONS.md)
 only when using those integrations. Keep credentials placeholder-only and do
 not use shared git stash/autostash across worktrees.
+
+<!-- agent-guidance-kit:routes:start -->
+## Agent Guidance Kit skills
+
+These receipt-managed skills were adopted from Agent Guidance Kit.
+
+| Task | Skill |
+| :--- | :--- |
+| Adopt, add, audit, refresh, or update Agent Guidance Kit content | [agent-guidance-maintenance](skills/agent-guidance-maintenance/SKILL.md) |
+| Review security boundaries, authority, secrets, and sensitive data flows | [security-review](skills/security-review/SKILL.md) |
+| Diagnose an observed failure and find its root cause before fixing it | [systematic-debugging](skills/systematic-debugging/SKILL.md) |
+<!-- agent-guidance-kit:routes:end -->
