@@ -24,7 +24,8 @@ receipts, plan exact changes, and apply approved content.
   routing, and verification evidence.
 - **Owner:** ongoing Agent Guidance Kit adoption lifecycle in a target project.
 - **Non-goals:** silently updating content, choosing providers or models,
-  fetching a missing kit checkout, or replacing project-local guidance.
+  fetching a missing kit checkout, silently refreshing a source checkout, or
+  replacing project-local guidance.
 - **Side effects:** none before approval; afterward, only the unchanged approved
   plan and separately disclosed target-local adaptations.
 
@@ -46,15 +47,58 @@ Resolution order is:
 5. otherwise stop and ask for the checkout path.
 
 Never search unrelated directories, fetch a replacement, or write a personal
-path into tracked guidance. Initial adoption records an ignored locator when a
-Git worktree is available.
+path into tracked guidance. Initial adoption records an ignored locator when no
+higher-priority portable source already resolves the kit and a Git worktree is
+available; an already valid environment, locator, or adjacent-sibling result is
+preserved as the source-resolution method without redundant locator state.
+
+## Optionally refresh the source checkout
+
+When the user explicitly asks for the latest kit version, “update the kit,” or
+equivalent wording, refresh the already resolved local checkout before planning
+target changes. “Latest” means the checkout's intended `origin/main`; it does
+not mean searching for or fetching an arbitrary replacement checkout.
+
+First inspect and report:
+
+- the resolved source path and current commit;
+- whether it is a real Git worktree on the `main` branch;
+- the configured `origin` URL and whether it is the intended Agent Guidance
+  Kit source;
+- whether the worktree is clean and whether a rebase, merge, cherry-pick, or
+  other Git operation is in progress;
+- whether local `main` and `origin/main` have diverged or local `main` is ahead.
+
+Refresh only when the source is a clean `main` worktree with the intended
+remote and no divergent local commits. The only permitted source-refresh
+operations are equivalent to:
+
+```text
+git fetch origin main
+git pull --ff-only origin main
+```
+
+Never switch branches, reset, stash, merge, rebase, force-update, change the
+remote, or discard source-checkout work automatically. If the source is dirty,
+detached, not on `main`, missing the expected remote, or diverged, stop and ask
+the user what to do. Do not treat a source-refresh request as approval to apply
+the resulting changes to the target.
+
+After a successful refresh, record the old and new source revisions in the
+maintenance report and approval context; the generated plan records the new
+source revision. Re-read the current source `bootstrap-project` skill and
+continue with the normal receipt-aware plan. The target still requires explicit
+approval of that exact plan before any adopted content or routing changes are
+applied.
 
 ## Workflow
 
 1. Read target-local guidance and the latest adoption receipts under
    `.agents/.agent-guidance-kit/receipts/`. Treat local policy as authoritative.
-2. Resolve and validate the kit source. Record how it was resolved and its Git
-   revision; do not assume an old locator still points to a valid kit.
+2. Resolve and validate the kit source. If the user requested the latest source,
+   run the optional source-checkout refresh procedure first. Record how the
+   source was resolved and its Git revision; do not assume an old locator still
+   points to a valid kit.
 3. For an audit, compare installed receipt digests, current target manifests,
    source manifests, dependency declarations, and managed AGENTS routes. Do not
    mutate anything.
