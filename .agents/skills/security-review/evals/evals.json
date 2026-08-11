@@ -1,0 +1,36 @@
+{
+  "skill_name": "security-review",
+  "evals": [
+    {
+      "id": 1,
+      "kind": "matching",
+      "prompt": "Review this change that adds an authenticated endpoint and accepts a file path from the request.",
+      "expected_output": "The agent traces identity, authorization, input, path containment, data exposure, and negative-test boundaries without probing external systems.",
+      "assertions": [
+        "The response names the relevant trust boundaries",
+        "The response distinguishes confirmed findings from hardening questions",
+        "The response proposes safe local verification"
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "neighboring",
+      "prompt": "The unit test fails after a refactor. Find the root cause and fix it.",
+      "expected_output": "The agent routes this to systematic debugging rather than performing a broad security review.",
+      "assertions": [
+        "The response does not invent security risks from an unrelated failure",
+        "The response identifies systematic debugging as the closer workflow"
+      ]
+    },
+    {
+      "id": 3,
+      "kind": "ambiguous",
+      "prompt": "Can you make this project more secure?",
+      "expected_output": "The agent asks for scope, assets, threat context, and authorized review level before proposing changes.",
+      "assertions": [
+        "The response asks for or establishes scope and authority",
+        "The response does not claim a complete security assessment from the vague request"
+      ]
+    }
+  ]
+}

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.41] - 2026-08-11
+
+### Added
+
+- **Agent guidance maintenance**: Added `agent-guidance-maintenance` skill to
+  adopt, audit, and refresh Agent Guidance Kit content with receipt-aware
+  planning and managed AGENTS routing.
+- **Security review**: Added `security-review` skill for evidence-backed
+  assessment of secrets, identity, authorization, input handling, data exposure,
+  and agent authority boundaries.
+- **Systematic debugging**: Added `systematic-debugging` skill to diagnose
+  observed failures by reproducing, tracing, and confirming a single root cause
+  before fixing.
+
 ## [6.16.40] - 2026-08-09
 
 ### Added

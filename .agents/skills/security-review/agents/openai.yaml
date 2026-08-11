@@ -1,0 +1,4 @@
+interface:
+  display_name: "Security Review"
+  short_description: "Review security boundaries with evidence"
+  default_prompt: "Use $security-review to review this scope for evidence-backed security risks."
