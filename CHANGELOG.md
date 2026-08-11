@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.42] - 2026-08-11
+
+### Fixed
+
+- **Context7 MCP connectivity**: Changed `context7` from remote SSE endpoint
+  (`https://mcp.context7.com/mcp`) to local stdio subprocess
+  (`npx -y @upstash/context7-mcp`) to avoid broken hosted SSE transport
+  behavior.
+
 ## [6.16.41] - 2026-08-11
 
 ### Added
