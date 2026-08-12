@@ -44,7 +44,18 @@ def probe_one(task, candidates, config, expected=None):
 
     def qualifies(c):
         try:
-            return router.candidate_qualifies(c, prof, config, sensitive)
+            import arr_bridge
+
+            ok, _ = arr_bridge._kraken_non_quality_eligible(c, prof, config, sensitive)
+            if not ok:
+                return False
+            # mimic legacy relax_quality=False quality gate for diagnostics
+            if c.quality is None:
+                return False
+            minimum = router.effective_minimum(prof)
+            if c.quality < minimum:
+                return False
+            return True
         except Exception:
             return False
 

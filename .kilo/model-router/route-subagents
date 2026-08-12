@@ -2,6 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+VENV_PY="$SCRIPT_DIR/.venv/bin/python"
+if [[ ! -x "$VENV_PY" ]]; then
+  echo "ERROR: ARR venv not found at $VENV_PY" >&2
+  echo "Run: $SCRIPT_DIR/setup.sh" >&2
+  exit 64
+fi
 
 if [[ -f "$SCRIPT_DIR/env.local" ]]; then
   set -a
@@ -14,4 +20,4 @@ if [[ "${ARTIFICIAL_ANALYSIS_API_KEY:-}" == REPLACE_WITH_* ]]; then
   unset ARTIFICIAL_ANALYSIS_API_KEY
 fi
 
-exec python3 -u "$SCRIPT_DIR/subagents.py" "$@"
+exec "$VENV_PY" -u "$SCRIPT_DIR/subagents.py" "$@"
