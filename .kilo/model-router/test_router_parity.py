@@ -164,7 +164,7 @@ class ParityTests(unittest.TestCase):
         self.assertIn(".venv/bin/python", route_sub)
         req = (script_dir / "requirements.txt").read_text()
         self.assertIn("agent-runtime-router.git@", req)
-        self.assertIn("08650a492315c6e6caa5dfb732d15d41a7864063", req)
+        self.assertIn("742d5da1c4661cb9cdbe0e292852386adc71edeb", req)
         # Verify setup script exists and is executable
         setup = script_dir / "setup.sh"
         self.assertTrue(setup.exists())

@@ -38,7 +38,7 @@ if not arr_bridge.ARR_AVAILABLE:
     raise ImportError(
         "agent-runtime-router 1.4.0 not found in .kilo/model-router/.venv; "
         "run .kilo/model-router/setup.sh (Python >=3.11 required) — "
-        "pinned revision 08650a492315c6e6caa5dfb732d15d41a7864063"
+        "pinned revision 742d5da1c4661cb9cdbe0e292852386adc71edeb"
     ) from getattr(arr_bridge, "_ARR_IMPORT_ERROR", None)
 
 SKILL_REFERENCE_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])/([A-Za-z0-9][A-Za-z0-9_-]*)")
