@@ -1044,53 +1044,6 @@ def is_sensitive(task: str, profile_name: str) -> bool:
     return any(re.search(pattern, task, flags=re.IGNORECASE) for pattern in SENSITIVE_PROMPT_PATTERNS)
 
 
-def candidate_qualifies(
-    candidate: Candidate,
-    profile: Mapping[str, Any],
-    config: Mapping[str, Any],
-    sensitive: bool,
-    *,
-    relax_quality: bool = False,
-) -> bool:
-    """Compatibility shim: legacy entrypoint now delegates to ARR bridge.
-
-    The original ranking/qualification logic has been removed (ARR is the
-    sole router). This shim preserves the public API for diagnostics
-    (select_probe.py) and existing callers by reusing arr_bridge's
-    harness-neutral checks, without reintroducing legacy sort_key logic.
-    """
-    # Defer to ARR bridge's non-quality gate check (quota/status/tool/etc.)
-    try:
-        import arr_bridge as _ab
-
-        ok, reason = _ab._kraken_non_quality_eligible(candidate, profile, config, sensitive)
-        if not ok:
-            candidate.rejection = reason or "no candidate satisfies policy"
-            return False
-        # Quality checks (including below-minimum and unknown)
-        minimum = effective_minimum(profile)
-        if candidate.quality is None:
-            candidate.rejection = "capability quality is unknown and cannot be assessed"
-            return False
-        if candidate.quality < minimum and not relax_quality:
-            candidate.rejection = f"quality score {candidate.quality:g} is below {minimum:g}"
-            return False
-        secondary = profile.get("secondary", {})
-        if candidate.aa and isinstance(secondary, Mapping) and not relax_quality:
-            evaluations = candidate.aa.get("evaluations", {})
-            for metric, threshold in secondary.items():
-                value = number(evaluations.get(metric)) if isinstance(evaluations, Mapping) else None
-                if value is not None and value < float(threshold):
-                    candidate.rejection = f"{metric} is below {threshold}"
-                    return False
-        candidate.rejection = None
-        return True
-    except Exception:
-        # Fallback: treat as qualified to avoid masking ARR routing
-        candidate.rejection = None
-        return True
-
-
 def select_variant(candidate: Candidate, profile: Mapping[str, Any]) -> None:
     if not candidate.variants:
         candidate.variant = None
