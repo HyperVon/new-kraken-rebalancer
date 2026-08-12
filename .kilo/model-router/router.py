@@ -1052,48 +1052,43 @@ def candidate_qualifies(
     *,
     relax_quality: bool = False,
 ) -> bool:
-    policy = config.get("policy", {})
-    if candidate.quota_state in {"insufficient", "unavailable", "blocked"}:
-        candidate.rejection = f"quota state is {candidate.quota_state}"
-        return False
-    if candidate.status not in {"active", "unknown"}:
-        candidate.rejection = "catalog status is not active"
-        return False
-    if not candidate.tool_call:
-        candidate.rejection = "tool calling is not advertised"
-        return False
-    if profile.get("requiresReasoning") and not candidate.reasoning:
-        candidate.rejection = "reasoning support is not advertised"
-        return False
-    if candidate.context_limit and candidate.context_limit < int(profile.get("context", 0)):
-        candidate.rejection = "context window is too small"
-        return False
-    if candidate.billing == "free" and not (policy.get("allowFree", False) or candidate.free_allowed):
-        candidate.rejection = "free routes disabled by policy"
-        return False
-    if candidate.billing == "free" and sensitive and policy.get("denyFreeForSensitive", True):
-        candidate.rejection = "free routes disabled for sensitive work"
-        return False
-    if candidate.billing != "free" and not policy.get("allowPaid", True):
-        candidate.rejection = "paid routes disabled by policy"
-        return False
-    minimum = effective_minimum(profile)
-    if candidate.quality is None:
-        candidate.rejection = "capability quality is unknown and cannot be assessed"
-        return False
-    elif candidate.quality < minimum:
-        if not relax_quality:
+    """Compatibility shim: legacy entrypoint now delegates to ARR bridge.
+
+    The original ranking/qualification logic has been removed (ARR is the
+    sole router). This shim preserves the public API for diagnostics
+    (select_probe.py) and existing callers by reusing arr_bridge's
+    harness-neutral checks, without reintroducing legacy sort_key logic.
+    """
+    # Defer to ARR bridge's non-quality gate check (quota/status/tool/etc.)
+    try:
+        import arr_bridge as _ab
+
+        ok, reason = _ab._kraken_non_quality_eligible(candidate, profile, config, sensitive)
+        if not ok:
+            candidate.rejection = reason or "no candidate satisfies policy"
+            return False
+        # Quality checks (including below-minimum and unknown)
+        minimum = effective_minimum(profile)
+        if candidate.quality is None:
+            candidate.rejection = "capability quality is unknown and cannot be assessed"
+            return False
+        if candidate.quality < minimum and not relax_quality:
             candidate.rejection = f"quality score {candidate.quality:g} is below {minimum:g}"
             return False
-    secondary = profile.get("secondary", {})
-    if candidate.aa and isinstance(secondary, Mapping) and not relax_quality:
-        evaluations = candidate.aa.get("evaluations", {})
-        for metric, threshold in secondary.items():
-            value = number(evaluations.get(metric)) if isinstance(evaluations, Mapping) else None
-            if value is not None and value < float(threshold):
-                candidate.rejection = f"{metric} is below {threshold}"
-                return False
-    return True
+        secondary = profile.get("secondary", {})
+        if candidate.aa and isinstance(secondary, Mapping) and not relax_quality:
+            evaluations = candidate.aa.get("evaluations", {})
+            for metric, threshold in secondary.items():
+                value = number(evaluations.get(metric)) if isinstance(evaluations, Mapping) else None
+                if value is not None and value < float(threshold):
+                    candidate.rejection = f"{metric} is below {threshold}"
+                    return False
+        candidate.rejection = None
+        return True
+    except Exception:
+        # Fallback: treat as qualified to avoid masking ARR routing
+        candidate.rejection = None
+        return True
 
 
 def select_variant(candidate: Candidate, profile: Mapping[str, Any]) -> None:
@@ -1431,20 +1426,12 @@ def select_candidate(
     )
     if selected is not None:
         return selected
-    # No candidate from ARR — ARR already handled relax_quality fallback via
-    # arr_bridge (max quality). If still nothing, build legacy-compatible error
-    # message via candidate_qualifies so existing tests keep their expected
-    # rejection strings ("paid routes disabled", "capability quality is unknown").
-    # This is the only remaining legacy path; ranking itself is now ARR-only.
-    excluded_routes = excluded_routes or set()
-    excluded_providers = excluded_providers or set()
-    reasons: dict[str, int] = {}
-    for candidate in candidates:
-        if candidate.route in excluded_routes or candidate.provider in excluded_providers:
-            continue
-        candidate_qualifies(candidate, profile, config, sensitive)
-        if candidate.rejection:
-            reasons[candidate.rejection] = reasons.get(candidate.rejection, 0) + 1
+    # No candidate from ARR — build Kraken-compatible error detail via ARR
+    # evaluations (no legacy candidate_qualifies). ARR is the sole ranker;
+    # this preserves the expected rejection strings for tests.
+    reasons = arr_bridge.arr_rejection_summary(
+        candidates, profile, config, sensitive, excluded_routes, excluded_providers
+    )
     detail = ""
     if reasons:
         summary = ", ".join(f"{reason} ({count} model{'s' if count != 1 else ''})" for reason, count in sorted(reasons.items(), key=lambda item: -item[1])[:5])

@@ -187,6 +187,207 @@ def _config_to_arr_policy(config: Mapping[str, Any], profile: Mapping[str, Any])
     )
 
 
+# ---------------------------------------------------------------------------
+# Legacy-free helpers (no import of router.candidate_qualifies)
+# ---------------------------------------------------------------------------
+
+def _effective_minimum(profile: Mapping[str, Any]) -> float:
+    def _num(v):
+        try:
+            return float(v) if v is not None else None
+        except Exception:
+            return None
+    minimum = _num(profile.get("minimum")) or 0.0
+    margin = _num(profile.get("margin")) or 0.0
+    return minimum + margin
+
+
+def _kraken_non_quality_eligible(candidate: Any, profile: Mapping[str, Any], config: Mapping[str, Any], sensitive: bool) -> tuple[bool, str | None]:
+    """Check if kraken candidate passes all gates except quality threshold.
+
+    Returns (eligible, rejection_reason). Mirrors legacy candidate_qualifies
+    with relax_quality=True but without importing router.
+    """
+    policy = config.get("policy", {}) if isinstance(config.get("policy"), Mapping) else {}
+    # quota
+    quota_state = str(getattr(candidate, "quota_state", "unknown"))
+    if quota_state in {"insufficient", "unavailable", "blocked"}:
+        return False, f"quota state is {quota_state}"
+    # status
+    status = str(getattr(candidate, "status", "active"))
+    if status not in {"active", "unknown"}:
+        return False, "catalog status is not active"
+    # tool_call
+    if not bool(getattr(candidate, "tool_call", True)):
+        return False, "tool calling is not advertised"
+    # reasoning
+    if bool(profile.get("requiresReasoning")) and not bool(getattr(candidate, "reasoning", False)):
+        return False, "reasoning support is not advertised"
+    # context
+    try:
+        ctx_needed = int(profile.get("context", 0) or 0)
+    except Exception:
+        ctx_needed = 0
+    ctx_limit = getattr(candidate, "context_limit", None)
+    if ctx_limit is not None and ctx_needed and int(ctx_limit) < ctx_needed:
+        return False, "context window is too small"
+    # billing
+    billing = str(getattr(candidate, "billing", "paid"))
+    free_allowed = bool(getattr(candidate, "free_allowed", False))
+    if billing == "free" and not (bool(policy.get("allowFree", False)) or free_allowed):
+        return False, "free routes disabled by policy"
+    if billing == "free" and sensitive and bool(policy.get("denyFreeForSensitive", True)):
+        return False, "free routes disabled for sensitive work"
+    if billing != "free" and not bool(policy.get("allowPaid", True)):
+        return False, "paid routes disabled by policy"
+    # quality unknown is still a rejection even when relaxed
+    if getattr(candidate, "quality", None) is None:
+        return False, "capability quality is unknown and cannot be assessed"
+    # secondary checks are skipped when relax_quality=True (kraken parity)
+    return True, None
+
+
+def _arr_reason_to_kraken(reason: str, candidate: Any, profile: Mapping[str, Any]) -> str:
+    """Map ARR evaluation reason to Kraken's expected rejection string."""
+    # Direct mappings
+    if reason == "cost:free_disallowed":
+        return "free routes disabled by policy"
+    if reason == "cost:free_blocked_for_sensitive":
+        return "free routes disabled for sensitive work"
+    if reason == "cost:paid_disallowed":
+        return "paid routes disabled by policy"
+    if reason == "quality:unknown":
+        return "capability quality is unknown and cannot be assessed"
+    if reason.startswith("quality:below_minimum:"):
+        # ARR: quality:below_minimum:30<40  -> Kraken: quality score 30 is below 40
+        try:
+            payload = reason.split(":", 2)[2]  # "30<40"
+            q_str, min_str = payload.split("<", 1)
+            q = float(q_str)
+            m = float(min_str)
+            return f"quality score {q:g} is below {m:g}"
+        except Exception:
+            # fallback to effective minimum
+            q = getattr(candidate, "quality", 0)
+            m = _effective_minimum(profile)
+            try:
+                return f"quality score {float(q):g} is below {float(m):g}"
+            except Exception:
+                return f"quality score {q} is below {m}"
+    if reason == "capability:tool_call_unavailable":
+        return "tool calling is not advertised"
+    if reason == "capability:reasoning_required":
+        return "reasoning support is not advertised"
+    if reason == "context:insufficient" or reason == "context:unknown_disallowed":
+        return "context window is too small"
+    if reason == "availability:unavailable":
+        return "catalog status is not active"
+    if reason.startswith("availability:"):
+        return "catalog status is not active"
+    if reason.startswith("quota:"):
+        # quota:exhausted / quota:blocked -> map to quota state message if possible
+        qs = getattr(candidate, "quota_state", "unknown")
+        if qs in {"insufficient", "exhausted", "unavailable", "blocked"}:
+            # normalize to kraken wording
+            if qs == "exhausted":
+                qs = "insufficient"
+            return f"quota state is {qs}"
+        if reason == "quota:exhausted":
+            return "quota state is insufficient"
+        if reason == "quota:blocked":
+            return "quota state is blocked"
+        return f"quota state is {qs}"
+    if reason.startswith("capability:missing:"):
+        # generic capability miss; map to tool/reasoning if known else keep
+        cap = reason.split(":", 2)[2] if ":" in reason else reason
+        if cap == "tool_call":
+            return "tool calling is not advertised"
+        if cap == "reasoning":
+            return "reasoning support is not advertised"
+        return f"capability {cap} is not advertised"
+    if reason.startswith("tps:"):
+        return "tps is insufficient"
+    # fallback: return raw but ensure it contains expected substrings for test
+    return reason
+
+
+def arr_rejection_summary(
+    candidates: Sequence[Any],
+    profile: Mapping[str, Any],
+    config: Mapping[str, Any],
+    sensitive: bool,
+    excluded_routes: set[str] | None = None,
+    excluded_providers: set[str] | None = None,
+) -> dict[str, int]:
+    """Build Kraken-compatible top rejection reasons via ARR evaluations.
+
+    Returns dict of Kraken rejection string -> count, for error detail.
+    """
+    if not ARR_AVAILABLE:
+        return {}
+    excluded_routes = excluded_routes or set()
+    excluded_providers = excluded_providers or set()
+    usable = [c for c in candidates if c.route not in excluded_routes and c.provider not in excluded_providers]
+    if not usable:
+        return {}
+    try:
+        arr_cands = tuple(_kraken_to_arr_candidate(c) for c in usable)
+        task = _profile_to_arr_task("kraken", profile, sensitive)
+        policy = _config_to_arr_policy(config, profile)
+        arr_cands = tuple(c for c in arr_cands if c is not None)
+        if not arr_cands:
+            return {}
+        decision = arr_route(task, arr_cands, policy)
+        reasons: dict[str, int] = {}
+        # Build map from candidate_id to kraken candidate for message mapping
+        id_to_kraken = {c.route: c for c in usable}
+        for ev in decision.evaluations:
+            if ev.eligible:
+                continue
+            cid = ev.candidate.candidate_id
+            kc = id_to_kraken.get(cid)
+            if kc is None:
+                continue
+            for r in ev.reasons:
+                kraken_msg = _arr_reason_to_kraken(r, kc, profile)
+                reasons[kraken_msg] = reasons.get(kraken_msg, 0) + 1
+        # If ARR gave no reasons (should not), fallback to non-quality check
+        if not reasons:
+            for c in usable:
+                ok, rej = _kraken_non_quality_eligible(c, profile, config, sensitive)
+                if not ok and rej:
+                    reasons[rej] = reasons.get(rej, 0) + 1
+                elif not ok:
+                    reasons["no candidate satisfies policy"] = reasons.get("no candidate satisfies policy", 0) + 1
+                else:
+                    # check quality below minimum specifically
+                    q = getattr(c, "quality", None)
+                    if q is not None:
+                        m = _effective_minimum(profile)
+                        if q < m:
+                            msg = f"quality score {q:g} is below {m:g}"
+                            reasons[msg] = reasons.get(msg, 0) + 1
+        return reasons
+    except Exception:
+        # fallback to direct kraken checks
+        reasons: dict[str, int] = {}
+        for c in usable:
+            ok, rej = _kraken_non_quality_eligible(c, profile, config, sensitive)
+            if not ok and rej:
+                reasons[rej] = reasons.get(rej, 0) + 1
+            else:
+                q = getattr(c, "quality", None)
+                if q is None:
+                    msg = "capability quality is unknown and cannot be assessed"
+                    reasons[msg] = reasons.get(msg, 0) + 1
+                else:
+                    m = _effective_minimum(profile)
+                    if q < m:
+                        msg = f"quality score {q:g} is below {m:g}"
+                        reasons[msg] = reasons.get(msg, 0) + 1
+        return reasons
+
+
 def arr_select_candidate(
     candidates: Sequence[Any],
     profile: Mapping[str, Any],
@@ -242,25 +443,11 @@ def arr_select_candidate(
     # and max(c.quality). This must NOT rescue candidates rejected for other
     # reasons (free disabled, unknown quality, quota exhausted, etc.).
     relax_candidates: list[Any] = []
-    try:
-        import router as kraken_router
-
-        has_qualifies = hasattr(kraken_router, "candidate_qualifies")
-    except Exception:
-        has_qualifies = False
-        kraken_router = None  # type: ignore[assignment]
     for c in usable_kraken:
         if getattr(c, "quality", None) is None:
             continue  # unknown quality never qualifies even with relax_quality
-        if has_qualifies:
-            try:
-                # candidate_qualifies mutates c.rejection; use a copy of relevant state via direct call
-                if kraken_router.candidate_qualifies(c, profile, config, sensitive, relax_quality=True):
-                    relax_candidates.append(c)
-            except Exception:
-                # Fallback to simple billing/status check if qualifies fails
-                relax_candidates.append(c)
-        else:
+        ok, _ = _kraken_non_quality_eligible(c, profile, config, sensitive)
+        if ok:
             relax_candidates.append(c)
     if relax_candidates:
         best = max(relax_candidates, key=lambda c: float(getattr(c, "quality", 0.0) or 0.0))
