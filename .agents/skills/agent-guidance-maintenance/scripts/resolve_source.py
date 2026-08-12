@@ -19,7 +19,40 @@ class SourceResolutionError(RuntimeError):
     """Raised when a kit checkout cannot be resolved safely."""
 
 
+def _load_canonical_validator():
+    try:
+        import importlib.util
+
+        candidate = (
+            Path(__file__).resolve().parents[2]
+            / "bootstrap-project"
+            / "scripts"
+            / "install_skills"
+            / "validation.py"
+        )
+        if not candidate.is_file() or candidate.is_symlink():
+            return None, None
+        spec = importlib.util.spec_from_file_location(
+            "_canonical_install_validation", candidate
+        )
+        if spec is None or spec.loader is None:
+            return None, None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+        return module.validate_root, module.AdoptionError
+    except Exception:  # noqa: BLE001 — fallback when canonical validator is unavailable
+        return None, None
+
+
+_canonical_validate_root, _CanonicalError = _load_canonical_validator()
+
+
 def validate_directory(path: Path, label: str) -> Path:
+    if _canonical_validate_root is not None:
+        try:
+            return _canonical_validate_root(path, label)
+        except _CanonicalError as error:  # type: ignore[misc]
+            raise SourceResolutionError(str(error)) from error
     expanded = path.expanduser()
     if not expanded.exists():
         raise SourceResolutionError(f"{label} does not exist: {expanded}")
