@@ -8,6 +8,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
 REQ_FILE="$SCRIPT_DIR/requirements.txt"
 PY_MIN="3.11"
+ARR_VERSION="1.4.0"
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "ERROR: python3 not found in PATH" >&2
@@ -27,10 +28,8 @@ echo "[setup] Creating venv at $VENV_DIR (Python $PY_VERSION)"
 python3 -m venv "$VENV_DIR"
 # shellcheck source=/dev/null
 source "$VENV_DIR/bin/activate"
-echo "[setup] Upgrading pip"
-pip install --upgrade pip >/dev/null
 echo "[setup] Installing pinned ARR from $REQ_FILE"
-pip install -r "$REQ_FILE"
+python -m pip install --disable-pip-version-check --upgrade -r "$REQ_FILE"
 echo "[setup] Verifying ARR installation"
-python -c "import agent_runtime_router; print(f'ARR {agent_runtime_router.__version__} installed')"
+python -c "import agent_runtime_router; assert agent_runtime_router.__version__ == '$ARR_VERSION', agent_runtime_router.__version__; print(f'ARR {agent_runtime_router.__version__} installed')"
 echo "[setup] Done. Use $VENV_DIR/bin/python for routing."

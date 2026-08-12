@@ -9,8 +9,8 @@ DEFAULT_PROFILES / ranking. Reads the live catalog, AA cache, and quota snapshot
 expects to run from .kilo/model-router/ (so `import router` resolves).
 
 Usage:
-    python3 select_probe.py                 # run the built-in coverage matrix
-    python3 select_probe.py --task "..."    # probe a single arbitrary prompt
+    .venv/bin/python select_probe.py                 # run the built-in coverage matrix
+    .venv/bin/python select_probe.py --task "..."    # probe a single arbitrary prompt
 """
 
 import argparse
@@ -41,28 +41,20 @@ def probe_one(task, candidates, config, expected=None):
     name, prof = router.profile_config(config, "auto", task)
     sensitive = router.is_sensitive(task, None)
     router.apply_ranking_data(candidates, prof, config)
+    import arr_bridge
 
-    def qualifies(c):
-        try:
-            import arr_bridge
-
-            ok, _ = arr_bridge._kraken_non_quality_eligible(c, prof, config, sensitive)
-            if not ok:
-                return False
-            # mimic legacy relax_quality=False quality gate for diagnostics
-            if c.quality is None:
-                return False
-            minimum = router.effective_minimum(prof)
-            if c.quality < minimum:
-                return False
-            return True
-        except Exception:
-            return False
-
-    qualifying = [c for c in candidates if qualifies(c)]
+    # Use the same ARR decision/evaluations as production rather than
+    # reimplementing eligibility in this diagnostic utility.
+    selection = arr_bridge.arr_route_decision(candidates, prof, config, sensitive)
+    eligible_ids = {
+        evaluation.candidate.candidate_id
+        for evaluation in (selection.decision.evaluations if selection.decision else ())
+        if evaluation.eligible
+    }
+    qualifying = [c for c in candidates if c.route in eligible_ids]
     try:
         selected, warnings = router.select_with_tps_guard(candidates, prof, config, sensitive, [], [])
-    except router.RouterError as e:
+    except router.NoRouteError as e:
         print(f"\n=== {task!r}")
         print(f"  expected={expected} got={name}  qualifying={len(qualifying)}  ERROR: {e}")
         return

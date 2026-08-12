@@ -291,6 +291,36 @@ class RouterTests(unittest.TestCase):
         self.assertFalse(MODULE.model_is_allowed("nvidia/free-model", "free-model", settings, blacklist))
         self.assertTrue(MODULE.model_is_allowed("openai/gpt-5.4", "gpt-5.4", settings, blacklist))
 
+    def test_existing_config_filters_candidates_before_arr(self):
+        config = copy.deepcopy(MODULE.DEFAULT_CONFIG)
+        config["providers"] = {
+            "openai": {
+                "enabled": True,
+                "requiresAuth": False,
+                "billing": "paid",
+                "include": ["openai/allowed"],
+            },
+            "nvidia": {
+                "enabled": True,
+                "requiresAuth": False,
+                "billing": "free",
+                "freeOnly": True,
+                "allowFree": True,
+                "include": ["*"],
+            },
+        }
+        config["blacklist"] = {"models": ["openai/blocked"], "providers": ["nvidia"]}
+        raw_models = [
+            {"providerID": "openai", "id": "allowed", "name": "Allowed", "cost": {"input": 1.0, "output": 2.0}, "capabilities": {"toolcall": True}},
+            {"providerID": "openai", "id": "other", "name": "Other", "cost": {"input": 1.0, "output": 2.0}, "capabilities": {"toolcall": True}},
+            {"providerID": "openai", "id": "blocked", "name": "Blocked", "cost": {"input": 1.0, "output": 2.0}, "capabilities": {"toolcall": True}},
+            {"providerID": "nvidia", "id": "free", "name": "Free", "cost": {"input": 0.0, "output": 0.0}, "capabilities": {"toolcall": True}},
+        ]
+
+        candidates = MODULE.build_candidates(raw_models, config, {})
+
+        self.assertEqual(["openai/allowed"], [candidate.route for candidate in candidates])
+
     def test_task_profile_inference_escalates_trading_work(self):
         self.assertEqual("critical", MODULE.infer_profile("Review the trading order execution path"))
 

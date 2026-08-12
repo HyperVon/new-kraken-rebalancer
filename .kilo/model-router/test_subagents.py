@@ -221,6 +221,25 @@ class SubagentRouterTests(unittest.TestCase):
         self.assertTrue(MODULE.workflows.requires_distinct_routes("adversarial-pr-review"))
         self.assertFalse(MODULE.workflows.requires_distinct_routes("documentation-review"))
 
+    def test_arr_integration_failure_is_not_reinterpreted_as_route_diversity_exhaustion(self):
+        integration_error = MODULE.router.arr_bridge.ARRIntegrationError("ARR routing failed")
+        with patch.object(MODULE.router, "load_config", return_value={}), patch.object(
+            MODULE.router, "fetch_catalog", return_value=([], [])
+        ), patch.object(MODULE.router, "load_artificial_analysis", return_value=({}, "disabled")), patch.object(
+            MODULE.availability, "snapshot", return_value={"warnings": []}
+        ), patch.object(MODULE.router, "build_candidates", return_value=[object()]), patch.object(
+            MODULE.router, "select_with_tps_guard", side_effect=integration_error
+        ):
+            with self.assertRaises(MODULE.router.arr_bridge.ARRIntegrationError):
+                MODULE.build_plan(
+                    None,
+                    "adversarial-pr-review",
+                    "Review the branch",
+                    None,
+                    False,
+                    False,
+                )
+
     def test_read_only_worker_workspace_isolated_from_parent_runtime_files(self):
         with MODULE.worker_workspace(True) as workspace:
             self.assertNotEqual(MODULE.router.ROOT, workspace)

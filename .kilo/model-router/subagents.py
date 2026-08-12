@@ -195,7 +195,7 @@ def build_plan(
                 sensitive,
                 excluded_routes=used_routes if require_distinct_routes else None,
             )
-        except router.RouterError:
+        except router.NoRouteError:
             if not require_distinct_routes:
                 raise
             warnings.append(f"route diversity unavailable for track {track['id']}; reused the best available route")
@@ -382,7 +382,7 @@ def launch_with_failover(
                 excluded_routes=attempted_routes,
                 excluded_providers=excluded_providers,
             )
-        except router.RouterError:
+        except router.NoRouteError:
             result["failovers"] = failovers
             return result
         next_selection = router.report(

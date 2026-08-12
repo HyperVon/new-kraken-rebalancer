@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.43] - 2026-08-12
+
+### Fixed
+
+- **ARR model-router integration**: Pin the runnable CI action, validate the
+  project-local ARR version, preserve unknown billing and fallback evidence,
+  keep one ARR decision per selection, and fail closed on integration errors.
+- **Configuration authority**: Keep the existing Kraken config as the sole
+  source for provider/model includes, billing/free policy, profiles, quotas,
+  probes, and blacklists; ARR receives only the filtered candidates and policy.
+- **Model-router setup and diagnostics**: Document the Python 3.11+ setup path,
+  remove the unpinned pip upgrade, and make the selection probe use ARR's actual
+  evaluations.
+
 ## [6.16.42] - 2026-08-11
 
 ### Fixed

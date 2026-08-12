@@ -152,8 +152,56 @@ class ParityTests(unittest.TestCase):
             # Fail-closed: must raise RouterError (any module instance) with chained cause
             self.assertIn("ARR routing failed", str(ctx.exception))
             self.assertIsNotNone(ctx.exception.__cause__)
-            # Ensure it's a RouterError type (name check for cross-module)
-            self.assertIn("RouterError", type(ctx.exception).__name__)
+            self.assertIsInstance(ctx.exception, MODULE.RouterError)
+
+    def test_unknown_billing_is_paid_gated(self):
+        unknown = candidate("openrouter/unknown", billing="unknown", quality=40, aa_cost=0.2)
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 20}
+        denied_config = {"policy": {"allowPaid": False, "allowFree": True}}
+        with self.assertRaises(MODULE.NoRouteError) as denied:
+            MODULE.select_candidate([unknown], profile, denied_config, False)
+        self.assertIn("paid routes disabled by policy", str(denied.exception))
+
+        allowed = MODULE.select_candidate(
+            [candidate("openrouter/unknown", billing="unknown", quality=40, aa_cost=0.2)],
+            profile,
+            {"policy": {"allowPaid": True, "allowFree": True}},
+            False,
+        )
+        self.assertEqual("openrouter/unknown", allowed.route)
+
+    def test_no_route_uses_one_arr_decision(self):
+        cand = candidate("openrouter/m", billing="paid", quality=10, aa_cost=0.2, tool_call=False)
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 50}
+        config = {"policy": {"allowPaid": True, "allowFree": True}}
+        with patch.object(arr_bridge, "arr_route", wraps=arr_bridge.arr_route) as route:
+            with self.assertRaises(MODULE.NoRouteError):
+                MODULE.select_candidate([cand], profile, config, False)
+        self.assertEqual(1, route.call_count)
+
+    def test_tps_guard_does_not_mask_arr_integration_failure(self):
+        cand = candidate("openrouter/m", billing="free", quality=40, aa_cost=0.0)
+        config = {
+            "policy": {"allowPaid": True, "allowFree": True},
+            "tpsProbe": {"enabled": True, "maxProbesPerRun": 1, "onlyFree": True},
+        }
+        with patch.object(
+            MODULE,
+            "select_candidate",
+            side_effect=arr_bridge.ARRIntegrationError("ARR routing failed"),
+        ):
+            with self.assertRaises(arr_bridge.ARRIntegrationError):
+                MODULE.select_with_tps_guard([cand], {"minimum": 20}, config, False)
+
+    def test_fallback_evidence_is_preserved_in_report(self):
+        cand = candidate("openrouter/m", billing="paid", quality=10, aa_cost=0.2)
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 50}
+        config = {"policy": {"allowPaid": True, "allowFree": True}}
+        selected = MODULE.select_candidate([cand], profile, config, False)
+        self.assertTrue(selected.fallback_used)
+        self.assertTrue(
+            MODULE.report(selected, "coding", profile, "configured", False)["fallback_used"]
+        )
 
     def test_clean_environment_wrappers_use_venv(self):
         # Verify wrappers reference .venv and requirements pinned, and setup installs correctly
@@ -164,26 +212,15 @@ class ParityTests(unittest.TestCase):
         self.assertIn(".venv/bin/python", route_sub)
         req = (script_dir / "requirements.txt").read_text()
         self.assertIn("agent-runtime-router.git@", req)
-        self.assertIn("742d5da1c4661cb9cdbe0e292852386adc71edeb", req)
+        self.assertIn("d7d0cfefd279142559d11bd2c6d20d17f2d87ded", req)
         # Verify setup script exists and is executable
         setup = script_dir / "setup.sh"
         self.assertTrue(setup.exists())
         self.assertTrue(setup.stat().st_mode & 0o111)
-        # Verify venv python exists if setup has run; otherwise diagnostic message
+        # The suite is intentionally run only after setup.sh; a missing venv is
+        # a failed clean-install gate, not a skippable local condition.
         venv_py = script_dir / ".venv" / "bin" / "python"
-        if not venv_py.exists():
-            # Fail-closed diagnostic: import should raise with setup guidance
-            with self.assertRaises(ImportError) as ctx:
-                # Simulate missing venv by temporarily hiding ARR
-                with patch.dict("sys.modules", {"agent_runtime_router": None}):
-                    # Force reimport failure
-                    import importlib
-                    if "arr_bridge" in sys.modules:
-                        del sys.modules["arr_bridge"]
-                    import arr_bridge as ab
-                    self.assertFalse(ab.ARR_AVAILABLE)
-            # If venv missing, router import should give clear message
-            pass
+        self.assertTrue(venv_py.exists(), "run .kilo/model-router/setup.sh before this suite")
 
     def test_real_config_profile_semantics(self):
         # Use actual tracked config profile (coding) semantics: secondary agentic threshold

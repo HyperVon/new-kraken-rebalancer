@@ -26,13 +26,13 @@ class CleanInstallTests(unittest.TestCase):
         self.assertNotIn("@main", req)
         self.assertNotIn("@master", req)
 
-    def test_setup_creates_venv_and_installs(self):
-        # This test simulates a clean checkout: create a temp copy without venv, run setup, verify
-        # For speed, we check that the existing venv was created by setup and contains ARR
+    def test_setup_produced_isolated_venv(self):
+        # CI runs setup.sh before this suite. Do not silently skip the dependency
+        # check: a missing venv means the clean-install gate was not performed.
         script_dir = Path(__file__).parent
         venv_py = script_dir / ".venv" / "bin" / "python"
         if not venv_py.exists():
-            self.skipTest("venv not present; run .kilo/model-router/setup.sh first")
+            self.fail("venv not present; run .kilo/model-router/setup.sh before this suite")
         # Verify ARR is importable from venv and not relying on global
         result = subprocess.run(
             [str(venv_py), "-c", "import agent_runtime_router; print(agent_runtime_router.__version__)"],
@@ -71,7 +71,7 @@ class CleanInstallTests(unittest.TestCase):
         script_dir = Path(__file__).parent
         venv_py = script_dir / ".venv" / "bin" / "python"
         if not venv_py.exists():
-            self.skipTest("venv not present")
+            self.fail("venv not present; run .kilo/model-router/setup.sh before this suite")
         # Run with -S to ignore site, but venv site should still be available
         result = subprocess.run(
             [str(venv_py), "-S", "-c", "import sys; print(sys.path)"],

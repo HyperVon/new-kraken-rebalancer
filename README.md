@@ -533,7 +533,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   ├── setup-script                        # Prepare Gradle classes for Agent Manager worktrees
 │   ├── run-script                          # Build fat JAR and start an isolated local simulation
 │   ├── agent-manager.json                  # Agent Manager worktree configuration
-│   ├── model-router/                       # Routed subagent launcher (route-subagents, route-kilo)
+│   ├── model-router/                       # ARR-backed launcher (setup.sh, route-subagents, route-kilo)
 │   ├── command/                            # Project command definitions
 │   └── agent/                              # Project agent definitions
 ├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)
