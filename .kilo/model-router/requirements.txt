@@ -1,0 +1,3 @@
+# Pinned ARR revision for reproducible routing
+# See .kilo/model-router/setup.sh
+git+https://github.com/HyperVon/agent-runtime-router.git@08650a492315c6e6caa5dfb732d15d41a7864063

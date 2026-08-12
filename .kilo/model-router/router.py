@@ -28,13 +28,18 @@ from typing import Any, Iterable, Mapping, Sequence
 import availability
 import fileio
 
-# ARR integration: harness-neutral routing via agent-runtime-router (1.3.0)
+# ARR integration: harness-neutral routing via agent-runtime-router (1.4.0)
 # The legacy Kilo router selection logic has been removed; ARR is now the sole
-# routing backend. The bridge translates kraken Candidates to ARR contracts.
+# routing backend. The bridge translates Kraken Candidates to ARR contracts.
+# Requires Python >=3.11 and a project-local venv (see .kilo/model-router/setup.sh).
 import arr_bridge  # type: ignore
 
 if not arr_bridge.ARR_AVAILABLE:
-    raise ImportError("agent-runtime-router 1.3.0+ is required for routing (pip install agent-runtime-router)")
+    raise ImportError(
+        "agent-runtime-router 1.4.0 not found in .kilo/model-router/.venv; "
+        "run .kilo/model-router/setup.sh (Python >=3.11 required) — "
+        "pinned revision 08650a492315c6e6caa5dfb732d15d41a7864063"
+    ) from getattr(arr_bridge, "_ARR_IMPORT_ERROR", None)
 
 SKILL_REFERENCE_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])/([A-Za-z0-9][A-Za-z0-9_-]*)")
 
