@@ -316,8 +316,24 @@ must choose among independently authenticated Kilo, OpenCode Go, OpenAI,
 OpenRouter, and NVIDIA routes, use the repository launcher:
 
 ```bash
+# First checkout only: install the pinned ARR runtime in the project-local venv.
+bash .kilo/model-router/setup.sh
+
 ./route-kilo --profile coding "Fix the failing Kotlin build"
 ```
+
+The setup requires Python 3.11 or newer and installs the exact
+`agent-runtime-router` revision recorded in
+`.kilo/model-router/requirements.txt`. The launchers use that venv exclusively;
+they fail closed with setup instructions if it is missing. Do not install ARR
+globally or invoke the router with a system `python3`.
+
+The existing `.kilo/model-router/config` remains the router's source of truth.
+It still controls provider/model `include` and `exclude` patterns, billing and
+`allowFree` flags, profile thresholds and variants, quota/TPS settings, and the
+blacklist. Kraken applies those discovery filters before translating the
+remaining candidates into ARR contracts; ARR does not maintain a second
+provider catalog or blacklist.
 
 The project-root `./route-kilo` wrapper opens the full Kilo TUI automatically and
 refreshes route metadata only when the cached catalog (2h) or Artificial Analysis
@@ -483,7 +499,8 @@ environment credential is detected, even if it is absent from `kilo auth list`.
 
 To choose a route without launching a full Kilo session, use the router's
 `select` subcommand (or add `--json` for machine-readable output):
-`python3 .kilo/model-router/router.py select --task "<prompt>"`. The default
+`.kilo/model-router/.venv/bin/python .kilo/model-router/router.py select --task "<prompt>"`.
+The default
 `run` subcommand both selects the route and then launches/streams the Kilo
 session for that task, so a slow `run` usually reflects the Kilo run itself —
 not the selection step. When no route qualifies, the error lists the top

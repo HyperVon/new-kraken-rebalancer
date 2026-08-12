@@ -27,6 +27,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import availability
 import fileio
+from router_errors import NoRouteError, RouterError
 
 # ARR integration: harness-neutral routing via agent-runtime-router (1.4.0)
 # The legacy Kilo router selection logic has been removed; ARR is now the sole
@@ -36,9 +37,10 @@ import arr_bridge  # type: ignore
 
 if not arr_bridge.ARR_AVAILABLE:
     raise ImportError(
-        "agent-runtime-router 1.4.0 not found in .kilo/model-router/.venv; "
+        "agent-runtime-router 1.4.0 is not available from the project venv; "
         "run .kilo/model-router/setup.sh (Python >=3.11 required) — "
-        "pinned revision 742d5da1c4661cb9cdbe0e292852386adc71edeb"
+        "pinned revision d7d0cfefd279142559d11bd2c6d20d17f2d87ded. "
+        f"Import detail: {getattr(arr_bridge, '_ARR_IMPORT_ERROR', 'unknown error')}"
     ) from getattr(arr_bridge, "_ARR_IMPORT_ERROR", None)
 
 SKILL_REFERENCE_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])/([A-Za-z0-9][A-Za-z0-9_-]*)")
@@ -312,11 +314,8 @@ class Candidate:
     variants: dict[str, Mapping[str, Any]] = field(default_factory=dict)
     preferred_variant: str | None = None
     variant: str | None = None
+    fallback_used: bool = False
     rejection: str | None = None
-
-
-class RouterError(RuntimeError):
-    """An expected, user-actionable routing failure."""
 
 
 def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
@@ -1301,7 +1300,7 @@ def select_with_tps_guard(
                 excluded_routes=excluded | probe_excluded,
                 excluded_providers=excluded_providers,
             )
-        except RouterError:
+        except NoRouteError:
             # Probing excluded every remaining candidate: keep the best
             # available route rather than fail the run.
             warnings.append(
@@ -1352,7 +1351,7 @@ def select_with_tps_guard(
             ),
             warnings,
         )
-    except RouterError:
+    except NoRouteError:
         warnings.append("no qualifying route outside the slow free routes; kept the best available free route")
         return (
             select_candidate(
@@ -1379,22 +1378,28 @@ def select_candidate(
     # apply_ranking_data is still required to populate quality/effective_cost
     # before translation to ARR contracts.
     apply_ranking_data(candidates, profile, config)
-    selected = arr_bridge.arr_select_candidate(
+    selection = arr_bridge.arr_select_candidate(
         candidates, profile, config, sensitive, excluded_routes, excluded_providers
     )
-    if selected is not None:
-        return selected
+    if selection.candidate is not None:
+        # Variant choice is Kraken presentation/launch policy, not ARR
+        # eligibility. Keep it outside the adapter so the bridge stays free of
+        # imports back into this module.
+        select_variant(selection.candidate, profile)
+        return selection.candidate
     # No candidate from ARR — build Kraken-compatible error detail via ARR
     # evaluations (no legacy candidate_qualifies). ARR is the sole ranker;
     # this preserves the expected rejection strings for tests.
     reasons = arr_bridge.arr_rejection_summary(
-        candidates, profile, config, sensitive, excluded_routes, excluded_providers
+        selection.decision,
+        selection.usable,
+        profile,
     )
     detail = ""
     if reasons:
         summary = ", ".join(f"{reason} ({count} model{'s' if count != 1 else ''})" for reason, count in sorted(reasons.items(), key=lambda item: -item[1])[:5])
         detail = f"; top rejection reasons: {summary}"
-    raise RouterError(f"no candidate satisfies the current capability, cost, and privacy policy{detail}")
+    raise NoRouteError(f"no candidate satisfies the current capability, cost, and privacy policy{detail}")
 
 
 def report(
@@ -1412,6 +1417,7 @@ def report(
         "available_variants": sorted(candidate.variants),
         "profile": profile_name,
         "billing": candidate.billing,
+        "fallback_used": candidate.fallback_used,
         "cost": {
             "effective": candidate.effective_cost,
             "source": candidate.effective_cost_source,
@@ -1755,7 +1761,7 @@ def main() -> int:
                 excluded_routes=attempted_routes,
                 excluded_providers=excluded_providers,
             )
-        except RouterError:
+        except NoRouteError:
             return exit_code
         result = report(
             next_candidate,

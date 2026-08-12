@@ -13,14 +13,21 @@ ARR owns:
 Design constraints (PR #241 fixes):
 - Call ARR exactly once per routing decision and retain its RouteDecision.
 - Convert ARR reasons to Kraken wording only after the decision.
-- Do not catch broad ARR/translation exceptions; surface as fail-closed RouterError with chained cause.
+- Catch integration exceptions only at the adapter boundary; surface them as
+  fail-closed ARRIntegrationError values with chained causes.
 - No local fallback ranking or duplicate eligibility engine.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from router_errors import ARRIntegrationError
+
+ARR_REQUIRED_VERSION = "1.4.0"
+
 try:
+    from agent_runtime_router import __version__ as ARR_VERSION
     from agent_runtime_router import Candidate as ARRCandidate
     from agent_runtime_router import RoutingPolicy as ARRPolicy
     from agent_runtime_router import TaskRequest as ARRTask
@@ -30,10 +37,23 @@ try:
     from agent_runtime_router import route as arr_route
     from agent_runtime_router.errors import RouterInputError
 
+    if ARR_VERSION != ARR_REQUIRED_VERSION:
+        raise ImportError(
+            f"agent-runtime-router {ARR_REQUIRED_VERSION} required, found {ARR_VERSION}"
+        )
     ARR_AVAILABLE = True
 except ImportError as e:
     ARR_AVAILABLE = False
     _ARR_IMPORT_ERROR = e
+
+
+@dataclass(frozen=True)
+class ARRSelection:
+    """One ARR decision plus the Kraken candidates used to make it."""
+
+    candidate: Any | None
+    decision: Any | None
+    usable: tuple[Any, ...]
 
 
 # Rejection translation: ARR reason -> Kraken wording for report / error detail
@@ -43,6 +63,8 @@ def _arr_reason_to_kraken(reason: str, candidate: Any, profile: Mapping[str, Any
     if reason == "cost:free_blocked_for_sensitive":
         return "free routes disabled for sensitive work"
     if reason == "cost:paid_disallowed":
+        return "paid routes disabled by policy"
+    if reason == "cost:unknown_disallowed":
         return "paid routes disabled by policy"
     if reason == "quality:unknown":
         return "capability quality is unknown and cannot be assessed"
@@ -94,15 +116,6 @@ def _arr_reason_to_kraken(reason: str, candidate: Any, profile: Mapping[str, Any
             return "reasoning support is not advertised"
         return f"capability {cap} is not advertised"
     return reason
-
-
-def _effective_minimum(profile: Mapping[str, Any]) -> float:
-    def _num(v: Any) -> float | None:
-        try:
-            return float(v) if v is not None else None
-        except Exception:
-            return None
-    return (_num(profile.get("minimum")) or 0.0) + (_num(profile.get("margin")) or 0.0)
 
 
 def _kraken_to_arr_candidate(k: Any) -> Any:
@@ -284,7 +297,11 @@ def _config_to_arr_policy(config: Mapping[str, Any], profile: Mapping[str, Any],
     providers = config.get("providers", {}) if isinstance(config.get("providers"), Mapping) else {}
     allowlist: list[str] = []
     for prov_id, prov_cfg in providers.items():
-        if isinstance(prov_cfg, Mapping) and bool(prov_cfg.get("allowFree", False)):
+        if (
+            isinstance(prov_cfg, Mapping)
+            and bool(prov_cfg.get("enabled", True))
+            and bool(prov_cfg.get("allowFree", False))
+        ):
             allowlist.append(str(prov_id))
     # Also include any candidate that has free_allowed=True (per-candidate)
     for c in candidates:
@@ -300,16 +317,12 @@ def _config_to_arr_policy(config: Mapping[str, Any], profile: Mapping[str, Any],
         vp = []
     variant_pref = tuple(str(v) for v in vp if isinstance(v, str) and v)
 
-    # Unknown evidence policies: Kraken legacy allowed unknown status/quota/context,
-    # but ARR should be explicit. We set allow_unknown_* true to match legacy
-    # and preserve tie-break (quota) / eligibility (status/context).
-    # For unknown cost/billing, preserve historical paid gate: allow_unknown_cost true would hide unknown cost;
-    # legacy treated unknown billing as paid-gated, so we keep allow_unknown_cost=False and let _evaluate handle billing.
-    # However, to avoid rejecting unknown billing via cost:unknown_disallowed, we set allow_unknown_cost=True
-    # and rely on paid gate for unknown billing. Explicitly document.
+    # Unknown status/quota/context were eligible in Kraken and remain explicit
+    # ARR opt-ins. Unknown billing was historically treated as paid, so it is
+    # allowed only when the legacy paid policy is enabled.
     return ARRPolicy(
         allow_paid=allow_paid,
-        allow_unknown_cost=True,  # unknown billing not rejected via cost class; paid gate handles it
+        allow_unknown_cost=allow_paid,
         allow_unknown_availability=True,  # unknown status was eligible (legacy)
         allow_unknown_quota=True,  # unknown quota eligible but deprioritized (ARR tie-break)
         allow_unknown_context_window=True,  # 0 -> None eligible (legacy)
@@ -325,6 +338,75 @@ def _config_to_arr_policy(config: Mapping[str, Any], profile: Mapping[str, Any],
     )
 
 
+def _usable_candidates(
+    candidates: Sequence[Any],
+    excluded_routes: set[str] | None = None,
+    excluded_providers: set[str] | None = None,
+) -> tuple[Any, ...]:
+    excluded_routes = excluded_routes or set()
+    excluded_providers = excluded_providers or set()
+    return tuple(
+        c
+        for c in candidates
+        if c.route not in excluded_routes and c.provider not in excluded_providers
+    )
+
+
+def arr_route_decision(
+    candidates: Sequence[Any],
+    profile: Mapping[str, Any],
+    config: Mapping[str, Any],
+    sensitive: bool,
+    excluded_routes: set[str] | None = None,
+    excluded_providers: set[str] | None = None,
+) -> ARRSelection:
+    """Translate inputs and invoke ARR exactly once for this decision."""
+    if not ARR_AVAILABLE:
+        raise ARRIntegrationError(
+            "agent-runtime-router is not installed or has the wrong version; "
+            "run .kilo/model-router/setup.sh"
+        ) from _ARR_IMPORT_ERROR
+
+    try:
+        usable = _usable_candidates(candidates, excluded_routes, excluded_providers)
+    except Exception as e:
+        raise ARRIntegrationError(f"candidate filtering failed: {e}") from e
+    if not usable:
+        return ARRSelection(candidate=None, decision=None, usable=())
+
+    try:
+        arr_cands = tuple(_kraken_to_arr_candidate(c) for c in usable)
+        task = _profile_to_arr_task("kraken", profile, sensitive)
+        policy = _config_to_arr_policy(config, profile, usable)
+    except Exception as e:
+        raise ARRIntegrationError(f"ARR translation failed: {e}") from e
+
+    try:
+        decision = arr_route(task, arr_cands, policy)
+    except RouterInputError as e:
+        raise ARRIntegrationError(f"ARR routing rejected translated input: {e}") from e
+    except Exception as e:
+        raise ARRIntegrationError(f"ARR routing failed: {e}") from e
+
+    if decision.selected is None:
+        return ARRSelection(candidate=None, decision=decision, usable=usable)
+
+    try:
+        selected_id = decision.selected.candidate_id
+    except Exception as e:
+        raise ARRIntegrationError("ARR returned a malformed selected candidate") from e
+    for kc in usable:
+        if kc.route == selected_id:
+            # Keep the user-visible candidate compatible with the existing
+            # launcher while retaining the decision's fallback evidence.
+            kc.fallback_used = bool(getattr(decision, "fallback_used", False))
+            return ARRSelection(candidate=kc, decision=decision, usable=usable)
+
+    raise ARRIntegrationError(
+        f"ARR selected unknown candidate {selected_id!r}; refusing to continue"
+    )
+
+
 def arr_select_candidate(
     candidates: Sequence[Any],
     profile: Mapping[str, Any],
@@ -332,89 +414,32 @@ def arr_select_candidate(
     sensitive: bool,
     excluded_routes: set[str] | None = None,
     excluded_providers: set[str] | None = None,
-) -> Any | None:
-    """Thin adapter: translate, call ARR once, return Kraken Candidate or None.
+) -> ARRSelection:
+    """Return the single ARR decision used by the caller.
 
-    Raises RouterError with chained cause on ARR/translation failure (fail-closed).
-    Returns None only when ARR explicitly reports no eligible candidate.
+    No local ranking or eligibility fallback is performed here. A no-route
+    decision is represented by ``selection.candidate is None``; integration
+    failures raise ``ARRIntegrationError`` and must not be treated as no-route.
     """
-    if not ARR_AVAILABLE:
-        raise ImportError("agent-runtime-router is not installed; run .kilo/model-router/setup.sh") from _ARR_IMPORT_ERROR
-
-    excluded_routes = excluded_routes or set()
-    excluded_providers = excluded_providers or set()
-    usable = [c for c in candidates if c.route not in excluded_routes and c.provider not in excluded_providers]
-    if not usable:
-        return None
-
-    # Translate — let any exception surface as RouterError with cause
-    try:
-        arr_cands = tuple(_kraken_to_arr_candidate(c) for c in usable)
-        task = _profile_to_arr_task("kraken", profile, sensitive)
-        policy = _config_to_arr_policy(config, profile, usable)
-        arr_cands = tuple(c for c in arr_cands if c is not None)
-        if not arr_cands:
-            return None
-    except Exception as e:
-        import router as kraken_router  # type: ignore
-        raise kraken_router.RouterError(f"ARR translation failed: {e}") from e
-
-    # Single ARR call — do not catch broad Exception
-    try:
-        decision = arr_route(task, arr_cands, policy)
-    except RouterInputError:
-        raise
-    except Exception as e:
-        import router as kraken_router  # type: ignore
-        raise kraken_router.RouterError(f"ARR routing failed: {e}") from e
-
-    if decision.selected is None:
-        return None
-
-    selected_id = decision.selected.candidate_id
-    for kc in usable:
-        if kc.route == selected_id:
-            # Variant selection is Kraken presentation/launch only; do not swallow errors silently — let it raise if broken
-            import router as kraken_router  # type: ignore
-            kraken_router.select_variant(kc, profile)
-            return kc
-    return None
+    return arr_route_decision(
+        candidates,
+        profile,
+        config,
+        sensitive,
+        excluded_routes,
+        excluded_providers,
+    )
 
 
 def arr_rejection_summary(
+    decision: Any,
     candidates: Sequence[Any],
     profile: Mapping[str, Any],
-    config: Mapping[str, Any],
-    sensitive: bool,
-    excluded_routes: set[str] | None = None,
-    excluded_providers: set[str] | None = None,
 ) -> dict[str, int]:
-    """Translate ARR evaluations to Kraken wording for error detail.
-
-    Calls ARR once; surfaces translation/routing exceptions as RouterError.
-    """
-    if not ARR_AVAILABLE:
-        raise ImportError("agent-runtime-router is not installed; run .kilo/model-router/setup.sh") from _ARR_IMPORT_ERROR
-
-    excluded_routes = excluded_routes or set()
-    excluded_providers = excluded_providers or set()
-    usable = [c for c in candidates if c.route not in excluded_routes and c.provider not in excluded_providers]
-    if not usable:
+    """Translate one already-computed ARR decision to Kraken wording."""
+    if decision is None:
         return {}
-
-    try:
-        arr_cands = tuple(_kraken_to_arr_candidate(c) for c in usable)
-        task = _profile_to_arr_task("kraken", profile, sensitive)
-        policy = _config_to_arr_policy(config, profile, usable)
-        arr_cands = tuple(c for c in arr_cands if c is not None)
-        if not arr_cands:
-            return {}
-        decision = arr_route(task, arr_cands, policy)
-    except Exception as e:
-        import router as kraken_router  # type: ignore
-        raise kraken_router.RouterError(f"ARR rejection summary failed: {e}") from e
-
-    id_to_kraken = {c.route: c for c in usable}
+    id_to_kraken = {c.route: c for c in candidates}
     reasons: dict[str, int] = {}
     for ev in decision.evaluations:
         if ev.eligible:
