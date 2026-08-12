@@ -28,6 +28,14 @@ from typing import Any, Iterable, Mapping, Sequence
 import availability
 import fileio
 
+# ARR integration: harness-neutral routing via agent-runtime-router (1.3.0)
+# The legacy Kilo router selection logic has been removed; ARR is now the sole
+# routing backend. The bridge translates kraken Candidates to ARR contracts.
+import arr_bridge  # type: ignore
+
+if not arr_bridge.ARR_AVAILABLE:
+    raise ImportError("agent-runtime-router 1.3.0+ is required for routing (pip install agent-runtime-router)")
+
 SKILL_REFERENCE_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])/([A-Za-z0-9][A-Za-z0-9_-]*)")
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1414,72 +1422,34 @@ def select_candidate(
     excluded_routes: set[str] | None = None,
     excluded_providers: set[str] | None = None,
 ) -> Candidate:
+    # ARR is now the sole routing backend (legacy selection logic removed).
+    # apply_ranking_data is still required to populate quality/effective_cost
+    # before translation to ARR contracts.
     apply_ranking_data(candidates, profile, config)
+    selected = arr_bridge.arr_select_candidate(
+        candidates, profile, config, sensitive, excluded_routes, excluded_providers
+    )
+    if selected is not None:
+        return selected
+    # No candidate from ARR — ARR already handled relax_quality fallback via
+    # arr_bridge (max quality). If still nothing, build legacy-compatible error
+    # message via candidate_qualifies so existing tests keep their expected
+    # rejection strings ("paid routes disabled", "capability quality is unknown").
+    # This is the only remaining legacy path; ranking itself is now ARR-only.
     excluded_routes = excluded_routes or set()
     excluded_providers = excluded_providers or set()
-    usable = [
-        candidate
-        for candidate in candidates
-        if candidate.route not in excluded_routes
-        and candidate.provider not in excluded_providers
-        and candidate_qualifies(candidate, profile, config, sensitive)
-    ]
-    if not usable:
-        for candidate in candidates:
-            candidate.rejection = None
-        fallback = [
-            candidate
-            for candidate in candidates
-            if candidate.route not in excluded_routes
-            and candidate.provider not in excluded_providers
-            and candidate_qualifies(candidate, profile, config, sensitive, relax_quality=True)
-        ]
-        if fallback:
-            selected = max(fallback, key=lambda c: c.quality or 0.0)
-            select_variant(selected, profile)
-            return selected
-        reasons: dict[str, int] = {}
-        for candidate in candidates:
-            if candidate.route in excluded_routes or candidate.provider in excluded_providers:
-                continue
-            candidate_qualifies(candidate, profile, config, sensitive)
-            if candidate.rejection:
-                reasons[candidate.rejection] = reasons.get(candidate.rejection, 0) + 1
-        detail = ""
-        if reasons:
-            summary = ", ".join(f"{reason} ({count} model{'s' if count != 1 else ''})" for reason, count in sorted(reasons.items(), key=lambda item: -item[1])[:5])
-            detail = f"; top rejection reasons: {summary}"
-        raise RouterError(f"no candidate satisfies the current capability, cost, and privacy policy{detail}")
-
-    def sort_key(candidate: Candidate) -> tuple[float, float, int, float, int]:
-        # Lowest effective cost wins. Within an equal-cost group the second key
-        # depends on whether that group costs anything:
-        #   cost > 0  -> smallest capability headroom above the profile minimum,
-        #                so spend buys a just-sufficient model rather than the
-        #                most expensive one that merely clears the bar.
-        #   cost == 0 -> highest quality, because "just sufficient" only exists
-        #                to avoid paying for headroom. A free route has no
-        #                marginal cost, so deliberately picking the weaker of two
-        #                free models buys nothing and loses capability.
-        # Then an already-paid subscription over PAYG, then higher quota headroom
-        # as a load-spread tiebreak. Free models are not quota-metered (report
-        # 'unknown'), so an unknown free quota never blocks them — free cost 0.0
-        # already ranks them first.
-        free = candidate.billing == "free"
-        unknown_quota = 0 if (candidate.quota_state == "sufficient" or free) else 1
-        cost = candidate.effective_cost if candidate.effective_cost is not None else float("inf")
-        quality = candidate.quality if candidate.quality is not None else 0.0
-        minimum = effective_minimum(profile)
-        capability = -quality if cost == 0.0 else quality - minimum
-        # Prefer an already-paid subscription/account-priced route over PAYG when
-        # cost and capability rank tie (avoid marginal spend).
-        subscription = candidate.billing in {"subscription", "subscription/account-priced", "account-priced"}
-        quota = candidate.quota_percent if candidate.quota_percent is not None else 0.0
-        return cost, capability, 0 if subscription else 1, -quota, unknown_quota
-
-    selected = min(usable, key=sort_key)
-    select_variant(selected, profile)
-    return selected
+    reasons: dict[str, int] = {}
+    for candidate in candidates:
+        if candidate.route in excluded_routes or candidate.provider in excluded_providers:
+            continue
+        candidate_qualifies(candidate, profile, config, sensitive)
+        if candidate.rejection:
+            reasons[candidate.rejection] = reasons.get(candidate.rejection, 0) + 1
+    detail = ""
+    if reasons:
+        summary = ", ".join(f"{reason} ({count} model{'s' if count != 1 else ''})" for reason, count in sorted(reasons.items(), key=lambda item: -item[1])[:5])
+        detail = f"; top rejection reasons: {summary}"
+    raise RouterError(f"no candidate satisfies the current capability, cost, and privacy policy{detail}")
 
 
 def report(
