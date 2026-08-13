@@ -14,9 +14,10 @@ policy and it is not the source of provider eligibility decisions.
 - `.agents/runtime-router/adapters/kilo/profiles.json` owns the eight Kraken
   task profiles and their primary/secondary quality thresholds, context and
   output estimates, reasoning requirements, and native variant preferences.
-- `.agents/runtime-router/adapters/kilo/catalog.py`, `quota.py`, and `tps.py`
-  are target adapters. They return ARR contracts and never rank candidates or
-  persist credentials/raw provider output.
+- `.agents/runtime-router/adapters/kilo/catalog.py` and `quota.py`, plus the
+  TPS/readiness orchestration in `run_arr_task.py`, are target adapters. They
+  return ARR contracts and never rank candidates or persist credentials/raw
+  provider output.
 - `.agents/runtime-router/adapters/kilo/benchmarks.py` is the target-owned
   quality bridge. It may use `ARTIFICIAL_ANALYSIS_API_KEY` when configured and
   otherwise falls back to the public OpenRouter model feed. It persists only
@@ -50,7 +51,8 @@ python3 .agents/.agent-runtime-router/run.py --python \
   --profile routine --approve "Run the approved low-cost smoke task"
 
 # Bounded read-only workflow; add --approve only after reviewing its plan.
-python3 .agents/runtime-router/adapters/kilo/route_subagents.py \
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/route_subagents.py \
   --manifest .agents/runtime-router/adapters/kilo/manifest.local \
   "Review the requested change"
 ```

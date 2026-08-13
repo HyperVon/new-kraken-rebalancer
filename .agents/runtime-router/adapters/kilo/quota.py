@@ -132,8 +132,17 @@ def collect_quota_evidence(
     *,
     harness_id: str = "kilo",
     now: float | None = None,
+    approve: bool = False,
 ) -> dict[str, QuotaEvidence]:
-    """Collect optional account quota without making plugin presence mandatory."""
+    """Collect optional account quota after explicit approval.
+
+    The configured command is target-owned executable code and may contact
+    provider/account services. A route plan therefore never invokes it;
+    callers must pass ``approve=True`` for a live quota refresh.
+    """
+
+    if not approve:
+        return {}
 
     current = time.time() if now is None else float(now)
     settings = provider_policy.get("quota", {}) if isinstance(provider_policy, Mapping) else {}

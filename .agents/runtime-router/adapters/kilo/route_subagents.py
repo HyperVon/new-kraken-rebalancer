@@ -115,9 +115,9 @@ def main(argv: list[str] | None = None) -> int:
             provider_policy,
             target,
             refresh=args.refresh,
-            allow_network=args.approve or args.refresh,
+            allow_network=args.approve,
         )
-        quota = collect_quota_evidence(candidates, provider_policy, harness_id="kilo")
+        quota = collect_quota_evidence(candidates, provider_policy, harness_id="kilo", approve=args.approve)
         candidates = apply_quota_evidence(candidates, quota, harness_id="kilo")
         # Probe only the highest-ranked free route(s) needed by this workflow,
         # rather than whichever catalog rows happened to be listed first.

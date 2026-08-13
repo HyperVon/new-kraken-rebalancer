@@ -133,7 +133,7 @@ Also lint `.agents/OPERATING.md` and thin harness stubs (`CLAUDE.md`,
 `.github/copilot-instructions.md`) whenever agent OS files change.
 
 The repository quality scripts append `--disable-warning=DEP0169` to
-`NODE_OPTIONS` while they run Gradle. Kotlin 2.4.10's downloaded Yarn 1.22.22
+`NODE_OPTIONS` while they run Gradle. Kotlin 2.4.20-RC's downloaded Yarn 1.22.22
 emits that warning from its own Git resolver under modern Node; the filter is
 limited to quality tooling and does not affect application launches or other
 Node diagnostics.

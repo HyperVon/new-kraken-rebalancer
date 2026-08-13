@@ -319,7 +319,8 @@ OpenRouter, and NVIDIA routes, use the repository launcher:
 ```bash
 # First checkout only: use the bootstrap-runtime-router skill to install the
 # receipt-managed ARR runtime after reviewing its plan.
-python3 .agents/runtime-router/adapters/kilo/run_arr_task.py --help
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/run_arr_task.py --help
 
 ./route-kilo --profile coding "Fix the failing Kotlin build"
 ```
@@ -336,12 +337,15 @@ variants, quota/TPS settings, model overrides, and the blacklist. Kraken applies
 those discovery filters before translating candidates into ARR contracts; ARR
 does not maintain a second provider catalog or blacklist.
 
-The project-root `./route-kilo` wrapper opens the full Kilo TUI automatically and
-refreshes route metadata only when the cached catalog (2h) or Artificial Analysis
-snapshot (24h) is stale, so warm-cache startups are fast. Pass `--refresh` to
-force a re-fetch. It forwards the initial prompt and any additional router flags
-to `.agents/runtime-router/adapters/kilo/run_arr_task.py` through the receipt-managed
-runtime wrapper.
+The project-root `./route-kilo` wrapper runs the headless, JSON-producing ARR/Kilo
+worker path through the receipt-managed runtime. It refreshes route metadata only
+when the cached catalog (2h) or Artificial Analysis snapshot (24h) is stale, so
+warm-cache starts are fast. Pass `--refresh --approve` to force a live re-fetch;
+without approval, refresh and quota/discovery calls remain blocked. It forwards the
+initial prompt and any additional router flags to
+`.agents/runtime-router/adapters/kilo/run_arr_task.py`; it does not open the
+interactive Kilo TUI. The interactive TUI remains a separate, manually selected
+native-harness path outside ARR's control.
 
 Before a selected free route is used, the router sanity-checks its sustained
 throughput with a short Kilo-native generation probe (roughly a thousand
@@ -514,7 +518,8 @@ fan-out, use a manifest with one entry per independent track:
 ```bash
 cp .agents/runtime-router/adapters/kilo/manifest.example \
   .agents/runtime-router/adapters/kilo/manifest.local
-./.agents/runtime-router/adapters/kilo/route_subagents.py \
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/route_subagents.py \
   --manifest .agents/runtime-router/adapters/kilo/manifest.local \
   "<parent task>"
 ```
@@ -545,7 +550,8 @@ For a second-pass adversarial review of a completed documentation audit, use the
 dedicated preset with the prior findings in the task context:
 
 ```bash
-./.agents/runtime-router/adapters/kilo/route_subagents.py \
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/route_subagents.py \
   --workflow documentation-adversarial-review \
   --task "Independently re-review the documentation findings from the parent audit" \
   --approve

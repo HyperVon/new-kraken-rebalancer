@@ -268,8 +268,18 @@ def build_candidates(raw_models: Iterable[Mapping[str, Any]], provider_policy: M
         override = models.get(route, {})
         if not isinstance(override, Mapping) or not _allowed(route, model, provider, settings, blacklist):
             continue
-        billing = _billing(route, settings, override, record)
         costs = record.get("cost") if isinstance(record.get("cost"), Mapping) else {}
+        input_cost = _number(costs.get("input"))
+        output_cost = _number(costs.get("output"))
+        # A free-only target provider must not turn a catalog row with a
+        # positive advertised price into a free candidate. Drop it rather
+        # than allowing it to bypass paid/quota policy.
+        if settings.get("freeOnly") and (
+            (input_cost is not None and input_cost > 0)
+            or (output_cost is not None and output_cost > 0)
+        ):
+            continue
+        billing = _billing(route, settings, override, record)
         capabilities, tool_call, reasoning = _raw_capabilities(record)
         limits = record.get("limit") if isinstance(record.get("limit"), Mapping) else {}
         context = _integer(override.get("contextLimit", limits.get("context")))

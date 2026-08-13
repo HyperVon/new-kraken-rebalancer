@@ -203,7 +203,7 @@ def _load_or_discover(
             return load_catalog_cache(path)
         except Exception:
             return None
-    if not approve and not refresh:
+    if not approve:
         return None
     try:
         candidates = discover_candidates(executable, provider_policy, refresh=refresh)
@@ -609,10 +609,10 @@ def main(argv: list[str] | None = None) -> int:
             provider_policy,
             target,
             refresh=args.refresh,
-            allow_network=args.approve or args.refresh,
+            allow_network=args.approve,
         )
         candidates = _apply_profile_quality(candidates, selected_profile)
-        quota = collect_quota_evidence(candidates, provider_policy, harness_id="kilo")
+        quota = collect_quota_evidence(candidates, provider_policy, harness_id="kilo", approve=args.approve)
         candidates = apply_quota_evidence(candidates, quota, harness_id="kilo")
         task = _resolve_kilo_alias(task, candidates)
         adapter = build_adapter(target, executable)

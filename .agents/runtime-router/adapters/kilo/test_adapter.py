@@ -27,7 +27,7 @@ from catalog import CatalogError, build_candidates, discover_candidates, parse_c
 from quota import collect_quota_evidence
 from run_arr_task import (
     TARGET as RUNNER_TARGET,
-    _apply_profile_quality, _readiness_digest, _readiness_settings,
+    _apply_profile_quality, _load_or_discover, _readiness_digest, _readiness_settings,
     _route_with_readiness, _task, _tps_probe_priority,
     _resolve_kilo_alias,
 )
@@ -59,6 +59,19 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         self.assertIn("tool_call", candidate.capabilities)
         self.assertIn(EffortLevel.HIGH, {profile.effort for profile in candidate.effort_profiles})
         self.assertEqual(candidate.quality_metrics["artificial_analysis_coding_index"], 50)
+
+    def test_free_only_provider_drops_positive_catalog_cost(self) -> None:
+        records = (
+            {
+                "providerID": "nvidia",
+                "id": "paid-model",
+                "status": "active",
+                "cost": {"input": 0.2, "output": 0.4},
+            },
+        )
+        policy = json.loads((ADAPTER_DIR / "provider-policy.json").read_text())
+        with self.assertRaises(CatalogError):
+            build_candidates(records, policy)
 
     def test_target_billing_overrides_zero_catalog_price(self) -> None:
         records = (
@@ -158,6 +171,41 @@ class KrakenKiloAdapterTests(unittest.TestCase):
                 if old is not None:
                     __import__("os").environ["OPENCODE_QUOTA_COMMAND"] = old
 
+    def test_unapproved_quota_plan_never_invokes_plugin(self) -> None:
+        candidates = (
+            Candidate(
+                "openrouter", "demo:free", frozenset({"code"}),
+                Availability.AVAILABLE, CostClass.FREE, QuotaStatus.UNKNOWN,
+                128000, billing="free",
+            ),
+        )
+        provider_policy = json.loads((ADAPTER_DIR / "provider-policy.json").read_text())
+        with patch.dict(os.environ, {"OPENCODE_QUOTA_COMMAND": "/bin/false"}), patch(
+            "quota._run_plugin"
+        ) as run_plugin:
+            self.assertEqual(collect_quota_evidence(candidates, provider_policy), {})
+            run_plugin.assert_not_called()
+
+    def test_refresh_requires_approval_before_discovery(self) -> None:
+        policy = TargetPolicyConfig.from_mapping(
+            json.loads((POLICY_DIR / "policy.json").read_text())
+        )
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "run_arr_task.discover_candidates"
+        ) as discover:
+            target = Path(directory)
+            result = _load_or_discover(
+                target,
+                target / "catalog-cache.json",
+                "/bin/true",
+                {},
+                policy,
+                refresh=True,
+                approve=False,
+            )
+            self.assertIsNone(result)
+            discover.assert_not_called()
+
     def test_low_subscription_quota_is_exhausted_and_payg_is_last_resort(self) -> None:
         subscription = Candidate(
             "opencode-go", "subscription", frozenset({"code"}),
@@ -179,7 +227,7 @@ class KrakenKiloAdapterTests(unittest.TestCase):
             "quota._run_plugin", return_value=payload
         ):
             evidence = collect_quota_evidence(
-                (subscription, payg), provider_policy, now=100
+                (subscription, payg), provider_policy, now=100, approve=True
             )
         prepared = apply_quota_evidence(
             (subscription, payg), evidence, now=101, harness_id="kilo"

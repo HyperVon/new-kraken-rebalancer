@@ -533,14 +533,14 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── .agents/                                # AI Agent rules, guidelines & domain skills
 │   ├── AGENTS.md                          # Repository rules & technical guidelines
 │   ├── OPERATING.md                       # Always-on norms (all agent frameworks)
-│   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
+│   ├── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
+│   └── runtime-router/                    # Target-owned ARR policy, Kilo adapter & namespaced evidence
 ├── .kilo/                                  # Optional Kilo Code integration (Agent Manager hooks)
 │   ├── kilo.json                           # Context Mode plugin + safe local-tool settings
 │   ├── shell-strategy.md                   # Non-interactive shell and bounded-output guidance
 │   ├── setup-script                        # Prepare Gradle classes for Agent Manager worktrees
 │   ├── run-script                          # Build fat JAR and start an isolated local simulation
 │   ├── agent-manager.json                  # Agent Manager worktree configuration
-│   ├── runtime-router/                     # Target-owned ARR policy, Kilo adapter & namespaced evidence
 │   ├── command/                            # Project command definitions
 │   └── agent/                              # Project agent definitions
 ├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)
