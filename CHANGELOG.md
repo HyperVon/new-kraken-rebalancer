@@ -18,6 +18,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Upgrade safety and documentation**: Preserve legacy router credential ignores,
   pin the ARR CI dependency to the reviewed commit, and align the Kilo command
   and adapter-path documentation with the receipt-managed headless runner.
+- **Approval documentation**: Clarify target policy ownership, namespaced evidence,
+  and the explicit quota-command contract.
 
 ## [6.16.44] - 2026-08-13
 

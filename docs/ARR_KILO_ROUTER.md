@@ -9,8 +9,10 @@ policy and it is not the source of provider eligibility decisions.
 - `.agents/runtime-router/policy.json` owns ARR policy switches and the target
   blacklist boundary.
 - `.agents/runtime-router/adapters/kilo/provider-policy.json` owns the enabled
-  providers, include rules, billing/free rules, model overrides, quota/TPS
-  source settings, and legacy blacklist fixture.
+  providers, include rules, billing/free rules, model overrides, the optional
+  quota source settings, and legacy blacklist fixture. Free-TPS thresholds and
+  probe/cache bounds remain in the ARR target policy at
+  `.agents/runtime-router/policy.json`.
 - `.agents/runtime-router/adapters/kilo/profiles.json` owns the eight Kraken
   task profiles and their primary/secondary quality thresholds, context and
   output estimates, reasoning requirements, and native variant preferences.

@@ -333,9 +333,11 @@ install ARR globally or use an unrelated system package.
 The target-owned `.agents/runtime-router/adapters/kilo/provider-policy.json`
 and `profiles.json` remain the source of truth. They control provider/model
 `include` patterns, billing and `allowFree` flags, profile thresholds and
-variants, quota/TPS settings, model overrides, and the blacklist. Kraken applies
-those discovery filters before translating candidates into ARR contracts; ARR
-does not maintain a second provider catalog or blacklist.
+variants, optional quota-source settings, model overrides, and the blacklist.
+The shared `.agents/runtime-router/policy.json` controls ARR routing switches,
+free-TPS thresholds, and probe/cache bounds. Kraken applies those target-owned
+filters before translating candidates into ARR contracts; ARR does not maintain
+a second provider catalog or blacklist.
 
 The project-root `./route-kilo` wrapper runs the headless, JSON-producing ARR/Kilo
 worker path through the receipt-managed runtime. It refreshes route metadata only
@@ -397,15 +399,14 @@ The profile constrains route selection; it does not directly choose a model.
 The router still selects the provider/model using capability, cost, quota, and
 availability.
 
-When the provider catalog exposes variants, the profile also selects reasoning
-effort: trivial/routine prefer low/medium, coding medium/high, complex-coding/
-agentic high/thinking, and quick-review/detailed-review/critical xhigh/max, with
-model-specific fallbacks. Headless
-workers receive `--variant`; the full TUI uses a temporary agent configuration
-overlay because its top-level CLI has no variant flag. The project config is not
-modified. Detailed-review and critical profiles prioritize capability evidence
-while keeping eligible free routes available; only explicit blacklist patterns
-exclude models or providers.
+When the provider catalog exposes verified native variants, the profile also
+selects reasoning effort: trivial/routine prefer low/medium, coding medium/high,
+complex-coding/agentic high/thinking, and quick-review/detailed-review/critical
+xhigh/max, with model-specific fallbacks. Headless ARR workers receive the
+selected native `--variant`; the interactive TUI's manually selected variant is
+outside ARR's control. Detailed-review and critical profiles prioritize
+capability evidence while keeping eligible free routes available; only explicit
+blacklist patterns exclude models or providers.
 
 The launcher binds the selected route to Kilo's target-owned `code` agent for
 headless worker execution. Review skills remain read-only through their track
@@ -489,13 +490,14 @@ secondary fallback (cached 24h, no key required) so that transient AA failures
 do not collapse every candidate to `capability quality is unknown`.
 
 The launcher does not store credentials or change the model inside an
-already-running TUI session. When installed, it consumes the quota plugin's
-secret-safe `status --json` and `show --json` output; fresh exhausted or
-unavailable providers are excluded, while missing or stale data remains
-`unknown`. Its free-route guard only examines the launcher prompt; it cannot
-inspect future tool output, so secret files must remain excluded from the
-agent context. OpenRouter participates only when it is enabled by the
-target-owned provider policy and Kilo reports a usable route.
+already-running TUI session. When explicitly approved and configured, it invokes
+the target-owned absolute `OPENCODE_QUOTA_COMMAND`, which must emit a bounded
+JSON mapping; fresh exhausted or unavailable providers are excluded, while
+missing, stale, malformed, or unapproved data remains `unknown`. Its free-route
+guard only examines the launcher prompt; it cannot inspect future tool output,
+so secret files must remain excluded from the agent context. OpenRouter
+participates only when it is enabled by the target-owned provider policy and
+Kilo reports a usable route.
 
 The target runner always prints a structured plan first. Without `--approve` it
 does not launch a worker; with `--approve` it revalidates the plan and starts
