@@ -306,6 +306,29 @@ When writing code or tests:
 Audit rubric and cleanup workflow:
 [skills/ai-slop-detector/SKILL.md](skills/ai-slop-detector/SKILL.md).
 
+### Always-on quality baseline
+
+Treat "AI slop" as an observable artifact defect, not a guess about authorship:
+plausible-looking code, tests, docs, configuration, or guidance that lacks
+current evidence or adds unnecessary correctness, maintenance, safety, or
+review cost. Apply this lightweight pass to every task:
+
+- Tie non-obvious claims, commands, APIs, configuration, tests, and completion
+  statements to current source, contracts, observed behavior, or checks; label
+  unknowns instead of filling them with assumptions.
+- Before adding an artifact or abstraction, identify its concrete consumer,
+  canonical owner, simpler alternative, and outcome-level verification.
+- Keep the change and its documentation focused on the requested user or
+  maintainer task. Do not add speculative wrappers, duplicate mechanisms,
+  misleading tests, or unrelated cleanup.
+- Treat style, verbosity, unusual formatting, and formulaic language as prompts
+  to investigate, not defects by themselves.
+
+Use [ai-slop-detector](skills/ai-slop-detector/SKILL.md) for a scoped
+evidence-based audit or explicitly authorized cleanup. The full skill is
+conditional; this compact baseline is not. Do not turn ordinary work into a
+repository-wide audit merely because the baseline is always active.
+
 ---
 
 ## 8. Native model selection
