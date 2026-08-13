@@ -5,7 +5,7 @@
     ".kilo/shell-strategy.md",
     ".agents/AGENTS.md",
     ".agents/OPERATING.md",
-    ".kilo/model-router/instructions.md"
+    ".agents/skills/agent-runtime-router/SKILL.md"
   ],
   "compaction": {
     "auto": true,

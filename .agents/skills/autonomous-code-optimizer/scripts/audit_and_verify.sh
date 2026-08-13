@@ -4,7 +4,7 @@ set -e
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# Kotlin 2.4.10's downloaded Yarn 1.22.22 emits DEP0169 from its own GitResolver
+# Kotlin 2.4.20-RC's downloaded Yarn 1.22.22 emits DEP0169 from its own GitResolver
 # under modern Node while resolving the generated Karma Git dependency. Keep this
 # filter scoped to repository quality tooling; application launches stay unchanged.
 case " ${NODE_OPTIONS:-} " in

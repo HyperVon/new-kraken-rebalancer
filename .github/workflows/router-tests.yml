@@ -20,28 +20,26 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: .kilo/model-router/requirements.txt
-      - name: Create venv and install pinned ARR
+          cache-dependency-path: .github/workflows/router-tests.yml
+      - name: Install reviewed ARR revision
         run: |
           python3 --version
-          bash .kilo/model-router/setup.sh
-      - name: Run Kraken router tests via venv
-        run: .kilo/model-router/.venv/bin/python -m unittest discover -s .kilo/model-router -p "test_*.py" -v
-      - name: Verify wrappers use venv and fail closed without global ARR
+          python3 -m pip install --disable-pip-version-check \
+            "agent-runtime-router @ git+https://github.com/HyperVon/agent-runtime-router.git@781814f2ec3970aa3598ac13f5697629bb7ec2dd"
+      - name: Run Kraken ARR adapter and parity tests
+        env:
+          PYTHONPATH: .agents/runtime-router/adapters/kilo
         run: |
-          # Wrappers must use venv python, not global
-          grep -q ".venv/bin/python" .kilo/model-router/route-kilo
-          grep -q ".venv/bin/python" .kilo/model-router/route-subagents
-          # Simulate clean checkout without global site packages
-          .kilo/model-router/.venv/bin/python -c "import agent_runtime_router; print(agent_runtime_router.__version__)"
-          # Clean env: wrappers should still work with isolated venv, but fail without venv
-          tmp=$(mktemp -d)
-          cp -r .kilo/model-router "$tmp/"
-          rm -rf "$tmp/model-router/.venv"
-          if "$tmp/model-router/route-kilo" --help 2>&1 | grep -q "ARR venv not found"; then
-            echo "Clean-checkout fail-closed verified"
+          python3 -m unittest discover \
+            -s .agents/runtime-router/adapters/kilo -p "test_*.py" -v
+      - name: Verify legacy router is absent and wrappers fail closed without runtime
+        run: |
+          test ! -e .kilo/model-router
+          test ! -e .kilo/model-router/router.py
+          test -x route-kilo
+          if ./route-kilo --profile routine "router wrapper smoke" 2>&1 | grep -q "ARR runtime is not installed"; then
+            echo "Clean checkout fail-closed verified"
           else
-            echo "ERROR: wrapper did not fail closed without venv"
+            echo "ERROR: wrapper did not fail closed without the target runtime"
             exit 1
           fi
-          rm -rf "$tmp"

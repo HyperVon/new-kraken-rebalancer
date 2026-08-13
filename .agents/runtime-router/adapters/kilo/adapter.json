@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess",
+  "adapter_id": "kilo",
+  "probe_id": "kilo-models"
+}

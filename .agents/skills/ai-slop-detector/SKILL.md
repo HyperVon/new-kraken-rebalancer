@@ -139,7 +139,7 @@ signal, not evidence of slop.
 ### Optional parallel evidence pass
 
 For a full-repository or broad PR audit, use the `ai-slop-detector` preset from
-`.kilo/model-router/route-subagents` after Step 0 and the native model-selection
+`.agents/runtime-router/adapters/kilo/route_subagents.py` after Step 0 and the native model-selection
 gate. It supplies disjoint production/build, tests/evaluation,
 documentation/skills/rules, and UI/assets tracks. Workers return findings only;
 the parent owns severity triage, cleanup decisions, edits, and serial quality

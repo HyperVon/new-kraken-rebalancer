@@ -65,6 +65,13 @@ See the [Agentic Development Guide](docs/AGENTIC_DEVELOPMENT.md) for the full
 provenance, instruction architecture, cross-harness setup, skill catalog,
 human–agent workflow, review loop, and maintenance guidance.
 
+The optional cross-provider Kilo workflow is now provided by ARR and is
+documented in [ARR-backed Kilo routing](docs/ARR_KILO_ROUTER.md). The target
+owns its provider/model policy, blacklist, quota sources, and cached free-model
+TPS evidence; ARR owns routing, effort selection, worker approval, and bounded
+reports. Other harnesses continue to use their native launchers and the same
+portable `.agents/` guidance.
+
 The repository is still fully usable without KiloCode. Application code, tests,
 Gradle tasks, documentation, Git workflows, and the portable `.agents/` skills
 remain available to any capable development tool. KiloCode-only additions are
@@ -105,7 +112,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 
 | Layer           | Technology                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                               |
+| **Language**    | Kotlin 2.4.20-RC (Kotlin Multiplatform: JVM + JS; temporary security patch)                                  |
 | **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.1                                                   |
 | **Database**    | SQLite (via JetBrains Exposed ORM 1.4.0)                                                                     |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |
@@ -526,14 +533,14 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── .agents/                                # AI Agent rules, guidelines & domain skills
 │   ├── AGENTS.md                          # Repository rules & technical guidelines
 │   ├── OPERATING.md                       # Always-on norms (all agent frameworks)
-│   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
+│   ├── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
+│   └── runtime-router/                    # Target-owned ARR policy, Kilo adapter & namespaced evidence
 ├── .kilo/                                  # Optional Kilo Code integration (Agent Manager hooks)
 │   ├── kilo.json                           # Context Mode plugin + safe local-tool settings
 │   ├── shell-strategy.md                   # Non-interactive shell and bounded-output guidance
 │   ├── setup-script                        # Prepare Gradle classes for Agent Manager worktrees
 │   ├── run-script                          # Build fat JAR and start an isolated local simulation
 │   ├── agent-manager.json                  # Agent Manager worktree configuration
-│   ├── model-router/                       # ARR-backed launcher (setup.sh, route-subagents, route-kilo)
 │   ├── command/                            # Project command definitions
 │   └── agent/                              # Project agent definitions
 ├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)

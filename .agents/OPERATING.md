@@ -65,10 +65,10 @@ The repository is harness-agnostic for ordinary development: any capable host
 can use the application source, tests, Gradle commands, Git workflow, and
 portable `.agents/` guidance. KiloCode-specific conveniences are optional and
 limited to Kilo Auto, `.kilo/kilo.json`, `./route-kilo`,
-`.kilo/model-router/route-subagents`, Kilo route reports, Context Mode, and
+`.agents/runtime-router/adapters/kilo/route_subagents.py`, Kilo route reports, Context Mode, and
 Agent Manager. When running under Google Antigravity (AGY), subagents MUST be
 launched directly through Antigravity's native `invoke_subagent` tool calls;
-agents MUST NOT execute `.kilo/model-router/route-subagents` or `subagents.py`
+agents MUST NOT execute `.agents/runtime-router/adapters/kilo/route_subagents.py`
 scripts. Other non-Kilo hosts should similarly use their built-in native agent fan-out.
 
 Independent work must be launched concurrently: use one parallel tool message
@@ -96,16 +96,16 @@ the host provides it. If no usable route is exposed, keep the work in the parent
    route from its name alone.
 4. Native Auto tiers do not need a repository-side catalog, probe script, or
    permanent route ledger. For the separate cross-provider requirement, the
-    optional `.kilo/model-router/route-kilo` launcher uses a bounded, ephemeral
-    catalog and persists only secret-free cooldown metadata; it never persists
-    credentials, balances, or raw provider errors.
+    optional ARR-backed `./route-kilo` launcher uses bounded, target-owned
+   catalog/quota/TPS evidence and persists only redacted namespaced state; it
+   never persists credentials, prompts, balances, or raw provider errors.
 5. Record the user approval, route-selection evidence, fallback, and any
    substitution for each track.
 6. If the host exposes only a role and cannot expose a usable model route, stop
    material/parallel fan-out; do not silently use the parent route or a role-only
    fallback.
 7. For a broad read-only workflow covered by a routed preset, let
-   `route-subagents --run` print and execute the track/route/effort plan. Use the
+   ARR workflow launcher to print and execute the track/route/effort plan. Use the
    `question` tool or host equivalent when a hard availability, scope, editing,
    or high-risk review decision remains unresolved.
 8. For high-risk or disputed work, choose a stronger host route such as Kilo
@@ -355,31 +355,33 @@ meets the task's context, tool, modality, latency, and risk requirements, then
 use that host's native fallback and entitlement information.
 
 When a request must choose between direct authenticated Kilo, OpenCode Go, OpenAI,
-OpenRouter, and NVIDIA routes, use `.kilo/model-router/route-kilo` instead of claiming
+OpenRouter, and NVIDIA routes, use the ARR-backed `./route-kilo` instead of claiming
 that `kilo/kilo-auto/efficient` can see those independent credentials. The
-launcher discovers providers reported by `kilo auth list`, loaded Kilo/OpenCode
-provider configuration, or standard provider environment variables. It ranks
-active tool-capable routes using optional Artificial Analysis benchmark data or
-Kilo catalog token pricing, and starts `kilo run` with the selected exact route.
-When the installed `opencode-quota` plugin has fresh data, it filters exhausted
-providers and reports the quota source/state. Otherwise quota remains `unknown`.
-It does not probe every provider or silently retry an agent after a partial
-failure.
+launcher considers only providers and include/blacklist rules declared in the
+target-owned `.agents/runtime-router/adapters/kilo/provider-policy.json`. It
+uses Kilo's bounded model listing for those providers, optional target-owned
+Artificial Analysis/OpenRouter benchmark evidence, and the target's explicit
+billing policy; it does not infer a provider universe from `kilo auth list`,
+ambient configuration, or environment variables. The optional OpenCode quota
+command is run only after explicit approval; otherwise paid quota remains
+`unknown`. It does not probe every provider or silently retry an agent after a
+partial failure.
 
 For bounded parallel subagents in Google Antigravity (AGY), launch subagents
-natively via `invoke_subagent` tool calls; do NOT execute `.kilo/model-router/route-subagents`
-or `subagents.py`.
+natively via `invoke_subagent` tool calls; do NOT execute the Kilo-specific ARR
+workflow launcher.
 
-For Kilo CLI sessions, `.kilo/model-router/route-subagents` with a track manifest
+For Kilo CLI sessions, `.agents/runtime-router/adapters/kilo/route_subagents.py`
+with a track manifest
 can be used instead of the host `Task` wrapper when the wrapper cannot expose
 model selection. It computes one route plan per track from a shared metadata
-snapshot, requires `--run` to launch, and starts each worker with its exact
+snapshot, requires `--approve` to launch, and starts each worker with its exact
 `kilo run --model provider/model` route. The default worker contract is read-only;
 the parent owns integration and final verification. A raw role-only Task call is
 not evidence that this cross-provider routing occurred.
 
 For named broad project skills when running under Kilo, use the corresponding
-automatic workflow preset listed in `.kilo/model-router/instructions.md`; under
+workflow definition listed in the target ARR adapter docs; under
 Antigravity, perform discovery fan-out natively using `invoke_subagent`.
 
 Before material or parallel delegation:
@@ -390,9 +392,10 @@ Before material or parallel delegation:
 3. Start with the least expensive capable tier and escalate for demonstrated
    complexity, repeated failure, or safety-sensitive reasoning.
 4. Treat catalog status or configured credentials as insufficient proof of live
-   quota. The launcher persists only secret-free route/provider cooldown expiry
-   and failure category in the user cache; it never persists balances,
-   credentials, or raw provider errors.
+   quota. ARR/Kraken persist only bounded, redacted evidence (catalog, quality,
+   TPS, readiness, quota metadata, and cooldown state) under the active
+   harness namespace; credentials, prompts, balances, and raw provider errors
+   are never persisted.
 5. Treat context size as route-specific; when unavailable, keep delegated
    requests below **128K** and split before **180K**.
 

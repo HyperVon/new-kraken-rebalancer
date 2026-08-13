@@ -1,4 +1,6 @@
 {
+  "schema_version": 1,
+  "source_ref": "new-kraken-rebalancer@7e94c39",
   "artificialAnalysis": {
     "enabled": true,
     "apiKeyEnv": "ARTIFICIAL_ANALYSIS_API_KEY",
@@ -22,15 +24,11 @@
       "modelEolSeconds": 86400
     }
   },
-  "tpsProbe": {
-    "enabled": true,
-    "onlyFree": true,
-    "minTps": 20,
-    "probeCharacters": 1000,
-    "maxTokens": 400,
-    "timeoutSeconds": 60,
-    "cacheMinutes": 60,
-    "maxProbesPerRun": 3
+  "readinessProbe": {
+    "maxProbesPerRun": 3,
+    "cacheTtlSeconds": 86400,
+    "failureCacheTtlSeconds": 300,
+    "timeoutSeconds": 120
   },
   "coldStart": {
     "staggerSeconds": 5,
@@ -43,45 +41,29 @@
     "kilo": {
       "enabled": true,
       "billing": "account-priced",
-      "include": [
-        "kilo-auto/efficient"
-      ]
+      "include": ["kilo-auto/efficient"]
     },
     "opencode-go": {
       "enabled": true,
       "billing": "subscription/account-priced",
-      "include": [
-        "*"
-      ]
+      "include": ["*"]
     },
     "openai": {
       "enabled": true,
       "billing": "subscription/account-priced",
-      "include": [
-        "*"
-      ],
-      "probeEndpoint": "https://api.openai.com/v1/chat/completions",
-      "probeApiKeyEnv": "OPENAI_API_KEY"
+      "include": ["*"]
     },
     "openrouter": {
       "enabled": true,
-      "billing": "paid",
-      "include": [
-        "*"
-      ],
-      "probeEndpoint": "https://openrouter.ai/api/v1/chat/completions",
-      "probeApiKeyEnv": "OPENROUTER_API_KEY"
+      "billing": "payg",
+      "include": ["*"]
     },
     "nvidia": {
       "enabled": true,
       "billing": "free",
       "freeOnly": true,
       "allowFree": true,
-      "include": [
-        "*"
-      ],
-      "probeEndpoint": "https://integrate.api.nvidia.com/v1/chat/completions",
-      "probeApiKeyEnv": "NVIDIA_API_KEY"
+      "include": ["*"]
     },
     "ollama": {
       "enabled": true,
@@ -89,25 +71,13 @@
       "billing": "free",
       "freeOnly": true,
       "allowFree": true,
-      "include": [
-        "*"
-      ],
-      "probeEndpoint": "http://localhost:11434/v1/chat/completions"
+      "include": ["*"]
     }
   },
   "models": {
-    "ollama/gpt-oss:20b": {
-      "aaSlug": "gpt-oss-20b",
-      "contextLimit": 131072
-    },
-    "ollama/gemma4:12b": {
-      "aaSlug": "gemma-4-12b",
-      "contextLimit": 262144
-    },
-    "ollama/qwen3-coder:30b": {
-      "aaSlug": "qwen3-coder-next",
-      "contextLimit": 262144
-    }
+    "ollama/gpt-oss:20b": {"aaSlug": "gpt-oss-20b", "contextLimit": 131072},
+    "ollama/gemma4:12b": {"aaSlug": "gemma-4-12b", "contextLimit": 262144},
+    "ollama/qwen3-coder:30b": {"aaSlug": "qwen3-coder-next", "contextLimit": 262144}
   },
   "blacklist": {
     "models": [
@@ -130,9 +100,7 @@
       "nvidia/stepfun-ai/step-3.7-flash",
       "nvidia/mistralai/mistral-small-4-119b-2603"
     ],
-    "providers": [
-      "ollama"
-    ]
+    "providers": ["ollama"]
   },
   "policy": {
     "allowPaid": true,

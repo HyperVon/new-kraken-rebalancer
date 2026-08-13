@@ -87,7 +87,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 ## 1. Technology stack (verify against build files)
 
-- **Language**: Kotlin **2.4.10** (KMP: JVM + JS)
+- **Language**: Kotlin **2.4.20-RC** (KMP: JVM + JS; security patch pending the 2.4.20 stable release)
 - **JDK**: **25** (`java.toolchain`)
 - **Backend**: Ktor **3.5.2** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
 - **Database**: SQLite via JetBrains Exposed **1.4.0**
@@ -195,7 +195,7 @@ frontend browser tests, Spotless, markdownlint including `.agents/OPERATING.md`
 and harness stubs).
 
 The repository quality scripts set `NODE_OPTIONS` only for the external
-`DEP0169` warning emitted by the Kotlin 2.4.10 downloaded Yarn 1.22.22 resolver
+`DEP0169` warning emitted by the Kotlin 2.4.20-RC downloaded Yarn 1.22.22 resolver
 under modern Node. This does not change application launches or suppress other
 Node diagnostics.
 
@@ -302,3 +302,14 @@ These receipt-managed skills were adopted from Agent Guidance Kit.
 | Review security boundaries, authority, secrets, and sensitive data flows | [security-review](skills/security-review/SKILL.md) |
 | Diagnose an observed failure and find its root cause before fixing it | [systematic-debugging](skills/systematic-debugging/SKILL.md) |
 <!-- agent-guidance-kit:routes:end -->
+
+<!-- agent-runtime-router:routes:start -->
+## Agent Runtime Router skills
+
+These receipt-managed skills were installed from Agent Runtime Router.
+
+| Task | Skill |
+| :--- | :--- |
+| Use explicit routing, inventory, or dry-run planning | [agent-runtime-router](skills/agent-runtime-router/SKILL.md) |
+| Audit, refresh, or repair the local router installation | [agent-runtime-router-maintenance](skills/agent-runtime-router-maintenance/SKILL.md) |
+<!-- agent-runtime-router:routes:end -->
