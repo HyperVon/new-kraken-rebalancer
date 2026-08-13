@@ -523,6 +523,7 @@ cp .agents/runtime-router/adapters/kilo/manifest.example \
 python3 .agents/.agent-runtime-router/run.py --python \
   .agents/runtime-router/adapters/kilo/route_subagents.py \
   --manifest .agents/runtime-router/adapters/kilo/manifest.local \
+  --free-only \
   "<parent task>"
 ```
 
@@ -533,7 +534,8 @@ billing, cost, and quota decision for each. Review the plan, then add
 requires every track to use a different candidate.
 
 The standard project skills use automatic presets rather than this local
-manifest: `documentation-review`, `autonomous-code-optimizer`,
+manifest: `documentation-review`, `comprehensive-quality-overhaul`,
+`autonomous-code-optimizer`,
 `continuous-improvement`, `continuous-quality`, `adversarial-pr-review`,
 `ai-slop-detector`, `complex-code-comments`, `dependency-upgrade`,
 `architecture-review`, `rules-and-skills-audit`, and `skill-reviewer` each map
@@ -556,6 +558,7 @@ python3 .agents/.agent-runtime-router/run.py --python \
   .agents/runtime-router/adapters/kilo/route_subagents.py \
   --workflow documentation-adversarial-review \
   --task "Independently re-review the documentation findings from the parent audit" \
+  --free-only \
   --approve
 ```
 

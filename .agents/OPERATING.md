@@ -68,8 +68,10 @@ limited to Kilo Auto, `.kilo/kilo.json`, `./route-kilo`,
 `.agents/runtime-router/adapters/kilo/route_subagents.py`, Kilo route reports, Context Mode, and
 Agent Manager. When running under Google Antigravity (AGY), subagents MUST be
 launched directly through Antigravity's native `invoke_subagent` tool calls;
-agents MUST NOT execute `.agents/runtime-router/adapters/kilo/route_subagents.py`
-scripts. Other non-Kilo hosts should similarly use their built-in native agent fan-out.
+do not execute the Kilo-specific ARR adapter there. Other non-Kilo hosts should
+similarly use their built-in native agent fan-out. Under Kilo, use the
+receipt-managed ARR runner described in §8; do not substitute Kilo's native
+role-only `Task` tool when the target ARR adapter is present.
 
 Independent work must be launched concurrently: use one parallel tool message
 or a background process for the complete fan-out, then poll results. Do not
@@ -371,14 +373,24 @@ For bounded parallel subagents in Google Antigravity (AGY), launch subagents
 natively via `invoke_subagent` tool calls; do NOT execute the Kilo-specific ARR
 workflow launcher.
 
-For Kilo CLI sessions, `.agents/runtime-router/adapters/kilo/route_subagents.py`
-with a track manifest
-can be used instead of the host `Task` wrapper when the wrapper cannot expose
-model selection. It computes one route plan per track from a shared metadata
-snapshot, requires `--approve` to launch, and starts each worker with its exact
-`kilo run --model provider/model` route. The default worker contract is read-only;
-the parent owns integration and final verification. A raw role-only Task call is
-not evidence that this cross-provider routing occurred.
+For Kilo CLI sessions, invoke the adapter through the receipt-managed runtime:
+
+```text
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/route_subagents.py \
+  --workflow <workflow-id> --task "<parent task>"
+```
+
+This is the only supported Kilo path for cross-provider subagent routing. It
+computes one route plan per track from a shared metadata snapshot, requires
+`--approve` to launch, and starts each worker with its exact `kilo run
+--model provider/model` route. A raw role-only Task call is not evidence that
+ARR routing occurred. If the command reports `INCOMPLETE` because its catalog
+or evidence is missing, stop and report that state; do not silently fall back
+to native subagents on the parent model.
+If the receipt-managed runtime itself is missing or stale, use the
+`agent-runtime-router-maintenance` or `bootstrap-runtime-router` skill first;
+that is different from a valid runtime reporting incomplete catalog evidence.
 
 For named broad project skills when running under Kilo, use the corresponding
 workflow definition listed in the target ARR adapter docs; under

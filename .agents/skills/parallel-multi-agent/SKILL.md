@@ -45,10 +45,13 @@ model route for each track:
 - Treat `subagent_type` as the worker role, not as route evidence from its name.
 - In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute the Kilo-specific ARR workflow launcher.
 - Under Kilo CLI, every read-only discovery or review fan-out MUST go through
-  `.agents/runtime-router/adapters/kilo/route_subagents.py`;
-  a raw role-only `Task` call is not a substitute because it selects no
-  provider/model route. Direct `Task` subagents are the fallback only when the
-  launcher cannot run (non-Kilo host, no network, launcher failure).
+  the receipt-managed ARR launcher: the target's
+  `.agents/.agent-runtime-router/run.py --python` wrapping
+  `.agents/runtime-router/adapters/kilo/route_subagents.py`. A raw role-only
+  `Task` call is not a substitute because it selects no provider/model route.
+  If ARR reports `INCOMPLETE`, `NO_ROUTE`, or an execution error, preserve that
+  status and stop or ask for the required approval; do not silently fall back to
+  native same-model `Task` subagents while an ARR adapter is installed.
 - Native Auto owns its model mappings and fallbacks; it does not need a
   repository-side inventory or probe.
 - For a broad read-only named workflow under Antigravity, perform discovery fan-out natively via `invoke_subagent`. Under Kilo CLI, use the routed preset.
@@ -156,8 +159,10 @@ For named broad workflows, prefer the automatic preset instead of creating a
 manifest manually:
 
 ```bash
-./.agents/runtime-router/adapters/kilo/route_subagents.py \
+./.agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/route_subagents.py \
   --workflow documentation-review \
+  --free-only \
   --task "<the user's workflow request>" \
   --refresh \
   --approve

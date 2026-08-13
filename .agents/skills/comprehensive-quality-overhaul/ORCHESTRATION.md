@@ -72,53 +72,29 @@ result.
 
 ## Launcher and routing mechanics
 
-In Kilo CLI sessions use one launcher invocation for the entire fan-out. The
-launcher has no --free-only flag; enforce free-only through a custom manifest
-and config override. The override replaces the tracked config, so copy the
-full blacklist section verbatim. Disable opencode-go and openai explicitly;
-policy.allowPaid=false alone does not disable account-priced providers. Keep
-allowFree=true and denyFreeForSensitive=false.
-
-The kilo provider may be enabled only when targeting a `kilo/*:free` route; then
-widen its include to `*`. Otherwise disable it. Verify the printed route plan
-before launch: every route must be free and no route may match the blacklist.
-Record the exact route, effort, fallback, and availability evidence.
-
-Example override shape (replace the blacklist placeholder with the exact
-tracked section):
-
-    {
-      "providers": {
-        "kilo": {"enabled": false},
-        "opencode-go": {"enabled": false},
-        "openai": {"enabled": false}
-      },
-      "policy": {"allowPaid": false, "allowFree": true, "denyFreeForSensitive": false},
-      "blacklist": "copy verbatim from the target-owned ARR provider-policy.json"
-    }
-
-For a `kilo/*:free` route, set `kilo.enabled=true` and `kilo.include=["*"]`. Keep
-the manifest and override in the gitignored coordination directory.
+In Kilo CLI sessions use the receipt-managed runtime and the registered
+workflow. The launcher owns the route plan and `--free-only` rejects paid and
+unknown-cost candidates without requiring a copied policy/config override.
+Run plan mode first and inspect every track's route, effort, billing, fallback,
+and evidence. A missing or stale catalog is `INCOMPLETE`, not permission to use
+Kilo's native role-only Task tool.
 
 Use a script because Kilo's shell wrapper can mangle long inline task strings:
 
     #!/usr/bin/env bash
     set -euo pipefail
     cd <parent-repo-root>
-    exec ./.agents/runtime-router/adapters/kilo/route_subagents.py \
-      --manifest .worktrees/.coordination/manifest.json \
-      --config .worktrees/.coordination/free-only-config.json \
-      --max-workers 5 \
-      --timeout 1800 \
-      --allow-edits \
-      --approve \
-      --auto
+    exec ./.agents/.agent-runtime-router/run.py --python \
+      .agents/runtime-router/adapters/kilo/route_subagents.py \
+      --workflow comprehensive-quality-overhaul \
+      --free-only \
+      --task "$TASK" \
+      --approve
 
-allow-edits forces workers to the parent root. Every manifest track must set
-read_only: false, scope source files to `.worktrees/wt-<track>/...`, scope
-coordination files to the parent absolute coordination directory, and state
-that working-directory rule at the top of its task. Verify parent
-git status --porcelain after every wave for stray edits.
+The command above is the launch form after the plan has been reviewed. Omit
+`--approve` for plan mode. The registered preset is read-only; the parent owns
+integration and final verification. Verify parent `git status --porcelain`
+after the wave for stray edits.
 
 ## Step 0 — clean and prepare
 
@@ -126,9 +102,8 @@ Clean only worktrees owned by this skill and its coordination directory. If a
 leftover worktree contains work that matters, preserve it on its branch before
 removal; removal discards uncommitted changes.
 
-    shopt -s nullglob
-    for wt in .worktrees/wt-*; do git worktree remove --force "$wt"; done
-    shopt -u nullglob
+    [ -d .worktrees ] && find .worktrees -mindepth 1 -maxdepth 1 -type d \
+      -name 'wt-*' -exec git worktree remove --force '{}' \;
     git worktree prune
     rm -rf .worktrees/.coordination
     rmdir .worktrees 2>/dev/null || true
@@ -178,7 +153,8 @@ once from scratch. If the retry fails, continue with remaining tracks and mark
 the final run partial. A substantial partial diff gets a finalize-only retry
 instead: pass its real status and finding IDs, forbid new work, require a
 self-consistency check and final heartbeat, and record implemented: false if it
-cannot be completed. Every retry retains --timeout 1800 and --allow-edits.
+cannot be completed. Every retry retains the same workflow, `--free-only`
+constraint, route plan, and read-only worker contract.
 
 ## Step 2 — collect and triage
 
@@ -228,7 +204,8 @@ Keep worktrees until the user has reviewed candidate PRs. Then remove only the
 skill-owned worktrees and coordination state, prune, and report cleanup. Do not
 delete overhaul branches while PRs still refer to them.
 
-    for wt in .worktrees/wt-*; do git worktree remove --force "$wt"; done
+    [ -d .worktrees ] && find .worktrees -mindepth 1 -maxdepth 1 -type d \
+      -name 'wt-*' -exec git worktree remove --force '{}' \;
     git worktree prune
     rm -rf .worktrees
 

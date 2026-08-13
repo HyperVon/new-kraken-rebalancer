@@ -56,10 +56,10 @@ This skill:
 
 | Track | Child skills | Default role |
 | :--- | :--- | :--- |
-| Code | code-review; autonomous-code-optimizer Pass 1+3 survey; kotlin-refactoring-and-cleanup; reduce-code-size; complex-code-comments; todo-resolution | Audit and implement scoped S/M corrections in its worktree |
-| Documentation | documentation-review; changelog-and-docs-sync; user-guide | Audit and implement scoped doc corrections in its worktree |
-| Skills/rules | rules-and-skills-audit; skill-reviewer; ai-slop-detector on skills/rules/docs | Audit guidance and implement approved scoped corrections in its worktree |
-| Tests/security/dependencies | continuous-quality; write-kotest; dependency-upgrade; ai-slop-detector on tests/build/security | Report defects and implement scoped corrections in its worktree |
+| Code | code-review; autonomous-code-optimizer Pass 1+3 survey; kotlin-refactoring-and-cleanup; reduce-code-size; complex-code-comments; todo-resolution | Audit and report scoped S/M corrections; the parent applies approved changes |
+| Documentation | documentation-review; changelog-and-docs-sync; user-guide | Audit and report scoped doc corrections; the parent applies approved changes |
+| Skills/rules | rules-and-skills-audit; skill-reviewer; ai-slop-detector on skills/rules/docs | Audit and report guidance corrections; the parent applies approved changes |
+| Tests/security/dependencies | continuous-quality; write-kotest; dependency-upgrade; ai-slop-detector on tests/build/security | Report defects and test/dependency corrections; the parent applies approved changes |
 | Architecture/product | architecture-review; product-opportunity-review | Recommend only; all items are L-class until approved |
 
 The parent may run ui-visual-review serially after integration if visual evidence
@@ -94,9 +94,14 @@ convergence.
 1. Establish a clean, current base; remove only this skill's leftover
    worktrees/coordination state; create five isolated worktrees; record model
    routes.
-2. Launch all five tracks concurrently through the required free-only
-   launcher/config path; use the documented direct-subagent fallback only when
-   the launcher cannot run.
+2. Under Kilo, run the receipt-managed ARR launcher in plan mode first, using
+   the `comprehensive-quality-overhaul` workflow and `--free-only`. Never call
+   Kilo's native `Task` tool as a fallback when the target ARR adapter exists.
+   If the launcher reports `INCOMPLETE` for missing catalog/evidence, stop and
+   report that state (or obtain the separate approval needed for refresh); do
+   not reinterpret it as launcher unavailability. Launch all five tracks only
+   after the exact plan is reviewed and approved. Other harnesses use their
+   native bounded fan-out and must record the selected route themselves.
 3. Poll heartbeats and findings; handle stalled tracks with one retry, or a
    finalize-only retry when a substantial partial diff exists.
 4. Collect and deduplicate findings. Classify S/M/L; stop on L changes needing

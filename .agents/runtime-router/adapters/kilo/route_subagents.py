@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from dataclasses import replace
@@ -14,6 +15,31 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 # See ``run_arr_task.py``: this is a directory-relative calculation.
 TARGET = HERE.parents[3]
+
+
+def _requested_target() -> Path:
+    """Resolve an explicit --target before selecting its receipt runtime."""
+
+    for index, argument in enumerate(sys.argv[1:]):
+        if argument == "--target" and index + 2 <= len(sys.argv[1:]):
+            return Path(sys.argv[index + 2]).expanduser().resolve()
+        if argument.startswith("--target="):
+            return Path(argument.split("=", 1)[1]).expanduser().resolve()
+    return TARGET
+
+
+def _use_receipt_runtime() -> None:
+    """Keep direct invocations on the selected target's installed ARR version."""
+
+    runtime = _requested_target() / ".agents" / ".agent-runtime-router" / "venv"
+    python = runtime / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if python.is_file() and Path(sys.executable).resolve() != python.resolve():
+        os.execv(str(python), [str(python), str(Path(__file__).resolve()), *sys.argv[1:]])
+
+
+if __name__ == "__main__":
+    _use_receipt_runtime()
+
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
@@ -51,12 +77,31 @@ def _workflow_tracks(path: Path, workflow: str, parent_task: str) -> list[Track]
     return tracks
 
 
+def _free_only_policy(policy: Any) -> Any:
+    """Apply the launcher-level free-route restriction without changing target files."""
+
+    return replace(
+        policy,
+        routing_policy=replace(
+            policy.routing_policy,
+            allow_paid=False,
+            allow_unknown_cost=False,
+            allow_free=True,
+        ),
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", default=str(TARGET))
     parser.add_argument("--manifest")
     parser.add_argument("--workflow")
     parser.add_argument("--distinct-routes", action="store_true")
+    parser.add_argument(
+        "--free-only",
+        action="store_true",
+        help="reject paid and unknown-cost candidates for every track",
+    )
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--approve", action="store_true")
     parser.add_argument("--max-readiness-probes", type=int, default=None)
@@ -70,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
     target = Path(args.target).resolve()
     try:
         policy = load_target_policy(target / ".agents/runtime-router/policy.json")
+        if args.free_only:
+            policy = _free_only_policy(policy)
         provider_policy = load_json(target / ".agents/runtime-router/adapters/kilo/provider-policy.json")
         (
             readiness_budget,
