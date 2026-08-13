@@ -33,16 +33,20 @@ description: >-
    failing assertion. Record the exact command, inputs, environment, and
    expected versus observed result.
 3. Reproduce it with the smallest reliable case. If it is intermittent, narrow
-   the conditions and gather more evidence before guessing.
+   the conditions and gather more evidence before guessing. For timing or
+   concurrency failures, wait on an observable condition with a bounded
+   timeout instead of adding an arbitrary sleep or retry-until-green loop.
 4. Establish the change and data path. Inspect the relevant diff, recent
    changes, configuration, dependencies, and a known-working neighboring path.
    Trace the bad value or state backward to its first incorrect origin.
 5. State one falsifiable hypothesis: “X is the root cause because Y.” Run the
    smallest diagnostic or test that can distinguish it from the alternatives.
-   Do not bundle multiple fixes into the experiment.
+   For performance regressions, capture a comparable baseline and change one
+   variable at a time. Do not bundle multiple fixes into the experiment.
 6. Once the cause is confirmed, add or update the smallest regression test or
-   repeatable reproduction. Apply the minimal root-cause correction, then run
-   the focused test and the repository's relevant complete gate.
+   repeatable reproduction at the failing seam. Apply the minimal root-cause
+   correction, then run the focused test, the original reproduction, and the
+   repository's relevant complete gate.
 7. If the hypothesis fails, record what the evidence ruled out and return to
    investigation. Continue only while the next experiment can add discriminating
    evidence. If repeated attempts leave the same uncertainty, stop and discuss

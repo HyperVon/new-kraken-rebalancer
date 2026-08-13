@@ -44,10 +44,19 @@ description: >-
 5. Test only safe local properties that can support a finding: validation,
    permissions, redaction, path containment, dependency metadata, configuration
    parsing, and negative tests. Preserve sensitive values and redact evidence.
-6. Rank each finding by realistic impact, exploitability, affected boundary,
-   evidence strength, and remediation cost. Separate confirmed defects from
-   questions or hardening suggestions.
-7. Recommend the smallest correction and a regression or verification probe.
+6. Try to disprove each candidate finding with a minimal safe local check.
+   Record the precondition, evidence for and against it, confidence, and any
+   missing deployment context. Distinguish a confirmed defect from a question,
+   informational supply-chain signal, or hardening suggestion.
+7. Check security-relevant defaults and fail-open paths: fallback credentials,
+   permissive authorization, weak crypto or randomness, debug leakage, unsafe
+   network egress, and hidden recovery behavior. For dependencies, record
+   version-matched advisories and useful provenance signals such as yanked or
+   abandoned releases, install scripts, bundled binaries, or publisher
+   concentration; do not inflate informational signals into vulnerabilities.
+8. Rank each finding by realistic impact, exploitability, affected boundary,
+   evidence strength, and remediation cost. Recommend the smallest correction
+   and a regression or verification probe.
    Stop when the scope is exhausted or the next test would require external,
    destructive, credentialed, or unauthorized activity.
 
@@ -63,6 +72,8 @@ description: >-
 - Are sensitive data access, retention, redaction, and error behavior explicit?
 - Are dependency, supply-chain, network, and update assumptions evidenced?
 - Do tests demonstrate rejection and fail-closed behavior for the risky cases?
+- Is this actually a design-time threat-model request? If so, hand off to
+  `threat-modeling` rather than repeating a generic vulnerability checklist.
 
 ## Report and stop condition
 
