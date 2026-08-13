@@ -357,14 +357,15 @@ use that host's native fallback and entitlement information.
 When a request must choose between direct authenticated Kilo, OpenCode Go, OpenAI,
 OpenRouter, and NVIDIA routes, use the ARR-backed `./route-kilo` instead of claiming
 that `kilo/kilo-auto/efficient` can see those independent credentials. The
-launcher discovers providers reported by `kilo auth list`, loaded Kilo/OpenCode
-provider configuration, or standard provider environment variables. It ranks
-active tool-capable routes using optional Artificial Analysis benchmark data or
-Kilo catalog token pricing, and starts `kilo run` with the selected exact route.
-When the installed `opencode-quota` plugin has fresh data, it filters exhausted
-providers and reports the quota source/state. Otherwise quota remains `unknown`.
-It does not probe every provider or silently retry an agent after a partial
-failure.
+launcher considers only providers and include/blacklist rules declared in the
+target-owned `.agents/runtime-router/adapters/kilo/provider-policy.json`. It
+uses Kilo's bounded model listing for those providers, optional target-owned
+Artificial Analysis/OpenRouter benchmark evidence, and the target's explicit
+billing policy; it does not infer a provider universe from `kilo auth list`,
+ambient configuration, or environment variables. The optional OpenCode quota
+command is run only after explicit approval; otherwise paid quota remains
+`unknown`. It does not probe every provider or silently retry an agent after a
+partial failure.
 
 For bounded parallel subagents in Google Antigravity (AGY), launch subagents
 natively via `invoke_subagent` tool calls; do NOT execute the Kilo-specific ARR
@@ -391,9 +392,10 @@ Before material or parallel delegation:
 3. Start with the least expensive capable tier and escalate for demonstrated
    complexity, repeated failure, or safety-sensitive reasoning.
 4. Treat catalog status or configured credentials as insufficient proof of live
-   quota. The launcher persists only secret-free route/provider cooldown expiry
-   and failure category in the user cache; it never persists balances,
-   credentials, or raw provider errors.
+   quota. ARR/Kraken persist only bounded, redacted evidence (catalog, quality,
+   TPS, readiness, quota metadata, and cooldown state) under the active
+   harness namespace; credentials, prompts, balances, and raw provider errors
+   are never persisted.
 5. Treat context size as route-specific; when unavailable, keep delegated
    requests below **128K** and split before **180K**.
 
