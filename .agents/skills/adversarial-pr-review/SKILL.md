@@ -95,7 +95,7 @@ several small, independently useful reports:
 ## Agent selection and launch
 
 **MUST — no exceptions.** For every Kilo CLI session, you MUST invoke the
-`.kilo/model-router/route-subagents` script with `--workflow adversarial-pr-review --run`
+`.agents/runtime-router/adapters/kilo/route_subagents.py` with `--workflow adversarial-pr-review --approve`
 to launch independent review tracks. You MUST NOT use the native `Task` / `task`
 tool, `ctx_batch_execute`, `ctx_execute`, or any in-process parallel scan as a
 substitute for the routed launcher. A role label (e.g. `adversarial-reviewer-a`)
@@ -103,24 +103,24 @@ or a Kilo Auto tier does not select a provider/model route; only the script's
 exact-route selection satisfies the model-selection gate.
 
 For `adversarial-pr-review`, the approval gate is the user's explicit request
-to run an adversarial/multi-agent PR review. That request authorizes `--run`
-immediately; you do NOT need to ask for additional permission. Omit `--run`
+to run an adversarial/multi-agent PR review. That request authorizes `--approve`
+immediately; you do NOT need to ask for additional permission. Omit `--approve`
 only when the workflow explicitly requires a separate human route decision
 that the user has not yet provided.
 
 For Kilo CLI sessions this handoff is **mandatory**: launch the independent
 tracks through the `adversarial-pr-review` preset in
-`.kilo/model-router/route-subagents` (with `--run` after the exact-route gate
-passes) per `.kilo/model-router/instructions.md`. Do not substitute raw
+`.agents/runtime-router/adapters/kilo/route_subagents.py` (with `--approve` after the exact-route gate
+passes) per the target ARR adapter docs. Do not substitute raw
 role-only `Task` calls for the preset — a role label does not select a
 provider/model route. Include the track matrix in the parent task so agents do
 not redo one another's work.
 
 While the launcher runs, the parent MUST keep checking observability instead of
 sitting idle: poll the per-run status file printed at launch (or the
-`~/.cache/kilo/model-router/status.json` pointer to the most recent run) every
+the target ARR harness-state status pointer) every
 60–90 seconds and read the background-process `logs` between polls (see "While
-workers run" in `.kilo/model-router/instructions.md`). Status transitions
+workers run" in the target ARR adapter docs). Status transitions
 decide when to stop polling; a stalled run is stopped and retried once, not
 waited on blindly.
 
@@ -137,7 +137,7 @@ or Kilo/OpenCode examples only; Cursor, Claude Code, Copilot, and other hosts
 should map the same capabilities to their own read-only Task/equivalent agents.
 Preserve the bounded scope, stop condition, report cap, and parent ownership
 regardless of the host. **For Kilo CLI sessions the preset in
-`.kilo/model-router/instructions.md` is the required launch path (see below);
+the target ARR adapter workflow is the required launch path (see below);
 the role table is only a mapping aid for hosts that launch natively.**
 
 Prefer a repository-specialized read-only role when its contract matches the
@@ -156,7 +156,7 @@ authorize a material or parallel launch when route selection is unavailable.
 
 When running under Google Antigravity (AGY), launch reviewer tracks natively
 using built-in `invoke_subagent` tool calls; do NOT execute
-`.kilo/model-router/route-subagents` or `subagents.py` scripts. For other
+the Kilo-specific ARR workflow launcher. For other
 non-Kilo, non-AGY hosts, use the host's native parallel task delegation. Include
 the track matrix in the parent task so agents do not redo one another's work.
 A prompt must contain:
@@ -236,7 +236,7 @@ Repeat only for affected tracks:
    duplicates, false positives, and style preferences that contradict project
    conventions. Worker findings are not in the route report: read them from
    the worker session database per "Reading worker findings" in
-   `.kilo/model-router/instructions.md`.
+   the target ARR adapter documentation.
 4. **Targeted verification** — disputed or high-impact findings get a focused
    second verifier. It receives only the finding and affected paths.
 5. **Fix** — the parent applies legitimate critical/warning fixes and small

@@ -43,9 +43,9 @@ model route for each track:
 - State the route and effort plan to the user and obtain explicit approval before
   the first material or parallel worker launch.
 - Treat `subagent_type` as the worker role, not as route evidence from its name.
-- In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute `.kilo/model-router/route-subagents` or `subagents.py`.
+- In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute the Kilo-specific ARR workflow launcher.
 - Under Kilo CLI, every read-only discovery or review fan-out MUST go through
-  `.kilo/model-router/route-subagents` (see `.kilo/model-router/instructions.md`);
+  `.agents/runtime-router/adapters/kilo/route_subagents.py`;
   a raw role-only `Task` call is not a substitute because it selects no
   provider/model route. Direct `Task` subagents are the fallback only when the
   launcher cannot run (non-Kilo host, no network, launcher failure).
@@ -140,7 +140,7 @@ high-risk or disputed review, or `kilo/kilo-auto/small` for bounded routine
 work. Auto tiers choose their underlying models and server-side fallbacks; do
 not add a launcher, catalog parser, connectivity probe, or hardcoded
 underlying-model pool to reproduce that behavior. The separate
-`route-subagents` launcher exists only to enforce direct cross-provider routes
+ARR's target workflow launcher exists only to enforce direct cross-provider routes
 when the host Task surface cannot do so.
 
 If a host Task surface cannot expose the selected route, keep the track
@@ -156,14 +156,14 @@ For named broad workflows, prefer the automatic preset instead of creating a
 manifest manually:
 
 ```bash
-./.kilo/model-router/route-subagents \
+./.agents/runtime-router/adapters/kilo/route_subagents.py \
   --workflow documentation-review \
   --task "<the user's workflow request>" \
   --refresh \
-  --run
+  --approve
 ```
 
-Use the matching preset listed in `.kilo/model-router/instructions.md`. The
+Use the matching workflow definition listed in the target ARR adapter docs. The
 launcher supplies bounded scopes and specialized roles, prints the route/quota
 plan, and launches each read-only track. A named read-only workflow request
 authorizes this bounded fan-out; the parent still owns edits, integration, and

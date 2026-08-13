@@ -94,7 +94,7 @@ tracked section):
         "openai": {"enabled": false}
       },
       "policy": {"allowPaid": false, "allowFree": true, "denyFreeForSensitive": false},
-      "blacklist": "copy verbatim from .kilo/model-router/config"
+      "blacklist": "copy verbatim from the target-owned ARR provider-policy.json"
     }
 
 For a `kilo/*:free` route, set `kilo.enabled=true` and `kilo.include=["*"]`. Keep
@@ -105,13 +105,13 @@ Use a script because Kilo's shell wrapper can mangle long inline task strings:
     #!/usr/bin/env bash
     set -euo pipefail
     cd <parent-repo-root>
-    exec ./.kilo/model-router/route-subagents \
+    exec ./.agents/runtime-router/adapters/kilo/route_subagents.py \
       --manifest .worktrees/.coordination/manifest.json \
       --config .worktrees/.coordination/free-only-config.json \
       --max-workers 5 \
       --timeout 1800 \
       --allow-edits \
-      --run \
+      --approve \
       --auto
 
 allow-edits forces workers to the parent root. Every manifest track must set

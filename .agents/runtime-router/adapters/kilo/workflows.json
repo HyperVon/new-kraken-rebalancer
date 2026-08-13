@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "source_ref": "new-kraken-rebalancer@7e94c39",
+  "workflows": {
+    "documentation-review": [
+      {"id":"product-docs","profile":"routine","agent":"documentation-contract-auditor","files":["README.md","docs/","SECURITY.md"],"task":"Audit product and security documentation against source truth."},
+      {"id":"runtime-contracts","profile":"coding","agent":"explore","files":["src/","common/","docs/"],"task":"Audit runtime and algorithm documentation against implementation."},
+      {"id":"agent-guidance","profile":"routine","agent":"agent-guidance-auditor","files":[".agents/",".cursor/",".kilo/"],"task":"Audit guidance and harness projections for drift."}
+    ],
+    "documentation-adversarial-review": [
+      {"id":"finding-verification","profile":"agentic","agent":"documentation-contract-auditor","files":["README.md","docs/",".agents/"],"task":"Independently verify the parent documentation findings."},
+      {"id":"completeness-sweep","profile":"agentic","agent":"explore","files":["README.md","docs/","src/"],"task":"Search for distinct missed documentation findings."},
+      {"id":"severity-evidence","profile":"critical","agent":"documentation-contract-auditor","files":["README.md","docs/","SECURITY.md"],"task":"Challenge severity and evidence strength."}
+    ],
+    "adversarial-pr-review": [
+      {"id":"runtime-correctness","profile":"coding","agent":"explore","files":["src/","common/","frontend-js/"],"task":"Review changed runtime behavior for concrete regressions."},
+      {"id":"tooling-security","profile":"agentic","agent":"agent-guidance-auditor","files":[".agents/",".kilo/",".github/"],"task":"Review tooling, permissions, credentials, and workflow safety."},
+      {"id":"tests-docs","profile":"routine","agent":"documentation-contract-auditor","files":["src/test/","docs/","CHANGELOG.md"],"task":"Review tests and docs for contract gaps."}
+    ],
+    "architecture-review": [
+      {"id":"backend-domain","profile":"agentic","agent":"explore","files":["src/","common/"],"task":"Map backend, domain, trading, and persistence architecture."},
+      {"id":"ui-flows","profile":"agentic","agent":"explore","files":["src/","frontend-js/","common/"],"task":"Map HTTP, SSR, frontend, and reactive-flow architecture."},
+      {"id":"operations-security","profile":"critical","agent":"agent-guidance-auditor","files":[".agents/",".kilo/",".github/","SECURITY.md"],"task":"Map operations, security, and agent-harness architecture."}
+    ],
+    "continuous-quality": [
+      {"id":"runtime-edges","profile":"critical","agent":"explore","files":["src/","common/"],"task":"Find runtime, money-path, persistence, and concurrency edge cases."},
+      {"id":"tests-evaluation","profile":"coding","agent":"explore","files":["src/test/","common/","docs/EVALUATION.md"],"task":"Find missing tests and evaluation scenarios."},
+      {"id":"ui-regressions","profile":"coding","agent":"explore","files":["frontend-js/","src/","docs/USER_GUIDE.md"],"task":"Find UI and browser regression cases."}
+    ],
+    "continuous-improvement": [
+      {"id":"code","profile":"coding","agent":"explore","files":["src/","common/"],"task":"Discover high-value code improvements without editing."},
+      {"id":"ui","profile":"coding","agent":"explore","files":["frontend-js/","src/","docs/images/"],"task":"Discover bounded UI improvements without editing."},
+      {"id":"docs","profile":"routine","agent":"documentation-contract-auditor","files":["README.md","docs/",".agents/"],"task":"Discover documentation and guidance improvements."}
+    ],
+    "autonomous-code-optimizer": [
+      {"id":"runtime","profile":"coding","agent":"explore","files":["src/","common/"],"task":"Find behavior-preserving runtime simplifications and correctness risks."},
+      {"id":"tests","profile":"coding","agent":"explore","files":["src/test/","common/"],"task":"Find test gaps and redundant test setup without editing."},
+      {"id":"guidance","profile":"routine","agent":"agent-guidance-auditor","files":[".agents/",".kilo/"],"task":"Find duplicated or stale agent guidance and routing instructions."}
+    ],
+    "ai-slop-detector": [
+      {"id":"source","profile":"coding","agent":"explore","files":["src/","common/","frontend-js/"],"task":"Find generated-looking, redundant, or low-signal source content."},
+      {"id":"tests","profile":"routine","agent":"explore","files":["src/test/","docs/"],"task":"Find test and documentation content that does not prove behavior."},
+      {"id":"guidance","profile":"routine","agent":"agent-guidance-auditor","files":[".agents/",".kilo/"],"task":"Find repetitive, contradictory, or low-signal agent guidance."}
+    ],
+    "complex-code-comments": [
+      {"id":"backend-comments","profile":"coding","agent":"explore","files":["src/","common/"],"task":"Find missing or inaccurate comments around non-obvious backend behavior."},
+      {"id":"frontend-comments","profile":"coding","agent":"explore","files":["frontend-js/","src/"],"task":"Find missing or stale comments around frontend lifecycle and integration behavior."},
+      {"id":"guidance-comments","profile":"routine","agent":"agent-guidance-auditor","files":[".agents/",".kilo/"],"task":"Find stale or misleading comments in agent guidance."}
+    ],
+    "dependency-upgrade": [
+      {"id":"gradle","profile":"coding","agent":"explore","files":["build.gradle.kts","settings.gradle.kts","gradle/"],"task":"Inventory dependency and plugin upgrade opportunities and compatibility constraints."},
+      {"id":"security","profile":"critical","agent":"explore","files":["gradle/","build.gradle.kts","SECURITY.md"],"task":"Assess dependency security, provenance, and upgrade risk."},
+      {"id":"docs","profile":"routine","agent":"documentation-contract-auditor","files":["README.md","docs/",".agents/"],"task":"Find version and upgrade instructions that would need synchronization."}
+    ],
+    "skill-reviewer": [
+      {"id":"rules","profile":"routine","agent":"agent-guidance-auditor","files":[".agents/AGENTS.md",".agents/OPERATING.md"],"task":"Review canonical rules for conflicts, missing boundaries, and stale claims."},
+      {"id":"skills","profile":"routine","agent":"agent-guidance-auditor","files":[".agents/skills/"],"task":"Review skills for triggers, safety contracts, routing, and verification quality."},
+      {"id":"harness","profile":"agentic","agent":"agent-guidance-auditor","files":[".kilo/",".cursor/","CLAUDE.md"],"task":"Review harness projections for portability and drift."}
+    ],
+    "rules-and-skills-audit": [
+      {"id":"canonical-rules","profile":"routine","agent":"agent-guidance-auditor","files":[".agents/AGENTS.md",".agents/OPERATING.md"],"task":"Audit canonical rules and operating norms."},
+      {"id":"domain-skills","profile":"routine","agent":"agent-guidance-auditor","files":[".agents/skills/"],"task":"Audit domain skills for safety and contract drift."},
+      {"id":"projections-harness","profile":"routine","agent":"agent-guidance-auditor","files":[".cursor/",".kilo/","CLAUDE.md"],"task":"Audit harness projections and links."}
+    ]
+  }
+}

@@ -105,18 +105,18 @@ root `AGENTS.md`).
 
 The four passes and convergence loop are coupled; do not split them into
 independent implementations. Within a pass, use the
-`autonomous-code-optimizer` preset from `.kilo/model-router/route-subagents` for
+`autonomous-code-optimizer` preset from `.agents/runtime-router/adapters/kilo/route_subagents.py` for
 bounded, read-only scans after the native model-selection gate. Workers must not
 edit, run Gradle, or claim convergence; the parent integrates findings, applies
 fixes, runs gates serially, and makes the zero-new-issues decision. If route
 selection is unavailable, keep the scan parent-owned.
 
 ```bash
-./.kilo/model-router/route-subagents \
+./.agents/runtime-router/adapters/kilo/route_subagents.py \
   --workflow autonomous-code-optimizer \
   --task "<the user's optimizer request>" \
   --refresh \
-  --run
+  --approve
 ```
 
 ## Pass 2 — Financial & concurrency

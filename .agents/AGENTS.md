@@ -302,3 +302,14 @@ These receipt-managed skills were adopted from Agent Guidance Kit.
 | Review security boundaries, authority, secrets, and sensitive data flows | [security-review](skills/security-review/SKILL.md) |
 | Diagnose an observed failure and find its root cause before fixing it | [systematic-debugging](skills/systematic-debugging/SKILL.md) |
 <!-- agent-guidance-kit:routes:end -->
+
+<!-- agent-runtime-router:routes:start -->
+## Agent Runtime Router skills
+
+These receipt-managed skills were installed from Agent Runtime Router.
+
+| Task | Skill |
+| :--- | :--- |
+| Use explicit routing, inventory, or dry-run planning | [agent-runtime-router](skills/agent-runtime-router/SKILL.md) |
+| Audit, refresh, or repair the local router installation | [agent-runtime-router-maintenance](skills/agent-runtime-router-maintenance/SKILL.md) |
+<!-- agent-runtime-router:routes:end -->

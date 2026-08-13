@@ -44,11 +44,13 @@ __pycache__/
 
 /codegen/bin/
 
-# Local model-router credentials
-.kilo/model-router/env.local
-.kilo/model-router/manifest.local
-
-# ARR local venv
-.kilo/model-router/.venv/
-# Allow pinned ARR requirements (dedicated router install mechanism)
-!.kilo/model-router/requirements.txt
+# Local router credentials and generated evidence
+.agents/runtime-router/adapters/kilo/env.local
+.agents/runtime-router/adapters/kilo/manifest.local
+.agents/runtime-router/adapters/kilo/discovery.json
+.agents/runtime-router/adapters/kilo/kilo-resolved.json
+.agents/runtime-router/catalog-cache.json
+.agents/runtime-router/discovery-last-report.json
+.agents/runtime-router/.state.lock
+.agents/runtime-router/harnesses/
+.agents/.agent-runtime-router/

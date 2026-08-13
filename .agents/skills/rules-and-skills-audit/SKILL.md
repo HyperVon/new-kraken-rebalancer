@@ -19,7 +19,7 @@ Audit relevant guidance before proposing changes. Treat rules as policy and skil
 ## Optional parallel audit
 
 For a broad guidance tree, use the `rules-and-skills-audit` preset from
-`.kilo/model-router/route-subagents` for canonical rules/operating norms, domain
+`.agents/runtime-router/adapters/kilo/route_subagents.py` for canonical rules/operating norms, domain
 skills, harness/projections, and cross-link/index health. Give each worker a
 bounded path set. The parent resolves duplicate or conflicting findings and
 owns all edits. If route selection is unavailable, stay parent-owned; never
