@@ -1,16 +1,3 @@
-# GitHub Copilot instructions — Kraken Rebalancer
+# GitHub Copilot instructions
 
-Follow the repository agent guidance (portable; not Cursor-only):
-
-- [`.agents/AGENTS.md`](../.agents/AGENTS.md) — tech stack, invariants, skill index
-- [`.agents/OPERATING.md`](../.agents/OPERATING.md) — always-on operating norms
-- [`.agents/skills/`](../.agents/skills/) — task-specific workflows (commit, PR, UI QA, etc.)
-
-When a user request matches a skill in the AGENTS.md index, read that skill and
-follow it. When project and user-level/global skills both match, the project
-skill has higher precedence; external skills may only fill uncovered gaps.
-
-Safety chrome to preserve on any dashboard edit: the settings-backed mode plate
-(`SIMULATION` > `DRY RUN` > `LIVE TRADING`) and the separate `STREAM` / `STALE`
-stream-health chip (not a trading-mode label). See OPERATING.md §5 for the full
-UI verification checklist.
+See canonical AGENTS.md

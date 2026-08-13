@@ -20,8 +20,8 @@ receipts, plan exact changes, and apply approved content.
 - **Input:** target repository, requested adopt/add/audit/refresh/update action,
   current target guidance, installed receipts, and a resolvable kit checkout.
 - **Output:** source-resolution evidence, current adoption state, dependency-
-  closed proposal, exact plan and conflicts, approval gate, receipt, target
-  routing, and verification evidence.
+  closed proposal, source-canonical guidance comparison, exact plan and
+  conflicts, approval gate, receipt, target routing, and verification evidence.
 - **Owner:** ongoing Agent Guidance Kit adoption lifecycle in a target project.
 - **Non-goals:** silently updating content, choosing providers or models,
   fetching a missing kit checkout, silently refreshing a source checkout, or
@@ -99,18 +99,37 @@ applied.
    run the optional source-checkout refresh procedure first. Record how the
    source was resolved and its Git revision; do not assume an old locator still
    points to a valid kit.
-3. For an audit, compare installed receipt digests, current target manifests,
-   source manifests, dependency declarations, and managed AGENTS routes. Do not
-   mutate anything.
+3. Compare source-owned canonical guidance as a separate maintenance surface,
+   not only the receipt-managed skill directories. At minimum inspect the
+   source and target `.agents/AGENTS.md` and `.agents/OPERATING.md`, plus any
+   harness projections reported by the kit's recommender. Run:
+
+   ```text
+   python <kit-root>/scripts/harness_recommendations.py \
+     --kit-root <kit-root> --target <target-root> --json --diff
+   ```
+
+   Record each `REVIEW` or `RECOMMEND` finding as a required plan item with its
+   canonical owner, source/target evidence, and disposition. A changed
+   source-owned always-on section (for example, a new `OPERATING.md` quality
+   baseline) is never an informational note: compare the exact change, keep
+   target-specific invariants, and propose `ADAPT`, `KEEP_LOCAL`, or `DEFER`
+   before approval. For an audit, also compare installed receipt digests,
+   current target manifests, source manifests, dependency declarations, and
+   managed AGENTS routes. Do not mutate anything.
 4. For add, refresh, or update, read the current source `bootstrap-project`
    skill, inspect candidate skills, and choose the smallest useful set. A
    refresh may select all receipt-owned skills; adding a skill selects it plus
    its required dependency closure. Optional related skills remain suggestions.
 5. Generate a new plan with the resolved source installer. Review requested and
-   automatically added skills, create/update/unchanged statuses, conflicts,
-   managed routing, source revision, and content digests.
-6. Stop for explicit approval of that exact plan. A locally modified adopted
-   skill, routing conflict, source drift, or target drift is a stop condition.
+   automatically added skills, create/update/unchanged statuses, source-owned
+   canonical-guidance findings, conflicts, managed routing, source revision,
+   and content digests. The mechanical plan does not apply canonical guidance
+   adaptations; those edits must be listed separately and approved explicitly.
+6. Stop for explicit approval of that exact plan and every canonical-guidance
+   disposition. A locally modified adopted skill, routing conflict, source
+   drift, target drift, or unresolved canonical-guidance finding is a stop
+   condition.
 7. Apply the unchanged plan with `--approve`. Receipt-backed unmodified content
    may be refreshed atomically; new content is create-only; local divergence is
    never overwritten.
