@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.46] - 2026-08-13
+
+### Fixed
+
+- **Kilo ARR fan-out**: Route multi-agent workflows through the receipt-managed
+  ARR runtime, register the comprehensive quality workflow, enforce optional
+  free-only launches, and fail closed with structured `INCOMPLETE` output when
+  catalog evidence is unavailable instead of silently using same-model native
+  subagents.
+
 ## [6.16.45] - 2026-08-13
 
 ### Fixed

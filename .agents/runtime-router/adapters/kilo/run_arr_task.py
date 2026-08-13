@@ -27,6 +27,31 @@ HERE = Path(__file__).resolve().parent
 # root is therefore three parents above the directory (not four, which is the
 # correct count only when starting from a *file* under this directory).
 TARGET = HERE.parents[3]
+
+
+def _requested_target() -> Path:
+    """Resolve an explicit --target before selecting its receipt runtime."""
+
+    for index, argument in enumerate(sys.argv[1:]):
+        if argument == "--target" and index + 2 <= len(sys.argv[1:]):
+            return Path(sys.argv[index + 2]).expanduser().resolve()
+        if argument.startswith("--target="):
+            return Path(argument.split("=", 1)[1]).expanduser().resolve()
+    return TARGET
+
+
+def _use_receipt_runtime() -> None:
+    """Keep direct invocations on the selected target's installed ARR version."""
+
+    runtime = _requested_target() / ".agents" / ".agent-runtime-router" / "venv"
+    python = runtime / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if python.is_file() and Path(sys.executable).resolve() != python.resolve():
+        os.execv(str(python), [str(python), str(Path(__file__).resolve()), *sys.argv[1:]])
+
+
+if __name__ == "__main__":
+    _use_receipt_runtime()
+
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 

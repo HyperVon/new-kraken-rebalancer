@@ -18,7 +18,7 @@ from agent_runtime_router import (
     QuotaStatus, READINESS_CAPABILITY, ReadinessCache, ReadinessMeasurement,
     ReadinessStatus, TaskRequest,
 )
-from agent_runtime_router.harnesses.target import TargetPolicyConfig
+from agent_runtime_router.harnesses.target import TargetPolicyConfig, route_with_target_policy
 from agent_runtime_router.throughput import TpsMeasurement, TpsStatus
 from agent_runtime_router.quota import apply_quota_evidence
 
@@ -31,7 +31,7 @@ from run_arr_task import (
     _route_with_readiness, _task, _tps_probe_priority,
     _resolve_kilo_alias,
 )
-from route_subagents import TARGET as SUBAGENT_RUNNER_TARGET
+from route_subagents import TARGET as SUBAGENT_RUNNER_TARGET, _free_only_policy
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -139,6 +139,9 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         executable = shutil.which("kilo")
         if executable is None:
             self.skipTest("Kilo is not installed")
+        profile = ROOT / ".agents" / "runtime-router" / "harnesses" / "kilo" / "profile.json"
+        if not profile.is_file():
+            self.skipTest("ignored Kilo harness profile has not been generated")
         adapter = build_adapter(ROOT, executable)
         self.assertEqual("kilo", adapter.describe().harness_id)
 
@@ -146,6 +149,7 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         workflows = json.loads((ADAPTER_DIR / "workflows.json").read_text())["workflows"]
         expected = {
             "documentation-review",
+            "comprehensive-quality-overhaul",
             "documentation-adversarial-review",
             "adversarial-pr-review",
             "architecture-review",
@@ -159,6 +163,95 @@ class KrakenKiloAdapterTests(unittest.TestCase):
             "skill-reviewer",
         }
         self.assertTrue(expected.issubset(workflows))
+
+    def test_comprehensive_quality_workflow_has_five_read_only_tracks(self) -> None:
+        workflows = json.loads((ADAPTER_DIR / "workflows.json").read_text())["workflows"]
+        tracks = workflows["comprehensive-quality-overhaul"]
+        self.assertEqual(
+            {track["id"] for track in tracks},
+            {"wt-code", "wt-docs", "wt-skills", "wt-tests", "wt-arch"},
+        )
+        self.assertTrue(all(track.get("read_only") is True for track in tracks))
+        self.assertTrue(all(track.get("files") and track.get("task") for track in tracks))
+
+    def test_receipt_runner_exposes_free_only_workflow_launcher(self) -> None:
+        runner = ROOT / ".agents" / ".agent-runtime-router" / "run.py"
+        launcher = ADAPTER_DIR / "route_subagents.py"
+        result = subprocess.run(
+            [sys.executable, str(runner), "--python", str(launcher), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--free-only", result.stdout)
+
+    def test_free_only_policy_rejects_paid_and_unknown_cost(self) -> None:
+        policy = TargetPolicyConfig.from_mapping(
+            json.loads((POLICY_DIR / "policy.json").read_text())
+        )
+        restricted = _free_only_policy(policy)
+        self.assertTrue(restricted.routing_policy.allow_free)
+        self.assertFalse(restricted.routing_policy.allow_paid)
+        self.assertFalse(restricted.routing_policy.allow_unknown_cost)
+        task = TaskRequest("free-only", frozenset({"code"}), 1, None, None)
+        free = Candidate(
+            "kilo", "free", frozenset({"code"}), Availability.AVAILABLE,
+            CostClass.FREE, QuotaStatus.AVAILABLE, 128000, billing="free", tps=30,
+        )
+        paid = Candidate(
+            "kilo", "paid", frozenset({"code"}), Availability.AVAILABLE,
+            CostClass.PAID, QuotaStatus.AVAILABLE, 128000, billing="payg",
+        )
+        unknown = Candidate(
+            "kilo", "unknown", frozenset({"code"}), Availability.AVAILABLE,
+            CostClass.UNKNOWN, QuotaStatus.AVAILABLE, 128000, billing="unknown",
+        )
+        now = time.time()
+        measurement = TpsMeasurement(
+            free.candidate_id, "test", "kilo", "a" * 64, TpsStatus.MEASURED,
+            now, now + 600, 30,
+        )
+        decision = route_with_target_policy(
+            task, (paid, unknown, free), restricted,
+            tps_measurements={free.candidate_id: measurement}, now=now,
+        )
+        self.assertIsNotNone(decision.selected)
+        self.assertEqual(free.candidate_id, decision.selected.candidate_id)
+
+    def test_workflow_launcher_reports_missing_catalog_structurally(self) -> None:
+        launcher = ADAPTER_DIR / "route_subagents.py"
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            for relative in (
+                ".agents/runtime-router/policy.json",
+                ".agents/runtime-router/adapters/kilo/provider-policy.json",
+                ".agents/runtime-router/adapters/kilo/profiles.json",
+                ".agents/runtime-router/adapters/kilo/workflows.json",
+            ):
+                destination = target / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / relative, destination)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(launcher),
+                    "--target",
+                    str(target),
+                    "--workflow",
+                    "comprehensive-quality-overhaul",
+                    "--free-only",
+                    "--task",
+                    "offline launcher preflight",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("Traceback", result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload, {"error_code": "catalog_missing_or_unusable", "status": "INCOMPLETE"})
 
     def test_missing_quota_plugin_does_not_break_free_candidates(self) -> None:
         candidates = (Candidate("openrouter", "demo:free", frozenset({"code"}), __import__("agent_runtime_router").Availability.AVAILABLE, __import__("agent_runtime_router").CostClass.FREE, __import__("agent_runtime_router").QuotaStatus.UNKNOWN, 128000, billing="free"),)

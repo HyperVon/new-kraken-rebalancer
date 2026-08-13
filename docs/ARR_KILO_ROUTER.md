@@ -56,6 +56,7 @@ python3 .agents/.agent-runtime-router/run.py --python \
 python3 .agents/.agent-runtime-router/run.py --python \
   .agents/runtime-router/adapters/kilo/route_subagents.py \
   --manifest .agents/runtime-router/adapters/kilo/manifest.local \
+  --free-only \
   "Review the requested change"
 ```
 
@@ -93,6 +94,21 @@ health, quality cache, credentials, prompts, or provider output.
 
 The old router's eight profile names remain target-owned and are represented in
 `profiles.json`; the workflow registry also carries the legacy review,
-quality, optimization, dependency, and skill-audit presets. The parity tests
+comprehensive-quality-overhaul, quality, optimization, dependency, and
+skill-audit presets. The parity tests
 must remain offline. A real acceptance run is separate and must use a
 disposable worktree plus explicit `--approve`.
+
+For a registered read-only workflow, use the receipt-managed runner in plan
+mode first, then add `--approve` only after reviewing every route:
+
+```bash
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/route_subagents.py \
+  --workflow comprehensive-quality-overhaul --free-only \
+  --task "<parent request>"
+```
+
+Missing or stale catalog evidence is reported as `INCOMPLETE`; it is not a
+reason to replace ARR with Kilo's native same-model subagents. Use the
+maintenance/bootstrap skills when the receipt-managed runtime itself is absent.
