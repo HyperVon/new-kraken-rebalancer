@@ -219,8 +219,45 @@ val nettyVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)\.Final""")
 val (nettySecurityMajor, nettySecurityMinor, nettySecurityPatch) =
     nettyVersionPattern.matchEntire(nettySecurityFloor)!!.destructured
 
+val httpCoreSecurityFloor = "5.4.3"
+val httpCoreVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)(?:[-+].*)?""")
+val (httpCoreSecurityMajor, httpCoreSecurityMinor, httpCoreSecurityPatch) =
+    httpCoreVersionPattern.matchEntire(httpCoreSecurityFloor)!!.destructured
+
 configurations.all {
     resolutionStrategy.eachDependency {
+        if (requested.group == "org.apache.httpcomponents.core5" &&
+            requested.name in setOf("httpcore5", "httpcore5-h2")
+        ) {
+            val requestedVersion =
+                requested.version
+                    ?.let(httpCoreVersionPattern::matchEntire)
+                    ?.destructured
+            if (requestedVersion != null) {
+                val (major, minor, patch) = requestedVersion
+                val majorNumber = major.toInt()
+                val minorNumber = minor.toInt()
+                val patchNumber = patch.toInt()
+                val isBelowSecurityFloor =
+                    majorNumber < httpCoreSecurityMajor.toInt() ||
+                        (
+                            majorNumber == httpCoreSecurityMajor.toInt() &&
+                                (
+                                    minorNumber < httpCoreSecurityMinor.toInt() ||
+                                        (
+                                            minorNumber == httpCoreSecurityMinor.toInt() &&
+                                                patchNumber < httpCoreSecurityPatch.toInt()
+                                            )
+                                    )
+                            )
+                if (isBelowSecurityFloor) {
+                    useVersion(httpCoreSecurityFloor)
+                    because(
+                        "Keep Apache HttpComponents Core at 5.4.3 or newer for CVE-2026-54399",
+                    )
+                }
+            }
+        }
         if (requested.group == "io.netty") {
             val requestedVersion = requested.version
                 ?.let(nettyVersionPattern::matchEntire)

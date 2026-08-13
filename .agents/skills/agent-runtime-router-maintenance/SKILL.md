@@ -55,9 +55,9 @@ existing installation, prefer the target-local interpreter under
 `.agents/.agent-runtime-router/venv/` when it is available; mixing a global
 Python with a target runtime can produce an incompatible site-packages path.
 
-4. Review source revision, package digest, skill statuses, route changes, and
+1. Review source revision, package digest, skill statuses, route changes, and
    conflicts. Obtain explicit approval for that exact plan.
-5. Apply only the unchanged approved plan:
+2. Apply only the unchanged approved plan:
 
    ```text
    python <router-root>/.agents/skills/bootstrap-runtime-router/scripts/install_runtime.py \

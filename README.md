@@ -112,7 +112,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 
 | Layer           | Technology                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                               |
+| **Language**    | Kotlin 2.4.20-RC (Kotlin Multiplatform: JVM + JS; temporary security patch)                                  |
 | **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.1                                                   |
 | **Database**    | SQLite (via JetBrains Exposed ORM 1.4.0)                                                                     |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |

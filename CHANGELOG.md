@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.44] - 2026-08-13
+
+### Fixed
+
+- **Dependency security alerts**: Raised transitive Apache HttpComponents Core
+  dependencies to the patched `5.4.3` floor for CVE-2026-54399, and moved the
+  Kotlin Gradle plugin from `2.4.10` to the patched `2.4.20-RC` preview line
+  for CVE-2026-53914. The Kotlin preview is temporary until stable `2.4.20`
+  is released.
+
 ## [6.16.43] - 2026-08-12
 
 ### Fixed
