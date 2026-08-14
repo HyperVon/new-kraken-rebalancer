@@ -213,9 +213,9 @@ silence or from the application's provisional local estimate.
 After the request, while the loop is still paused:
 
 1. Re-fetch `GET /api/order-intents`; the resolved ID must no longer appear.
-2. Check `GET /api/health`; `unresolvedOrderIntents` must be `0`. Readiness
-   remains `PAUSED` (and `/api/readiness` returns `503`) until you resume, which
-   is expected.
+2. Check `GET /api/health`; `unresolvedOrderIntents` must decrease. It reaches
+   `0` only when no other intent remains unresolved. Readiness remains `PAUSED`
+   (and `/api/readiness` returns `503`) until you resume, which is expected.
 3. Inspect the matching history entry. When the exact Kraken API fill has
    already synced, confirmation keeps that fill and removes only its duplicate
    local failed estimate.
