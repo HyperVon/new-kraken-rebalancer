@@ -354,7 +354,8 @@ with a wide range of tools and paradigms:
   be manually resolved while an AddOrder may
   still be in flight; abandoned PENDING rows are recovered as UNCERTAIN on
   restart. Unresolved intents are not reconciled, deduplicated, or pruned
-  automatically
+  automatically. Follow the [operator recovery runbook](SECURITY.md#operator-recovery-runbook)
+  before resolving an intent
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
@@ -769,7 +770,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |
 | `GET` | `/api/readiness` | Readiness status; returns `503` until safe to operate (JSON) |
 | `GET` | `/api/order-intents` | Unresolved live-order intents for operator review (JSON) |
-| `POST` | `/api/order-intents/{id}/resolve` | Resolve an intent as `CONFIRMED` or `REJECTED` with evidence and optional `orderTxid` (CSRF-protected) |
+| `POST` | `/api/order-intents/{id}/resolve` | Resolve an intent as `CONFIRMED` or `REJECTED` with evidence and optional `orderTxid` (CSRF-protected; see [operator recovery runbook](SECURITY.md#operator-recovery-runbook)) |
 | `POST` | `/api/pause` | Pause loop (CSRF-protected) |
 | `POST` | `/api/resume` | Resume loop (CSRF-protected) |
 | `GET` | `/api/history/snapshots` | Portfolio snapshots for History charts (JSON, `?range=`) |

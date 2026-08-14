@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.49] - 2026-08-14
+
+### Fixed
+
+- **Live-order recovery**: Allow an ID-linked local estimate to be resolved
+  when a pre-existing row has lost its mutable client-order or submission-state
+  metadata, while still requiring its immutable trade attributes to match.
+
+### Changed
+
+- **Live-order recovery documentation**: Add a human-oriented operator runbook
+  with exchange-evidence preconditions, an executable CSRF-protected resolution
+  request, expected results, and post-resolution checks. Link it from the API
+  reference and User Guide.
+
 ## [6.16.48] - 2026-08-14
 
 ### Changed

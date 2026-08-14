@@ -152,13 +152,13 @@ sync watermark, and unresolved live-order counts. `GET /api/readiness` returns
 exists, the latest cycle is not failed, and no ambiguous live-order intent is
 waiting for review. It returns `503` with a `readinessReason` otherwise.
 
-If an ambiguous live order occurs, stop changing modes, inspect
-`GET /api/order-intents`, verify the order and fills in Kraken, then resolve the
-intent with `POST /api/order-intents/{id}/resolve` as `CONFIRMED` or `REJECTED`
-with evidence and, when known, the optional Kraken `orderTxid`. Wait for a
-`PENDING` intent to become `UNCERTAIN`; PENDING means
-the AddOrder may still be in flight and cannot be manually resolved. The route
-uses the same CSRF token issued by the Settings page.
+If an ambiguous live order occurs, leave the loop paused, then inspect
+`GET /api/order-intents`. Only an `UNCERTAIN` intent is eligible for manual
+resolution: `PENDING` means the AddOrder request may still be in flight. The
+resolution route uses the same CSRF token issued by the Settings page. Follow
+the [operator recovery runbook](../SECURITY.md#operator-recovery-runbook) for
+the exchange-verification checklist, complete `curl` request, and post-request
+checks before resuming.
 
 ### Responsive layouts
 
@@ -425,9 +425,10 @@ badges instead.
    fills.
 4. If logs report an uncertain live submission, stop changing modes or
    retrying manually. Verify Kraken open orders, closed orders, and fills before
-   resolving the durable pending intent with
-   `POST /api/order-intents/{id}/resolve`; the bot blocks further live orders to
-   avoid a duplicate submission.
+   resolving the durable intent; the bot blocks further live orders to avoid a
+   duplicate submission. Use the
+   [operator recovery runbook](../SECURITY.md#operator-recovery-runbook), which
+   includes the exact CSRF-protected request and verification steps.
 
 ---
 

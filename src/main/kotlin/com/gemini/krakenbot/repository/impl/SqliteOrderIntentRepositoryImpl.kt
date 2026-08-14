@@ -158,15 +158,18 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
             intent.clientOrderIdAmbiguous -> TradeTable.id eq TradeTable.id
             else -> TradeTable.clientOrderId.isNull()
         }
-        val tradeIdentity = clientOrderIdentity and
+        val localTradeAttributes =
             (TradeTable.timestamp eq intent.createdAt.toEpochMilli()) and
-            (TradeTable.pair eq intent.pair) and
-            (TradeTable.symbol eq intent.symbol) and
-            (TradeTable.side eq intent.side) and
-            (TradeTable.volume eq intent.volume) and
-            (TradeTable.usdAmount eq intent.usdAmount) and
-            (TradeTable.dryRun eq false) and
-            ((TradeTable.tradeSource eq TradeSource.LOCAL_ESTIMATE.name) or TradeTable.tradeSource.isNull()) and
+                (TradeTable.pair eq intent.pair) and
+                (TradeTable.symbol eq intent.symbol) and
+                (TradeTable.side eq intent.side) and
+                (TradeTable.volume eq intent.volume) and
+                (TradeTable.usdAmount eq intent.usdAmount) and
+                (TradeTable.dryRun eq false) and
+                ((TradeTable.tradeSource eq TradeSource.LOCAL_ESTIMATE.name) or TradeTable.tradeSource.isNull()) and
+                (TradeTable.success eq false)
+        val strictCandidateIdentity = clientOrderIdentity and
+            localTradeAttributes and
             (
                 TradeTable.submissionState inList listOf(
                     OrderIntentState.PENDING.name,
@@ -176,7 +179,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         val localTradeId = intent.localTradeId ?: run {
             val candidateIds = TradeTable
                 .select(TradeTable.id)
-                .where { tradeIdentity }
+                .where { strictCandidateIdentity }
                 .orderBy(TradeTable.id, SortOrder.ASC)
                 .limit(2)
                 .map { it[TradeTable.id] }
@@ -188,11 +191,14 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         if (localTradeId == null) {
             error("Cannot reconcile order intent ${intent.id}: no matching local trade exists.")
         }
+        // localTradeId is the durable journal link. Older rows can lack a client order ID or
+        // submission state after migration, so only require immutable trade attributes here.
+        val linkedTradeIdentity = (TradeTable.id eq localTradeId) and localTradeAttributes
         if (state == OrderIntentState.CONFIRMED && hasSettledApiFill(intent, effectiveOrderTxid)) {
             // A verified Kraken order may sync before an operator resolves its recovered intent.
             // Preserve its settled economics and remove only the superseded local placeholder.
             val deletedRows = TradeTable.deleteWhere {
-                (TradeTable.id eq localTradeId) and tradeIdentity
+                linkedTradeIdentity
             }
             if (deletedRows != 1) {
                 error("Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.")
@@ -200,7 +206,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
             return
         }
         val updatedRows = TradeTable.update({
-            (TradeTable.id eq localTradeId) and tradeIdentity
+            linkedTradeIdentity
         }) {
             it[TradeTable.success] = state == OrderIntentState.CONFIRMED
             it[TradeTable.errorMessage] = if (state == OrderIntentState.CONFIRMED) null else errorMessage
