@@ -340,11 +340,15 @@ filters before translating candidates into ARR contracts; ARR does not maintain
 a second provider catalog or blacklist.
 
 The project-root `./route-kilo` wrapper runs the headless, JSON-producing ARR/Kilo
-worker path through the receipt-managed runtime. It refreshes route metadata only
-when the cached catalog (2h) or Artificial Analysis snapshot (24h) is stale, so
-warm-cache starts are fast. Pass `--refresh --approve` to force a live re-fetch;
-without approval, refresh and quota/discovery calls remain blocked. It forwards the
-initial prompt and any additional router flags to
+worker path through the receipt-managed runtime. Normal plan mode consumes the
+existing target-owned catalog and never refreshes it implicitly, so warm-cache
+starts are fast. A catalog refresh is a separate, explicitly approved metadata
+operation; after it completes, re-run plan mode without `--refresh`. Likewise, if
+a free route is blocked only because TPS or tool-readiness evidence is missing,
+use the separate `--prepare-evidence --approve` operation: it runs bounded
+evidence probes and returns `EVIDENCE_READY`, but never launches the requested
+worker. Re-run and review the ordinary plan before a separate approved worker
+launch. The wrapper forwards the initial prompt and any additional router flags to
 `.agents/runtime-router/adapters/kilo/run_arr_task.py`; it does not open the
 interactive Kilo TUI. The interactive TUI remains a separate, manually selected
 native-harness path outside ARR's control.
@@ -466,7 +470,10 @@ reviewed and added to the target-owned blacklist explicitly.
 It discovers the providers explicitly enabled by the target-owned
 `provider-policy.json` through bounded `kilo models <provider> --verbose`
 commands, then launches `kilo run -m provider/model --agent code --format json`
-with the selected exact route and normalized variant. The current project
+with the selected exact route and normalized variant. A Kilo model listing may
+legitimately take several minutes during a cold start or slow provider
+response; use the generated adapter deadline rather than a short ad-hoc
+timeout or a 10–15 second spot check. The current project
 policy treats OpenCode Go and the authenticated OpenAI route as
 account-priced, OpenRouter as paid, and configured NVIDIA routes as free-only.
 Edit the target-owned `provider-policy.json` when an account or billing
@@ -529,9 +536,13 @@ python3 .agents/.agent-runtime-router/run.py --python \
 
 The command plans every track against one Kilo catalog and the target-owned
 quality/quota/TPS snapshots, and prints a separate provider/model, effort,
-billing, cost, and quota decision for each. Review the plan, then add
-`--approve` to launch the workers. Add `--distinct-routes` when the workflow
-requires every track to use a different candidate.
+billing, cost, and quota decision for each. If it reports missing or stale
+evidence, do not replace it with Kilo's native same-model subagents: obtain the
+separate discovery or evidence-only approval described in
+[`ARR_KILO_ROUTER.md`](ARR_KILO_ROUTER.md), then re-run this ordinary plan.
+Review the plan, then add `--approve` to launch the workers. Add
+`--distinct-routes` when the workflow requires every track to use a different
+candidate.
 
 The standard project skills use automatic presets rather than this local
 manifest: `documentation-review`, `comprehensive-quality-overhaul`,
@@ -548,7 +559,10 @@ report contract. Raw prompts and provider output are not persisted by ARR.
 Standard read-only workers inspect temporary repository snapshots, so accidental
 worker edits do not enter the parent worktree. Write-capable work is not
 implicitly enabled by this adapter; the parent must use a separately reviewed
-write workflow and explicit promotion.
+write workflow and explicit promotion. The snapshot includes regular target
+files only: symbolic links are deliberately omitted rather than followed, so
+Kilo instruction configuration must use the regular canonical file path
+documented in [`ARR_KILO_ROUTER.md`](ARR_KILO_ROUTER.md).
 
 For a second-pass adversarial review of a completed documentation audit, use the
 dedicated preset with the prior findings in the task context:

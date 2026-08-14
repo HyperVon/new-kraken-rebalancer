@@ -10,6 +10,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Kilo 7.4.22 upgrade handling**: Accept compatible 7.4 patch releases from
+  7.4.21 onward, verify the local version and required help flags before
+  regenerating ignored harness metadata, and fail clearly for an unreviewed
+  command-surface change without contacting providers.
+- **ARR/Kilo workflow reliability**: Normalize multiline workflow and manual
+  prompts before shell-free argv binding, keep the adapter and launcher output
+  limits aligned, and make read-only fan-out guidance wait for terminal worker
+  results instead of relying on unavailable heartbeats or coordination files.
+
 - **Kilo ARR fan-out**: Route multi-agent workflows through the receipt-managed
   ARR runtime, register the comprehensive quality workflow, enforce optional
   free-only launches, and fail closed with structured `INCOMPLETE` output when

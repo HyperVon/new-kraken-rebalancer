@@ -24,6 +24,7 @@ from agent_runtime_router.quota import apply_quota_evidence
 
 from adapter import build_adapter
 from catalog import CatalogError, build_candidates, discover_candidates, parse_catalog_output
+from gen_discovery import _is_supported_kilo_version, _profile_mapping
 from quota import collect_quota_evidence
 from run_arr_task import (
     TARGET as RUNNER_TARGET,
@@ -31,7 +32,9 @@ from run_arr_task import (
     _route_with_readiness, _task, _tps_probe_priority,
     _resolve_kilo_alias,
 )
-from route_subagents import TARGET as SUBAGENT_RUNNER_TARGET, _free_only_policy
+from route_subagents import TARGET as SUBAGENT_RUNNER_TARGET, _free_only_policy, _workflow_tracks
+from route_subagents import _sanitize_prompt as sanitize_workflow_prompt
+from run_arr_task import _sanitize_prompt as sanitize_manual_prompt
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -145,6 +148,66 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         adapter = build_adapter(ROOT, executable)
         self.assertEqual("kilo", adapter.describe().harness_id)
 
+    def test_generator_builds_a_valid_namespaced_kilo_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            (target / "AGENTS.md").write_text("rules\n", encoding="utf-8")
+            (target / ".agents" / "skills").mkdir(parents=True)
+            (target / ".kilo" / "agent").mkdir(parents=True)
+            profile = _profile_mapping(target, "7.4.21")
+
+        self.assertEqual(1, profile["schema_version"])
+        self.assertEqual("kilo", profile["harness_id"])
+        self.assertEqual("7.4.21", profile["version"])
+        self.assertEqual(["AGENTS.md"], profile["instruction_paths"])
+        self.assertEqual([".agents/skills", ".kilo/agent"], profile["skill_paths"])
+        self.assertEqual(
+            {"model_listing", "native_launch"},
+            {item["capability"] for item in profile["capabilities"]},
+        )
+
+    def test_generator_accepts_compatible_kilo_patch_releases_only(self) -> None:
+        self.assertTrue(_is_supported_kilo_version("7.4.21"))
+        self.assertTrue(_is_supported_kilo_version("7.4.22"))
+        self.assertTrue(_is_supported_kilo_version("7.4.99"))
+        self.assertFalse(_is_supported_kilo_version("7.4.20"))
+        self.assertFalse(_is_supported_kilo_version("7.5.0"))
+        self.assertFalse(_is_supported_kilo_version("8.0.0"))
+        self.assertFalse(_is_supported_kilo_version("7.4.22-dev"))
+
+    def test_generator_requires_the_observed_kilo_help_contract(self) -> None:
+        from gen_discovery import _verify_help_contract
+
+        outputs = iter(
+            (
+                subprocess.CompletedProcess((), 0, b"--model --agent --format --variant", None),
+                subprocess.CompletedProcess((), 0, b"--verbose", None),
+            )
+        )
+        with patch("gen_discovery.subprocess.run", side_effect=lambda *args, **kwargs: next(outputs)):
+            _verify_help_contract(Path("/absolute/kilo"))
+
+        with patch(
+            "gen_discovery.subprocess.run",
+            return_value=subprocess.CompletedProcess((), 0, b"--model --agent --format", None),
+        ):
+            with self.assertRaises(SystemExit):
+                _verify_help_contract(Path("/absolute/kilo"))
+
+    def test_launch_prompts_are_normalized_before_bounded_argv_binding(self) -> None:
+        raw = "First line\nSecond line\twith a separator\x00"
+        self.assertEqual("First line Second line with a separator", sanitize_manual_prompt(raw))
+        self.assertEqual("First line Second line with a separator", sanitize_workflow_prompt(raw))
+
+    def test_registered_workflow_tracks_have_argv_safe_prompts(self) -> None:
+        tracks = _workflow_tracks(
+            ADAPTER_DIR / "workflows.json",
+            "comprehensive-quality-overhaul",
+            "Line one\nLine two\twith a detail",
+        )
+        self.assertEqual(5, len(tracks))
+        self.assertTrue(all("\n" not in track.task and "\t" not in track.task for track in tracks))
+
     def test_legacy_workflow_presets_are_registered(self) -> None:
         workflows = json.loads((ADAPTER_DIR / "workflows.json").read_text())["workflows"]
         expected = {
@@ -185,6 +248,45 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--free-only", result.stdout)
+
+    def test_evidence_preparation_requires_a_separate_explicit_approval(self) -> None:
+        runner = ROOT / ".agents" / ".agent-runtime-router" / "run.py"
+        single = subprocess.run(
+            [
+                sys.executable,
+                str(runner),
+                "--python",
+                str(ADAPTER_DIR / "run_arr_task.py"),
+                "--prepare-evidence",
+                "No worker should start.",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        workflow = subprocess.run(
+            [
+                sys.executable,
+                str(runner),
+                "--python",
+                str(ADAPTER_DIR / "route_subagents.py"),
+                "--workflow",
+                "comprehensive-quality-overhaul",
+                "--prepare-evidence",
+                "No workers should start.",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        expected = {
+            "error_code": "evidence_approval_required",
+            "status": "INCOMPLETE",
+        }
+        self.assertEqual(2, single.returncode)
+        self.assertEqual(expected, json.loads(single.stdout))
+        self.assertEqual(2, workflow.returncode)
+        self.assertEqual(expected, json.loads(workflow.stdout))
 
     def test_free_only_policy_rejects_paid_and_unknown_cost(self) -> None:
         policy = TargetPolicyConfig.from_mapping(
@@ -426,8 +528,9 @@ class KrakenKiloAdapterTests(unittest.TestCase):
             )
         self.assertEqual(payg.candidate_id, decision.selected.candidate_id)
 
-    def test_catalog_discovery_divides_outer_budget_across_enabled_providers(self) -> None:
+    def test_catalog_discovery_uses_configured_multi_minute_provider_budget(self) -> None:
         provider_policy = {
+            "discovery": {"providerTimeoutSeconds": 4.0},
             "providers": {"one": {"enabled": True}, "two": {"enabled": True}},
         }
         calls = []
@@ -441,7 +544,15 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         with patch("catalog._run_bounded", side_effect=fake_run):
             candidates = discover_candidates("/absolute/kilo", provider_policy, timeout_seconds=10.0)
         self.assertEqual({item.candidate_id for item in candidates}, {"one/demo", "two/demo"})
-        self.assertEqual([call[1] for call in calls], [5.0, 5.0])
+        self.assertEqual([call[1] for call in calls], [4.0, 4.0])
+
+    def test_catalog_discovery_rejects_unbounded_provider_timeout(self) -> None:
+        provider_policy = {
+            "discovery": {"providerTimeoutSeconds": 901},
+            "providers": {"one": {"enabled": True}},
+        }
+        with self.assertRaises(CatalogError):
+            discover_candidates("/absolute/kilo", provider_policy, timeout_seconds=900)
 
     def test_runner_reports_missing_or_unrouteable_catalog_without_traceback(self) -> None:
         runner = ADAPTER_DIR / "run_arr_task.py"

@@ -63,6 +63,39 @@ discovery and provider calls require their own approval. Preserve the
 structured `INCOMPLETE`, `NO_ROUTE`, and adapter-error distinction rather than
 editing policy or inventing evidence to make the preflight pass.
 
+### Plan, refresh, and execution are separate
+
+Keep these three operations distinct:
+
+1. A normal route plan reads the existing target-owned profile, policy, and
+   catalog cache. It must not refresh the cache as a side effect. If the cache
+   is missing, stale, or unusable, report `NEEDS_REFRESH`/`INCOMPLETE` and stop.
+2. A discovery or cache refresh is a live metadata operation. It may invoke a
+   harness listing command, quota source, or network-backed adapter and may
+   write target-owned evidence. It requires a separate, explicit approval and
+   must be run through the bounded discovery command with an explicit cache
+   output path. Some harness/provider listings legitimately take several
+   minutes during a cold start; use the adapter's configured bounded deadline,
+   not an ad-hoc 10–15 second shell timeout. Do not add `--refresh` to an
+   ordinary plan command.
+3. Worker execution is a third approval boundary. Review the completed route
+   plan, then approve only the exact command/plan that will run. A discovery
+   approval is not worker approval, and a worker approval must not be used as a
+   substitute for a missing or failed discovery result.
+
+Never remove an approval gate or edit a consumer adapter merely to make a
+plan appear `READY`. If the adapter cannot refresh evidence independently of
+execution, report that boundary as a target-adapter design issue and produce a
+separate repair plan; do not silently combine discovery and launch.
+
+When the active harness runs discovery asynchronously, a still-running job is
+neither a timeout nor an unavailable provider. Start one bounded discovery
+only, then observe that job's actual terminal result using the harness's normal
+job-status mechanism. Do not infer completion from a short sleep, start a
+duplicate refresh, or consume its cache while it is still running. If the
+harness cannot show a terminal result, report the refresh as `INCOMPLETE`;
+only the adapter's structured terminal report may establish usable evidence.
+
 ## Commands
 
 All inputs are explicit JSON files. Keep catalogs, tasks, policies, and
@@ -172,6 +205,28 @@ The command executes only the fixed argv or HTTPS allowlist declared by the
 target adapter. Exit `3` means an adapter integration failure; it is distinct
 from exit `2` for incomplete/no-route evidence.
 
+For Kilo specifically, do not confuse Kilo's host-native aliases with ARR
+catalog evidence. `kilo-auto/small` (or another `kilo-auto/*` label) can be an
+internal Kilo title/helper session and is not proof that ARR selected that
+model for a worker. ARR catalog candidates are the exact IDs emitted by the
+target discovery cache, commonly `kilo/kilo-auto/<tier>`; inspect the
+candidate's provider, billing, quota, freshness, capability, and rejection
+evidence before describing it as a route. Never infer a catalog candidate
+from the conversational model, a Kilo UI label, or a provider-policy include
+pattern.
+
+When a route is unavailable, perform one bounded diagnostic: record the
+catalog status/count, the selected harness, and the most frequent rejection
+reasons for the requested track. Distinguish missing/unusable evidence,
+adapter failure, and a genuine `NO_ROUTE`. Do not loop on a model label, waive
+`--free-only`, enable unknown quota/cost, or fall back to the harness's native
+subagent tool without asking the user for one explicit decision. A short
+manual probe is not evidence that a provider is unavailable: do not exclude a
+provider merely because a diagnostic command exceeded an arbitrary timeout
+that is shorter than the target adapter's configured deadline. Let the
+bounded adapter report `timeout` at its own deadline, and preserve that
+structured result.
+
 To switch harnesses, review the emitted adaptation plan and apply only the
 unchanged plan after separate approval:
 
@@ -189,6 +244,15 @@ For native launching, require the target adapter's `LaunchSpec` to pass
 identity drift, environment overrides, and limit mismatches; the returned
 `WorkerCommand.sha256` is the digest that approval must bind.
 
+If a route plan reaches a `render_launch_input_rejected` adapter error, stop
+routing retries. It means the target adapter constructed an invalid bounded
+native command or prompt shape (for example, a control character in an argv
+argument), not that a provider is unavailable. Keep the rejected value out of
+reports, repair or reject the value in the target-owned adapter, add a
+regression, then re-plan. This is a harness-neutral adapter-contract failure;
+do not refresh evidence, relax routing policy, or switch to native delegation
+as a workaround.
+
 ## Routing rules
 
 - Denials and blacklist entries are hard constraints and override preferences,
@@ -201,6 +265,11 @@ identity drift, environment overrides, and limit mismatches; the returned
 - If the result is `no route`, use the per-candidate reasons to identify the
   missing or denied evidence. Do not broaden the policy merely to make a route
   appear.
+- A route decision is not a provider call or a worker launch. Keep target
+  semantic adapter changes (catalog parsing, quota/TPS probes, native command
+  construction) in the consumer project; the generic ARR skill may diagnose
+  them but must not edit them while performing a read-only route or maintenance
+  workflow.
 
 ## Cross-project acceptance evidence
 
@@ -225,5 +294,12 @@ The installed package also exposes an explicit local-worker API. A worker start
 requires a one-shot task-, candidate-, and absolute-command-bound approval and
 remains local, argv-only, bounded, cancellable, and observable. Do not invoke it from a
 routing request unless the user separately authorizes the specific local
-command. Provider authentication, network dispatch, retries, worktrees, and
-recovery remain outside this installed skill.
+command. Read-only multi-track workers receive a temporary snapshot containing
+only regular, permitted target files. Symbolic links are omitted rather than
+followed, so a worker can never receive bytes from outside the target through a
+link. A target harness's instruction/configuration list must therefore point to
+regular in-target files needed by workers, not a compatibility symlink. If an
+expected path is absent from a read-only worker snapshot, inspect and repair
+that target-owned configuration; never copy the link target manually or weaken
+the snapshot boundary. Provider authentication, network dispatch, retries,
+worktrees, and recovery remain outside this installed skill.
