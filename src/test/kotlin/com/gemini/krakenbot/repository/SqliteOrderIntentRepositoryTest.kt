@@ -280,6 +280,9 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                         trade.success shouldBe true
                         trade.orderTxid shouldBe "O-SETTLED-ALREADY"
                         trade.tradeId shouldBe "T-SETTLED-ALREADY"
+                        trade.usdAmount.shouldBeEqualComparingTo(BigDecimal("56.45"))
+                        trade.price.shouldBeEqualComparingTo(BigDecimal("8.68461538"))
+                        trade.fee.shouldBeEqualComparingTo(BigDecimal("0.3387"))
                         trade.submissionState shouldBe null
                     }
             }
@@ -329,6 +332,63 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
                 trades.single { it.source == TradeSource.API_FILL }.orderTxid shouldBe "O-OTHER-ORDER"
                 trades.single { it.source == TradeSource.LOCAL_ESTIMATE }.also { trade ->
+                    trade.success shouldBe true
+                    trade.orderTxid shouldBe "O-CONFIRMED-ORDER"
+                    trade.submissionState shouldBe null
+                }
+            }
+        }
+
+        "manual confirmation keeps its local estimate for same-txid rows that are not settled API fills" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.50000000"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.68307692"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+                val apiFill = intent.toPendingTrade().copy(
+                    success = true,
+                    errorMessage = null,
+                    source = TradeSource.API_FILL,
+                    orderTxid = "O-CONFIRMED-ORDER",
+                    submissionState = null,
+                )
+                listOf(
+                    apiFill.copy(pair = "ETHUSD", tradeId = "T-WRONG-PAIR"),
+                    apiFill.copy(symbol = "ETH", tradeId = "T-WRONG-SYMBOL"),
+                    apiFill.copy(side = "BUY", tradeId = "T-WRONG-SIDE"),
+                    apiFill.copy(success = false, tradeId = "T-UNSUCCESSFUL"),
+                    apiFill.copy(dryRun = true, tradeId = "T-DRY-RUN"),
+                    apiFill.copy(source = TradeSource.LOCAL_ESTIMATE, tradeId = "T-LOCAL-ESTIMATE"),
+                ).forEach { tradeRepository.saveTrade(it) }
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified settled Kraken order O-CONFIRMED-ORDER",
+                    orderTxid = "O-CONFIRMED-ORDER",
+                )
+
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.size shouldBe 7
+                trades.single { it.id == localTradeId }.also { trade ->
+                    trade.source shouldBe TradeSource.LOCAL_ESTIMATE
                     trade.success shouldBe true
                     trade.orderTxid shouldBe "O-CONFIRMED-ORDER"
                     trade.submissionState shouldBe null
