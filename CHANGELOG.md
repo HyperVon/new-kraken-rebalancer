@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.48] - 2026-08-14
+
+### Changed
+
+- **Agent Guidance Kit maintenance**: Refresh the adopted maintenance,
+  systematic-debugging, and security-review guidance with safer local-file
+  validation and explicit divergence and retirement handling.
+
 ## [6.16.47] - 2026-08-14
 
 ### Fixed
