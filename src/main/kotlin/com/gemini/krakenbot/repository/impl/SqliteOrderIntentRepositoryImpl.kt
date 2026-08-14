@@ -15,6 +15,7 @@ import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
@@ -187,6 +188,17 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         if (localTradeId == null) {
             error("Cannot reconcile order intent ${intent.id}: no matching local trade exists.")
         }
+        if (state == OrderIntentState.CONFIRMED && hasSettledApiFill(intent, effectiveOrderTxid)) {
+            // A verified Kraken order may sync before an operator resolves its recovered intent.
+            // Preserve its settled economics and remove only the superseded local placeholder.
+            val deletedRows = TradeTable.deleteWhere {
+                (TradeTable.id eq localTradeId) and tradeIdentity
+            }
+            if (deletedRows != 1) {
+                error("Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.")
+            }
+            return
+        }
         val updatedRows = TradeTable.update({
             (TradeTable.id eq localTradeId) and tradeIdentity
         }) {
@@ -207,6 +219,19 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
             "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing."
         }
     }
+
+    private fun hasSettledApiFill(intent: OrderIntent, orderTxid: String?): Boolean = orderTxid != null && TradeTable
+        .select(TradeTable.id)
+        .where {
+            (TradeTable.orderTxid eq orderTxid) and
+                (TradeTable.pair eq intent.pair) and
+                (TradeTable.symbol eq intent.symbol) and
+                (TradeTable.side eq intent.side) and
+                (TradeTable.success eq true) and
+                (TradeTable.dryRun eq false) and
+                (TradeTable.tradeSource eq TradeSource.API_FILL.name)
+        }
+        .any()
 
     private fun buildIntent(row: ResultRow): OrderIntent = OrderIntent(
         id = row[OrderIntentTable.id],

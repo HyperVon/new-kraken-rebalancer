@@ -226,6 +226,116 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
+        "manual confirmation retains a settled API fill instead of duplicating its local estimate" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.50000000"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.68307692"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                tradeRepository.saveTrade(
+                    intent.toPendingTrade().copy(
+                        success = true,
+                        errorMessage = null,
+                        usdAmount = BigDecimal("56.45"),
+                        price = BigDecimal("8.68461538"),
+                        fee = BigDecimal("0.3387"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = "O-SETTLED-ALREADY",
+                        tradeId = "T-SETTLED-ALREADY",
+                        submissionState = null,
+                    ),
+                )
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified settled Kraken order O-SETTLED-ALREADY",
+                    orderTxid = "O-SETTLED-ALREADY",
+                )
+
+                service.countUnresolvedIntents() shouldBe 0L
+                tradeRepository
+                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                    .single()
+                    .also { trade ->
+                        trade.source shouldBe TradeSource.API_FILL
+                        trade.success shouldBe true
+                        trade.orderTxid shouldBe "O-SETTLED-ALREADY"
+                        trade.tradeId shouldBe "T-SETTLED-ALREADY"
+                        trade.submissionState shouldBe null
+                    }
+            }
+        }
+
+        "manual confirmation keeps its local estimate when an API fill belongs to another order" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.50000000"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.68307692"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+                tradeRepository.saveTrade(
+                    intent.toPendingTrade().copy(
+                        success = true,
+                        errorMessage = null,
+                        source = TradeSource.API_FILL,
+                        orderTxid = "O-OTHER-ORDER",
+                        tradeId = "T-OTHER-ORDER",
+                        submissionState = null,
+                    ),
+                )
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified settled Kraken order O-CONFIRMED-ORDER",
+                    orderTxid = "O-CONFIRMED-ORDER",
+                )
+
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.single { it.source == TradeSource.API_FILL }.orderTxid shouldBe "O-OTHER-ORDER"
+                trades.single { it.source == TradeSource.LOCAL_ESTIMATE }.also { trade ->
+                    trade.success shouldBe true
+                    trade.orderTxid shouldBe "O-CONFIRMED-ORDER"
+                    trade.submissionState shouldBe null
+                }
+            }
+        }
+
         "normalizes a blank manual order txid to null" {
             runTest {
                 val intentId = savePendingWithTrade(newIntent())
@@ -240,7 +350,12 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                     ),
                 )
 
-                service.resolve(intentId, OrderIntentState.REJECTED, "No matching fill", orderTxid = "   ")
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified exchange outcome without a recorded Kraken order ID",
+                    orderTxid = "   ",
+                )
 
                 DriverManager.getConnection(databaseUrl).use { connection ->
                     connection.prepareStatement("SELECT order_txid FROM order_intents WHERE id = ?").use { statement ->
