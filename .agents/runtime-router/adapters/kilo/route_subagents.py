@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from dataclasses import replace
@@ -50,7 +51,7 @@ from agent_runtime_router.workflow import Track, load_manifest_tracks  # noqa: E
 from agent_runtime_router import TaskRequest  # noqa: E402
 from agent_runtime_router.quota import apply_quota_evidence  # noqa: E402
 
-from adapter import build_adapter, load_json  # noqa: E402
+from adapter import build_adapter, load_json, KILO_MAX_OUTPUT_BYTES  # noqa: E402
 from run_arr_task import (  # noqa: E402
     _apply_profile_quality,
     _cached_tps,
@@ -67,13 +68,28 @@ from quota import collect_quota_evidence  # noqa: E402
 from benchmarks import apply_benchmark_quality  # noqa: E402
 
 
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_prompt(text: str) -> str:
+    """Strip control characters that ARR's bounded argv contract rejects."""
+
+    return _CONTROL_CHARS.sub(" ", text).strip()
+
+
 def _workflow_tracks(path: Path, workflow: str, parent_task: str) -> list[Track]:
     value = load_json(path)
     workflows = value.get("workflows")
     raw_tracks = workflows.get(workflow) if isinstance(workflows, dict) else None
     if not isinstance(raw_tracks, list) or not raw_tracks:
         raise ValueError("workflow_unknown")
-    tracks = load_manifest_tracks({"tracks": [{**item, "task": f"Parent request:\n{parent_task}\n\nTrack focus:\n{item.get('task', '')}"} for item in raw_tracks]})
+    assembled = (
+        f"Parent request: {parent_task}  Track focus: {item.get('task', '')}"
+        for item in raw_tracks
+    )
+    tracks = load_manifest_tracks(
+        {"tracks": [{**item, "task": _sanitize_prompt(text)} for item, text in zip(raw_tracks, assembled)]}
+    )
     return tracks
 
 
@@ -103,6 +119,11 @@ def main(argv: list[str] | None = None) -> int:
         help="reject paid and unknown-cost candidates for every track",
     )
     parser.add_argument("--refresh", action="store_true")
+    parser.add_argument(
+        "--prepare-evidence",
+        action="store_true",
+        help="explicitly refresh bounded TPS/readiness/quality evidence without launching workers",
+    )
     parser.add_argument("--approve", action="store_true")
     parser.add_argument("--max-readiness-probes", type=int, default=None)
     parser.add_argument("--json", action="store_true")
@@ -112,6 +133,12 @@ def main(argv: list[str] | None = None) -> int:
     task_text = args.task_option or args.task
     if not task_text:
         parser.error("a task is required")
+    if args.prepare_evidence and not args.approve:
+        print(json.dumps({"status": "INCOMPLETE", "error_code": "evidence_approval_required"}, sort_keys=True))
+        return 2
+    if args.prepare_evidence and args.refresh:
+        print(json.dumps({"status": "INCOMPLETE", "error_code": "discovery_requires_separate_approval"}, sort_keys=True))
+        return 2
     target = Path(args.target).resolve()
     try:
         policy = load_target_policy(target / ".agents/runtime-router/policy.json")
@@ -234,6 +261,9 @@ def main(argv: list[str] | None = None) -> int:
             records.append({"track": track.id, "route": selected.candidate_id, "profile": track.profile, "effort": decision.selected_effort.value if decision.selected_effort else None, "variant": decision.selected_variant, "billing": selected.billing})
             prepared.append(LaunchItem(track=track, selection=selected, prompt=track.task, candidates=launch_candidates, policy=policy.routing_policy, task=launch_task, effort=decision.selected_effort, variant=decision.selected_variant))
         plan = {"schema_version": 1, "status": "PLAN", "records": records}
+        if args.prepare_evidence:
+            print(json.dumps({**plan, "status": "EVIDENCE_READY", "workers_not_started": True}, sort_keys=True))
+            return 0
         if not args.approve:
             print(json.dumps(plan, sort_keys=True))
             return 0
@@ -244,6 +274,7 @@ def main(argv: list[str] | None = None) -> int:
             adapter=adapter,
             approval_factory=lambda item, dispatch, command: ExecutionApproval(f"kraken-{item.track.id}", dispatch.task_id, dispatch.candidate_id, command.sha256),
             max_workers=min(len(prepared), 8),
+            max_output_bytes=KILO_MAX_OUTPUT_BYTES,
             start_delay_seconds=float(provider_policy.get("coldStart", {}).get("staggerSeconds", 0)),
             allow_failover=all(item.track.read_only for item in prepared),
             allow_cold_start_retry=all(item.track.read_only for item in prepared),

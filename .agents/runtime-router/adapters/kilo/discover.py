@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--kilo", required=True)
     parser.add_argument("--refresh", action="store_true")
-    parser.add_argument("--timeout", type=float, default=45.0)
+    parser.add_argument("--timeout", type=float, default=900.0)
     parser.add_argument("--max-candidates", type=int, default=5000)
     args = parser.parse_args(argv)
     try:
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
             target_root=str(target),
             refresh=bool(args.refresh),
             max_candidates=max(1, min(int(args.max_candidates), 5000)),
-            timeout_seconds=max(1.0, min(float(args.timeout), 120.0)),
+            timeout_seconds=max(1.0, min(float(args.timeout), 900.0)),
         )
         report = KrakenCatalogSource(str(executable), policy).discover(request)
     except Exception:

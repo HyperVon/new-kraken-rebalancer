@@ -537,12 +537,14 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   └── runtime-router/                    # Target-owned ARR policy, Kilo adapter & namespaced evidence
 ├── .kilo/                                  # Optional Kilo Code integration (Agent Manager hooks)
 │   ├── kilo.json                           # Context Mode plugin + safe local-tool settings
-│   ├── shell-strategy.md                   # Non-interactive shell and bounded-output guidance
+│   ├── shell-strategy.md                   # Compatibility symlink; excluded from ARR worker snapshots
 │   ├── setup-script                        # Prepare Gradle classes for Agent Manager worktrees
 │   ├── run-script                          # Build fat JAR and start an isolated local simulation
 │   ├── agent-manager.json                  # Agent Manager worktree configuration
 │   ├── command/                            # Project command definitions
 │   └── agent/                              # Project agent definitions
+├── .opencode/                              # Cross-harness companion configuration
+│   └── shell-strategy.md                   # Canonical shell guidance used by Kilo worker snapshots
 ├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)
 ├── CLAUDE.md                               # Claude Code entrypoint → .agents/
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/

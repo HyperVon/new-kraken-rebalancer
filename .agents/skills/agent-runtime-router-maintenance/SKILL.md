@@ -137,6 +137,32 @@ pointer, preserves the previous adapter and target denials, records a
 secret-free receipt, and fails closed on any drift. Semantic adapter changes
 still require target-local edits and a new discovery/verification plan.
 
+Do not use a route-plan command with `--refresh` to “make the plan work.” A
+normal plan is read-only and may consume an existing cache only. If the cache
+is absent, stale, or unusable, stop with `NEEDS_REFRESH`/`INCOMPLETE`, obtain a
+separate discovery approval, and run the bounded `harness discover` command
+with an explicit target-local `--cache-output`. Discovery may take several
+minutes for a cold-starting or network-backed harness; do not wrap it in a
+shorter ad-hoc timeout, truncate its output with a pipeline, or classify a
+provider as unavailable before the configured adapter deadline. Re-run the
+route plan without refresh after discovery. Discovery approval never
+authorizes a worker, and worker approval never authorizes an unplanned
+discovery.
+
+If the harness executes discovery in the background, treat its live job status
+as the authority: one job that is still running has not failed merely because a
+short observation window elapsed. Do not launch another refresh, read a
+partially written cache, or synthesize a timeout from a sleep/poll interval.
+Wait for the configured bounded deadline or the harness's terminal result. If
+the harness cannot supply that result, retain `INCOMPLETE` rather than guessing
+whether the provider is unavailable.
+
+If a target adapter needs a semantic repair (for example, Kilo table parsing,
+quota/TPS evidence, or native launch binding), do not patch that adapter from
+this generic maintenance workflow. Report the exact adapter failure and the
+smallest target-owned repair plan, then verify the repaired adapter and refresh
+evidence under their own approvals.
+
 `harness verify --dry-run` checks the active profile and target-owned
 `adapters/<id>/adapter.json` plus `discovery.json` metadata. It does not import
 or execute target adapter code.

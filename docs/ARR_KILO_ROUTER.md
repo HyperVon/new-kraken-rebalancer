@@ -39,6 +39,28 @@ After pulling a newer ARR or target revision, use the maintenance skill's
 plan/apply flow. Do not copy an old virtual environment or catalog between
 worktrees. Re-run `harness audit` and the adapter tests after refresh.
 
+### Routine Kilo CLI upgrades
+
+The Kilo adapter accepts patch releases in the reviewed `7.4` series beginning
+with `7.4.21`. After a routine Kilo patch upgrade, regenerate only the ignored,
+machine-local Kilo metadata:
+
+```bash
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/gen_discovery.py
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/test_adapter.py
+python3 .agents/.agent-runtime-router/run.py harness audit --target . --pretty
+```
+
+Generation performs bounded local `--version`, `run --help`, and `models
+--help` checks only. It does not list models, read credentials, contact a
+provider, or refresh a catalog. A fresh catalog remains usable until its normal
+TTL expires; a stale catalog still follows the separate approved discovery
+path. A new Kilo minor or major release, or a changed required help flag, fails
+closed with a compatibility error: update and verify the target adapter before
+routing rather than pinning or bypassing the check.
+
 ## Routing commands
 
 ```bash
@@ -69,6 +91,40 @@ normalized effort, billing class, evidence source, and worker status.
 
 - Kilo model listing is bounded and redacted. Failed or malformed discovery
   never creates a usable catalog cache.
+- A real Kilo model listing can take several minutes during a cold start or
+  while a provider backend responds slowly. Use the generated discovery
+  contract's multi-minute deadline; do not wrap it in a shorter shell timeout,
+  truncate it with `head`, or classify a provider as unavailable after a
+  10–15 second spot check. The adapter still has one finite overall deadline
+  and a finite per-provider deadline, so it will eventually return structured
+  timeout evidence.
+- **Kilo Code only:** if its shell tool reports the discovery as an active
+  background job, it is still running. Start one bounded command, use Kilo's
+  job-status result to obtain its terminal JSON, and do not start a duplicate
+  discovery or read the cache before then. A short sleep is not a timeout;
+  only the adapter's terminal report or its configured 900-second deadline can
+  establish a discovery outcome.
+- **Kilo Code only:** ARR read-only workers receive a temporary snapshot of
+  regular target files and deliberately omit symbolic links rather than
+  following them. Kilo's tracked `.kilo/shell-strategy.md` compatibility link
+  is therefore not part of a worker snapshot; `.kilo/kilo.json` must reference
+  the canonical regular `.opencode/shell-strategy.md` file instead. Do not
+  manually copy a link target into a worker or weaken the generic ARR snapshot
+  boundary to work around a missing instruction path.
+- The Kilo refresh command must pass `--cache-ttl 7200`, matching the
+  target-owned policy. ARR's generic five-minute default is intentionally
+  conservative and is too short for this target's catalog/TPS/readiness
+  preparation sequence.
+- A successful catalog alone does not make a free route eligible: Kraken's
+  target policy also requires fresh TPS and tool-readiness evidence. When an
+  ordinary free-only plan reports `NO_ROUTE` for those missing observations,
+  request a separate evidence-only approval and run
+  `run_arr_task.py --prepare-evidence --approve <task>` (or the corresponding
+  `route_subagents.py` workflow command). This runs only bounded evidence
+  probes and returns `EVIDENCE_READY`; it never launches the requested worker.
+  It deliberately rejects `--refresh`, keeping Kilo model discovery a separate
+  approval. Re-run plan mode and review the result before separately approving
+  a worker launch.
 - OpenCode quota data is optional. A missing plugin leaves free routing usable;
   paid quota remains unknown until a fresh, identity-bound plugin result exists.
 - Free candidates always require a fresh cached TPS measurement at or above the
@@ -112,3 +168,7 @@ python3 .agents/.agent-runtime-router/run.py --python \
 Missing or stale catalog evidence is reported as `INCOMPLETE`; it is not a
 reason to replace ARR with Kilo's native same-model subagents. Use the
 maintenance/bootstrap skills when the receipt-managed runtime itself is absent.
+The default registered workflow uses ARR's temporary read-only snapshots and
+returns its audit through terminal worker results; it does not create five
+worktrees, heartbeats, or coordination files merely to show intermediate
+progress.

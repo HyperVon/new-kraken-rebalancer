@@ -30,6 +30,9 @@
     "failureCacheTtlSeconds": 300,
     "timeoutSeconds": 120
   },
+  "discovery": {
+    "providerTimeoutSeconds": 300
+  },
   "coldStart": {
     "staggerSeconds": 5,
     "retryOnFastFail": true,
@@ -91,6 +94,8 @@
       "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
       "openrouter/google/gemma-4-31b-it",
       "openrouter/google/gemma-4-31b-it:free",
+      "openrouter/google/gemma-4-26b-a4b-it",
+      "openrouter/google/gemma-4-26b-a4b-it:free",
       "openrouter/kwaipilot/kat-coder-air-v2.5",
       "nvidia/mistralai/mistral-medium-3.5-128b",
       "nvidia/openai/gpt-oss-120b",

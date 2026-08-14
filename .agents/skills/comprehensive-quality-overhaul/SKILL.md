@@ -2,7 +2,7 @@
 name: comprehensive-quality-overhaul
 description: >-
   Full-repository quality sweep using every project skill in parallel across
-  multiple worktrees. Runs code review, AI slop detection, autonomous
+  multiple bounded tracks. Runs code review, AI slop detection, autonomous
   optimization, documentation review, skills/rules audit, security/dependency
   checks, test coverage analysis, and comment hygiene in a single coordinated
   cycle. Architecture and product reviews are captured as recommendations for
@@ -13,14 +13,15 @@ description: >-
 
 # Comprehensive Quality Overhaul
 
-Orchestrate a full repository quality sweep across isolated worktrees, then
-integrate evidence into reviewable candidate PRs. This skill sequences child
-skills; it does not replace their contracts, severity rubrics, or stop
+Orchestrate a full repository quality sweep across isolated tracks, then
+integrate evidence into reviewable candidate PRs. The default ARR/Kilo preset
+uses read-only snapshots rather than writable worktrees. This skill sequences
+child skills; it does not replace their contracts, severity rubrics, or stop
 conditions.
 
 Read [ORCHESTRATION.md](ORCHESTRATION.md) before executing the fan-out. It
-contains worktree setup, coordination protocol, free-route launcher mechanics,
-retry handling, detailed track prompts, triage templates, and teardown.
+contains the read-only delivery contract, free-route launcher mechanics, retry
+handling, detailed track prompts, triage templates, and teardown boundaries.
 
 ## Trigger and non-goals
 
@@ -48,7 +49,7 @@ This skill:
 | Inputs | Repository state, current main/base, applicable project skills, and explicit approval for L-class changes |
 | Outputs | Findings report, S/M candidate fixes, L proposals, PR triage, verification evidence, and separately authorized PR actions |
 | Routing | Worker fan-out uses free routes only; follow the launcher/config rules in ORCHESTRATION.md |
-| Isolation | Five worktrees: code, docs, skills/rules, tests/security/dependencies, and architecture/product |
+| Isolation | Five read-only audit tracks. The default ARR/Kilo launcher gives each a temporary snapshot; a separate approved workflow is required for writable worktrees. |
 | Stop | All tracks report, findings are triaged, approved changes are verified, and unresolved L items are presented as proposals |
 | Parent owns | Integration, app boot, final gates, branch/commit/push/PR decisions, and teardown |
 
@@ -76,34 +77,51 @@ convergence.
   trading math/order paths, or major dependencies as L regardless of diff size.
   Stop and ask with evidence and a compensating-control proposal.
 - Workers never inspect secrets, boot servers, run Gradle, commit, push, open
-  PRs, or create issues. They write only within their assigned worktree and
-  the parent-absolute coordination directory.
-- Workers write heartbeats at least every 60 seconds and findings
-  incrementally. The parent emits active-run status at least every 30 seconds.
+  PRs, create issues, or write coordination artifacts. Read-only ARR/Kilo
+  workers return their audit in the supervised terminal result; the parent owns
+  any durable summary.
+- Do not treat missing progress text, heartbeats, or coordination files as a
+  stalled ARR/Kilo worker. Wait for the launcher's terminal structured result
+  and configured deadline; only a terminal failure justifies one retry.
 - Never resolve overlapping findings inside the parallel wave; deduplicate and
   integrate in the parent.
 - Do not claim convergence because exclusions or thresholds were widened.
 - Do not use paid worker routes. Verify every selected route is free and not
   blacklisted; preserve the full blacklist when using a config override.
+- Do not mistake a Kilo `kilo-auto/*` UI/helper label for an ARR route. Route
+  identity comes from the target-owned catalog candidate and its evidence.
+- On `NO_ROUTE`, inspect rejection reasons once and report the blocker. Never
+  broaden policy, waive `--free-only`, or switch to native delegation without
+  an explicit user decision.
 - Run app-boot and final verification serially. Keep build state isolated.
 - Do not commit, push, open PRs, or delete worktrees beyond the authorized
   workflow and user-approved lifecycle.
 
 ## Execution outline
 
-1. Establish a clean, current base; remove only this skill's leftover
-   worktrees/coordination state; create five isolated worktrees; record model
-   routes.
+1. Establish a clean, current target; record the target revision and model
+   routes. The registered read-only ARR/Kilo workflow does not create
+   worktrees or a coordination directory.
 2. Under Kilo, run the receipt-managed ARR launcher in plan mode first, using
    the `comprehensive-quality-overhaul` workflow and `--free-only`. Never call
    Kilo's native `Task` tool as a fallback when the target ARR adapter exists.
    If the launcher reports `INCOMPLETE` for missing catalog/evidence, stop and
-   report that state (or obtain the separate approval needed for refresh); do
-   not reinterpret it as launcher unavailability. Launch all five tracks only
-   after the exact plan is reviewed and approved. Other harnesses use their
-   native bounded fan-out and must record the selected route themselves.
-3. Poll heartbeats and findings; handle stalled tracks with one retry, or a
-   finalize-only retry when a substantial partial diff exists.
+   report that state (or obtain the separate approval needed for discovery or
+   evidence preparation); do not reinterpret it as launcher unavailability.
+   Do not add `--refresh` to plan mode. A cache refresh is a separate approved
+   discovery operation and must be completed, validated, and followed by a new
+   plan without refresh. Under Kilo, a successful catalog can still leave free
+   routes blocked by TPS/tool-readiness evidence; request the explicit
+   `--prepare-evidence --approve` step, which cannot launch workers, then plan
+   again before asking for worker-launch approval.
+   Kilo model enumeration is allowed to take several minutes; never replace
+   the adapter's configured bounded deadline with a short manual timeout or
+   exclude a provider from one short diagnostic alone.
+   Launch all five tracks only after the exact plan is reviewed and approved.
+   Other harnesses use their native bounded fan-out and must record the
+   selected route themselves.
+3. Wait for the terminal worker results; do not diagnose a stall from silence.
+   Handle one terminal failure or timeout with at most one identical retry.
 4. Collect and deduplicate findings. Classify S/M/L; stop on L changes needing
    approval.
 5. Build a candidate-PR triage table with dependencies, readiness,
@@ -130,14 +148,13 @@ teardown commands are in ORCHESTRATION.md; do not reconstruct them from memory.
 
 ## Compact completion checklist
 
-- [ ] Base, branch, routes, worktrees, and coordination paths were recorded.
+- [ ] Target revision and free-only routes were recorded; no unapproved
+      worktree or coordination state was created.
 - [ ] Five tracks launched concurrently with free-only verified routes.
-- [ ] Worker scope, heartbeat, incremental finding, and no-secret contracts held.
+- [ ] Read-only worker scope, terminal-report, and no-secret contracts held.
 - [ ] App-boot work was requested to and executed by the parent serially.
 - [ ] Findings were deduplicated and classified with evidence.
 - [ ] S/M changes stayed scoped and L changes were presented for approval.
 - [ ] Candidate PR triage includes status, dependencies, and merge order.
 - [ ] Required quality gates and adversarial review ran before any approved PR.
-- [ ] Partial runs, retries, and blockers are reported.
-- [ ] Skill-owned worktrees and coordination state are torn down at the approved
-      lifecycle point.
+- [ ] Partial runs, terminal failures, retries, and blockers are reported.

@@ -21,6 +21,11 @@ from agent_runtime_router.observations import Freshness
 
 from catalog import CatalogError, discover_candidates
 
+# Bounded worker output cap shared by the adapter and the launch dispatch plan.
+# The launch contract requires the adapter's command cap to equal the plan's
+# cap, so both sides must reference this single value.
+KILO_MAX_OUTPUT_BYTES = 4_194_304
+
 
 def load_json(path: Path) -> dict[str, Any]:
     try:
@@ -111,7 +116,8 @@ def build_adapter(target_root: Path, executable: str | Path | None = None) -> Ki
             EffortLevel.XHIGH: "xhigh",
             EffortLevel.MAX: "max",
         },
+        max_output_bytes=KILO_MAX_OUTPUT_BYTES,
     )
 
 
-__all__ = ["KrakenCatalogSource", "build_adapter", "load_json"]
+__all__ = ["KILO_MAX_OUTPUT_BYTES", "KrakenCatalogSource", "build_adapter", "load_json"]

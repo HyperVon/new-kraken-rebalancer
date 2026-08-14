@@ -32,7 +32,8 @@ from agent_runtime_router.errors import RouterInputError
 
 MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 MAX_CANDIDATES = 5_000
-MAX_TIMEOUT_SECONDS = 120.0
+MAX_TIMEOUT_SECONDS = 900.0
+DEFAULT_PROVIDER_TIMEOUT_SECONDS = 300.0
 _JSON_DECODER = json.JSONDecoder()
 _SAFE_ERROR = re.compile(r"^[a-z][a-z0-9._-]{0,79}$")
 _FREE_SUFFIX = re.compile(r"(?:[:\s_-]free\)?$)", re.IGNORECASE)
@@ -321,7 +322,7 @@ def build_candidates(raw_models: Iterable[Mapping[str, Any]], provider_policy: M
     return tuple(sorted(result, key=lambda item: item.candidate_id))
 
 
-def discover_candidates(executable: str | Path, provider_policy: Mapping[str, Any], *, refresh: bool = False, timeout_seconds: float = 45.0) -> tuple[Candidate, ...]:
+def discover_candidates(executable: str | Path, provider_policy: Mapping[str, Any], *, refresh: bool = False, timeout_seconds: float = 900.0) -> tuple[Candidate, ...]:
     """Run bounded Kilo discovery for configured providers and build ARR candidates."""
 
     providers = provider_policy.get("providers", {})
@@ -334,14 +335,32 @@ def discover_candidates(executable: str | Path, provider_policy: Mapping[str, An
     )
     if not enabled:
         raise CatalogError("catalog_no_enabled_providers")
-    # The ARR subprocess wrapper has one outer deadline.  Divide it across
-    # configured providers so a single unavailable Kilo provider cannot consume
-    # the entire discovery budget and leave no catalog at all.  A provider that
-    # needs a longer refresh can be retried explicitly by a target adapter, but
-    # this generic bounded path must always terminate within its contract.
-    provider_timeout = max(1.0, min(timeout_seconds, timeout_seconds / len(enabled)))
+    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
+        raise CatalogError("catalog_timeout_invalid")
+    timeout_seconds = float(timeout_seconds)
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0 or timeout_seconds > MAX_TIMEOUT_SECONDS:
+        raise CatalogError("catalog_timeout_invalid")
+    discovery_settings = provider_policy.get("discovery", {})
+    if discovery_settings is None:
+        discovery_settings = {}
+    if not isinstance(discovery_settings, Mapping):
+        raise CatalogError("catalog_policy_invalid")
+    provider_timeout = _number(
+        discovery_settings.get("providerTimeoutSeconds", DEFAULT_PROVIDER_TIMEOUT_SECONDS)
+    )
+    if provider_timeout is None or provider_timeout <= 0 or provider_timeout > MAX_TIMEOUT_SECONDS:
+        raise CatalogError("catalog_timeout_invalid")
+    # The adapter has one explicit outer deadline, but each provider receives a
+    # target-configured multi-minute budget.  A fixed short slice per provider
+    # incorrectly labels cold/network-backed listings as unavailable.  The
+    # remaining-deadline calculation still guarantees that the whole adapter
+    # terminates within the ARR subprocess bound.
+    deadline = time.monotonic() + timeout_seconds
     all_records: list[Mapping[str, Any]] = []
     for provider in enabled:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         # Discovery must not load Kilo's optional remote/plugin layer.  That
         # layer can block independently for a provider and consume ARR's
         # entire bounded discovery budget; quota is collected by the separate
@@ -352,7 +371,10 @@ def discover_candidates(executable: str | Path, provider_policy: Mapping[str, An
         if refresh:
             command.append("--refresh")
         try:
-            returncode, output = _run_bounded(command, timeout_seconds=provider_timeout)
+            returncode, output = _run_bounded(
+                command,
+                timeout_seconds=min(provider_timeout, remaining),
+            )
         except CatalogError:
             # One unavailable provider must not erase usable catalogs from
             # the remaining configured providers.  The per-provider bound

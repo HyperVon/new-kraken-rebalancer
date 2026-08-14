@@ -4,8 +4,10 @@
 This is the target-owned entry point.  It deliberately does not infer a
 provider from the conversation or maintain a second ranking engine.  The
 caller supplies a profile (or a harness/agent can propose one), ARR chooses
-the route and normalized effort, and ``--approve`` is the only execution
-authority.
+the route and normalized effort, and ``--approve`` is the explicit authority
+for a live operation. ``--prepare-evidence --approve`` is deliberately the
+exception: it permits only bounded route-evidence probes and stops before a
+worker is launched; a later worker launch still needs its own approved call.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -21,6 +24,15 @@ import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_prompt(text: str) -> str:
+    """Strip control characters that ARR's bounded argv contract rejects."""
+
+    return _CONTROL_CHARS.sub(" ", text).strip()
+
 
 HERE = Path(__file__).resolve().parent
 # ``HERE`` is ``<target>/.agents/runtime-router/adapters/kilo``.  The target
@@ -88,7 +100,7 @@ from agent_runtime_router.router import route as route_candidates  # noqa: E402
 from agent_runtime_router.throughput import TpsCache, TpsCacheKey, TpsProbeConfig, TpsProbeRunner  # noqa: E402
 from agent_runtime_router.workflow import Track  # noqa: E402
 
-from adapter import build_adapter, load_json  # noqa: E402
+from adapter import build_adapter, load_json, KILO_MAX_OUTPUT_BYTES  # noqa: E402
 from catalog import CatalogError, discover_candidates  # noqa: E402
 from quota import collect_quota_evidence  # noqa: E402
 from benchmarks import apply_benchmark_quality  # noqa: E402
@@ -106,6 +118,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--sensitive", action="store_true")
     parser.add_argument("--max-readiness-probes", type=int, default=None)
     parser.add_argument("--refresh", action="store_true")
+    parser.add_argument(
+        "--prepare-evidence",
+        action="store_true",
+        help="explicitly refresh bounded TPS/readiness/quality evidence without launching a worker",
+    )
     parser.add_argument("--approve", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("task")
@@ -608,6 +625,16 @@ def _prepare_launch_binding(
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.prepare_evidence and not args.approve:
+        return _emit(
+            {"status": "INCOMPLETE", "error_code": "evidence_approval_required"},
+            code=2,
+        )
+    if args.prepare_evidence and args.refresh:
+        return _emit(
+            {"status": "INCOMPLETE", "error_code": "discovery_requires_separate_approval"},
+            code=2,
+        )
     try:
         target, policy_path, provider_path, profiles_path, catalog_path = _paths(args)
         policy = load_target_policy(policy_path)
@@ -673,6 +700,8 @@ def main(argv: list[str] | None = None) -> int:
         plan = {"records": records, "route": decision.selected.candidate_id if decision.selected else None, "status": "PLAN" if decision.selected else "NO_ROUTE"}
         if decision.selected is None:
             return _emit(plan, code=2)
+        if args.prepare_evidence:
+            return _emit({**plan, "status": "EVIDENCE_READY", "worker_not_started": True})
         if not args.approve:
             return _emit({**plan, "approval_required": True}, code=0)
         launch_task, launch_candidates = _prepare_launch_binding(
@@ -685,9 +714,10 @@ def main(argv: list[str] | None = None) -> int:
             executable=executable,
             catalog_digest=cache.source_digest,
         )
-        track = Track("manual-kilo", args.task, args.profile, "code", (), True)
-        item = LaunchItem(track=track, selection=decision.selected, prompt=args.task, candidates=launch_candidates, policy=policy.routing_policy, task=launch_task, effort=decision.selected_effort, variant=decision.selected_variant)
-        result = launch_worker(item, timeout=900, adapter=adapter, approval_factory=lambda item, dispatch, command: __import__("agent_runtime_router.supervisor", fromlist=["ExecutionApproval"]).ExecutionApproval("kraken-manual", dispatch.task_id, dispatch.candidate_id, command.sha256), max_output_bytes=4_194_304)
+        safe_task = _sanitize_prompt(args.task)
+        track = Track("manual-kilo", safe_task, args.profile, "code", (), True)
+        item = LaunchItem(track=track, selection=decision.selected, prompt=safe_task, candidates=launch_candidates, policy=policy.routing_policy, task=launch_task, effort=decision.selected_effort, variant=decision.selected_variant)
+        result = launch_worker(item, timeout=900, adapter=adapter, approval_factory=lambda item, dispatch, command: __import__("agent_runtime_router.supervisor", fromlist=["ExecutionApproval"]).ExecutionApproval("kraken-manual", dispatch.task_id, dispatch.candidate_id, command.sha256), max_output_bytes=KILO_MAX_OUTPUT_BYTES)
         return _emit({**plan, "status": "SUCCEEDED" if result.exit_code == 0 and not result.failure_kind else "FAILED", "exit_code": result.exit_code, "failure_kind": result.failure_kind, "error_code": result.error_code, "report": result.report})
     except Exception as exc:
         code = str(exc).split(":", 1)[0] or "router_error"
