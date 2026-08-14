@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.51] - 2026-08-14
+
+### Fixed
+
+- **Live-order recovery**: Resolve a journal-linked local estimate by its
+  durable trade ID after validating its immutable fields, avoiding SQLite
+  decimal-binding drift that could otherwise leave a verified intent blocked.
+
 ## [6.16.50] - 2026-08-14
 
 ### Fixed
