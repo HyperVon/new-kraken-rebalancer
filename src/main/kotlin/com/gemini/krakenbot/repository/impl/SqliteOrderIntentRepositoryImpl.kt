@@ -204,9 +204,11 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 "Cannot reconcile order intent ${intent.id}: no matching local trade exists.",
             )
         }
-        // localTradeId is the durable journal link. Older rows can lack a client order ID or
-        // submission state after migration, so only require immutable trade attributes here.
-        val linkedTradeIdentity = (TradeTable.id eq localTradeId) and localTradeAttributes
+        // localTradeId is the durable journal link. Verify the immutable attributes before mutating
+        // it, but target writes by its primary key so SQLite's decimal representation cannot make a
+        // valid journal link appear to be missing.
+        verifyLinkedLocalTrade(intent, localTradeId)
+        val linkedTradeIdentity = TradeTable.id eq localTradeId
         if (state == OrderIntentState.CONFIRMED && hasSettledApiFill(intent, effectiveOrderTxid)) {
             // A verified Kraken order may sync before an operator resolves its recovered intent.
             // Preserve its settled economics and remove only the superseded local placeholder.
@@ -239,6 +241,34 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         if (updatedRows != 1) {
             throw OrderIntentReconciliationException(
                 "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.",
+            )
+        }
+    }
+
+    private fun verifyLinkedLocalTrade(intent: OrderIntent, localTradeId: Int) {
+        val localTrade = TradeTable
+            .selectAll()
+            .where { TradeTable.id eq localTradeId }
+            .singleOrNull()
+            ?: throw OrderIntentReconciliationException(
+                "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.",
+            )
+        val source = localTrade[TradeTable.tradeSource]
+        val matchesIntent =
+            listOf(
+                localTrade[TradeTable.timestamp] == intent.createdAt.toEpochMilli(),
+                localTrade[TradeTable.pair] == intent.pair,
+                localTrade[TradeTable.symbol] == intent.symbol,
+                localTrade[TradeTable.side].equals(intent.side, ignoreCase = true),
+                localTrade[TradeTable.volume].compareTo(intent.volume) == 0,
+                localTrade[TradeTable.usdAmount].compareTo(intent.usdAmount) == 0,
+                !localTrade[TradeTable.dryRun],
+                source in setOf(TradeSource.LOCAL_ESTIMATE.name, null),
+                !localTrade[TradeTable.success],
+            ).all { it }
+        if (!matchesIntent) {
+            throw OrderIntentReconciliationException(
+                "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId does not match the intent.",
             )
         }
     }

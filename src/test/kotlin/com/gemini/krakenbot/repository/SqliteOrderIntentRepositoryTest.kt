@@ -288,6 +288,64 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
+        "manual confirmation reconciles a linked estimate with SQLite decimal drift" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val storedUsdAmount = BigDecimal("56.439999971595803")
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.54229657"),
+                    usdAmount = storedUsdAmount,
+                    expectedPrice = BigDecimal("8.62694000"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+                tradeRepository.saveTrade(
+                    intent.toPendingTrade().copy(
+                        timestamp = intent.createdAt.plusMillis(536),
+                        success = true,
+                        errorMessage = null,
+                        usdAmount = BigDecimal("56.45"),
+                        price = BigDecimal("8.62919000"),
+                        fee = BigDecimal("0.3387"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = "O-DECIMAL-DRIFT",
+                        tradeId = "T-DECIMAL-DRIFT",
+                        submissionState = null,
+                    ),
+                )
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified settled Kraken order O-DECIMAL-DRIFT",
+                    orderTxid = "O-DECIMAL-DRIFT",
+                )
+
+                service.countUnresolvedIntents() shouldBe 0L
+                tradeRepository
+                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                    .single()
+                    .also { trade ->
+                        trade.source shouldBe TradeSource.API_FILL
+                        trade.orderTxid shouldBe "O-DECIMAL-DRIFT"
+                        trade.tradeId shouldBe "T-DECIMAL-DRIFT"
+                    }
+            }
+        }
+
         "manual confirmation reconciles an ID-linked migrated local estimate" {
             runTest {
                 val tradeRepository = SqliteTradeRepositoryImpl(database)
@@ -923,6 +981,76 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 }
 
                 service.getUnresolvedIntents().single().state shouldBe OrderIntentState.PENDING
+            }
+        }
+
+        "rejects resolution when a linked trade is no longer pending" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent()
+                val tradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = tradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement("UPDATE trades SET success = 1 WHERE id = ?").use { statement ->
+                        statement.setInt(1, tradeId)
+                        statement.executeUpdate() shouldBe 1
+                    }
+                }
+
+                shouldThrow<IllegalStateException> {
+                    service.resolve(intentId, OrderIntentState.CONFIRMED, "Verified exchange outcome")
+                }
+
+                service.getUnresolvedIntents().single().state shouldBe OrderIntentState.UNCERTAIN
+            }
+        }
+
+        "rejects resolution when a linked trade's immutable fields no longer match" {
+            runTest {
+                val assignments = listOf(
+                    "timestamp = timestamp + 1",
+                    "usd_amount = usd_amount + 1",
+                    "dry_run = 1",
+                )
+                for (assignment in assignments) {
+                    val tradeRepository = SqliteTradeRepositoryImpl(database)
+                    val intent = newIntent()
+                    val tradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                    val intentId = service.savePending(intent.copy(localTradeId = tradeId))
+                    service.recordOutcome(
+                        intentId,
+                        OrderResult.Failure(
+                            pair = intent.pair,
+                            side = intent.side,
+                            volume = intent.volume,
+                            errorMessage = "response lost",
+                            submissionUncertain = true,
+                        ),
+                    ) shouldBe true
+                    DriverManager.getConnection(databaseUrl).use { connection ->
+                        connection.prepareStatement("UPDATE trades SET $assignment WHERE id = ?").use { statement ->
+                            statement.setInt(1, tradeId)
+                            statement.executeUpdate() shouldBe 1
+                        }
+                    }
+
+                    shouldThrow<IllegalStateException> {
+                        service.resolve(intentId, OrderIntentState.CONFIRMED, "Verified exchange outcome")
+                    }
+
+                    service.getUnresolvedIntents().single { it.id == intentId }.state shouldBe
+                        OrderIntentState.UNCERTAIN
+                }
             }
         }
 
