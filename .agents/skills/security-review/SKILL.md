@@ -44,10 +44,23 @@ description: >-
 5. Test only safe local properties that can support a finding: validation,
    permissions, redaction, path containment, dependency metadata, configuration
    parsing, and negative tests. Preserve sensitive values and redact evidence.
+
+   **Safe local verification rules:**
+   - Verify parsing and injection boundaries using benign sentinel values (e.g. `' OR '1'='1`, `../etc/passwd` path normalization assertions, `<script>alert(1)</script>` escaping tests in isolated units).
+   - Never execute destructive payloads (e.g. `rm -rf`, DROP TABLE, credential exfiltration) even against local test environments.
+   - Mock the execution sink (e.g., intercept the generated SQL string or shell command) to verify unescaped characters without executing them.
+   - *Note:* The sentinel examples above are test-design guidance, not executable payloads. If the reviewed project uses content scanning tools, recommend placing test fixtures in a scanner-excluded directory.
 6. Try to disprove each candidate finding with a minimal safe local check.
    Record the precondition, evidence for and against it, confidence, and any
    missing deployment context. Distinguish a confirmed defect from a question,
    informational supply-chain signal, or hardening suggestion.
+
+   **Prove source-to-sink reachability:**
+   Never report a vulnerability based solely on the presence of a sensitive function or sink (e.g., `subprocess.run`, `eval`, `innerHTML`, raw SQL query). A confirmed finding requires proving:
+   1. An untrusted source exists (user input, external API, untrusted file).
+   2. The data reaches the sensitive sink without sufficient validation, sanitization, parameterization, or type enforcement.
+   3. Attacker-controlled parameters can meaningfully alter execution semantics.
+   If input is strictly static, internal, or constrained by strong enums/whitelists, classify it as safe or a low-priority defense-in-depth note, never an active vulnerability.
 7. Check security-relevant defaults and fail-open paths: fallback credentials,
    permissive authorization, weak crypto or randomness, debug leakage, unsafe
    network egress, and hidden recovery behavior. For dependencies, record
@@ -67,8 +80,16 @@ description: >-
 - Can untrusted input escape intended query, command, template, path, or
   serialization boundaries?
 - Are secrets absent from source, fixtures, logs, errors, artifacts, and URLs?
+- Are secret tokens, signatures, and password hashes compared using constant-time comparison functions (`hmac.compare_digest`, `crypto.timingSafeEqual`) to prevent timing side-channel attacks?
+- Is cryptographically secure randomness (`secrets`, `crypto.getRandomValues`) used for tokens, nonces, and session IDs instead of pseudo-random generators (`random.random()`, `Math.random()`)?
+- In multi-tenant systems, is tenant isolation enforced at the database query layer (e.g. mandatory `tenant_id` filter) rather than relying on application-level routing?
 - Can an agent, script, dependency, or CI job gain more authority than the
   user intended?
+- **Agent and LLM workflow boundaries:**
+  - *Indirect Prompt Injection:* Can untrusted external data (web pages, user uploads, issue comments, email bodies, database records) inject instructions that alter the agent's behavior or override system prompts?
+  - *Tool Output Poisoning:* Are tool inputs and outputs treated as untrusted boundaries? Can untrusted tool responses trick the agent into invoking destructive tools with malicious arguments?
+  - *Ambient Authority & Confused Deputy:* Does the agent or background worker run with broader privileges than required for the task? Can an unauthenticated caller trigger privileged agent operations?
+  - *Sensitive Context Leakage:* Does the agent reflect private files, credentials, or internal system prompts into user-visible outputs, tool arguments, or telemetry logs?
 - Are sensitive data access, retention, redaction, and error behavior explicit?
 - Are dependency, supply-chain, network, and update assumptions evidenced?
 - Do tests demonstrate rejection and fail-closed behavior for the risky cases?

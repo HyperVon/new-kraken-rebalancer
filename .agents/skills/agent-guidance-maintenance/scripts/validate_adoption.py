@@ -53,6 +53,15 @@ def receipt_skills(root: Path, errors: list[str]) -> set[str]:
     return names
 
 
+def read_text_safe(path: Path) -> str | None:
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def validate_links(root: Path, errors: list[str]) -> None:
     skills_root = root / ".agents/skills"
     if not skills_root.is_dir() or skills_root.is_symlink():
@@ -68,7 +77,10 @@ def validate_links(root: Path, errors: list[str]) -> None:
         if skill_md.is_symlink() or not skill_md.is_file():
             errors.append(f"{skill_dir.relative_to(root)}: missing real SKILL.md")
             continue
-        text = skill_md.read_text(encoding="utf-8")
+        text = read_text_safe(skill_md)
+        if text is None:
+            errors.append(f"{skill_md.relative_to(root)}: unreadable SKILL.md")
+            continue
         match = FRONTMATTER_NAME.search(text)
         if not match or match.group(1) != skill_dir.name:
             errors.append(
@@ -80,7 +92,11 @@ def validate_links(root: Path, errors: list[str]) -> None:
                     f"{markdown.relative_to(root)}: symlinked Markdown is unsafe"
                 )
                 continue
-            for raw_target in LINK.findall(markdown.read_text(encoding="utf-8")):
+            md_text = read_text_safe(markdown)
+            if md_text is None:
+                errors.append(f"{markdown.relative_to(root)}: unreadable Markdown")
+                continue
+            for raw_target in LINK.findall(md_text):
                 target = raw_target.strip()
                 split = urlsplit(target)
                 if split.scheme or target.startswith("#"):
@@ -104,18 +120,15 @@ def validate_links(root: Path, errors: list[str]) -> None:
 
 def validate_routes(root: Path, adopted: set[str], errors: list[str]) -> None:
     candidates = (root / ".agents/AGENTS.md", root / "AGENTS.md")
-    managed = [
-        path
-        for path in candidates
-        if path.is_file()
-        and not path.is_symlink()
-        and ROUTE_START in path.read_text(encoding="utf-8")
-    ]
+    managed: list[tuple[Path, str]] = []
+    for path in candidates:
+        text = read_text_safe(path)
+        if text is not None and ROUTE_START in text:
+            managed.append((path, text))
     if len(managed) != 1:
         errors.append("managed Agent Guidance Kit route file is missing or duplicated")
         return
-    route_file = managed[0]
-    text = route_file.read_text(encoding="utf-8")
+    route_file, text = managed[0]
     if text.count(ROUTE_START) != 1 or text.count(ROUTE_END) != 1:
         errors.append(
             f"{route_file.relative_to(root)}: managed route block is missing or malformed"

@@ -36,6 +36,10 @@ description: >-
    the conditions and gather more evidence before guessing. For timing or
    concurrency failures, wait on an observable condition with a bounded
    timeout instead of adding an arbitrary sleep or retry-until-green loop.
+
+   **For regressions and intermittent failures:**
+   - *Regression bisection:* For regressions after recent changes, inspect git commit history and diffs across the failing subsystem. Reproduce the test on the last known-working commit to confirm that the failure is a genuine regression rather than an environment issue.
+   - *Intermittent / CI-only failures:* Compare environment differences (OS, architecture, lockfiles, timezone, concurrency). Execute the reproduction under a stress loop (20–50 iterations) to establish an empirical baseline failure rate before testing fixes.
 4. Establish the change and data path. Inspect the relevant diff, recent
    changes, configuration, dependencies, and a known-working neighboring path.
    Trace the bad value or state backward to its first incorrect origin.
@@ -54,6 +58,11 @@ description: >-
 
 ## Boundaries and gotchas
 
+- **Prohibit the "null-check bandage":** Never fix a crash by merely suppressing the symptom at the crash site (e.g., adding `if obj is None: return`, default fallbacks, or `try/except: pass`) unless the component contract explicitly dictates that null/empty input is valid at that layer. Always trace upstream to find why the invariant was violated at the data origin.
+- **Maintain diagnostic environment hygiene:**
+  - Run reproductions in an isolated scratch workspace or with clean test fixtures.
+  - Cleanly remove all temporary debug prints, logging probes, and diagnostic mocks before finalizing the root-cause fix.
+  - Verify that local caches, build artifacts (`.pyc`, build outputs), and environment variables are reset between reproduction attempts to prevent Heisenbugs.
 - A passing health check, linter, retry, or timeout does not establish root
   cause; verify the failing behavior itself.
 - Do not hide an unknown behind a catch-all fallback, retry loop, delay, or

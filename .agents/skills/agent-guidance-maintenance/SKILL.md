@@ -93,13 +93,18 @@ applied.
 
 ## Workflow
 
-1. Read target-local guidance and the latest adoption receipts under
-   `.agents/.agent-guidance-kit/receipts/`. Treat local policy as authoritative.
-2. Resolve and validate the kit source. If the user requested the latest source,
+1. **Working tree pre-flight.** Inspect target working tree status
+   (`git status --porcelain`). If the target repository has uncommitted
+   modifications in `.agents/` or root guidance files, warn the user and
+   recommend committing or stashing WIP before applying maintenance updates.
+2. **Read local policy and receipts.** Read target-local guidance and the latest
+   adoption receipts under `.agents/.agent-guidance-kit/receipts/`. Treat local
+   policy as authoritative.
+3. Resolve and validate the kit source. If the user requested the latest source,
    run the optional source-checkout refresh procedure first. Record how the
    source was resolved and its Git revision; do not assume an old locator still
    points to a valid kit.
-3. Compare source-owned canonical guidance as a separate maintenance surface,
+4. Compare source-owned canonical guidance as a separate maintenance surface,
    not only the receipt-managed skill directories. At minimum inspect the
    source and target `.agents/AGENTS.md` and `.agents/OPERATING.md`, plus any
    harness projections reported by the kit's recommender. Run:
@@ -117,23 +122,38 @@ applied.
    before approval. For an audit, also compare installed receipt digests,
    current target manifests, source manifests, dependency declarations, and
    managed AGENTS routes. Do not mutate anything.
-4. For add, refresh, or update, read the current source `bootstrap-project`
+5. For add, refresh, or update, read the current source `bootstrap-project`
    skill, inspect candidate skills, and choose the smallest useful set. A
    refresh may select all receipt-owned skills; adding a skill selects it plus
    its required dependency closure. Optional related skills remain suggestions.
-5. Generate a new plan with the resolved source installer. Review requested and
+6. Generate a new plan with the resolved source installer. Review requested and
    automatically added skills, create/update/unchanged statuses, source-owned
    canonical-guidance findings, conflicts, managed routing, source revision,
    and content digests. The mechanical plan does not apply canonical guidance
    adaptations; those edits must be listed separately and approved explicitly.
-6. Stop for explicit approval of that exact plan and every canonical-guidance
+7. Stop for explicit approval of that exact plan and every canonical-guidance
    disposition. A locally modified adopted skill, routing conflict, source
    drift, target drift, or unresolved canonical-guidance finding is a stop
    condition.
-7. Apply the unchanged plan with `--approve`. Receipt-backed unmodified content
+
+   **Resolving target divergence:**
+   When an adopted skill's digest differs from upstream kit source and previous receipts:
+   1. *Report the exact diff:* Display a unified diff comparing upstream kit version, previous receipt digest, and current target-modified content.
+   2. *Present explicit resolution options to the user:*
+      - **Option A (Keep Local / Unmanage):** Retain target modifications permanently. Remove the skill from future receipt updates and move its route outside the managed AGK block into the project-owned index table.
+      - **Option B (Upstream Contribution):** If the local modification is generic and reusable, propose upstream contribution via `upstream-contribution`.
+      - **Option C (Manual 3-Way Merge):** Synthesize upstream improvements into the target-local skill while preserving project-specific customizations, then update the local receipt with explicit approval.
+      - **Option D (Overwrite / Reset):** Discard local divergence and reset to upstream canonical version (requires explicit user confirmation).
+
+   **Upstream deprecation and retirement:**
+   When an upstream kit release renames, consolidates, or removes an adopted skill:
+   - The maintenance plan must explicitly list the retired skill as `RETIRE` rather than silently deleting it.
+   - If the skill directory contains target-created files (e.g., custom evals, scripts, or notes), preserve the directory and warn the user.
+   - Upon approved application, remove the retired skill from `.agents/.agent-guidance-kit/receipts/` and update the managed AGENTS route block.
+8. Apply the unchanged plan with `--approve`. Receipt-backed unmodified content
    may be refreshed atomically; new content is create-only; local divergence is
    never overwritten.
-8. Run the bundled target validator plus the target repository's relevant
+9. Run the bundled target validator plus the target repository's relevant
    guidance and project gates. Report every pass, failure, skip, and conflict.
 
 ## Stop condition
