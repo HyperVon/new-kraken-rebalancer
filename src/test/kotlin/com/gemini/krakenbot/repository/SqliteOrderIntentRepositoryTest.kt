@@ -941,6 +941,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 val tradeRepository = SqliteTradeRepositoryImpl(database)
                 val intent = newIntent()
                 val tradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val duplicateTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
                 val intentId = service.savePending(intent.copy(localTradeId = tradeId))
 
                 service.recordOutcome(
@@ -953,9 +954,17 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                     ),
                 )
 
-                tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                    .single { it.id == tradeId }
-                    .submissionState shouldBe null
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.single { it.id == tradeId }.also { trade ->
+                    trade.success shouldBe true
+                    trade.orderTxid shouldBe "O-LINKED-ID"
+                    trade.submissionState shouldBe null
+                }
+                trades.single { it.id == duplicateTradeId }.also { trade ->
+                    trade.success shouldBe false
+                    trade.orderTxid shouldBe null
+                    trade.submissionState shouldBe OrderSubmissionState.PENDING
+                }
             }
         }
 
@@ -1019,8 +1028,12 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             runTest {
                 val assignments = listOf(
                     "timestamp = timestamp + 1",
+                    "pair = 'ETHUSD'",
+                    "symbol = 'ETH'",
+                    "side = 'SELL'",
                     "usd_amount = usd_amount + 1",
                     "dry_run = 1",
+                    "source = 'API_FILL'",
                 )
                 for (assignment in assignments) {
                     val tradeRepository = SqliteTradeRepositoryImpl(database)
