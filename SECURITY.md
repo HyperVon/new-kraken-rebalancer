@@ -210,6 +210,13 @@ rejected order, change `state` to `REJECTED`, omit `orderTxid` unless one exists
 and record the specific negative exchange evidence. Never infer rejection from
 silence or from the application's provisional local estimate.
 
+Some historical `API_FILL` rows may predate persistence of Kraken's order and
+trade identifiers. During a manually confirmed resolution, the application
+accepts such a row only when exactly one unkeyed API fill matches the intent's
+pair, symbol, side, volume, 10-second timestamp window, 1% USD tolerance, and,
+when available, 1% expected-price tolerance. Multiple candidates return HTTP
+`409` and leave the intent unresolved for further investigation.
+
 After the request, while the loop is still paused:
 
 1. Re-fetch `GET /api/order-intents`; the resolved ID must no longer appear.

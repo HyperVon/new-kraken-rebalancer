@@ -45,7 +45,9 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
                 "Order intent $id is missing or already resolved."
             }
         } catch (e: IOException) {
-            val reconciliationFailure = e.cause as? IllegalStateException
+            val reconciliationFailure = generateSequence(e.cause) { it.cause }
+                .filterIsInstance<IllegalStateException>()
+                .firstOrNull()
             if (reconciliationFailure != null) {
                 throw reconciliationFailure
             }
