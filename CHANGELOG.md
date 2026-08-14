@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.50] - 2026-08-14
+
+### Fixed
+
+- **Legacy API-fill recovery**: When a confirmed uncertain intent has one
+  matching historical API fill whose Kraken identifiers were not persisted,
+  retain that fill and remove the duplicate local estimate. Multiple matching
+  unkeyed fills remain fail-closed.
+
 ## [6.16.49] - 2026-08-14
 
 ### Fixed

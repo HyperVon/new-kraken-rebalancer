@@ -353,6 +353,207 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
+        "manual confirmation retains a single matching legacy API fill without identifiers" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.54229657"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.62694000"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement(
+                        "UPDATE trades SET client_order_id = NULL, submission_state = NULL WHERE id = ?",
+                    ).use { statement ->
+                        statement.setInt(1, localTradeId)
+                        statement.executeUpdate() shouldBe 1
+                    }
+                }
+                tradeRepository.saveTrade(
+                    intent.toPendingTrade().copy(
+                        timestamp = intent.createdAt.plusMillis(536),
+                        success = true,
+                        errorMessage = null,
+                        usdAmount = BigDecimal("56.45"),
+                        price = BigDecimal("8.62919000"),
+                        fee = BigDecimal("0.3387"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = null,
+                        tradeId = null,
+                        clientOrderId = null,
+                        submissionState = null,
+                    ),
+                )
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified settled Kraken order O-LEGACY-UNKEYED",
+                    orderTxid = "O-LEGACY-UNKEYED",
+                )
+
+                service.countUnresolvedIntents() shouldBe 0L
+                tradeRepository
+                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                    .single()
+                    .also { trade ->
+                        trade.source shouldBe TradeSource.API_FILL
+                        trade.orderTxid shouldBe null
+                        trade.tradeId shouldBe null
+                        trade.usdAmount.shouldBeEqualComparingTo(BigDecimal("56.45"))
+                        trade.price.shouldBeEqualComparingTo(BigDecimal("8.62919000"))
+                        trade.fee.shouldBeEqualComparingTo(BigDecimal("0.3387"))
+                    }
+            }
+        }
+
+        "manual confirmation does not match legacy API fills outside economics tolerances" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.54229657"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.62694000"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                val outOfToleranceFills = listOf(
+                    intent.toPendingTrade().copy(
+                        timestamp = intent.createdAt.plusMillis(500),
+                        success = true,
+                        errorMessage = null,
+                        usdAmount = BigDecimal("58.00"),
+                        price = BigDecimal("8.62919000"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = null,
+                        tradeId = null,
+                        clientOrderId = null,
+                        submissionState = null,
+                    ),
+                    intent.toPendingTrade().copy(
+                        timestamp = intent.createdAt.plusMillis(501),
+                        success = true,
+                        errorMessage = null,
+                        usdAmount = BigDecimal("56.45"),
+                        price = BigDecimal("8.80000000"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = null,
+                        tradeId = null,
+                        clientOrderId = null,
+                        submissionState = null,
+                    ),
+                )
+                for (trade in outOfToleranceFills) {
+                    tradeRepository.saveTrade(trade)
+                }
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified settled Kraken order O-OUTSIDE-TOLERANCE",
+                    orderTxid = "O-OUTSIDE-TOLERANCE",
+                )
+
+                service.countUnresolvedIntents() shouldBe 0L
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.count { it.source == TradeSource.API_FILL } shouldBe 2
+                trades.single { it.id == localTradeId }.also { trade ->
+                    trade.source shouldBe TradeSource.LOCAL_ESTIMATE
+                    trade.success shouldBe true
+                    trade.orderTxid shouldBe "O-OUTSIDE-TOLERANCE"
+                }
+            }
+        }
+
+        "manual confirmation fails closed for multiple matching legacy API fills without identifiers" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.54229657"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = null,
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                repeat(2) { index ->
+                    tradeRepository.saveTrade(
+                        intent.toPendingTrade().copy(
+                            timestamp = intent.createdAt.plusMillis(500L + index),
+                            success = true,
+                            errorMessage = null,
+                            usdAmount = BigDecimal("56.45"),
+                            price = BigDecimal("8.62919000"),
+                            fee = BigDecimal("0.3387"),
+                            source = TradeSource.API_FILL,
+                            orderTxid = null,
+                            tradeId = null,
+                            clientOrderId = null,
+                            submissionState = null,
+                        ),
+                    )
+                }
+
+                shouldThrow<IllegalStateException> {
+                    service.resolve(
+                        intentId,
+                        OrderIntentState.CONFIRMED,
+                        "Verified settled Kraken order O-AMBIGUOUS-LEGACY",
+                        orderTxid = "O-AMBIGUOUS-LEGACY",
+                    )
+                }
+
+                service.getUnresolvedIntents().single().state shouldBe OrderIntentState.UNCERTAIN
+                tradeRepository
+                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                    .single { it.id == localTradeId }
+                    .success shouldBe false
+            }
+        }
+
         "manual confirmation keeps its local estimate when an API fill belongs to another order" {
             runTest {
                 val tradeRepository = SqliteTradeRepositoryImpl(database)

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.repository.OrderIntentRepository
@@ -45,7 +46,9 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
                 "Order intent $id is missing or already resolved."
             }
         } catch (e: IOException) {
-            val reconciliationFailure = e.cause as? IllegalStateException
+            val reconciliationFailure = generateSequence(e.cause) { it.cause }
+                .filterIsInstance<OrderIntentReconciliationException>()
+                .firstOrNull()
             if (reconciliationFailure != null) {
                 throw reconciliationFailure
             }

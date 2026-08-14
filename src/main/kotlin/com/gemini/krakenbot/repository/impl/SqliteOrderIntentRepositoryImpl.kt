@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.OrderIntentRepository
@@ -11,8 +12,10 @@ import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
@@ -21,9 +24,15 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import org.slf4j.LoggerFactory
+import java.math.BigDecimal
 import java.time.Instant
 
 class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderIntentRepository {
+    private companion object {
+        const val LEGACY_API_FILL_MATCH_WINDOW_MILLIS = 10_000L
+        val LEGACY_API_FILL_RELATIVE_TOLERANCE = BigDecimal("0.01")
+    }
+
     private val log = LoggerFactory.getLogger(SqliteOrderIntentRepositoryImpl::class.java)
 
     override suspend fun savePending(intent: OrderIntent): Int =
@@ -183,13 +192,17 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 .orderBy(TradeTable.id, SortOrder.ASC)
                 .limit(2)
                 .map { it[TradeTable.id] }
-            check(candidateIds.size <= 1) {
-                "Cannot reconcile order intent ${intent.id}: multiple local trade candidates exist."
+            if (candidateIds.size > 1) {
+                throw OrderIntentReconciliationException(
+                    "Cannot reconcile order intent ${intent.id}: multiple local trade candidates exist.",
+                )
             }
             candidateIds.singleOrNull()
         }
         if (localTradeId == null) {
-            error("Cannot reconcile order intent ${intent.id}: no matching local trade exists.")
+            throw OrderIntentReconciliationException(
+                "Cannot reconcile order intent ${intent.id}: no matching local trade exists.",
+            )
         }
         // localTradeId is the durable journal link. Older rows can lack a client order ID or
         // submission state after migration, so only require immutable trade attributes here.
@@ -201,7 +214,9 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 linkedTradeIdentity
             }
             if (deletedRows != 1) {
-                error("Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.")
+                throw OrderIntentReconciliationException(
+                    "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.",
+                )
             }
             return
         }
@@ -221,23 +236,61 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 -> null
             }
         }
-        check(updatedRows == 1) {
-            "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing."
+        if (updatedRows != 1) {
+            throw OrderIntentReconciliationException(
+                "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.",
+            )
         }
     }
 
-    private fun hasSettledApiFill(intent: OrderIntent, orderTxid: String?): Boolean = orderTxid != null && TradeTable
-        .select(TradeTable.id)
-        .where {
-            (TradeTable.orderTxid eq orderTxid) and
-                (TradeTable.pair eq intent.pair) and
+    private fun hasSettledApiFill(intent: OrderIntent, orderTxid: String?): Boolean {
+        if (orderTxid == null) return false
+        val settledFillIdentity =
+            (TradeTable.pair eq intent.pair) and
                 (TradeTable.symbol eq intent.symbol) and
                 (TradeTable.side eq intent.side) and
                 (TradeTable.success eq true) and
                 (TradeTable.dryRun eq false) and
                 (TradeTable.tradeSource eq TradeSource.API_FILL.name)
+        val exactOrderMatch = TradeTable
+            .select(TradeTable.id)
+            .where { settledFillIdentity and (TradeTable.orderTxid eq orderTxid) }
+            .any()
+        if (exactOrderMatch) return true
+
+        val usdTolerance = intent.usdAmount.abs().multiply(LEGACY_API_FILL_RELATIVE_TOLERANCE)
+        val expectedPriceIdentity = intent.expectedPrice?.let { expectedPrice ->
+            val priceTolerance = expectedPrice.abs().multiply(LEGACY_API_FILL_RELATIVE_TOLERANCE)
+            (TradeTable.price greaterEq expectedPrice.subtract(priceTolerance)) and
+                (TradeTable.price lessEq expectedPrice.add(priceTolerance))
+        } ?: (TradeTable.id eq TradeTable.id)
+        val unkeyedCandidates = TradeTable
+            .select(TradeTable.id)
+            .where {
+                settledFillIdentity and
+                    TradeTable.orderTxid.isNull() and
+                    TradeTable.tradeId.isNull() and
+                    (TradeTable.volume eq intent.volume) and
+                    (
+                        TradeTable.timestamp greaterEq
+                            intent.createdAt.toEpochMilli() - LEGACY_API_FILL_MATCH_WINDOW_MILLIS
+                        ) and
+                    (
+                        TradeTable.timestamp lessEq
+                            intent.createdAt.toEpochMilli() + LEGACY_API_FILL_MATCH_WINDOW_MILLIS
+                        ) and
+                    (TradeTable.usdAmount greaterEq intent.usdAmount.subtract(usdTolerance)) and
+                    (TradeTable.usdAmount lessEq intent.usdAmount.add(usdTolerance)) and
+                    expectedPriceIdentity
+            }.limit(2)
+            .map { it[TradeTable.id] }
+        if (unkeyedCandidates.size > 1) {
+            throw OrderIntentReconciliationException(
+                "Cannot reconcile order intent ${intent.id}: multiple unkeyed settled API fills match.",
+            )
         }
-        .any()
+        return unkeyedCandidates.size == 1
+    }
 
     private fun buildIntent(row: ResultRow): OrderIntent = OrderIntent(
         id = row[OrderIntentTable.id],
