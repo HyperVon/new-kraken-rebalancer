@@ -203,6 +203,29 @@ class CsrfProtectionTest :
             }
         }
 
+        "isValid_WithDuplicateTokenParams_RejectsRequest" {
+            testApplication {
+                routing {
+                    post("/test-csrf") {
+                        val params = call.receiveParameters()
+                        if (CsrfProtection.isValid(call, params)) {
+                            call.respondText("OK")
+                        } else {
+                            call.respondText("FORBIDDEN", status = HttpStatusCode.Forbidden)
+                        }
+                    }
+                }
+
+                val response = client.post("/test-csrf") {
+                    header(HttpHeaders.Cookie, "rebalancer-csrf=secret123")
+                    header(HttpHeaders.Origin, "http://localhost:8080")
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    setBody(parametersOf(FormFields.CSRF_TOKEN, listOf("secret123", "secret123")).formUrlEncode())
+                }
+                response.status shouldBe HttpStatusCode.Forbidden
+            }
+        }
+
         "isValid_WithNonBlankCookieAndWhitespaceFormToken_RejectsRequest" {
             testApplication {
                 routing {

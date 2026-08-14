@@ -127,7 +127,7 @@ duplicating the portable rules.
   commits
 - **Tests:** Add or update tests for any non-trivial logic changes. The project
   enforces JaCoCo **95%** line/method/instruction and **90%** branch coverage on
-  the JVM, plus Karma/Istanbul **90/90/90/75** on `:frontend-js`
+  the JVM, plus Karma/Istanbul **90/80/90/75** (statements/functions/lines/branches) on `:frontend-js`
 - **Coroutines:** Any method interacting with `KrakenService` must be a
   `suspend` function and tested with `runTest`. Flow-based APIs (e.g.
   `watchConfigChanges()`) should use

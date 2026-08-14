@@ -107,7 +107,7 @@ the host provides it. If no usable route is exposed, keep the work in the parent
    material/parallel fan-out; do not silently use the parent route or a role-only
    fallback.
 7. For a broad read-only workflow covered by a routed preset, let
-   ARR workflow launcher to print and execute the track/route/effort plan. Use the
+   the ARR workflow launcher print and execute the track/route/effort plan. Use the
    `question` tool or host equivalent when a hard availability, scope, editing,
    or high-risk review decision remains unresolved.
 8. For high-risk or disputed work, choose a stronger host route such as Kilo
@@ -389,7 +389,7 @@ ARR routing occurred. If the command reports `INCOMPLETE` because its catalog
 or evidence is missing, stop and report that state; do not silently fall back
 to native subagents on the parent model.
 If the receipt-managed runtime itself is missing or stale, use the
-`agent-runtime-router-maintenance` or `bootstrap-runtime-router` skill first;
+`agent-runtime-router-maintenance` skill first;
 that is different from a valid runtime reporting incomplete catalog evidence.
 
 For named broad project skills when running under Kilo, use the corresponding

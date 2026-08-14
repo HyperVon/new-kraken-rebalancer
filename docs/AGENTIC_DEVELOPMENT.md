@@ -199,6 +199,16 @@ harnesses.
 | [`skill-reviewer`](../.agents/skills/skill-reviewer/SKILL.md) | Content improvements for the project agent playbook |
 | [`skill-optimizer`](../.agents/skills/skill-optimizer/SKILL.md) | Context-cost measurement and safe compression of agent guidance |
 
+### Receipt-managed skills
+
+| Skill | What it covers |
+| :--- | :--- |
+| [`agent-guidance-maintenance`](../.agents/skills/agent-guidance-maintenance/SKILL.md) | Adopt, audit, refresh, or update Agent Guidance Kit content |
+| [`agent-runtime-router`](../.agents/skills/agent-runtime-router/SKILL.md) | Agent Runtime Router inventory, routing decisions, and dry-run planning |
+| [`agent-runtime-router-maintenance`](../.agents/skills/agent-runtime-router-maintenance/SKILL.md) | Audit, refresh, or repair local Agent Runtime Router installation |
+| [`security-review`](../.agents/skills/security-review/SKILL.md) | Evidence-backed security boundary, secrets, and data-flow audits |
+| [`systematic-debugging`](../.agents/skills/systematic-debugging/SKILL.md) | Root-cause diagnosis for test/build failures and performance regressions |
+
 ### Orchestration and continuous work
 
 | Skill | What it covers |

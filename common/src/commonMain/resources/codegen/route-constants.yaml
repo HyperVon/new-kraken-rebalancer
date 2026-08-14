@@ -14,6 +14,7 @@ Routes:
   API_HEALTH: "/api/health"
   API_READINESS: "/api/readiness"
   API_ORDER_INTENTS: "/api/order-intents"
+  API_ORDER_INTENTS_RESOLVE_TEMPLATE: "/api/order-intents/{id}/resolve"
   API_PAUSE: "/api/pause"
   API_RESUME: "/api/resume"
   STATIC_STYLE_CSS: "/static/style.css"
