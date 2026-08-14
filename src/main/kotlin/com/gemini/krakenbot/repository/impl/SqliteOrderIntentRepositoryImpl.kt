@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.OrderIntentRepository
@@ -191,13 +192,17 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 .orderBy(TradeTable.id, SortOrder.ASC)
                 .limit(2)
                 .map { it[TradeTable.id] }
-            check(candidateIds.size <= 1) {
-                "Cannot reconcile order intent ${intent.id}: multiple local trade candidates exist."
+            if (candidateIds.size > 1) {
+                throw OrderIntentReconciliationException(
+                    "Cannot reconcile order intent ${intent.id}: multiple local trade candidates exist.",
+                )
             }
             candidateIds.singleOrNull()
         }
         if (localTradeId == null) {
-            error("Cannot reconcile order intent ${intent.id}: no matching local trade exists.")
+            throw OrderIntentReconciliationException(
+                "Cannot reconcile order intent ${intent.id}: no matching local trade exists.",
+            )
         }
         // localTradeId is the durable journal link. Older rows can lack a client order ID or
         // submission state after migration, so only require immutable trade attributes here.
@@ -209,7 +214,9 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 linkedTradeIdentity
             }
             if (deletedRows != 1) {
-                error("Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.")
+                throw OrderIntentReconciliationException(
+                    "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.",
+                )
             }
             return
         }
@@ -229,8 +236,10 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 -> null
             }
         }
-        check(updatedRows == 1) {
-            "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing."
+        if (updatedRows != 1) {
+            throw OrderIntentReconciliationException(
+                "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.",
+            )
         }
     }
 
@@ -275,8 +284,10 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                     expectedPriceIdentity
             }.limit(2)
             .map { it[TradeTable.id] }
-        check(unkeyedCandidates.size <= 1) {
-            "Cannot reconcile order intent ${intent.id}: multiple unkeyed settled API fills match."
+        if (unkeyedCandidates.size > 1) {
+            throw OrderIntentReconciliationException(
+                "Cannot reconcile order intent ${intent.id}: multiple unkeyed settled API fills match.",
+            )
         }
         return unkeyedCandidates.size == 1
     }

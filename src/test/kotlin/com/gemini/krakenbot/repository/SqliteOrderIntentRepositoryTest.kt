@@ -423,6 +423,78 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
+        "manual confirmation does not match legacy API fills outside economics tolerances" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.54229657"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.62694000"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                val outOfToleranceFills = listOf(
+                    intent.toPendingTrade().copy(
+                        timestamp = intent.createdAt.plusMillis(500),
+                        success = true,
+                        errorMessage = null,
+                        usdAmount = BigDecimal("58.00"),
+                        price = BigDecimal("8.62919000"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = null,
+                        tradeId = null,
+                        clientOrderId = null,
+                        submissionState = null,
+                    ),
+                    intent.toPendingTrade().copy(
+                        timestamp = intent.createdAt.plusMillis(501),
+                        success = true,
+                        errorMessage = null,
+                        usdAmount = BigDecimal("56.45"),
+                        price = BigDecimal("8.80000000"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = null,
+                        tradeId = null,
+                        clientOrderId = null,
+                        submissionState = null,
+                    ),
+                )
+                for (trade in outOfToleranceFills) {
+                    tradeRepository.saveTrade(trade)
+                }
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified settled Kraken order O-OUTSIDE-TOLERANCE",
+                    orderTxid = "O-OUTSIDE-TOLERANCE",
+                )
+
+                service.countUnresolvedIntents() shouldBe 0L
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.count { it.source == TradeSource.API_FILL } shouldBe 2
+                trades.single { it.id == localTradeId }.also { trade ->
+                    trade.source shouldBe TradeSource.LOCAL_ESTIMATE
+                    trade.success shouldBe true
+                    trade.orderTxid shouldBe "O-OUTSIDE-TOLERANCE"
+                }
+            }
+        }
+
         "manual confirmation fails closed for multiple matching legacy API fills without identifiers" {
             runTest {
                 val tradeRepository = SqliteTradeRepositoryImpl(database)

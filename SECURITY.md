@@ -213,11 +213,16 @@ silence or from the application's provisional local estimate.
 Some historical `API_FILL` rows may predate persistence of Kraken's order and
 trade identifiers. During a manually confirmed resolution, the application
 accepts such a row only when exactly one unkeyed API fill matches the intent's
-pair, symbol, side, volume, 10-second timestamp window, 1% USD tolerance, and,
-when available, 1% expected-price tolerance. Multiple candidates return HTTP
-`409` and leave the intent unresolved for further investigation.
+pair, symbol, side, volume, and a timestamp within ±10 seconds of the intent,
+plus 1% USD tolerance and, when available, 1% expected-price tolerance. If the
+unkeyed fallback is evaluated and multiple candidates match, the request
+returns HTTP `409` and leaves the intent unresolved for further
+investigation.
+This manual fallback is deliberately stricter than background sync: every
+listed constraint must pass, and pair aliases or exact-volume overrides do not
+qualify a candidate.
 
-After the request, while the loop is still paused:
+After a successful resolution response, while the loop is still paused:
 
 1. Re-fetch `GET /api/order-intents`; the resolved ID must no longer appear.
 2. Check `GET /api/health`; `unresolvedOrderIntents` must decrease. It reaches
