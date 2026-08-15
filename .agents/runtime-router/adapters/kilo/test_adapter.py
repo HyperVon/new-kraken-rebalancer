@@ -337,6 +337,8 @@ class KrakenKiloAdapterTests(unittest.TestCase):
 
     def test_receipt_runner_exposes_free_only_workflow_launcher(self) -> None:
         runner = ROOT / ".agents" / ".agent-runtime-router" / "run.py"
+        if not runner.is_file():
+            self.skipTest("ARR harness not installed (run.py missing)")
         launcher = ADAPTER_DIR / "route_subagents.py"
         result = subprocess.run(
             [sys.executable, str(runner), "--python", str(launcher), "--help"],
@@ -349,6 +351,8 @@ class KrakenKiloAdapterTests(unittest.TestCase):
 
     def test_evidence_preparation_requires_a_separate_explicit_approval(self) -> None:
         runner = ROOT / ".agents" / ".agent-runtime-router" / "run.py"
+        if not runner.is_file():
+            self.skipTest("ARR harness not installed (run.py missing)")
         single = subprocess.run(
             [
                 sys.executable,
