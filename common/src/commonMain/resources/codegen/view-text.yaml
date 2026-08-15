@@ -84,6 +84,7 @@ ViewText:
   ACTION_FAILED_PREFIX: "FAILED "
   ACTION_SKIPPING_DUST_PREFIX: "Skipping dust "
   ACTION_FOR_SUFFIX: " for "
+  ACTION_NO_COUNTERBALANCING_ASSETS: "Fiat correction: no counter-balancing candidates"
   # Table headers
   HEADER_ASSET: "Asset"
   HEADER_PRICE: "Price"

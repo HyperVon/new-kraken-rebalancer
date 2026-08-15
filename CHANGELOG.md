@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.2] - 2026-08-15
+
+### Changed
+
+- **Continuous Improvement Cycle 31**:
+  - **Action Log Formatting Standardization**: Added `ACTION_NO_COUNTERBALANCING_ASSETS` to `:common` `ViewText` catalog and `ActionLogFormatter.formatNoCounterBalancingAssets()`, delegating `RebalanceEventFormatter.format(NoCounterBalancingAssets)` to central formatting.
+  - **Exposed Query Tautology Cleanup**: Removed dummy SQL tautology `TradeTable.id eq TradeTable.id` in `SqliteOrderIntentRepositoryImpl` by conditionally chaining predicates in `updateLocalTrade` and `findSettledLegacyTradeMatch`.
+  - **Settlement Logic Documentation**: Added comprehensive KDoc to `OrderSettleHelper.settleUsdAfterSells` detailing the 4-tier settlement fallback hierarchy and balance peek / projected cash safety caps.
+  - **CSS Tokenization & Selectors**: Replaced raw button selectors and box-shadow calls in `FormStyles.kt`, `HistoryToolbarStyles.kt`, and `NavigationStyles.kt` with `CssClass.Button` constants and `boxShadowRaw`.
+  - **Frontend JS Formatting & Precision**: Centralized full timestamp and count formatting in `HistoryFormatting.kt` (`formatFullTradeTime`, `formatIntegerCount`) and standardized comparison delta percentage precision on `PrecisionConstants.SCALE_USD`.
+  - **Documentation & Project Tree Sync**: Added `ARR_KILO_ROUTER.md` to `README.md` project tree, aligned `OrderResult` and `StringConstantSchemas` subproject package trees, updated `docs/FLOWS.md` settle helper diagrams, and synchronized Karma test threshold documentation across agent skills.
+
 ## [6.17.1] - 2026-08-15
 
 ### Changed

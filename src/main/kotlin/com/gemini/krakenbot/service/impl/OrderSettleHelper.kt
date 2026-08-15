@@ -33,10 +33,19 @@ internal object OrderSettleHelper {
     private const val MAX_FILL_HISTORY_PAGES = 5
 
     /**
-     * Prefer fill-confirmed sell proceeds (trade history matched by order txid). When no txids
-     * are available (tests / backends that omit them), fall back to the balance-poll heuristic.
-     * When fill confirmation succeeds and a positive balance is already visible, take the min so
-     * history that leads spendable cash cannot inflate the buy budget.
+     * Reconciles available USD cash after executing one or more sell orders.
+     *
+     * ### Settlement Hierarchy:
+     * 1. **Primary Tier (Fill-Confirmed Proceeds)**: Polls Kraken `TradesHistory` matching [sellOrderTxids]
+     *    and sums confirmed net proceeds (`openingUsd + sum(volume * price - fee)`).
+     * 2. **Safety Cap 1 (Spendable Balance Peek)**: When fill confirmation succeeds, peeks at live balances
+     *    and caps the settled cash to `min(fillConfirmed, balancePeek)`. This ensures that fills in trade history
+     *    that have not yet settled into spendable ledger balance cannot cause downstream buys to fail for insufficient funds.
+     * 3. **Safety Cap 2 (Projected Cash Cap)**: If the spendable balance peek encounters a transient API error,
+     *    caps the confirmed proceeds to `min(fillConfirmed, projectedCash)` as a defensive safety upper bound.
+     * 4. **Fallback Tier (Balance-Polling Heuristic)**: When [sellOrderTxids] is empty (e.g. mock/emulator paths
+     *    omitting txids) or fill confirmation yields zero positive cash, polls live balances up to
+     *    [MAX_REFRESH_ATTEMPTS] with exponential backoff until observed cash is >= 95% of [projectedCash].
      */
     suspend fun settleUsdAfterSells(
         backend: KrakenService,

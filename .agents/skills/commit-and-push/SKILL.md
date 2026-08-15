@@ -66,7 +66,7 @@ credential, runtime state, or unrelated user change is included. Do not use a
 destructive cleanup command to make the worktree appear clean.
 
 Coverage expectations: JVM JaCoCo 95% line/method/instruction, 90% branch;
-JS Karma 90% statements/functions/lines, 75% branches.
+JS Karma 90% statements/lines, 80% functions, 75% branches.
 
 ## Step 3: Commit
 

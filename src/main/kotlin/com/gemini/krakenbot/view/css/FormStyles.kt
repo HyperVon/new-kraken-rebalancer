@@ -81,7 +81,7 @@ object FormStyles {
             color = Color.inherit
         }
 
-        ".btn-primary" {
+        CssClass.Button.Primary.querySelector {
             background =
                 "linear-gradient(135deg, ${CssTheme.colorBlueGradientStart.value} 0%, " +
                 "${CssTheme.colorBlueDeep.value} 45%, ${CssTheme.colorBlueHover.value} 100%)"
@@ -89,36 +89,35 @@ object FormStyles {
             boxShadowRaw(CssTheme.shadowBtnPrimary)
         }
 
-        ".btn-primary:hover" {
+        "${CssClass.Button.Primary.querySelector}:hover" {
             background =
                 "linear-gradient(135deg, ${CssTheme.colorBlueAccent.value} 0%, " +
                 "${CssTheme.colorBluePrimary.value} 50%, ${CssTheme.colorBlueHover.value} 100%)"
-            put(
-                "box-shadow",
+            boxShadowRaw(
                 "0 0 22px rgba(59,130,246,0.4), 0 8px 18px rgba(37,99,235,0.35), " +
                     "inset 0 1px 0 rgba(255,255,255,0.22)",
             )
         }
 
-        ".btn-secondary" {
+        CssClass.Button.Secondary.querySelector {
             background = CssTheme.colorGlassSurfaceSubtle.value
             solidBorder(CssTheme.colorBorderInput)
             color = CssTheme.colorMutedLight
         }
 
-        ".btn-secondary:hover" {
+        "${CssClass.Button.Secondary.querySelector}:hover" {
             background = CssTheme.colorGlassSurfaceHover.value
             borderColor = CssTheme.colorBorderInputHover
             color = Color.white
         }
 
-        ".btn-danger" {
+        CssClass.Button.Danger.querySelector {
             background = CssTheme.colorDangerBgSubtle.value
             solidBorder(CssTheme.colorDangerBorder)
             color = CssTheme.colorDanger
         }
 
-        ".btn-danger:hover" {
+        "${CssClass.Button.Danger.querySelector}:hover" {
             background = CssTheme.colorDangerBgHover.value
             borderColor = CssTheme.colorDanger
         }
@@ -283,10 +282,7 @@ object FormStyles {
             padding = Padding(0.5.rem, 0.75.rem)
             borderRadius = CssTheme.radiusLg
             solidBorder(CssTheme.colorSurface2Border)
-            put(
-                "box-shadow",
-                "0 4px 12px -4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(186,220,255,0.08)",
-            )
+            boxShadowRaw("0 4px 12px -4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(186,220,255,0.08)")
         }
 
         ".${CssClass.Form.AllocationEditSymbol}" {
@@ -412,8 +408,7 @@ object FormStyles {
                 "linear-gradient(165deg, rgba(16,185,129,0.16) 0%, rgba(16,185,129,0.05) 28%, " +
                 "rgba(18,28,48,0.92) 100%)"
             borderColor = CssTheme.colorSuccessBorder
-            put(
-                "box-shadow",
+            boxShadowRaw(
                 "0 8px 22px rgba(0,0,0,0.5), 0 0 22px rgba(16,185,129,0.12), " +
                     "inset 0 1px 0 rgba(147,197,253,0.14)",
             )

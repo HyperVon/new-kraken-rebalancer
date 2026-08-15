@@ -18,6 +18,8 @@ object ActionLogFormatter {
             "${ViewText.ACTION_DISTRIBUTING_FIAT_MIDDLE}$candidateCount${ViewText.ACTION_CANDIDATES_SUFFIX}"
     }
 
+    fun formatNoCounterBalancingAssets(): String = ViewText.ACTION_NO_COUNTERBALANCING_ASSETS
+
     fun formatOrderExecution(
         side: OrderSide,
         symbol: String,

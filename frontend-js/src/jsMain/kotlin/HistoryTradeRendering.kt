@@ -48,7 +48,7 @@ private fun renderTradeRow(t: TradeRecord): HTMLTableRowElement {
     tr.className = (CssClass.Table.Hoverable + CssClass.History.TradeCard).toString()
 
     val time = formatCompactTradeTime(t.timestamp)
-    val fullTime = Date(t.timestamp).asDynamic().toLocaleString(EN_US).toString()
+    val fullTime = formatFullTradeTime(t.timestamp)
     val side = t.side.uppercase()
     val sideClass =
         when (side) {
@@ -204,7 +204,7 @@ internal fun updateStats(stats: HistoryStats) {
     if (ath != null) ath.textContent = formatUSD(dynamicNumber(stats.allTimeHigh) ?: 0.0)
     if (totalTrades != null) {
         val count = stats.totalTradesExecuted.toDouble()
-        totalTrades.textContent = count.asDynamic().toLocaleString()
+        totalTrades.textContent = formatIntegerCount(count)
     }
     if (totalVolume != null) {
         totalVolume.textContent =

@@ -35,7 +35,8 @@ flowchart TB
 
     subgraph Core["🔄 Core Application Logic"]
         PM["PortfolioManagerImpl\nrunLoop()"]
-        OE["OrderExecutorImpl\nsettleUsdAfterSells()"]
+        OE["OrderExecutorImpl\n(delegates to OrderSettleHelper)"]
+        OSH["OrderSettleHelper\nsettleUsdAfterSells()"]
     end
 
     subgraph Services["📦 Services"]
@@ -325,13 +326,15 @@ abort buys if neither path confirms positive USD.
 ```mermaid
 sequenceDiagram
     participant OE as OrderExecutorImpl
+    participant OSH as OrderSettleHelper
     participant Fill as pollFillConfirmedUsd() [cold]
     participant Hist as getTradeHistory
     participant Bal as getBalances
 
     note over OE: Only when executedSells and not dryRun
     alt "sell orderTxids present"
-        OE->>Fill: settleUsdAfterSells → pollFillConfirmedUsd → .last()
+        OE->>OSH: settleUsdAfterSells(backend, openingUsd, projectedCash, txids)
+        OSH->>Fill: pollFillConfirmedUsd → .last()
         loop "Up to 3 attempts (250ms doubling)"
             Fill->>Fill: delay(backoffMs)
             Fill->>Hist: pages by count or page-size fallback, max 5

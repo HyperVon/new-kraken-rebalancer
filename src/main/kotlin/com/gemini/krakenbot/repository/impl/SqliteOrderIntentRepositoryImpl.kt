@@ -164,7 +164,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         val effectiveOrderTxid = orderTxid ?: intent.orderTxid
         val clientOrderIdentity = when {
             intent.clientOrderId != null -> TradeTable.clientOrderId eq intent.clientOrderId
-            intent.clientOrderIdAmbiguous -> TradeTable.id eq TradeTable.id
+            intent.clientOrderIdAmbiguous -> null
             else -> TradeTable.clientOrderId.isNull()
         }
         val localTradeAttributes =
@@ -177,8 +177,8 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 (TradeTable.dryRun eq false) and
                 ((TradeTable.tradeSource eq TradeSource.LOCAL_ESTIMATE.name) or TradeTable.tradeSource.isNull()) and
                 (TradeTable.success eq false)
-        val strictCandidateIdentity = clientOrderIdentity and
-            localTradeAttributes and
+        val candidateBaseCondition = clientOrderIdentity?.let { it and localTradeAttributes } ?: localTradeAttributes
+        val strictCandidateIdentity = candidateBaseCondition and
             (
                 TradeTable.submissionState inList listOf(
                     OrderIntentState.PENDING.name,
@@ -293,26 +293,27 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
             val priceTolerance = expectedPrice.abs().multiply(LEGACY_API_FILL_RELATIVE_TOLERANCE)
             (TradeTable.price greaterEq expectedPrice.subtract(priceTolerance)) and
                 (TradeTable.price lessEq expectedPrice.add(priceTolerance))
-        } ?: (TradeTable.id eq TradeTable.id)
+        }
+        val unkeyedBaseCondition =
+            settledFillIdentity and
+                TradeTable.orderTxid.isNull() and
+                TradeTable.tradeId.isNull() and
+                (TradeTable.volume eq intent.volume) and
+                (
+                    TradeTable.timestamp greaterEq
+                        intent.createdAt.toEpochMilli() - LEGACY_API_FILL_MATCH_WINDOW_MILLIS
+                    ) and
+                (
+                    TradeTable.timestamp lessEq
+                        intent.createdAt.toEpochMilli() + LEGACY_API_FILL_MATCH_WINDOW_MILLIS
+                    ) and
+                (TradeTable.usdAmount greaterEq intent.usdAmount.subtract(usdTolerance)) and
+                (TradeTable.usdAmount lessEq intent.usdAmount.add(usdTolerance))
+        val unkeyedCondition = expectedPriceIdentity?.let { unkeyedBaseCondition and it } ?: unkeyedBaseCondition
         val unkeyedCandidates = TradeTable
             .select(TradeTable.id)
-            .where {
-                settledFillIdentity and
-                    TradeTable.orderTxid.isNull() and
-                    TradeTable.tradeId.isNull() and
-                    (TradeTable.volume eq intent.volume) and
-                    (
-                        TradeTable.timestamp greaterEq
-                            intent.createdAt.toEpochMilli() - LEGACY_API_FILL_MATCH_WINDOW_MILLIS
-                        ) and
-                    (
-                        TradeTable.timestamp lessEq
-                            intent.createdAt.toEpochMilli() + LEGACY_API_FILL_MATCH_WINDOW_MILLIS
-                        ) and
-                    (TradeTable.usdAmount greaterEq intent.usdAmount.subtract(usdTolerance)) and
-                    (TradeTable.usdAmount lessEq intent.usdAmount.add(usdTolerance)) and
-                    expectedPriceIdentity
-            }.limit(2)
+            .where { unkeyedCondition }
+            .limit(2)
             .map { it[TradeTable.id] }
         if (unkeyedCandidates.size > 1) {
             throw OrderIntentReconciliationException(
