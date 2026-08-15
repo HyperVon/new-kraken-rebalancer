@@ -40,6 +40,15 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
+      # CodeQL's Kotlin extractor currently supports versions below 2.4.20.
+      # Keep the production security patch at 2.4.20-RC and use the latest
+      # supported compiler only for this temporary analysis build.
+      - name: Use CodeQL-supported Kotlin compiler
+        if: matrix.language == 'java-kotlin'
+        run: |
+          grep -q '^kotlin = "2.4.20-RC"$' gradle/libs.versions.toml
+          sed -i 's/^kotlin = "2.4.20-RC"$/kotlin = "2.4.10"/' gradle/libs.versions.toml
+
       - name: Build Kotlin backend
         if: matrix.language == 'java-kotlin'
         run: |
