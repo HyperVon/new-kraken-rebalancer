@@ -7,6 +7,8 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.AnalysisResult
+import com.gemini.krakenbot.domain.PortfolioValues
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -571,6 +573,27 @@ class PortfolioManagerLoopTest : StringSpec() {
                     orderExecutor = orderExecutor,
                 )
                 shouldThrow<IllegalStateException> { pm.resumeLoop() }
+            }
+        }
+
+        "startRebalancingLoop with active worker returns existing job and reports running" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers { awaitCancellation() }
+
+                val job1 = portfolioManager.startRebalancingLoop(this)
+                runCurrent()
+                portfolioManager.isLoopRunning() shouldBe true
+
+                val job2 = portfolioManager.startRebalancingLoop(this)
+                job2 shouldBe job1
+                portfolioManager.isLoopRunning() shouldBe true
+
+                portfolioManager.stopRebalancingLoop()
+                runCurrent()
+                portfolioManager.isLoopRunning() shouldBe false
             }
         }
     }

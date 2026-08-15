@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
-import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.service.OrderIntentService
 import java.io.IOException

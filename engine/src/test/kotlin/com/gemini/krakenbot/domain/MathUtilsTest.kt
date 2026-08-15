@@ -1,4 +1,4 @@
-package com.gemini.krakenbot.service
+package com.gemini.krakenbot.domain
 
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -7,7 +7,7 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.math.RoundingMode
 
-class ServiceUtilsTest : StringSpec() {
+class MathUtilsTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
@@ -29,6 +29,10 @@ class ServiceUtilsTest : StringSpec() {
             val result = safeParseBigDecimal("123.45678", scale = 2, mode = RoundingMode.HALF_UP)
             result.scale() shouldBe 2
             result shouldBeEqualComparingTo BigDecimal("123.46")
+
+            val nullScaled = safeParseBigDecimal(null, scale = 2, default = BigDecimal("5.00"))
+            nullScaled.scale() shouldBe 2
+            nullScaled shouldBeEqualComparingTo BigDecimal("5.00")
         }
 
         "should evaluate relative tolerance correctly" {

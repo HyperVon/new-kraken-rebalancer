@@ -560,6 +560,12 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │       ├── view/util/                     # Generated YAML string catalogs (StringConstantSchemas), Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps, AllocationEditor
 │   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs
 ├── codegen/                                # JVM-only module with KSP processors for API mappers and YAML string catalogs
+├── engine/                                 # Pure Kotlin domain calculation library (:engine)
+│   ├── src/main/kotlin/com/gemini/krakenbot/
+│   │   ├── domain/                         # RebalancerEngine, PortfolioCalculations, TradeCalculator, RebalancePlan, PrecisionConstantsJvm
+│   │   ├── model/                          # Rich domain models: PortfolioSnapshot (AssetSnapshot), TradeRecord, OrderResult
+│   │   └── util/                           # ActionLogFormatter, BalanceKeys, BigDecimalExtensions, MathUtils, RebalanceEventFormatter
+│   └── src/test/kotlin/                    # Pure engine domain calculation unit tests (JaCoCo 95/90 gates)
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
@@ -593,19 +599,17 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── CsrfProtection.kt              # Double-submit protection for settings mutations
 │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
 │   ├── api/                               # Generated history mappers + custom sync-progress response mapping
-│   ├── codegen/                           # @GenerateApiMapper annotations for generated API mappers
-│   ├── domain/                             # Typed RebalancePlan and RebalanceEvent values
-│   ├── model/                             # PortfolioSnapshot, OrderIntent, OrderResult, TradeRecord, LedgerEvent, RewardsOverTime, TradeSource, HistoryStats, RebalancerComparison, PortfolioStats
+│   ├── model/                             # OrderIntent, LedgerEvent, RewardsOverTime, HistoryStats, RebalancerComparison, PortfolioStats
 │   ├── repository/                        # TradeRepository, OrderIntentRepository, LedgerRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
 │   │   └── table/                         # Trade/OrderIntent tables, SchemaMigrationTable, snapshot/stat/history tables
-│   ├── service/                           # Interfaces, OrderIntentService, ServiceUtils, and AssetColorAssigner
+│   ├── service/                           # Interfaces, OrderIntentService, and AssetColorAssigner
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
 │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
-│   │       ├── RebalancerEngine.kt       # Domain rebalance math (no network/DB)
-│   │       ├── PortfolioCalculations.kt  # Shared target/deviation math
 │   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
+│   │       ├── OrderSettleHelper.kt      # Settle proceeds polling, backoff, and pagination
+│   │       ├── RebalanceSessionContext.kt# Immutable per-cycle session context
 │   │       ├── OrderIntentServiceImpl.kt # Durable ambiguous-order lifecycle
 │   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
 │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
@@ -623,13 +627,13 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │           ├── TradeHistoryReconstructionService.kt
 │   │           ├── RebalancerComparisonCalculator.kt # Rebalancer vs Buy & Hold comparison
 │   │           └── SnapshotHistoryCalculator.kt # History reconstruction helpers
-│   ├── util/                              # NetworkUtils, TradeDeduplicator, TradeCalculator, ActionLogFormatter, BigDecimalExtensions, BalanceKeys, PrecisionConstantsJvm
+│   ├── util/                              # NetworkUtils, TradeDeduplicator
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Shell, Grid, Form, History, charts, activity, performance
 │   │   ├── css/                          # CssTheme, CssStyles, ComponentStyles, LayoutStyles, TableStyles, FormStyles, NavigationStyles, MediaQueries
 │   │   └── util/                         # AllocationExtensions, Formatter, HtmlExtensions, HtmlHelpers, Icons, Layouts (shared IDs/Routes live in :common)
-├── src/test/kotlin/                       # JVM unit / E2E / evaluation tests (JaCoCo gates)
+├── src/test/kotlin/                       # JVM integration / E2E / evaluation tests (JaCoCo gates)
 ├── src/main/resources/                    # Static resources
 │   └── static/
 │       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL

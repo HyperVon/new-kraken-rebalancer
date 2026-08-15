@@ -1,4 +1,4 @@
-package com.gemini.krakenbot.service
+package com.gemini.krakenbot.domain
 
 import java.math.BigDecimal
 import java.math.RoundingMode

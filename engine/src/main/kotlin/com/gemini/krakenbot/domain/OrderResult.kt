@@ -1,4 +1,4 @@
-package com.gemini.krakenbot.model
+package com.gemini.krakenbot.domain
 
 import java.math.BigDecimal
 

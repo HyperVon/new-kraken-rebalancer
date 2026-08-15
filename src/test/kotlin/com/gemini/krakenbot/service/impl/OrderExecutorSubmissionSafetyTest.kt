@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntentState
-import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.FakeKrakenService

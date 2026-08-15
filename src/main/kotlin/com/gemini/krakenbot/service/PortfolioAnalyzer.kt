@@ -1,19 +1,17 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.AnalysisResult
+import com.gemini.krakenbot.domain.AssetDeviations
+import com.gemini.krakenbot.domain.AssetPrices
+import com.gemini.krakenbot.domain.AssetValues
+import com.gemini.krakenbot.domain.MutableRebalanceOrders
+import com.gemini.krakenbot.domain.PortfolioValues
+import com.gemini.krakenbot.domain.RawBalances
+import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import java.math.BigDecimal
-
-typealias AssetPrices = Map<String, BigDecimal>
-typealias AssetValues = Map<String, BigDecimal>
-typealias AssetDeviations = Map<String, BigDecimal>
-typealias RebalanceOrders = Map<String, BigDecimal>
-typealias MutableRebalanceOrders = MutableMap<String, BigDecimal>
-
-data class PortfolioValues(val totalValueUSD: BigDecimal, val currentValuesUSD: AssetValues)
-
-data class AnalysisResult(val buyOrders: RebalanceOrders, val sellOrders: RebalanceOrders, val actionLog: List<String>)
 
 interface PortfolioAnalyzer {
     suspend fun fetchBalances(): RawBalances

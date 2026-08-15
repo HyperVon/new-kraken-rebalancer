@@ -1,4 +1,4 @@
-package com.gemini.krakenbot.util
+package com.gemini.krakenbot.domain
 
 import com.gemini.krakenbot.model.OrderSide
 import io.kotest.core.spec.IsolationMode

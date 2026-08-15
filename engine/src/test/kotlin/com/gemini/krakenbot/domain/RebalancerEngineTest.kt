@@ -1,13 +1,13 @@
-package com.gemini.krakenbot.service.impl
+package com.gemini.krakenbot.domain
 
-import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
-import com.gemini.krakenbot.service.PortfolioValues
-import com.gemini.krakenbot.util.ActionLogFormatter
+import com.gemini.krakenbot.util.ALLOCATION_TOLERANCE
+import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
+import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
+import com.gemini.krakenbot.util.HUNDRED
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -24,13 +24,9 @@ class RebalancerEngineTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-        val allocations = listOf(
-            Allocation(Asset.BTC, 50.0),
-            Allocation(Asset.ETH, 30.0),
-            Allocation(Asset.USD, 20.0),
-        )
+        val allocations = EngineTestFixtures.defaultAllocations()
 
-        val settings = TestFixtures.settings(
+        val settings = EngineTestFixtures.settings(
             simulation = true,
             loopDelaySeconds = 60,
             deviationTriggerPercent = 5.0,
@@ -235,6 +231,147 @@ class RebalancerEngineTest : StringSpec() {
             val distribution = events.filterIsInstance<RebalanceEvent.FiatCorrectionDistributed>().single()
             distribution.usdAmount.shouldBeEqualComparingTo(BigDecimal("100.00"))
             distribution.candidateCount shouldBe 2
+        }
+
+        "calculatePortfolioValues returns failure when crypto price is missing or zero" {
+            val balances = mapOf("BTC" to BigDecimal("1.0"), "USD" to BigDecimal("100.00"))
+            val missingPrice = RebalancerEngine.calculatePortfolioValues(
+                balances = balances,
+                prices = emptyMap(),
+                allocations = EngineTestFixtures.defaultAllocations(),
+            )
+            (missingPrice is Result.Failure) shouldBe true
+
+            val zeroPrice = RebalancerEngine.calculatePortfolioValues(
+                balances = balances,
+                prices = mapOf("BTC" to BigDecimal.ZERO, "ETH" to BigDecimal("3000.00")),
+                allocations = EngineTestFixtures.defaultAllocations(),
+            )
+            (zeroPrice is Result.Failure) shouldBe true
+        }
+
+        "calculateCryptoScaleFactor returns ONE when all allocations are USD" {
+            val allUsd = listOf(Allocation(Asset.USD, 100.0))
+            RebalancerEngine.calculateCryptoScaleFactor(BigDecimal("100.00"), allUsd) shouldBe BigDecimal.ONE
+        }
+
+        "distributeFiatCorrection sells overweights on USD withdrawal" {
+            val buyOrders = mutableMapOf<String, BigDecimal>()
+            val sellOrders = mutableMapOf<String, BigDecimal>()
+            val actionLog = mutableListOf<String>()
+            RebalancerEngine.distributeFiatCorrection(
+                usdDev = BigDecimal("-100.00"),
+                allDevs = mapOf(
+                    Asset.USD to BigDecimal("-100.00"),
+                    Asset.BTC to BigDecimal("60.00"),
+                    Asset.ETH to BigDecimal("40.00"),
+                ),
+                buyOrders = buyOrders,
+                sellOrders = sellOrders,
+                actionLog = actionLog,
+            )
+            sellOrders[Asset.BTC]!!.shouldBeEqualComparingTo(BigDecimal("60.00"))
+            sellOrders[Asset.ETH]!!.shouldBeEqualComparingTo(BigDecimal("40.00"))
+            buyOrders.shouldBeEmpty()
+        }
+
+        "BalanceKeys resolves matching keys and aliases" {
+            val balances = mapOf("XXBT" to BigDecimal("1.5"), "ZUSD" to BigDecimal("1000.00"))
+            resolveBalance("BTC", balances).shouldBeEqualComparingTo(BigDecimal("1.5"))
+            resolveBalanceOrNull("BTC", balances)!!.shouldBeEqualComparingTo(BigDecimal("1.5"))
+            resolveBalance("ETH", balances).shouldBeEqualComparingTo(BigDecimal.ZERO)
+            resolveBalanceOrNull("ETH", balances) shouldBe null
+        }
+
+        "PrecisionConstantsJvm values match expectations" {
+            PrecisionConstants.HUNDRED.shouldBeEqualComparingTo(BigDecimal("100"))
+            PrecisionConstants.FEE_RATE_ESTIMATE.shouldBeEqualComparingTo(BigDecimal("0.006"))
+            PrecisionConstants.CASH_RESERVE_FACTOR.shouldBeEqualComparingTo(BigDecimal("0.99"))
+            PrecisionConstants.ALLOCATION_TOLERANCE.shouldBeEqualComparingTo(BigDecimal("0.01"))
+        }
+
+        "calculateDrawdown returns ZERO when totalPortfolioValue >= ath or ath <= 0" {
+            RebalancerEngine.calculateDrawdown(BigDecimal("100.00"), BigDecimal("100.00")) shouldBe BigDecimal.ZERO
+            RebalancerEngine.calculateDrawdown(BigDecimal("110.00"), BigDecimal("100.00")) shouldBe BigDecimal.ZERO
+            RebalancerEngine.calculateDrawdown(BigDecimal("100.00"), BigDecimal.ZERO) shouldBe BigDecimal.ZERO
+            RebalancerEngine.calculateDrawdown(BigDecimal("100.00"), BigDecimal("-10.00")) shouldBe BigDecimal.ZERO
+        }
+
+        "calculateFiatDeployment returns ZERO when fiatMaxDrawdown <= 0 or drawdown <= 0" {
+            RebalancerEngine.calculateFiatDeployment(
+                BigDecimal("10.00"),
+                settings.copy(fiatMaxDrawdown = 0.0),
+            ) shouldBe BigDecimal.ZERO
+            RebalancerEngine.calculateFiatDeployment(
+                BigDecimal("-5.00"),
+                settings.copy(fiatMaxDrawdown = 20.0),
+            ) shouldBe BigDecimal.ZERO
+        }
+
+        "analyzeDeviationsPlan handles crypto sells, USD withdrawal fiat correction, and skips fiat correction" {
+            // Case 1: Crypto overweight -> sellOrders populated
+            val sellPlan = RebalancerEngine.analyzeDeviationsPlan(
+                totalPortfolioValueUSD = BigDecimal("1000.00"),
+                currentValuesUSD = mapOf(
+                    "BTC" to BigDecimal("700.00"),
+                    "ETH" to BigDecimal("200.00"),
+                    "USD" to BigDecimal("100.00"),
+                ),
+                effectiveUsdTarget = BigDecimal("20.00"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                allocations = allocations,
+                settings = settings,
+            )
+            sellPlan.sellOrders.shouldContainKey("BTC")
+
+            // Case 2: USD withdrawal triggers fiat correction when crypto does not trigger
+            val withdrawalPlan = RebalancerEngine.analyzeDeviationsPlan(
+                totalPortfolioValueUSD = BigDecimal("1000.00"),
+                currentValuesUSD = mapOf(
+                    "BTC" to BigDecimal("550.00"),
+                    "ETH" to BigDecimal("350.00"),
+                    "USD" to BigDecimal("100.00"),
+                ),
+                effectiveUsdTarget = BigDecimal("20.00"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                allocations = allocations,
+                settings = settings.copy(deviationTriggerPercent = 18.0),
+            )
+            withdrawalPlan.sellOrders.isNotEmpty() shouldBe true
+
+            // Case 3: USD triggers AND crypto triggers -> fiat correction skipped
+            val bothTriggerPlan = RebalancerEngine.analyzeDeviationsPlan(
+                totalPortfolioValueUSD = BigDecimal("1000.00"),
+                currentValuesUSD = mapOf(
+                    "BTC" to BigDecimal("700.00"),
+                    "ETH" to BigDecimal("200.00"),
+                    "USD" to BigDecimal("100.00"),
+                ),
+                effectiveUsdTarget = BigDecimal("20.00"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                allocations = allocations,
+                settings = settings.copy(deviationTriggerPercent = 5.0),
+            )
+            bothTriggerPlan.events.filterIsInstance<RebalanceEvent.FiatCorrectionEnforced>().isEmpty() shouldBe true
+        }
+
+        "distributeFiatCorrectionPlan emits NoCounterBalancingAssets when totalCounterDev is zero" {
+            val events = mutableListOf<RebalanceEvent>()
+            RebalancerEngine.distributeFiatCorrectionPlan(
+                usdDev = BigDecimal("100.00"),
+                allDevs = mapOf(Asset.USD to BigDecimal("100.00"), Asset.BTC to BigDecimal("0.00")),
+                buyOrders = mutableMapOf(),
+                sellOrders = mutableMapOf(),
+                events = events,
+            )
+            events.filterIsInstance<RebalanceEvent.NoCounterBalancingAssets>().isNotEmpty() shouldBe true
+        }
+
+        "MathUtils isWithinRelativeTolerance edge cases" {
+            isWithinRelativeTolerance(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal("0.01")) shouldBe true
+            isWithinRelativeTolerance(BigDecimal.ZERO, BigDecimal.TEN, BigDecimal("0.01")) shouldBe false
+            isWithinRelativeTolerance(BigDecimal("100.00"), BigDecimal("100.50"), BigDecimal("0.01")) shouldBe true
+            isWithinRelativeTolerance(BigDecimal("100.00"), BigDecimal("105.00"), BigDecimal("0.01")) shouldBe false
         }
     }
 }

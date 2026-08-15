@@ -1,16 +1,16 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.domain.RawBalances
+import com.gemini.krakenbot.domain.toPercentScale
+import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.util.toPercentScale
-import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart

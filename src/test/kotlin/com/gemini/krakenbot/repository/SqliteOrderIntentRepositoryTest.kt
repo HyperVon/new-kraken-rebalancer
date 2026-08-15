@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
-import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource

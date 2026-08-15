@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.domain.TradeCalculator
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
@@ -15,7 +16,6 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import com.gemini.krakenbot.service.withExecutionSession
-import com.gemini.krakenbot.util.TradeCalculator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex

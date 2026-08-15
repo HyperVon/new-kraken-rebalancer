@@ -1,8 +1,13 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.domain.OrderResult
+import com.gemini.krakenbot.domain.PortfolioCalculations
+import com.gemini.krakenbot.domain.RawBalances
+import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.domain.toCryptoScale
+import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.model.TradeRecord
@@ -10,11 +15,7 @@ import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.RawBalances
-import com.gemini.krakenbot.service.RawPrices
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.util.toCryptoScale
-import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory

@@ -1,4 +1,4 @@
-package com.gemini.krakenbot.util
+package com.gemini.krakenbot.domain
 
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec

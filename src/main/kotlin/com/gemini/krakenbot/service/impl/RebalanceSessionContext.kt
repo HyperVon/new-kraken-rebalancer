@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.service.AssetPrices
+import com.gemini.krakenbot.domain.AssetPrices
 import com.gemini.krakenbot.service.KrakenService
 
 /**

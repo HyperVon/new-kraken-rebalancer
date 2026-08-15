@@ -1,8 +1,8 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
-import com.gemini.krakenbot.model.OrderResult
 
 interface OrderIntentService {
     suspend fun savePending(intent: OrderIntent): Int

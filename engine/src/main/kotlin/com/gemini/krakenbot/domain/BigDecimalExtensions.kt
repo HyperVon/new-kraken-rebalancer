@@ -1,5 +1,6 @@
-package com.gemini.krakenbot.util
+package com.gemini.krakenbot.domain
 
+import com.gemini.krakenbot.util.PrecisionConstants
 import java.math.BigDecimal
 import java.math.RoundingMode
 

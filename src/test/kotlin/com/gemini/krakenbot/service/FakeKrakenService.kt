@@ -1,7 +1,9 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.domain.OrderResult
+import com.gemini.krakenbot.domain.RawBalances
+import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import java.math.BigDecimal

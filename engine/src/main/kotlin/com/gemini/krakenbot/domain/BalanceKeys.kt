@@ -1,7 +1,6 @@
-package com.gemini.krakenbot.util
+package com.gemini.krakenbot.domain
 
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.service.RawBalances
 import java.math.BigDecimal
 
 /** Resolves a symbol against Kraken-style balance map keys (exact, uppercased, X/Z prefixes). Returns null if no key is present. */

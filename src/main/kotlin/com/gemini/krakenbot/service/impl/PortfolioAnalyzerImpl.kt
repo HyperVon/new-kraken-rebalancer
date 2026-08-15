@@ -1,26 +1,28 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.AnalysisResult
+import com.gemini.krakenbot.domain.AssetDeviations
+import com.gemini.krakenbot.domain.AssetPrices
+import com.gemini.krakenbot.domain.AssetValues
+import com.gemini.krakenbot.domain.MutableRebalanceOrders
+import com.gemini.krakenbot.domain.PortfolioCalculations
+import com.gemini.krakenbot.domain.PortfolioValues
+import com.gemini.krakenbot.domain.RawBalances
+import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.domain.RebalancerEngine
+import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.service.AnalysisResult
-import com.gemini.krakenbot.service.AssetDeviations
-import com.gemini.krakenbot.service.AssetPrices
-import com.gemini.krakenbot.service.AssetValues
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.MutableRebalanceOrders
 import com.gemini.krakenbot.service.PortfolioAnalyzer
-import com.gemini.krakenbot.service.PortfolioValues
-import com.gemini.krakenbot.service.RawBalances
-import com.gemini.krakenbot.service.RawPrices
-import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.time.Instant
-import com.gemini.krakenbot.util.resolveBalance as resolveBalanceFromKeys
+import com.gemini.krakenbot.domain.resolveBalance as resolveBalanceFromKeys
 
 class PortfolioAnalyzerImpl(
     private val krakenService: KrakenService,
