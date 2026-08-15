@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.55] - 2026-08-15
+
+### Added
+
+- **UI Operator Live Order Intent Recovery (ARCH-04 / PROD-04)**: Add an actionable recovery banner and CSRF-protected HTMX resolution form to the live Dashboard (`DashboardFragmentComponent.kt`, `DashboardView.kt`, `DashboardController.kt`). Allows operators to directly select `CONFIRMED` or `REJECTED`, record exchange evidence and optional order txids, and resolve ambiguous `UNCERTAIN` live submissions directly from the UI without manual terminal curl scripts.
+- **`RebalanceSessionContext` Value Object (ARCH-03)**: Introduce `RebalanceSessionContext.kt` to encapsulate per-cycle state (`cycleId`, `backend`, `prices`, `settings`, `actionLog`, `cycleTradeIds`) into an immutable context object, simplifying `OrderExecutorImpl` internal signatures.
+
+### Changed
+
+- **Settle Helper Decomposition**: Extract USD settle backoff, fill-confirmation polling, and pagination logic from `OrderExecutorImpl.kt` into dedicated `OrderSettleHelper.kt`.
+- **JaCoCo 90% Branch Coverage Gate Restored**: Eliminate unreachable synthetic bytecode branches from default arguments in `NetworkUtils.kt`, raising total project branch coverage to 90.01% and restoring the strict `0.90` minimum branch gate in `build.gradle.kts` and `README.md`.
+- **`PrecisionConstantsJvm` Optimization**: Cache static `BigDecimal` backing instances (`CACHED_CASH_RESERVE_FACTOR`, `CACHED_FEE_RATE_ESTIMATE`, etc.) to eliminate repeated heap allocations on property access.
+- **`OrderSide` Enum Safety**: Replace raw `"BUY"`/`"SELL"` string branches with canonical `OrderSide.isBuy()` and `OrderSide.isSell()` in `RebalancerComparisonCalculator.kt` and `TradeHistorySnapshotStore.kt`.
+
 ## [6.16.54] - 2026-08-15
 
 ### Fixed

@@ -808,8 +808,8 @@ CI (`.github/workflows/ci.yml`) runs the equivalent coverage gate explicitly:
 The backend enforces **strict line, branch, method, and instruction coverage**
 via JaCoCo: **95% instruction, 90% branch, 95% line, and 95% method**.
 Exclusions are narrow: framework bootstrap (`DatabaseConfig`, `KtorConfig`),
-Exposed table declarations, Kraken API
-client interfaces/impl, generated HTML-extension lambdas, CSS DSL, and
+Exposed table declarations, pure Kraken API
+client interfaces (`KrakenService*` — `KrakenServiceImpl` remains tested), generated HTML-extension lambdas, CSS DSL, and
 `KrakenRebalancerApplication`.
 
 To run JVM tests only:

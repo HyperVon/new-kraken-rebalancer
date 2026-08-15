@@ -195,10 +195,7 @@ tasks.jacocoTestCoverageVerification {
             limit {
                 counter = "BRANCH"
                 value = "COVEREDRATIO"
-                // Per-type ledger cursors + FormatSpec/allowlist add branches that are covered via deterministic unit tests
-                // (LedgersSyncServiceTest per-type, NetworkUtilsTest allowlist) but leave the env-gated allowAll
-                // path (System.getenv) uncovered in CI without host env — keep at 0.89 until that path is exercised via integration.
-                minimum = "0.89".toBigDecimal()
+                minimum = "0.90".toBigDecimal()
             }
             limit {
                 counter = "LINE"

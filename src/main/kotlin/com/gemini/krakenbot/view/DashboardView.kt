@@ -3,6 +3,7 @@ package com.gemini.krakenbot.view
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -72,7 +73,9 @@ class DashboardView(
         history: List<PortfolioSnapshot>,
         allocations: List<Allocation> = emptyList(),
         delta24h: BigDecimal? = null,
+        unresolvedIntents: List<OrderIntent> = emptyList(),
+        csrfToken: String? = null,
     ) {
-        fragmentComponent.render(latest, history, allocations, delta24h)
+        fragmentComponent.render(latest, history, allocations, delta24h, unresolvedIntents, csrfToken)
     }
 }

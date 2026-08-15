@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RebalancerComparisonPoint
@@ -251,14 +252,14 @@ object RebalancerComparisonCalculator {
         val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
         val assetBalance = balances.getValue(symbol)
 
-        when (side) {
-            "BUY" -> {
+        when {
+            OrderSide.isBuy(side) -> {
                 balances[symbol] = assetBalance.add(trade.volume)
                 val usdCost = trade.usdAmount.add(trade.fee)
                 balances[Asset.USD] = usdBalance.subtract(usdCost)
             }
 
-            "SELL" -> {
+            OrderSide.isSell(side) -> {
                 balances[symbol] = assetBalance.subtract(trade.volume)
                 val usdProceeds = trade.usdAmount.subtract(trade.fee)
                 balances[Asset.USD] = usdBalance.add(usdProceeds)

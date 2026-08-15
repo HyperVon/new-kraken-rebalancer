@@ -106,7 +106,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Domain rebalance math | `RebalancerEngine` (no network/DB) |
 | Typed planning events | `domain/RebalancePlan` + presentation action-log adapter |
 | Shared math | `PortfolioCalculations` |
-| Brawn (execution) | `OrderExecutorImpl` (sell/buy sequencing + durable live submission journal) |
+| Brawn (execution) | `OrderExecutorImpl` (sell/buy sequencing + durable live submission journal) + `OrderSettleHelper` + `RebalanceSessionContext` |
 | Live-order recovery | `OrderIntentService` → `SqliteOrderIntentRepositoryImpl` / `order_intents` |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |

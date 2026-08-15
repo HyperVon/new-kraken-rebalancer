@@ -1,9 +1,12 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.util.StreamStatus
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmxAttrs
@@ -11,8 +14,19 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.span
+import kotlinx.html.ButtonType
 import kotlinx.html.DIV
+import kotlinx.html.FormMethod
+import kotlinx.html.InputType
+import kotlinx.html.button
+import kotlinx.html.form
+import kotlinx.html.h3
 import kotlinx.html.id
+import kotlinx.html.input
+import kotlinx.html.option
+import kotlinx.html.p
+import kotlinx.html.select
+import kotlinx.html.strong
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
@@ -34,6 +48,8 @@ class DashboardFragmentComponent(
         history: List<PortfolioSnapshot>,
         allocations: List<Allocation> = emptyList(),
         delta24h: BigDecimal? = null,
+        unresolvedIntents: List<OrderIntent> = emptyList(),
+        csrfToken: String? = null,
     ) {
         val timeSinceUpdate =
             0L.coerceAtLeast(
@@ -44,6 +60,11 @@ class DashboardFragmentComponent(
         // Mode plate stays in the shell; this OOB swap only refreshes STREAM/STALE
         // (SSE freshness — StatusCard.Live here means healthy stream, not live trading).
         renderStreamStatus(latest, timeSinceUpdate, isStale)
+
+        if (unresolvedIntents.isNotEmpty()) {
+            renderUnresolvedIntentsBanner(unresolvedIntents, csrfToken)
+        }
+
         overviewGridComponent.render(latest, history, delta24h)
 
         div.div(CssClass.Layout.DetailGrid) {
@@ -52,6 +73,66 @@ class DashboardFragmentComponent(
         }
 
         recentActivityComponent.render(history)
+    }
+
+    context(div: DIV)
+    private fun renderUnresolvedIntentsBanner(intents: List<OrderIntent>, csrfToken: String?) {
+        div.div(CssClass.Utility.ErrorBanner) {
+            h3 {
+                +"⚠️ Action Required: Unresolved Live Order Intent (${intents.size})"
+            }
+            p {
+                +"Live trading is paused because a Kraken order submission had an ambiguous outcome. "
+                +"Inspect the exchange to verify whether the order filled or failed, then resolve the intent below."
+            }
+            div {
+                for (intent in intents) {
+                    val intentId = intent.id ?: continue
+                    div {
+                        p {
+                            strong { +"Intent #$intentId: " }
+                            +"${intent.side} ${intent.volume} ${intent.symbol} "
+                            +"(~$${intent.usdAmount}) • State: ${intent.state}"
+                        }
+                        if (!intent.errorMessage.isNullOrBlank()) {
+                            p { +"Error: ${intent.errorMessage}" }
+                        }
+                        form(action = "/api/order-intents/$intentId/resolve", method = FormMethod.post) {
+                            attributes[HtmxAttrs.HX_POST] = "/api/order-intents/$intentId/resolve"
+                            attributes[HtmxAttrs.HX_TARGET] = "body"
+                            if (csrfToken != null) {
+                                input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) {
+                                    value = csrfToken
+                                }
+                            }
+                            select(classes = CssClass.Form.InputGlass.value) {
+                                name = FormFields.ORDER_INTENT_STATE
+                                option {
+                                    value = OrderIntentState.CONFIRMED.name
+                                    +"CONFIRMED (Order filled on exchange)"
+                                }
+                                option {
+                                    value = OrderIntentState.REJECTED.name
+                                    +"REJECTED (Order failed / not on exchange)"
+                                }
+                            }
+                            input(type = InputType.text, classes = CssClass.Form.InputGlass.value) {
+                                name = FormFields.ORDER_INTENT_ORDER_TXID
+                                placeholder = "Kraken Order TxID (optional)"
+                            }
+                            input(type = InputType.text, classes = CssClass.Form.InputGlass.value) {
+                                name = FormFields.ORDER_INTENT_EVIDENCE
+                                placeholder = "Resolution Evidence (e.g. Verified on Kraken Web UI)"
+                                required = true
+                            }
+                            button(type = ButtonType.submit, classes = CssClass.Button.Primary.value) {
+                                +"Resolve Intent #$intentId"
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     context(div: DIV)

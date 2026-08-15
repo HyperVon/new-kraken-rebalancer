@@ -79,7 +79,7 @@ section owns the **cold Flow poll implementation**.
   `getLedgersPaginated()`; invoked from `syncLedgersFromKraken()`). It uses the
   same 300s throttle/session boundary, but inserts pages under a unique ledger
   identity and persists separate seed progress and watermark metadata.
-- `settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
+- `OrderSettleHelper.settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
   - **Primary:** `pollFillConfirmedUsd()` → `sumMatchedSellProceeds()` (history
     matched by sell `orderTxid`, **net of fee**, up to 5×50 pages) → balance peek
     `min(fill, balance)` when spendable USD is visible, else
