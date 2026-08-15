@@ -5,11 +5,11 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -529,6 +529,57 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "/api/order-intents/42/resolve"
             html shouldContain "/api/order-intents/43/resolve"
             html shouldContain testCsrfToken
+        }
+
+        "renderRecentActivity formats buy, sell, info, and relative time ranges" {
+            val now = Instant.now()
+            val snapJustNow = PortfolioSnapshot(
+                timestamp = now.minusSeconds(10),
+                totalValueUSD = BigDecimal("10000.00"),
+                assets = emptyMap(),
+                actions = listOf(
+                    "BUY BTC Volume: 0.1 Cost: $5000.00",
+                    "[DRY RUN] SELL ETH Volume: 2.0 Value: $6000.00",
+                    "BUY BTC malformed format",
+                    "BUY BTC Volume: invalid Cost: $100.00",
+                    "Deviation: SOL +12.5%",
+                ),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal("20.00"),
+            )
+            val snap5m = snapJustNow.copy(
+                timestamp = now.minusSeconds(300),
+                actions = listOf("USD Deviation Triggered. Enforcing fiat correction."),
+            )
+            val snap2h = snapJustNow.copy(
+                timestamp = now.minusSeconds(7200),
+                actions = listOf("Distributing Fiat Correction ($500.00) among 2 candidates."),
+            )
+            val snap3d = snapJustNow.copy(
+                timestamp = now.minusSeconds(259200),
+                actions = listOf("Arbitrary informational message"),
+            )
+
+            val html = createHTML().div {
+                view.renderDashboardFragment(
+                    latest = snapJustNow,
+                    history = listOf(snapJustNow, snap5m, snap2h, snap3d),
+                    unresolvedIntents = emptyList(),
+                    csrfToken = testCsrfToken,
+                )
+            }
+
+            html shouldContain "BUY BTC · 0.1 · $5,000.00"
+            html shouldContain "SELL ETH · 2 · $6,000.00 · DRY RUN"
+            html shouldContain "SOL +12.5% drift detected"
+            html shouldContain "Cash drift detected; applying correction"
+            html shouldContain "Cash correction distributed across underweight assets"
+            html shouldContain "Arbitrary informational message"
+            html shouldContain "just now"
+            html shouldContain "5m ago"
+            html shouldContain "2h ago"
+            html shouldContain "3d ago"
         }
     }
 }

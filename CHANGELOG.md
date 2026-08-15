@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.0] - 2026-08-15
+
+### Added
+
+- **Pure Domain Engine Subproject (`:engine`) (ARCH-01)**: Extract mathematical engine calculations, domain planning events, and rich domain models into a standalone, pure Kotlin JVM library module `:engine` depending only on `:common` and compile-time `:codegen`.
+  - Migrated `RebalancerEngine`, `PortfolioCalculations`, `TradeCalculator`, `RebalancePlan`, `RebalanceEvent`, `OrderResult`, and `PrecisionConstantsJvm` to `:engine`.
+  - Migrated rich JVM domain models `PortfolioSnapshot` and `TradeRecord` (with provenance, deduplication, and reconciliation extensions) to `:engine`.
+  - Configured independent JaCoCo coverage verification gates (95% line/method/instruction, 90% branch) and comprehensive Kotest specification suite for `:engine`.
+
 ## [6.16.55] - 2026-08-15
 
 ### Added

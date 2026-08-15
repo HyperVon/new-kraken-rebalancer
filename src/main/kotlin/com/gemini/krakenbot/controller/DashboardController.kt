@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -17,7 +18,6 @@ import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.css.CssStyles
 import com.gemini.krakenbot.view.util.CssClass

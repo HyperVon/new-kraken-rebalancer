@@ -1,13 +1,13 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.domain.OrderResult
+import com.gemini.krakenbot.domain.RawBalances
+import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.RawBalances
-import com.gemini.krakenbot.service.RawPrices
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext

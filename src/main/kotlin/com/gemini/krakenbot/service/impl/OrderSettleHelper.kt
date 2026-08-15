@@ -1,13 +1,13 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.domain.resolveBalance
+import com.gemini.krakenbot.domain.resolveBalanceOrNull
+import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.getTradeHistoryUntil
-import com.gemini.krakenbot.util.resolveBalance
-import com.gemini.krakenbot.util.resolveBalanceOrNull
-import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll

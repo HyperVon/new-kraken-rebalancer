@@ -3,6 +3,10 @@ package com.gemini.krakenbot.service.impl.history
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.domain.PortfolioCalculations
+import com.gemini.krakenbot.domain.RebalancerEngine
+import com.gemini.krakenbot.domain.toCryptoScale
+import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -12,12 +16,8 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.impl.PortfolioCalculations
-import com.gemini.krakenbot.service.impl.RebalancerEngine
 import com.gemini.krakenbot.service.impl.SimulationDefaults
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.util.toCryptoScale
-import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow

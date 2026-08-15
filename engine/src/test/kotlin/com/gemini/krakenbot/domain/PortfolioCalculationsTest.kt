@@ -1,7 +1,8 @@
-package com.gemini.krakenbot.service.impl
+package com.gemini.krakenbot.domain
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -61,7 +62,7 @@ class PortfolioCalculationsTest : StringSpec() {
 
         "should treat zero-target holdings as 100% deviation when value remains" {
             val deviationPct = PortfolioCalculations.calculateDeviationPercent(
-                deviationUSD = BigDecimal("50.00"),
+                deviationUSD = BigDecimal.ZERO.max(BigDecimal("50.00")),
                 targetValueUSD = BigDecimal.ZERO,
                 currentValueUSD = BigDecimal("50.00"),
             )
@@ -246,6 +247,38 @@ class PortfolioCalculationsTest : StringSpec() {
         "should fall back to default USD target when allocations contain no USD" {
             PortfolioCalculations.calculateUsdTargetPercent(listOf(Allocation("BTC", 80.0)))
                 .shouldBeEqualComparingTo(BigDecimal("5.00"))
+        }
+
+        "calculateTargetValue computes total * target / 100" {
+            PortfolioCalculations.calculateTargetValue(BigDecimal("50.00"), BigDecimal("1000.00"))
+                .shouldBeEqualComparingTo(BigDecimal("500.00"))
+        }
+
+        "compute24hDelta computes percentage delta against 24h baseline" {
+            val now = java.time.Instant.now()
+            val latest = PortfolioSnapshot(
+                timestamp = now,
+                totalValueUSD = BigDecimal("1100.00"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val past24h = latest.copy(timestamp = now.minusSeconds(86400), totalValueUSD = BigDecimal("1000.00"))
+            val delta = PortfolioCalculations.compute24hDelta(latest, listOf(latest, past24h))
+            delta!!.shouldBeEqualComparingTo(BigDecimal("10.00"))
+
+            // Short history returns null
+            PortfolioCalculations.compute24hDelta(latest, listOf(latest)) shouldBe null
+
+            // No baseline older than 24h
+            val past1h = latest.copy(timestamp = now.minusSeconds(3600), totalValueUSD = BigDecimal("1000.00"))
+            PortfolioCalculations.compute24hDelta(latest, listOf(latest, past1h)) shouldBe null
+
+            // Zero baseline returns null
+            val zeroPast = past24h.copy(totalValueUSD = BigDecimal.ZERO)
+            PortfolioCalculations.compute24hDelta(latest, listOf(latest, zeroPast)) shouldBe null
         }
     }
 }

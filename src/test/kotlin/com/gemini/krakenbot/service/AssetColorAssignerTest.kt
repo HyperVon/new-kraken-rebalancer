@@ -78,5 +78,13 @@ class AssetColorAssignerTest : StringSpec() {
             AssetColorAssigner.assignMissingColors(input) shouldBe
                 AssetColorAssigner.assignMissingColors(input)
         }
+
+        "assignMissingColors covers diverse symbols across all hue segments" {
+            val symbols = listOf("ADA", "AVAX", "DOT", "LINK", "UNI", "MATIC", "XRP", "NEAR", "ATOM", "ALGO")
+            val allocations = symbols.map { Allocation(it, 10.0) }
+            val colored = AssetColorAssigner.assignMissingColors(allocations)
+            colored.size shouldBe symbols.size
+            colored.all { it.color != null } shouldBe true
+        }
     }
 }

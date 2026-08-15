@@ -9,6 +9,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.TradeCalculator
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
@@ -23,8 +24,6 @@ import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
-import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
-import com.gemini.krakenbot.util.TradeCalculator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec

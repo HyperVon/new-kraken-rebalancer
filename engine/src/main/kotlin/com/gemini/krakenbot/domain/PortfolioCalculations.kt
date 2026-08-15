@@ -1,15 +1,15 @@
-package com.gemini.krakenbot.service.impl
+package com.gemini.krakenbot.domain
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.util.HUNDRED // extension import for PrecisionConstants.HUNDRED
+import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import java.math.BigDecimal
 import java.math.RoundingMode
 
 /**
- * Shared portfolio math used by [RebalancerEngine] and [PortfolioAnalyzerImpl].
+ * Shared portfolio math used by [RebalancerEngine] and portfolio analyzers.
  */
 object PortfolioCalculations {
     /**
@@ -39,9 +39,7 @@ object PortfolioCalculations {
 
     /** Current allocation percent: `valueUSD / totalPortfolioValueUSD × 100`, or zero when total is zero. */
     fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
-        if (totalPortfolioValueUSD >
-            BigDecimal.ZERO
-        ) {
+        if (totalPortfolioValueUSD > BigDecimal.ZERO) {
             valueUSD
                 .multiply(PrecisionConstants.HUNDRED)
                 .divide(totalPortfolioValueUSD, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
@@ -172,7 +170,8 @@ object PortfolioCalculations {
         val past = history.firstOrNull { it.timestamp <= cutoff } ?: return null
         val base = past.totalValueUSD
         if (base.signum() == 0) return null
-        return (latest.totalValueUSD - base)
+        return latest.totalValueUSD
+            .subtract(base)
             .divide(base, DELTA_SCALE, RoundingMode.HALF_UP)
             .multiply(PrecisionConstants.HUNDRED)
     }

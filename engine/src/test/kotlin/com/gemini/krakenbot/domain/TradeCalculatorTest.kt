@@ -1,6 +1,5 @@
-package com.gemini.krakenbot.util
+package com.gemini.krakenbot.domain
 
-import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
@@ -144,6 +143,27 @@ class TradeCalculatorTest : StringSpec() {
                 prices = mapOf("BTC" to BigDecimal("50000.00")),
             )
             trade.side shouldBe OrderSide.BUY.uppercaseName
+        }
+
+        "createTradeRecord falls back to BigDecimal.ZERO when symbol missing in prices" {
+            val orderResult = OrderResult(
+                success = true,
+                dryRun = false,
+                pair = "XBTUSD",
+                side = OrderSide.BUY.uppercaseName,
+                volume = BigDecimal("0.1"),
+            )
+            val trade = TradeCalculator.createTradeRecord(
+                result = orderResult,
+                symbol = "BTC",
+                pair = "XBTUSD",
+                side = OrderSide.BUY.uppercaseName,
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                prices = emptyMap(),
+            )
+            trade.expectedPrice shouldBe BigDecimal.ZERO
+            trade.slippagePercent shouldBe BigDecimal.ZERO
         }
     }
 }

@@ -12,7 +12,13 @@ plugins {
 
 spotless {
     kotlin {
-        target("src/**/*.kt", "common/src/**/*.kt", "frontend-js/src/**/*.kt", "codegen/src/**/*.kt")
+        target(
+            "src/**/*.kt",
+            "common/src/**/*.kt",
+            "frontend-js/src/**/*.kt",
+            "codegen/src/**/*.kt",
+            "engine/src/**/*.kt",
+        )
         ktlint(libs.versions.ktlint.get()).editorConfigOverride(
             mapOf(
                 "ktlint_standard_no-wildcard-imports" to "disabled",
@@ -64,6 +70,7 @@ dependencies {
     ksp(project(":codegen"))
 
     implementation(project(":common"))
+    implementation(project(":engine"))
     implementation(libs.jackson.module.kotlin)
     implementation(libs.jackson.datatype.jsr310)
     implementation(libs.kotlin.reflect)
@@ -155,6 +162,10 @@ val coverageExcludes =
         "**/config/KtorConfigKt*",
         "**/repository/table/**",
         "**/service/KrakenService*",
+        "**/service/*Service.class",
+        "**/service/OrderExecutor.class",
+        "**/repository/*Repository.class",
+        "**/*\$DefaultImpls*",
         "**/view/util/HtmlExtensionsKt*",
         "**/view/css/**",
         "**/KrakenRebalancerApplication*",

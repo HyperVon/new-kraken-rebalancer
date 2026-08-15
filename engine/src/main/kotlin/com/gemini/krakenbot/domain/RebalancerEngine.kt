@@ -1,24 +1,11 @@
-package com.gemini.krakenbot.service.impl
+package com.gemini.krakenbot.domain
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.domain.RebalanceEvent
-import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
-import com.gemini.krakenbot.service.AnalysisResult
-import com.gemini.krakenbot.service.AssetDeviations
-import com.gemini.krakenbot.service.AssetPrices
-import com.gemini.krakenbot.service.AssetValues
-import com.gemini.krakenbot.service.MutableRebalanceOrders
-import com.gemini.krakenbot.service.PortfolioValues
-import com.gemini.krakenbot.service.RawBalances
-import com.gemini.krakenbot.service.RawPrices
-import com.gemini.krakenbot.util.HUNDRED // extension import for PrecisionConstants.HUNDRED
+import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.util.RebalanceEventFormatter
-import com.gemini.krakenbot.util.resolveBalance
-import com.gemini.krakenbot.util.toUsdScale
 import com.gemini.krakenbot.view.util.ViewText
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal

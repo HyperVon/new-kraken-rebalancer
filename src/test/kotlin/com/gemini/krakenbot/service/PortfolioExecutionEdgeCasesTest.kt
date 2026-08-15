@@ -2,8 +2,8 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl

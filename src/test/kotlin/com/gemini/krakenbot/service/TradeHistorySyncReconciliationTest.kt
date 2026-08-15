@@ -5,6 +5,7 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.domain.TradeCalculator
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
@@ -14,7 +15,6 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
-import com.gemini.krakenbot.util.TradeCalculator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
