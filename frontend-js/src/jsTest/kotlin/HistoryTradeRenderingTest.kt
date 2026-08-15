@@ -18,7 +18,8 @@ class HistoryTradeRenderingTest : StringSpec() {
     init {
         "formatPair handles valid and missing symbols" {
             formatPair(mockTradeRecord(symbol = Asset.BTC)) shouldBe "${Asset.BTC}/${Asset.USD}"
-            formatPair(mockTradeRecord(symbol = "")) shouldBe ""
+            formatPair(mockTradeRecord(symbol = "", pair = "ETH/USD")) shouldBe "ETH/USD"
+            formatPair(mockTradeRecord(symbol = "", pair = "")) shouldBe ""
         }
 
         "renderTradeTable shows nine columns with price fee and slippage" {

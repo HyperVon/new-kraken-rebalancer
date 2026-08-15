@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.domain.OrderResult
+import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -230,10 +231,36 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
             val balLock = svcLock.getBalances()
             balLock["ZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("99.00"))
             attemptLock shouldBe 2
-            // Rate limit retry (10s) + lockout retry (10s) = 20s virtual time
-            currentTime shouldBe 20_000L
+            var attempt503 = 0
+            val engine503 = MockEngine {
+                if (attempt503++ == 0) {
+                    respond(
+                        content = "Service Unavailable",
+                        status = HttpStatusCode.ServiceUnavailable,
+                        headers = headersOf(HttpHeaders.ContentType, "text/plain"),
+                    )
+                } else {
+                    respond(
+                        content = "{\"error\":[],\"result\":{\"ZUSD\":\"77.00\"}}",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                    )
+                }
+            }
+            val svc503 = KrakenServiceImpl(
+                mockConfig,
+                jacksonObjectMapper(),
+                HttpClient(engine503) { expectSuccess = true },
+            )
+            val bal503 = svc503.getBalances()
+            bal503["ZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("77.00"))
+            attempt503 shouldBe 2
 
-            val evidence = "rateAttempts=$attemptRate lockAttempts=$attemptLock virtualTimeMs=$currentTime"
+            // Rate limit retry (10s) + lockout retry (10s) + 503 lockout retry (10s) = 30s virtual time
+            currentTime shouldBe 30_000L
+
+            val evidence =
+                "rateAttempts=$attemptRate lockAttempts=$attemptLock attempts503=$attempt503 virtualTimeMs=$currentTime"
             EvaluationScenariosTest.recordResult(
                 "Scenario 36",
                 "retryWithFlow handles 429/503 and lockout",
@@ -331,6 +358,33 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
             EvaluationScenariosTest.recordResult(
                 "Scenario 38",
                 "Ledgers sync recovery uses 96d bound not full history",
+                TestFixtures.PASS,
+                evidence,
+            )
+        }
+    }
+
+    "Scenario 41: Zero/negative fiat deployment exponent and normalized staking rewards" {
+        runTest {
+            val settingsZeroExp = TestFixtures.settings(
+                dryRun = true,
+                simulation = true,
+                fiatMaxDrawdown = 20.0,
+                fiatDeploymentExponent = 0.0,
+            )
+            val settingsNegExp = settingsZeroExp.copy(fiatDeploymentExponent = -1.0)
+            val dd = BigDecimal("10.00")
+
+            val deployZero = RebalancerEngine.calculateFiatDeployment(dd, settingsZeroExp)
+            val deployNeg = RebalancerEngine.calculateFiatDeployment(dd, settingsNegExp)
+
+            deployZero.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            deployNeg.shouldBeEqualComparingTo(BigDecimal.ZERO)
+
+            val evidence = "deployZero=$deployZero deployNeg=$deployNeg"
+            EvaluationScenariosTest.recordResult(
+                "Scenario 41",
+                "Zero/negative fiat deployment exponent and normalized staking rewards",
                 TestFixtures.PASS,
                 evidence,
             )

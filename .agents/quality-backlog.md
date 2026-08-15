@@ -32,6 +32,21 @@ Product polish discovered during QA belongs in
 | CQ-18-12 | S | bug | dropped | frontend-js/history | Review rejected: scrubber and zoom paths already guard null state, missing ranges, and non-positive spans; existing tests cover disabled/null-safe behavior | 18 | — | — |
 | CQ-18-13 | S | bug | dropped | controller/settings | Review rejected: symbols/targets/colors lengths are validated before indexed mapping, and the mismatch response is covered by `DashboardControllerTest` | 18 | — | — |
 
+| CQ-20-01 | S | bug | done | frontend-js/formatting | `formatUSD()` outputs `"-$0.00"` for values near zero (e.g. `-0.001`) due to raw vs rounded sign check | 20 | — | — |
+| CQ-20-02 | S | bug | done | frontend-js/history | `formatPair()` returns `""` when `trade.symbol` is blank instead of falling back to `trade.pair` | 20 | — | — |
+| CQ-20-03 | S | bug | done | history/query | `getRewardsOverTime` uses `event.asset.uppercase()` instead of `Asset.normalizeLedgerAsset()`, missing prices for staked assets | 20 | — | — |
+| CQ-20-04 | S | bug | done | history/sync | `LedgersSyncService` unseeded initial sync leaves `startSec = null` (full history) instead of bounding to 96d | 20 | — | — |
+| CQ-20-05 | S | bug | done | history/sync | `LedgersSyncService.readInitialPaginationOffset()` rejected valid sum of multi-type offsets via `% 50 == 0` | 20 | — | — |
+| CQ-20-06 | S | bug | done | algorithm/fiat | `RebalancerEngine.calculateFiatDeployment` does not guard `fiatDeploymentExponent <= 0.0` | 20 | — | — |
+| CQ-20-07 | S | bug | done | controller/orders | `DashboardController.handlePostOrderIntentResolution()` does not validate `id > 0` before service call | 20 | — | — |
+| CQ-20-08 | S | gap | done | Kraken/retry | Add dedicated test coverage for HTTP 503 status code in `retryWithFlow` lockout detection | 20 | — | — |
+| CQ-20-09 | S | gap | done | orders/settlement | Add dedicated test coverage for balance-poll fallback when `peekUsdBalance` fails in `OrderSettleHelper` | 20 | — | — |
+| CQ-20-10 | S | harness | done | eval/scenarios | Add Scenario 41 exercising zero/negative fiat exponent safety and multi-asset staking reward normalization | 20 | — | — |
+
+## Done (recent)
+
+| ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |
+| :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :---: |
 | CQ-19-01 | S | bug | done | algorithm/fiat | distributeFiatCorrection early-return when totalCounterDev==0 logs only, no actionLog follow-up after "Fiat Correction Enforced" | 19 | 222 | — |
 | CQ-19-02 | M | bug | done | algorithm/fiat | Fiat-correction shares bypass isSignificant/dust gates, silently dropped at execution — mitigated by $2 minimumOrderSize floor (CQ-19-04) | 19 | 222 | — |
 | CQ-19-03 | S | bug | done | algorithm/orders | Sell volume floors to 0 with no actionLog/dust entry, zero-target dust sticks | 19 | 222 | — |
@@ -48,8 +63,6 @@ Product polish discovered during QA belongs in
 | CQ-19-14 | L | gap | done | algorithm/eval | ALGORITHM PENDING→UNCERTAIN/cl_ord_id/batch abort has 0 scenarios — hardened to Scenario 39 (deterministic ids, abort, blocking) | 19 | 222 | #221 |
 | CQ-19-15 | M | gap | done | algorithm/eval | retryWithFlow/withStableBackend/ledgers sync have no evaluation scenario | 19 | 222 | — |
 | CQ-19-16 | S | bug | done | config/flows | withExecutionSession takes ()->T not suspend ()->T, suspend callers wrap | 19 | 222 | — |
-
-## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :---: |

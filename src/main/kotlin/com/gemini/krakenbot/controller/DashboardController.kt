@@ -454,8 +454,8 @@ class DashboardController(
         }
 
         val id = call.parameters["id"]?.toIntOrNull()
-        if (id == null) {
-            respondJson(mapOf("error" to "Order intent id must be an integer."), HttpStatusCode.BadRequest)
+        if (id == null || id <= 0) {
+            respondJson(mapOf("error" to "Order intent id must be a positive integer."), HttpStatusCode.BadRequest)
             return
         }
 

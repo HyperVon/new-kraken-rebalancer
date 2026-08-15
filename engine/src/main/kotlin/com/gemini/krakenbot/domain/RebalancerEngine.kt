@@ -89,7 +89,11 @@ object RebalancerEngine {
         }
 
     fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal {
-        if (drawdownPct <= BigDecimal.ZERO || settings.fiatMaxDrawdown <= 0.0) return BigDecimal.ZERO
+        if (drawdownPct <= BigDecimal.ZERO || settings.fiatMaxDrawdown <= 0.0 ||
+            settings.fiatDeploymentExponent <= 0.0
+        ) {
+            return BigDecimal.ZERO
+        }
 
         val maxDD = BigDecimal.valueOf(settings.fiatMaxDrawdown)
         var ratio =

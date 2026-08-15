@@ -16,8 +16,8 @@ import org.w3c.dom.*
 import kotlin.js.Date
 
 fun formatPair(trade: TradeRecord): String {
-    if (trade.symbol.isBlank()) return ""
-    return "${trade.symbol}/USD"
+    if (trade.symbol.isNotBlank()) return "${trade.symbol}/USD"
+    return trade.pair
 }
 
 internal fun renderTradeTable(trades: List<TradeRecord>) {

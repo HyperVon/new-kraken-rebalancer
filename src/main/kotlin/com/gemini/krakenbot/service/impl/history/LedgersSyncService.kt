@@ -72,16 +72,21 @@ class LedgersSyncService(
     private suspend fun syncLedgersFromKrakenPinned(config: AppConfig) {
         val isSeeded = repository.isLedgersSeeded()
         val effectiveLatest = calculateEffectiveLatestTime()
-        // Null effective → full history (startSec null). Otherwise overlap by 5 minutes so entries
-        // near the previous watermark are re-fetched and deduplicated rather than missed.
-        val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
-        // A numeric progress cursor marks an interrupted seed; it only gates recovery while the
-        // ledger store is unseeded (mirrors the trade sync watermark logic).
-        val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
-        // CQ-19-06: recovery must not fetch full history (startSec=null) — bound to 96d like
-        // TradeHistorySyncService to avoid wasting rate-limit on pruned data.
+        // Incremental sync overlaps by 5 minutes so entries near the previous watermark are
+        // re-fetched and deduplicated rather than missed. Unseeded initial sync and recovery both
+        // bound to 96 days (SEED_HISTORY_LOOKBACK) like TradeHistorySyncService to avoid fetching
+        // historical entries that would be immediately pruned.
         val seedBound = nowProvider().minus(96, ChronoUnit.DAYS)
-        val paginationStartSec = if (isRecoveringInitialSync) seedBound.epochSecond else startSec
+        val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
+        val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
+        val paginationStartSec = if (isRecoveringInitialSync) {
+            seedBound.epochSecond
+        } else {
+            (
+                startSec
+                    ?: seedBound.epochSecond
+                )
+        }
 
         log.info(
             "Starting ledger synchronization (isSeeded={}, startSec={}, recovering={})...",
@@ -186,7 +191,7 @@ class LedgersSyncService(
     private suspend fun readInitialPaginationOffset(): Int? = repository
         .getSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET)
         ?.toIntOrNull()
-        ?.takeIf { it >= 0 && it % KrakenApiConstants.LEDGER_PAGE_SIZE == 0 }
+        ?.takeIf { it >= 0 }
 
     /** Cold paginated Kraken ledger history — per-type cursors; progress is durable until the first seed completes. */
     private fun getLedgersPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<LedgerEvent>> = flow {

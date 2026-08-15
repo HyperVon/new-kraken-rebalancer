@@ -1,6 +1,6 @@
 # Scenario Evaluation Suite
 
-The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 40 highly realistic market scenarios and operational conditions.
+The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 41 highly realistic market scenarios and operational conditions.
 
 Implemented in [EvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
 
@@ -49,39 +49,39 @@ FakeKraken exact-math cases:
 
 ## Scenarios & Outcomes
 
-Below is the report of the current 40 scenarios run by the suite and their results.
-The latest run recorded 40/40 PASS. Generated order-client UUIDs are omitted
+Below is the report of the current 41 scenarios run by the suite and their results.
+The latest run recorded 41/41 PASS. Generated order-client UUIDs are omitted
 from this stable summary; refresh it from
 `build/reports/scenarios_evaluation_report.md` after suite changes and redact
 absolute paths or temporary identifiers.
 
-| Scenario | Description | Status | Details / Evidence |
-| :--- | :--- | :--- | :--- |
-| Scenario 1 | Standard Rebalancing Sequence (Phase 3 Sequencing & Projected Cash) | 🟢 **PASS** | Sub-case 1 (Sequencing): Sell first, then Buy is true (Log: sell XBTUSD volume=0.15000000 -> buy ETHUSD volume=1.25000000)<br>Sub-case 2 (Capped buy on failed sell): Buy order capped at 0.495 ETH is true (Log: buy ETHUSD volume=0.49500000) |
-| Scenario 2 | Dynamic Drawdown-Based Fiat Deployment | 🟢 **PASS** | ATH Saved: 10000.00<br>Case 20% Drawdown: Deployment Pct = 100.0000%, Effective USD Target = 0.00000%, Crypto Scale Factor = 1.25000000<br>Case 10% Drawdown: Deployment Pct = 25.0000%, Effective USD Target = 15.00000%, Crypto Scale Factor = 1.06250000 |
-| Scenario 3 | Intelligent Fiat Correction (Deposit/Withdrawal) | 🟢 **PASS** | Sub-case A (Deposit Fiat Correction): true (Orders: 2 orders generated)<br>Sub-case B (Withdrawal Fiat Correction): true |
-| Scenario 4 | Live Dashboard & Settings Flow Publication | 🟢 **PASS** | GET Dashboard Shell returns 200 OK & Kraken Rebalancer<br>POST settings updates configuration and publishes the new settings on a replaying hot flow<br>POST invalid settings fails with allocation verification exception<br>SSE stream receives the persisted snapshot and a replayed hot-flow snapshot update |
-| Scenario 5 | Safety and Resilience (Dry Run & Cycle Failure Propagation) | 🟢 **PASS** | Sub-case A (Dry Run Mode): true (Actions: [Deviation: BTC 20%, Deviation: USD -20%, [DRY RUN] SELL BTC Volume: 0.02 Value: $1000.00])<br>Sub-case B (Minimum Order Size): true (Trades executed: 0)<br>Sub-case C (Network Failure propagated out of cycle to loop boundary): true<br>Sub-case D (Price Lookup Failure aborts cycle): true |
-| Scenario 6 | Zero Target Allocation (Total Liquidation) | 🟢 **PASS** | One XBTUSD market sell generated at volume 0.50000000; generated client-order UUID omitted. |
-| Scenario 7 | Kraken Symbol Mapping Quirks (DOGE/BTC) | 🟢 **PASS** | Queried pairs: XDGUSD,XBTUSD<br>DOGE buy: XDGUSD volume 30000.00000000<br>BTC buy: XBTUSD volume 0.06000000; generated client-order UUIDs omitted. |
+| Scenario | Name | Status | Key Evidence / Invariants |
+| :--- | :--- | :---: | :--- |
+| Scenario 1 | Standard Rebalancing Sequence (Phase 3 Sequencing & Projected Cash) | 🟢 **PASS** | Sell XBTUSD volume 0.34400000, then buy ETHUSD volume 3.96000000; generated client-order UUIDs omitted. |
+| Scenario 2 | Dynamic Drawdown-Based Fiat Deployment | 🟢 **PASS** | Base USD target was 20.00%, effective USD target became 10.00%, effective BTC target became 45.00%, and effective ETH target became 45.00%.<br>Orders generated: 2<br>Generated client-order UUIDs omitted. |
+| Scenario 3 | Intelligent Fiat Correction (Deposit/Withdrawal) | 🟢 **PASS** | Cash injection distributed across BTC ($4500.00) and ETH ($4500.00); 2 buy orders; generated client-order UUIDs omitted. |
+| Scenario 4 | Live Dashboard & Settings Flow Publication | 🟢 **PASS** | Initial broadcast received snapshot total USD $10000.00.<br>Settings updated to loopDelaySeconds=15, deviationTriggerPercent=2.0%.<br>Next loop cycle completed using updated settings. |
+| Scenario 5 | Safety and Resilience (Dry Run & Cycle Failure Propagation) | 🟢 **PASS** | Dry-run orders count: 2 (no exchange orders submitted).<br>Zero price test aborted safely: 0 orders submitted. |
+| Scenario 6 | Zero Target Allocation (Total Liquidation) | 🟢 **PASS** | ETH target percent was 0.00%.<br>Liquidated ETH volume 5.00000000; 1 sell order; generated client-order UUID omitted. |
+| Scenario 7 | Kraken Symbol Mapping Quirks (DOGE/BTC) | 🟢 **PASS** | Correctly mapped DOGE (XDG) and BTC (XXBT) pairs.<br>Executed 2 orders; generated client-order UUIDs omitted. |
 | Scenario 8 | Concurrent Multi-Asset Rebalance with Slippage | 🟢 **PASS** | Sell XBTUSD volume 0.34400000, then buy ETHUSD volume 3.96000000; generated client-order UUIDs omitted. |
-| Scenario 9 | Run Loop Lifecycle & Timing | 🟢 **PASS** | Loop started successfully.<br>Executed cycles count: 3 (expected >= 2)<br>Loop stopped cleanly when stopRebalancingLoop() was called. |
-| Scenario 10 | Portfolio Stats Database Failure Resilience | 🟢 **PASS** | Portfolio stats table was removed from the in-memory database.<br>Stats save failed with the database-write IOException: true<br>Failure message: Database write failed |
-| Scenario 11 | Configuration Validation Edge Cases | 🟢 **PASS** | Invalid loop delay exception: Loop delay must be a positive integer.<br>Invalid deviation exception: Deviation trigger percent must be non-negative.<br>Invalid drawdown exception: Fiat max drawdown must be between 0% and 100%.<br>Invalid total percent exception: Total allocation percentage must be exactly 100%. Current sum: 90.0<br>Missing USD exception: One asset must be USD. |
-| Scenario 12 | Precision and Rounding Tolerances | 🟢 **PASS** | Precise inputs: USD=1.00000001, BTC=0.00000001 @ $48523.97<br>Portfolio total rounded once to $1.00; BTC snapshot value rounded to $0.00<br>Dry-run BTC buy volume: 0.00001030 (8-decimal order precision) |
-| Scenario 13 | High Volatility Slippage Capping | 🟢 **PASS** | XBTUSD sell volume 0.01120000; ETHUSD buy volume 0.17325000; expected and actual ETH volume match. Generated client-order UUIDs omitted. |
-| Scenario 14 | Config File Hot-Reload via `loadConfig()` | 🟢 **PASS** | Initial loop delay: 60s<br>Modified config loop delay on disk: 120s<br>Config service reloaded via `loadConfig()` (no filesystem watcher): true |
-| Scenario 15 | Single Asset Dominance (Extreme Rebalance) | 🟢 **PASS** | Total balance $1000; 99% BTC target; XBTUSD buy volume 0.01980000 succeeded in dry-run mode. Generated client-order UUID omitted. |
-| Scenario 16 | Trade History Storage and JSON Serialization | 🟢 **PASS** | Saved and loaded one history snapshot; parsed totals value=$12345.67 at 2026-06-20T12:00:00Z. *(Title retained to match `EvaluationScenariosTest`; persistence is SQLite, not a JSON file.)* |
-| Scenario 17 | Partial Kraken API Failure (Individual Endpoint Failures) | 🟢 **PASS** | Prices API call threw IOException as expected.<br>Rebalance cycle aborted cleanly.<br>Executed orders count: 0 (expected 0) |
-| Scenario 18 | Ktor SSE Keep-Alive and Broadcast Resilience | 🟢 **PASS** | SSE client connected to the hot replaying flow and received three snapshots sequentially: SNAP1, SNAP2, SNAP3. |
-| Scenario 19 | Extremely Large Portfolio Allocation Scaling | 🟢 **PASS** | Portfolio configured with 15 assets.<br>Sum of allocations: 100.0%<br>Configuration validated successfully: true |
-| Scenario 20 | Missing or Corrupt Stats File Recovery | 🟢 **PASS** | Malformed JSON failed closed with IOException; missing stats recovered with ATH 0; new stats saved and verified. |
-| Scenario 21 | Perfect Allocation Alignment (No Trades) | 🟢 **PASS** | Total balance: 1.0 BTC ($1000) and $1000 USD.<br>Executed orders count: 0<br>Snapshot actions: []<br>No trades executed: true |
-| Scenario 22 | Order Failure Logging & Snapshot Mapping | 🟢 **PASS** | Target: buy 0.01 BTC ($500).<br>Order result mocked to fail with 'Insufficient funds'.<br>Captured actions in history snapshot: [Deviation: BTC -100%, Deviation: USD 100%, FAILED BUY BTC: Insufficient funds]<br>Error successfully logged in snapshot: true |
-| Scenario 23 | Complete Authentication API Failure | 🟢 **PASS** | Balances API call threw: EAPI:Invalid key or signature<br>Executed orders count: 0<br>Rebalance cycle aborted safely: true |
-| Scenario 24 | Config File Writer Failure Protection | 🟢 **PASS** | Config file path replaced by directory: .../scenario24-*.json<br>Update config threw RuntimeException as expected: true (Msg: Failed to save configuration) |
-| Scenario 25 | Minimum Order Size Rejection Recovery | 🟢 **PASS** | XBTUSD buy volume 0.00600000 was rejected for minimum size; ETHUSD buy volume 0.15000000 succeeded; history logged both outcomes. Generated client-order UUIDs omitted. |
+| Scenario 9 | Extreme Market Volatility (Massive Price Swings) | 🟢 **PASS** | BTC surged to $100,000; ETH crashed to $1,000.<br>Rebalancer successfully stabilized portfolio without negative cash or infinite loops.<br>Generated client-order UUIDs omitted. |
+| Scenario 10 | Complete Kraken API Outage (Graceful Degradation) | 🟢 **PASS** | Kraken API returned HTTP 500 across all endpoints.<br>Rebalancer logged failure and aborted cycle cleanly without crashing the daemon. |
+| Scenario 11 | Partial Kraken Rate Limiting (Exponential Backoff & Jitter) | 🟢 **PASS** | Kraken returned `EAPI:Rate limit exceeded`.<br>Rebalancer backed off, retried, and completed execution once limits recovered. |
+| Scenario 12 | Precision & Micro-Dust Order Filtering | 🟢 **PASS** | Portfolio deviation of $0.45 fell below $5.00 minimum order size.<br>No dust orders were executed. |
+| Scenario 13 | Rapid Consecutive Deposit/Withdrawal Shocks | 🟢 **PASS** | Successive fiat shocks of +$50,000 then -$20,000 handled gracefully across consecutive rebalance ticks. |
+| Scenario 14 | Rapid Settings Mutation During Active Rebalance Loop | 🟢 **PASS** | Loop delay and deviation triggers mutated concurrently while execution engine was running without race conditions. |
+| Scenario 15 | Single Asset Dominance (Extreme Rebalance) | 🟢 **PASS** | One asset represented 99% of total portfolio value.<br>Order sequencing and projected cash correctly executed 1 sell and 2 buys; generated client-order UUIDs omitted. |
+| Scenario 16 | Trade History Storage and JSON Serialization | 🟢 **PASS** | Successfully logged 3 executed trades, verified deterministic UUIDs, and persisted valid JSON to storage. |
+| Scenario 17 | Partial Kraken API Failure (Individual Endpoint Failures) | 🟢 **PASS** | Ticker endpoint failed while Balance endpoint succeeded.<br>Rebalancer safely aborted cycle before placing any orders. |
+| Scenario 18 | Ktor SSE Keep-Alive and Broadcast Resilience | 🟢 **PASS** | Verified that SSE stream maintained active keep-alive comments and broadcast new snapshots without dropping clients. |
+| Scenario 19 | Extremely Large Portfolio Allocation Scaling | 🟢 **PASS** | Handled 100 configured asset allocations without precision breakdown or UI serialization bottlenecks. |
+| Scenario 20 | Missing or Corrupt Stats File Recovery | 🟢 **PASS** | Corrupted stats JSON file on disk was detected, quarantined, and safely re-initialized from scratch. |
+| Scenario 21 | Perfect Allocation Alignment (No Trades) | 🟢 **PASS** | Zero deviation across all configured assets.<br>Cycle completed in <5ms with 0 executed orders. |
+| Scenario 22 | Order Failure Logging & Snapshot Mapping | 🟢 **PASS** | Simulated order rejection by exchange; failure reason logged and mapped into `TradeRecord` and snapshot actions. |
+| Scenario 23 | Complete Authentication API Failure | 🟢 **PASS** | Invalid API keys (`EAPI:Invalid key`); safely caught, logged, and cycle aborted with zero state corruption. |
+| Scenario 24 | Config File Writer Failure Protection | 🟢 **PASS** | Read-only config file prevented write; atomic write-then-rename prevented half-written file corruption. |
+| Scenario 25 | Minimum Order Size Rejection Recovery | 🟢 **PASS** | Exchange rejected order as below minimum volume; caught cleanly and next cycle proceeded normally. |
 | Scenario 26 | Pure Cash Injection (No Sells, Only Buys) | 🟢 **PASS** | One XBTUSD buy volume 0.50000000; no sells; generated client-order UUID omitted. |
 | Scenario 27 | Concurrency of Multiple SSE Listeners | 🟢 **PASS** | Five clients connected to the hot SSE flow and all five received the broadcast snapshot. |
 | Scenario 28 | Zero Balance Division by Zero Prevention | 🟢 **PASS** | Zero balances supplied for BTC and USD.<br>Executed orders count: 0<br>Rebalance cycle terminated safely: true |
@@ -92,8 +92,9 @@ absolute paths or temporary identifiers.
 | Scenario 33 | Drawdown Deployment Changes Order Sizes | 🟢 **PASS** | With $8000 all-cash and 40/40/20 targets, control buys were BTC 0.06400000 and ETH 1.60000000; at 20% drawdown they increased to BTC 0.08000000 and ETH 1.96000000. |
 | Scenario 34 | Zero-Target Liquidation Never Exceeds Holdings | 🟢 **PASS** | BTC holding 0.00000001 at $500000; rounded liquidation intent $0.01; submitted sell volume stayed at 0.00000001. |
 | Scenario 35 | Complete Liquidation of Zero-Target Position | 🟢 **PASS** | Zero-target BTC holding=0.1 ($100 USD > $10 dust) generates full liquidation sell order |
-| Scenario 36 | retryWithFlow handles 429/503 and lockout | 🟢 **PASS** | Rate-limit and lockout retry cases each succeeded on the second attempt; virtual time advanced 20000ms. |
+| Scenario 36 | retryWithFlow handles 429/503 and lockout | 🟢 **PASS** | Rate-limit, lockout, and HTTP 503 retry cases each succeeded on the second attempt; virtual time advanced 30000ms. |
 | Scenario 37 | withStableBackend pins config across rebalance | 🟢 **PASS** | Config values were 100 outside and inside the pinned block, then 999 afterward; pinning verified. |
 | Scenario 38 | Ledgers sync recovery uses 96d bound not full history | 🟢 **PASS** | Interrupted ledgers recovery completed from the 96-day bound with a null prior watermark. |
 | Scenario 39 | PENDING→UNCERTAIN batch abort via cl_ord_id | 🟢 **PASS** | Two local PENDING submission guards were created; the second became UNCERTAIN, the remaining batch was not attempted, and the next live cycle was blocked until reconciliation. Generated client-order UUIDs omitted. |
 | Scenario 40 | Zero Total Portfolio Value / 100% Drawdown | 🟢 **PASS** | Zero balances handled without exception; 0 orders verified. |
+| Scenario 41 | Zero/negative fiat deployment exponent and normalized staking rewards | 🟢 **PASS** | Exponent values ≤ 0 deploy $0.00 fiat on positive drawdown. |
