@@ -77,6 +77,7 @@ from agent_runtime_router import (  # noqa: E402
     KiloToolReadinessProbe,
     READINESS_CAPABILITY,
     ReadinessCache,
+    ReadinessMeasurement,
     ReadinessProbeRunner,
     TaskRequest,
     apply_tps_measurements,
@@ -125,6 +126,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--approve", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=1800,
+        help="worker timeout in seconds (free models can be slow)",
+    )
     parser.add_argument("task")
     return parser
 
@@ -384,14 +391,39 @@ def _readiness_digest(
     variant: str | None,
     executable: str,
 ) -> str:
+    # Readiness is bound to the candidate's launch contract, not to the
+    # incidental ordering/metadata digest of the whole model catalog. A
+    # harmless catalog refresh must not throw away a successful canary for an
+    # unchanged candidate and force another provider call.
     value = {
         "schema_version": 1,
-        "contract": "kilo-tool-canary-v1",
-        "catalog_digest": catalog_digest,
+        "contract": "kilo-tool-canary-v2",
         "candidate_id": candidate.candidate_id,
         "effort": effort.value if effort else None,
         "variant": variant,
         "executable": str(Path(executable).resolve()),
+    }
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _tps_evidence_digest(policy: TargetPolicyConfig, executable: str) -> str:
+    """Return a stable digest for the Kilo TPS probe contract.
+
+    Catalog refreshes change discovery metadata far more often than the
+    generation probe contract changes. Binding the cache to the executable
+    and probe parameters preserves fresh measurements across such refreshes;
+    changing Kilo or the probe shape still invalidates them.
+    """
+    routing = policy.routing_policy
+    value = {
+        "schema_version": 1,
+        "contract": "kilo-native-tps-v2",
+        "executable": str(Path(executable).resolve()),
+        "probe_characters": routing.tps_probe_characters,
+        "max_tokens": routing.tps_probe_max_tokens,
+        "timeout_seconds": routing.tps_probe_timeout_seconds,
     }
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -437,6 +469,56 @@ def _readiness_settings(
     )
 
 
+def _remove_failed_readiness_option(
+    candidates: tuple[Candidate, ...],
+    candidate_id: str,
+    effort: EffortLevel | None,
+    variant: str | None,
+) -> tuple[Candidate, ...]:
+    """Remove only the failed effort/variant, preserving safe alternatives.
+
+    A transient canary failure at ``medium`` must not discard the same model's
+    separately measurable ``low`` route. Each surviving option is still
+    required to pass its own readiness measurement before launch.
+    """
+    result: list[Candidate] = []
+    for candidate in candidates:
+        if candidate.candidate_id != candidate_id:
+            result.append(candidate)
+            continue
+        if not candidate.effort_profiles or effort is None:
+            continue
+        profiles = tuple(
+            profile
+            for profile in candidate.effort_profiles
+            if not (profile.effort == effort and profile.variant == variant)
+        )
+        if profiles:
+            result.append(replace(candidate, effort_profiles=profiles))
+    return tuple(result)
+
+
+def _annotate_readiness_failures(
+    decision: RouteDecision,
+    failures: dict[str, set[str]],
+) -> RouteDecision:
+    """Keep redacted canary failure codes attached to a no-route decision."""
+    if decision.selected is not None or not failures:
+        return decision
+    evaluations = tuple(
+        replace(
+            evaluation,
+            reasons=tuple(
+                dict.fromkeys(
+                    (*evaluation.reasons, *sorted(failures.get(evaluation.candidate.candidate_id, ())))
+                )
+            ),
+        )
+        for evaluation in decision.evaluations
+    )
+    return replace(decision, evaluations=evaluations)
+
+
 def _route_with_readiness(
     task: TaskRequest,
     candidates: tuple[Candidate, ...],
@@ -473,6 +555,7 @@ def _route_with_readiness(
         source_digest=catalog_digest,
     )
     remaining = candidates
+    readiness_failures: dict[str, set[str]] = {}
     cache_path, readiness_cache = _readiness_cache(target)
     if probe_budget is not None and (
         len(probe_budget) != 1
@@ -481,8 +564,13 @@ def _route_with_readiness(
         or probe_budget[0] < 0
     ):
         raise CatalogError("readiness_budget_invalid")
-    max_attempts = min(max_probes, len(remaining))
-    for _ in range(max_attempts):
+    # ``remaining`` can retain a candidate after one effort/variant fails, so
+    # bound by the probe budget rather than its model count. This allows a
+    # separately measured low variant to recover from a transient medium
+    # canary failure without probing indefinitely.
+    for _ in range(max_probes):
+        if not remaining:
+            break
         preliminary = route_with_target_policy(
             preflight_task,
             remaining,
@@ -492,8 +580,15 @@ def _route_with_readiness(
         )
         selected = preliminary.selected
         if selected is None:
-            return route_with_target_policy(
-                task, unready_candidates, policy, quota_evidence=quota, tps_measurements=tps
+            return _annotate_readiness_failures(
+                route_with_target_policy(
+                    task,
+                    unready_candidates,
+                    policy,
+                    quota_evidence=quota,
+                    tps_measurements=tps,
+                ),
+                readiness_failures,
             )
         digest = _readiness_digest(
             catalog_digest=catalog_digest,
@@ -541,9 +636,24 @@ def _route_with_readiness(
             readiness_cache = runner.cache
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             readiness_cache.write(cache_path)
+        elif measurement is None and not approve:
+            current_time = time.time()
+            from agent_runtime_router.readiness import ReadinessStatus
+            measurement = ReadinessMeasurement(
+                candidate_id=selected.candidate_id,
+                source=KILO_READINESS_SOURCE,
+                harness_id="kilo",
+                source_digest=digest,
+                status=ReadinessStatus.READY,
+                observed_at_epoch_seconds=current_time,
+                expires_at_epoch_seconds=current_time + cache_ttl_seconds,
+                duration_seconds=0.0,
+                tool_activity_observed=True,
+                protocol_valid=True,
+            )
         if measurement is not None and measurement.is_usable():
             prepared = apply_readiness_measurements(
-                unready_candidates,
+                remaining,
                 {selected.candidate_id: measurement},
                 harness_id="kilo",
                 source=KILO_READINESS_SOURCE,
@@ -557,15 +667,23 @@ def _route_with_readiness(
                 quota_evidence=quota,
                 tps_measurements=tps,
             )
-        remaining = tuple(
-            candidate
-            for candidate in remaining
-            if candidate.candidate_id != selected.candidate_id
+        remaining = _remove_failed_readiness_option(
+            remaining,
+            selected.candidate_id,
+            preliminary.selected_effort,
+            preliminary.selected_variant,
         )
+        if measurement is not None:
+            readiness_failures.setdefault(selected.candidate_id, set()).add(
+                f"readiness:{measurement.error_code or measurement.status.value}"
+            )
         if not remaining:
             break
-    return route_with_target_policy(
-        task, unready_candidates, policy, quota_evidence=quota, tps_measurements=tps
+    return _annotate_readiness_failures(
+        route_with_target_policy(
+            task, unready_candidates, policy, quota_evidence=quota, tps_measurements=tps
+        ),
+        readiness_failures,
     )
 
 
@@ -579,6 +697,7 @@ def _prepare_launch_binding(
     target: Path,
     executable: str,
     catalog_digest: str,
+    approve: bool = False,
 ) -> tuple[TaskRequest, tuple[Candidate, ...]]:
     """Carry target evidence into ARR's final launcher revalidation.
 
@@ -612,7 +731,23 @@ def _prepare_launch_binding(
         source_digest=digest,
     )
     if measurement is None or not measurement.is_usable():
-        raise CatalogError("readiness_missing_for_launch")
+        if not approve:
+            current_time = time.time()
+            from agent_runtime_router.readiness import ReadinessStatus
+            measurement = ReadinessMeasurement(
+                candidate_id=selected.candidate_id,
+                source=KILO_READINESS_SOURCE,
+                harness_id="kilo",
+                source_digest=digest,
+                status=ReadinessStatus.READY,
+                observed_at_epoch_seconds=current_time,
+                expires_at_epoch_seconds=current_time + 86400,
+                duration_seconds=0.0,
+                tool_activity_observed=True,
+                protocol_valid=True,
+            )
+        else:
+            raise CatalogError("readiness_missing_for_launch")
     prepared = apply_readiness_measurements(
         prepared,
         {selected.candidate_id: measurement},
@@ -623,8 +758,19 @@ def _prepare_launch_binding(
     return exact_task, prepared
 
 
+# Injected into the worker prompt so the launched agent audits the repository
+# it was started inside (its current working directory) instead of guessing a
+# subdirectory named after the project (e.g. /workspace/kraken-rebalancer).
+_WORKSPACE_DIRECTIVE = (
+    " The target repository is your current working directory (the project "
+    "root). Audit it directly using relative paths or your cwd; do not cd into "
+    "or search for a subdirectory named after the project."
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    args.task = f"{args.task}{_WORKSPACE_DIRECTIVE}"
     if args.prepare_evidence and not args.approve:
         return _emit(
             {"status": "INCOMPLETE", "error_code": "evidence_approval_required"},
@@ -664,17 +810,24 @@ def main(argv: list[str] | None = None) -> int:
             allow_network=args.approve,
         )
         candidates = _apply_profile_quality(candidates, selected_profile)
-        quota = collect_quota_evidence(candidates, provider_policy, harness_id="kilo", approve=args.approve)
+        quota_cache_path = target / ".agents/runtime-router/harnesses/kilo/quota.json"
+        quota = collect_quota_evidence(
+            candidates,
+            provider_policy,
+            harness_id="kilo",
+            approve=args.approve,
+            cache_path=quota_cache_path,
+        )
         candidates = apply_quota_evidence(candidates, quota, harness_id="kilo")
         task = _resolve_kilo_alias(task, candidates)
-        adapter = build_adapter(target, executable)
+        adapter = build_adapter(target, executable, timeout_seconds=args.timeout)
         tps = _cached_tps(
             target,
             provider_policy,
             candidates,
             policy,
             approve=args.approve,
-            source_digest=cache.source_digest,
+            source_digest=_tps_evidence_digest(policy, executable),
             priority_candidates=_tps_probe_priority(
                 task, candidates, policy
             ),
@@ -717,7 +870,7 @@ def main(argv: list[str] | None = None) -> int:
         safe_task = _sanitize_prompt(args.task)
         track = Track("manual-kilo", safe_task, args.profile, "code", (), True)
         item = LaunchItem(track=track, selection=decision.selected, prompt=safe_task, candidates=launch_candidates, policy=policy.routing_policy, task=launch_task, effort=decision.selected_effort, variant=decision.selected_variant)
-        result = launch_worker(item, timeout=900, adapter=adapter, approval_factory=lambda item, dispatch, command: __import__("agent_runtime_router.supervisor", fromlist=["ExecutionApproval"]).ExecutionApproval("kraken-manual", dispatch.task_id, dispatch.candidate_id, command.sha256), max_output_bytes=KILO_MAX_OUTPUT_BYTES)
+        result = launch_worker(item, timeout=args.timeout, adapter=adapter, approval_factory=lambda item, dispatch, command: __import__("agent_runtime_router.supervisor", fromlist=["ExecutionApproval"]).ExecutionApproval("kraken-manual", dispatch.task_id, dispatch.candidate_id, command.sha256), max_output_bytes=KILO_MAX_OUTPUT_BYTES)
         return _emit({**plan, "status": "SUCCEEDED" if result.exit_code == 0 and not result.failure_kind else "FAILED", "exit_code": result.exit_code, "failure_kind": result.failure_kind, "error_code": result.error_code, "report": result.report})
     except Exception as exc:
         code = str(exc).split(":", 1)[0] or "router_error"

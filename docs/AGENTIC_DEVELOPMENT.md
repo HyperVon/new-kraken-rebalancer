@@ -390,6 +390,7 @@ that profile. Available profiles are:
 | `coding` | Implementation, bugs, tests, builds, and Gradle |
 | `complex-coding` | Refactors, algorithms, concurrency, performance, and deeply-coupled code |
 | `agentic` | Complex multi-step reasoning and tool use |
+| `architecture` | Architecture/product review; high intelligence floor and strongest available effort |
 | `quick-review` | Documentation, instruction, and source-contract audits |
 | `detailed-review` | Deeper security, architecture, and adversarial review of shipped code |
 | `critical` | Security, credentials, trading, financial, architecture, or adversarial work |
@@ -415,7 +416,7 @@ availability.
 
 When the provider catalog exposes verified native variants, the profile also
 selects reasoning effort: trivial/routine prefer low/medium, coding medium/high,
-complex-coding/agentic high/thinking, and quick-review/detailed-review/critical
+complex-coding/agentic high/thinking, and architecture/quick-review/detailed-review/critical
 xhigh/max, with model-specific fallbacks. Headless ARR workers receive the
 selected native `--variant`; the interactive TUI's manually selected variant is
 outside ARR's control. Detailed-review and critical profiles prioritize
@@ -550,9 +551,12 @@ billing, cost, and quota decision for each. If it reports missing or stale
 evidence, do not replace it with Kilo's native same-model subagents: obtain the
 separate discovery or evidence-only approval described in
 [`ARR_KILO_ROUTER.md`](ARR_KILO_ROUTER.md), then re-run this ordinary plan.
-Review the plan, then add `--approve` to launch the workers. Add
-`--distinct-routes` when the workflow requires every track to use a different
-candidate.
+Review the plan, then add `--approve` to launch the workers. Named workflow
+presets request distinct model-family routes by default; use
+`--allow-route-reuse` only when same-model reuse is intentional. The launcher
+returns a `result_directory` and per-track `report_path` values under
+`.agents/runtime-router/harnesses/kilo/workflows/`; read those bounded,
+redacted reports instead of starting a second native Kilo fan-out.
 
 The standard project skills use automatic presets rather than this local
 manifest: `documentation-review`, `comprehensive-quality-overhaul`,
@@ -565,7 +569,9 @@ The parent passes the user's request as `--task`; no manual manifest editing is
 required. The automatic command prints the route/quota plan and launches the
 read-only workers when invoked with `--approve`. Each worker receives an exact
 `kilo run -m provider/model` route, a bounded prompt, and a compact structured
-report contract. Raw prompts and provider output are not persisted by ARR.
+report contract. ARR persists only its bounded, redacted report summaries in
+the target-owned workflow result directory; raw prompts and provider output are
+not persisted by ARR.
 Standard read-only workers inspect temporary repository snapshots, so accidental
 worker edits do not enter the parent worktree. Write-capable work is not
 implicitly enabled by this adapter; the parent must use a separately reviewed

@@ -142,6 +142,10 @@ def _quality_values(raw: Mapping[str, Any]) -> dict[str, float]:
     return values
 
 
+def _has_benchmark_metrics(raw: Mapping[str, Any]) -> bool:
+    return any(key.startswith("artificial_analysis_") for key in _quality_values(raw))
+
+
 def _identity_values(raw: Mapping[str, Any]) -> tuple[str, ...]:
     values: list[str] = []
     for key in ("slug", "id", "model", "name"):
@@ -160,12 +164,41 @@ def _normalize_identity(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
+def _configured_alias_matches(alias: str, identities: Sequence[str]) -> bool:
+    normalized_alias = _normalize_identity(alias)
+    return any(
+        alias == identity
+        or alias == identity.rsplit("/", 1)[-1]
+        or normalized_alias == _normalize_identity(identity.rsplit("/", 1)[-1])
+        for identity in identities
+    )
+
+
 def _match_record(candidate: Candidate, override: Mapping[str, Any], records: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
+    configured_values: list[str] = []
     configured = override.get("aaSlug")
     if isinstance(configured, str) and configured:
+        configured_values.append(configured)
+    configured_many = override.get("aaSlugs")
+    if isinstance(configured_many, list):
+        configured_values.extend(
+            item for item in configured_many if isinstance(item, str) and item
+        )
+    # Prefer an alias that actually carries quality metrics. This lets the
+    # primary AA feed use ``hy3`` while the explicit OpenRouter fallback uses
+    # its published ``hy3-preview`` identity, without silently binding a
+    # context-only record.
+    first_match: Mapping[str, Any] | None = None
+    for alias in dict.fromkeys(configured_values):
         for record in records:
-            if configured in _identity_values(record):
+            if not _configured_alias_matches(alias, _identity_values(record)):
+                continue
+            if first_match is None:
+                first_match = record
+            if _has_benchmark_metrics(record):
                 return record
+    if first_match is not None:
+        return first_match
     candidate_values = (candidate.model, candidate.candidate_id)
     normalized = {_normalize_identity(value) for value in candidate_values if value}
     best: tuple[float, Mapping[str, Any]] | None = None
@@ -199,11 +232,32 @@ def _records_from_payload(payload: Any) -> list[Mapping[str, Any]]:
     return records
 
 
-def _source_digest(settings: Mapping[str, Any]) -> str:
+def _source_digest(settings: Mapping[str, Any], model_settings: Mapping[str, Any] | None = None) -> str:
+    aliases: dict[str, list[str]] = {}
+    if isinstance(model_settings, Mapping):
+        for candidate_id, override in model_settings.items():
+            if not isinstance(candidate_id, str) or not isinstance(override, Mapping):
+                continue
+            values: list[str] = []
+            aa_slug = override.get("aaSlug")
+            if isinstance(aa_slug, str) and aa_slug:
+                values.append(aa_slug)
+            aa_slugs = override.get("aaSlugs")
+            if isinstance(aa_slugs, list):
+                values.extend(
+                    item for item in aa_slugs if isinstance(item, str) and item
+                )
+            if values:
+                aliases[candidate_id] = list(dict.fromkeys(values))
     safe = {
+        "matching_version": 2,
         "aa_enabled": bool(settings.get("enabled", True)),
         "api_url": str(settings.get("baseUrl", "https://artificialanalysis.ai/api/v2")),
         "cache_hours": float(settings.get("cacheHours", 24)),
+        # Model aliases are part of the evidence contract.  Adding a new
+        # route (for example Kilo's free Hy3 route) must invalidate an older
+        # quality cache that was created before that route existed.
+        "model_aliases": aliases,
     }
     return hashlib.sha256(json.dumps(safe, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -315,7 +369,9 @@ def apply_benchmark_quality(
     settings = provider_policy.get("artificialAnalysis", {})
     if not isinstance(settings, Mapping):
         return tuple(candidates)
-    digest = _source_digest(settings)
+    model_settings = provider_policy.get("models", {})
+    model_settings = model_settings if isinstance(model_settings, Mapping) else {}
+    digest = _source_digest(settings, model_settings)
     path = _cache_path(target)
     cached = None if refresh else _load_cache(path, source_digest=digest, now=current)
     source = "cache"
@@ -328,8 +384,6 @@ def apply_benchmark_quality(
     if records is None and allow_network:
         raw_records, source, fallback_used = _fetch_sources(settings, refresh=refresh, fetcher=fetcher)
         if raw_records:
-            model_settings = provider_policy.get("models", {})
-            model_settings = model_settings if isinstance(model_settings, Mapping) else {}
             built: dict[str, dict[str, float]] = {}
             for candidate in candidates:
                 override = model_settings.get(candidate.candidate_id, {})

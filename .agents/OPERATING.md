@@ -388,6 +388,11 @@ computes one route plan per track from a shared metadata snapshot, requires
 ARR routing occurred. If the command reports `INCOMPLETE` because its catalog
 or evidence is missing, stop and report that state; do not silently fall back
 to native subagents on the parent model.
+Named workflow fan-outs default to distinct model-family routes and return
+`result_directory` plus per-track `report_path` values under
+`.agents/runtime-router/harnesses/kilo/workflows/`; inspect those reports
+instead of launching a second native `kilo run` batch. Pass
+`--allow-route-reuse` only when reuse is deliberate.
 If the receipt-managed runtime itself is missing or stale, use the
 `agent-runtime-router-maintenance` skill first;
 that is different from a valid runtime reporting incomplete catalog evidence.

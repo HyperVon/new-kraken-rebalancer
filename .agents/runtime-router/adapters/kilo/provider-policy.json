@@ -25,10 +25,10 @@
     }
   },
   "readinessProbe": {
-    "maxProbesPerRun": 3,
+    "maxProbesPerRun": 5,
     "cacheTtlSeconds": 86400,
     "failureCacheTtlSeconds": 300,
-    "timeoutSeconds": 120
+    "timeoutSeconds": 300
   },
   "discovery": {
     "providerTimeoutSeconds": 300
@@ -44,7 +44,7 @@
     "kilo": {
       "enabled": true,
       "billing": "account-priced",
-      "include": ["kilo-auto/efficient"]
+      "include": ["*"]
     },
     "opencode-go": {
       "enabled": true,
@@ -78,6 +78,8 @@
     }
   },
   "models": {
+    "kilo/tencent/hy3": {"aaSlugs": ["hy3", "hy3-preview"]},
+    "kilo/tencent/hy3:free": {"aaSlugs": ["hy3", "hy3-preview"]},
     "ollama/gpt-oss:20b": {"aaSlug": "gpt-oss-20b", "contextLimit": 131072},
     "ollama/gemma4:12b": {"aaSlug": "gemma-4-12b", "contextLimit": 262144},
     "ollama/qwen3-coder:30b": {"aaSlug": "qwen3-coder-next", "contextLimit": 262144}

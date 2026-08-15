@@ -52,9 +52,17 @@ ARR/Kilo preset merely to obtain progress updates.
 In Kilo CLI sessions use the receipt-managed runtime and the registered
 workflow. The launcher owns the route plan and `--free-only` rejects paid and
 unknown-cost candidates without requiring a copied policy/config override.
-Run plan mode first and inspect every track's route, effort, billing, fallback,
-and evidence. A missing or stale catalog is `INCOMPLETE`, not permission to use
+Named workflows default to distinct model-family routes; this prevents a
+five-track review from silently becoming five copies of the same model. Use
+`--allow-route-reuse` only when reuse is intentional and documented. Run plan
+mode first and inspect every track's route, effort, billing, fallback, and
+evidence. A missing or stale catalog is `INCOMPLETE`, not permission to use
 Kilo's native role-only Task tool.
+
+For this registered preset, do not reconstruct the adapter by grepping its
+Python files, invoke `kilo auto`, or create a hand-written per-track command.
+The one supported path is the receipt-managed command below; its terminal JSON
+and result files are the contract.
 
 Use a script because Kilo's shell wrapper can mangle long inline task strings:
 
@@ -65,13 +73,17 @@ Use a script because Kilo's shell wrapper can mangle long inline task strings:
       .agents/runtime-router/adapters/kilo/route_subagents.py \
       --workflow comprehensive-quality-overhaul \
       --free-only \
+      --distinct-routes \
       --task "$TASK" \
       --approve
 
 The command above is the launch form after the plan has been reviewed. Omit
 `--approve` for plan mode. The registered preset is read-only; the parent owns
 integration and final verification. Verify parent `git status --porcelain`
-after the wave for stray edits.
+after the wave for stray edits. On a successful launch, the JSON result includes
+`result_directory` and one `report_path` per track under
+`.agents/runtime-router/harnesses/kilo/workflows/`; read those redacted reports
+for findings. Do not run a second native `kilo run` fan-out to recover output.
 
 ### Evidence and approval sequence
 
@@ -118,7 +130,7 @@ workflow worker:
 
     ./.agents/.agent-runtime-router/run.py --python \
       .agents/runtime-router/adapters/kilo/route_subagents.py \
-      --workflow comprehensive-quality-overhaul --free-only \
+      --workflow comprehensive-quality-overhaul --free-only --distinct-routes \
       --prepare-evidence --approve --task "$TASK"
 
 `--prepare-evidence` rejects `--refresh`, so model discovery stays a separate
@@ -135,6 +147,16 @@ the exact candidate IDs in the ARR cache (often `kilo/kilo-auto/<tier>`) and
 report their provider, billing, quota, freshness, capability, and rejection
 evidence. A single bounded `NO_ROUTE` diagnostic is enough; do not loop on the
 label, silently waive `--free-only`, or enable unknown quota/cost.
+
+### Do not bypass the routed result
+
+The launcher may be quiet while discovery, readiness, or workers are running;
+that is expected. Wait for its terminal JSON result and allow the configured
+multi-minute bounds. The result is the source of truth for route/effort and
+the `report_path` files are the source of truth for worker findings. Never
+replace a slow ARR operation with `kilo auto`, a native role-only task, or a
+hand-written batch of `kilo run` commands: those bypass ARR's per-track routing,
+effort binding, free-model gates, and report provenance.
 
 ## Step 0 — prepare the read-only wave
 

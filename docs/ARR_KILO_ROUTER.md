@@ -13,6 +13,15 @@ policy and it is not the source of provider eligibility decisions.
   quota source settings, and legacy blacklist fixture. Free-TPS thresholds and
   probe/cache bounds remain in the ARR target policy at
   `.agents/runtime-router/policy.json`.
+- Provider `include` rules are discovery filters, not billing policy. Kilo's
+  provider is intentionally wildcarded because Kilo Gateway can expose both
+  account-priced and explicitly free models under the same provider. Billing
+  is translated per model from the listing's `isFree`/billing/cost evidence,
+  with the provider declaration used only as a fallback. A free model must
+  still pass ARR's quota, readiness, and TPS gates before it can route.
+  For example, the Kilo listing currently emits `kilo/tencent/hy3:free` with
+  `isFree: true`; that route is distinct from the paid `kilo/tencent/hy3`
+  route even though both belong to the Kilo provider.
 - `.agents/runtime-router/adapters/kilo/profiles.json` owns the eight Kraken
   task profiles and their primary/secondary quality thresholds, context and
   output estimates, reasoning requirements, and native variant preferences.
@@ -115,6 +124,13 @@ normalized effort, billing class, evidence source, and worker status.
   target-owned policy. ARR's generic five-minute default is intentionally
   conservative and is too short for this target's catalog/TPS/readiness
   preparation sequence.
+- The target-owned TPS and tool-readiness probes allow a bounded five-minute
+  provider wait. Do not wrap either command in a 10–15 second shell timeout or
+  interpret a still-running Kilo job as a failed provider.
+- The five-minute policy requires an ARR runtime that accepts the extended
+  probe bound. After updating this target policy, refresh the receipt-managed
+  ARR runtime from the matching ARR source before running the adapter; an older
+  runtime may reject the policy at load time rather than reporting a route.
 - A successful catalog alone does not make a free route eligible: Kraken's
   target policy also requires fresh TPS and tool-readiness evidence. When an
   ordinary free-only plan reports `NO_ROUTE` for those missing observations,
@@ -125,6 +141,12 @@ normalized effort, billing class, evidence source, and worker status.
   It deliberately rejects `--refresh`, keeping Kilo model discovery a separate
   approval. Re-run plan mode and review the result before separately approving
   a worker launch.
+- A workflow `NO_ROUTE` response is structured rather than a bare failure: it
+  identifies the track/profile, candidate count, bounded rejection counts, and
+  a small redacted sample of candidate IDs/reasons. Treat that evidence as the
+  diagnosis (for example `tps:unknown_disallowed` or
+  `capability:missing:agent_readiness`); do not relax policy or substitute
+  native same-model delegation to hide it.
 - OpenCode quota data is optional. A missing plugin leaves free routing usable;
   paid quota remains unknown until a fresh, identity-bound plugin result exists.
 - Free candidates always require a fresh cached TPS measurement at or above the
@@ -161,7 +183,7 @@ mode first, then add `--approve` only after reviewing every route:
 ```bash
 python3 .agents/.agent-runtime-router/run.py --python \
   .agents/runtime-router/adapters/kilo/route_subagents.py \
-  --workflow comprehensive-quality-overhaul --free-only \
+  --workflow comprehensive-quality-overhaul --free-only --distinct-routes \
   --task "<parent request>"
 ```
 
@@ -171,4 +193,9 @@ maintenance/bootstrap skills when the receipt-managed runtime itself is absent.
 The default registered workflow uses ARR's temporary read-only snapshots and
 returns its audit through terminal worker results; it does not create five
 worktrees, heartbeats, or coordination files merely to show intermediate
-progress.
+progress. A successful launch also returns `result_directory` and per-track
+`report_path` values under
+`.agents/runtime-router/harnesses/kilo/workflows/`. Those files contain the
+bounded, redacted worker summaries. Do not bypass this with native `kilo run`
+commands, and use `--allow-route-reuse` only when same-model reuse is
+intentional.

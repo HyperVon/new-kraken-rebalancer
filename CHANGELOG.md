@@ -10,6 +10,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **ARR/Kilo workflow routing**: Name architecture review as a high-intelligence,
+  high-effort profile, plan it first, and default named fan-outs to distinct
+  model-family routes. Receipt-managed launches now return bounded report paths
+  under the target-owned runtime state so agents do not need to bypass ARR with
+  native same-model commands.
+
 - **Docs & harness sync (Batch 1)**: Fix a dangling README fragment, add the
   missing `frontend-js` package tree entries (`AssetColors`, `HistoryFormatting`,
   `HistorySessionState`), align the Karma threshold wording in `CONTRIBUTING.md`,
@@ -37,7 +43,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `CsrfProtection` token-issuance unit tests, and `PortfolioCalculations`
   USD-target fallback tests, raising JVM JaCoCo branch coverage to the 0.90
   gate.
-
 ## [6.16.52] - 2026-08-14
 
 ### Changed

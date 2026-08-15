@@ -60,3 +60,4 @@ __pycache__/
 .agents/runtime-router/.state.lock
 .agents/runtime-router/harnesses/
 .agents/.agent-runtime-router/
+.agents/skills/comprehensive-quality-overhaul/results/
