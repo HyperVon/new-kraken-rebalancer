@@ -166,7 +166,6 @@ manifest manually:
 ./.agents/.agent-runtime-router/run.py --python \
   .agents/runtime-router/adapters/kilo/route_subagents.py \
   --workflow documentation-review \
-  --free-only \
   --distinct-routes \
   --task "<the user's workflow request>"
 ```
@@ -177,7 +176,8 @@ request the separate evidence-only approval and run the documented
 `--prepare-evidence --approve` command before asking for worker approval. Do not
 combine `--refresh` with the worker launch, use a short shell timeout, or fall
 back to Kilo's native role-only task tool. After evidence is ready, rerun the
-plan without `--refresh`, inspect it again, and only then add `--approve` to
+plan without `--refresh`, inspect it again, and only then add `--approve` (and
+`--approve-cost` if paid routes are selected, or `--free-only` for zero-cost runs) to
 launch. The launcher supplies bounded scopes and specialized roles; the parent
 still owns edits, integration, and final gates. Named workflow launches return
 `result_directory` plus one redacted `report_path` per track under

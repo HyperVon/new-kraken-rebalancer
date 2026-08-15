@@ -154,10 +154,72 @@ authoritative; this workflow does not switch it or launch a worker.
    effort (`minimal`, `low`, `medium`, `high`, `xhigh`, `max`) to the observed
    native option.
 
+For a cost-effective advisory, include alternatives (for example cheaper,
+stronger, free, or lower latency) and show cost ranges, quota/billing/TPS
+evidence, freshness, unknowns, and rejection reasons. Do not turn raw scores
+from different benchmarks into one number or hide uncertainty behind a
+“best value” label. This is currently a skill-level read-only workflow over
+`route` output. A dedicated provider-neutral `recommend` contract/CLI is
+planned as roadmap Milestone 6.3C; do not claim that it exists, switch the
+primary model, or launch a worker as part of a recommendation.
+
 For subagents, use the same route-and-effort decision only when the target has
 a workspace-aware ARR launcher. Otherwise explain that native harness
 delegation may reuse the parent model and is not proof that ARR selected the
 subagent route.
+
+### Quality evidence and models outside AA coverage
+
+Do not treat benchmark numbers as a universal scale. A score of `45` from one
+benchmark is not comparable with `45` from another unless ARR has a separately
+versioned, validated calibration. Preserve the source, benchmark/version,
+metric/scale, exact model identity, effort, agent/harness context, freshness,
+applicability, and mapping confidence with every quality observation.
+
+Milestone 6.3A is still planned: the current v1 router may carry legacy
+scalar quality fields, so this source precedence is the accepted target policy
+and evidence contract, not a claim that every installed catalog enforces all
+of these fields today. When an exact Artificial Analysis record exists, treat it as authoritative.
+Alternate benchmark sources may fill coverage gaps for models AA does not
+cover, but they never override or get averaged into an AA result. Use an
+alternate score only for the task dimensions its source actually measures; a
+coding-only result does not prove architecture or long-horizon agentic ability.
+Unknown, stale, unmatched, or proxy evidence remains unknown for strict
+profiles. Fuzzy model-name matching may create a diagnostic suggestion or a
+target-local evaluation candidate, but it must not make another model's score
+routeable.
+
+Benchmark/source adapters are reusable and harness-neutral. A new harness
+integration should provide route discovery, capabilities, effort/variant
+mapping, and native launch semantics; it should not implement benchmark
+parsing or cross-source score conversion. Before enabling alternate evidence,
+produce a read-only coverage report and shadow-routing comparison. Read
+`docs/quality-evidence.md` from the ARR source checkout for the complete policy
+and implementation order; do not assume that source document exists in a
+consumer target merely because this installed skill is present.
+
+### Human decision gate for unknown evidence
+
+Fail-closed automatic routing is still the default. The bounded human-selection
+mode described here is planned (roadmap Milestone 6.3B); until a target exposes
+and explicitly enables that contract, report `INCOMPLETE`/`NO_ROUTE` rather
+than inventing a local override. Once implemented, it may request a bounded
+provisional options report when candidates pass all known hard gates but are
+blocked only by unknown billing, cost, quota, availability, or capability
+evidence. Do not include known denials, pin failures, failed mandatory free-TPS,
+health blocks, known capability/context failures, or other known hard
+rejections.
+
+Show each exact candidate/effort/variant, evidence source/tier, known facts,
+unknown fields, and provisional ranking reasons. Do not launch after displaying
+the list. Require the user to select one exact option, acknowledge each
+unresolved risk, and set a spend cap when billing/cost is unknown. Record a
+user claim as `USER_ATTESTED`, not verified provider evidence. The final
+selection must be bound to the task, policy, candidate, effort, variant,
+command/plan, workspace, limits, and attestations. Never use a blanket
+“allow all unknowns” switch, silently retry another unknown route, or reuse a
+selection after task/policy/evidence drift. The harness may render the options
+and collect the choice; ARR owns validation and approval binding.
 
 ### Language-neutral task analysis
 

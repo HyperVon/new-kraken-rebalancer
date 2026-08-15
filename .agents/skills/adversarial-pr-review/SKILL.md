@@ -97,10 +97,10 @@ several small, independently useful reports:
 **MUST — no exceptions.** For every Kilo CLI session, you MUST invoke the
 receipt-managed ARR launcher (`.agents/.agent-runtime-router/run.py --python`
 wrapping `.agents/runtime-router/adapters/kilo/route_subagents.py`) with
-`--workflow adversarial-pr-review --free-only --approve` to launch independent
-review tracks. You MUST NOT use the native `Task` / `task` tool,
-`ctx_batch_execute`, `ctx_execute`, or any in-process parallel scan as a
-substitute for the routed launcher. A role label (e.g. `adversarial-reviewer-a`)
+`--workflow adversarial-pr-review --approve` (and `--approve-cost` for paid routes, or
+`--free-only` for free routes) to launch independent review tracks. You MUST NOT use the
+native `Task` / `task` tool, `ctx_batch_execute`, `ctx_execute`, or any in-process parallel
+scan as a substitute for the routed launcher. A role label (e.g. `adversarial-reviewer-a`)
 or a Kilo Auto tier does not select a provider/model route; only the launcher’s
 exact route plan satisfies the model-selection gate. If it reports
 `INCOMPLETE`, `NO_ROUTE`, or an execution error, stop and preserve that status;
@@ -108,7 +108,7 @@ do not silently fall back to same-model native subagents.
 
 Before that approved launch, run the same command once in plan mode (omit
 `--approve` and `--refresh`) and inspect every track's exact candidate, billing,
-quota, TPS, tool-readiness, effort, and rejection evidence. A missing/stale
+quota, TPS, tool-readiness, effort, cost estimates, and rejection evidence. A missing/stale
 catalog requires separate bounded discovery approval. A `NO_ROUTE` caused by
 missing free TPS or tool-readiness evidence requires the separate
 `--prepare-evidence --approve` step described in the target ARR adapter docs;
@@ -127,8 +127,8 @@ that the user has not yet provided.
 For Kilo CLI sessions this handoff is **mandatory**: launch the independent
 tracks through the `adversarial-pr-review` preset using the receipt-managed
 `.agents/.agent-runtime-router/run.py --python` wrapper and the target ARR
-adapter (with `--free-only --approve` after the exact-route gate passes) per the
-target ARR adapter docs. Do not substitute raw
+adapter (with `--approve` and `--approve-cost` or `--free-only` after the exact-route
+gate passes) per the target ARR adapter docs. Do not substitute raw
 role-only `Task` calls for the preset — a role label does not select a
 provider/model route. Include the track matrix in the parent task so agents do
 not redo one another's work.

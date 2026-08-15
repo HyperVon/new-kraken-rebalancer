@@ -189,7 +189,7 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         policy = TargetPolicyConfig.from_mapping(raw)
         self.assertTrue(policy.routing_policy.allow_free)
         self.assertTrue(policy.routing_policy.min_free_tps >= 20)
-        self.assertEqual(300.0, policy.routing_policy.tps_probe_timeout_seconds)
+        self.assertEqual(60.0, policy.routing_policy.tps_probe_timeout_seconds)
         self.assertIn("ollama", policy.routing_policy.denied_providers)
         self.assertTrue(any("claude" in entry for entry in policy.blacklist))
 
@@ -807,6 +807,36 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         self.assertFalse(legacy.exists(), "the deleted router must not be resurrected")
         self.assertTrue((ADAPTER_DIR / "run_arr_task.py").is_file())
         self.assertTrue((ADAPTER_DIR / "route_subagents.py").is_file())
+
+    def test_workflow_plan_includes_cost_report_and_free_alternatives(self) -> None:
+        runner = ADAPTER_DIR / "route_subagents.py"
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join(
+            item for item in (env.get("PYTHONPATH", ""), str(ADAPTER_DIR)) if item
+        )
+        result = subprocess.run(
+            [sys.executable, str(runner), "--target", str(ROOT), "--workflow", "comprehensive-quality-overhaul", "--free-only", "--allow-route-reuse", "Test plan"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=15,
+        )
+        # Catalog cache may be absent in fresh checkout/CI — treat as skip, not failure
+        if result.returncode != 0:
+            try:
+                payload = json.loads(result.stdout) if result.stdout else {}
+            except Exception:
+                payload = {}
+            if payload.get("status") == "INCOMPLETE" and "catalog" in payload.get("error_code", ""):
+                self.skipTest("catalog cache not present (expected in fresh checkout)")
+            self.assertEqual(result.returncode, 0, f"stdout={result.stdout} stderr={result.stderr}")
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "PLAN")
+        self.assertIn("cost_report", payload)
+        cost_report = payload["cost_report"]
+        self.assertTrue(cost_report["all_free"])
+        self.assertEqual(cost_report["total_estimated_cost"], 0.0)
+        self.assertEqual(len(cost_report["task_summaries"]), 5)
 
 
 if __name__ == "__main__":
