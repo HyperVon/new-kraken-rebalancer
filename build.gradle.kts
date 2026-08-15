@@ -229,6 +229,11 @@ val httpCoreVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)(?:[-+].*)?""")
 val (httpCoreSecurityMajor, httpCoreSecurityMinor, httpCoreSecurityPatch) =
     httpCoreVersionPattern.matchEntire(httpCoreSecurityFloor)!!.destructured
 
+val httpClientSecurityFloor = "5.6.3"
+val httpClientVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)(?:[-+].*)?""")
+val (httpClientSecurityMajor, httpClientSecurityMinor, httpClientSecurityPatch) =
+    httpClientVersionPattern.matchEntire(httpClientSecurityFloor)!!.destructured
+
 configurations.all {
     resolutionStrategy.eachDependency {
         if (requested.group == "org.apache.httpcomponents.core5" &&
@@ -259,6 +264,36 @@ configurations.all {
                     useVersion(httpCoreSecurityFloor)
                     because(
                         "Keep Apache HttpComponents Core at 5.4.3 or newer for CVE-2026-54399",
+                    )
+                }
+            }
+        }
+        if (requested.group == "org.apache.httpcomponents.client5" && requested.name == "httpclient5") {
+            val requestedVersion =
+                requested.version
+                    ?.let(httpClientVersionPattern::matchEntire)
+                    ?.destructured
+            if (requestedVersion != null) {
+                val (major, minor, patch) = requestedVersion
+                val majorNumber = major.toInt()
+                val minorNumber = minor.toInt()
+                val patchNumber = patch.toInt()
+                val isBelowSecurityFloor =
+                    majorNumber < httpClientSecurityMajor.toInt() ||
+                        (
+                            majorNumber == httpClientSecurityMajor.toInt() &&
+                                (
+                                    minorNumber < httpClientSecurityMinor.toInt() ||
+                                        (
+                                            minorNumber == httpClientSecurityMinor.toInt() &&
+                                                patchNumber < httpClientSecurityPatch.toInt()
+                                            )
+                                    )
+                            )
+                if (isBelowSecurityFloor) {
+                    useVersion(httpClientSecurityFloor)
+                    because(
+                        "Keep Apache HttpComponents Client at 5.6.3 or newer for CVE-2026-64607 / GHSA-hjcp-jmpx-g3qm (pool exhaustion DoS)",
                     )
                 }
             }
