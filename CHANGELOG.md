@@ -14,6 +14,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Follow-up: FormatSpec + ledger cursors + allowlist**: Introduce `FormatSpec` in `:common` as single source for price/fee tier (`>=100→2, >=1→4, >=0.01→6 else 8`) and delegate `HistoryTradeRendering`/`Formatter` to it, add `FormatSpecTest`/`Formatter` tier tests, implement per-type ledger cursors in `LedgersSyncService` (independent `offset`/`total`/`done` per `staking`/`dividend` with summed progress), and make `isLocalOrPrivateOrigin` testable via explicit `Set<String>` overload with `NetworkUtilsTest` allowlist coverage. Adjust JaCoCo branch gate to `0.89` for the new env-gated `ALLOW_ALL` path until integration covers it, and update `README` common tree.
 
+### Security
+
+- **Dependabot #111 — CVE-2026-64607 / GHSA-hjcp-jmpx-g3qm**: Bump `org.apache.httpcomponents.client5:httpclient5` from `5.5.1` (via `ktor-client-apache5`/`ktor-server-test-host`) to `5.6.3` via Gradle `resolutionStrategy` security floor (`httpClientSecurityFloor`). Fixes classic-IO connection leak on invalid `Content-Encoding` that could exhaust the pool (pool-exhaustion DoS, CVSS 5.3, CWE-772). Verified with `dependencyInsight` (`5.5.1 -> 5.6.3` selected by rule) and `build`/`jacocoTestCoverageVerification` green. Existing `httpcore5` (`5.4.3` for CVE-2026-54399) and `netty` (`4.2.17.Final`) floors remain.
+
 ## [6.16.53] - 2026-08-14
 
 ### Changed
