@@ -176,17 +176,30 @@ def _raw_capabilities(record: Mapping[str, Any]) -> tuple[frozenset[str], bool |
 
 def _billing(route: str, provider_settings: Mapping[str, Any], model_settings: Mapping[str, Any], record: Mapping[str, Any]) -> str:
     configured = model_settings.get("billing", provider_settings.get("billing"))
+    record_billing = record.get("billing")
     costs = record.get("cost")
     input_cost = _number(costs.get("input")) if isinstance(costs, Mapping) else None
     output_cost = _number(costs.get("output")) if isinstance(costs, Mapping) else None
+    # Provider billing is only a fallback.  Kilo (and other gateways) can
+    # expose both account-priced and explicitly free models under one
+    # provider, so a verified per-model marker must win over the provider
+    # default.  ``isFree`` is emitted by Kilo's model listing; the route
+    # suffix remains a portable fallback for providers that encode free
+    # models in their IDs.
+    if record.get("isFree") is True:
+        return "free"
     if route.lower().endswith(":free") or "/free" in route.lower() or provider_settings.get("freeOnly"):
         return "free"
-    if isinstance(configured, str) and configured in {"free", "paid", "payg", "subscription", "subscription/account-priced", "account-priced"}:
+    valid_billing = {"free", "paid", "payg", "subscription", "subscription/account-priced", "account-priced"}
+    if isinstance(record_billing, str) and record_billing in valid_billing:
+        return record_billing
+    if isinstance(configured, str) and configured in valid_billing:
         return configured
-    # A target-owned billing declaration is authoritative. Some account-backed
+    # A provider-level account/subscription declaration remains the fallback
+    # when the listing has no per-model billing marker. Some account-backed
     # gateways advertise a zero per-token catalog price even though requests
-    # consume account credits or subscription quota; treating those routes as
-    # free would bypass both paid authorization and quota evidence.
+    # consume account credits or subscription quota; the configured fallback
+    # is intentionally checked above so those routes remain paid.
     if input_cost == 0 and output_cost == 0:
         return "free"
     return "unknown"
@@ -272,6 +285,22 @@ def build_candidates(raw_models: Iterable[Mapping[str, Any]], provider_policy: M
         costs = record.get("cost") if isinstance(record.get("cost"), Mapping) else {}
         input_cost = _number(costs.get("input"))
         output_cost = _number(costs.get("output"))
+        free_hint = (
+            override.get("billing") == "free"
+            or record.get("billing") == "free"
+            or record.get("isFree") is True
+            or route.lower().endswith(":free")
+            or "/free" in route.lower()
+            or settings.get("freeOnly")
+        )
+        # Do not allow contradictory metadata to turn a positively priced
+        # route into a free candidate.  This applies to mixed providers as
+        # well as providers configured free-only.
+        if free_hint and (
+            (input_cost is not None and input_cost > 0)
+            or (output_cost is not None and output_cost > 0)
+        ):
+            continue
         # A free-only target provider must not turn a catalog row with a
         # positive advertised price into a free candidate. Drop it rather
         # than allowing it to bypass paid/quota policy.

@@ -103,7 +103,10 @@ convergence.
    routes. The registered read-only ARR/Kilo workflow does not create
    worktrees or a coordination directory.
 2. Under Kilo, run the receipt-managed ARR launcher in plan mode first, using
-   the `comprehensive-quality-overhaul` workflow and `--free-only`. Never call
+   the `comprehensive-quality-overhaul` workflow, `--free-only`, and distinct
+   routes. Architecture is intentionally planned first with the named
+   `architecture` profile so it receives the strongest eligible route before
+   diversity is applied to the remaining tracks. Never call
    Kilo's native `Task` tool as a fallback when the target ARR adapter exists.
    If the launcher reports `INCOMPLETE` for missing catalog/evidence, stop and
    report that state (or obtain the separate approval needed for discovery or
@@ -118,6 +121,8 @@ convergence.
    the adapter's configured bounded deadline with a short manual timeout or
    exclude a provider from one short diagnostic alone.
    Launch all five tracks only after the exact plan is reviewed and approved.
+   Read the terminal result's `result_directory` and per-track `report_path`
+   files; do not launch a second native Kilo fan-out to obtain reports.
    Other harnesses use their native bounded fan-out and must record the
    selected route themselves.
 3. Wait for the terminal worker results; do not diagnose a stall from silence.

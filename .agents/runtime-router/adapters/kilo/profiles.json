@@ -49,6 +49,19 @@
       "output_tokens": 5000,
       "variantPreference": ["high", "thinking", "max", "xhigh", "medium"]
     },
+    "architecture": {
+      "metric": "artificial_analysis_intelligence_index",
+      "minimum": 40,
+      "secondary": {
+        "artificial_analysis_agentic_index": 25,
+        "artificial_analysis_coding_index": 20
+      },
+      "requiresReasoning": true,
+      "context": 128000,
+      "input_tokens": 16000,
+      "output_tokens": 8000,
+      "variantPreference": ["max", "xhigh", "high", "thinking", "medium"]
+    },
     "quick-review": {
       "metric": "artificial_analysis_intelligence_index",
       "minimum": 34,

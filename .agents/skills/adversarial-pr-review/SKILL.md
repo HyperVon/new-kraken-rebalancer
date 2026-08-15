@@ -106,6 +106,18 @@ exact route plan satisfies the model-selection gate. If it reports
 `INCOMPLETE`, `NO_ROUTE`, or an execution error, stop and preserve that status;
 do not silently fall back to same-model native subagents.
 
+Before that approved launch, run the same command once in plan mode (omit
+`--approve` and `--refresh`) and inspect every track's exact candidate, billing,
+quota, TPS, tool-readiness, effort, and rejection evidence. A missing/stale
+catalog requires separate bounded discovery approval. A `NO_ROUTE` caused by
+missing free TPS or tool-readiness evidence requires the separate
+`--prepare-evidence --approve` step described in the target ARR adapter docs;
+that step never launches workers. Kilo discovery and readiness can legitimately
+take several minutes, so do not use a 10–15 second shell timeout, start a
+duplicate job, or replace the adapter with `kilo auto`/native role-only
+delegation. Rerun the plan without `--refresh` after evidence is ready, then
+obtain the exact worker-launch approval.
+
 For `adversarial-pr-review`, the approval gate is the user's explicit request
 to run an adversarial/multi-agent PR review. That request authorizes `--approve`
 immediately; you do NOT need to ask for additional permission. Omit `--approve`

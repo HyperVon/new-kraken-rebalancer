@@ -10,11 +10,13 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 from pathlib import Path
 
 from agent_runtime_router import (
-    Candidate, EffortLevel, Availability, CostClass, KILO_READINESS_SOURCE,
+    Candidate, EffortLevel, EffortProfile, Availability, CostClass, KILO_READINESS_SOURCE,
     QuotaStatus, READINESS_CAPABILITY, ReadinessCache, ReadinessMeasurement,
     ReadinessStatus, TaskRequest,
 )
@@ -29,11 +31,20 @@ from quota import collect_quota_evidence
 from run_arr_task import (
     TARGET as RUNNER_TARGET,
     _apply_profile_quality, _load_or_discover, _readiness_digest, _readiness_settings,
-    _route_with_readiness, _task, _tps_probe_priority,
+    _tps_evidence_digest,
+    _remove_failed_readiness_option, _route_with_readiness, _task, _tps_probe_priority,
     _resolve_kilo_alias,
 )
-from route_subagents import TARGET as SUBAGENT_RUNNER_TARGET, _free_only_policy, _workflow_tracks
+from route_subagents import (
+    TARGET as SUBAGENT_RUNNER_TARGET,
+    _diversity_key,
+    _free_only_policy,
+    _persist_worker_reports,
+    _workflow_uses_distinct_routes,
+    _workflow_tracks,
+)
 from route_subagents import _sanitize_prompt as sanitize_workflow_prompt
+from route_subagents import _no_route_payload
 from run_arr_task import _sanitize_prompt as sanitize_manual_prompt
 
 
@@ -92,9 +103,47 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         self.assertEqual("account-priced", candidate.billing)
         self.assertEqual(CostClass.PAID, candidate.cost_class)
 
+    def test_explicit_model_free_marker_overrides_mixed_provider_default(self) -> None:
+        records = (
+            {
+                "providerID": "kilo",
+                "id": "tencent/hy3:free",
+                "status": "active",
+                "isFree": True,
+                "cost": {"input": 0, "output": 0},
+                "capabilities": {"toolcall": True, "reasoning": True},
+                "limit": {"context": 262144, "output": 128000},
+                "variants": {"none": {}, "low": {}, "high": {}},
+            },
+        )
+        policy = json.loads((ADAPTER_DIR / "provider-policy.json").read_text())
+        candidate = build_candidates(records, policy)[0]
+        self.assertEqual("kilo/tencent/hy3:free", candidate.candidate_id)
+        self.assertEqual("free", candidate.billing)
+        self.assertEqual(CostClass.FREE, candidate.cost_class)
+        self.assertEqual({EffortLevel.LOW, EffortLevel.HIGH}, {profile.effort for profile in candidate.effort_profiles})
+
+    def test_positive_price_cannot_be_marked_free_by_contradictory_model_metadata(self) -> None:
+        records = (
+            {
+                "providerID": "kilo",
+                "id": "tencent/hy3:free",
+                "status": "active",
+                "isFree": True,
+                "cost": {"input": 0.14, "output": 0.58},
+            },
+        )
+        policy = json.loads((ADAPTER_DIR / "provider-policy.json").read_text())
+        with self.assertRaises(CatalogError):
+            build_candidates(records, policy)
+
+    def test_hy3_artificial_analysis_alias_is_target_owned(self) -> None:
+        policy = json.loads((ADAPTER_DIR / "provider-policy.json").read_text())
+        self.assertEqual(["hy3", "hy3-preview"], policy["models"]["kilo/tencent/hy3:free"]["aaSlugs"])
+
     def test_all_legacy_profiles_are_present(self) -> None:
         profiles = json.loads((ADAPTER_DIR / "profiles.json").read_text())
-        expected = {"trivial", "routine", "coding", "complex-coding", "agentic", "quick-review", "detailed-review", "critical"}
+        expected = {"trivial", "routine", "coding", "complex-coding", "agentic", "architecture", "quick-review", "detailed-review", "critical"}
         self.assertEqual(set(profiles["profiles"]), expected)
         for profile in profiles["profiles"].values():
             self.assertIn("context", profile)
@@ -105,6 +154,11 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         self.assertEqual(profiles["profiles"]["coding"]["secondary"], {"artificial_analysis_agentic_index": 15})
         self.assertEqual(profiles["profiles"]["complex-coding"]["minimum"] + profiles["profiles"]["complex-coding"]["margin"], 60)
         self.assertEqual(profiles["profiles"]["agentic"]["secondary"], {"artificial_analysis_coding_index": 15})
+        self.assertEqual(profiles["profiles"]["architecture"]["minimum"], 40)
+        self.assertEqual(
+            profiles["profiles"]["architecture"]["variantPreference"][0],
+            "max",
+        )
         self.assertEqual(profiles["profiles"]["quick-review"]["context"], 96000)
         self.assertEqual(profiles["profiles"]["detailed-review"]["secondary"]["artificial_analysis_agentic_index"], 25)
         self.assertEqual(profiles["profiles"]["critical"]["variantPreference"][0], "max")
@@ -135,6 +189,7 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         policy = TargetPolicyConfig.from_mapping(raw)
         self.assertTrue(policy.routing_policy.allow_free)
         self.assertTrue(policy.routing_policy.min_free_tps >= 20)
+        self.assertEqual(300.0, policy.routing_policy.tps_probe_timeout_seconds)
         self.assertIn("ollama", policy.routing_policy.denied_providers)
         self.assertTrue(any("claude" in entry for entry in policy.blacklist))
 
@@ -236,6 +291,49 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         )
         self.assertTrue(all(track.get("read_only") is True for track in tracks))
         self.assertTrue(all(track.get("files") and track.get("task") for track in tracks))
+        self.assertEqual("architecture", next(track for track in tracks if track["id"] == "wt-arch")["profile"])
+
+    def test_workflow_diversity_treats_free_alias_as_same_model_family(self) -> None:
+        free = Candidate(
+            "kilo", "tencent/hy3:free", frozenset({"code"}),
+            Availability.AVAILABLE, CostClass.FREE, QuotaStatus.AVAILABLE, 128000,
+        )
+        paid = Candidate(
+            "kilo", "tencent/hy3", frozenset({"code"}),
+            Availability.AVAILABLE, CostClass.PAID, QuotaStatus.AVAILABLE, 128000,
+        )
+        self.assertEqual(_diversity_key(free), _diversity_key(paid))
+
+    def test_named_workflows_default_to_distinct_model_families(self) -> None:
+        self.assertTrue(_workflow_uses_distinct_routes("comprehensive-quality-overhaul"))
+        self.assertTrue(_workflow_uses_distinct_routes("architecture-review"))
+        self.assertFalse(_workflow_uses_distinct_routes(None))
+
+    def test_workflow_reports_are_persisted_as_bounded_paths(self) -> None:
+        class FakeResult:
+            track = "wt-arch"
+            report = "redacted worker summary"
+
+            @staticmethod
+            def to_execution_report(*, adapter_status: str) -> Any:
+                return SimpleNamespace(
+                    to_dict=lambda: {
+                        "schema_version": 1,
+                        "track": "wt-arch",
+                        "status": "SUCCEEDED",
+                        "adapter_status": adapter_status,
+                    }
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            relative, results = _persist_worker_reports(
+                Path(directory), "comprehensive-quality-overhaul", [FakeResult()]
+            )
+            report_path = Path(directory) / results[0]["report_path"]
+            self.assertTrue(report_path.is_file())
+            self.assertEqual("redacted worker summary", report_path.read_text(encoding="utf-8"))
+            self.assertTrue((Path(directory) / relative / "manifest.json").is_file())
+            self.assertEqual(64, len(results[0]["report_sha256"]))
 
     def test_receipt_runner_exposes_free_only_workflow_launcher(self) -> None:
         runner = ROOT / ".agents" / ".agent-runtime-router" / "run.py"
@@ -355,6 +453,29 @@ class KrakenKiloAdapterTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload, {"error_code": "catalog_missing_or_unusable", "status": "INCOMPLETE"})
 
+    def test_no_route_report_preserves_track_and_rejection_reasons(self) -> None:
+        policy = TargetPolicyConfig.from_mapping(
+            json.loads((POLICY_DIR / "policy.json").read_text())
+        )
+        restricted = _free_only_policy(policy)
+        paid = Candidate(
+            "openrouter", "paid", frozenset({"code"}), Availability.AVAILABLE,
+            CostClass.PAID, QuotaStatus.AVAILABLE, 128000, billing="payg",
+        )
+        task = TaskRequest("no-route", frozenset({"code"}), 1, None, None)
+        decision = route_with_target_policy(task, (paid,), restricted)
+        from agent_runtime_router.workflow import Track
+
+        payload = _no_route_payload(
+            Track("tests-docs", "private prompt must not be emitted", "routine", "code", (), True),
+            decision,
+        )
+        self.assertEqual("no_route", payload["error_code"])
+        self.assertEqual("tests-docs", payload["track"])
+        self.assertEqual(1, payload["candidate_count"])
+        self.assertTrue(payload["rejection_counts"])
+        self.assertNotIn("private prompt", json.dumps(payload))
+
     def test_missing_quota_plugin_does_not_break_free_candidates(self) -> None:
         candidates = (Candidate("openrouter", "demo:free", frozenset({"code"}), __import__("agent_runtime_router").Availability.AVAILABLE, __import__("agent_runtime_router").CostClass.FREE, __import__("agent_runtime_router").QuotaStatus.UNKNOWN, 128000, billing="free"),)
         provider_policy = json.loads((ADAPTER_DIR / "provider-policy.json").read_text())
@@ -458,10 +579,10 @@ class KrakenKiloAdapterTests(unittest.TestCase):
 
     def test_readiness_probe_settings_are_target_owned_and_bounded(self) -> None:
         provider_policy = json.loads((ADAPTER_DIR / "provider-policy.json").read_text())
-        self.assertEqual((3, 86400.0, 300.0, 120.0), _readiness_settings(provider_policy))
-        self.assertEqual((2, 86400.0, 300.0, 120.0), _readiness_settings(provider_policy, requested_max_probes=2))
+        self.assertEqual((5, 86400.0, 300.0, 300.0), _readiness_settings(provider_policy))
+        self.assertEqual((2, 86400.0, 300.0, 300.0), _readiness_settings(provider_policy, requested_max_probes=2))
         with self.assertRaises(CatalogError):
-            _readiness_settings(provider_policy, requested_max_probes=4)
+            _readiness_settings(provider_policy, requested_max_probes=6)
 
     def test_tps_probe_priority_uses_arr_route_order_without_bypassing_gate(self) -> None:
         free = Candidate(
@@ -489,6 +610,80 @@ class KrakenKiloAdapterTests(unittest.TestCase):
             __import__("agent_runtime_router.harnesses.target", fromlist=["route_with_target_policy"])
             .route_with_target_policy(task, (free,), policy).selected
         )
+
+    def test_failed_readiness_variant_keeps_other_effort_options(self) -> None:
+        candidate = Candidate(
+            "openrouter", "free", frozenset({"code", "tool_call"}),
+            Availability.AVAILABLE, CostClass.FREE, QuotaStatus.AVAILABLE,
+            128000, billing="free", effort_profiles=(
+                __import__("agent_runtime_router", fromlist=["EffortProfile"]).EffortProfile(
+                    EffortLevel.LOW, quality=40, variant="low",
+                ),
+                __import__("agent_runtime_router", fromlist=["EffortProfile"]).EffortProfile(
+                    EffortLevel.MEDIUM, quality=40, variant="medium",
+                ),
+            ),
+        )
+        remaining = _remove_failed_readiness_option(
+            (candidate,), candidate.candidate_id, EffortLevel.MEDIUM, "medium"
+        )
+        self.assertEqual((EffortLevel.LOW,), tuple(item.effort for item in remaining[0].effort_profiles))
+        self.assertEqual(
+            (), _remove_failed_readiness_option(
+                remaining, candidate.candidate_id, EffortLevel.LOW, "low"
+            )
+        )
+
+    def test_readiness_failure_falls_back_to_a_measured_variant(self) -> None:
+        policy = TargetPolicyConfig.from_mapping(
+            json.loads((POLICY_DIR / "policy.json").read_text())
+        )
+        candidate = Candidate(
+            "openrouter", "free", frozenset({"code", "tool_call"}),
+            Availability.AVAILABLE, CostClass.FREE, QuotaStatus.AVAILABLE,
+            128000, billing="free", effort_profiles=(
+                EffortProfile(EffortLevel.LOW, quality=40, variant="low"),
+                EffortProfile(EffortLevel.MEDIUM, quality=40, variant="medium"),
+            ),
+        )
+        task = TaskRequest(
+            "readiness-fallback", frozenset({"code", READINESS_CAPABILITY}),
+            1, None, None,
+        )
+        now = time.time()
+        medium_digest = _readiness_digest(
+            catalog_digest="a" * 64, candidate=candidate,
+            effort=EffortLevel.MEDIUM, variant="medium", executable="/opt/kilo",
+        )
+        low_digest = _readiness_digest(
+            catalog_digest="b" * 64, candidate=candidate,
+            effort=EffortLevel.LOW, variant="low", executable="/opt/kilo",
+        )
+        failed = ReadinessMeasurement(
+            candidate.candidate_id, KILO_READINESS_SOURCE, "kilo", medium_digest,
+            ReadinessStatus.FAILED, now, now + 600, 1.0, False, False,
+            "canary_result_missing",
+        )
+        ready = ReadinessMeasurement(
+            candidate.candidate_id, KILO_READINESS_SOURCE, "kilo", low_digest,
+            ReadinessStatus.READY, now, now + 600, 1.0, True, True,
+        )
+        tps = TpsMeasurement(
+            candidate.candidate_id, "test", "kilo", "t" * 64,
+            TpsStatus.MEASURED, now, now + 600, 30,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory).resolve()
+            path = target / ".agents/runtime-router/harnesses/kilo/readiness.json"
+            ReadinessCache((failed, ready)).write(path, now=now)
+            decision = _route_with_readiness(
+                task, (candidate,), policy, quota={}, tps={candidate.candidate_id: tps},
+                target=target, adapter=None, executable="/opt/kilo", catalog_digest="c" * 64,
+                approve=False, max_probes=3, cache_ttl_seconds=600,
+                failure_cache_ttl_seconds=30, timeout_seconds=300,
+            )
+        self.assertEqual(candidate.candidate_id, decision.selected.candidate_id)
+        self.assertEqual(EffortLevel.LOW, decision.selected_effort)
 
     def test_cached_readiness_routes_around_exhausted_subscription_to_payg(self) -> None:
         subscription = Candidate(
@@ -527,6 +722,32 @@ class KrakenKiloAdapterTests(unittest.TestCase):
                 failure_cache_ttl_seconds=30, timeout_seconds=10,
             )
         self.assertEqual(payg.candidate_id, decision.selected.candidate_id)
+
+    def test_evidence_digests_survive_catalog_refresh_but_bind_launch_contract(self) -> None:
+        candidate = Candidate(
+            "openrouter", "free", frozenset({"code"}), Availability.AVAILABLE,
+            CostClass.FREE, QuotaStatus.AVAILABLE, 128000, billing="free",
+        )
+        first = _readiness_digest(
+            catalog_digest="a" * 64, candidate=candidate, effort=None,
+            variant=None, executable="/opt/kilo",
+        )
+        refreshed = _readiness_digest(
+            catalog_digest="b" * 64, candidate=candidate, effort=None,
+            variant=None, executable="/opt/kilo",
+        )
+        self.assertEqual(first, refreshed)
+        policy = TargetPolicyConfig.from_mapping(
+            json.loads((POLICY_DIR / "policy.json").read_text())
+        )
+        self.assertEqual(
+            _tps_evidence_digest(policy, "/opt/kilo"),
+            _tps_evidence_digest(policy, "/opt/kilo"),
+        )
+        self.assertNotEqual(
+            _tps_evidence_digest(policy, "/opt/kilo"),
+            _tps_evidence_digest(policy, "/opt/other-kilo"),
+        )
 
     def test_catalog_discovery_uses_configured_multi_minute_provider_budget(self) -> None:
         provider_policy = {

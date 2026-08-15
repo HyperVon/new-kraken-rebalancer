@@ -3,11 +3,11 @@
   "source_ref": "new-kraken-rebalancer@7e94c39",
   "workflows": {
     "comprehensive-quality-overhaul": [
+      {"id":"wt-arch","profile":"architecture","agent":"explore","files":["src/","common/","frontend-js/",".agents/"],"task":"Produce architecture and product recommendations only; do not implement them. Prioritize system boundaries, long-horizon trade-offs, and high-impact risks.","read_only":true},
       {"id":"wt-code","profile":"coding","agent":"explore","files":["src/","common/"],"task":"Audit code quality and report bounded scoped corrections for the parent to review.","read_only":true},
       {"id":"wt-docs","profile":"routine","agent":"documentation-contract-auditor","files":["README.md","CHANGELOG.md","docs/",".agents/"],"task":"Audit documentation and guidance against source truth and report bounded corrections.","read_only":true},
       {"id":"wt-skills","profile":"routine","agent":"agent-guidance-auditor","files":[".agents/",".cursor/",".kilo/"],"task":"Audit rules, skills, and harness projections for drift and safety issues.","read_only":true},
-      {"id":"wt-tests","profile":"coding","agent":"explore","files":["src/test/","common/","gradle/",".github/"],"task":"Audit tests, quality gates, security, and dependency evidence without changing live behavior.","read_only":true},
-      {"id":"wt-arch","profile":"agentic","agent":"explore","files":["src/","common/","frontend-js/",".agents/"],"task":"Produce architecture and product recommendations only; do not implement them.","read_only":true}
+      {"id":"wt-tests","profile":"coding","agent":"explore","files":["src/test/","common/","gradle/",".github/"],"task":"Audit tests, quality gates, security, and dependency evidence without changing live behavior.","read_only":true}
     ],
     "documentation-review": [
       {"id":"product-docs","profile":"routine","agent":"documentation-contract-auditor","files":["README.md","docs/","SECURITY.md"],"task":"Audit product and security documentation against source truth."},
@@ -25,8 +25,8 @@
       {"id":"tests-docs","profile":"routine","agent":"documentation-contract-auditor","files":["src/test/","docs/","CHANGELOG.md"],"task":"Review tests and docs for contract gaps."}
     ],
     "architecture-review": [
-      {"id":"backend-domain","profile":"agentic","agent":"explore","files":["src/","common/"],"task":"Map backend, domain, trading, and persistence architecture."},
-      {"id":"ui-flows","profile":"agentic","agent":"explore","files":["src/","frontend-js/","common/"],"task":"Map HTTP, SSR, frontend, and reactive-flow architecture."},
+      {"id":"backend-domain","profile":"architecture","agent":"explore","files":["src/","common/"],"task":"Map backend, domain, trading, and persistence architecture."},
+      {"id":"ui-flows","profile":"architecture","agent":"explore","files":["src/","frontend-js/","common/"],"task":"Map HTTP, SSR, frontend, and reactive-flow architecture."},
       {"id":"operations-security","profile":"critical","agent":"agent-guidance-auditor","files":[".agents/",".kilo/",".github/","SECURITY.md"],"task":"Map operations, security, and agent-harness architecture."}
     ],
     "continuous-quality": [

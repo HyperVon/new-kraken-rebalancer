@@ -16,7 +16,7 @@ from agent_runtime_router.harnesses.contracts import (
     ProbeEvidence,
     VerificationReport,
 )
-from agent_runtime_router.integrations.kilo import KiloAdapter
+from agent_runtime_router.integrations.kilo import DEFAULT_KILO_TIMEOUT_SECONDS, KiloAdapter
 from agent_runtime_router.observations import Freshness
 
 from catalog import CatalogError, discover_candidates
@@ -70,7 +70,11 @@ class KrakenCatalogSource:
         )
 
 
-def build_adapter(target_root: Path, executable: str | Path | None = None) -> KiloAdapter:
+def build_adapter(
+    target_root: Path,
+    executable: str | Path | None = None,
+    timeout_seconds: float = DEFAULT_KILO_TIMEOUT_SECONDS,
+) -> KiloAdapter:
     policy_dir = target_root / ".agents" / "runtime-router" / "adapters" / "kilo"
     provider_policy = load_json(policy_dir / "provider-policy.json")
     kilo = str(executable or shutil.which("kilo") or "")
@@ -106,6 +110,7 @@ def build_adapter(target_root: Path, executable: str | Path | None = None) -> Ki
         discovery_source=KrakenCatalogSource(str(kilo_path), provider_policy),
         profile=profile,
         version=profile.version if profile else None,
+        timeout_seconds=timeout_seconds,
         effort_variants={
             # The native mapping is deliberately target-visible and can be
             # changed when Kilo verifies a new variant contract.
