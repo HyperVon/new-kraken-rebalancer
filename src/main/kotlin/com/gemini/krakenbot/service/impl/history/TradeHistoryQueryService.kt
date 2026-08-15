@@ -62,7 +62,7 @@ class TradeHistoryQueryService(
         val points = snapshots.map { snapshot ->
             while (eventIndex < stakingEvents.size && stakingEvents[eventIndex].time <= snapshot.timestamp) {
                 val event = stakingEvents[eventIndex]
-                val symbol = event.asset.uppercase()
+                val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
                 cumulativeByAsset[symbol] = (cumulativeByAsset[symbol] ?: BigDecimal.ZERO).add(event.amount)
                 eventIndex++
             }

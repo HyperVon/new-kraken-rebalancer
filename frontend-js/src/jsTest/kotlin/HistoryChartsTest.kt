@@ -25,6 +25,9 @@ class HistoryChartsTest : StringSpec() {
             formatUSD(1234.56) shouldBe "$1,234.56"
             formatUSD(0.0) shouldBe "$0.00"
             formatUSD(-12.3456) shouldBe "-$12.35"
+            formatUSD(-0.001) shouldBe "$0.00"
+            formatUSD(-0.0049) shouldBe "$0.00"
+            formatUSD(-0.01) shouldBe "-$0.01"
         }
 
         "getUniqueSymbols filters and sorts symbols" {

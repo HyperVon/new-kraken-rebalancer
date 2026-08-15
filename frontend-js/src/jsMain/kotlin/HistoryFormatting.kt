@@ -5,7 +5,7 @@ import com.gemini.krakenbot.util.PrecisionConstants
 fun formatUSD(valDouble: Double): String {
     val absVal = if (valDouble < 0) -valDouble else valDouble
     val formatted = usdOptionsToLocale(absVal, PrecisionConstants.SCALE_USD, PrecisionConstants.SCALE_USD)
-    return if (valDouble < 0) "-$$formatted" else "$$formatted"
+    return if (valDouble < 0 && formatted != "0.00") "-$$formatted" else "$$formatted"
 }
 
 fun formatPctTick(v: Double, includePlus: Boolean = true): String {

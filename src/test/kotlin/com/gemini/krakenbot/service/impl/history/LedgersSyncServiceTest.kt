@@ -239,8 +239,26 @@ class LedgersSyncServiceTest : StringSpec() {
 
             service.isLedgersSeeded() shouldBe false
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC).shouldBeNull()
+            val expectedStartSec = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
             coVerify {
-                krakenService.getLedgers(startSec = null, offset = 0, endSec = any(), types = any())
+                krakenService.getLedgers(startSec = expectedStartSec, offset = 0, endSec = any(), types = any())
+            }
+        }
+
+        "recovering an interrupted seed with non-multiple-of-50 multi-type offset" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, "62")
+
+            coEvery { krakenService.getLedgers(any(), 0, any(), any()) } returns emptyList()
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            coVerify {
+                krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
         }
 

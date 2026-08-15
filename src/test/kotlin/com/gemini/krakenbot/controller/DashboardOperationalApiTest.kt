@@ -175,6 +175,8 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                     }
 
                 resolve("not-an-id", "CONFIRMED", "evidence").status shouldBe HttpStatusCode.BadRequest
+                resolve("0", "CONFIRMED", "evidence").status shouldBe HttpStatusCode.BadRequest
+                resolve("-5", "CONFIRMED", "evidence").status shouldBe HttpStatusCode.BadRequest
                 resolve("7", "NOT_A_STATE", "evidence").status shouldBe HttpStatusCode.UnprocessableEntity
                 resolve("7", "PENDING", "evidence").status shouldBe HttpStatusCode.UnprocessableEntity
                 resolve("7", "CONFIRMED", "").status shouldBe HttpStatusCode.UnprocessableEntity

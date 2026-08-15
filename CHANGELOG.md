@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.1] - 2026-08-15
+
+### Fixed
+
+- **Near-Zero Currency Formatting (`formatUSD`)**: Prevent `-$0.00` display for small negative amounts (e.g. `-$0.001`) by checking whether formatted output rounded to `"0.00"` in `HistoryFormatting.kt`.
+- **Trade Pair Formatting Fallback**: Fall back to `trade.pair` in `HistoryTradeRendering.kt` when `trade.symbol` is blank.
+- **Normalized Staking Rewards Pricing**: Use `Asset.normalizeLedgerAsset()` in `TradeHistoryQueryService.getRewardsOverTime` so staked assets (`DOT.S`, `XXBT`, `ETH2`) resolve snapshot asset prices correctly.
+- **Unseeded Initial Ledger Sync 96-Day Bound**: Bound initial unseeded ledger sync in `LedgersSyncService` to 96 days (`seedBound`) matching `TradeHistorySyncService` to prevent fetching pruned historical ledgers.
+- **Multi-Type Ledger Sync Offset Recovery**: Allow non-50-multiple initial pagination offset sum in `LedgersSyncService.readInitialPaginationOffset` for multi-type ledger recovery.
+- **Non-Positive Fiat Deployment Exponent Guard**: Return `BigDecimal.ZERO` in `RebalancerEngine.calculateFiatDeployment` when `fiatDeploymentExponent <= 0.0`.
+- **Order Intent ID Parameter Validation**: Reject `id <= 0` with HTTP 400 Bad Request in `DashboardController.handlePostOrderIntentResolution`.
+
+### Added
+
+- **Evaluation Scenario 41**: Added Scenario 41 covering zero/negative fiat deployment exponents and normalized multi-asset staking reward queries over time.
+- **Order Settle Helper Test Coverage**: Added dedicated `OrderSettleHelperTest` covering USD settlement capping, balance peek exceptions, and fallback polls.
+
 ## [6.17.0] - 2026-08-15
 
 ### Added
