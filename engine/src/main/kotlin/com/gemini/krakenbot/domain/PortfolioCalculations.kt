@@ -128,6 +128,27 @@ object PortfolioCalculations {
     }
 
     /**
+     * Creates a display-ready [PortfolioSnapshot.AssetSnapshot] from precomputed [AssetMetrics],
+     * avoiding redundant percent and deviation recalculations.
+     */
+    fun createAssetSnapshot(
+        symbol: String,
+        balance: BigDecimal,
+        price: BigDecimal,
+        valueUSD: BigDecimal,
+        metrics: AssetMetrics,
+    ): PortfolioSnapshot.AssetSnapshot = PortfolioSnapshot.AssetSnapshot(
+        symbol = Asset(symbol),
+        balance = balance.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
+        price = price.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
+        valueUSD = valueUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+        targetPercent = metrics.calcTargetPercent.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+        currentPercent = metrics.currentPercent.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+        deviationPercent = metrics.deviationPercent.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+        deviationUSD = metrics.deviationUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+    )
+
+    /**
      * Creates a display-ready [PortfolioSnapshot.AssetSnapshot] with percents rounded to `SCALE_USD`.
      */
     fun createAssetSnapshot(

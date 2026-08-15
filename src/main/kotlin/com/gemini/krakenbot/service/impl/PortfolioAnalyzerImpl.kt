@@ -177,8 +177,7 @@ class PortfolioAnalyzerImpl(
                     balance = balance,
                     price = price,
                     valueUSD = valUSD,
-                    targetPercent = metrics.calcTargetPercent,
-                    totalPortfolioValueUSD = totalPortfolioValueUSD,
+                    metrics = metrics,
                 )
         }
 

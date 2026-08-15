@@ -120,8 +120,8 @@ Quick ripgrep (from repository root; treat hits as defects unless justified):
 
 ```bash
 rg 'KrakenService|OrderExecutor|TradeRepository' src/main/kotlin/com/gemini/krakenbot/view --glob '*.kt'
-rg 'repository\.|KrakenService' src/main/kotlin/com/gemini/krakenbot/service/impl/RebalancerEngine.kt \
-  src/main/kotlin/com/gemini/krakenbot/service/impl/PortfolioCalculations.kt
+rg 'repository\.|KrakenService' engine/src/main/kotlin/com/gemini/krakenbot/domain/RebalancerEngine.kt \
+  engine/src/main/kotlin/com/gemini/krakenbot/domain/PortfolioCalculations.kt
 rg 'KrakenServiceImpl|SimulatedKrakenService' src/main/kotlin/com/gemini/krakenbot/controller --glob '*.kt'
 ```
 

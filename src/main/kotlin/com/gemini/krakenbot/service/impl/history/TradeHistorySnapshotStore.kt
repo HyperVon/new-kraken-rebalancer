@@ -319,8 +319,7 @@ class TradeHistorySnapshotStore(
                         balance = asset.balance,
                         price = asset.price,
                         valueUSD = asset.valueUSD,
-                        targetPercent = metrics.calcTargetPercent,
-                        totalPortfolioValueUSD = exactPortfolioValue,
+                        metrics = metrics,
                     )
             }
 

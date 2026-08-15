@@ -564,7 +564,7 @@ rg 'dryRun\s*=\s*false' src/test/ src/main/ --glob '*.kt'
 ### MockK + Exposed static mocks
 
 - Use the constant
-  `TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT`.
+  `TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT`.
 - Always `unmockkStatic(...)` in `finally` or test teardown.
 - Prefer real `:memory:` SQLite via `DatabaseConfig.init(":memory:")` unless the
   test targets failure mapping.
@@ -1160,8 +1160,8 @@ Quick ripgrep (treat hits as defects unless justified):
 
 ```bash
 rg 'KrakenService|OrderExecutor|TradeRepository' src/main/kotlin/com/gemini/krakenbot/view --glob '*.kt'
-rg 'repository\.|KrakenService' src/main/kotlin/com/gemini/krakenbot/service/impl/RebalancerEngine.kt \
-  src/main/kotlin/com/gemini/krakenbot/service/impl/PortfolioCalculations.kt
+rg 'repository\.|KrakenService' engine/src/main/kotlin/com/gemini/krakenbot/domain/RebalancerEngine.kt \
+  engine/src/main/kotlin/com/gemini/krakenbot/domain/PortfolioCalculations.kt
 rg 'KrakenServiceImpl|SimulatedKrakenService' src/main/kotlin/com/gemini/krakenbot/controller --glob '*.kt'
 ```
 ````

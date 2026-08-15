@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlQueries
 import kotlinx.css.Align
 import kotlinx.css.BorderCollapse
 import kotlinx.css.BorderStyle
@@ -120,34 +121,34 @@ object TableStyles {
             boxShadowRaw("0 0 0 3px rgba(16, 185, 129, 0.15)")
         }
 
-        "th.sortable" {
+        HtmlQueries.SORTABLE_TH {
             cursor = Cursor.pointer
             userSelectRaw("none")
         }
 
-        "th.sortable:hover" {
+        "${HtmlQueries.SORTABLE_TH}:hover" {
             color = CssTheme.colorTextPrimary
         }
 
-        "th.sortable:focus-visible" {
+        "${HtmlQueries.SORTABLE_TH}:focus-visible" {
             outlineRaw("none")
             color = CssTheme.colorTextPrimary
             boxShadowRaw("inset 0 0 0 2px rgba(59, 130, 246, 0.7)")
         }
 
-        "th.sortable::after" {
+        "${HtmlQueries.SORTABLE_TH}::after" {
             content = QuotedString("")
             marginLeft = 0.35.rem
             fontSize = 0.7.rem
             opacity = 0.4
         }
 
-        "th.sortable.asc::after" {
+        "${HtmlQueries.SORTABLE_TH}.${CssClass.Utility.Asc.value}::after" {
             content = QuotedString("▲")
             opacity = 1
         }
 
-        "th.sortable.desc::after" {
+        "${HtmlQueries.SORTABLE_TH}.${CssClass.Utility.Desc.value}::after" {
             content = QuotedString("▼")
             opacity = 1
         }

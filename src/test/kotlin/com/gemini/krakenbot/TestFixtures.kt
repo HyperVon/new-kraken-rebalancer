@@ -99,10 +99,10 @@ object TestFixtures {
     const val HELLO = "hello"
 
     /**
-     * File facade that carries Exposed's `Database.transactionManager` extension. `mockkStatic` has to
-     * be given this class name because an extension property cannot be stubbed through its receiver.
+     * File facade that carries Exposed's transaction extensions. `mockkStatic` has to
+     * be given this class name because extension functions cannot be stubbed through their receiver.
      */
-    const val ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT =
+    const val ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT =
         "org.jetbrains.exposed.v1.jdbc.transactions.JdbcTransactionInterfaceKt"
 
     /**

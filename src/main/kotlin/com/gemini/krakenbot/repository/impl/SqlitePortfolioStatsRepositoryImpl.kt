@@ -28,20 +28,16 @@ class SqlitePortfolioStatsRepositoryImpl(
         LoggerFactory.getLogger(SqlitePortfolioStatsRepositoryImpl::class.java)
 
     override suspend fun load(): PortfolioStats {
-        val dbStats = try {
-            database.readTransactionIO {
+        val dbStats =
+            database.safeReadTransactionIO(
+                log = log,
+                logMessage = "Failed to load portfolio stats from database",
+            ) {
                 PortfolioStatsTable
                     .selectAll()
                     .firstOrNull()
                     ?.let { PortfolioStats(it[PortfolioStatsTable.allTimeHigh] ?: BigDecimal.ZERO) }
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.error("Failed to load portfolio stats from database", e)
-            if (e is IOException) throw e
-            throw IOException("Database read failed", e)
-        }
         if (dbStats != null) {
             return dbStats
         }
