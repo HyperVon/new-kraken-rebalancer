@@ -213,8 +213,7 @@ object SnapshotHistoryCalculator {
                         balance = balance,
                         price = price,
                         valueUSD = valueUSD,
-                        targetPercent = metrics.calcTargetPercent,
-                        totalPortfolioValueUSD = exactPortfolioValue,
+                        metrics = metrics,
                     )
             }
 

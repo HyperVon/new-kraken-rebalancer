@@ -48,7 +48,7 @@ private fun renderTradeRow(t: TradeRecord): HTMLTableRowElement {
     tr.className = (CssClass.Table.Hoverable + CssClass.History.TradeCard).toString()
 
     val time = formatCompactTradeTime(t.timestamp)
-    val fullTime = Date(t.timestamp).asDynamic().toLocaleString().toString()
+    val fullTime = Date(t.timestamp).asDynamic().toLocaleString(EN_US).toString()
     val side = t.side.uppercase()
     val sideClass =
         when (side) {

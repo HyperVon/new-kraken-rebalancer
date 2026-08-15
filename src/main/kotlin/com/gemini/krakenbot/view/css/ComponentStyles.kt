@@ -173,7 +173,7 @@ object ComponentStyles {
             gap = 1.5.rem
             padding = Padding(1.5.rem, 1.75.rem)
             // Slightly taller lift than sibling tiles.
-            put("box-shadow", CssTheme.shadowHeroCard)
+            boxShadowRaw(CssTheme.shadowHeroCard)
         }
 
         ".hero-card > .hero-card-text" {
@@ -382,7 +382,7 @@ object ComponentStyles {
             boxShadowRaw(CssTheme.insetShadowDark)
         }
         ".${CssClass.Hero.TileBarFill.value}" {
-            boxShadowRaw("inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.10)")
+            boxShadowRaw(CssTheme.barFillShadow)
         }
         ".${CssClass.Hero.TileBarFill.value}::after" {
             left = 10.pct

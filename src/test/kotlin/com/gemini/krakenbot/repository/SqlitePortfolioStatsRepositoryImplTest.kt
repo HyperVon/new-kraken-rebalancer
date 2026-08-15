@@ -148,7 +148,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                 val throwingTxManager = StatsThrowingTransactionManager(realTxManager)
 
                 val mockDb = mockk<Database>(relaxed = true)
-                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 try {
                     every { mockDb.transactionManager } returns throwingTxManager
 
@@ -161,7 +161,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                         }
                     thrown.message shouldBe "Direct IO failure"
                 } finally {
-                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 }
             }
         }
@@ -173,7 +173,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                     val cancellation = CancellationException("cancel stats transaction")
                     val throwingTxManager = StatsThrowingTransactionManager(db.transactionManager, cancellation)
                     val mockDb = mockk<Database>(relaxed = true)
-                    mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                     every { mockDb.transactionManager } returns throwingTxManager
                     val cancelledRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
 
@@ -187,7 +187,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                         }
                         thrown shouldBe cancellation
                     } finally {
-                        unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                        unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                     }
                 }
             }

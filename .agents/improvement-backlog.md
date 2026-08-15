@@ -35,11 +35,20 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 ## Open
 
 | ID | Size | Status | Area | Summary | Cycle | Notes |
-| :--- | :---: | :--- | :--- | :--- | :--- | :--- |
+| :--- | :---: | :--- | :--- | :--- | :---: | :--- |
 | CI-28-C07 | S | dropped | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | superseded by CI-29-C01 (done 220) |
 | CI-28-U01 | S | done | css | Tokenize remaining raw `rgba()`/shadow literals in `ComponentStyles.kt` | 28 | 222 |
 
 ## Done (recent)
+
+| CI-30-C01 | S | done | code | Add `createAssetSnapshot` overload taking `AssetMetrics` to avoid 4x recalculations | 30 | 30 |
+| CI-30-C02 | S | done | code | Standardize Exposed queries on `.where { (cond1) and (cond2) }` instead of chained `.andWhere` | 30 | 30 |
+| CI-30-C03 | S | done | code | Add `Database.safeReadTransactionIO` helper to dedupe read transaction error handling | 30 | 30 |
+| CI-30-C04 | S | done | test | Rename `TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT` to Exposed v1 identifier | 30 | 30 |
+| CI-30-U01 | S | done | css | Use `CssTheme.barFillShadow` and `boxShadowRaw` in `ComponentStyles.kt` and `LayoutStyles.kt` | 30 | 30 |
+| CI-30-U02 | S | done | css | Use `HtmlQueries.SORTABLE_TH` and `CssClass` sortable constants in `TableStyles.kt` | 30 | 30 |
+| CI-30-F01 | S | done | frontend | Pass `EN_US` locale to `Date(t.timestamp).toLocaleString(EN_US)` in `HistoryTradeRendering.kt` | 30 | 30 |
+| CI-30-D01 | S | done | docs | Document `:engine` subproject in README tech stack table, project tree, ALGORITHM, and AGENTS | 30 | 30 |
 
 | CI-28-C08 | M | done | frontend | Split `formatUsd`/`formatPercent`/`EN_US`/`usdOptionsToLocale` out of `HistoryCharts`/`HistoryLoading` into `HistoryFormatting.kt` (single source) | 28 | 222 |
 | CI-28-C09 | M | done | history | Extract `buildSnapshotsChronological` ATH helper from `SnapshotHistoryCalculator.calculateHistoricalSnapshots` | 28 | 222 |

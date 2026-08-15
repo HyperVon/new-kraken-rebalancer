@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.1] - 2026-08-15
+
+### Changed
+
+- **Continuous Improvement Cycle 30**:
+  - **Snapshot Calculation Optimization**: Added `PortfolioCalculations.createAssetSnapshot` overload taking precomputed `AssetMetrics`, eliminating 4x redundant BigDecimal recalculations across `PortfolioAnalyzerImpl`, `SnapshotHistoryCalculator`, and `TradeHistorySnapshotStore`.
+  - **Exposed Query Standardization**: Standardized `SqliteTradeRepositoryImpl` and `SqliteLedgerRepositoryImpl` range queries on `.where { (cond1) and (cond2) }`, removing deprecated chained `.andWhere` usage.
+  - **Database Error Handling Helper**: Introduced `Database.safeReadTransactionIO` and `safeReadTransaction` in `RepositoryUtils.kt` to deduplicate and standardize read transaction exception mapping across repository implementations.
+  - **Test Fixtures Constant Modernization**: Renamed `TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT` to `ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT` and updated KDoc / test specs to reflect Exposed 1.x.
+  - **CSS & Token Consistency**: Replaced hardcoded box-shadow literals in `ComponentStyles.kt` with `CssTheme.barFillShadow` and `CssTheme.shadowHeroCard`, switched `LayoutStyles.kt` to `boxShadowRaw`, and referenced `HtmlQueries.SORTABLE_TH` and `CssClass` sortable constants in `TableStyles.kt`.
+  - **Frontend Date Tooltip Locale**: Standardized on explicit `EN_US` locale in `HistoryTradeRendering.kt` full-timestamp tooltip for deterministic formatting across client browser locales.
+  - **Documentation & Agent Rules Sync**: Documented the pure `:engine` module in `README.md` (tech stack table and subproject tree layout), `docs/ALGORITHM.md`, and `.agents/AGENTS.md`, and updated autonomous optimizer verification paths.
+
 ## [6.17.0] - 2026-08-15
 
 ### Added

@@ -122,6 +122,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
 | **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo 95/95/95/90, Karma/Istanbul 90/80/90/75                                  |
 | **Build**       | Gradle 9.7.0 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.8.0                                                     |
+| **Engine**      | Pure Kotlin JVM domain calculation library with independent JaCoCo 95/90 coverage gates                      |
 | **Codegen**     | JVM-only module with KSP processors for API mappers and YAML string catalogs                                 |
 | **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable      |
 
@@ -562,9 +563,9 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── codegen/                                # JVM-only module with KSP processors for API mappers and YAML string catalogs
 ├── engine/                                 # Pure Kotlin domain calculation library (:engine)
 │   ├── src/main/kotlin/com/gemini/krakenbot/
-│   │   ├── domain/                         # RebalancerEngine, PortfolioCalculations, TradeCalculator, RebalancePlan, PrecisionConstantsJvm
-│   │   ├── model/                          # Rich domain models: PortfolioSnapshot (AssetSnapshot), TradeRecord, OrderResult
-│   │   └── util/                           # ActionLogFormatter, BalanceKeys, BigDecimalExtensions, MathUtils, RebalanceEventFormatter
+│   │   ├── codegen/                        # GenerateApiMapper annotation processor target
+│   │   ├── domain/                         # RebalancerEngine, PortfolioCalculations, TradeCalculator, RebalancePlan, formatters, helpers
+│   │   └── model/                          # Domain models: PortfolioSnapshot (AssetSnapshot), TradeRecord, OrderResult
 │   └── src/test/kotlin/                    # Pure engine domain calculation unit tests (JaCoCo 95/90 gates)
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
