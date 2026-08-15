@@ -33,12 +33,12 @@ kotlin {
                 implementation(kotlin("test"))
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotest.assertions.core)
-                implementation("io.kotest:kotest-framework-engine:${libs.versions.kotest.get()}")
+                implementation(libs.kotest.framework.engine)
             }
         }
         getByName("jsTest") {
             dependencies {
-                implementation("io.kotest:kotest-framework-engine:${libs.versions.kotest.get()}")
+                implementation(libs.kotest.framework.engine)
                 implementation(devNpm("karma-coverage", "2.2.1"))
                 implementation(devNpm("@jsdevtools/coverage-istanbul-loader", "3.0.5"))
             }

@@ -1,3 +1,5 @@
 # GitHub Copilot instructions
 
-See canonical AGENTS.md
+@AGENTS.md
+@.agents/AGENTS.md
+@.agents/OPERATING.md

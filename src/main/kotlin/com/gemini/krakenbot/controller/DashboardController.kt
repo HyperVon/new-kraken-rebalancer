@@ -15,6 +15,7 @@ import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
+import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.DashboardView
@@ -503,7 +504,7 @@ class DashboardController(
         val paused = readDiagnostic("loop pause state") { portfolioManager.isLoopPaused() } ?: false
         val loopRunning = readDiagnostic("loop running state") { portfolioManager.isLoopRunning() } ?: false
         val cycleStatus = readDiagnostic("cycle status") { portfolioManager.getOperationalStatus() }
-            ?: com.gemini.krakenbot.service.RebalanceOperationalStatus()
+            ?: RebalanceOperationalStatus()
         val unresolvedOrderIntents = readDiagnostic("order intent status") {
             orderIntentService.countUnresolvedIntents()
         }
@@ -524,7 +525,7 @@ class DashboardController(
             }
             ?: "N/A"
         val readinessReason = when {
-            paused -> "PAUSED"
+            paused -> HealthStatusKeys.REASON_PAUSED
 
             !loopRunning -> HealthStatusKeys.LOOP_NOT_RUNNING
 
@@ -535,15 +536,15 @@ class DashboardController(
             unresolvedOrderIntents == null || legacyUnresolvedSubmissions == null ->
                 HealthStatusKeys.DIAGNOSTICS_UNAVAILABLE
 
-            unresolvedOrderIntents > 0 || legacyUnresolvedSubmissions -> "UNRESOLVED_ORDER_INTENT"
+            unresolvedOrderIntents > 0 || legacyUnresolvedSubmissions -> HealthStatusKeys.REASON_UNRESOLVED_ORDER_INTENT
 
-            latestSnapshot == null -> "NO_SNAPSHOT"
+            latestSnapshot == null -> HealthStatusKeys.REASON_NO_SNAPSHOT
 
-            cycleStatus.lastCycleError != null -> "LAST_CYCLE_FAILED"
+            cycleStatus.lastCycleError != null -> HealthStatusKeys.REASON_LAST_CYCLE_FAILED
 
-            else -> "READY"
+            else -> HealthStatusKeys.STATUS_READY
         }
-        val ready = readinessReason == "READY"
+        val ready = readinessReason == HealthStatusKeys.STATUS_READY
         val responseMap = mapOf(
             HealthStatusKeys.STATUS to HealthStatusKeys.STATUS_UP,
             HealthStatusKeys.TIMESTAMP to Instant.now().toString(),
@@ -557,10 +558,10 @@ class DashboardController(
                 if (ready) HealthStatusKeys.STATUS_READY else HealthStatusKeys.STATUS_NOT_READY,
             HealthStatusKeys.READINESS_REASON to readinessReason,
             HealthStatusKeys.ACTIVE_MODE to when {
-                settings?.simulation == true -> "SIMULATION"
-                settings?.dryRun == true -> "DRY_RUN"
-                settings != null -> "LIVE"
-                else -> "UNKNOWN"
+                settings?.simulation == true -> HealthStatusKeys.MODE_SIMULATION
+                settings?.dryRun == true -> HealthStatusKeys.MODE_DRY_RUN
+                settings != null -> HealthStatusKeys.MODE_LIVE
+                else -> HealthStatusKeys.MODE_UNKNOWN
             },
             HealthStatusKeys.LOOP_RUNNING to loopRunning,
             HealthStatusKeys.LAST_CYCLE_STARTED_AT to (cycleStatus.lastCycleStartedAt?.toString() ?: "N/A"),

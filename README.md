@@ -75,6 +75,7 @@ portable `.agents/` guidance.
 The repository is still fully usable without KiloCode. Application code, tests,
 Gradle tasks, documentation, Git workflows, and the portable `.agents/` skills
 remain available to any capable development tool. KiloCode-only additions are
+strictly optional and isolated to Kilo harness configuration and route scripts.
 
 ### Cline MCP Quota Tool
 
@@ -562,6 +563,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
+│   │   ├── AssetColors.kt                 # Palette generation and chart color helpers
 │   │   ├── Dashboard.kt                   # Stats card age calculation & table sorting
 │   │   ├── Settings.kt                    # Targets validation & dynamic row actions
 │   │   ├── History.kt                     # History page wiring (initHistory)
@@ -569,8 +571,10 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── HistoryChartState.kt           # Chart state, series visibility, and time range
 │   │   ├── HistoryCharts.kt               # Snapshot, rewards, and net-cash-flow chart builders
 │   │   ├── HistoryComparisonChart.kt      # Rebalancer comparison chart
+│   │   ├── HistoryFormatting.kt           # Localized date, time, and currency formatters
 │   │   ├── HistoryZoom.kt                 # Zoom buttons and pan scrubbers
 │   │   ├── HistoryLoading.kt              # History API loading and sync progress
+│   │   ├── HistorySessionState.kt         # History session cache and active filter state
 │   │   ├── HistoryTradeRendering.kt       # Trade table and summary-card rendering
 │   │   ├── HistoryJsonParsing.kt          # Typed History JSON parsing over :common api DTOs
 │   │   ├── HistoryViewPrefs.kt            # Browser-local History view presets

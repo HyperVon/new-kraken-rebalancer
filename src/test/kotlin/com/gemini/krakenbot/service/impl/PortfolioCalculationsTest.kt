@@ -237,5 +237,15 @@ class PortfolioCalculationsTest : StringSpec() {
             snapshot.valueUSD.shouldBeEqualComparingTo(BigDecimal("6172.84"))
             snapshot.targetPercent.shouldBeEqualComparingTo(BigDecimal("50.12"))
         }
+
+        "should fall back to default USD target when no allocations present" {
+            PortfolioCalculations.calculateUsdTargetPercent(emptyList())
+                .shouldBeEqualComparingTo(BigDecimal("5.00"))
+        }
+
+        "should fall back to default USD target when allocations contain no USD" {
+            PortfolioCalculations.calculateUsdTargetPercent(listOf(Allocation("BTC", 80.0)))
+                .shouldBeEqualComparingTo(BigDecimal("5.00"))
+        }
     }
 }

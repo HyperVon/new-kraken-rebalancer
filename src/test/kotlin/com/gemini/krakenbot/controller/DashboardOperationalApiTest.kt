@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
@@ -321,6 +322,255 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 response.status shouldBe HttpStatusCode.ServiceUnavailable
                 response.bodyAsText() shouldContain "\"readinessReason\":\"CONFIG_UNAVAILABLE\""
                 response.bodyAsText() shouldContain "\"lastTradeSyncTime\":\"N/A\""
+            }
+        }
+
+        "valid settings POST with CSRF returns 200 and redirects to the dashboard" {
+            every { configService.getConfig() } returns TestFixtures.config()
+            coEvery { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.DRY_RUN to listOf("on"),
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("50.0"),
+                            FormFields.COLORS to listOf("#ffffff"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.OK
+                response.headers["HX-Redirect"] shouldBe "/"
+            }
+
+            coVerify { configService.updateConfig(any()) }
+        }
+
+        "settings POST without CSRF token is forbidden" {
+            every { configService.getConfig() } returns TestFixtures.config()
+
+            testApplication {
+                application { configureTestEnv() }
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    setBody(
+                        parametersOf(
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.Forbidden
+            }
+        }
+
+        "settings POST with non-numeric deviation value returns 422" {
+            every { configService.getConfig() } returns TestFixtures.config()
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("not-a-number"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("50.0"),
+                            FormFields.COLORS to listOf("#ffffff"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+        }
+
+        "settings POST with missing required field returns 422" {
+            every { configService.getConfig() } returns TestFixtures.config()
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("50.0"),
+                            FormFields.COLORS to listOf("#ffffff"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+        }
+
+        "settings POST with duplicate deviation value returns 422" {
+            every { configService.getConfig() } returns TestFixtures.config()
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0", "2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("50.0"),
+                            FormFields.COLORS to listOf("#ffffff"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+        }
+
+        "settings POST with non-finite deviation value returns 422" {
+            every { configService.getConfig() } returns TestFixtures.config()
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("Infinity"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("50.0"),
+                            FormFields.COLORS to listOf("#ffffff"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+        }
+
+        "settings POST with mismatched allocation sizes returns 422" {
+            every { configService.getConfig() } returns TestFixtures.config()
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("50.0", "25.0"),
+                            FormFields.COLORS to listOf("#ffffff"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+        }
+
+        "settings POST with invalid hex color returns 422" {
+            every { configService.getConfig() } returns TestFixtures.config()
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("50.0"),
+                            FormFields.COLORS to listOf("not-a-color"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+        }
+
+        "settings POST that fails config validation returns 422" {
+            every { configService.getConfig() } returns TestFixtures.config()
+            coEvery { configService.updateConfig(any()) } throws
+                InvalidConfigurationException("allocations must sum to 100%")
+
+            testApplication {
+                application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
+                val response = client.post("/settings") {
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("BTC"),
+                            FormFields.TARGETS to listOf("50.0"),
+                            FormFields.COLORS to listOf("#ffffff"),
+                        ).formUrlEncode(),
+                    )
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
             }
         }
     }
