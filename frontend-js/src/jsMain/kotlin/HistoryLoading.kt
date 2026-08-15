@@ -12,7 +12,6 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Promise
-import kotlin.js.json
 import com.gemini.krakenbot.view.util.HtmlQueries.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 
 private var syncIntervalId: Int? = null
@@ -40,7 +39,7 @@ internal fun setupSyncProgressAndLoad() {
     }
 
     val buttons = document.querySelectorAll(TIME_RANGE_BTNS_QUERY)
-    for (i in 0 until buttons.length) {
+    repeat(buttons.length) { i ->
         val btn = buttons.item(i) as? HTMLElement
         btn?.addEventListener(HtmlEvents.CLICK, {
             val range = btn.getAttribute(HtmlAttrs.DATA_RANGE) ?: TimeRange.THIRTY_DAYS.key

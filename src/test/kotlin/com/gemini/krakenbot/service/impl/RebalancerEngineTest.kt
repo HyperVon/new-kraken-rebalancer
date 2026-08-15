@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.service.PortfolioValues
@@ -109,6 +110,11 @@ class RebalancerEngineTest : StringSpec() {
             }
         }
 
+        "calculateEffectiveUsdTarget leaves USD unchanged when deployment is zero" {
+            RebalancerEngine.calculateEffectiveUsdTarget(BigDecimal.ZERO, allocations)
+                .shouldBeEqualComparingTo(BigDecimal("20.00"))
+        }
+
         "calculateCryptoScaleFactor redistributes freed USD to crypto allocations" {
             val effectiveUsd = BigDecimal("10.00")
             val scale = RebalancerEngine.calculateCryptoScaleFactor(effectiveUsd, allocations)
@@ -167,6 +173,28 @@ class RebalancerEngineTest : StringSpec() {
             )
         }
 
+        "analyzeDeviationsPlan emits typed events before legacy log formatting" {
+            val plan = RebalancerEngine.analyzeDeviationsPlan(
+                totalPortfolioValueUSD = BigDecimal("10000.00"),
+                currentValuesUSD = mapOf(
+                    Asset.BTC to BigDecimal("6000.00"),
+                    Asset.ETH to BigDecimal("3000.00"),
+                    Asset.USD to BigDecimal("1000.00"),
+                ),
+                effectiveUsdTarget = BigDecimal("20.00"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                allocations = allocations,
+                settings = settings.copy(deviationTriggerPercent = 5.0, minimumOrderSizeUSD = 10.0),
+            )
+
+            val btcTrigger = plan.events
+                .filterIsInstance<RebalanceEvent.DeviationTriggered>()
+                .single { it.symbol == Asset.BTC }
+            btcTrigger.deviationPercent.shouldBeEqualComparingTo(BigDecimal("20"))
+            plan.events.filterIsInstance<RebalanceEvent.DeviationTriggered>()
+                .map { it.symbol } shouldContain Asset.BTC
+        }
+
         "distributeFiatCorrection buys underweights on USD deposit" {
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
@@ -188,6 +216,25 @@ class RebalancerEngineTest : StringSpec() {
             actionLog.shouldContain(
                 ActionLogFormatter.formatFiatCorrectionDistribution(BigDecimal("100.00"), 2),
             )
+        }
+
+        "distributeFiatCorrectionPlan returns typed distribution event" {
+            val events = mutableListOf<RebalanceEvent>()
+            RebalancerEngine.distributeFiatCorrectionPlan(
+                usdDev = BigDecimal("100.00"),
+                allDevs = mapOf(
+                    Asset.USD to BigDecimal("100.00"),
+                    Asset.BTC to BigDecimal("-60.00"),
+                    Asset.ETH to BigDecimal("-40.00"),
+                ),
+                buyOrders = mutableMapOf(),
+                sellOrders = mutableMapOf(),
+                events = events,
+            )
+
+            val distribution = events.filterIsInstance<RebalanceEvent.FiatCorrectionDistributed>().single()
+            distribution.usdAmount.shouldBeEqualComparingTo(BigDecimal("100.00"))
+            distribution.candidateCount shouldBe 2
         }
     }
 }

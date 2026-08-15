@@ -2,7 +2,6 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.StreamStatus
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs

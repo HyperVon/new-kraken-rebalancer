@@ -1,0 +1,64 @@
+{
+  "plan_id": "3014b3af3d540006d35992eefbc1e7a853a15a7dfd8cf45a00c20043c6998f5c",
+  "result": "COMPLETED",
+  "routing": {
+    "after_digest": "5e83b2904f6dab73bbbda9bf36c9ed3c0fcd1daa1d8f262c21061660997824ef",
+    "block_digest": "04d990b45ee18a59d4e8c7085ed947971053e3ff6bdd8afa5e0d9e4585d2c5fa",
+    "path": ".agents/AGENTS.md",
+    "skills": [
+      "agent-guidance-maintenance",
+      "security-review",
+      "systematic-debugging"
+    ]
+  },
+  "schema_version": 2,
+  "selection": {
+    "automatically_added": {},
+    "requested": [
+      "agent-guidance-maintenance"
+    ]
+  },
+  "skills": [
+    {
+      "destination": ".agents/skills/agent-guidance-maintenance",
+      "files": [
+        {
+          "mode": 420,
+          "path": "SKILL.md",
+          "sha256": "778cd0396a3e29a8001940e229d9cf80e6c61455d76c32d041b0b43efe59ed8b",
+          "size": 7201
+        },
+        {
+          "mode": 420,
+          "path": "agents/openai.yaml",
+          "sha256": "d912dd31df704ff4269310a328059420add649aef445d313a9cbccacd3c9a5a3",
+          "size": 219
+        },
+        {
+          "mode": 493,
+          "path": "scripts/resolve_source.py",
+          "sha256": "4eac5c828fadc84af724d36094b0554622210593f371c5f7d13b44ff891ff5a4",
+          "size": 9340
+        },
+        {
+          "mode": 493,
+          "path": "scripts/validate_adoption.py",
+          "sha256": "b67baea4099479d600edef36c60af033f075a2e7fc100d5de4746facf7b092ce",
+          "size": 6306
+        }
+      ],
+      "name": "agent-guidance-maintenance",
+      "source_digest": "34ebaa74da603ae7df4970079ae2504b66d6ae74b8825652b0ac62381e0261e8",
+      "status": "UNCHANGED"
+    }
+  ],
+  "source": {
+    "name": "agent-guidance-kit",
+    "revision": "2fcdd1ceb263",
+    "selected_digest": "211b4af58140011e7641fb14be2f26c1cc4bd29b6f4bf0a3185ea17eef48207e"
+  },
+  "source_resolution": {
+    "method": "adjacent sibling",
+    "status": "UNCHANGED"
+  }
+}

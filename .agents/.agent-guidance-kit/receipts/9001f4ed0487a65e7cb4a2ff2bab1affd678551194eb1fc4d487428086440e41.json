@@ -1,0 +1,88 @@
+{
+  "plan_id": "9001f4ed0487a65e7cb4a2ff2bab1affd678551194eb1fc4d487428086440e41",
+  "result": "COMPLETED",
+  "routing": {
+    "after_digest": "5e83b2904f6dab73bbbda9bf36c9ed3c0fcd1daa1d8f262c21061660997824ef",
+    "block_digest": "04d990b45ee18a59d4e8c7085ed947971053e3ff6bdd8afa5e0d9e4585d2c5fa",
+    "path": ".agents/AGENTS.md",
+    "skills": [
+      "agent-guidance-maintenance",
+      "security-review",
+      "systematic-debugging"
+    ]
+  },
+  "schema_version": 2,
+  "selection": {
+    "automatically_added": {
+      "agent-guidance-maintenance": [
+        "required maintenance entrypoint"
+      ]
+    },
+    "requested": [
+      "systematic-debugging"
+    ]
+  },
+  "skills": [
+    {
+      "destination": ".agents/skills/agent-guidance-maintenance",
+      "files": [
+        {
+          "mode": 420,
+          "path": "SKILL.md",
+          "sha256": "84fb6c451b7284ec58958698264b69758a12c8eb70a16b964ac3f366dac2fb25",
+          "size": 9114
+        },
+        {
+          "mode": 420,
+          "path": "agents/openai.yaml",
+          "sha256": "d912dd31df704ff4269310a328059420add649aef445d313a9cbccacd3c9a5a3",
+          "size": 219
+        },
+        {
+          "mode": 493,
+          "path": "scripts/resolve_source.py",
+          "sha256": "4eac5c828fadc84af724d36094b0554622210593f371c5f7d13b44ff891ff5a4",
+          "size": 9340
+        },
+        {
+          "mode": 493,
+          "path": "scripts/validate_adoption.py",
+          "sha256": "0aeb34a34439217c7992f10701ab7e7ebc9629443ebdc93759092a88f67a8fe0",
+          "size": 6791
+        }
+      ],
+      "name": "agent-guidance-maintenance",
+      "source_digest": "8150b8f24fb8da8d3c8c2b20b8615a70b842e79d5c7042a0b19e82b87baaad6b",
+      "status": "UNCHANGED"
+    },
+    {
+      "destination": ".agents/skills/systematic-debugging",
+      "files": [
+        {
+          "mode": 420,
+          "path": "SKILL.md",
+          "sha256": "44c5493e0c2e66397bca0c66d4e4915ad22fb6cb57ff870d10ad7fe0867ccea8",
+          "size": 5430
+        },
+        {
+          "mode": 420,
+          "path": "agents/openai.yaml",
+          "sha256": "7d4d25b5678148c1718dc7d98d38e45a1bbef0551d3453dd6f5e4f8d65459855",
+          "size": 208
+        }
+      ],
+      "name": "systematic-debugging",
+      "source_digest": "0644e471d3c59847d7305c6e0dc8ecca6baa1448e00deec7b81f3da994160997",
+      "status": "UPDATE"
+    }
+  ],
+  "source": {
+    "name": "agent-guidance-kit",
+    "revision": "6302d4f6f35e",
+    "selected_digest": "33a091a5611623adca2344cbfee58444c93dc3408059f787d53b31ccc746f022"
+  },
+  "source_resolution": {
+    "method": "adjacent sibling",
+    "status": "UNCHANGED"
+  }
+}

@@ -101,7 +101,7 @@ class HistoryLoadingTest : StringSpec() {
             window.asDynamic().fetch = { url: String ->
                 val response: dynamic = json()
                 response.json = {
-                    Promise<dynamic> { resolve: (dynamic) -> Unit, _: (Throwable) -> Unit ->
+                    Promise { resolve: (dynamic) -> Unit, _: (Throwable) -> Unit ->
                         bodyResolvers[url] = resolve
                     }
                 }
@@ -166,7 +166,7 @@ class HistoryLoadingTest : StringSpec() {
             window.asDynamic().fetch = { url: String ->
                 val response: dynamic = json()
                 response.json = {
-                    Promise<dynamic> { resolve: (dynamic) -> Unit, reject: (Throwable) -> Unit ->
+                    Promise { resolve: (dynamic) -> Unit, reject: (Throwable) -> Unit ->
                         bodyResolvers[url] = resolve
                         bodyRejectors[url] = reject
                     }

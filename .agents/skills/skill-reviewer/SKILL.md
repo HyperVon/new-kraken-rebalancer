@@ -100,7 +100,7 @@ PR verification patterns) — but **coding/architecture skills come first**.
 ### Optional parallel content pass
 
 When the scope spans many independent skills, use the `skill-reviewer` preset
-from `.kilo/model-router/route-subagents` for read-only content tracks such as
+from `.agents/runtime-router/adapters/kilo/route_subagents.py` for read-only content tracks such as
 coding/architecture, trading/persistence, UI/KMP, and workflow/meta. The parent
 deduplicates findings into the required report or Canvas. Workers must not edit
 skills or rules. If route selection is unavailable, review in the parent; do not

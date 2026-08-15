@@ -8,8 +8,10 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.test.runTest
+import java.nio.file.Files
 import java.sql.DriverManager
 import java.time.Instant
+import java.util.Comparator
 import java.util.UUID
 
 class DatabaseConfigTest : StringSpec() {
@@ -25,6 +27,422 @@ class DatabaseConfigTest : StringSpec() {
         "should initialize in-memory database" {
             val db = DatabaseConfig.init(TestFixtures.MEMORY_)
             db shouldNotBe null
+        }
+
+        "records the current schema version and creates the order intent journal" {
+            val databaseUrl = "jdbc:sqlite:file:schema-version-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("SELECT MAX(version) FROM schema_migrations").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 5
+                    }
+                    statement.executeQuery(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'order_intents'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                    }
+                }
+            }
+        }
+
+        "repairs a malformed same-name order intent index" {
+            val databaseUrl = "jdbc:sqlite:file:malformed-index-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP INDEX idx_order_intents_state")
+                    statement.executeUpdate("CREATE INDEX idx_order_intents_state ON order_intents(created_at)")
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA index_info('idx_order_intents_state')").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("name") shouldBe "state"
+                        resultSet.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "imports legacy pending trade guards into the operator journal" {
+            val databaseUrl = "jdbc:sqlite:file:legacy-guard-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 5")
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES
+                        (
+                            1700000000000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'timeout', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            'cycle-legacy', NULL, NULL, 'client-legacy', 'PENDING'
+                        ), (
+                            1700000001000, 'XBTUSD', 'SELL', 'BTC', '0.00500000', '250.00', 0, 0,
+                            'connection reset', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            'cycle-legacy-uncertain', NULL, NULL, 'client-legacy-uncertain', 'UNCERTAIN'
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT COUNT(*) FROM order_intents WHERE state = 'PENDING'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 0
+                    }
+                    statement.executeQuery(
+                        "SELECT COUNT(*) FROM order_intents WHERE state = 'UNCERTAIN'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 2
+                    }
+                    statement.executeQuery("SELECT submission_state FROM trades").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString(1) shouldBe "PENDING"
+                        resultSet.next() shouldBe true
+                        resultSet.getString(1) shouldBe "UNCERTAIN"
+                    }
+                }
+            }
+        }
+
+        "imports duplicate legacy guards without collapsing their local trade identities" {
+            val databaseUrl = "jdbc:sqlite:file:duplicate-legacy-guard-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES
+                        (
+                            1700000010000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'timeout-1', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            NULL, NULL, NULL, NULL, 'UNCERTAIN'
+                        ), (
+                            1700000010000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'timeout-2', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            NULL, NULL, NULL, NULL, 'UNCERTAIN'
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT local_trade_id FROM order_intents ORDER BY local_trade_id",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        val firstTradeId = resultSet.getInt(1)
+                        resultSet.next() shouldBe true
+                        val secondTradeId = resultSet.getInt(1)
+                        (firstTradeId != secondTradeId) shouldBe true
+                        resultSet.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "keeps duplicate non-null legacy client IDs explicitly ambiguous" {
+            val databaseUrl = "jdbc:sqlite:file:duplicate-client-guard-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES
+                        (
+                            1700000011000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'timeout-1', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            NULL, NULL, NULL, 'duplicate-client', 'UNCERTAIN'
+                        ), (
+                            1700000012000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'timeout-2', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            NULL, NULL, NULL, 'duplicate-client', 'UNCERTAIN'
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT client_order_id, client_order_id_ambiguous, local_trade_id, error_message " +
+                            "FROM order_intents ORDER BY local_trade_id",
+                    ).use { resultSet ->
+                        repeat(2) {
+                            resultSet.next() shouldBe true
+                            resultSet.getString("client_order_id") shouldBe null
+                            resultSet.getBoolean("client_order_id_ambiguous") shouldBe true
+                            val expectedError =
+                                "Ambiguous legacy client_order_id 'duplicate-client'; " +
+                                    "verify this trade before resolution. timeout-${it + 1}"
+                            resultSet.getString("error_message") shouldBe
+                                expectedError
+                        }
+                        resultSet.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "backfills an upstream journal intent when only its timestamp differs" {
+            val databaseUrl = "jdbc:sqlite:file:upstream-timestamp-skew-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES (
+                            1700000015000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'response lost', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            'upstream-cycle', NULL, NULL, 'upstream-client', 'UNCERTAIN'
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO order_intents (
+                            cycle_id, client_order_id, client_order_id_ambiguous, pair, symbol, side,
+                            volume, usd_amount, expected_price, created_at, state, order_txid,
+                            error_message, resolved_at, resolution_evidence, local_trade_id
+                        ) VALUES (
+                            'upstream-cycle', 'upstream-client', 0, 'XBTUSD', 'BTC', 'BUY',
+                            '0.01000000', '500.00', '50000.00000000', 1700000015042, 'UNCERTAIN', NULL,
+                            'response lost', NULL, NULL, NULL
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT COUNT(*), MIN(local_trade_id), MIN(client_order_id_ambiguous) FROM order_intents",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 1
+                        resultSet.getInt(2) shouldNotBe 0
+                        resultSet.getInt(3) shouldBe 0
+                    }
+                }
+            }
+        }
+
+        "does not let a resolved duplicate hide an unresolved legacy guard" {
+            val databaseUrl = "jdbc:sqlite:file:mixed-client-guard-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES
+                        (
+                            1700000013000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 1, 0,
+                            NULL, '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            NULL, 'O-RESOLVED', NULL, 'mixed-client', NULL
+                        ), (
+                            1700000014000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'timeout', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            NULL, NULL, NULL, 'mixed-client', 'UNCERTAIN'
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO order_intents (
+                            cycle_id, client_order_id, pair, symbol, side, volume, usd_amount,
+                            expected_price, created_at, state, order_txid, error_message,
+                            resolved_at, resolution_evidence, local_trade_id
+                        ) VALUES (
+                            NULL, 'mixed-client', 'XBTUSD', 'BTC', 'BUY', '0.01000000', '500.00',
+                            '50000.00000000', 1700000013000, 'CONFIRMED', 'O-RESOLVED', NULL,
+                            1700000015000, 'Already confirmed', NULL
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT client_order_id, local_trade_id, state FROM order_intents ORDER BY id",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("client_order_id") shouldBe "mixed-client"
+                        resultSet.getInt("local_trade_id") shouldNotBe 0
+                        resultSet.getString("state") shouldBe "CONFIRMED"
+                        resultSet.next() shouldBe true
+                        resultSet.getString("client_order_id") shouldBe null
+                        resultSet.getInt("local_trade_id") shouldNotBe 0
+                        resultSet.getString("state") shouldBe "UNCERTAIN"
+                        resultSet.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "migrates a v3 terminal null-client intent and clears its legacy guard" {
+            val databaseUrl = "jdbc:sqlite:file:v3-terminal-intent-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+            var tradeId = 0
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP TABLE order_intents")
+                    statement.executeUpdate(
+                        """
+                        CREATE TABLE order_intents (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            cycle_id VARCHAR(36),
+                            client_order_id VARCHAR(36),
+                            pair VARCHAR(16) NOT NULL,
+                            symbol VARCHAR(16) NOT NULL,
+                            side VARCHAR(4) NOT NULL,
+                            volume DECIMAL(24, 8) NOT NULL,
+                            usd_amount DECIMAL(18, 2) NOT NULL,
+                            expected_price DECIMAL(24, 8),
+                            created_at INTEGER NOT NULL,
+                            state VARCHAR(16) NOT NULL,
+                            order_txid VARCHAR(64),
+                            error_message TEXT,
+                            resolved_at INTEGER,
+                            resolution_evidence TEXT
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES (
+                            1700000020000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'response lost', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            NULL, NULL, NULL, NULL, 'PENDING'
+                        )
+                        """.trimIndent(),
+                    )
+                    tradeId = statement.executeQuery(
+                        "SELECT id FROM trades ORDER BY id DESC LIMIT 1",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1)
+                    }
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO order_intents (
+                            cycle_id, client_order_id, pair, symbol, side, volume, usd_amount,
+                            expected_price, created_at, state, order_txid, error_message,
+                            resolved_at, resolution_evidence
+                        ) VALUES (
+                            NULL, NULL, 'XBTUSD', 'BTC', 'BUY', '0.01000000', '500.00',
+                            '50000.00000000', 1700000020000, 'CONFIRMED', 'O-V3', NULL,
+                            1700000021000, 'Exchange query confirmed O-V3'
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 5")
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT local_trade_id FROM order_intents WHERE state = 'CONFIRMED'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe tradeId
+                    }
+                    statement.executeQuery(
+                        "SELECT success, submission_state, order_txid FROM trades",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getBoolean("success") shouldBe true
+                        resultSet.getString("submission_state") shouldBe null
+                        resultSet.getString("order_txid") shouldBe "O-V3"
+                    }
+                }
+            }
+        }
+
+        "creates a backup for a file-backed JDBC URL before migration" {
+            val directory = Files.createTempDirectory("kraken-db-backup-")
+            try {
+                val databasePath = directory.resolve("rebalancer.db")
+                val databaseUrl = "jdbc:sqlite:$databasePath"
+                DatabaseConfig.init(databaseUrl)
+
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 5")
+                    }
+                }
+
+                DatabaseConfig.init(databaseUrl)
+
+                Files.list(directory).use { files ->
+                    files.anyMatch { it.fileName.toString().startsWith("rebalancer.db.pre-migration-") } shouldBe true
+                }
+            } finally {
+                Files.walk(directory).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+            }
         }
 
         "migrates a genuine pre-provenance schema and preserves ambiguous provenance" {

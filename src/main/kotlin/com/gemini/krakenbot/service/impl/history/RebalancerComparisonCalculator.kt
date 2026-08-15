@@ -45,14 +45,12 @@ object RebalancerComparisonCalculator {
 
         val periodRewards = rewards.filter { it.type == LedgerEvent.TYPE_STAKING && it.time > baseline.timestamp }
 
-        val balanceResult = validateTrackedBalanceChanges(orderedSnapshots, trades, periodRewards)
-        if (balanceResult == null) {
-            return unavailable(
+        val balanceResult =
+            validateTrackedBalanceChanges(orderedSnapshots, trades, periodRewards) ?: return unavailable(
                 reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                 unavailableAt = baseline.timestamp,
                 baselineTimestamp = baseline.timestamp,
             )
-        }
 
         val baselineBalances = extractBaselineBalances(baseline)
 

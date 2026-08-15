@@ -58,8 +58,6 @@ class HistorySessionStateTest : StringSpec() {
                 visibilityStates.clear()
                 HistoryViewPrefs.resetInteractionState()
                 (document.getElementById("show-dry-run-checkbox") as HTMLInputElement).checked = true
-                // Select should be back to default before restore
-                val selectBefore = document.getElementById("history-views-select") as HTMLSelectElement
                 // Refresh to default to simulate fresh page load's initToolbar
                 HistoryViewPrefs.refreshSelect(
                     HistoryViewPrefs.loadStore(),

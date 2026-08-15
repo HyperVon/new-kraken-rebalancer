@@ -1,0 +1,106 @@
+{
+  "plan_id": "57506467d699e5b78482dc544409e8f7d3b87aa80ebb68580bf2ad04b45b98f2",
+  "result": "COMPLETED",
+  "routing": {
+    "after_digest": "5e83b2904f6dab73bbbda9bf36c9ed3c0fcd1daa1d8f262c21061660997824ef",
+    "block_digest": "04d990b45ee18a59d4e8c7085ed947971053e3ff6bdd8afa5e0d9e4585d2c5fa",
+    "path": ".agents/AGENTS.md",
+    "skills": [
+      "agent-guidance-maintenance",
+      "security-review",
+      "systematic-debugging"
+    ]
+  },
+  "schema_version": 2,
+  "selection": {
+    "automatically_added": {},
+    "requested": [
+      "agent-guidance-maintenance",
+      "security-review",
+      "systematic-debugging"
+    ]
+  },
+  "skills": [
+    {
+      "destination": ".agents/skills/agent-guidance-maintenance",
+      "files": [
+        {
+          "mode": 420,
+          "path": "SKILL.md",
+          "sha256": "778cd0396a3e29a8001940e229d9cf80e6c61455d76c32d041b0b43efe59ed8b",
+          "size": 7201
+        },
+        {
+          "mode": 420,
+          "path": "agents/openai.yaml",
+          "sha256": "d912dd31df704ff4269310a328059420add649aef445d313a9cbccacd3c9a5a3",
+          "size": 219
+        },
+        {
+          "mode": 493,
+          "path": "scripts/resolve_source.py",
+          "sha256": "4eac5c828fadc84af724d36094b0554622210593f371c5f7d13b44ff891ff5a4",
+          "size": 9340
+        },
+        {
+          "mode": 493,
+          "path": "scripts/validate_adoption.py",
+          "sha256": "b67baea4099479d600edef36c60af033f075a2e7fc100d5de4746facf7b092ce",
+          "size": 6306
+        }
+      ],
+      "name": "agent-guidance-maintenance",
+      "source_digest": "34ebaa74da603ae7df4970079ae2504b66d6ae74b8825652b0ac62381e0261e8",
+      "status": "UNCHANGED"
+    },
+    {
+      "destination": ".agents/skills/security-review",
+      "files": [
+        {
+          "mode": 420,
+          "path": "SKILL.md",
+          "sha256": "b4aba26c04355d7c748be15f90ae6c23b9681fe16eb62b6e7ae323d89b706e01",
+          "size": 4918
+        },
+        {
+          "mode": 420,
+          "path": "agents/openai.yaml",
+          "sha256": "ba34c38dce13b55de62ab89dda0bd27f6fd0d5e4fff393f99bb88ea0fd7c539f",
+          "size": 207
+        }
+      ],
+      "name": "security-review",
+      "source_digest": "69dfcc684774f86bb81bda139634aa9e3de35066c253a1ad72e377306d16a51b",
+      "status": "UNCHANGED"
+    },
+    {
+      "destination": ".agents/skills/systematic-debugging",
+      "files": [
+        {
+          "mode": 420,
+          "path": "SKILL.md",
+          "sha256": "8b5dfe5612b3d012f6467a22376f2a3bef55e2e6851d038f1add2bb0fb1d9940",
+          "size": 4062
+        },
+        {
+          "mode": 420,
+          "path": "agents/openai.yaml",
+          "sha256": "7d4d25b5678148c1718dc7d98d38e45a1bbef0551d3453dd6f5e4f8d65459855",
+          "size": 208
+        }
+      ],
+      "name": "systematic-debugging",
+      "source_digest": "b5a7521608de597a17f8c83c0a08f0eb4d372e0fbeee54e89ca7eb446395e7d5",
+      "status": "UNCHANGED"
+    }
+  ],
+  "source": {
+    "name": "agent-guidance-kit",
+    "revision": "2fcdd1ceb263",
+    "selected_digest": "5bedd85e299103b41b12c8cb9fce4767ee001f1c60a11a46b7a3567280670eda"
+  },
+  "source_resolution": {
+    "method": "adjacent sibling",
+    "status": "UNCHANGED"
+  }
+}

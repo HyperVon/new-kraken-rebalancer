@@ -96,6 +96,8 @@ choice provides several benefits to human maintainers:
 | [`.agents/AGENTS.md`](../.agents/AGENTS.md) | Current stack, architecture map, safety invariants, quality thresholds, and skill index |
 | [`.agents/OPERATING.md`](../.agents/OPERATING.md) | Harness-neutral working conventions shared across AI tools |
 | [`.agents/skills/`](../.agents/skills/) | Focused workflows for particular domains and development tasks |
+| [`.agents/HARNESS_INTEGRATIONS.md`](../.agents/HARNESS_INTEGRATIONS.md) | Conditional Cursor Cloud and Kilo Agent Manager details |
+| [`AGENTS.md`](../AGENTS.md) | Thin universal entrypoint into the canonical project guidance |
 | [`.agents/improvement-backlog.md`](../.agents/improvement-backlog.md) | Product and engineering improvements discovered during iterative cycles |
 | [`.agents/quality-backlog.md`](../.agents/quality-backlog.md) | QA findings, test gaps, defects, and deferred quality work |
 | [`.agents/skill-content-backlog.md`](../.agents/skill-content-backlog.md) | Proposed and completed improvements to the agent playbook |
@@ -104,8 +106,8 @@ choice provides several benefits to human maintainers:
 | [`.github/copilot-instructions.md`](../.github/copilot-instructions.md) | GitHub Copilot entrypoint linking to the portable guidance |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Human contribution, test, pull-request, and agent-assisted development guidance |
 
-There is no root `AGENTS.md`. The canonical project file is
-[`.agents/AGENTS.md`](../.agents/AGENTS.md). This layout keeps the portable
+The root `AGENTS.md` is a thin universal entrypoint; the canonical project file
+is [`.agents/AGENTS.md`](../.agents/AGENTS.md). This layout keeps the portable
 instruction system together under one directory instead of spreading full
 copies among several harness-specific files.
 
@@ -195,6 +197,7 @@ harnesses.
 | [`rules-and-skills-audit`](../.agents/skills/rules-and-skills-audit/SKILL.md) | Structural conflicts, redundancy, stale guidance, and consolidation |
 | [`skill-authoring`](../.agents/skills/skill-authoring/SKILL.md) | Approved creation and modification of project skills, routing, safety, and validation |
 | [`skill-reviewer`](../.agents/skills/skill-reviewer/SKILL.md) | Content improvements for the project agent playbook |
+| [`skill-optimizer`](../.agents/skills/skill-optimizer/SKILL.md) | Context-cost measurement and safe compression of agent guidance |
 
 ### Orchestration and continuous work
 
@@ -257,11 +260,12 @@ integrations and are not expected to work automatically in another host:
 
 - Kilo Auto model selection from `.kilo/kilo.json`
 - the project-root `./route-kilo` launcher and cross-provider provider/model selection
-- automatic routed subagent fan-out through `.kilo/model-router/route-subagents`
-- persisted Kilo route reports under `~/.cache/kilo/model-router/reports/`
+- automatic routed subagent fan-out through the target-owned ARR Kilo adapter
+  `.agents/runtime-router/adapters/kilo/route_subagents.py`
+- persisted redacted Kilo evidence under `.agents/runtime-router/harnesses/kilo/`
 - the Context Mode plugin and Kilo Agent Manager setup/run hooks
 
-Other hosts (such as Google Antigravity / AGY) MUST use their native built-in subagent launcher mechanisms (`invoke_subagent`). When executing under Antigravity, agents launch subagents solely through built-in Antigravity tools and MUST NOT invoke external subagent scripts (`.kilo/model-router/route-subagents` or `subagents.py`). If a host cannot expose a concrete model route or the required subagent tool, keep the work in the parent rather than claiming that the Kilo integration ran.
+Other hosts (such as Google Antigravity / AGY) MUST use their native built-in subagent launcher mechanisms (`invoke_subagent`). When executing under Antigravity, agents launch subagents solely through built-in harness tools and MUST NOT invoke the Kilo-specific adapter script. If a host cannot expose a concrete model route or the required subagent tool, keep the work in the parent rather than claiming that the Kilo integration ran.
 
 ## Models and adaptive multi-agent review
 
@@ -313,32 +317,61 @@ must choose among independently authenticated Kilo, OpenCode Go, OpenAI,
 OpenRouter, and NVIDIA routes, use the repository launcher:
 
 ```bash
+# First checkout only: use the bootstrap-runtime-router skill to install the
+# receipt-managed ARR runtime after reviewing its plan.
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/run_arr_task.py --help
+
 ./route-kilo --profile coding "Fix the failing Kotlin build"
 ```
 
-The project-root `./route-kilo` wrapper opens the full Kilo TUI automatically and
-refreshes route metadata only when the cached catalog (2h) or Artificial Analysis
-snapshot (24h) is stale, so warm-cache startups are fast. Pass `--refresh` to
-force a re-fetch. It forwards the initial prompt and any additional router flags
-to `.kilo/model-router/route-kilo`.
+The bootstrap uses the exact ARR source revision recorded in the installation
+receipt and keeps the runtime under `.agents/.agent-runtime-router/`; the
+launcher fails closed when that receipt-managed runtime is missing. Do not
+install ARR globally or use an unrelated system package.
+
+The target-owned `.agents/runtime-router/adapters/kilo/provider-policy.json`
+and `profiles.json` remain the source of truth. They control provider/model
+`include` patterns, billing and `allowFree` flags, profile thresholds and
+variants, optional quota-source settings, model overrides, and the blacklist.
+The shared `.agents/runtime-router/policy.json` controls ARR routing switches,
+free-TPS thresholds, and probe/cache bounds. Kraken applies those target-owned
+filters before translating candidates into ARR contracts; ARR does not maintain
+a second provider catalog or blacklist.
+
+The project-root `./route-kilo` wrapper runs the headless, JSON-producing ARR/Kilo
+worker path through the receipt-managed runtime. Normal plan mode consumes the
+existing target-owned catalog and never refreshes it implicitly, so warm-cache
+starts are fast. A catalog refresh is a separate, explicitly approved metadata
+operation; after it completes, re-run plan mode without `--refresh`. Likewise, if
+a free route is blocked only because TPS or tool-readiness evidence is missing,
+use the separate `--prepare-evidence --approve` operation: it runs bounded
+evidence probes and returns `EVIDENCE_READY`, but never launches the requested
+worker. Re-run and review the ordinary plan before a separate approved worker
+launch. The wrapper forwards the initial prompt and any additional router flags to
+`.agents/runtime-router/adapters/kilo/run_arr_task.py`; it does not open the
+interactive Kilo TUI. The interactive TUI remains a separate, manually selected
+native-harness path outside ARR's control.
 
 Before a selected free route is used, the router sanity-checks its sustained
-throughput with a short probe (an OpenAI-compatible chat completion that asks
-for roughly a thousand characters of output, capped by `tpsProbe.maxTokens`),
+throughput with a short Kilo-native generation probe (roughly a thousand
+characters of output). It uses Kilo's authenticated execution path rather than
+reading credentials or duplicating provider API calls,
 and re-selects the next best route when the measured tokens/sec stays below
-`tpsProbe.minTps` (default 20). Probe results are cached under
-`~/.cache/kilo/model-router/tps.json` for `tpsProbe.cacheMinutes` (default 60)
-so warm startups stay fast; unmeasurable routes (no endpoint, no key, probe
-error) never block selection. The probe times out after
-`min(tpsProbe.timeoutSeconds, tpsProbe.probeCharacters / tpsProbe.minTps)`
-seconds (50s by default) and a timed-out route is cached at 0 tokens/sec, so it
-stays excluded for the cache window instead of being re-probed. If every free
-route is too slow, selection falls back to the next cheapest qualifying route,
-paid if necessary, and warns.
-Tune or disable via the `tpsProbe` section of `.kilo/model-router/config`.
+`min_free_tps` (default 20). Probe results are cached under
+`.agents/runtime-router/harnesses/kilo/tps.json` for the target's configured
+TPS TTL (default 60 minutes), so warm startups stay fast. A failed,
+unmeasurable, or below-threshold free route is not eligible until its cached
+evidence expires or a deliberate refresh replaces it. If every free route is
+too slow or unproven, selection falls back to the next qualifying paid route
+only when the target's paid/quota policy permits it.
+Tune the target-owned TPS fields in `.agents/runtime-router/policy.json`;
+free-model TPS protection is mandatory and cannot be disabled by a task prompt.
 
-`--profile` is optional and defaults to `auto`, which infers the routing
-requirements from the prompt. Available profiles are:
+`--profile` is optional and defaults to the conservative `agentic` profile.
+The calling skill or primary agent should provide a more specific profile when
+the task requirements are known; ARR then chooses the model and effort within
+that profile. Available profiles are:
 
 | Profile | Use for |
 | :--- | :--- |
@@ -347,18 +380,16 @@ requirements from the prompt. Available profiles are:
 | `coding` | Implementation, bugs, tests, builds, and Gradle |
 | `complex-coding` | Refactors, algorithms, concurrency, performance, and deeply-coupled code |
 | `agentic` | Complex multi-step reasoning and tool use |
+| `architecture` | Architecture/product review; high intelligence floor and strongest available effort |
 | `quick-review` | Documentation, instruction, and source-contract audits |
 | `detailed-review` | Deeper security, architecture, and adversarial review of shipped code |
 | `critical` | Security, credentials, trading, financial, architecture, or adversarial work |
-| `auto` | Automatic profile inference from the prompt |
 
-Profile inference is ordered critical → review → complex-coding → coding →
-routine → trivial, so deliberation tasks (review, audit, documentation,
-analysis, workflow, delegation) resolve to a `review` profile even when their
-prompt also mentions code — a code review is held to the review intelligence
-minimum, not the lower coding floor. `/code-review`-style invocations and
-security/architecture audits resolve to `detailed-review`; lighter audits to
-`quick-review`.
+The launcher does not treat English keywords as an authoritative classifier.
+The calling skill or primary agent supplies the profile when a task needs a
+specific quality floor; if it does not, the conservative `agentic` default is
+used. ARR still chooses the concrete model, effort, and native variant from
+the resulting evidence.
 
 Examples:
 
@@ -373,20 +404,20 @@ The profile constrains route selection; it does not directly choose a model.
 The router still selects the provider/model using capability, cost, quota, and
 availability.
 
-When the provider catalog exposes variants, the profile also selects reasoning
-effort: trivial/routine prefer low/medium, coding medium/high, complex-coding/
-agentic high/thinking, and quick-review/detailed-review/critical xhigh/max, with
-model-specific fallbacks. Headless
-workers receive `--variant`; the full TUI uses a temporary agent configuration
-overlay because its top-level CLI has no variant flag. The project config is not
-modified. Detailed-review and critical profiles prioritize capability evidence
-while keeping eligible free routes available; only explicit blacklist patterns
-exclude models or providers.
+When the provider catalog exposes verified native variants, the profile also
+selects reasoning effort: trivial/routine prefer low/medium, coding medium/high,
+complex-coding/agentic high/thinking, and architecture/quick-review/detailed-review/critical
+xhigh/max, with model-specific fallbacks. Headless ARR workers receive the
+selected native `--variant`; the interactive TUI's manually selected variant is
+outside ARR's control. Detailed-review and critical profiles prioritize
+capability evidence while keeping eligible free routes available; only explicit
+blacklist patterns exclude models or providers.
 
-The launcher also selects the TUI mode/agent from the inferred profile:
-quick-review and detailed-review start a read-only `ask` agent, while every
-other profile starts the `code` agent (the orchestrator agent is deprecated
-and never used). An explicit `--agent` flag overrides the inference.
+The launcher binds the selected route to Kilo's target-owned `code` agent for
+headless worker execution. Review skills remain read-only through their track
+contract and isolated workspace; they do not rely on a role name as evidence
+of model selection. The interactive Kilo TUI's manually selected agent is
+outside ARR's control.
 
 The default policy selects the lowest-cost route that satisfies the selected
 profile's capability, reasoning, tool, context, quota, and privacy requirements.
@@ -417,7 +448,8 @@ and the file is explicitly included in the main session's initial instructions.
 Unknown slash commands are left unchanged.
 
 To permanently exclude a model or provider from automatic selection, update
-`.kilo/model-router/config`:
+the target-owned `provider-policy.json` blacklist and its ARR-compatible
+wildcards in `policy.json`:
 
 ```json
 "blacklist": {
@@ -431,34 +463,31 @@ To permanently exclude a model or provider from automatic selection, update
 ranking for both `./route-kilo` and routed subagents. Ask for a blacklist update
 when a route should no longer be selected; the next route plan should verify it.
 
-End-of-life models are added to `blacklist.models` automatically: when a launch
-answers HTTP 410 / "end of life", the launcher appends the exact dead route to
-`.kilo/model-router/config` and immediately retries the next best candidate
-without excluding the provider. The write appears as a config diff to review and
-commit; an EOL is a universal fact, so the exclusion is shared rather than kept
-in a private cache.
+Provider or model failures remain structured runtime evidence. ARR may apply a
+bounded cooldown to a read-only retry, but it never edits the tracked target
+blacklist or provider policy automatically. A model-EOL decision must be
+reviewed and added to the target-owned blacklist explicitly.
 
-It discovers providers from `kilo auth list`, loaded Kilo/OpenCode provider
-configuration, and standard provider environment variables. It reads active
-route capabilities and token prices from `kilo models`, and launches `kilo run --model provider/model`
-with the selected exact route. The current project policy treats OpenCode Go
-and the authenticated OpenAI OAuth route as account-priced, OpenRouter as paid,
-and configured NVIDIA routes as free-only. Free routes are enabled for this
-public-source project, but the launcher blocks them when the task prompt names
-credentials, secret-bearing files, or obvious PII. Edit `.kilo/model-router/config`
-when an account or billing arrangement differs.
+It discovers the providers explicitly enabled by the target-owned
+`provider-policy.json` through bounded `kilo models <provider> --verbose`
+commands, then launches `kilo run -m provider/model --agent code --format json`
+with the selected exact route and normalized variant. A Kilo model listing may
+legitimately take several minutes during a cold start or slow provider
+response; use the generated adapter deadline rather than a short ad-hoc
+timeout or a 10–15 second spot check. The current project
+policy treats OpenCode Go and the authenticated OpenAI route as
+account-priced, OpenRouter as paid, and configured NVIDIA routes as free-only.
+Edit the target-owned `provider-policy.json` when an account or billing
+arrangement differs; ARR does not infer credentials from the conversation.
 
-Copy `.kilo/model-router/env.example` to `.kilo/model-router/env.local`, replace
-the placeholder, and optionally load it into the current shell with
-`source .kilo/model-router/env.local`. The launcher sources it automatically too.
-`env.local` is ignored by Git and the key is never part of tracked project
-configuration. The launcher uses the Artificial Analysis free language-model endpoint and caches only its
-public model metadata under the user cache directory. It uses the published
-Intelligence Index cost-per-task as a comparative benchmark prior, not as the
-exact cost of the current request. Without that key, it falls back to Kilo's
-per-million-token catalog prices and task-profile estimates. Artificial Analysis
-model-to-route joins are accepted only when configured or sufficiently confident;
-unknown mappings remain visible in the selection report.
+Credentials remain in the harness/Kilo environment and are never copied into
+ARR files. The target adapter uses the Artificial Analysis free language-model
+endpoint when `ARTIFICIAL_ANALYSIS_API_KEY` is present and caches only bounded
+numeric quality evidence under the ignored Kilo harness namespace. It uses
+the published indices as comparative quality evidence, not as an exact cost
+for the current request. Artificial Analysis model-to-route joins are accepted
+only when configured or sufficiently confident; unknown mappings remain
+ineligible when a profile requires a quality floor.
 
 When the Artificial Analysis endpoint is unreachable or the key is absent,
 the launcher falls back to the public OpenRouter
@@ -469,23 +498,20 @@ secondary fallback (cached 24h, no key required) so that transient AA failures
 do not collapse every candidate to `capability quality is unknown`.
 
 The launcher does not store credentials or change the model inside an
-already-running TUI session. When installed, it consumes the quota plugin's
-secret-safe `status --json` and `show --json` output; fresh exhausted or
-unavailable providers are excluded, while missing or stale data remains
-`unknown`. Its free-route guard only examines the launcher prompt; it cannot
-inspect future tool output, so secret files must remain excluded from the agent
-context. Use `--continue` to select a route for a new turn while continuing the
-last Kilo session. OpenRouter participates when its provider configuration or
-environment credential is detected, even if it is absent from `kilo auth list`.
+already-running TUI session. When explicitly approved and configured, it invokes
+the target-owned absolute `OPENCODE_QUOTA_COMMAND`, which must emit a bounded
+JSON mapping; fresh exhausted or unavailable providers are excluded, while
+missing, stale, malformed, or unapproved data remains `unknown`. Its free-route
+guard only examines the launcher prompt; it cannot inspect future tool output,
+so secret files must remain excluded from the agent context. OpenRouter
+participates only when it is enabled by the target-owned provider policy and
+Kilo reports a usable route.
 
-To choose a route without launching a full Kilo session, use the router's
-`select` subcommand (or add `--json` for machine-readable output):
-`python3 .kilo/model-router/router.py select --task "<prompt>"`. The default
-`run` subcommand both selects the route and then launches/streams the Kilo
-session for that task, so a slow `run` usually reflects the Kilo run itself —
-not the selection step. When no route qualifies, the error lists the top
-candidate-rejection reasons (quota, tool support, capability quality, etc.) to
-aid diagnosis of transient availability or configuration issues.
+The target runner always prints a structured plan first. Without `--approve` it
+does not launch a worker; with `--approve` it revalidates the plan and starts
+the selected Kilo worker. A missing or unusable catalog, stale evidence, or no
+eligible route returns structured `INCOMPLETE`/`NO_ROUTE` JSON rather than a
+traceback. The runner does not change an already-running TUI session.
 
 Runtime `429`, credit, authentication, and provider-unavailable failures create
 only a user-cache cooldown for the affected route/provider. Routed read-only
@@ -500,50 +526,60 @@ the provider exposes it and otherwise use bounded exponential backoff.
 fan-out, use a manifest with one entry per independent track:
 
 ```bash
-cp .kilo/model-router/manifest.example .kilo/model-router/manifest.local
-./.kilo/model-router/route-subagents \
-  --manifest .kilo/model-router/manifest.local
+cp .agents/runtime-router/adapters/kilo/manifest.example \
+  .agents/runtime-router/adapters/kilo/manifest.local
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/route_subagents.py \
+  --manifest .agents/runtime-router/adapters/kilo/manifest.local \
+  --free-only \
+  "<parent task>"
 ```
 
-The command plans every track against one Kilo/Artificial Analysis metadata
-snapshot and prints a separate provider/model, capability, billing, cost, and
-quota decision for each when the plugin has fresh data. Review the plan, then
-add `--run` to launch the workers.
+The command plans every track against one Kilo catalog and the target-owned
+quality/quota/TPS snapshots, and prints a separate provider/model, effort,
+billing, cost, and quota decision for each. If it reports missing or stale
+evidence, do not replace it with Kilo's native same-model subagents: obtain the
+separate discovery or evidence-only approval described in
+[`ARR_KILO_ROUTER.md`](ARR_KILO_ROUTER.md), then re-run this ordinary plan.
+Review the plan, then add `--approve` to launch the workers. Named workflow
+presets request distinct model-family routes by default; use
+`--allow-route-reuse` only when same-model reuse is intentional. The launcher
+returns a `result_directory` and per-track `report_path` values under
+`.agents/runtime-router/harnesses/kilo/workflows/`; read those bounded,
+redacted reports instead of starting a second native Kilo fan-out.
 
 The standard project skills use automatic presets rather than this local
-manifest: `documentation-review`, `autonomous-code-optimizer`,
+manifest: `documentation-review`, `comprehensive-quality-overhaul`,
+`autonomous-code-optimizer`,
 `continuous-improvement`, `continuous-quality`, `adversarial-pr-review`,
 `ai-slop-detector`, `complex-code-comments`, `dependency-upgrade`,
 `architecture-review`, `rules-and-skills-audit`, and `skill-reviewer` each map
-to a bounded track plan in `.kilo/model-router/workflows.py`. The parent passes
-the user's request as `--task`; no manual manifest editing is required. The
-automatic command prints the route/quota plan and launches the read-only workers
-when invoked with `--run`. Each worker receives an exact
-`kilo run --model provider/model` route, a bounded prompt, and a compact report
-contract. Each run also writes a secret-free Markdown and JSON route report to
-`~/.cache/kilo/model-router/reports/` and prints the Markdown path; set
-`KILO_MODEL_ROUTER_REPORT_DIR` or pass `--report-dir` to change the destination.
-The launcher also prints a compact `Route summary` table to stdout after the
-workers finish (track, status, planned-to-used provider/model chain, profile,
-billing, duration), which the parent session relays into the conversation so
-the operator sees which providers/models ran which tasks without opening the
-report directory.
-Standard read-only workers inspect temporary repository copies, so accidental
-worker edits do not enter the parent worktree; `--allow-edits` is reserved for
-explicit custom manifests with owned writable paths.
-Use `--allow-edits` only when the manifest explicitly assigns disjoint writable
-paths and the parent has retained integration ownership. The host `Task` tool
-cannot be transparently intercepted; direct role-only Task calls therefore do
-not provide this cross-provider guarantee.
+to a bounded track plan in the target/Agent Guidance Kit workflow definition.
+The parent passes the user's request as `--task`; no manual manifest editing is
+required. The automatic command prints the route/quota plan and launches the
+read-only workers when invoked with `--approve`. Each worker receives an exact
+`kilo run -m provider/model` route, a bounded prompt, and a compact structured
+report contract. ARR persists only its bounded, redacted report summaries in
+the target-owned workflow result directory; raw prompts and provider output are
+not persisted by ARR.
+Standard read-only workers inspect temporary repository snapshots, so accidental
+worker edits do not enter the parent worktree. Write-capable work is not
+implicitly enabled by this adapter; the parent must use a separately reviewed
+write workflow and explicit promotion. The snapshot includes regular target
+files only: symbolic links are deliberately omitted rather than followed, so
+Kilo instruction configuration must use the regular canonical file path
+documented in [`ARR_KILO_ROUTER.md`](ARR_KILO_ROUTER.md).
 
 For a second-pass adversarial review of a completed documentation audit, use the
 dedicated preset with the prior findings in the task context:
 
 ```bash
-./.kilo/model-router/route-subagents \
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/route_subagents.py \
   --workflow documentation-adversarial-review \
   --task "Independently re-review the documentation findings from the parent audit" \
-  --run
+  --free-only \
+  --approve
 ```
 
 Launch the command in the host's background process facility when available and
@@ -643,7 +679,7 @@ needs an update:
 | :--- | :--- |
 | Project fact, architecture boundary, or safety invariant | `.agents/AGENTS.md` |
 | Convention shared by every harness | `.agents/OPERATING.md` and the matching Cursor projection |
-| Detailed repeatable workflow | `.agents/skills/<name>/SKILL.md` |
+| Detailed repeatable workflow | `.agents/skills/<name>/SKILL.md` and directly linked sibling references |
 | Cursor-only integration detail | The relevant `.cursor/rules/*.mdc` file or skill, with a portable explanation retained |
 | Human explanation of the overall system | This document |
 | Skill routing | The skill frontmatter and `.agents/AGENTS.md` index |

@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "source_ref": "new-kraken-rebalancer@7e94c39",
+  "artificialAnalysis": {
+    "enabled": true,
+    "apiKeyEnv": "ARTIFICIAL_ANALYSIS_API_KEY",
+    "cacheHours": 24
+  },
+  "quota": {
+    "plugin": {
+      "enabled": true,
+      "commandEnv": "OPENCODE_QUOTA_COMMAND",
+      "maxAgeSeconds": 300,
+      "minimumRemainingPercent": 1,
+      "timeoutSeconds": 45
+    },
+    "cooldown": {
+      "rateLimitSeconds": 60,
+      "maxSeconds": 3600,
+      "creditsSeconds": 3600,
+      "providerUnavailableSeconds": 300,
+      "reportContractSeconds": 300,
+      "authenticationSeconds": 3600,
+      "modelEolSeconds": 86400
+    }
+  },
+  "readinessProbe": {
+    "maxProbesPerRun": 5,
+    "cacheTtlSeconds": 86400,
+    "failureCacheTtlSeconds": 300,
+    "timeoutSeconds": 300
+  },
+  "discovery": {
+    "providerTimeoutSeconds": 300
+  },
+  "coldStart": {
+    "staggerSeconds": 5,
+    "retryOnFastFail": true,
+    "fastFailThresholdSeconds": 5,
+    "retryDelaySeconds": 10,
+    "maxRetries": 1
+  },
+  "providers": {
+    "kilo": {
+      "enabled": true,
+      "billing": "account-priced",
+      "include": ["*"]
+    },
+    "opencode-go": {
+      "enabled": true,
+      "billing": "subscription/account-priced",
+      "include": ["*"]
+    },
+    "openai": {
+      "enabled": true,
+      "billing": "subscription/account-priced",
+      "include": ["*"]
+    },
+    "openrouter": {
+      "enabled": true,
+      "billing": "payg",
+      "include": ["*"]
+    },
+    "nvidia": {
+      "enabled": true,
+      "billing": "free",
+      "freeOnly": true,
+      "allowFree": true,
+      "include": ["*"]
+    },
+    "ollama": {
+      "enabled": true,
+      "requiresAuth": false,
+      "billing": "free",
+      "freeOnly": true,
+      "allowFree": true,
+      "include": ["*"]
+    }
+  },
+  "models": {
+    "kilo/tencent/hy3": {"aaSlugs": ["hy3", "hy3-preview"]},
+    "kilo/tencent/hy3:free": {"aaSlugs": ["hy3", "hy3-preview"]},
+    "ollama/gpt-oss:20b": {"aaSlug": "gpt-oss-20b", "contextLimit": 131072},
+    "ollama/gemma4:12b": {"aaSlug": "gemma-4-12b", "contextLimit": 262144},
+    "ollama/qwen3-coder:30b": {"aaSlug": "qwen3-coder-next", "contextLimit": 262144}
+  },
+  "blacklist": {
+    "models": [
+      "minimax-m2.7",
+      "*claude*",
+      "*anthropic*",
+      "*gpt-5-6-sol*",
+      "nvidia/qwen/qwen3.5-122b-a10b",
+      "nvidia/qwen/qwen3.5-397b-a17b",
+      "nvidia/minimaxai/minimax-m2.7",
+      "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openrouter/google/gemma-4-31b-it",
+      "openrouter/google/gemma-4-31b-it:free",
+      "openrouter/google/gemma-4-26b-a4b-it",
+      "openrouter/google/gemma-4-26b-a4b-it:free",
+      "openrouter/kwaipilot/kat-coder-air-v2.5",
+      "nvidia/mistralai/mistral-medium-3.5-128b",
+      "nvidia/openai/gpt-oss-120b",
+      "nvidia/thinkingmachines/inkling",
+      "nvidia/minimaxai/minimax-m3",
+      "nvidia/z-ai/glm-5.2",
+      "nvidia/stepfun-ai/step-3.7-flash",
+      "nvidia/mistralai/mistral-small-4-119b-2603"
+    ],
+    "providers": ["ollama"]
+  },
+  "policy": {
+    "allowPaid": true,
+    "allowFree": true,
+    "denyFreeForSensitive": true,
+    "useAaCostPerTask": true
+  }
+}

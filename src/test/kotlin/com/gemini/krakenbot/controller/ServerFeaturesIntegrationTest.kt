@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
 import com.gemini.krakenbot.config.configureCompression
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
@@ -54,6 +55,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
     init {
         var isPaused = false
         val portfolioManager = mockk<PortfolioManager>(relaxed = true)
+        val orderIntentService = mockk<OrderIntentService>(relaxed = true)
         every { portfolioManager.isLoopPaused() } answers { isPaused }
         every { portfolioManager.pauseLoop() } answers { isPaused = true }
         every { portfolioManager.resumeLoop() } answers { isPaused = false }
@@ -63,6 +65,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                 single { mockk<TradeHistoryService>(relaxed = true) }
                 single { mockk<ConfigService>(relaxed = true) }
                 single { portfolioManager }
+                single { orderIntentService }
                 single { jacksonObjectMapper().registerModule(JavaTimeModule()) }
                 single { DashboardShellComponent() }
                 single { SettingsFormComponent() }
@@ -87,7 +90,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                         historyPageComponent = get(),
                     )
                 }
-                single { DashboardController(get(), get(), get(), get(), get()) }
+                single { DashboardController(get(), get(), get(), get(), get(), get()) }
             }
 
         beforeTest {

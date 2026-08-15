@@ -79,7 +79,7 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
 
 - **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous coroutine loop. It acts as a lightweight facade that delegates domain logic to the analyzer and executor, and coordinates snapshot persistence. It reactively restarts the loop upon configuration changes via `watchConfigChanges()`.
 - **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), assembles end-of-cycle `PortfolioSnapshot`s, and delegates valuation / drawdown / deviation / fiat-correction math to **`RebalancerEngine`**. Portfolio value calculation returns a `Result<PortfolioValues>` for graceful error handling.
-- **`RebalancerEngine` (Domain calculator)**: Side-effect-light math (no network/DB) for portfolio values, drawdown, fiat deployment, targets, deviation analysis, and fiat correction. Logging is retained for diagnostics.
+- **`RebalancerEngine` (Domain calculator)**: Side-effect-light math (no network/DB) for portfolio values, drawdown, fiat deployment, targets, deviation analysis, and fiat correction. It emits a typed `RebalancePlan` with `RebalanceEvent` values; a presentation adapter keeps the existing snapshot action-log strings stable. Logging is retained for diagnostics.
 - **`PortfolioCalculations` (Shared Math)**: Consolidated percentage, target, and deviation calculations shared by the analyzer (including end-of-cycle snapshot assembly) — eliminates duplicate math across the codebase.
 - **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, action-log formatting, and persisting each order via `TradeHistoryService.saveTrade`. Before a real live placement, it persists a `PENDING` intent with a deterministic Kraken **`cl_ord_id`** (from `cycleId|symbol|side`). AddOrder is attempted only once; an ambiguous transport/response failure becomes `UNCERTAIN`, aborts the remaining batch, and blocks later live orders until operator reconciliation (`userref` is not a uniqueness key among open orders).
 - **`KrakenServiceImpl` + `RateLimiter` (The Gateway)**: Handles HMAC-SHA512
@@ -90,7 +90,7 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
   attempts are capped at 5, rate-limit backoff starts at 10 seconds, and
   temporary lockouts double from 10 seconds up to 15 minutes for at most 9
   lockout attempts.
-- **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations and exposes `watchConfigChanges()` as a reactive `Flow<Settings>`. Trade logs and portfolio statistics are persisted to SQLite (using JetBrains Exposed ORM).
+- **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqliteOrderIntentRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations and exposes `watchConfigChanges()` as a reactive `Flow<Settings>`. Trade logs, live-order intents, and portfolio statistics are persisted to SQLite (using JetBrains Exposed ORM); schema versions are recorded and file-backed migrations receive a pre-migration backup.
 - **`TradeHistoryServiceImpl`**: Thin façade over Sync / SnapshotStore / Query /
   Reconstruction. The hot `MutableSharedFlow<PortfolioSnapshot>` lives on
   `TradeHistorySnapshotStore` and is exposed via `getHistoryFlow()` for the Ktor
@@ -117,6 +117,12 @@ In this phase, the system builds a complete view of the current portfolio state.
 4. **Price safety**: If any non-USD configured asset is missing a ticker price or
    the resolved price is zero, the cycle **aborts** before orders are generated
    (`Result.Failure`) to avoid erroneous trades.
+
+The reconstruction path follows the same consistency boundary: it captures one
+execution-session configuration and pins one exchange backend for balances,
+ticker prices, OHLC history, and snapshot calculations. A settings change or
+simulation flip cannot make one reconstruction pass mix configurations or
+backends.
 
 ---
 
@@ -261,10 +267,11 @@ failure.
     - Only successful buys deduct from available cash and the remaining budget.
 4. **Order Placement**:
     - Orders are placed as **Market Orders** for immediate execution.
-    - Before a real live AddOrder call, a durable `PENDING` trade intent is
-      written with `clientOrderId`. A definite exchange response resolves that
-      row. A transport failure, response failure, or response without a txid is
-      ambiguous and marks it `UNCERTAIN`; the executor stops the batch.
+    - Before a real live AddOrder call, a durable `PENDING` row is written to
+      `order_intents` with `clientOrderId`. A definite exchange response
+      resolves that row. A transport failure, response failure, or response
+      without a txid is ambiguous and marks it `UNCERTAIN`; the executor stops
+      the batch.
       Cancellation persists that uncertain state in a `NonCancellable`
       durability block before propagating. Dry-run and simulation exceptions
       update the local estimate with the actual known failure instead. If that
@@ -276,6 +283,13 @@ failure.
       operator must verify Kraken open orders, closed orders, and fills before
       clearing the SQLite state; missing trade history alone is not proof that
       Kraken rejected the order.
+    - Operators review unresolved rows with `GET /api/order-intents` and clear
+      only `UNCERTAIN` rows through `POST /api/order-intents/{id}/resolve` using
+      an explicit `CONFIRMED` or `REJECTED` outcome, evidence, and the optional
+      Kraken `orderTxid` when known. `PENDING`
+      rows cannot be terminalized while AddOrder may still be in flight;
+      restart recovery converts abandoned PENDING rows to UNCERTAIN. `GET
+      /api/readiness` remains `503` while any unresolved row exists.
     - "Dust" orders (below the configured `minimumOrderSizeUSD`) are skipped to
       avoid API errors.
     - USD intents are converted to crypto volumes at 8 decimal places with

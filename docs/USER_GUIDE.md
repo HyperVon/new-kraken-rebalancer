@@ -141,6 +141,25 @@ Dry Run, or Live Trading mode.
 
 Use this page as your “is the bot healthy right now?” view.
 
+### Operational status and readiness
+
+The JSON endpoints are intentionally unauthenticated for this application's
+single-operator/private-LAN deployment model. Treat every device that can reach
+the server as trusted. `GET /api/health` is a liveness and diagnostic check; it
+includes the active mode, loop state, last cycle timestamps/error, latest trade
+sync watermark, and unresolved live-order counts. `GET /api/readiness` returns
+`200` only when the loop is running, configuration is available, a snapshot
+exists, the latest cycle is not failed, and no ambiguous live-order intent is
+waiting for review. It returns `503` with a `readinessReason` otherwise.
+
+If an ambiguous live order occurs, leave the loop paused, then inspect
+`GET /api/order-intents`. Only an `UNCERTAIN` intent is eligible for manual
+resolution: `PENDING` means the AddOrder request may still be in flight. The
+resolution route uses the same CSRF token issued by the Settings page. Follow
+the [operator recovery runbook](../SECURITY.md#operator-recovery-runbook) for
+the exchange-verification checklist, complete `curl` request, and post-request
+checks before resuming.
+
 ### Responsive layouts
 
 The dashboard is checked at the same common viewport profiles used by the visual
@@ -182,7 +201,7 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Deviation Trigger (%)** | Minimum absolute deviation from target before an asset can trigger trades. Minimum **0**. |
 | **Minimum Order Size ($)** | Dual role: absolute USD deviation must meet this for an asset to trigger, and orders below this notional are skipped at execution. **Minimum `2` (enforced).** |
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
-| **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Minimum **0.1** (must be positive). |
+| **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Must be positive (any value > 0). |
 
 ### Safety modes
 
@@ -406,8 +425,10 @@ badges instead.
    fills.
 4. If logs report an uncertain live submission, stop changing modes or
    retrying manually. Verify Kraken open orders, closed orders, and fills before
-   resolving the durable pending intent; the bot blocks further live orders to
-   avoid a duplicate submission.
+   resolving the durable intent; the bot blocks further live orders to avoid a
+   duplicate submission. Use the
+   [operator recovery runbook](../SECURITY.md#operator-recovery-runbook), which
+   includes the exact CSRF-protected request and verification steps.
 
 ---
 

@@ -7,7 +7,6 @@ import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
@@ -16,7 +15,7 @@ import org.w3c.dom.*
 import kotlin.js.Date
 
 fun formatPair(trade: TradeRecord): String {
-    if (trade.symbol.isNullOrBlank()) return ""
+    if (trade.symbol.isBlank()) return ""
     return "${trade.symbol}/USD"
 }
 

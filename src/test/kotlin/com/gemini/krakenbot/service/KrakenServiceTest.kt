@@ -317,6 +317,22 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
+        "executeOrder_MalformedResponseIsUncertain" {
+            runTest {
+                val service = createService("{broken-json")
+
+                val result = service.executeOrder(
+                    pair = TestFixtures.XBTUSD,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.BUY.apiValue,
+                    volume = BigDecimal.ONE,
+                )
+
+                result.success.shouldBeFalse()
+                result.submissionUncertain shouldBe true
+            }
+        }
+
         "executeOrder_ServerErrorJsonIsUncertain" {
             runTest {
                 var requestCount = 0

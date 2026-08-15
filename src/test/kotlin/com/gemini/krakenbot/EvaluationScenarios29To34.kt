@@ -655,7 +655,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
         }
     }
 
-    "Scenario 36: Zero Total Portfolio Value / 100% Drawdown" {
+    "Scenario 40: Zero Total Portfolio Value / 100% Drawdown" {
         runTest {
             val fakeKraken = FakeKrakenService()
             val mockConfig = mockk<ConfigService>(relaxed = true)
@@ -707,7 +707,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
                 pm.performRebalanceCycle()
             } catch (e: Exception) {
                 EvaluationScenariosTest.recordResult(
-                    "Scenario 36",
+                    "Scenario 40",
                     "Zero Total Portfolio Value / 100% Drawdown",
                     "FAIL",
                     "Unexpected exception with zero total: ${e.message}",
@@ -718,7 +718,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             fakeKraken.executedOrders.size shouldBe 0
 
             EvaluationScenariosTest.recordResult(
-                "Scenario 36",
+                "Scenario 40",
                 "Zero Total Portfolio Value / 100% Drawdown",
                 TestFixtures.PASS,
                 "Zero balances handled without exception; 0 orders verified",

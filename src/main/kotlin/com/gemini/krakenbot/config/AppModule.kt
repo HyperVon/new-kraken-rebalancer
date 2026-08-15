@@ -6,14 +6,17 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
+import com.gemini.krakenbot.repository.impl.SqliteOrderIntentRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -21,6 +24,7 @@ import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
+import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
@@ -76,6 +80,8 @@ val coreModule =
 
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
         singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
+        singleOf(::SqliteOrderIntentRepositoryImpl) { bind<OrderIntentRepository>() }
+        singleOf(::OrderIntentServiceImpl) { bind<OrderIntentService>() }
         singleOf(::SqliteLedgerRepositoryImpl) { bind<LedgerRepository>() }
         single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
         single {
@@ -139,7 +145,13 @@ val coreModule =
             )
         }
         singleOf(::PortfolioAnalyzerImpl) { bind<PortfolioAnalyzer>() }
-        singleOf(::OrderExecutorImpl) { bind<OrderExecutor>() }
+        single<OrderExecutor> {
+            OrderExecutorImpl(
+                krakenService = get(),
+                tradeHistoryService = get(),
+                orderIntentService = get(),
+            )
+        }
         // Explicit ctor: nullable `krakenService` defaults to null; singleOf would skip injection
         // and leave cycle-level DynamicKraken pinning disabled (#89).
         single<PortfolioManager> {

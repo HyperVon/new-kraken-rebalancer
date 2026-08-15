@@ -65,11 +65,13 @@ The repository is harness-agnostic for ordinary development: any capable host
 can use the application source, tests, Gradle commands, Git workflow, and
 portable `.agents/` guidance. KiloCode-specific conveniences are optional and
 limited to Kilo Auto, `.kilo/kilo.json`, `./route-kilo`,
-`.kilo/model-router/route-subagents`, Kilo route reports, Context Mode, and
+`.agents/runtime-router/adapters/kilo/route_subagents.py`, Kilo route reports, Context Mode, and
 Agent Manager. When running under Google Antigravity (AGY), subagents MUST be
 launched directly through Antigravity's native `invoke_subagent` tool calls;
-agents MUST NOT execute `.kilo/model-router/route-subagents` or `subagents.py`
-scripts. Other non-Kilo hosts should similarly use their built-in native agent fan-out.
+do not execute the Kilo-specific ARR adapter there. Other non-Kilo hosts should
+similarly use their built-in native agent fan-out. Under Kilo, use the
+receipt-managed ARR runner described in §8; do not substitute Kilo's native
+role-only `Task` tool when the target ARR adapter is present.
 
 Independent work must be launched concurrently: use one parallel tool message
 or a background process for the complete fan-out, then poll results. Do not
@@ -96,16 +98,16 @@ the host provides it. If no usable route is exposed, keep the work in the parent
    route from its name alone.
 4. Native Auto tiers do not need a repository-side catalog, probe script, or
    permanent route ledger. For the separate cross-provider requirement, the
-    optional `.kilo/model-router/route-kilo` launcher uses a bounded, ephemeral
-    catalog and persists only secret-free cooldown metadata; it never persists
-    credentials, balances, or raw provider errors.
+    optional ARR-backed `./route-kilo` launcher uses bounded, target-owned
+   catalog/quota/TPS evidence and persists only redacted namespaced state; it
+   never persists credentials, prompts, balances, or raw provider errors.
 5. Record the user approval, route-selection evidence, fallback, and any
    substitution for each track.
 6. If the host exposes only a role and cannot expose a usable model route, stop
    material/parallel fan-out; do not silently use the parent route or a role-only
    fallback.
 7. For a broad read-only workflow covered by a routed preset, let
-   `route-subagents --run` print and execute the track/route/effort plan. Use the
+   ARR workflow launcher to print and execute the track/route/effort plan. Use the
    `question` tool or host equivalent when a hard availability, scope, editing,
    or high-risk review decision remains unresolved.
 8. For high-risk or disputed work, choose a stronger host route such as Kilo
@@ -306,6 +308,29 @@ When writing code or tests:
 Audit rubric and cleanup workflow:
 [skills/ai-slop-detector/SKILL.md](skills/ai-slop-detector/SKILL.md).
 
+### Always-on quality baseline
+
+Treat "AI slop" as an observable artifact defect, not a guess about authorship:
+plausible-looking code, tests, docs, configuration, or guidance that lacks
+current evidence or adds unnecessary correctness, maintenance, safety, or
+review cost. Apply this lightweight pass to every task:
+
+- Tie non-obvious claims, commands, APIs, configuration, tests, and completion
+  statements to current source, contracts, observed behavior, or checks; label
+  unknowns instead of filling them with assumptions.
+- Before adding an artifact or abstraction, identify its concrete consumer,
+  canonical owner, simpler alternative, and outcome-level verification.
+- Keep the change and its documentation focused on the requested user or
+  maintainer task. Do not add speculative wrappers, duplicate mechanisms,
+  misleading tests, or unrelated cleanup.
+- Treat style, verbosity, unusual formatting, and formulaic language as prompts
+  to investigate, not defects by themselves.
+
+Use [ai-slop-detector](skills/ai-slop-detector/SKILL.md) for a scoped
+evidence-based audit or explicitly authorized cleanup. The full skill is
+conditional; this compact baseline is not. Do not turn ordinary work into a
+repository-wide audit merely because the baseline is always active.
+
 ---
 
 ## 8. Native model selection
@@ -332,31 +357,48 @@ meets the task's context, tool, modality, latency, and risk requirements, then
 use that host's native fallback and entitlement information.
 
 When a request must choose between direct authenticated Kilo, OpenCode Go, OpenAI,
-OpenRouter, and NVIDIA routes, use `.kilo/model-router/route-kilo` instead of claiming
+OpenRouter, and NVIDIA routes, use the ARR-backed `./route-kilo` instead of claiming
 that `kilo/kilo-auto/efficient` can see those independent credentials. The
-launcher discovers providers reported by `kilo auth list`, loaded Kilo/OpenCode
-provider configuration, or standard provider environment variables. It ranks
-active tool-capable routes using optional Artificial Analysis benchmark data or
-Kilo catalog token pricing, and starts `kilo run` with the selected exact route.
-When the installed `opencode-quota` plugin has fresh data, it filters exhausted
-providers and reports the quota source/state. Otherwise quota remains `unknown`.
-It does not probe every provider or silently retry an agent after a partial
-failure.
+launcher considers only providers and include/blacklist rules declared in the
+target-owned `.agents/runtime-router/adapters/kilo/provider-policy.json`. It
+uses Kilo's bounded model listing for those providers, optional target-owned
+Artificial Analysis/OpenRouter benchmark evidence, and the target's explicit
+billing policy; it does not infer a provider universe from `kilo auth list`,
+ambient configuration, or environment variables. The optional OpenCode quota
+command is run only after explicit approval; otherwise paid quota remains
+`unknown`. It does not probe every provider or silently retry an agent after a
+partial failure.
 
 For bounded parallel subagents in Google Antigravity (AGY), launch subagents
-natively via `invoke_subagent` tool calls; do NOT execute `.kilo/model-router/route-subagents`
-or `subagents.py`.
+natively via `invoke_subagent` tool calls; do NOT execute the Kilo-specific ARR
+workflow launcher.
 
-For Kilo CLI sessions, `.kilo/model-router/route-subagents` with a track manifest
-can be used instead of the host `Task` wrapper when the wrapper cannot expose
-model selection. It computes one route plan per track from a shared metadata
-snapshot, requires `--run` to launch, and starts each worker with its exact
-`kilo run --model provider/model` route. The default worker contract is read-only;
-the parent owns integration and final verification. A raw role-only Task call is
-not evidence that this cross-provider routing occurred.
+For Kilo CLI sessions, invoke the adapter through the receipt-managed runtime:
+
+```text
+python3 .agents/.agent-runtime-router/run.py --python \
+  .agents/runtime-router/adapters/kilo/route_subagents.py \
+  --workflow <workflow-id> --task "<parent task>"
+```
+
+This is the only supported Kilo path for cross-provider subagent routing. It
+computes one route plan per track from a shared metadata snapshot, requires
+`--approve` to launch, and starts each worker with its exact `kilo run
+--model provider/model` route. A raw role-only Task call is not evidence that
+ARR routing occurred. If the command reports `INCOMPLETE` because its catalog
+or evidence is missing, stop and report that state; do not silently fall back
+to native subagents on the parent model.
+Named workflow fan-outs default to distinct model-family routes and return
+`result_directory` plus per-track `report_path` values under
+`.agents/runtime-router/harnesses/kilo/workflows/`; inspect those reports
+instead of launching a second native `kilo run` batch. Pass
+`--allow-route-reuse` only when reuse is deliberate.
+If the receipt-managed runtime itself is missing or stale, use the
+`agent-runtime-router-maintenance` or `bootstrap-runtime-router` skill first;
+that is different from a valid runtime reporting incomplete catalog evidence.
 
 For named broad project skills when running under Kilo, use the corresponding
-automatic workflow preset listed in `.kilo/model-router/instructions.md`; under
+workflow definition listed in the target ARR adapter docs; under
 Antigravity, perform discovery fan-out natively using `invoke_subagent`.
 
 Before material or parallel delegation:
@@ -367,9 +409,10 @@ Before material or parallel delegation:
 3. Start with the least expensive capable tier and escalate for demonstrated
    complexity, repeated failure, or safety-sensitive reasoning.
 4. Treat catalog status or configured credentials as insufficient proof of live
-   quota. The launcher persists only secret-free route/provider cooldown expiry
-   and failure category in the user cache; it never persists balances,
-   credentials, or raw provider errors.
+   quota. ARR/Kraken persist only bounded, redacted evidence (catalog, quality,
+   TPS, readiness, quota metadata, and cooldown state) under the active
+   harness namespace; credentials, prompts, balances, and raw provider errors
+   are never persisted.
 5. Treat context size as route-specific; when unavailable, keep delegated
    requests below **128K** and split before **180K**.
 
