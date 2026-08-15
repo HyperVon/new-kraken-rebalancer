@@ -214,13 +214,78 @@ tasks.check {
     dependsOn(":frontend-js:jsBrowserTest")
 }
 
+val nettySecurityFloor = "4.2.17.Final"
+val nettyVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)\.Final""")
+val (nettySecurityMajor, nettySecurityMinor, nettySecurityPatch) =
+    nettyVersionPattern.matchEntire(nettySecurityFloor)!!.destructured
+
+val httpCoreSecurityFloor = "5.4.3"
+val httpCoreVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)(?:[-+].*)?""")
+val (httpCoreSecurityMajor, httpCoreSecurityMinor, httpCoreSecurityPatch) =
+    httpCoreVersionPattern.matchEntire(httpCoreSecurityFloor)!!.destructured
+
 configurations.all {
     resolutionStrategy.eachDependency {
+        if (requested.group == "org.apache.httpcomponents.core5" &&
+            requested.name in setOf("httpcore5", "httpcore5-h2")
+        ) {
+            val requestedVersion =
+                requested.version
+                    ?.let(httpCoreVersionPattern::matchEntire)
+                    ?.destructured
+            if (requestedVersion != null) {
+                val (major, minor, patch) = requestedVersion
+                val majorNumber = major.toInt()
+                val minorNumber = minor.toInt()
+                val patchNumber = patch.toInt()
+                val isBelowSecurityFloor =
+                    majorNumber < httpCoreSecurityMajor.toInt() ||
+                        (
+                            majorNumber == httpCoreSecurityMajor.toInt() &&
+                                (
+                                    minorNumber < httpCoreSecurityMinor.toInt() ||
+                                        (
+                                            minorNumber == httpCoreSecurityMinor.toInt() &&
+                                                patchNumber < httpCoreSecurityPatch.toInt()
+                                            )
+                                    )
+                            )
+                if (isBelowSecurityFloor) {
+                    useVersion(httpCoreSecurityFloor)
+                    because(
+                        "Keep Apache HttpComponents Core at 5.4.3 or newer for CVE-2026-54399",
+                    )
+                }
+            }
+        }
         if (requested.group == "io.netty") {
-            useVersion("4.1.136.Final")
-            because(
-                "Fixes Netty security vulnerabilities including HTTP/2 continuation frame flood (CVE-2026-33871) and newer vulnerabilities (CVE-2026-45536, CVE-2026-45416, CVE-2026-44249)",
-            )
+            val requestedVersion = requested.version
+                ?.let(nettyVersionPattern::matchEntire)
+                ?.destructured
+            if (requestedVersion != null) {
+                val (major, minor, patch) = requestedVersion
+                val majorNumber = major.toInt()
+                val minorNumber = minor.toInt()
+                val patchNumber = patch.toInt()
+                val isBelowSecurityFloor =
+                    majorNumber < nettySecurityMajor.toInt() ||
+                        (
+                            majorNumber == nettySecurityMajor.toInt() &&
+                                (
+                                    minorNumber < nettySecurityMinor.toInt() ||
+                                        (
+                                            minorNumber == nettySecurityMinor.toInt() &&
+                                                patchNumber < nettySecurityPatch.toInt()
+                                            )
+                                    )
+                            )
+                if (isBelowSecurityFloor) {
+                    useVersion(nettySecurityFloor)
+                    because(
+                        "Keep Netty at the 4.2.17.Final security floor without downgrading Ktor's Netty 4.2 line",
+                    )
+                }
+            }
         }
     }
 }

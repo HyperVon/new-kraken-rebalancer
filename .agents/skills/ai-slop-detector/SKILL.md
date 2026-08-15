@@ -29,6 +29,13 @@ severity, or bad faith.
 Default to an **audit and report**. Modify files only when the user explicitly
 asks to clean up, eliminate, or fix findings.
 
+An always-on evidence-first quality baseline also lives in
+`.agents/OPERATING.md` (Always-on quality baseline). That compact baseline is the
+default posture for every task; this skill owns the deeper procedure when a
+request explicitly concerns AI slop, evidence-backed artifact quality, or a
+broad cross-artifact audit. Do not broaden an ordinary implementation or review
+task into a full audit without evidence or a matching request.
+
 ## Scope and boundaries
 
 This skill covers **all repository artifacts**, including:
@@ -132,7 +139,7 @@ signal, not evidence of slop.
 ### Optional parallel evidence pass
 
 For a full-repository or broad PR audit, use the `ai-slop-detector` preset from
-`.kilo/model-router/route-subagents` after Step 0 and the native model-selection
+`.agents/runtime-router/adapters/kilo/route_subagents.py` after Step 0 and the native model-selection
 gate. It supplies disjoint production/build, tests/evaluation,
 documentation/skills/rules, and UI/assets tracks. Workers return findings only;
 the parent owns severity triage, cleanup decisions, edits, and serial quality

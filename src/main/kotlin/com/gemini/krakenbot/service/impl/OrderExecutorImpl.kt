@@ -2,6 +2,8 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
@@ -11,6 +13,7 @@ import com.gemini.krakenbot.service.AssetPrices
 import com.gemini.krakenbot.service.AssetValues
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RebalanceOrders
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -39,14 +42,10 @@ import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
-private val ERROR_LIVE_ORDERS_BLOCKED = ViewText.ERROR_LIVE_ORDERS_BLOCKED
-private val ORDER_SUBMISSION_PENDING = ViewText.ORDER_SUBMISSION_PENDING
-private val ORDER_SUBMISSION_FAILED = ViewText.ORDER_SUBMISSION_FAILED
-private val ORDER_SUBMISSION_FAILED_UNCERTAIN = ViewText.ORDER_SUBMISSION_FAILED_UNCERTAIN
-
 class OrderExecutorImpl(
     private val krakenService: KrakenService,
     private val tradeHistoryService: TradeHistoryService,
+    private val orderIntentService: OrderIntentService? = null,
 ) : OrderExecutor {
     private val log = LoggerFactory.getLogger(OrderExecutorImpl::class.java)
 
@@ -83,9 +82,12 @@ class OrderExecutorImpl(
         cycleId: String,
         availableBalances: RawBalances?,
     ) {
-        if (!settings.dryRun && !settings.simulation && tradeHistoryService.hasPendingSubmissions()) {
+        val hasLegacyPending = !settings.dryRun && !settings.simulation && tradeHistoryService.hasPendingSubmissions()
+        val hasJournalPending = !settings.dryRun && !settings.simulation &&
+            orderIntentService?.hasUnresolvedIntents() == true
+        if (!settings.dryRun && !settings.simulation && (hasLegacyPending || hasJournalPending)) {
             log.error("Refusing live orders while an unresolved submission intent exists")
-            actionLog.add(ERROR_LIVE_ORDERS_BLOCKED)
+            actionLog.add(ViewText.ERROR_LIVE_ORDERS_BLOCKED)
             return
         }
         // Pin live vs simulation for the whole sell→buy sequence; pass settings.dryRun into
@@ -260,6 +262,7 @@ class OrderExecutorImpl(
             result: OrderResult,
             id: Int? = null,
             submissionState: OrderSubmissionState? = null,
+            timestamp: Instant = Instant.now(),
         ): TradeRecord = TradeCalculator.createTradeRecord(
             result = result,
             symbol = symbol,
@@ -268,14 +271,60 @@ class OrderExecutorImpl(
             volume = volume,
             usdAmount = effectiveUsdAmount,
             prices = prices,
+            timestamp = timestamp,
             cycleId = cycleId.ifBlank { null },
         ).copy(id = id, clientOrderId = clOrdId, submissionState = submissionState)
 
+        val pendingTimestamp = Instant.now()
         val pending = createJournalRecord(
-            result = OrderResult(false, pair, side.apiValue, volume, settings.dryRun, ORDER_SUBMISSION_PENDING),
-            submissionState = if (isLiveSubmission) OrderSubmissionState.PENDING else null,
+            result = OrderResult(
+                false,
+                pair,
+                side.apiValue,
+                volume,
+                settings.dryRun,
+                ViewText.ORDER_SUBMISSION_PENDING,
+            ),
+            submissionState = if (isLiveSubmission) {
+                OrderSubmissionState.PENDING
+            } else {
+                null
+            },
+            timestamp = pendingTimestamp,
         )
         val pendingId = tradeHistoryService.saveTrade(pending)
+        if (isLiveSubmission && orderIntentService != null && clOrdId == null) {
+            val invalidIdentity = IllegalStateException("Live order requires a non-blank cycle id")
+            markSubmissionFailureWithoutMasking(pending, pendingId, invalidIdentity)
+            throw invalidIdentity
+        }
+        val intentId = if (isLiveSubmission) {
+            val intent = OrderIntent(
+                cycleId = cycleId.ifBlank { null },
+                clientOrderId = clOrdId,
+                pair = pair,
+                symbol = symbol,
+                side = side.uppercaseName,
+                volume = volume,
+                usdAmount = effectiveUsdAmount,
+                expectedPrice = prices[symbol],
+                createdAt = pending.timestamp,
+                state = OrderIntentState.PENDING,
+                localTradeId = pendingId,
+            )
+            try {
+                orderIntentService?.savePending(intent)
+            } catch (e: Exception) {
+                markSubmissionFailureWithoutMasking(
+                    pending.copy(submissionState = OrderSubmissionState.PENDING),
+                    pendingId,
+                    e,
+                )
+                throw e
+            }
+        } else {
+            null
+        }
         val result = try {
             backend.executeOrder(
                 pair = pair,
@@ -288,11 +337,45 @@ class OrderExecutorImpl(
         } catch (e: CancellationException) {
             // Persist the durable outcome even when the surrounding cycle has already been cancelled.
             withContext(NonCancellable) {
-                markSubmissionFailureWithoutMasking(pending, pendingId, e)
+                val outcomeStatus = recordIntentOutcomeWithoutMasking(
+                    intentId,
+                    uncertainResult(pair, side, volume, settings, e.message),
+                    e,
+                )
+                when (outcomeStatus) {
+                    IntentOutcomeStatus.FAILED -> markSubmissionFailureWithoutMasking(
+                        pending.copy(submissionState = OrderSubmissionState.UNCERTAIN),
+                        pendingId,
+                        e,
+                    )
+
+                    IntentOutcomeStatus.NOT_CONFIGURED -> markSubmissionFailureWithoutMasking(pending, pendingId, e)
+
+                    IntentOutcomeStatus.APPLIED,
+                    IntentOutcomeStatus.ALREADY_RESOLVED,
+                    -> Unit
+                }
             }
             throw e
         } catch (e: Exception) {
-            markSubmissionFailureWithoutMasking(pending, pendingId, e)
+            val outcomeStatus = recordIntentOutcomeWithoutMasking(
+                intentId,
+                uncertainResult(pair, side, volume, settings, e.message),
+                e,
+            )
+            when (outcomeStatus) {
+                IntentOutcomeStatus.FAILED -> markSubmissionFailureWithoutMasking(
+                    pending.copy(submissionState = OrderSubmissionState.UNCERTAIN),
+                    pendingId,
+                    e,
+                )
+
+                IntentOutcomeStatus.NOT_CONFIGURED -> markSubmissionFailureWithoutMasking(pending, pendingId, e)
+
+                IntentOutcomeStatus.APPLIED,
+                IntentOutcomeStatus.ALREADY_RESOLVED,
+                -> Unit
+            }
             throw e
         }
         val resolvedResult = if (isLiveSubmission && result.success && result.orderTxid.isNullOrBlank()) {
@@ -302,11 +385,26 @@ class OrderExecutorImpl(
                 side = result.side,
                 volume = result.volume,
                 dryRun = result.dryRun,
-                errorMessage = ORDER_SUBMISSION_FAILED_UNCERTAIN,
+                errorMessage = ViewText.ORDER_SUBMISSION_FAILED_UNCERTAIN,
                 submissionUncertain = true,
             )
         } else {
             result
+        }
+        if (intentId != null) {
+            val outcomeApplied = orderIntentService?.recordOutcome(intentId, resolvedResult) != false
+            if (!outcomeApplied) {
+                val staleOutcome = uncertainResult(
+                    pair = pair,
+                    side = side,
+                    volume = volume,
+                    settings = settings,
+                    message = "Order intent was resolved before the exchange outcome was recorded",
+                )
+                log.error("Order intent {} was already resolved; aborting the remaining order batch", intentId)
+                actionLog.add("ERROR: Order intent $intentId was already resolved; order batch aborted")
+                return staleOutcome
+            }
         }
         logOrderResult(
             result = resolvedResult,
@@ -319,15 +417,63 @@ class OrderExecutorImpl(
         val resolved = createJournalRecord(
             result = resolvedResult,
             id = pendingId,
-            submissionState = if (isLiveSubmission && resolvedResult.submissionUncertain) {
+            submissionState = if (isLiveSubmission && orderIntentService == null &&
+                resolvedResult.submissionUncertain
+            ) {
                 OrderSubmissionState.UNCERTAIN
             } else {
                 null
             },
         )
-        tradeHistoryService.updateTrade(pending.copy(id = pendingId), resolved)
+        if (intentId == null) {
+            tradeHistoryService.updateTrade(pending.copy(id = pendingId), resolved)
+        }
         cycleTradeIds.add(pendingId)
         return resolvedResult
+    }
+
+    private fun uncertainResult(
+        pair: String,
+        side: OrderSide,
+        volume: BigDecimal,
+        settings: Settings,
+        message: String?,
+    ): OrderResult = OrderResult(
+        success = false,
+        pair = pair,
+        side = side.apiValue,
+        volume = volume,
+        dryRun = settings.dryRun,
+        errorMessage = message ?: ViewText.ORDER_SUBMISSION_FAILED_UNCERTAIN,
+        submissionUncertain = true,
+    )
+
+    private suspend fun recordIntentOutcomeWithoutMasking(
+        intentId: Int?,
+        result: OrderResult,
+        cause: Exception,
+    ): IntentOutcomeStatus {
+        if (intentId == null) return IntentOutcomeStatus.NOT_CONFIGURED
+        try {
+            return if (orderIntentService?.recordOutcome(intentId, result) == true) {
+                IntentOutcomeStatus.APPLIED
+            } else {
+                IntentOutcomeStatus.ALREADY_RESOLVED
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (persistenceFailure: Exception) {
+            cause.addSuppressed(persistenceFailure)
+            log.error("Failed to persist order intent outcome", persistenceFailure)
+            return IntentOutcomeStatus.FAILED
+        }
+    }
+
+    private enum class IntentOutcomeStatus {
+        APPLIED,
+        ALREADY_RESOLVED,
+        FAILED,
+        NOT_CONFIGURED,
     }
 
     private fun shouldAbortAfterFailure(result: OrderResult?): Boolean = result?.submissionUncertain == true
@@ -338,9 +484,9 @@ class OrderExecutorImpl(
             pending.copy(
                 id = id,
                 errorMessage = message ?: if (pending.submissionState == null) {
-                    ORDER_SUBMISSION_FAILED
+                    ViewText.ORDER_SUBMISSION_FAILED
                 } else {
-                    ORDER_SUBMISSION_FAILED_UNCERTAIN
+                    ViewText.ORDER_SUBMISSION_FAILED_UNCERTAIN
                 },
                 submissionState = pending.submissionState?.let { OrderSubmissionState.UNCERTAIN },
             ),

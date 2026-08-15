@@ -115,7 +115,7 @@ select `kilo/kilo-auto/frontier` for high-risk or disputed documentation claims.
 Kilo Auto chooses its underlying model server-side, so do not claim a specific
 underlying model or recreate its catalog and fallback logic in repository
 scripts. If a host Task accepts only a role and cannot expose a usable route, use
-`.kilo/model-router/route-subagents` for the bounded audit or keep it
+`.agents/runtime-router/adapters/kilo/route_subagents.py` for the bounded audit or keep it
 parent-owned; never use an unverified role-only worker.
 Use `review_surface.sh` only for a branch-scoped changed-path surface; it does
 not select or probe models.
@@ -141,14 +141,14 @@ For Kilo broad audits, invoke the automatic preset rather than creating a local
 manifest manually:
 
 ```bash
-./.kilo/model-router/route-subagents \
+./.agents/runtime-router/adapters/kilo/route_subagents.py \
   --workflow documentation-review \
   --task "<the user's documentation-review request>" \
   --refresh \
-  --run
+  --approve
 ```
 
-The command prints the route/quota matrix before launching; `--run` is included
+The command prints the route/quota matrix before launching; `--approve` is included
 above because this read-only workflow is authorized to launch its evidence
 tracks. The preset owns only read-only evidence tracks; the parent remains
 responsible for findings, edits, and gates.

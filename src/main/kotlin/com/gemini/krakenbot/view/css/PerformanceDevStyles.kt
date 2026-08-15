@@ -6,10 +6,8 @@ import kotlinx.css.CssBuilder
 import kotlinx.css.Display
 import kotlinx.css.FlexDirection
 import kotlinx.css.FontWeight
-import kotlinx.css.Padding
 import kotlinx.css.QuotedString
 import kotlinx.css.alignItems
-import kotlinx.css.background
 import kotlinx.css.backgroundColor
 import kotlinx.css.borderRadius
 import kotlinx.css.color
@@ -25,7 +23,6 @@ import kotlinx.css.marginBottom
 import kotlinx.css.marginRight
 import kotlinx.css.opacity
 import kotlinx.css.pct
-import kotlinx.css.px
 import kotlinx.css.rem
 import kotlinx.css.width
 

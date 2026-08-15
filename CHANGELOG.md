@@ -6,6 +6,218 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.53] - 2026-08-14
+
+### Changed
+
+- **ARR/Kilo workflow routing**: Name architecture review as a high-intelligence,
+  high-effort profile, plan it first, and default named fan-outs to distinct
+  model-family routes. Receipt-managed launches now return bounded report paths
+  under the target-owned runtime state so agents do not need to bypass ARR with
+  native same-model commands.
+
+- **Docs & harness sync (Batch 1)**: Fix a dangling README fragment, add the
+  missing `frontend-js` package tree entries (`AssetColors`, `HistoryFormatting`,
+  `HistorySessionState`), align the Karma threshold wording in `CONTRIBUTING.md`,
+  document the receipt-managed skills in `docs/AGENTIC_DEVELOPMENT.md`, correct
+  two typos in `.agents/OPERATING.md`, and add canonical harness links to
+  `.github/copilot-instructions.md`.
+
+### Fixed
+
+- **Code hygiene (Batch 2)**: Replace the inline `RebalanceOperationalStatus`
+  FQN and raw readiness/active-mode string literals in `DashboardController`
+  with generated `:common` catalog constants, and register the missing
+  `HealthStatusKeys` entries and `Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE`
+  in the codegen catalogs.
+
+### Build
+
+- **Dependency hygiene (Batch 3)**: Deduplicate the `kotest-framework-engine`
+  dependency in `frontend-js` via a version-catalog alias.
+
+### Test
+
+- **Coverage hardening (Batch 3 + gate closure)**: Add multiplatform `:common`
+  DTO contract tests, a CSRF duplicate-token rejection test, direct
+  `CsrfProtection` token-issuance unit tests, and `PortfolioCalculations`
+  USD-target fallback tests, raising JVM JaCoCo branch coverage to the 0.90
+  gate.
+## [6.16.52] - 2026-08-14
+
+### Changed
+
+- **Agent Guidance Kit adoption receipt**: Update the receipt-managed adoption
+  manifest to source revision `6302d4f` while preserving repository evaluation
+  suites.
+
+## [6.16.51] - 2026-08-14
+
+### Fixed
+
+- **Live-order recovery**: Resolve a journal-linked local estimate by its
+  durable trade ID after validating its immutable fields, avoiding SQLite
+  decimal-binding drift that could otherwise leave a verified intent blocked.
+
+## [6.16.50] - 2026-08-14
+
+### Fixed
+
+- **Legacy API-fill recovery**: When a confirmed uncertain intent has one
+  matching historical API fill whose Kraken identifiers were not persisted,
+  retain that fill and remove the duplicate local estimate. Multiple matching
+  unkeyed fills remain fail-closed.
+
+## [6.16.49] - 2026-08-14
+
+### Fixed
+
+- **Live-order recovery**: Allow an ID-linked local estimate to be resolved
+  when a pre-existing row has lost its mutable client-order or submission-state
+  metadata, while still requiring its immutable trade attributes to match.
+
+### Changed
+
+- **Live-order recovery documentation**: Add a human-oriented operator runbook
+  with exchange-evidence preconditions, an executable CSRF-protected resolution
+  request, expected results, and post-resolution checks. Link it from the API
+  reference and User Guide.
+
+## [6.16.48] - 2026-08-14
+
+### Changed
+
+- **Agent Guidance Kit maintenance**: Refresh the adopted maintenance,
+  systematic-debugging, and security-review guidance with safer local-file
+  validation and explicit divergence and retirement handling.
+
+## [6.16.47] - 2026-08-14
+
+### Fixed
+
+- **Recovered live-order reconciliation**: When an operator confirms an
+  uncertain order already synced from Kraken, retain the authoritative API fill
+  and remove the superseded failed local estimate instead of showing it twice.
+
+## [6.16.46] - 2026-08-13
+
+### Fixed
+
+- **Kilo 7.4.22 upgrade handling**: Accept compatible 7.4 patch releases from
+  7.4.21 onward, verify the local version and required help flags before
+  regenerating ignored harness metadata, and fail clearly for an unreviewed
+  command-surface change without contacting providers.
+- **ARR/Kilo workflow reliability**: Normalize multiline workflow and manual
+  prompts before shell-free argv binding, keep the adapter and launcher output
+  limits aligned, and make read-only fan-out guidance wait for terminal worker
+  results instead of relying on unavailable heartbeats or coordination files.
+
+- **Kilo ARR fan-out**: Route multi-agent workflows through the receipt-managed
+  ARR runtime, register the comprehensive quality workflow, enforce optional
+  free-only launches, and fail closed with structured `INCOMPLETE` output when
+  catalog evidence is unavailable instead of silently using same-model native
+  subagents.
+
+## [6.16.45] - 2026-08-13
+
+### Fixed
+
+- **ARR approval boundaries**: Require explicit approval before Kilo discovery,
+  benchmark refreshes, or the optional OpenCode quota command can contact
+  external services or write evidence caches.
+- **Free-provider billing safety**: Drop positively priced catalog rows from
+  providers configured as free-only so paid models cannot bypass quota policy.
+- **Upgrade safety and documentation**: Preserve legacy router credential ignores,
+  pin the ARR CI dependency to the reviewed commit, and align the Kilo command
+  and adapter-path documentation with the receipt-managed headless runner.
+- **Approval documentation**: Clarify target policy ownership, namespaced evidence,
+  and the explicit quota-command contract.
+
+## [6.16.44] - 2026-08-13
+
+### Fixed
+
+- **Dependency security alerts**: Raised transitive Apache HttpComponents Core
+  dependencies to the patched `5.4.3` floor for CVE-2026-54399, and moved the
+  Kotlin Gradle plugin from `2.4.10` to the patched `2.4.20-RC` preview line
+  for CVE-2026-53914. The Kotlin preview is temporary until stable `2.4.20`
+  is released.
+
+## [6.16.43] - 2026-08-12
+
+### Fixed
+
+- **ARR model-router integration**: Pin the runnable CI action, validate the
+  project-local ARR version, preserve unknown billing and fallback evidence,
+  keep one ARR decision per selection, and fail closed on integration errors.
+- **Configuration authority**: Keep the existing Kraken config as the sole
+  source for provider/model includes, billing/free policy, profiles, quotas,
+  probes, and blacklists; ARR receives only the filtered candidates and policy.
+- **Model-router setup and diagnostics**: Document the Python 3.11+ setup path,
+  remove the unpinned pip upgrade, and make the selection probe use ARR's actual
+  evaluations.
+
+## [6.16.42] - 2026-08-11
+
+### Fixed
+
+- **Context7 MCP connectivity**: Changed `context7` from remote SSE endpoint
+  (`https://mcp.context7.com/mcp`) to local stdio subprocess
+  (`npx -y @upstash/context7-mcp`) to avoid broken hosted SSE transport
+  behavior.
+
+## [6.16.41] - 2026-08-11
+
+### Added
+
+- **Agent guidance maintenance**: Added `agent-guidance-maintenance` skill to
+  adopt, audit, and refresh Agent Guidance Kit content with receipt-aware
+  planning and managed AGENTS routing.
+- **Security review**: Added `security-review` skill for evidence-backed
+  assessment of secrets, identity, authorization, input handling, data exposure,
+  and agent authority boundaries.
+- **Systematic debugging**: Added `systematic-debugging` skill to diagnose
+  observed failures by reproducing, tracing, and confirming a single root cause
+  before fixing.
+
+## [6.16.40] - 2026-08-09
+
+### Added
+
+- **Skill Optimizer**: Added `skill-optimizer` to measure agent-guidance
+  context cost and identify evidence-backed, approval-gated compression while
+  preserving routing, safety, and verification behavior.
+- **Live-order recovery journal**: Persisted `order_intents` records each real
+  AddOrder attempt before submission, exposes unresolved intents through
+  `/api/order-intents`, and provides a CSRF-protected operator resolution route.
+- **Operational readiness**: `/api/health` now reports active mode, loop/cycle
+  timestamps, sync watermark, and unresolved-order counts; `/api/readiness`
+  returns HTTP 503 until the service is safe to serve live work.
+- **Versioned SQLite migrations**: Added schema version records and a
+  pre-migration database backup for file-backed databases.
+- **Typed rebalance plans**: The math engine now emits typed domain events and
+  adapts them to the existing snapshot action-log strings at the presentation
+  boundary.
+
+### Changed
+
+- **Consistent history reads**: Historical snapshot reconstruction captures one
+  execution-session configuration and one pinned exchange backend for the full
+  reconstruction pass.
+- **Trusted-LAN deployment**: The dashboard remains intentionally unauthenticated
+  for the documented single-operator/private-network trust model; CSRF still
+  protects browser-originated mutations.
+- **Live-order recovery hardening**: Legacy journal/trade links now migrate with
+  bounded immutable-identity matching, explicit duplicate-client ambiguity, and
+  fail-closed stale-link handling; manual resolution can persist the verified
+  Kraken `orderTxid`.
+
+## [6.16.39] - 2026-08-09
+
+### Fixed
+
+- **Netty security resolution**: Keep resolved Netty modules at `4.2.17.Final` or newer without downgrading Ktor's Netty 4.2 dependency line.
+
 ## [6.16.38] - 2026-08-08
 
 ### Added

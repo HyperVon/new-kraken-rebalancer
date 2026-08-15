@@ -9,7 +9,7 @@ Audit relevant guidance before proposing changes. Treat rules as policy and skil
 
 ## Procedure
 
-1. Discover candidate guidance with `rg --files`, including nested `AGENTS.md`, `OPERATING.md`, `CLAUDE.md`, every `SKILL.md`, `.cursorrules`, `.cursor/rules/**/*.mdc`, `.github/copilot-instructions.md`, and guidance under `.codex/`. Include other harness-specific instruction files found nearby. Respect nested guidance and determine its scope before comparing it.
+1. Discover candidate guidance with `rg --files`, including nested `AGENTS.md`, `OPERATING.md`, `CLAUDE.md`, every `SKILL.md`, `.cursorrules`, `.cursor/rules/**/*.mdc`, `.github/copilot-instructions.md`, and guidance under `.codex/` if present. Include other harness-specific instruction files found nearby. Respect nested guidance and determine its scope before comparing it.
 2. Build a compact inventory: file, purpose, scope, explicit trigger, dependencies, and notable rules or workflows. Record the files actually read and disclose any candidates skipped.
 3. Compare candidates for duplicated instructions or checklists; overlapping triggers; broad workflows that subsume narrow ones; contradictory commands, versions, thresholds, or policy; stale facts or unreachable references; orphaned skills or index entries; and missing boundaries between central rules and task-specific skills. Treat harness projections and deliberate safety reinforcement as intentional when they name a canonical source and remain aligned. Ignore illustrative placeholders inside fenced examples when checking links.
 4. For each finding, cite exact paths and headings (or line numbers), classify it as `duplicate`, `merge candidate`, `scope/trigger issue`, `stale/inaccurate`, `conflict`, or `improvement`, and state the evidence. Distinguish true duplication from intentional reinforcement.
@@ -19,7 +19,7 @@ Audit relevant guidance before proposing changes. Treat rules as policy and skil
 ## Optional parallel audit
 
 For a broad guidance tree, use the `rules-and-skills-audit` preset from
-`.kilo/model-router/route-subagents` for canonical rules/operating norms, domain
+`.agents/runtime-router/adapters/kilo/route_subagents.py` for canonical rules/operating norms, domain
 skills, harness/projections, and cross-link/index health. Give each worker a
 bounded path set. The parent resolves duplicate or conflicting findings and
 owns all edits. If route selection is unavailable, stay parent-owned; never

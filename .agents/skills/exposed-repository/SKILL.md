@@ -14,7 +14,7 @@ When creating or modifying Exposed ORM repository implementations and table sche
 
 ## Exposed 1.x Packages
 
-This project uses Exposed **1.3.x**. Prefer these import roots:
+This project uses Exposed **1.4.0**. Prefer these import roots:
 
 - Table / column / operator APIs: `org.jetbrains.exposed.v1.core.*` (e.g. `Table`, `eq`, `and`, `inList`)
 - JDBC query / DML APIs: `org.jetbrains.exposed.v1.jdbc.*` (e.g. `Database`, `selectAll`, `insert`, `update`, `deleteWhere`)
@@ -98,9 +98,11 @@ override suspend fun loadAll(): List<TradeRecord> =
   `jdbc:sqlite:file:<uuid>?mode=memory&cache=shared&foreign_keys=true`, plus a
   shutdown-hook keepalive `Connection` per URL.
 - Tests must use `:memory:` (or that shared URL) — never a file DB.
-- Schema boot: `createStatements` + `addMissingColumnsStatements` +
-  `checkMappingConsistence` in one transaction (Exposed 1.x — no deprecated
-  `createMissingTablesAndColumns`).
+- Schema boot: `createStatements` + `addMissingColumnsStatements` + versioned
+  migration steps + `checkMappingConsistence` in one transaction (Exposed 1.x
+  — no deprecated `createMissingTablesAndColumns`). File-backed migrations
+  receive a pre-migration backup; legacy submission guards migrate into the
+  `order_intents` journal while the old trade column is retained until resolution.
 
 ## Primary Key Targeting
 

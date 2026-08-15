@@ -61,6 +61,7 @@ Canonical deep docs:
 | Create or modify an approved project skill | [skill-authoring](skills/skill-authoring/SKILL.md) |
 | Skill / agent-files review (skills, rules, AGENTS) | [skill-reviewer](skills/skill-reviewer/SKILL.md) |
 | Rules / skills structural audit | [rules-and-skills-audit](skills/rules-and-skills-audit/SKILL.md) |
+| Agent-guidance compression / context reduction | [skill-optimizer](skills/skill-optimizer/SKILL.md) |
 | Adversarial PR review (adaptive bounded multi-agent loop) | [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |
 | Dependency upgrades | [dependency-upgrade](skills/dependency-upgrade/SKILL.md) |
 | Commit & push | [commit-and-push](skills/commit-and-push/SKILL.md) |
@@ -86,7 +87,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 ## 1. Technology stack (verify against build files)
 
-- **Language**: Kotlin **2.4.10** (KMP: JVM + JS)
+- **Language**: Kotlin **2.4.20-RC** (KMP: JVM + JS; security patch pending the 2.4.20 stable release)
 - **JDK**: **25** (`java.toolchain`)
 - **Backend**: Ktor **3.5.2** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
 - **Database**: SQLite via JetBrains Exposed **1.4.0**
@@ -103,8 +104,10 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Orchestrator | `PortfolioManagerImpl` |
 | Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` (REST + ATH I/O) |
 | Domain rebalance math | `RebalancerEngine` (no network/DB) |
+| Typed planning events | `domain/RebalancePlan` + presentation action-log adapter |
 | Shared math | `PortfolioCalculations` |
 | Brawn (execution) | `OrderExecutorImpl` (sell/buy sequencing + durable live submission journal) |
+| Live-order recovery | `OrderIntentService` → `SqliteOrderIntentRepositoryImpl` / `order_intents` |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |
 | History reconstruction | `SnapshotHistoryCalculator` (`service/impl/history/`) |
@@ -138,6 +141,8 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   Sell volumes are capped to cycle-entry holdings; repeated nonblank Kraken
   trade IDs across shifted settle pages count once.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
+- **Operational readiness**: `/api/health` is liveness/diagnostic; `/api/readiness` is `503` while paused/stopped/uninitialized/failed, when configuration is unavailable, or while new or legacy unresolved live-order state remains. The dashboard intentionally remains unauthenticated for the trusted private-LAN deployment model; CSRF protects mutation routes.
+- **Schema safety**: `DatabaseConfig` records schema versions, backs up file-backed databases before migration, and idempotently imports legacy `TradeRecord.submissionState` guards into `order_intents` while retaining the legacy blocking column until resolution.
 
 ---
 
@@ -190,7 +195,7 @@ frontend browser tests, Spotless, markdownlint including `.agents/OPERATING.md`
 and harness stubs).
 
 The repository quality scripts set `NODE_OPTIONS` only for the external
-`DEP0169` warning emitted by the Kotlin 2.4.10 downloaded Yarn 1.22.22 resolver
+`DEP0169` warning emitted by the Kotlin 2.4.20-RC downloaded Yarn 1.22.22 resolver
 under modern Node. This does not change application launches or suppress other
 Node diagnostics.
 
@@ -243,6 +248,13 @@ domain skills.
 ## 7. Code quality invariants
 
 - **No FQNs** unless resolving a name collision — use imports.
+- **Use canonical constants directly**: production code must reference shared
+  `:common` catalogs such as `ViewText`, `CssClass`, `HtmlIds`, `HtmlAttrs`,
+  `Routes`, and `PrecisionConstants` at the use site. Do not create a local
+  `val` or `const val` that merely aliases one of those constants. In tests,
+  use independent raw expected strings for contract assertions so a test cannot
+  pass just because the implementation and expectation share the same catalog
+  entry; typed catalogs remain fine for non-assertion setup.
 - **No ARIA attributes**: Do not introduce `aria-*` attributes (`aria-hidden`, `aria-sort`, `aria-label`, etc.) into HTML DSL templates, `:common` attribute catalogs, or client Kotlin/JS. Rely on standard semantic HTML elements.
 - **No absolute user paths** or machine-specific hostnames in source/tests.
 - Markdown: lint per [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md)
@@ -272,63 +284,32 @@ See [write-kotest](skills/write-kotest/SKILL.md).
 
 ---
 
-## 9. Cursor Cloud environment
+## Optional harness integrations
 
-Cloud VM deltas only. Canonical setup: [README Getting Started](../README.md#getting-started);
-flags: [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
+Optional Cursor Cloud and Kilo Agent Manager details are conditional, not
+always-on project invariants. Load [HARNESS_INTEGRATIONS.md](HARNESS_INTEGRATIONS.md)
+only when using those integrations. Keep credentials placeholder-only and do
+not use shared git stash/autostash across worktrees.
 
-- **JDK:** Temurin 25 is the default `java`; no `JAVA_HOME` is required for
-  `./gradlew`. Matches §1 toolchain (ignore JDK 21 if present).
-- **Run (sim):** `cp rebalancer-config-template.json rebalancer-config.json`, set
-  `"simulation": true`, `./gradlew run` (background per [OPERATING.md](OPERATING.md) §4 —
-  poll `/api/health` until 200; first boot may block on seeding) →
-  <http://localhost:8080>. UI QA / screenshots: prefer isolated `RUN_DIR` + `fatJar` in
-  [ui-manual-qa](skills/ui-manual-qa/SKILL.md) / [docs-screenshot-refresh](skills/docs-screenshot-refresh/SKILL.md).
-- **Build/test:** [§5 Quality gates](#5-quality-gates) and [README Testing](../README.md#testing).
-  `./gradlew build` covers Gradle gates (Spotless, JVM tests, JaCoCo, Karma); still run
-  `npx markdownlint-cli` when editing docs.
-- **Hot-reload:** Settings UI saves restart the rebalance loop only
-  ([koin-di-and-config](skills/koin-di-and-config/SKILL.md),
-  [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md)); manual
-  `rebalancer-config.json` edits on disk require restart. **Kotlin / SSR / frontend
-  changes require `./gradlew run` restart** (Ktor Autoreload off).
-- **Settings input:** Every numeric trading field and allocation row is parsed
-  strictly before persistence; missing, non-finite, malformed, or mismatched
-  form values are rejected instead of defaulted or truncated.
+<!-- agent-guidance-kit:routes:start -->
+## Agent Guidance Kit skills
 
----
+These receipt-managed skills were adopted from Agent Guidance Kit.
 
-## 10. Kilo Agent Manager integration
+| Task | Skill |
+| :--- | :--- |
+| Adopt, add, audit, refresh, or update Agent Guidance Kit content | [agent-guidance-maintenance](skills/agent-guidance-maintenance/SKILL.md) |
+| Review security boundaries, authority, secrets, and sensitive data flows | [security-review](skills/security-review/SKILL.md) |
+| Diagnose an observed failure and find its root cause before fixing it | [systematic-debugging](skills/systematic-debugging/SKILL.md) |
+<!-- agent-guidance-kit:routes:end -->
 
-The following files are optional, Kilo-specific Agent Manager integrations under
-`.kilo/`. They are not application requirements or the canonical project
-workflow. The repository remains harness agnostic: other agent tools should use
-the standard Gradle/README workflows and the shared guidance in `.agents/`.
+<!-- agent-runtime-router:routes:start -->
+## Agent Runtime Router skills
 
-- **Scope:** these hooks are for Kilo Code's Agent Manager only. They do not
-  define or require a general agent protocol.
+These receipt-managed skills were installed from Agent Runtime Router.
 
-- **Setup:** `.kilo/setup-script` prepares Gradle classes in the selected
-  worktree without reading `.env`, application config, databases, logs, or
-  runtime data.
-- **Run:** `.kilo/run-script` builds the fat JAR and starts an isolated local
-  simulation for the Agent Manager Run button. It copies only
-  `rebalancer-config-template.json` into a private temporary directory, forces
-  both `simulation=true` and `dryRun=true`, and uses a temporary database.
-- **Port:** the application defaults to `8080` and accepts the JVM property
-  `kraken.server.port`. The run hook probes candidates in the
-  `18080`-`19079` range and skips occupied ports. Set `KILO_AGENT_PORT` to use
-  an explicit valid, unused port.
-- **Health check:** the run hook polls only the local `/api/health` endpoint,
-  suppresses build and application output, emits only a generic readiness
-  message or failure, and forcefully terminates and reaps only its own child
-  process during cleanup. It removes only its own temporary directory.
-
-Agent Manager automatically copies root `.env` and `.env.*` files into managed
-worktrees. Do not use those files for credentials in this workflow; keep them
-placeholder-only or use a separate operator-managed secret mechanism. Never
-commit `rebalancer-config.json`, API credentials, private keys, account data,
-or runtime logs.
-
-Bring worktree changes back with Agent Manager Apply, a normal merge, or a PR.
-Do not use shared `git stash` or autostash across worktrees.
+| Task | Skill |
+| :--- | :--- |
+| Use explicit routing, inventory, or dry-run planning | [agent-runtime-router](skills/agent-runtime-router/SKILL.md) |
+| Audit, refresh, or repair the local router installation | [agent-runtime-router-maintenance](skills/agent-runtime-router-maintenance/SKILL.md) |
+<!-- agent-runtime-router:routes:end -->

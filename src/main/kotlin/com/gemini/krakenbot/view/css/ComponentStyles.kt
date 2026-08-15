@@ -3,12 +3,10 @@ package com.gemini.krakenbot.view.css
 import com.gemini.krakenbot.view.util.CssClass
 import kotlinx.css.Align
 import kotlinx.css.BorderStyle
-import kotlinx.css.Color
 import kotlinx.css.CssBuilder
 import kotlinx.css.Display
 import kotlinx.css.FlexDirection
 import kotlinx.css.FontWeight
-import kotlinx.css.GridTemplateColumns
 import kotlinx.css.Overflow
 import kotlinx.css.Padding
 import kotlinx.css.Position

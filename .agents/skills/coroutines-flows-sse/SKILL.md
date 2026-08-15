@@ -42,6 +42,11 @@ loop immediately. During `beginExecutionSession()` … `endExecutionSession()`,
 outermost session exits, so an active cycle or paginated account sync is never
 cancelled into a mixed settings/credential version.
 
+Historical snapshot reconstruction uses the same nested-safe execution session
+and pins one exchange backend for its full balances/ticker/OHLC pass. Sync
+callers pass their already-captured config/backend into reconstruction rather
+than starting a second unpinned read path.
+
 ### Snapshots → SSE (hot)
 
 `TradeHistorySnapshotStore.snapshotFlow` — `replay=1`, buffer 16, `DROP_OLDEST`.
@@ -123,3 +128,6 @@ Fill-confirm poll constants (`pollFillConfirmedUsd` / `sumMatchedSellProceeds`):
 - [ ] Flow tests use `runTest` + `advanceUntilIdle`
 - [ ] Ledger pagination remains cold, mutex-protected, overlap-safe, and
       cancellation-aware
+- [ ] Readiness diagnostics remain separate from liveness: `/api/health` stays
+      `200`, while `/api/readiness` reports unresolved journal/cycle state with
+      `503` when unsafe

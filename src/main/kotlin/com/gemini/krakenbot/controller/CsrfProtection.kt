@@ -54,9 +54,13 @@ internal object CsrfProtection {
         val formTokens = parameters.getAll(FormFields.CSRF_TOKEN) ?: return false
         if (formTokens.size != 1) return false
         val formToken = formTokens.single()
+<<<<<<< HEAD
         if (formToken.isBlank()) return false
 
         return MessageDigest.isEqual(
+=======
+        return formToken.isNotBlank() && MessageDigest.isEqual(
+>>>>>>> origin/main
             cookieToken.toByteArray(Charsets.UTF_8),
             formToken.toByteArray(Charsets.UTF_8),
         )

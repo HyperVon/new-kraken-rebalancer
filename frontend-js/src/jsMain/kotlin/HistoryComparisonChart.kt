@@ -23,7 +23,7 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
             deltaEl.textContent = ViewText.EM_DASH
             deltaEl.className = CssClass.History.ComparisonDelta.value
         }
-        if (chartArea != null) chartArea.classList.add(CssClass.Utility.Hidden.value)
+        chartArea?.classList?.add(CssClass.Utility.Hidden.value)
         if (confidenceBadge != null) {
             confidenceBadge.textContent = ""
             confidenceBadge.classList.remove(CssClass.Utility.Visible.value)
@@ -36,7 +36,7 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
         return
     }
 
-    if (chartArea != null) chartArea.classList.remove(CssClass.Utility.Hidden.value)
+    chartArea?.classList?.remove(CssClass.Utility.Hidden.value)
     if (unavailableDiv != null) {
         unavailableDiv.textContent = ""
         unavailableDiv.classList.remove(CssClass.Utility.Visible.value)

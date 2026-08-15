@@ -65,6 +65,13 @@ See the [Agentic Development Guide](docs/AGENTIC_DEVELOPMENT.md) for the full
 provenance, instruction architecture, cross-harness setup, skill catalog,
 human–agent workflow, review loop, and maintenance guidance.
 
+The optional cross-provider Kilo workflow is now provided by ARR and is
+documented in [ARR-backed Kilo routing](docs/ARR_KILO_ROUTER.md). The target
+owns its provider/model policy, blacklist, quota sources, and cached free-model
+TPS evidence; ARR owns routing, effort selection, worker approval, and bounded
+reports. Other harnesses continue to use their native launchers and the same
+portable `.agents/` guidance.
+
 The repository is still fully usable without KiloCode. Application code, tests,
 Gradle tasks, documentation, Git workflows, and the portable `.agents/` skills
 remain available to any capable development tool. KiloCode-only additions are
@@ -105,7 +112,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 
 | Layer           | Technology                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                               |
+| **Language**    | Kotlin 2.4.20-RC (Kotlin Multiplatform: JVM + JS; temporary security patch)                                  |
 | **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.1                                                   |
 | **Database**    | SQLite (via JetBrains Exposed ORM 1.4.0)                                                                     |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |
@@ -342,8 +349,13 @@ with a wide range of tools and paradigms:
   persists a `PENDING` intent with its deterministic `cl_ord_id`. Ambiguous
   transport/response failures become `UNCERTAIN`, abort the remaining batch,
   and block later live orders until an operator verifies Kraken and resolves
-  the SQLite row; unresolved intents are not reconciled, deduplicated, or
-  pruned automatically
+  the SQLite row with `POST /api/order-intents/{id}/resolve` using explicit
+  evidence and the optional Kraken `orderTxid` when known. `PENDING` rows cannot
+  be manually resolved while an AddOrder may
+  still be in flight; abandoned PENDING rows are recovered as UNCERTAIN on
+  restart. Unresolved intents are not reconciled, deduplicated, or pruned
+  automatically. Follow the [operator recovery runbook](SECURITY.md#operator-recovery-runbook)
+  before resolving an intent
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
@@ -356,11 +368,13 @@ with a wide range of tools and paradigms:
   accepted order
 - **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`, link-local `169.254.x.x`) to permit local Wi-Fi access from other devices while blocking public web threats
 - **No dashboard user auth** — trust model is local/private network; see [SECURITY.md](SECURITY.md)
-- **Database Indexing & Auto Migrations** — schemas index timestamp columns; on startup
-  `DatabaseConfig` runs non-deprecated Exposed builders in one transaction
-  (`SchemaUtils.createStatements`, `addMissingColumnsStatements`, then
-  `checkMappingConsistence`) instead of the deprecated
-  `createMissingTablesAndColumns`
+- **Database Indexing & Versioned Migrations** — schemas index timestamp
+  columns; on startup `DatabaseConfig` records applied schema versions, runs
+  non-deprecated Exposed builders in one transaction, and creates a
+  pre-migration backup for an existing file-backed database
+- **Operational Readiness** — `/api/health` is a liveness/diagnostic endpoint;
+  `/api/readiness` reports whether the loop, snapshot history, and live-order
+  journal are safe for continued operation
 - Dust threshold filtering to avoid minimum order size errors
 - Automatic error recovery — API failures don't crash the rebalancing loop
 - Price validation — aborts cycle if any asset price is unavailable
@@ -520,27 +534,29 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── .agents/                                # AI Agent rules, guidelines & domain skills
 │   ├── AGENTS.md                          # Repository rules & technical guidelines
 │   ├── OPERATING.md                       # Always-on norms (all agent frameworks)
-│   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
+│   ├── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
+│   └── runtime-router/                    # Target-owned ARR policy, Kilo adapter & namespaced evidence
 ├── .kilo/                                  # Optional Kilo Code integration (Agent Manager hooks)
 │   ├── kilo.json                           # Context Mode plugin + safe local-tool settings
-│   ├── shell-strategy.md                   # Non-interactive shell and bounded-output guidance
+│   ├── shell-strategy.md                   # Compatibility symlink; excluded from ARR worker snapshots
 │   ├── setup-script                        # Prepare Gradle classes for Agent Manager worktrees
 │   ├── run-script                          # Build fat JAR and start an isolated local simulation
 │   ├── agent-manager.json                  # Agent Manager worktree configuration
-│   ├── model-router/                       # Routed subagent launcher (route-subagents, route-kilo)
 │   ├── command/                            # Project command definitions
 │   └── agent/                              # Project agent definitions
+├── .opencode/                              # Cross-harness companion configuration
+│   └── shell-strategy.md                   # Canonical shell guidance used by Kilo worker snapshots
 ├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)
 ├── CLAUDE.md                               # Claude Code entrypoint → .agents/
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
 ├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
 │   ├── src/commonMain/kotlin/com/gemini/krakenbot/
-│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, RewardsOverTime, SyncProgressResponse
+│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, RewardsOverTime, RewardsOverTimePoint, SyncProgressResponse
 │       ├── codegen/                       # GenerateStringConstants and shared codegen sources
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
 │       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, TradeSource, generated SyncMetadataKeys
 │       ├── util/                          # PrecisionConstants
-│       ├── view/util/                     # Generated YAML string catalogs, Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps
+│       ├── view/util/                     # Generated YAML string catalogs (StringConstantSchemas), Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps, AllocationEditor
 │   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs
 ├── codegen/                                # JVM-only module with KSP processors for API mappers and YAML string catalogs
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
@@ -574,17 +590,19 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
 │   ├── api/                               # Generated history mappers + custom sync-progress response mapping
 │   ├── codegen/                           # @GenerateApiMapper annotations for generated API mappers
-│   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, LedgerEvent, RewardsOverTime, TradeSource, HistoryStats, RebalancerComparison, PortfolioStats
-│   ├── repository/                        # TradeRepository, LedgerRepository, PortfolioStatsRepository
+│   ├── domain/                             # Typed RebalancePlan and RebalanceEvent values
+│   ├── model/                             # PortfolioSnapshot, OrderIntent, OrderResult, TradeRecord, LedgerEvent, RewardsOverTime, TradeSource, HistoryStats, RebalancerComparison, PortfolioStats
+│   ├── repository/                        # TradeRepository, OrderIntentRepository, LedgerRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
-│   │   └── table/                         # TradeTable, LedgerTable, PortfolioSnapshotTable, AssetSnapshotTable, PortfolioStatsTable, HistorySyncMetadataTable, ActionLogTable
-│   ├── service/                           # Interfaces, ServiceUtils, and AssetColorAssigner
+│   │   └── table/                         # Trade/OrderIntent tables, SchemaMigrationTable, snapshot/stat/history tables
+│   ├── service/                           # Interfaces, OrderIntentService, ServiceUtils, and AssetColorAssigner
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
 │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
 │   │       ├── RebalancerEngine.kt       # Domain rebalance math (no network/DB)
 │   │       ├── PortfolioCalculations.kt  # Shared target/deviation math
 │   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
+│   │       ├── OrderIntentServiceImpl.kt # Durable ambiguous-order lifecycle
 │   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
 │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
 │   │       ├── KrakenApiConstants.kt     # Kraken REST path/cost constants
@@ -741,24 +759,27 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 
 ## API Endpoints
 
-| Method | Path                         | Description                                                              |
-|--------|------------------------------|--------------------------------------------------------------------------|
-| `GET`  | `/`                          | Main dashboard shell (HTML)                                              |
-| `GET`  | `/settings`                  | Settings page (HTML)                                                     |
-| `POST` | `/settings`                  | Submit settings form (HTMX)                                              |
-| `GET`  | `/history`                   | History page (HTML charts + trade log)                                   |
-| `GET`  | `/fragments/dashboard`       | Dashboard fragment (HTMX)                                                |
-| `GET`  | `/api/status/stream`         | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
-| `GET`  | `/api/health`                | Public health check endpoint returning app status and metrics (JSON)     |
-| `POST` | `/api/pause`                 | Pause loop (CSRF-protected)                                              |
-| `POST` | `/api/resume`                | Resume loop (CSRF-protected)                                             |
-| `GET`  | `/api/history/snapshots`     | Portfolio snapshots for History charts (JSON, `?range=`)                 |
-| `GET`  | `/api/history/trades`        | Trade log for History page (JSON, `?range=`)                             |
-| `GET`  | `/api/history/stats`         | History summary-card aggregates (JSON, `?range=`)                        |
-| `GET`  | `/api/history/comparison`    | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`)    |
-| `GET`  | `/api/history/rewards`       | Cumulative staking rewards by asset (JSON, `?range=`)                    |
-| `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)             |
-| `GET`  | `/static/*`                  | Static assets (JS, dynamically compiled CSS via kotlinx-css)             |
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/` | Main dashboard shell (HTML) |
+| `GET` | `/settings` | Settings page (HTML) |
+| `POST` | `/settings` | Submit settings form (HTMX) |
+| `GET` | `/history` | History page (HTML charts + trade log) |
+| `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
+| `GET` | `/api/status/stream` | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
+| `GET` | `/api/health` | Public health check endpoint returning app status and metrics (JSON) |
+| `GET` | `/api/readiness` | Readiness status; returns `503` until safe to operate (JSON) |
+| `GET` | `/api/order-intents` | Unresolved live-order intents for operator review (JSON) |
+| `POST` | `/api/order-intents/{id}/resolve` | Resolve an intent as `CONFIRMED` or `REJECTED` with evidence and optional `orderTxid` (CSRF-protected; see [operator recovery runbook](SECURITY.md#operator-recovery-runbook)) |
+| `POST` | `/api/pause` | Pause loop (CSRF-protected) |
+| `POST` | `/api/resume` | Resume loop (CSRF-protected) |
+| `GET` | `/api/history/snapshots` | Portfolio snapshots for History charts (JSON, `?range=`) |
+| `GET` | `/api/history/trades` | Trade log for History page (JSON, `?range=`) |
+| `GET` | `/api/history/stats` | History summary-card aggregates (JSON, `?range=`) |
+| `GET` | `/api/history/comparison` | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`) |
+| `GET` | `/api/history/rewards` | Cumulative staking rewards by asset (JSON, `?range=`) |
+| `GET` | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON) |
+| `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 
 ---
 
@@ -805,7 +826,7 @@ To run JS browser tests only:
 
 Tests cover:
 
-- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **39 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 39 scenarios.
+- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **40 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 40 scenarios.
 - **Simulation Evaluation Suite** (`SimulationEvaluationScenariosTest`) — 6 invariant cases against the production `SimulatedKrakenService` emulator with real TradeHistory + in-memory SQLite. See **[EVALUATION.md](docs/EVALUATION.md)** for case descriptions.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing

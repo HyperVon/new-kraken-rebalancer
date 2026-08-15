@@ -14,6 +14,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import com.gemini.krakenbot.service.impl.KrakenApiConstants
+import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.TradeCalculator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -56,7 +57,13 @@ class TradeHistorySyncService(
         if (!reconstructionService.canRebuildSnapshots()) return
 
         log.info("Snapshot reconstruction version is stale or missing; rebuilding historical snapshots.")
-        reconstructionService.rebuildHistoricalSnapshots()
+        configService.withExecutionSession {
+            val pinnedConfig = configService.getConfig()
+            if (pinnedConfig.settings.simulation) return@withExecutionSession
+            krakenService.withStableBackend { backend ->
+                reconstructionService.rebuildHistoricalSnapshots(pinnedConfig, backend)
+            }
+        }
     }
 
     private suspend fun syncTradesFromKrakenLocked() {
@@ -81,13 +88,15 @@ class TradeHistorySyncService(
                 log.warn("Kraken API key became unavailable before synchronization started. Skipping synchronization.")
                 return
             }
-            krakenService.withStableBackend { syncTradesFromKrakenPinned(pinnedConfig) }
+            krakenService.withStableBackend { backend ->
+                syncTradesFromKrakenPinned(pinnedConfig, backend)
+            }
         } finally {
             configService.endExecutionSession()
         }
     }
 
-    private suspend fun syncTradesFromKrakenPinned(config: AppConfig) {
+    private suspend fun syncTradesFromKrakenPinned(config: AppConfig, backend: KrakenService) {
         val isSeeded = repository.isHistorySeeded()
         val effectiveLatest = calculateEffectiveLatestTime()
         // Bound every history pull to the seed lookback window instead of fetching full history
@@ -131,7 +140,7 @@ class TradeHistorySyncService(
             allocations = allocations,
         )
 
-        triggerReconstructionIfNeeded(config)
+        triggerReconstructionIfNeeded(config, backend)
 
         finalizeSync(isSeeded)
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
@@ -266,7 +275,7 @@ class TradeHistorySyncService(
 
     private enum class TradeReconciliationResult { INSERTED, RECONCILED, ALREADY_PERSISTED }
 
-    private suspend fun triggerReconstructionIfNeeded(config: AppConfig) {
+    private suspend fun triggerReconstructionIfNeeded(config: AppConfig, backend: KrakenService) {
         val snapshots = repository.load()
         val totalTrades = repository.getTradeSummaryStats().totalTradesExecuted
         val isSimulation = config.settings.simulation
@@ -278,7 +287,7 @@ class TradeHistorySyncService(
                 totalTrades,
             )
             try {
-                reconstructionService.reconstructHistoricalSnapshots()
+                reconstructionService.reconstructHistoricalSnapshots(config, backend)
                 log.info("Historical snapshot reconstruction completed successfully.")
             } catch (e: CancellationException) {
                 throw e
