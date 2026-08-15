@@ -65,10 +65,7 @@ object NavigationStyles {
             background = CssTheme.colorBlueGlassBgHover.value
             borderColor = CssTheme.colorBlueGlassBorderHover
             fontWeight = FontWeight.w600
-            put(
-                "box-shadow",
-                "0 0 18px rgba(59, 130, 246, 0.35), inset 0 1px 0 rgba(255,255,255,0.12)",
-            )
+            boxShadowRaw("0 0 18px rgba(59, 130, 246, 0.35), inset 0 1px 0 rgba(255,255,255,0.12)")
         }
     }
 }

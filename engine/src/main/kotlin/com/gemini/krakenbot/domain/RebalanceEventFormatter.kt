@@ -11,6 +11,6 @@ object RebalanceEventFormatter {
         is RebalanceEvent.FiatCorrectionDistributed ->
             ActionLogFormatter.formatFiatCorrectionDistribution(event.usdAmount, event.candidateCount)
 
-        RebalanceEvent.NoCounterBalancingAssets -> "Fiat correction: no counter-balancing candidates"
+        RebalanceEvent.NoCounterBalancingAssets -> ActionLogFormatter.formatNoCounterBalancingAssets()
     }
 }

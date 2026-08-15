@@ -4,6 +4,7 @@ import com.gemini.krakenbot.api.RebalancerComparison
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -90,7 +91,7 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
             val diff = dynamicNumber(pt.differenceUSD) ?: 0.0
             val diffPct = dynamicNumber(pt.differencePercent) ?: 0.0
             val sign = if (diff >= 0) "+" else ""
-            "Difference: $sign${formatUSD(diff)} ($sign${diffPct.toFixed(2)}%)"
+            "Difference: $sign${formatUSD(diff)} ($sign${diffPct.toFixed(PrecisionConstants.SCALE_USD)}%)"
         } else {
             null
         }
@@ -99,7 +100,8 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
     val (latestDiff, latestDiffPct) = comparison.latestDifferenceValues() ?: return
     val signStr = if (latestDiff > 0) "+" else ""
     if (deltaEl != null) {
-        deltaEl.textContent = "$signStr${formatUSD(latestDiff)} ($signStr${latestDiffPct.toFixed(2)}%)"
+        deltaEl.textContent =
+            "$signStr${formatUSD(latestDiff)} ($signStr${latestDiffPct.toFixed(PrecisionConstants.SCALE_USD)}%)"
         deltaEl.className = CssClass.History.ComparisonDelta.value
         if (latestDiff > 0) {
             deltaEl.classList.add(CssClass.Utility.Positive.value)

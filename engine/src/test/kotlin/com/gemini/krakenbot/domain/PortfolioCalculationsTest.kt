@@ -239,6 +239,34 @@ class PortfolioCalculationsTest : StringSpec() {
             snapshot.targetPercent.shouldBeEqualComparingTo(BigDecimal("50.12"))
         }
 
+        "should create asset snapshots directly from precomputed AssetMetrics" {
+            val metrics = PortfolioCalculations.calculateAssetMetrics(
+                symbol = Asset(Asset.BTC),
+                baseTargetPercent = BigDecimal("50.00"),
+                currentValueUSD = BigDecimal("6000.00"),
+                totalPortfolioValueUSD = BigDecimal("10000.00"),
+                effectiveUsdTarget = BigDecimal("20.00"),
+                cryptoScaleFactor = BigDecimal("1.0"),
+                minimumOrderSizeUSD = 5.0,
+            )
+            val snapshot = PortfolioCalculations.createAssetSnapshot(
+                symbol = Asset.BTC,
+                balance = BigDecimal("0.10000000"),
+                price = BigDecimal("60000.00000000"),
+                valueUSD = BigDecimal("6000.00"),
+                metrics = metrics,
+            )
+
+            snapshot.symbol.value shouldBe Asset.BTC
+            snapshot.balance.shouldBeEqualComparingTo(BigDecimal("0.10000000"))
+            snapshot.price.shouldBeEqualComparingTo(BigDecimal("60000.00000000"))
+            snapshot.valueUSD.shouldBeEqualComparingTo(BigDecimal("6000.00"))
+            snapshot.targetPercent.shouldBeEqualComparingTo(BigDecimal("50.00"))
+            snapshot.currentPercent.shouldBeEqualComparingTo(BigDecimal("60.00"))
+            snapshot.deviationUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+            snapshot.deviationPercent.shouldBeEqualComparingTo(BigDecimal("20.00"))
+        }
+
         "should fall back to default USD target when no allocations present" {
             PortfolioCalculations.calculateUsdTargetPercent(emptyList())
                 .shouldBeEqualComparingTo(BigDecimal("5.00"))

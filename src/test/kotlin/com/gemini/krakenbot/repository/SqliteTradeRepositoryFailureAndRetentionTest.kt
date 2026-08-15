@@ -108,7 +108,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
 
                 val mockDb = mockk<Database>(relaxed = true)
-                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 try {
                     every { mockDb.transactionManager } returns throwingTxManager
 
@@ -121,7 +121,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                         }
                     thrown.message shouldBe "Direct IO failure"
                 } finally {
-                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 }
             }
         }
@@ -136,7 +136,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
 
                 val mockDb = mockk<Database>(relaxed = true)
-                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 try {
                     every { mockDb.transactionManager } returns throwingTxManager
 
@@ -149,7 +149,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                         }
                     thrown.message shouldBe "Direct IO failure"
                 } finally {
-                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 }
             }
         }
@@ -164,7 +164,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
 
                 val mockDb = mockk<Database>(relaxed = true)
-                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 try {
                     every { mockDb.transactionManager } returns throwingTxManager
 
@@ -185,7 +185,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                         }
                     thrown.message shouldBe "Direct IO failure"
                 } finally {
-                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 }
             }
         }
@@ -329,7 +329,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
 
                 val mockDb = mockk<Database>(relaxed = true)
-                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 try {
                     every { mockDb.transactionManager } returns throwingTxManager
 
@@ -350,7 +350,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                         }
                     thrown.message shouldBe "Direct IO failure"
                 } finally {
-                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT)
                 }
             }
         }

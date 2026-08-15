@@ -31,7 +31,6 @@ import org.jetbrains.exposed.v1.core.max
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 import org.jetbrains.exposed.v1.core.sum
 import org.jetbrains.exposed.v1.jdbc.Database
-import org.jetbrains.exposed.v1.jdbc.andWhere
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
@@ -157,10 +156,9 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             val allIds =
                 PortfolioSnapshotTable
                     .select(PortfolioSnapshotTable.id)
-                    .andWhere {
-                        PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()
-                    }.andWhere {
-                        PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli()
+                    .where {
+                        (PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()) and
+                            (PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli())
                     }.orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
                     .map { it[PortfolioSnapshotTable.id] }
 
@@ -194,10 +192,9 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = database.readTransactionIO {
         TradeTable
             .selectAll()
-            .andWhere {
-                TradeTable.timestamp greaterEq from.toEpochMilli()
-            }.andWhere {
-                TradeTable.timestamp lessEq to.toEpochMilli()
+            .where {
+                (TradeTable.timestamp greaterEq from.toEpochMilli()) and
+                    (TradeTable.timestamp lessEq to.toEpochMilli())
             }.orderBy(TradeTable.timestamp, SortOrder.DESC)
             .map { row -> buildTradeFromRow(row) }
     }

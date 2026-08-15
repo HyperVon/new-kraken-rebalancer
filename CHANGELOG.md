@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.17.1] - 2026-08-15
+## [6.17.3] - 2026-08-15
 
 ### Fixed
 
@@ -22,6 +22,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Evaluation Scenario 41**: Added Scenario 41 covering zero/negative fiat deployment exponents and normalized multi-asset staking reward queries over time.
 - **Order Settle Helper Test Coverage**: Added dedicated `OrderSettleHelperTest` covering USD settlement capping, balance peek exceptions, and fallback polls.
+
+## [6.17.2] - 2026-08-15
+
+### Changed
+
+- **Continuous Improvement Cycle 31**:
+  - **Action Log Formatting Standardization**: Added `ACTION_NO_COUNTERBALANCING_ASSETS` to `:common` `ViewText` catalog and `ActionLogFormatter.formatNoCounterBalancingAssets()`, delegating `RebalanceEventFormatter.format(NoCounterBalancingAssets)` to central formatting.
+  - **Exposed Query Tautology Cleanup**: Removed dummy SQL tautology `TradeTable.id eq TradeTable.id` in `SqliteOrderIntentRepositoryImpl` by conditionally chaining predicates in `updateLocalTrade` and `findSettledLegacyTradeMatch`.
+  - **Settlement Logic Documentation**: Added comprehensive KDoc to `OrderSettleHelper.settleUsdAfterSells` detailing the 4-tier settlement fallback hierarchy and balance peek / projected cash safety caps.
+  - **CSS Tokenization & Selectors**: Replaced raw button selectors and box-shadow calls in `FormStyles.kt`, `HistoryToolbarStyles.kt`, and `NavigationStyles.kt` with `CssClass.Button` constants and `boxShadowRaw`.
+  - **Frontend JS Formatting & Precision**: Centralized full timestamp and count formatting in `HistoryFormatting.kt` (`formatFullTradeTime`, `formatIntegerCount`) and standardized comparison delta percentage precision on `PrecisionConstants.SCALE_USD`.
+  - **Documentation & Project Tree Sync**: Added `ARR_KILO_ROUTER.md` to `README.md` project tree, aligned `OrderResult` and `StringConstantSchemas` subproject package trees, updated `docs/FLOWS.md` settle helper diagrams, and synchronized Karma test threshold documentation across agent skills.
+
+## [6.17.1] - 2026-08-15
+
+### Changed
+
+- **Continuous Improvement Cycle 30**:
+  - **Snapshot Calculation Optimization**: Added `PortfolioCalculations.createAssetSnapshot` overload taking precomputed `AssetMetrics`, eliminating 4x redundant BigDecimal recalculations across `PortfolioAnalyzerImpl`, `SnapshotHistoryCalculator`, and `TradeHistorySnapshotStore`.
+  - **Exposed Query Standardization**: Standardized `SqliteTradeRepositoryImpl` and `SqliteLedgerRepositoryImpl` range queries on `.where { (cond1) and (cond2) }`, removing deprecated chained `.andWhere` usage.
+  - **Database Error Handling Helper**: Introduced `Database.safeReadTransactionIO` and `safeReadTransaction` in `RepositoryUtils.kt` to deduplicate and standardize read transaction exception mapping across repository implementations.
+  - **Test Fixtures Constant Modernization**: Renamed `TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT` to `ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT` and updated KDoc / test specs to reflect Exposed 1.x.
+  - **CSS & Token Consistency**: Replaced hardcoded box-shadow literals in `ComponentStyles.kt` with `CssTheme.barFillShadow` and `CssTheme.shadowHeroCard`, switched `LayoutStyles.kt` to `boxShadowRaw`, and referenced `HtmlQueries.SORTABLE_TH` and `CssClass` sortable constants in `TableStyles.kt`.
+  - **Frontend Date Tooltip Locale**: Standardized on explicit `EN_US` locale in `HistoryTradeRendering.kt` full-timestamp tooltip for deterministic formatting across client browser locales.
+  - **Documentation & Agent Rules Sync**: Documented the pure `:engine` module in `README.md` (tech stack table and subproject tree layout), `docs/ALGORITHM.md`, and `.agents/AGENTS.md`, and updated autonomous optimizer verification paths.
 
 ## [6.17.0] - 2026-08-15
 

@@ -33,4 +33,9 @@ internal fun usdOptionsToLocale(value: Double, minDigits: Int, maxDigits: Int): 
     return value.asDynamic().toLocaleString(EN_US, options)
 }
 
+internal fun formatFullTradeTime(timestamp: String): String =
+    kotlin.js.Date(timestamp).asDynamic().toLocaleString(EN_US).toString()
+
+internal fun formatIntegerCount(count: Double): String = count.asDynamic().toLocaleString(EN_US).toString()
+
 internal const val EN_US = "en-US"

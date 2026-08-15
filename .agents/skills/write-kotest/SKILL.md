@@ -80,7 +80,7 @@ val fakeKraken = FakeKrakenService().apply {
 ### MockK + Exposed static mocks
 
 - Use the constant
-  `TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT`.
+  `TestFixtures.ORG_JETBRAINS_EXPOSED_V1_JDBC_TRANSACTIONS_TRANSACTION_INTERFACE_KT`.
 - Always `unmockkStatic(...)` in `finally` or test teardown.
 - Prefer real `:memory:` SQLite via `DatabaseConfig.init(":memory:")` unless the
   test targets failure mapping.

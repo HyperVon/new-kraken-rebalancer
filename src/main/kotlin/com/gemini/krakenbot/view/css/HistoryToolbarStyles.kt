@@ -73,10 +73,7 @@ object HistoryToolbarStyles {
             color = CssTheme.colorTextPrimary
             background = CssTheme.colorBlueGlassBgHover.value
             borderColor = CssTheme.colorBlueGlassBorderHover
-            put(
-                "box-shadow",
-                "0 0 14px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255,255,255,0.1)",
-            )
+            boxShadowRaw("0 0 14px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255,255,255,0.1)")
         }
 
         // Parens are load-bearing here as well (see the rule above): without

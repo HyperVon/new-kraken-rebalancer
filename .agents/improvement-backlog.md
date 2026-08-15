@@ -35,11 +35,27 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 ## Open
 
 | ID | Size | Status | Area | Summary | Cycle | Notes |
-| :--- | :---: | :--- | :--- | :--- | :--- | :--- |
+| :--- | :---: | :--- | :--- | :--- | :---: | :--- |
 | CI-28-C07 | S | dropped | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | superseded by CI-29-C01 (done 220) |
 | CI-28-U01 | S | done | css | Tokenize remaining raw `rgba()`/shadow literals in `ComponentStyles.kt` | 28 | 222 |
 
 ## Done (recent)
+
+| CI-31-C02 | S | done | code | Standardize `RebalanceEvent.NoCounterBalancingAssets` formatting via `ActionLogFormatter` and `ViewText` | 31 | 31 |
+| CI-31-C03 | S | done | code | Avoid `TradeTable.id eq TradeTable.id` SQL tautology in `SqliteOrderIntentRepositoryImpl` via `Op.TRUE` | 31 | 31 |
+| CI-31-C04 | S | done | comments | Add KDoc and rationale comments to `OrderSettleHelper` USD settlement fallback branches | 31 | 31 |
+| CI-31-U01 | M | done | css | Tokenize hover shadows & glowing states across `FormStyles.kt`, `HistoryToolbarStyles.kt`, and `NavigationStyles.kt` | 31 | 31 |
+| CI-31-U02 | S | done | css | Use `CssClass` and `HtmlQueries` constants for button and color input selectors | 31 | 31 |
+| CI-31-F01 | S | done | frontend | Centralize full timestamp / count formatters in `HistoryFormatting.kt` and use `PrecisionConstants` in comparison chart | 31 | 31 |
+| CI-31-D01 | S | done | docs | Sync `README.md` subproject trees, `FLOWS.md` settle helper diagrams, and Karma coverage skill docs | 31 | 31 |
+| CI-30-C01 | S | done | code | Add `createAssetSnapshot` overload taking `AssetMetrics` to avoid 4x recalculations | 30 | 30 |
+| CI-30-C02 | S | done | code | Standardize Exposed queries on `.where { (cond1) and (cond2) }` instead of chained `.andWhere` | 30 | 30 |
+| CI-30-C03 | S | done | code | Add `Database.safeReadTransactionIO` helper to dedupe read transaction error handling | 30 | 30 |
+| CI-30-C04 | S | done | test | Rename `TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT` to Exposed v1 identifier | 30 | 30 |
+| CI-30-U01 | S | done | css | Use `CssTheme.barFillShadow` and `boxShadowRaw` in `ComponentStyles.kt` and `LayoutStyles.kt` | 30 | 30 |
+| CI-30-U02 | S | done | css | Use `HtmlQueries.SORTABLE_TH` and `CssClass` sortable constants in `TableStyles.kt` | 30 | 30 |
+| CI-30-F01 | S | done | frontend | Pass `EN_US` locale to `Date(t.timestamp).toLocaleString(EN_US)` in `HistoryTradeRendering.kt` | 30 | 30 |
+| CI-30-D01 | S | done | docs | Document `:engine` subproject in README tech stack table, project tree, ALGORITHM, and AGENTS | 30 | 30 |
 
 | CI-28-C08 | M | done | frontend | Split `formatUsd`/`formatPercent`/`EN_US`/`usdOptionsToLocale` out of `HistoryCharts`/`HistoryLoading` into `HistoryFormatting.kt` (single source) | 28 | 222 |
 | CI-28-C09 | M | done | history | Extract `buildSnapshotsChronological` ATH helper from `SnapshotHistoryCalculator.calculateHistoricalSnapshots` | 28 | 222 |

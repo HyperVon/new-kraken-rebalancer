@@ -6,12 +6,12 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.table.LedgerTable
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
+import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 import org.jetbrains.exposed.v1.jdbc.Database
-import org.jetbrains.exposed.v1.jdbc.andWhere
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.selectAll
@@ -49,10 +49,9 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
     override suspend fun getLedgersInRange(from: Instant, to: Instant): List<LedgerEvent> = database.readTransactionIO {
         LedgerTable
             .selectAll()
-            .andWhere {
-                LedgerTable.timestamp greaterEq from.toEpochMilli()
-            }.andWhere {
-                LedgerTable.timestamp lessEq to.toEpochMilli()
+            .where {
+                (LedgerTable.timestamp greaterEq from.toEpochMilli()) and
+                    (LedgerTable.timestamp lessEq to.toEpochMilli())
             }.orderBy(LedgerTable.timestamp, SortOrder.DESC)
             .map { row -> buildLedgerFromRow(row) }
     }

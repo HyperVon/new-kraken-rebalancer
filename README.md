@@ -122,6 +122,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
 | **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo 95/95/95/90, Karma/Istanbul 90/80/90/75                                  |
 | **Build**       | Gradle 9.7.0 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.8.0                                                     |
+| **Engine**      | Pure Kotlin JVM domain calculation library with independent JaCoCo 95/90 coverage gates                      |
 | **Codegen**     | JVM-only module with KSP processors for API mappers and YAML string catalogs                                 |
 | **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable      |
 
@@ -555,16 +556,16 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, RewardsOverTime, RewardsOverTimePoint, SyncProgressResponse
 │       ├── codegen/                       # GenerateStringConstants and shared codegen sources
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
-│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, TradeSource, generated SyncMetadataKeys
+│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, TradeSource, StringConstantSchemas, generated SyncMetadataKeys
 │       ├── util/                          # PrecisionConstants, FormatSpec (price/fee tier single-source), StreamStatus
-│       ├── view/util/                     # Generated YAML string catalogs (StringConstantSchemas), Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps, AllocationEditor
+│       ├── view/util/                     # Generated YAML string catalogs, Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps, AllocationEditor
 │   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs
 ├── codegen/                                # JVM-only module with KSP processors for API mappers and YAML string catalogs
 ├── engine/                                 # Pure Kotlin domain calculation library (:engine)
 │   ├── src/main/kotlin/com/gemini/krakenbot/
-│   │   ├── domain/                         # RebalancerEngine, PortfolioCalculations, TradeCalculator, RebalancePlan, PrecisionConstantsJvm
-│   │   ├── model/                          # Rich domain models: PortfolioSnapshot (AssetSnapshot), TradeRecord, OrderResult
-│   │   └── util/                           # ActionLogFormatter, BalanceKeys, BigDecimalExtensions, MathUtils, RebalanceEventFormatter
+│   │   ├── codegen/                        # GenerateApiMapper annotation processor target
+│   │   ├── domain/                         # RebalancerEngine, PortfolioCalculations, TradeCalculator, RebalancePlan, OrderResult, formatters, helpers
+│   │   └── model/                          # Domain models: PortfolioSnapshot (AssetSnapshot), TradeRecord
 │   └── src/test/kotlin/                    # Pure engine domain calculation unit tests (JaCoCo 95/90 gates)
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
@@ -640,6 +641,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
 ├── docs/                                  # Project documentation and architecture guides
 │   ├── AGENTIC_DEVELOPMENT.md             # Human guide to the AI-assisted development system
+│   ├── ARR_KILO_ROUTER.md                 # Agent Runtime Router specification and adapter architecture
 │   ├── USER_GUIDE.md                      # End-user walkthrough (Dashboard, Settings, History)
 │   ├── images/                            # README / User Guide screenshot PNGs
 │   ├── FLOWS.md                           # Kotlin Flow architecture guide

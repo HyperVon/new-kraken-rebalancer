@@ -296,10 +296,7 @@ object LayoutStyles {
             borderRadius = CssTheme.radiusPill
             background = CssTheme.colorSurface2.value
             solidBorder(CssTheme.colorGlassBorder)
-            put(
-                "box-shadow",
-                "0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(186,220,255,0.1)",
-            )
+            boxShadowRaw("0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(186,220,255,0.1)")
             fontSize = 0.75.rem
             color = CssTheme.colorTextSecondary
             whiteSpaceRaw("nowrap")
