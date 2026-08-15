@@ -94,7 +94,7 @@ private fun pickColorForNewAsset(): String {
 }
 
 private fun currentAllocationColors(): List<String> {
-    val inputs = document.querySelectorAll(".${CssClass.Form.AllocationColorInput}")
+    val inputs = document.querySelectorAll(CssClass.Form.AllocationColorInput.querySelector)
     val colors = mutableListOf<String>()
     inputs.forEachInput { input ->
         if (input.value.isNotEmpty()) {

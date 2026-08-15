@@ -41,6 +41,13 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 ## Done (recent)
 
+| CI-31-C02 | S | done | code | Standardize `RebalanceEvent.NoCounterBalancingAssets` formatting via `ActionLogFormatter` and `ViewText` | 31 | 31 |
+| CI-31-C03 | S | done | code | Avoid `TradeTable.id eq TradeTable.id` SQL tautology in `SqliteOrderIntentRepositoryImpl` via `Op.TRUE` | 31 | 31 |
+| CI-31-C04 | S | done | comments | Add KDoc and rationale comments to `OrderSettleHelper` USD settlement fallback branches | 31 | 31 |
+| CI-31-U01 | M | done | css | Tokenize hover shadows & glowing states across `FormStyles.kt`, `HistoryToolbarStyles.kt`, and `NavigationStyles.kt` | 31 | 31 |
+| CI-31-U02 | S | done | css | Use `CssClass` and `HtmlQueries` constants for button and color input selectors | 31 | 31 |
+| CI-31-F01 | S | done | frontend | Centralize full timestamp / count formatters in `HistoryFormatting.kt` and use `PrecisionConstants` in comparison chart | 31 | 31 |
+| CI-31-D01 | S | done | docs | Sync `README.md` subproject trees, `FLOWS.md` settle helper diagrams, and Karma coverage skill docs | 31 | 31 |
 | CI-30-C01 | S | done | code | Add `createAssetSnapshot` overload taking `AssetMetrics` to avoid 4x recalculations | 30 | 30 |
 | CI-30-C02 | S | done | code | Standardize Exposed queries on `.where { (cond1) and (cond2) }` instead of chained `.andWhere` | 30 | 30 |
 | CI-30-C03 | S | done | code | Add `Database.safeReadTransactionIO` helper to dedupe read transaction error handling | 30 | 30 |

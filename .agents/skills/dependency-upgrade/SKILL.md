@@ -174,7 +174,7 @@ or manually:
 ```
 
 Backend coverage (JaCoCo: 95% line/method/instruction, 90% branch) and Kotlin/JS
-Karma gates (90% statements/functions/lines, 75% branches) must pass. If a bump
+Karma gates (90% statements/lines, 80% functions, 75% branches) must pass. If a bump
 breaks something you cannot resolve, revert that single bump and report it
 rather than lowering quality gates.
 
