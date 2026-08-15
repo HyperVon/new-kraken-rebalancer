@@ -325,9 +325,18 @@ class DashboardController(
         }
 
         val delta24h = PortfolioCalculations.compute24hDelta(latest, history)
+        val unresolvedIntents = orderIntentService.getUnresolvedIntents()
+        val csrfToken = CsrfProtection.issueToken(call)
         val html =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderDashboardFragment(latest, history, allocations, delta24h)
+                dashboardView.renderDashboardFragment(
+                    latest = latest,
+                    history = history,
+                    allocations = allocations,
+                    delta24h = delta24h,
+                    unresolvedIntents = unresolvedIntents,
+                    csrfToken = csrfToken,
+                )
             }
         call.respondText(html, ContentType.Text.Html)
     }

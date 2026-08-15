@@ -20,7 +20,7 @@ fun isLocalOrPrivateOrigin(origin: String): Boolean {
 }
 
 internal fun isLocalOrPrivateOrigin(origin: String, allowedOrigins: Set<String>, allowAll: Boolean = false): Boolean {
-    if (allowAll || isExplicitlyAllowedOrigin(origin, allowedOrigins, allowAll)) return true
+    if (allowAll || isExplicitlyAllowedOrigin(origin, allowedOrigins)) return true
     val uri = parseOrigin(origin) ?: return false
     val host = uri.host?.removeSurrounding("[", "]") ?: return false
 
@@ -43,13 +43,7 @@ private fun parseAllowedOriginsFromEnv(): Set<String> {
     return raw.split(',').map { it.trim().removeSuffix("/") }.filter { it.isNotEmpty() }.toSet()
 }
 
-private fun isExplicitlyAllowedOrigin(
-    origin: String,
-    allowedOrigins: Set<String> = parseAllowedOriginsFromEnv(),
-    allowAll: Boolean = System.getenv("REBALANCER_ALLOW_ALL_ORIGINS")?.equals("true", ignoreCase = true) ==
-        true,
-): Boolean {
-    if (allowAll) return true
+private fun isExplicitlyAllowedOrigin(origin: String, allowedOrigins: Set<String>): Boolean {
     if (allowedOrigins.isEmpty()) return false
     val normalizedOrigin = origin.trim().removeSuffix("/")
     return allowedOrigins.any { candidate ->

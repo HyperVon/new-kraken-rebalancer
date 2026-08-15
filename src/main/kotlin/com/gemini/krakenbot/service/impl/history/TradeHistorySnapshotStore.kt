@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
@@ -337,8 +338,9 @@ class TradeHistorySnapshotStore(
     private fun applySeedTrade(balances: MutableMap<String, BigDecimal>, trade: TradeRecord, reverse: Boolean) {
         val symbol = trade.symbol.uppercase()
         val direction = if (reverse) -1 else 1
-        val assetDelta = if (trade.side.equals("BUY", ignoreCase = true)) trade.volume else trade.volume.negate()
-        val usdDelta = if (trade.side.equals("BUY", ignoreCase = true)) {
+        val isBuy = OrderSide.isBuy(trade.side)
+        val assetDelta = if (isBuy) trade.volume else trade.volume.negate()
+        val usdDelta = if (isBuy) {
             trade.usdAmount.add(trade.fee).negate()
         } else {
             trade.usdAmount.subtract(trade.fee)

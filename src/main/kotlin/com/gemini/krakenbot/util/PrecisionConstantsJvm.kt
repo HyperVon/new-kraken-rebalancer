@@ -2,14 +2,20 @@ package com.gemini.krakenbot.util
 
 import java.math.BigDecimal
 
+private val CACHED_CASH_RESERVE_FACTOR: BigDecimal = BigDecimal.valueOf(PrecisionConstants.CASH_RESERVE_FACTOR_DOUBLE)
+private val CACHED_FEE_RATE_ESTIMATE: BigDecimal = BigDecimal.valueOf(PrecisionConstants.FEE_RATE_ESTIMATE_DOUBLE)
+private val CACHED_HUNDRED: BigDecimal = BigDecimal.valueOf(PrecisionConstants.HUNDRED_INT.toLong())
+private val CACHED_ALLOCATION_TOLERANCE: BigDecimal =
+    BigDecimal.valueOf(PrecisionConstants.ALLOCATION_TOLERANCE_DELTA)
+
 val PrecisionConstants.CASH_RESERVE_FACTOR: BigDecimal
-    get() = BigDecimal.valueOf(CASH_RESERVE_FACTOR_DOUBLE)
+    get() = CACHED_CASH_RESERVE_FACTOR
 
 val PrecisionConstants.FEE_RATE_ESTIMATE: BigDecimal
-    get() = BigDecimal.valueOf(FEE_RATE_ESTIMATE_DOUBLE)
+    get() = CACHED_FEE_RATE_ESTIMATE
 
 val PrecisionConstants.HUNDRED: BigDecimal
-    get() = BigDecimal.valueOf(HUNDRED_INT.toLong())
+    get() = CACHED_HUNDRED
 
 val PrecisionConstants.ALLOCATION_TOLERANCE: BigDecimal
-    get() = BigDecimal.valueOf(ALLOCATION_TOLERANCE_DELTA)
+    get() = CACHED_ALLOCATION_TOLERANCE

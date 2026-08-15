@@ -152,12 +152,15 @@ sync watermark, and unresolved live-order counts. `GET /api/readiness` returns
 exists, the latest cycle is not failed, and no ambiguous live-order intent is
 waiting for review. It returns `503` with a `readinessReason` otherwise.
 
-If an ambiguous live order occurs, leave the loop paused, then inspect
-`GET /api/order-intents`. Only an `UNCERTAIN` intent is eligible for manual
-resolution: `PENDING` means the AddOrder request may still be in flight. The
-resolution route uses the same CSRF token issued by the Settings page. Follow
+If an ambiguous live order occurs, the application halts live trading and displays an
+**Action Required: Unresolved Live Order Intent** banner at the top of the Dashboard.
+You can inspect the intent details (ID, symbol, side, volume, USD amount, error message)
+and resolve it directly from the UI by selecting **CONFIRMED** or **REJECTED**,
+entering optional Kraken order transaction IDs, and providing resolution evidence.
+Alternatively, inspect `GET /api/order-intents` via REST. Only an `UNCERTAIN` intent is
+eligible for resolution (`PENDING` indicates an AddOrder in flight). Follow
 the [operator recovery runbook](../SECURITY.md#operator-recovery-runbook) for
-the exchange-verification checklist, complete `curl` request, and post-request
+the exchange-verification checklist, complete resolution options, and post-request
 checks before resuming.
 
 ### Responsive layouts

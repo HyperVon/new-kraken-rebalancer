@@ -131,7 +131,7 @@ effectively than spreading across all pairs.
      `(usdAmount − fee)` for matching sell `orderTxid`s, capped by balance peek /
      projected cash.
    - Dry-run or no sells: skip settle; buys budget off projected cash only.
-2. **USD settle** — only when **≥1 sell succeeded** and **not** dry-run:
+2. **USD settle** (`OrderSettleHelper.settleUsdAfterSells`) — only when **≥1 sell succeeded** and **not** dry-run:
    prefer **fill-confirmed** sell proceeds (trade history matched by order
    txid, net of fee); fall back to USD **balance poll** when no txids or fill
    confirm is empty. Both cold polls: up to **3** attempts from **250ms**
@@ -141,12 +141,12 @@ effectively than spreading across all pairs.
    [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md).
    Repeated nonblank Kraken trade IDs across shifting pages count once; id-less
    rows remain distinct because equal-economics partial fills can be legitimate.
-3. **Buy second** — wrap the sell→buy sequence in `withStableBackend`; apply a
+3. **Buy second** — wrap the sell→buy sequence in `withStableBackend` using `RebalanceSessionContext`; apply a
    **cycle-level 99%** budget of settled USD
    (`PrecisionConstants.CASH_RESERVE_FACTOR` / `CASH_RESERVE_FACTOR_DOUBLE`), then
    cap each buy by remaining budget.
 4. **Dust** — skip orders with USD notional `< minimumOrderSizeUSD`.
-   - **Pre-flight order guards** (`OrderExecutorImpl.executeSingleOrder`): after
+   - **Pre-flight order guards** (`OrderExecutorImpl.executeSingleOrder` via `RebalanceSessionContext`): after
      the dust check, abort when `usdAmount.signum() <= 0` or the computed
      `volume.signum() <= 0` — return `null`; do not call `executeOrder`.
    - Applies when `minimumOrderSizeUSD = 0`, or when a buy is trimmed to $0 by the

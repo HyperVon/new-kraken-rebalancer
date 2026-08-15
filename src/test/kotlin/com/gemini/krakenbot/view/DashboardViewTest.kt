@@ -6,6 +6,8 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.component.AllocationChartComponent
@@ -474,6 +476,59 @@ class DashboardViewTest : StringSpec() {
                 view.renderHistoryPage(baseConfig.settings)
             }
             html shouldContain "History - Kraken Rebalancer"
+        }
+
+        "DashboardView_renderDashboardFragment_withUnresolvedIntents" {
+            val latest = snap(0, "10000")
+            val intents = listOf(
+                OrderIntent(
+                    id = 42,
+                    cycleId = "cycle-123",
+                    clientOrderId = "cl-42",
+                    pair = "XXBTZUSD",
+                    symbol = "BTC",
+                    side = "BUY",
+                    volume = BigDecimal("0.05"),
+                    usdAmount = BigDecimal("3000.00"),
+                    expectedPrice = BigDecimal("60000.00"),
+                    createdAt = Instant.now(),
+                    state = OrderIntentState.UNCERTAIN,
+                    errorMessage = "Network timeout communicating with Kraken",
+                ),
+                OrderIntent(
+                    id = 43,
+                    cycleId = "cycle-123",
+                    clientOrderId = "cl-43",
+                    pair = "XETHZUSD",
+                    symbol = "ETH",
+                    side = "SELL",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("2500.00"),
+                    expectedPrice = BigDecimal("2500.00"),
+                    createdAt = Instant.now(),
+                    state = OrderIntentState.UNCERTAIN,
+                    errorMessage = null,
+                ),
+            )
+
+            val html = createHTML().div {
+                view.renderDashboardFragment(
+                    latest = latest,
+                    history = listOf(latest),
+                    unresolvedIntents = intents,
+                    csrfToken = testCsrfToken,
+                )
+            }
+
+            html shouldContain "Action Required: Unresolved Live Order Intent (2)"
+            html shouldContain "Intent #42"
+            html shouldContain "BUY 0.05 BTC (~$3000.00)"
+            html shouldContain "Error: Network timeout communicating with Kraken"
+            html shouldContain "Intent #43"
+            html shouldContain "SELL 1.0 ETH (~$2500.00)"
+            html shouldContain "/api/order-intents/42/resolve"
+            html shouldContain "/api/order-intents/43/resolve"
+            html shouldContain testCsrfToken
         }
     }
 }
