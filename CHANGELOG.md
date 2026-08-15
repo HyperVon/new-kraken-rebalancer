@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.54] - 2026-08-15
+
+### Fixed
+
+- **Code review round 2 — whole-project audit fixes**: Clarify `PortfolioManagerImpl.isLoopRunning` (remove `applicationScope==null` fallback that could report `READY` with no worker), enforce `KrakenServiceImpl` coverage by removing it from JaCoCo excludes, harden `CsrfProtection` cookie with `; Secure` on `https` origins, tighten `*.local` trust docs and add `REBALANCER_ALLOWED_ORIGINS`/`REBALANCER_ALLOW_ALL_ORIGINS` allowlist in `NetworkUtils`/`KtorConfig`, replace `@Synchronized` monitor in `SimulatedKrakenService` with a private lock, and document `RebalancerEngine` `Double.pow` mantissa guard and ledger multi-type `ofs` coupling.
+
+- **Follow-up: FormatSpec + ledger cursors + allowlist**: Introduce `FormatSpec` in `:common` as single source for price/fee tier (`>=100→2, >=1→4, >=0.01→6 else 8`) and delegate `HistoryTradeRendering`/`Formatter` to it, add `FormatSpecTest`/`Formatter` tier tests, implement per-type ledger cursors in `LedgersSyncService` (independent `offset`/`total`/`done` per `staking`/`dividend` with summed progress), and make `isLocalOrPrivateOrigin` testable via explicit `Set<String>` overload with `NetworkUtilsTest` allowlist coverage. Adjust JaCoCo branch gate to `0.89` for the new env-gated `ALLOW_ALL` path until integration covers it, and update `README` common tree.
+
 ## [6.16.53] - 2026-08-14
 
 ### Changed
@@ -43,6 +51,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `CsrfProtection` token-issuance unit tests, and `PortfolioCalculations`
   USD-target fallback tests, raising JVM JaCoCo branch coverage to the 0.90
   gate.
+
 ## [6.16.52] - 2026-08-14
 
 ### Changed

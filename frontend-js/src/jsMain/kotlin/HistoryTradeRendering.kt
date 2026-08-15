@@ -5,6 +5,7 @@ import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.util.FormatSpec
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -111,20 +112,11 @@ private fun formatFeeOrDash(value: Double): String =
     usdCellOrDash(value, PrecisionConstants.SCALE_USD, feeDigits(value))
 
 private fun formatQuantity(value: Double): String =
-    usdOptionsToLocale(value, minDigits = 0, maxDigits = PrecisionConstants.SCALE_CRYPTO)
+    usdOptionsToLocale(value, minDigits = 0, maxDigits = FormatSpec.quantityDigits())
 
-private fun priceDigits(value: Double): Int {
-    val absolute = kotlin.math.abs(value)
-    return when {
-        absolute >= 100.0 -> PrecisionConstants.SCALE_USD
-        absolute >= 1.0 -> 4
-        absolute >= 0.01 -> 6
-        else -> PrecisionConstants.SCALE_CRYPTO
-    }
-}
+private fun priceDigits(value: Double): Int = FormatSpec.priceDigits(value)
 
-private fun feeDigits(value: Double): Int =
-    if (kotlin.math.abs(value) >= 1.0) PrecisionConstants.SCALE_USD else PrecisionConstants.SCALE_FEE
+private fun feeDigits(value: Double): Int = FormatSpec.feeDigits(value)
 
 private fun slippageBadgeClass(value: Double): CssClass = when {
     value > 0.0 -> CssClass.Badge.SlippageAdverse

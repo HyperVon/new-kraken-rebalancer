@@ -114,7 +114,10 @@ object RebalancerEngine {
         ratio = ratio.coerceAtMost(BigDecimal.ONE)
 
         // Deploy% = (DD / MaxDD)^exponent × 100; ratio already capped at 1 so Deploy% ≤ 100.
-        // Fractional exponents require Double.pow; re-enter BigDecimal immediately and scale.
+        // Fractional exponents require Double.pow (~15-digit mantissa); at current
+        // exponent range 1–3 this is well within SCALE_PERCENT precision. Re-enter
+        // BigDecimal immediately, guard non-finite, and re-scale — do not widen the
+        // double domain.
         val deployDouble = (ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0)
             .takeIf { it.isFinite() } ?: 0.0
         return BigDecimal

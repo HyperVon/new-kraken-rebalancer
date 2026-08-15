@@ -5,6 +5,7 @@ import com.gemini.krakenbot.view.util.FormFields
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.plugins.origin
 import io.ktor.server.response.header
 import java.net.URI
 import java.security.MessageDigest
@@ -28,9 +29,11 @@ internal object CsrfProtection {
         val tokenBytes = ByteArray(TOKEN_BYTES)
         secureRandom.nextBytes(tokenBytes)
         val token = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes)
+        val isSecure = runCatching { call.request.origin.scheme == "https" }.getOrDefault(false)
+        val secureAttr = if (isSecure) "; Secure" else ""
         call.response.header(
             HttpHeaders.SetCookie,
-            "$COOKIE_NAME=$token; Path=/; HttpOnly; SameSite=Strict",
+            "$COOKIE_NAME=$token; Path=/; HttpOnly; SameSite=Strict$secureAttr",
         )
         return token
     }

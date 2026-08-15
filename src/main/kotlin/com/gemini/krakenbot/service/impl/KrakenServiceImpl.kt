@@ -413,7 +413,8 @@ class KrakenServiceImpl(
             // across types couples pagination and skips entries. Strip ofs for the fan-out and
             // let callers paginate per-type if they need it (LedgersSyncService is full-history
             // with startSec, so offset is only for initial seed recovery, which is single-type
-            // after the first page).
+            // after the first page). Future multi-type paginated callers must paginate per-type
+            // explicitly rather than reusing a combined ofs.
             val fanOutParams = params - KrakenApiConstants.PARAM_OFS
             val pages = sortedTypes.map { type ->
                 queryLedgerPage(fanOutParams + (KrakenApiConstants.PARAM_TYPE to type), types)

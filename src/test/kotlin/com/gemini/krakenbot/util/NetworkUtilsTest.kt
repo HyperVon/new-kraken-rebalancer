@@ -70,5 +70,20 @@ class NetworkUtilsTest : StringSpec() {
             isLocalOrPrivateOrigin("not a valid origin") shouldBe false
             isLocalOrPrivateOrigin("") shouldBe false
         }
+
+        "should allow origins via explicit allowlist and allow-all flag" {
+            isLocalOrPrivateOrigin("https://trusted.example.com", setOf("https://trusted.example.com")) shouldBe true
+            isLocalOrPrivateOrigin("https://trusted.example.com", setOf("trusted.example.com")) shouldBe true
+            isLocalOrPrivateOrigin("https://kraken.com", setOf("https://kraken.com")) shouldBe true
+            isLocalOrPrivateOrigin("https://kraken.com", setOf("https://other.com")) shouldBe false
+            isLocalOrPrivateOrigin(
+                "https://any.example.com",
+                setOf("https://any.example.com"),
+                allowAll = true,
+            ) shouldBe
+                true
+            isLocalOrPrivateOrigin("https://kraken.com", emptySet(), allowAll = true) shouldBe true
+            isLocalOrPrivateOrigin("https://kraken.com", emptySet(), allowAll = false) shouldBe false
+        }
     }
 }
