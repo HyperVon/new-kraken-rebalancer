@@ -32,7 +32,7 @@ jobs:
         run: |
           python3 --version
           python3 -m pip install --disable-pip-version-check \
-            "agent-runtime-router @ git+https://github.com/HyperVon/agent-runtime-router.git@1be0e38817c59e8aa216743dc62df71996430c0c"
+            "agent-runtime-router @ git+https://github.com/HyperVon/agent-runtime-router.git@ffc927c4424fe42f1266848b42258a5fa7d3bf66"
       - name: Run Kraken ARR adapter and parity tests
         env:
           PYTHONPATH: .agents/runtime-router/adapters/kilo
