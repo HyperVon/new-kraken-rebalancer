@@ -497,5 +497,35 @@ class DatabaseConfigTest : StringSpec() {
                 }
             }
         }
+
+        "handles terminal order intents when referenced local trade was pruned or deduplicated" {
+            val databaseUrl =
+                "jdbc:sqlite:file:pruned-trade-${UUID.randomUUID()}?mode=memory&cache=shared&foreign_keys=true"
+
+            // 1. Initialize schema
+            DatabaseConfig.init(databaseUrl)
+
+            // 2. Insert a confirmed terminal order intent that references a non-existent local trade (e.g. 999)
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO order_intents (
+                            cycle_id, client_order_id, client_order_id_ambiguous, pair, symbol,
+                            side, volume, usd_amount, expected_price, created_at, state,
+                            order_txid, error_message, resolved_at, resolution_evidence, local_trade_id
+                        ) VALUES (
+                            'cycle-1', 'cid-999', 0, 'LINKUSD', 'LINK',
+                            'SELL', '6.54229657', '56.44', '8.6274', 1786440127270, 'CONFIRMED',
+                            'OYDOVZ-Q5PT4-HUCR6Z', NULL, 1786440130000, 'Matched Kraken fill', 999
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            // 3. Re-run init — must succeed without throwing IllegalStateException
+            DatabaseConfig.init(databaseUrl)
+        }
     }
 }

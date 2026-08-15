@@ -470,9 +470,12 @@ object DatabaseConfig {
                         .selectAll()
                         .where { TradeTable.id eq resolvedIntent.localTradeId }
                         .firstOrNull()
-                    check(currentTrade != null) {
-                        "Cannot reconcile terminal order intent for missing local trade " +
-                            resolvedIntent.localTradeId
+                    if (currentTrade == null) {
+                        log.info(
+                            "Terminal order intent references local trade {} which is no longer in trades table (pruned or deduplicated).",
+                            resolvedIntent.localTradeId,
+                        )
+                        return@forEach
                     }
                     val clientOrderMatches = when {
                         resolvedIntent.clientOrderIdAmbiguous -> true
@@ -490,7 +493,11 @@ object DatabaseConfig {
                         currentTrade[TradeTable.volume].compareTo(resolvedIntent.volume) == 0 &&
                         currentTrade[TradeTable.usdAmount].compareTo(resolvedIntent.usdAmount) == 0 &&
                         !currentTrade[TradeTable.dryRun] &&
-                        currentTrade[TradeTable.tradeSource] in listOf(null, TradeSource.LOCAL_ESTIMATE.name)
+                        currentTrade[TradeTable.tradeSource] in listOf(
+                            null,
+                            TradeSource.LOCAL_ESTIMATE.name,
+                            TradeSource.LEGACY_UNKNOWN.name,
+                        )
                     check(immutableIdentityMatches) {
                         "Cannot reconcile terminal order intent for local trade " +
                             "${resolvedIntent.localTradeId}: immutable trade identity changed."

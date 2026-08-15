@@ -15,6 +15,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Migrated rich JVM domain models `PortfolioSnapshot` and `TradeRecord` (with provenance, deduplication, and reconciliation extensions) to `:engine`.
   - Configured independent JaCoCo coverage verification gates (95% line/method/instruction, 90% branch) and comprehensive Kotest specification suite for `:engine`.
 
+### Fixed
+
+- **Terminal Order Intent Reconciliation on Deduplicated / Pruned Trades**: Allow `DatabaseConfig.reconcileTerminalOrderIntents` to safely ignore terminal (`CONFIRMED`/`REJECTED`) order intents when the corresponding local trade record was previously cleaned up or deduplicated (e.g. replaced by synchronized Kraken API fills) or pruned, preventing startup crashes with `IllegalStateException: Cannot reconcile terminal order intent for missing local trade`.
+
 ## [6.16.55] - 2026-08-15
 
 ### Added
