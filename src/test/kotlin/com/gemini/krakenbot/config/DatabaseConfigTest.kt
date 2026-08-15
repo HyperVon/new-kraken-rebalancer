@@ -527,5 +527,48 @@ class DatabaseConfigTest : StringSpec() {
             // 3. Re-run init — must succeed without throwing IllegalStateException
             DatabaseConfig.init(databaseUrl)
         }
+
+        "handles terminal order intents when referenced local trade was already reconciled to API_FILL" {
+            val databaseUrl =
+                "jdbc:sqlite:file:reconciled-trade-${UUID.randomUUID()}?mode=memory&cache=shared&foreign_keys=true"
+
+            // 1. Initialize schema
+            DatabaseConfig.init(databaseUrl)
+
+            // 2. Insert a trade that was reconciled with API fill (submission_state = null, source = API_FILL, updated timestamp)
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            id, timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES (
+                            904, 1786440130000, 'LINKUSD', 'SELL', 'LINK', '6.54229657', '56.44', 1, 0,
+                            NULL, '8.62740000', '0.0500', '0.0000', '8.62740000', 'API_FILL',
+                            'cycle-1', 'OYDOVZ-Q5PT4-HUCR6Z', 'T-12345', '21d7013c-f728-3b0e-ae3c-ed37f3cb811e', NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO order_intents (
+                            cycle_id, client_order_id, client_order_id_ambiguous, pair, symbol,
+                            side, volume, usd_amount, expected_price, created_at, state,
+                            order_txid, error_message, resolved_at, resolution_evidence, local_trade_id
+                        ) VALUES (
+                            'cycle-1', '21d7013c-f728-3b0e-ae3c-ed37f3cb811e', 0, 'LINKUSD', 'LINK',
+                            'SELL', '6.54229657', '56.44', '8.6274', 1786440127270, 'CONFIRMED',
+                            'OYDOVZ-Q5PT4-HUCR6Z', NULL, 1786440130000, 'Matched Kraken fill', 904
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            // 3. Re-run init — must succeed without throwing IllegalStateException
+            DatabaseConfig.init(databaseUrl)
+        }
     }
 }

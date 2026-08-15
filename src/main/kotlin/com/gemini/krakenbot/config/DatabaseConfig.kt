@@ -477,6 +477,11 @@ object DatabaseConfig {
                         )
                         return@forEach
                     }
+                    val currentSubmissionState = currentTrade[TradeTable.submissionState]
+                    if (currentSubmissionState == null) {
+                        // The local trade row was already reconciled (submission_state cleared or updated by sync).
+                        return@forEach
+                    }
                     val clientOrderMatches = when {
                         resolvedIntent.clientOrderIdAmbiguous -> true
 
@@ -502,7 +507,6 @@ object DatabaseConfig {
                         "Cannot reconcile terminal order intent for local trade " +
                             "${resolvedIntent.localTradeId}: immutable trade identity changed."
                     }
-                    val currentSubmissionState = currentTrade[TradeTable.submissionState]
                     check(
                         currentSubmissionState != OrderSubmissionState.PENDING.name &&
                             currentSubmissionState != OrderSubmissionState.UNCERTAIN.name,
