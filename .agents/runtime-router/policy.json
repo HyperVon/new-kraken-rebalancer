@@ -20,9 +20,9 @@
     "min_free_tps": 20.0,
     "tps_probe_characters": 1000,
     "tps_probe_max_tokens": 400,
-    "tps_probe_timeout_seconds": 60.0,
+    "tps_probe_timeout_seconds": 300.0,
     "tps_cache_ttl_seconds": 3600.0,
-    "tps_max_probes_per_run": 3,
+    "tps_max_probes_per_run": 5,
     "allow_unknown_output_limit": true
   },
   "blacklist": [

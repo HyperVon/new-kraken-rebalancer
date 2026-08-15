@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.53] - 2026-08-14
+
+### Changed
+
+- **ARR/Kilo workflow routing**: Name architecture review as a high-intelligence,
+  high-effort profile, plan it first, and default named fan-outs to distinct
+  model-family routes. Receipt-managed launches now return bounded report paths
+  under the target-owned runtime state so agents do not need to bypass ARR with
+  native same-model commands.
+
+- **Docs & harness sync (Batch 1)**: Fix a dangling README fragment, add the
+  missing `frontend-js` package tree entries (`AssetColors`, `HistoryFormatting`,
+  `HistorySessionState`), align the Karma threshold wording in `CONTRIBUTING.md`,
+  document the receipt-managed skills in `docs/AGENTIC_DEVELOPMENT.md`, correct
+  two typos in `.agents/OPERATING.md`, and add canonical harness links to
+  `.github/copilot-instructions.md`.
+
+### Fixed
+
+- **Code hygiene (Batch 2)**: Replace the inline `RebalanceOperationalStatus`
+  FQN and raw readiness/active-mode string literals in `DashboardController`
+  with generated `:common` catalog constants, and register the missing
+  `HealthStatusKeys` entries and `Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE`
+  in the codegen catalogs.
+
+### Build
+
+- **Dependency hygiene (Batch 3)**: Deduplicate the `kotest-framework-engine`
+  dependency in `frontend-js` via a version-catalog alias.
+
+### Test
+
+- **Coverage hardening (Batch 3 + gate closure)**: Add multiplatform `:common`
+  DTO contract tests, a CSRF duplicate-token rejection test, direct
+  `CsrfProtection` token-issuance unit tests, and `PortfolioCalculations`
+  USD-target fallback tests, raising JVM JaCoCo branch coverage to the 0.90
+  gate.
 ## [6.16.52] - 2026-08-14
 
 ### Changed

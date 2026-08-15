@@ -12,7 +12,7 @@ from pathlib import Path
 
 from agent_runtime_router import Availability, Candidate, CostClass, QuotaStatus
 
-from benchmarks import _NoRedirect, apply_benchmark_quality
+from benchmarks import _NoRedirect, _source_digest, apply_benchmark_quality
 
 
 def _candidate() -> Candidate:
@@ -39,6 +39,86 @@ def _policy() -> dict[str, object]:
 
 
 class BenchmarkAdapterTests(unittest.TestCase):
+    def test_model_aliases_bind_quality_cache_identity(self) -> None:
+        settings = _policy()["artificialAnalysis"]
+        base = _source_digest(settings, {})
+        aliased = _source_digest(settings, {"kilo/tencent/hy3:free": {"aaSlugs": ["hy3", "hy3-preview"]}})
+        self.assertNotEqual(base, aliased)
+
+    def test_kilo_hy3_alias_binds_artificial_analysis_evidence(self) -> None:
+        candidate = Candidate(
+            "kilo",
+            "tencent/hy3:free",
+            frozenset({"code", "reasoning", "tool_call"}),
+            Availability.AVAILABLE,
+            CostClass.FREE,
+            QuotaStatus.UNKNOWN,
+            262144,
+            billing="free",
+        )
+        policy = _policy()
+        policy["models"] = {"kilo/tencent/hy3:free": {"aaSlugs": ["hy3", "hy3-preview"]}}
+
+        def fetcher(*, url: str, headers: dict[str, str], timeout_seconds: float) -> object:
+            del url, headers, timeout_seconds
+            return {
+                "data": [
+                    {
+                        "slug": "hy3",
+                        "evaluations": {
+                            "intelligence_index": 42,
+                            "coding_index": 58.8,
+                            "agentic_index": 31.4,
+                        },
+                    }
+                ]
+            }
+
+        previous = os.environ.get("ARR_TEST_AA_KEY")
+        os.environ["ARR_TEST_AA_KEY"] = "fixture-key"
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                result = apply_benchmark_quality(
+                    (candidate,), policy, Path(directory), allow_network=True, now=100.0, fetcher=fetcher
+                )
+        finally:
+            if previous is None:
+                os.environ.pop("ARR_TEST_AA_KEY", None)
+            else:
+                os.environ["ARR_TEST_AA_KEY"] = previous
+        self.assertEqual(42, result[0].quality_metrics["artificial_analysis_intelligence_index"])
+        self.assertEqual(58.8, result[0].quality_metrics["artificial_analysis_coding_index"])
+        self.assertEqual(31.4, result[0].quality_metrics["artificial_analysis_agentic_index"])
+
+    def test_hy3_preview_fallback_alias_ignores_context_only_record(self) -> None:
+        candidate = Candidate(
+            "kilo",
+            "tencent/hy3:free",
+            frozenset({"code"}),
+            Availability.AVAILABLE,
+            CostClass.FREE,
+            QuotaStatus.UNKNOWN,
+            262144,
+            billing="free",
+        )
+        policy = _policy()
+        policy["models"] = {"kilo/tencent/hy3:free": {"aaSlugs": ["hy3", "hy3-preview"]}}
+
+        def fetcher(*, url: str, headers: dict[str, str], timeout_seconds: float) -> object:
+            del url, headers, timeout_seconds
+            return {
+                "data": [
+                    {"id": "tencent/hy3", "context_length": 262144},
+                    {"id": "tencent/hy3-preview", "benchmarks": {"artificial_analysis": {"coding_index": 58.8}}},
+                ]
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = apply_benchmark_quality(
+                (candidate,), policy, Path(directory), allow_network=True, now=100.0, fetcher=fetcher
+            )
+        self.assertEqual(58.8, result[0].quality_metrics["artificial_analysis_coding_index"])
+
     def test_redirects_are_rejected(self) -> None:
         request = urllib.request.Request("https://example.test/models")
         with self.assertRaises(urllib.error.HTTPError):

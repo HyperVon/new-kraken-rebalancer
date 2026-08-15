@@ -159,20 +159,31 @@ For named broad workflows, prefer the automatic preset instead of creating a
 manifest manually:
 
 ```bash
+# First run this command without --approve and without --refresh to inspect
+# every track's route, cost, quota, TPS, and tool-readiness evidence. If the
+# plan reports a missing/stale catalog, obtain separate discovery approval and
+# let the bounded adapter finish; Kilo listings can take several minutes.
 ./.agents/.agent-runtime-router/run.py --python \
   .agents/runtime-router/adapters/kilo/route_subagents.py \
   --workflow documentation-review \
   --free-only \
-  --task "<the user's workflow request>" \
-  --refresh \
-  --approve
+  --distinct-routes \
+  --task "<the user's workflow request>"
 ```
 
-Use the matching workflow definition listed in the target ARR adapter docs. The
-launcher supplies bounded scopes and specialized roles, prints the route/quota
-plan, and launches each read-only track. A named read-only workflow request
-authorizes this bounded fan-out; the parent still owns edits, integration, and
-final gates.
+Use the matching workflow definition listed in the target ARR adapter docs. If
+the plan is `NO_ROUTE` because free TPS or tool-readiness evidence is missing,
+request the separate evidence-only approval and run the documented
+`--prepare-evidence --approve` command before asking for worker approval. Do not
+combine `--refresh` with the worker launch, use a short shell timeout, or fall
+back to Kilo's native role-only task tool. After evidence is ready, rerun the
+plan without `--refresh`, inspect it again, and only then add `--approve` to
+launch. The launcher supplies bounded scopes and specialized roles; the parent
+still owns edits, integration, and final gates. Named workflow launches return
+`result_directory` plus one redacted `report_path` per track under
+`.agents/runtime-router/harnesses/kilo/workflows/`; read those reports instead
+of starting a second native Kilo fan-out. If route reuse is intentional, pass
+`--allow-route-reuse` explicitly and record why.
 
 ## Worktree and state isolation
 
