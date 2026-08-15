@@ -107,8 +107,7 @@ class PortfolioManagerImpl(
 
     override fun isLoopPaused(): Boolean = isPaused
 
-    override fun isLoopRunning(): Boolean = isRunning &&
-        (workerJob?.isActive ?: (applicationScope == null))
+    override fun isLoopRunning(): Boolean = isRunning && workerJob?.isActive == true
 
     override fun getOperationalStatus(): RebalanceOperationalStatus = operationalStatus
 

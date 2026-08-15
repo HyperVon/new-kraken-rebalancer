@@ -32,6 +32,8 @@ fun Application.configureCORS() {
     install(CORS) {
         // The unauthenticated dashboard assumes local/private-network trust. CORS limits browser
         // cross-origin access accordingly; deployment still controls direct network reachability.
+        // `REBALANCER_ALLOWED_ORIGINS` / `REBALANCER_ALLOW_ALL_ORIGINS` extend the private-network
+        // predicate without widening `*.local` — see `isLocalOrPrivateOrigin`.
         allowOrigins { origin ->
             isLocalOrPrivateOrigin(origin)
         }

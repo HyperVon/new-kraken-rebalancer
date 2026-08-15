@@ -3,10 +3,24 @@ package com.gemini.krakenbot.util
 import java.net.URI
 
 /**
- * Dashboard CORS allowlist predicate: localhost/loopback, `*.local`, RFC1918, and link-local
+ * Dashboard CORS allowlist predicate: localhost/loopback, `*.local` (mDNS — convenience
+ * trust for home LANs; an attacker on a shared LAN could claim `evil.local`, so
+ * firewall the dashboard port if the LAN is untrusted), RFC1918, and link-local
  * (169.254/16). Public origins must remain rejected — the UI has no user auth.
+ *
+ * Env `REBALANCER_ALLOWED_ORIGINS` (comma-separated exact origins, e.g.
+ * `https://trusted.example.com,https://app.internal`) adds explicit allowlist entries
+ * on top of the private-network rules. Use it instead of widening `*.local` when the LAN
+ * is untrusted. `REBALANCER_ALLOW_ALL_ORIGINS=true` is a break-glass for lab use and must
+ * never be enabled with live keys.
  */
 fun isLocalOrPrivateOrigin(origin: String): Boolean {
+    val allowAll = System.getenv("REBALANCER_ALLOW_ALL_ORIGINS")?.equals("true", ignoreCase = true) == true
+    return isLocalOrPrivateOrigin(origin, parseAllowedOriginsFromEnv(), allowAll)
+}
+
+internal fun isLocalOrPrivateOrigin(origin: String, allowedOrigins: Set<String>, allowAll: Boolean = false): Boolean {
+    if (allowAll || isExplicitlyAllowedOrigin(origin, allowedOrigins, allowAll)) return true
     val uri = parseOrigin(origin) ?: return false
     val host = uri.host?.removeSurrounding("[", "]") ?: return false
 
@@ -22,6 +36,29 @@ fun isLocalOrPrivateOrigin(origin: String): Boolean {
     }
 
     return host.endsWith(".local", ignoreCase = true) && isValidLocalHostname(host)
+}
+
+private fun parseAllowedOriginsFromEnv(): Set<String> {
+    val raw = System.getenv("REBALANCER_ALLOWED_ORIGINS") ?: return emptySet()
+    return raw.split(',').map { it.trim().removeSuffix("/") }.filter { it.isNotEmpty() }.toSet()
+}
+
+private fun isExplicitlyAllowedOrigin(
+    origin: String,
+    allowedOrigins: Set<String> = parseAllowedOriginsFromEnv(),
+    allowAll: Boolean = System.getenv("REBALANCER_ALLOW_ALL_ORIGINS")?.equals("true", ignoreCase = true) ==
+        true,
+): Boolean {
+    if (allowAll) return true
+    if (allowedOrigins.isEmpty()) return false
+    val normalizedOrigin = origin.trim().removeSuffix("/")
+    return allowedOrigins.any { candidate ->
+        val trimmed = candidate.trim().removeSuffix("/")
+        normalizedOrigin.equals(trimmed, ignoreCase = true) ||
+            // Allow bare-host entries like "trusted.example.com" to match "https://trusted.example.com"
+            normalizedOrigin.equals("https://$trimmed", ignoreCase = true) ||
+            normalizedOrigin.equals("http://$trimmed", ignoreCase = true)
+    }
 }
 
 private fun parseOrigin(origin: String): URI? {

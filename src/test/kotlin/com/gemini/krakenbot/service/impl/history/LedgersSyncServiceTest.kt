@@ -76,7 +76,8 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
             service.syncLedgersFromKraken()
 
-            coVerify(exactly = 1) { krakenService.getLedgers(any(), any(), any(), any()) }
+            // Per-type cursors: staking + dividend each fetch once per sync (offset 0), second sync throttled.
+            coVerify(exactly = 2) { krakenService.getLedgers(any(), any(), any(), any()) }
             service.isLedgersSeeded() shouldBe true
         }
 
@@ -115,8 +116,9 @@ class LedgersSyncServiceTest : StringSpec() {
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
                 fixedNow.epochSecond.toString()
-            coVerify(exactly = 1) { krakenService.getLedgers(any(), 0, any(), any()) }
-            coVerify(exactly = 1) { krakenService.getLedgers(any(), 50, any(), any()) }
+            // Per-type cursors: each offset is fetched for staking + dividend (dividend duplicates are deduped).
+            coVerify(exactly = 2) { krakenService.getLedgers(any(), 0, any(), any()) }
+            coVerify(exactly = 2) { krakenService.getLedgers(any(), 50, any(), any()) }
         }
 
         "deduplicates the newest-first offset overlap across pages" {
@@ -133,6 +135,42 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 74
+        }
+
+        "per-type cursors continue staking after dividend is exhausted" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+
+            // Staking has 75 (2 pages), dividend has 10 (1 page) — exercises the `continue` branch when perTypeDone[dividend] becomes true.
+            val stakingPageOne = (0 until 50).map { event(it, time = baseTime) }
+            val stakingPageTwo = (50 until 75).map { event(it, time = baseTime) }
+            val dividendPage = (100 until 110).map { event(it, time = baseTime).copy(type = LedgerEvent.TYPE_DIVIDEND) }
+
+            coEvery { krakenService.getLedgers(any(), any(), any(), eq(setOf(LedgerEvent.TYPE_STAKING))) } coAnswers {
+                val offset = secondArg<Int?>() ?: 0
+                if (offset == 0) stakingPageOne else stakingPageTwo
+            }
+            coEvery { krakenService.getLedgers(any(), any(), any(), eq(setOf(LedgerEvent.TYPE_DIVIDEND))) } returns
+                dividendPage
+            var callCount = 0
+            coEvery { krakenService.getLastLedgerTotalCount() } coAnswers {
+                callCount++
+                // Calls interleave: staking offset0 -> getLast (1) => 75, dividend offset0 -> getLast (2) => 10, staking offset50 -> getLast (3) => 75
+                when (callCount) {
+                    1 -> 75
+                    2 -> 10
+                    3 -> 75
+                    else -> 0
+                }
+            }
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 85
+            // Dividend done after first page, second iteration only fetches staking pageTwo.
+            coVerify(exactly = 1) { krakenService.getLedgers(any(), 0, any(), eq(setOf(LedgerEvent.TYPE_DIVIDEND))) }
+            coVerify(exactly = 2) { krakenService.getLedgers(any(), any(), any(), eq(setOf(LedgerEvent.TYPE_STAKING))) }
         }
 
         "recovering an interrupted seed restarts from 96-day bounded history" {

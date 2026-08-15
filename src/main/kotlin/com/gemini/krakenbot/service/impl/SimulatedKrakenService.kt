@@ -45,9 +45,12 @@ class SimulatedKrakenService(private val configService: ConfigService) :
         log.info("Initialized SimulatedKrakenService")
     }
 
+    private val initLock = Any()
+
     // Serializes first-touch init and one-shot trade seeding across concurrent emulator calls.
-    @Synchronized
-    private fun initializeMissingBalancesAndPrices() {
+    // Uses a private lock (not the instance monitor) and must remain non-suspending so callers
+    // that already hold `orderMutex` do not block a thread inside a coroutine.
+    private fun initializeMissingBalancesAndPrices(): Unit = synchronized(initLock) {
         val allocations = configService.getConfig().allocations
         val missingSymbols = allocations.filter { !balances.containsKey(it.symbol.value.uppercase()) }
 

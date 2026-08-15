@@ -188,38 +188,64 @@ class LedgersSyncService(
         ?.toIntOrNull()
         ?.takeIf { it >= 0 && it % KrakenApiConstants.LEDGER_PAGE_SIZE == 0 }
 
-    /** Cold paginated Kraken ledger history; progress is durable until the first seed completes. */
+    /** Cold paginated Kraken ledger history — per-type cursors; progress is durable until the first seed completes. */
     private fun getLedgersPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<LedgerEvent>> = flow {
-        var offset = 0
+        val ledgerTypes = listOf(LedgerEvent.TYPE_STAKING, LedgerEvent.TYPE_DIVIDEND)
+        val perTypeOffset = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
+        val perTypeTotal = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
+        val perTypeDone = mutableMapOf<String, Boolean>().apply { ledgerTypes.forEach { this[it] = false } }
 
-        while (true) {
-            log.info("Fetching ledger batch with offset={}", offset)
-            val apiLedgers = krakenService.getLedgers(
-                startSec = startSec,
-                offset = offset,
-                endSec = endSec,
-                types = setOf(LedgerEvent.TYPE_STAKING, LedgerEvent.TYPE_DIVIDEND),
-            )
-            val totalCount = krakenService.getLastLedgerTotalCount()
-
+        while (perTypeDone.values.any { !it }) {
+            val batches = mutableListOf<List<LedgerEvent>>()
+            var combinedBatchSize = 0
+            for (type in ledgerTypes) {
+                if (perTypeDone[type] == true) continue
+                val offset = perTypeOffset[type] ?: 0
+                log.info("Fetching ledger batch type={} offset={}", type, offset)
+                val page = krakenService.getLedgers(
+                    startSec = startSec,
+                    offset = offset,
+                    endSec = endSec,
+                    types = setOf(type),
+                )
+                val totalCount = krakenService.getLastLedgerTotalCount()
+                perTypeTotal[type] = totalCount
+                batches.add(page)
+                combinedBatchSize += page.size
+                val nextOffset = offset + KrakenApiConstants.LEDGER_PAGE_SIZE
+                val hasMoreForType = if (totalCount >
+                    0
+                ) {
+                    nextOffset < totalCount
+                } else {
+                    page.size >= KrakenApiConstants.LEDGER_PAGE_SIZE
+                }
+                if (!hasMoreForType) perTypeDone[type] = true else perTypeOffset[type] = nextOffset
+            }
             if (!isSeeded) {
-                repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, offset.toString())
-                repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, totalCount.toString())
+                val effectiveOffset = ledgerTypes.sumOf { type ->
+                    if (perTypeDone[type] ==
+                        true
+                    ) {
+                        perTypeTotal[type] ?: 0
+                    } else {
+                        perTypeOffset[type] ?: 0
+                    }
+                }
+                val effectiveTotal = perTypeTotal.values.sum().let {
+                    if (it ==
+                        0
+                    ) {
+                        effectiveOffset + combinedBatchSize
+                    } else {
+                        it
+                    }
+                }
+                repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, effectiveOffset.toString())
+                repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, effectiveTotal.toString())
             }
-
-            if (apiLedgers.isNotEmpty()) emit(apiLedgers)
-
-            val nextOffset = offset + KrakenApiConstants.LEDGER_PAGE_SIZE
-            // The Ledgers endpoint's count is the full number of matching entries (unlike
-            // TradesHistory, which caps count at 1000), so a positive totalCount can be trusted
-            // for pagination; the size-based fallback covers backends without a count.
-            val hasMorePages = if (totalCount > 0) {
-                nextOffset < totalCount
-            } else {
-                apiLedgers.size >= KrakenApiConstants.LEDGER_PAGE_SIZE
-            }
-            if (!hasMorePages) break
-            offset = nextOffset
+            val merged = batches.flatten()
+            if (merged.isNotEmpty()) emit(merged)
         }
     }
 

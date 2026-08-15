@@ -556,7 +556,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │       ├── codegen/                       # GenerateStringConstants and shared codegen sources
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
 │       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, TradeSource, generated SyncMetadataKeys
-│       ├── util/                          # PrecisionConstants
+│       ├── util/                          # PrecisionConstants, FormatSpec (price/fee tier single-source), StreamStatus
 │       ├── view/util/                     # Generated YAML string catalogs (StringConstantSchemas), Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps, AllocationEditor
 │   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs
 ├── codegen/                                # JVM-only module with KSP processors for API mappers and YAML string catalogs

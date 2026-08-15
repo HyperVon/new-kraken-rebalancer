@@ -28,5 +28,18 @@ class FormatterTest : StringSpec() {
             Formatter.getDeviationSign(BigDecimal("1.0")) shouldBe "+"
             Formatter.getDeviationSign(BigDecimal.ZERO) shouldBe ""
         }
+
+        "priceDigitsForDisplay mirrors FormatSpec tiers" {
+            Formatter.priceDigitsForDisplay(BigDecimal("150.00")) shouldBe 2
+            Formatter.priceDigitsForDisplay(BigDecimal("50.00")) shouldBe 4
+            Formatter.priceDigitsForDisplay(BigDecimal("0.05")) shouldBe 6
+            Formatter.priceDigitsForDisplay(BigDecimal("0.001")) shouldBe 8
+            Formatter.priceDigitsForDisplay(BigDecimal("-0.001")) shouldBe 8
+        }
+
+        "feeDigitsForDisplay mirrors FormatSpec tiers" {
+            Formatter.feeDigitsForDisplay(BigDecimal("2.00")) shouldBe 2
+            Formatter.feeDigitsForDisplay(BigDecimal("0.50")) shouldBe 4
+        }
     }
 }
