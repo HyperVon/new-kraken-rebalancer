@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.domain.OrderResult
+import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -374,8 +375,8 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
             val settingsNegExp = settingsZeroExp.copy(fiatDeploymentExponent = -1.0)
             val dd = BigDecimal("10.00")
 
-            val deployZero = com.gemini.krakenbot.domain.RebalancerEngine.calculateFiatDeployment(dd, settingsZeroExp)
-            val deployNeg = com.gemini.krakenbot.domain.RebalancerEngine.calculateFiatDeployment(dd, settingsNegExp)
+            val deployZero = RebalancerEngine.calculateFiatDeployment(dd, settingsZeroExp)
+            val deployNeg = RebalancerEngine.calculateFiatDeployment(dd, settingsNegExp)
 
             deployZero.shouldBeEqualComparingTo(BigDecimal.ZERO)
             deployNeg.shouldBeEqualComparingTo(BigDecimal.ZERO)
