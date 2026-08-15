@@ -50,13 +50,14 @@ ARR/Kilo preset merely to obtain progress updates.
 ## Launcher and routing mechanics
 
 In Kilo CLI sessions use the receipt-managed runtime and the registered
-workflow. The launcher owns the route plan and `--free-only` rejects paid and
-unknown-cost candidates without requiring a copied policy/config override.
+workflow. The launcher owns the route plan. You can use `--free-only` to reject
+paid candidates, or allow verified paid candidates (funded by account credits
+such as OpenRouter) with cost and headroom reporting.
 Named workflows default to distinct model-family routes; this prevents a
 five-track review from silently becoming five copies of the same model. Use
 `--allow-route-reuse` only when reuse is intentional and documented. Run plan
 mode first and inspect every track's route, effort, billing, fallback, and
-evidence. A missing or stale catalog is `INCOMPLETE`, not permission to use
+cost estimates. A missing or stale catalog is `INCOMPLETE`, not permission to use
 Kilo's native role-only Task tool.
 
 For this registered preset, do not reconstruct the adapter by grepping its
@@ -72,13 +73,14 @@ Use a script because Kilo's shell wrapper can mangle long inline task strings:
     exec ./.agents/.agent-runtime-router/run.py --python \
       .agents/runtime-router/adapters/kilo/route_subagents.py \
       --workflow comprehensive-quality-overhaul \
-      --free-only \
       --distinct-routes \
       --task "$TASK" \
-      --approve
+      --approve \
+      --approve-cost
 
-The command above is the launch form after the plan has been reviewed. Omit
-`--approve` for plan mode. The registered preset is read-only; the parent owns
+The command above is the launch form after the plan has been reviewed (use
+`--approve-cost` when paid routes are selected, or `--free-only` for zero-cost runs).
+Omit `--approve` for plan mode. The registered preset is read-only; the parent owns
 integration and final verification. Verify parent `git status --porcelain`
 after the wave for stray edits. On a successful launch, the JSON result includes
 `result_directory` and one `report_path` per track under

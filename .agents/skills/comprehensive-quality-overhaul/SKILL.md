@@ -48,7 +48,7 @@ This skill:
 | Trigger | Full-repository quality sweep requests listed above |
 | Inputs | Repository state, current main/base, applicable project skills, and explicit approval for L-class changes |
 | Outputs | Findings report, S/M candidate fixes, L proposals, PR triage, verification evidence, and separately authorized PR actions |
-| Routing | Worker fan-out uses free routes only; follow the launcher/config rules in ORCHESTRATION.md |
+| Routing | Worker fan-out uses verified free routes or user-authorized paid routes with cost reporting; follow the launcher/config rules in ORCHESTRATION.md |
 | Isolation | Five read-only audit tracks. The default ARR/Kilo launcher gives each a temporary snapshot; a separate approved workflow is required for writable worktrees. |
 | Stop | All tracks report, findings are triaged, approved changes are verified, and unresolved L items are presented as proposals |
 | Parent owns | Integration, app boot, final gates, branch/commit/push/PR decisions, and teardown |
@@ -86,13 +86,13 @@ convergence.
 - Never resolve overlapping findings inside the parallel wave; deduplicate and
   integrate in the parent.
 - Do not claim convergence because exclusions or thresholds were widened.
-- Do not use paid worker routes. Verify every selected route is free and not
-  blacklisted; preserve the full blacklist when using a config override.
+- For paid routes, ensure cost estimates, remaining balance, and free alternatives
+  have been reviewed in plan mode, and pass `--approve-cost` (or `--free-only` for
+  zero-cost runs). Preserve the full blacklist when using a config override.
 - Do not mistake a Kilo `kilo-auto/*` UI/helper label for an ARR route. Route
   identity comes from the target-owned catalog candidate and its evidence.
 - On `NO_ROUTE`, inspect rejection reasons once and report the blocker. Never
-  broaden policy, waive `--free-only`, or switch to native delegation without
-  an explicit user decision.
+  broaden policy or switch to native delegation without an explicit user decision.
 - Run app-boot and final verification serially. Keep build state isolated.
 - Do not commit, push, open PRs, or delete worktrees beyond the authorized
   workflow and user-approved lifecycle.
@@ -103,11 +103,11 @@ convergence.
    routes. The registered read-only ARR/Kilo workflow does not create
    worktrees or a coordination directory.
 2. Under Kilo, run the receipt-managed ARR launcher in plan mode first, using
-   the `comprehensive-quality-overhaul` workflow, `--free-only`, and distinct
-   routes. Architecture is intentionally planned first with the named
-   `architecture` profile so it receives the strongest eligible route before
-   diversity is applied to the remaining tracks. Never call
-   Kilo's native `Task` tool as a fallback when the target ARR adapter exists.
+   the `comprehensive-quality-overhaul` workflow and distinct routes (or `--free-only`
+   if zero spend is preferred). Architecture is intentionally planned first with
+   the named `architecture` profile so it receives the strongest eligible route
+   before diversity is applied to the remaining tracks. Never call Kilo's native
+   `Task` tool as a fallback when the target ARR adapter exists.
    If the launcher reports `INCOMPLETE` for missing catalog/evidence, stop and
    report that state (or obtain the separate approval needed for discovery or
    evidence preparation); do not reinterpret it as launcher unavailability.

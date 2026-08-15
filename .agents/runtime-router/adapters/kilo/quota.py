@@ -40,6 +40,10 @@ def _number(value: Any) -> float | None:
 def _command_from_env(name: str) -> list[str] | None:
     raw = os.environ.get(name, "").strip()
     if not raw:
+        default_plugin = Path.home() / ".config/kilo/node_modules/@slkiser/opencode-quota/dist/bin/opencode-quota.js"
+        node_bin = Path("/opt/homebrew/bin/node")
+        if default_plugin.is_file() and node_bin.is_file():
+            return [str(node_bin), str(default_plugin), "show", "--json"]
         return None
     try:
         command = shlex.split(raw)
@@ -98,6 +102,26 @@ def _evidence_for(candidate: Candidate, raw: Mapping[str, Any], *, now: float, m
     expires = observed + max_age_seconds
     percent = _number(raw.get("remainingPercent", raw.get("quotaPercent", raw.get("remaining_percent"))))
     balance = _number(raw.get("remainingBalance", raw.get("balance", raw.get("credits"))))
+    currency = str(raw.get("currency"))[:12] if raw.get("currency") else None
+    entries = raw.get("entries")
+    if isinstance(entries, list) and entries:
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            entry_pct = _number(entry.get("percentRemaining", entry.get("remainingPercent")))
+            if entry_pct is not None:
+                percent = entry_pct if percent is None else min(percent, entry_pct)
+            entry_val = entry.get("value")
+            if isinstance(entry_val, str) and entry_val.startswith("$"):
+                try:
+                    parsed_val = float(entry_val.replace("$", "").replace(",", "").strip())
+                    balance = parsed_val if balance is None else min(balance, parsed_val)
+                    currency = "USD"
+                except ValueError:
+                    pass
+            elif isinstance(entry_val, (int, float)):
+                balance = float(entry_val) if balance is None else min(balance, float(entry_val))
+
     if percent is not None and percent <= minimum_percent:
         quota_status = QuotaStatus.EXHAUSTED
     elif balance is not None and balance <= 0:
@@ -133,22 +157,48 @@ def collect_quota_evidence(
     harness_id: str = "kilo",
     now: float | None = None,
     approve: bool = False,
+    cache_path: Path | None = None,
 ) -> dict[str, QuotaEvidence]:
-    """Collect optional account quota after explicit approval.
-
-    The configured command is target-owned executable code and may contact
-    provider/account services. A route plan therefore never invokes it;
-    callers must pass ``approve=True`` for a live quota refresh.
-    """
-
-    if not approve:
-        return {}
+    """Collect optional account quota after explicit approval or load fresh cached evidence."""
 
     current = time.time() if now is None else float(now)
     settings = provider_policy.get("quota", {}) if isinstance(provider_policy, Mapping) else {}
     plugin = settings.get("plugin", {}) if isinstance(settings, Mapping) else {}
     if not isinstance(plugin, Mapping) or not plugin.get("enabled", True):
         return {}
+
+    if cache_path is None:
+        cache_path = Path.cwd() / ".agents" / "runtime-router" / "harnesses" / harness_id / "quota.json"
+
+    max_age = max(1.0, min(float(plugin.get("maxAgeSeconds", 300)), 86_400.0))
+    plan_max_age = 86_400.0 if not approve else max_age
+    minimum = max(0.0, min(float(plugin.get("minimumRemainingPercent", 1)), 100.0))
+
+    if not approve:
+        if cache_path.is_file():
+            try:
+                cached_data = json.loads(cache_path.read_text(encoding="utf-8"))
+                cached_time = float(cached_data.get("timestamp", 0))
+                if current - cached_time <= plan_max_age:
+                    payload = cached_data.get("payload", {})
+                    result: dict[str, QuotaEvidence] = {}
+                    for candidate in candidates:
+                        raw = _provider_record(payload, candidate.provider)
+                        if raw is None:
+                            continue
+                        result[candidate.candidate_id] = _evidence_for(
+                            candidate,
+                            raw,
+                            now=current,
+                            max_age_seconds=plan_max_age,
+                            minimum_percent=minimum,
+                            harness_id=harness_id,
+                        )
+                    return result
+            except Exception:
+                pass
+        return {}
+
     command = _command_from_env(str(plugin.get("commandEnv", "OPENCODE_QUOTA_COMMAND")))
     if command is None:
         return {}
@@ -156,9 +206,17 @@ def collect_quota_evidence(
         payload = _run_plugin(command, timeout_seconds=float(plugin.get("timeoutSeconds", 45)))
     except QuotaAdapterError:
         return {}
-    max_age = max(1.0, min(float(plugin.get("maxAgeSeconds", 300)), 86_400.0))
-    minimum = max(0.0, min(float(plugin.get("minimumRemainingPercent", 1)), 100.0))
-    result: dict[str, QuotaEvidence] = {}
+
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps({"timestamp": current, "payload": payload}, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+    result = {}
     for candidate in candidates:
         raw = _provider_record(payload, candidate.provider)
         if raw is None:
