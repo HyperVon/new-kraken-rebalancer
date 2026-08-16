@@ -13,7 +13,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Dependency patch upgrades**:
   - **Logback** `1.6.1` → `1.6.3` (bug-fix patch; no API changes).
   - **Kotest** `6.2.3` → `6.2.4` (bug-fix patch; also bumps the `io.kotest` Gradle plugin via the shared version ref).
-- **Dependency audit**: Verified every coordinate in `gradle/libs.versions.toml` against Maven Central / Gradle Plugin Portal / npm / Gradle release feed — Kotlin `2.4.20-RC`, KSP `2.3.11`, Gradle `9.7.0`, Spotless `8.9.0`, Ktor `3.5.2`, Koin `4.2.2`, kotlinx-coroutines `1.11.0`, Exposed `1.4.0`, and all others are already at their latest stable release. No major/minor upgrades available. Dependabot alerts: 0 open.
+- **Dependency audit**: Verified every coordinate in `gradle/libs.versions.toml` against Maven Central / Gradle Plugin Portal / npm / Gradle release feed — KSP `2.3.11`, Gradle `9.7.0`, Spotless `8.9.0`, Ktor `3.5.2`, Koin `4.2.2`, kotlinx-coroutines `1.11.0`, Exposed `1.4.0`, and all others (Kotlin `2.4.20-RC` excepted, held on the latest available release candidate by design pending the `2.4.20` stable release) are already at their latest stable release. No major/minor upgrades available. Dependabot alerts: 0 open.
 
 ## [6.17.3] - 2026-08-15
 
