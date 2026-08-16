@@ -94,7 +94,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 - **Concurrency**: `kotlinx.coroutines` **1.11.0** — prefer `Dispatchers.IO` for DB/network; no `GlobalScope`
 - **Engine**: Pure Kotlin JVM domain calculation library (`:engine`) housing `RebalancerEngine`, `PortfolioCalculations`, and typed planning models with independent 95/90 JaCoCo gates
 - **Frontend/codegen**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.11** is required for Kotlin/JS Kotest discovery and the experimental JVM/common catalog processors
-- **Testing**: Kotest **6.2.3**, MockK **1.14.11**, Karma/Istanbul
+- **Testing**: Kotest **6.2.4**, MockK **1.14.11**, Karma/Istanbul
 - **Formatting**: Spotless **8.9.0** + ktlint **1.8.0**, **120**-char line length; `allWarningsAsErrors` in all modules
 
 ### Architecture names (SRP)

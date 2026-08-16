@@ -120,7 +120,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                              |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS                |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
-| **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo 95/95/95/90, Karma/Istanbul 90/80/90/75                                  |
+| **Testing**     | Kotest 6.2.4, MockK 1.14.11, JaCoCo 95/95/95/90, Karma/Istanbul 90/80/90/75                                  |
 | **Build**       | Gradle 9.7.0 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.8.0                                                     |
 | **Engine**      | Pure Kotlin JVM domain calculation library with independent JaCoCo 95/90 coverage gates                      |
 | **Codegen**     | JVM-only module with KSP processors for API mappers and YAML string catalogs                                 |
