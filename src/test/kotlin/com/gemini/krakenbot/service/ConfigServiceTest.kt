@@ -22,13 +22,16 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.io.IOException
@@ -860,6 +863,87 @@ class ConfigServiceTest : StringSpec() {
             val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
             service.getConfig().settings.minimumOrderSizeUSD shouldBe 5.0
             tempFile.readText() shouldBe originalContent
+        }
+
+        "endExecutionSession completes despite cancellation while configLock is held by updateConfig" {
+            runTest {
+                val lockHoldGate = CompletableDeferred<Unit>()
+                // Delegate real parsing so construction reads the on-disk config, but block the atomic
+                // write so updateConfig holds configLock for the duration of the contention.
+                val mapper = mockk<ObjectMapper>()
+                val writer = mockk<ObjectWriter>()
+                every { mapper.writerWithDefaultPrettyPrinter() } returns writer
+                every { mapper.readTree(any<String>()) } answers { objectMapper.readTree(firstArg<String>()) }
+                every { mapper.readValue(any<String>(), AppConfig::class.java) } answers {
+                    objectMapper.readValue(firstArg<String>(), AppConfig::class.java)
+                }
+                every { mapper.writeValueAsString(any()) } answers {
+                    objectMapper.writeValueAsString(firstArg<Any>())
+                }
+                coEvery { writer.writeValue(any<File>(), any()) } coAnswers {
+                    lockHoldGate.await()
+                }
+                val service = ConfigServiceImpl(mapper, tempFile.absolutePath)
+                val original = service.getConfig()
+                val updated = original.copy(
+                    settings = original.settings.copy(loopDelaySeconds = 999L),
+                )
+
+                // Open a session before contention so depth is already 1 (as a live rebalance would).
+                service.beginExecutionSession()
+                val blocker = launch {
+                    service.updateConfig(updated)
+                }
+                runCurrent()
+
+                // Cleanup contends with the lock held by blocker and is then cancelled, as a rebalance
+                // worker cancelled mid-cycle would be.
+                val sessionJob = launch {
+                    service.endExecutionSession()
+                }
+                runCurrent()
+                sessionJob.cancel()
+                runCurrent()
+
+                // While the lock is held, the staged config must not have published yet.
+                service.getConfig().settings.loopDelaySeconds shouldBe 60L
+
+                // Release the lock: with the NonCancellable cleanup guarantee the pending decrement must
+                // still run, publishing the staged config instead of stranding depth above zero.
+                lockHoldGate.complete(Unit)
+                runCurrent()
+                sessionJob.join()
+
+                service.getConfig().settings.loopDelaySeconds shouldBe 999L
+
+                // No permanent depth leak: a fresh begin/end session must not throw "No execution session".
+                service.beginExecutionSession()
+                service.endExecutionSession()
+            }
+        }
+
+        "resolveEnvVars escapes JSON control characters in substituted env values" {
+            mockkStatic(System::class)
+            try {
+                val cases = listOf(
+                    "ESC_QUOTE" to "\"quoted\"",
+                    "ESC_BACKSLASH" to "back\\slash",
+                    "ESC_NEWLINE" to "line1\nline2",
+                    "ESC_CR" to "line1\rline2",
+                    "ESC_TAB" to "col1\tcol2",
+                    "ESC_BACKSPACE" to "a\b",
+                )
+                cases.forEach { (key, value) ->
+                    every { System.getenv(key) } returns value
+                    writeRawConfig(apiKey = "\${$key}", privateKey = "static-private")
+                    val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                    withClue(key) {
+                        service.getConfig().kraken.apiKey.value shouldBe value
+                    }
+                }
+            } finally {
+                unmockkStatic(System::class)
+            }
         }
     }
 }

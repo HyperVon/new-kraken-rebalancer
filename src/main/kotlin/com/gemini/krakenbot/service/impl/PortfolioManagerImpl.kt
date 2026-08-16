@@ -64,13 +64,16 @@ class PortfolioManagerImpl(
     @Volatile
     private var operationalStatus = RebalanceOperationalStatus()
 
-    override fun stopRebalancingLoop() {
-        synchronized(lifecycleLock) {
+    override fun stopRebalancingLoop(): Job? {
+        // Capture and cancel the current worker under the lock so callers (the shutdown hook) join
+        // the worker actually cancelled here, not a stale startup worker left behind by pause/resume.
+        val cancelled = synchronized(lifecycleLock) {
             isRunning = false
             isPaused = false
-            workerJob?.cancel()
+            workerJob.also { it?.cancel() }
         }
         log.info("Rebalancing loop stopped.")
+        return cancelled
     }
 
     override fun startRebalancingLoop() {

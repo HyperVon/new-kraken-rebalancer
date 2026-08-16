@@ -9,6 +9,7 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.AnalysisResult
 import com.gemini.krakenbot.domain.PortfolioValues
+import com.gemini.krakenbot.joinRebalancingWorker
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -594,6 +595,68 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.stopRebalancingLoop()
                 runCurrent()
                 portfolioManager.isLoopRunning() shouldBe false
+            }
+        }
+
+        "shutdown joins the current worker after pause and resume, not the stale startup worker" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+
+                val aGate = CompletableDeferred<Unit>()
+                val bGate = CompletableDeferred<Unit>()
+                var syncCalls = 0
+                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers {
+                    syncCalls++
+                    when (syncCalls) {
+                        1 -> withContext(NonCancellable) { aGate.await() }
+                        2 -> withContext(NonCancellable) { bGate.await() }
+                        else -> error("unexpected sync call #$syncCalls")
+                    }
+                }
+
+                // Worker A starts and parks inside its startup sync.
+                val a = portfolioManager.startRebalancingLoop(this)
+                runCurrent()
+                syncCalls shouldBe 1
+
+                // Pause cancels A, then release A so it can drain to completion.
+                portfolioManager.pauseLoop()
+                aGate.complete(Unit)
+                runCurrent()
+
+                // Resume creates replacement worker B, which parks inside its own startup sync.
+                portfolioManager.resumeLoop()
+                runCurrent()
+                syncCalls shouldBe 2
+                portfolioManager.isLoopPaused() shouldBe false
+
+                // Shutdown stops the current worker and returns the job it actually cancelled.
+                val stoppedWorker = portfolioManager.stopRebalancingLoop()!!
+                (stoppedWorker !== a) shouldBe true
+
+                var dependenciesReleased = false
+                val joiner = launch {
+                    joinRebalancingWorker(stoppedWorker) shouldBe true
+                    dependenciesReleased = true
+                }
+                runCurrent()
+
+                // B is still draining inside its NonCancellable gate (cancellation is deferred until
+                // the gate releases), so the dependency release must not proceed yet. A is already
+                // complete, so joining the stale startup worker would have released immediately --
+                // proving shutdown now waits on the live worker B.
+                stoppedWorker.isCompleted shouldBe false
+                a.isCompleted shouldBe true
+                dependenciesReleased shouldBe false
+
+                bGate.complete(Unit)
+                runCurrent()
+                joiner.join()
+                dependenciesReleased shouldBe true
+                a.join()
+                stoppedWorker.join()
             }
         }
     }
