@@ -11,6 +11,7 @@ import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -98,14 +99,20 @@ class ConfigServiceImpl(
     }
 
     override suspend fun endExecutionSession() {
-        configLock.withLock {
-            check(executionSessionDepth > 0) { "No execution session is active." }
-            executionSessionDepth--
-            if (executionSessionDepth == 0) {
-                pendingConfig?.let { config ->
-                    appConfig = config
-                    pendingConfig = null
-                    _configFlow.tryEmit(config.settings)
+        // Mandatory session cleanup must run to completion even if the caller was cancelled while
+        // waiting for configLock (e.g. a rebalance worker cancelled mid-cycle against an in-flight
+        // updateConfig). NonCancellable keeps the lock acquisition alive so executionSessionDepth
+        // can never be stranded above zero.
+        withContext(NonCancellable) {
+            configLock.withLock {
+                check(executionSessionDepth > 0) { "No execution session is active." }
+                executionSessionDepth--
+                if (executionSessionDepth == 0) {
+                    pendingConfig?.let { config ->
+                        appConfig = config
+                        pendingConfig = null
+                        _configFlow.tryEmit(config.settings)
+                    }
                 }
             }
         }
@@ -206,9 +213,14 @@ class ConfigServiceImpl(
         escapeJsonStringValue(resolvedValue)
     }
 
-    private fun escapeJsonStringValue(value: String): String = value
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
+    private fun escapeJsonStringValue(value: String): String {
+        // Substitute through Jackson rather than a hand-maintained table so every JSON string
+        // control character (quote, backslash, newline, carriage return, tab, backspace, U+0000..001F)
+        // is escaped correctly. Jackson emits a fully escaped JSON string literal including the
+        // surrounding double quotes; strip only those outer quotes to leave the in-place content.
+        val escaped = objectMapper.writeValueAsString(value)
+        return escaped.substring(1, escaped.length - 1)
+    }
 
     /** Canonicalizes and validates settings/allocations, then backfills missing or invalid colors. */
     private fun validateAndNormalize(config: AppConfig): AppConfig {

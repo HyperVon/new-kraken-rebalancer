@@ -76,16 +76,18 @@ fun main() {
     val applicationScope: CoroutineScope = koin.get(
         qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
-    val workerJob = portfolioManager.startRebalancingLoop(applicationScope)
+    portfolioManager.startRebalancingLoop(applicationScope)
 
     Runtime.getRuntime().addShutdownHook(
         Thread {
             // Stop and join the worker before closing its Koin-managed client and dependency graph.
-            portfolioManager.stopRebalancingLoop()
+            // Use the job actually cancelled by stop() so a replacement worker created after a
+            // pause/resume is fully drained before the dependency graph is torn down.
+            val stoppedWorker = portfolioManager.stopRebalancingLoop()
             val workerJoined =
                 runBlocking {
                     joinRebalancingWorker(
-                        workerJob = workerJob,
+                        workerJob = stoppedWorker,
                         hasPendingSubmissions = { tradeHistoryService.hasPendingSubmissions() },
                         hasUnresolvedOrderIntents = { orderIntentService.hasUnresolvedIntents() },
                     )

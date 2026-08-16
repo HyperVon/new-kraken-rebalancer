@@ -11,7 +11,7 @@ data class RebalanceOperationalStatus(
 )
 
 interface PortfolioManager {
-    fun stopRebalancingLoop()
+    fun stopRebalancingLoop(): Job?
 
     fun startRebalancingLoop()
 
