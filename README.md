@@ -801,11 +801,9 @@ The project features a comprehensive test suite for both the backend JVM applica
 ./gradlew check
 ```
 
-CI (`.github/workflows/ci.yml`) runs the equivalent coverage gate explicitly:
-
-```bash
-./gradlew build jacocoTestCoverageVerification
-```
+CI (`.github/workflows/ci.yml`) runs `./gradlew build`, which transitively
+runs the JaCoCo coverage gate via the `check` task
+(`tasks.check dependsOn jacocoTestCoverageVerification`).
 
 `check` also depends on `:frontend-js:jsBrowserTest` (Karma/Istanbul).
 
