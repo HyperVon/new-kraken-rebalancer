@@ -451,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
                 catalog_digest=cache.source_digest,
                 approve=args.approve,
             )
-            records.append({"track": track.id, "route": selected.candidate_id, "profile": track.profile, "effort": decision.selected_effort.value if decision.selected_effort else None, "variant": decision.selected_variant, "billing": _sanitize_billing(selected.billing)})
+            records.append({"track": track.id, "route": selected.candidate_id, "profile": track.profile, "effort": decision.selected_effort.value if decision.selected_effort else None, "variant": decision.selected_variant})
             prepared.append(LaunchItem(track=track, selection=selected, prompt=track.task, candidates=launch_candidates, policy=policy.routing_policy, task=launch_task, effort=decision.selected_effort, variant=decision.selected_variant))
 
         cost_summaries: list[TaskCostSummary] = []

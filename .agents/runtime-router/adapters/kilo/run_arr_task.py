@@ -860,7 +860,7 @@ def main(argv: list[str] | None = None) -> int:
             failure_cache_ttl_seconds=readiness_failure_ttl,
             timeout_seconds=readiness_timeout,
         )
-        records = [{"agent": "code", "billing": _sanitize_billing(decision.selected.billing) if decision.selected else None, "profile": args.profile, "quality": decision.selected_quality, "effort": decision.selected_effort.value if decision.selected_effort else None, "variant": decision.selected_variant, "route": decision.selected.candidate_id if decision.selected else None}]
+        records = [{"agent": "code", "profile": args.profile, "quality": decision.selected_quality, "effort": decision.selected_effort.value if decision.selected_effort else None, "variant": decision.selected_variant, "route": decision.selected.candidate_id if decision.selected else None}]
         plan = {"records": records, "route": decision.selected.candidate_id if decision.selected else None, "status": "PLAN" if decision.selected else "NO_ROUTE"}
         if decision.selected is None:
             return _emit(plan, code=2)
