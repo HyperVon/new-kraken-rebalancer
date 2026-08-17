@@ -483,17 +483,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
 
-        # Look up account balance if available from quota evidence
-        acct_balance = None
-        for q_ev in quota.values():
-            if q_ev.remaining_balance is not None and q_ev.remaining_balance > 0:
-                acct_balance = q_ev.remaining_balance
-                break
-
         cost_report = summarize_workflow_cost(
             args.workflow or "workflow",
             cost_summaries,
-            account_balance=acct_balance,
             currency="USD",
         )
 
@@ -505,12 +497,15 @@ def main(argv: list[str] | None = None) -> int:
             "distinct_routes": distinct_routes,
         }
         if args.prepare_evidence:
+            # codeql[py/clear-text-logging-sensitive-data]  # payload is bounded routing metadata (route ids, cost estimates, redacted reports); no prompt/credentials/balance
             print(json.dumps({**plan, "status": "EVIDENCE_READY", "workers_not_started": True}, sort_keys=True))
             return 0
         if not args.approve:
+            # codeql[py/clear-text-logging-sensitive-data]  # payload is bounded routing metadata only
             print(json.dumps(plan, sort_keys=True))
             return 0
         if cost_report.any_paid and not args.approve_cost:
+            # codeql[py/clear-text-logging-sensitive-data]  # payload is bounded routing metadata; message uses cost estimate only
             print(json.dumps({
                 **plan,
                 "status": "AWAITING_COST_APPROVAL",
@@ -539,11 +534,6 @@ def main(argv: list[str] | None = None) -> int:
             approve=True,
             cache_path=quota_cache_path,
         )
-        ending_balance = None
-        for q_ev in post_quota.values():
-            if q_ev.remaining_balance is not None and q_ev.remaining_balance > 0:
-                ending_balance = q_ev.remaining_balance
-                break
 
         actual_summaries: list[TaskActualCostSummary] = []
         for track, item, result in zip(tracks, prepared, results):
@@ -580,8 +570,6 @@ def main(argv: list[str] | None = None) -> int:
         actual_cost_report = summarize_actual_workflow_cost(
             args.workflow or "workflow",
             actual_summaries,
-            starting_balance=acct_balance,
-            ending_balance=ending_balance,
             currency="USD",
         )
 
@@ -594,6 +582,7 @@ def main(argv: list[str] | None = None) -> int:
             "results": report_results,
             "actual_cost_report": actual_cost_report.to_dict(),
         }
+        # codeql[py/clear-text-logging-sensitive-data]  # output carries bounded redacted worker reports + cost estimates; no prompt/credentials/balance
         print(json.dumps(output, sort_keys=True))
         return 0 if output["status"] == "SUCCEEDED" else 2
     except _NoRouteError as exc:

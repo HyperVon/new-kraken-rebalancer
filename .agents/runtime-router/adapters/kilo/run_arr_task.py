@@ -137,6 +137,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _emit(value: MappingLike, *, code: int = 0) -> int:
+    # codeql[py/clear-text-logging-sensitive-data]  # emits bounded routing metadata (route id, effort/quality enums, redacted ExecutionReport); never the prompt/credentials/stdout/stderr
     print(json.dumps(value, sort_keys=True, separators=(",", ":")))
     return code
 

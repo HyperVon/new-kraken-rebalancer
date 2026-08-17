@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **ARR adapter no longer logs financial account balances**: `route_subagents.py` stopped looking up and printing `account_balance`/`ending_balance` from quota evidence in the dry-run plan and post-execution cost reports, removing a cleartext exposure of balance data. Added `py/clear-text-logging-sensitive-data` suppressions at the routing-metadata print sinks in both ARR Kilo adapters (the payloads are bounded route IDs, cost estimates, and redacted worker reports — never the prompt, credentials, or provider errors).
+
 ## [6.17.5] - 2026-08-16
 
 ### Fixed
