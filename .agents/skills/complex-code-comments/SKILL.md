@@ -112,8 +112,8 @@ Copy and track:
 
 - Default: full production Kotlin/JS + shared `:common`.
 - If the user names packages/files, stay in that scope.
-- For “everywhere”, use the `complex-code-comments` preset from
-  `.agents/runtime-router/adapters/kilo/route_subagents.py` on **disjoint** packages; one owner per
+- For “everywhere”, fan out bounded, read-only comment-audit tracks through the
+  host's native parallel task surface on **disjoint** packages; one owner per
   hot file. The parent owns integration and must not give every worker the full
   repository or use manual compaction to continue an oversized task.
 

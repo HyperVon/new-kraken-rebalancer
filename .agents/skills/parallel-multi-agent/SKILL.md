@@ -43,18 +43,16 @@ model route for each track:
 - State the route and effort plan to the user and obtain explicit approval before
   the first material or parallel worker launch.
 - Treat `subagent_type` as the worker role, not as route evidence from its name.
-- In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute the Kilo-specific ARR workflow launcher.
-- Under Kilo CLI, every read-only discovery or review fan-out MUST go through
-  the receipt-managed ARR launcher: the target's
-  `.agents/.agent-runtime-router/run.py --python` wrapping
-  `.agents/runtime-router/adapters/kilo/route_subagents.py`. A raw role-only
-  `Task` call is not a substitute because it selects no provider/model route.
-  If ARR reports `INCOMPLETE`, `NO_ROUTE`, or an execution error, preserve that
-  status and stop or ask for the required approval; do not silently fall back to
-  native same-model `Task` subagents while an ARR adapter is installed.
+- In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute a Kilo-specific launcher.
+- Under Kilo CLI, launch read-only discovery or review fan-out through the host's
+  native Task surface with the selected route from the native model-selection
+  gate. A raw role-only `Task` call is not a substitute because it selects no
+  provider/model route. If the host cannot expose the selected route, preserve
+  that status and stop or ask for the required approval; do not silently fall
+  back to native same-model `Task` subagents without a selected route.
 - Native Auto owns its model mappings and fallbacks; it does not need a
   repository-side inventory or probe.
-- For a broad read-only named workflow under Antigravity, perform discovery fan-out natively via `invoke_subagent`. Under Kilo CLI, use the routed preset.
+- For a broad read-only named workflow, perform discovery fan-out natively via the host's parallel task surface.
 - Escalate or add an independent verifier only when the track risk and available
   capability evidence justify it.
 
@@ -129,9 +127,10 @@ coverage, and stop reason.
 Never paste full prior reports into follow-ups; pass only the finding and the
 smallest affected path set.
 
-For an adversarial re-review of a completed documentation audit, use the
-`documentation-adversarial-review` preset rather than raw role-only Task calls.
-After it completes, inspect the Markdown/JSON route report. Same-role, same-tier,
+For an adversarial re-review of a completed documentation audit, launch a
+distinct-route review track through the host's native parallel surface rather
+than raw role-only Task calls. After it completes, inspect the route report.
+Same-role, same-tier,
 or same-provider labels do not prove independent model reasoning; record the
 actual routes and state explicitly when no independent route was obtained.
 
@@ -142,12 +141,10 @@ Kilo sessions inherit the project default `kilo/kilo-auto/efficient` from
 high-risk or disputed review, or `kilo/kilo-auto/small` for bounded routine
 work. Auto tiers choose their underlying models and server-side fallbacks; do
 not add a launcher, catalog parser, connectivity probe, or hardcoded
-underlying-model pool to reproduce that behavior. The separate
-ARR's target workflow launcher exists only to enforce direct cross-provider routes
-when the host Task surface cannot do so.
+underlying-model pool to reproduce that behavior.
 
 If a host Task surface cannot expose the selected route, keep the track
-parent-owned or use the routed manifest workflow; never claim that a role or
+parent-owned or stop and report that state; never claim that a role or
 profile enforced a model. The parent still owns the review surface, integration,
 and final verification:
 
@@ -155,35 +152,9 @@ and final verification:
 ./.agents/skills/adversarial-pr-review/scripts/review_surface.sh main
 ```
 
-For named broad workflows, prefer the automatic preset instead of creating a
-manifest manually:
-
-```bash
-# First run this command without --approve and without --refresh to inspect
-# every track's route, cost, quota, TPS, and tool-readiness evidence. If the
-# plan reports a missing/stale catalog, obtain separate discovery approval and
-# let the bounded adapter finish; Kilo listings can take several minutes.
-./.agents/.agent-runtime-router/run.py --python \
-  .agents/runtime-router/adapters/kilo/route_subagents.py \
-  --workflow documentation-review \
-  --distinct-routes \
-  --task "<the user's workflow request>"
-```
-
-Use the matching workflow definition listed in the target ARR adapter docs. If
-the plan is `NO_ROUTE` because free TPS or tool-readiness evidence is missing,
-request the separate evidence-only approval and run the documented
-`--prepare-evidence --approve` command before asking for worker approval. Do not
-combine `--refresh` with the worker launch, use a short shell timeout, or fall
-back to Kilo's native role-only task tool. After evidence is ready, rerun the
-plan without `--refresh`, inspect it again, and only then add `--approve` (and
-`--approve-cost` if paid routes are selected, or `--free-only` for zero-cost runs) to
-launch. The launcher supplies bounded scopes and specialized roles; the parent
-still owns edits, integration, and final gates. Named workflow launches return
-`result_directory` plus one redacted `report_path` per track under
-`.agents/runtime-router/harnesses/kilo/workflows/`; read those reports instead
-of starting a second native Kilo fan-out. If route reuse is intentional, pass
-`--allow-route-reuse` explicitly and record why.
+For named broad workflows, launch the bounded track fan-out through the host's
+native parallel task surface with the selected routes recorded per track. The
+parent still owns edits, integration, and final gates.
 
 ## Worktree and state isolation
 

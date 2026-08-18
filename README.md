@@ -65,17 +65,12 @@ See the [Agentic Development Guide](docs/AGENTIC_DEVELOPMENT.md) for the full
 provenance, instruction architecture, cross-harness setup, skill catalog,
 human–agent workflow, review loop, and maintenance guidance.
 
-The optional cross-provider Kilo workflow is now provided by ARR and is
-documented in [ARR-backed Kilo routing](docs/ARR_KILO_ROUTER.md). The target
-owns its provider/model policy, blacklist, quota sources, and cached free-model
-TPS evidence; ARR owns routing, effort selection, worker approval, and bounded
-reports. Other harnesses continue to use their native launchers and the same
-portable `.agents/` guidance.
-
-The repository is still fully usable without KiloCode. Application code, tests,
+Cross-provider routing, when needed, is handled by the host's native launchers
+and the same portable `.agents/` guidance. The repository is still fully usable
+without KiloCode. Application code, tests,
 Gradle tasks, documentation, Git workflows, and the portable `.agents/` skills
 remain available to any capable development tool. KiloCode-only additions are
-strictly optional and isolated to Kilo harness configuration and route scripts.
+strictly optional and isolated to Kilo harness configuration.
 
 ### Cline MCP Quota Tool
 
@@ -536,18 +531,17 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── .agents/                                # AI Agent rules, guidelines & domain skills
 │   ├── AGENTS.md                          # Repository rules & technical guidelines
 │   ├── OPERATING.md                       # Always-on norms (all agent frameworks)
-│   ├── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
-│   └── runtime-router/                    # Target-owned ARR policy, Kilo adapter & namespaced evidence
+│   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
 ├── .kilo/                                  # Optional Kilo Code integration (Agent Manager hooks)
 │   ├── kilo.json                           # Context Mode plugin + safe local-tool settings
-│   ├── shell-strategy.md                   # Compatibility symlink; excluded from ARR worker snapshots
+│   ├── shell-strategy.md                   # Compatibility symlink to canonical shell guidance
 │   ├── setup-script                        # Prepare Gradle classes for Agent Manager worktrees
 │   ├── run-script                          # Build fat JAR and start an isolated local simulation
 │   ├── agent-manager.json                  # Agent Manager worktree configuration
 │   ├── command/                            # Project command definitions
 │   └── agent/                              # Project agent definitions
 ├── .opencode/                              # Cross-harness companion configuration
-│   └── shell-strategy.md                   # Canonical shell guidance used by Kilo worker snapshots
+│   └── shell-strategy.md                   # Canonical shell guidance
 ├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)
 ├── CLAUDE.md                               # Claude Code entrypoint → .agents/
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
@@ -641,7 +635,6 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
 ├── docs/                                  # Project documentation and architecture guides
 │   ├── AGENTIC_DEVELOPMENT.md             # Human guide to the AI-assisted development system
-│   ├── ARR_KILO_ROUTER.md                 # Agent Runtime Router specification and adapter architecture
 │   ├── USER_GUIDE.md                      # End-user walkthrough (Dashboard, Settings, History)
 │   ├── images/                            # README / User Guide screenshot PNGs
 │   ├── FLOWS.md                           # Kotlin Flow architecture guide

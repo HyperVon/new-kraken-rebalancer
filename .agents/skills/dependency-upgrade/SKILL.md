@@ -69,8 +69,8 @@ Copy this checklist and track progress:
 
 ### Read-only parallel detection
 
-For a large dependency surface, use the `dependency-upgrade` preset from
-`.agents/runtime-router/adapters/kilo/route_subagents.py` for independent read-only evidence tracks
+For a large dependency surface, fan out independent read-only evidence tracks
+through the host's native parallel task surface
 such as Kotlin/KSP/Gradle, Ktor/Koin/Exposed, and testing/frontend/npm. Workers
 may inspect manifests, release notes, and compatibility evidence only; version
 edits, dependency refreshes, package-manager commands, migrations, and all

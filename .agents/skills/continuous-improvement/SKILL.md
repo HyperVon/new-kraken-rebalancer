@@ -44,9 +44,9 @@ the parent starts a narrower follow-up. Manual compaction is not a continuation
 strategy. The parent owns integration, backlog updates, serial quality gates,
 and final verification.
 
-When running under Google Antigravity (AGY), launch discovery subagents natively using built-in `invoke_subagent` tool calls; do NOT execute the Kilo-specific ARR workflow launcher. Discovery workers are read-only; implementation, backlog integration, Gradle, browser tests, and final verification remain parent-owned and serial.
+When running under Google Antigravity (AGY), launch discovery subagents natively using built-in `invoke_subagent` tool calls; do NOT execute a Kilo-specific workflow launcher. Discovery workers are read-only; implementation, backlog integration, Gradle, browser tests, and final verification remain parent-owned and serial.
 
-For optional Kilo CLI sessions, `.agents/runtime-router/adapters/kilo/route_subagents.py` with `--workflow continuous-improvement` can be used.
+For optional Kilo CLI sessions, launch the bounded discovery fan-out through the host's native Task surface with a selected route.
 
 ---
 

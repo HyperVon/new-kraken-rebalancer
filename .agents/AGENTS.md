@@ -71,7 +71,6 @@ Canonical deep docs:
 | Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
 | Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
 | Choose provider/model/effort or fallbacks | Use the host's native model selection; pair with [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) when fanning out |
-| Native Antigravity subagent fan-out vs Kilo routed subagents | [AGENTIC_DEVELOPMENT.md](../docs/AGENTIC_DEVELOPMENT.md#models-and-adaptive-multi-agent-review) and [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
 | Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) *(writes `.agents/improvement-backlog.md`)* |
 | Continuous quality (QA loop) | [continuous-quality](skills/continuous-quality/SKILL.md) *(writes `.agents/quality-backlog.md`)* |
 | Full-repository parallel quality sweep (all skills) | [comprehensive-quality-overhaul](skills/comprehensive-quality-overhaul/SKILL.md) |
@@ -303,14 +302,3 @@ These receipt-managed skills were adopted from Agent Guidance Kit.
 | Review security boundaries, authority, secrets, and sensitive data flows | [security-review](skills/security-review/SKILL.md) |
 | Diagnose an observed failure and find its root cause before fixing it | [systematic-debugging](skills/systematic-debugging/SKILL.md) |
 <!-- agent-guidance-kit:routes:end -->
-
-<!-- agent-runtime-router:routes:start -->
-## Agent Runtime Router skills
-
-These receipt-managed skills were installed from Agent Runtime Router.
-
-| Task | Skill |
-| :--- | :--- |
-| Use explicit routing, inventory, or dry-run planning | [agent-runtime-router](skills/agent-runtime-router/SKILL.md) |
-| Audit, refresh, or repair the local router installation | [agent-runtime-router-maintenance](skills/agent-runtime-router-maintenance/SKILL.md) |
-<!-- agent-runtime-router:routes:end -->

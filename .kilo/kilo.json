@@ -4,8 +4,7 @@
   "instructions": [
     ".opencode/shell-strategy.md",
     ".agents/AGENTS.md",
-    ".agents/OPERATING.md",
-    ".agents/skills/agent-runtime-router/SKILL.md"
+    ".agents/OPERATING.md"
   ],
   "compaction": {
     "auto": true,
