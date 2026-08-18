@@ -44,20 +44,4 @@ __pycache__/
 
 /codegen/bin/
 
-# Preserve legacy credential/venv ignores for upgrades from the removed router;
-# users must not accidentally stage those files after pulling ARR.
-.kilo/model-router/env.local
-.kilo/model-router/manifest.local
-.kilo/model-router/.venv/
-!.kilo/model-router/requirements.txt
-# ARR local router credentials and generated evidence
-.agents/runtime-router/adapters/kilo/env.local
-.agents/runtime-router/adapters/kilo/manifest.local
-.agents/runtime-router/adapters/kilo/discovery.json
-.agents/runtime-router/adapters/kilo/kilo-resolved.json
-.agents/runtime-router/catalog-cache.json
-.agents/runtime-router/discovery-last-report.json
-.agents/runtime-router/.state.lock
-.agents/runtime-router/harnesses/
-.agents/.agent-runtime-router/
 .agents/skills/comprehensive-quality-overhaul/results/

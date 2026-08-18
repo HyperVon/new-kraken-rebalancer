@@ -14,14 +14,10 @@ description: >-
 # Comprehensive Quality Overhaul
 
 Orchestrate a full repository quality sweep across isolated tracks, then
-integrate evidence into reviewable candidate PRs. The default ARR/Kilo preset
-uses read-only snapshots rather than writable worktrees. This skill sequences
-child skills; it does not replace their contracts, severity rubrics, or stop
-conditions.
-
-Read [ORCHESTRATION.md](ORCHESTRATION.md) before executing the fan-out. It
-contains the read-only delivery contract, free-route launcher mechanics, retry
-handling, detailed track prompts, triage templates, and teardown boundaries.
+integrate evidence into reviewable candidate PRs. The default host-native
+fan-out uses read-only snapshots rather than writable worktrees. This skill
+sequences child skills; it does not replace their contracts, severity rubrics,
+or stop conditions.
 
 ## Trigger and non-goals
 
@@ -48,8 +44,8 @@ This skill:
 | Trigger | Full-repository quality sweep requests listed above |
 | Inputs | Repository state, current main/base, applicable project skills, and explicit approval for L-class changes |
 | Outputs | Findings report, S/M candidate fixes, L proposals, PR triage, verification evidence, and separately authorized PR actions |
-| Routing | Worker fan-out uses verified free routes or user-authorized paid routes with cost reporting; follow the launcher/config rules in ORCHESTRATION.md |
-| Isolation | Five read-only audit tracks. The default ARR/Kilo launcher gives each a temporary snapshot; a separate approved workflow is required for writable worktrees. |
+| Routing | Worker fan-out uses verified free routes or user-authorized paid routes with cost reporting; follow the native model-selection gate rules in ORCHESTRATION.md |
+| Isolation | Five read-only audit tracks. The default host-native launcher gives each a temporary snapshot; a separate approved workflow is required for writable worktrees. |
 | Stop | All tracks report, findings are triaged, approved changes are verified, and unresolved L items are presented as proposals |
 | Parent owns | Integration, app boot, final gates, branch/commit/push/PR decisions, and teardown |
 
@@ -77,22 +73,23 @@ convergence.
   trading math/order paths, or major dependencies as L regardless of diff size.
   Stop and ask with evidence and a compensating-control proposal.
 - Workers never inspect secrets, boot servers, run Gradle, commit, push, open
-  PRs, create issues, or write coordination artifacts. Read-only ARR/Kilo
-  workers return their audit in the supervised terminal result; the parent owns
-  any durable summary.
+  PRs, create issues, or write coordination artifacts. Read-only workers return
+  their audit in the supervised terminal result; the parent owns any durable
+  summary.
 - Do not treat missing progress text, heartbeats, or coordination files as a
-  stalled ARR/Kilo worker. Wait for the launcher's terminal structured result
-  and configured deadline; only a terminal failure justifies one retry.
+  stalled worker. Wait for the host's terminal structured result and configured
+  deadline; only a terminal failure justifies one retry.
 - Never resolve overlapping findings inside the parallel wave; deduplicate and
   integrate in the parent.
 - Do not claim convergence because exclusions or thresholds were widened.
 - For paid routes, ensure cost estimates, remaining balance, and free alternatives
-  have been reviewed in plan mode, and pass `--approve-cost` (or `--free-only` for
-  zero-cost runs). Preserve the full blacklist when using a config override.
-- Do not mistake a Kilo `kilo-auto/*` UI/helper label for an ARR route. Route
-  identity comes from the target-owned catalog candidate and its evidence.
-- On `NO_ROUTE`, inspect rejection reasons once and report the blocker. Never
-  broaden policy or switch to native delegation without an explicit user decision.
+  have been reviewed in plan mode, and obtain explicit cost approval (or use
+  free-only for zero-cost runs).
+- Do not mistake a Kilo `kilo-auto/*` UI/helper label for a selected route.
+  Route identity comes from the host's exposed route evidence.
+- On missing route evidence, inspect rejection reasons once and report the
+  blocker. Never broaden policy or switch to native delegation without an
+  explicit user decision.
 - Run app-boot and final verification serially. Keep build state isolated.
 - Do not commit, push, open PRs, or delete worktrees beyond the authorized
   workflow and user-approved lifecycle.
@@ -100,29 +97,26 @@ convergence.
 ## Execution outline
 
 1. Establish a clean, current target; record the target revision and model
-   routes. The registered read-only ARR/Kilo workflow does not create
+   routes. The registered read-only host-native workflow does not create
    worktrees or a coordination directory.
-2. Under Kilo, run the receipt-managed ARR launcher in plan mode first, using
-   the `comprehensive-quality-overhaul` workflow and distinct routes (or `--free-only`
+2. Under Kilo, run the host's native model-selection gate in plan mode first,
+   using distinct routes (or free-only
    if zero spend is preferred). Architecture is intentionally planned first with
-   the named `architecture` profile so it receives the strongest eligible route
+   the strongest eligible route
    before diversity is applied to the remaining tracks. Never call Kilo's native
-   `Task` tool as a fallback when the target ARR adapter exists.
-   If the launcher reports `INCOMPLETE` for missing catalog/evidence, stop and
+   `Task` tool as a fallback without a selected route.
+   If route evidence is missing, stop and
    report that state (or obtain the separate approval needed for discovery or
    evidence preparation); do not reinterpret it as launcher unavailability.
-   Do not add `--refresh` to plan mode. A cache refresh is a separate approved
-   discovery operation and must be completed, validated, and followed by a new
-   plan without refresh. Under Kilo, a successful catalog can still leave free
-   routes blocked by TPS/tool-readiness evidence; request the explicit
-   `--prepare-evidence --approve` step, which cannot launch workers, then plan
+   Under Kilo, a successful route can still be blocked by
+   entitlement/readiness evidence; request the explicit
+   evidence-approval step, which cannot launch workers, then plan
    again before asking for worker-launch approval.
    Kilo model enumeration is allowed to take several minutes; never replace
-   the adapter's configured bounded deadline with a short manual timeout or
-   exclude a provider from one short diagnostic alone.
+   the host's configured bounded deadline with a short manual timeout.
    Launch all five tracks only after the exact plan is reviewed and approved.
-   Read the terminal result's `result_directory` and per-track `report_path`
-   files; do not launch a second native Kilo fan-out to obtain reports.
+   Read the terminal result's per-track reports;
+   do not launch a second native Kilo fan-out to obtain reports.
    Other harnesses use their native bounded fan-out and must record the
    selected route themselves.
 3. Wait for the terminal worker results; do not diagnose a stall from silence.
@@ -135,9 +129,6 @@ convergence.
    authorized commit/push/open-pr workflow.
 7. Report complete/partial status, evidence, recommended merge sequence, and
    next decisions. Tear down skill-owned worktrees only after review.
-
-The exact commands, coordination JSON, retry contract, report shape, and
-teardown commands are in ORCHESTRATION.md; do not reconstruct them from memory.
 
 ## Candidate triage rules
 

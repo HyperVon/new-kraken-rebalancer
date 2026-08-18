@@ -1,4 +1,0 @@
-interface:
-  display_name: "Use Agent Runtime Router"
-  short_description: "Route tasks with explicit evidence"
-  default_prompt: "Use $agent-runtime-router to evaluate an approved task against the configured router policy."

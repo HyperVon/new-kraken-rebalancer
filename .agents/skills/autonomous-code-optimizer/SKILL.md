@@ -104,20 +104,12 @@ root `AGENTS.md`).
 ### Optional scan fan-out
 
 The four passes and convergence loop are coupled; do not split them into
-independent implementations. Within a pass, use the
-`autonomous-code-optimizer` preset from `.agents/runtime-router/adapters/kilo/route_subagents.py` for
-bounded, read-only scans after the native model-selection gate. Workers must not
+independent implementations. Within a pass, fan out bounded, read-only scans
+through the host's native parallel task surface after the native
+model-selection gate. Workers must not
 edit, run Gradle, or claim convergence; the parent integrates findings, applies
 fixes, runs gates serially, and makes the zero-new-issues decision. If route
 selection is unavailable, keep the scan parent-owned.
-
-```bash
-./.agents/runtime-router/adapters/kilo/route_subagents.py \
-  --workflow autonomous-code-optimizer \
-  --task "<the user's optimizer request>" \
-  --refresh \
-  --approve
-```
 
 ## Pass 2 — Financial & concurrency
 

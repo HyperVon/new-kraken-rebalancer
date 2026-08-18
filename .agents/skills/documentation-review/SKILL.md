@@ -114,13 +114,12 @@ track. Kilo sessions inherit `kilo/kilo-auto/efficient` from `.kilo/kilo.json`;
 select `kilo/kilo-auto/frontier` for high-risk or disputed documentation claims.
 Kilo Auto chooses its underlying model server-side, so do not claim a specific
 underlying model or recreate its catalog and fallback logic in repository
-scripts. If a host Task accepts only a role and cannot expose a usable route, use
-`.agents/runtime-router/adapters/kilo/route_subagents.py` for the bounded audit or keep it
-parent-owned; never use an unverified role-only worker.
+scripts. If a host Task accepts only a role and cannot expose a usable route,
+keep the audit parent-owned; never use an unverified role-only worker.
 Use `review_surface.sh` only for a branch-scoped changed-path surface; it does
 not select or probe models.
-The automatic preset prints the track matrix, route, effort, and quota evidence
-before launching. The user's request for this read-only audit authorizes the
+The host prints the track matrix, route, effort, and quota evidence before
+launching. The user's request for this read-only audit authorizes the
 bounded discovery fan-out; use `question` only when a hard availability or scope
 decision remains unresolved.
 Size each track to the auditor's iteration cap and reserve the final step for
@@ -137,30 +136,21 @@ support is configured; do not silently pre-authorize that fallback. Never
 substitute an unverified role or `general` for a model. A small or coupled scope
 may proceed without this handoff.
 
-For Kilo broad audits, invoke the automatic preset rather than creating a local
-manifest manually:
+For Kilo broad audits, launch the bounded read-only audit tracks through the
+host's native parallel task surface with the selected routes recorded per track.
 
-```bash
-./.agents/runtime-router/adapters/kilo/route_subagents.py \
-  --workflow documentation-review \
-  --task "<the user's documentation-review request>" \
-  --refresh \
-  --approve
-```
-
-The command prints the route/quota matrix before launching; `--approve` is included
-above because this read-only workflow is authorized to launch its evidence
-tracks. The preset owns only read-only evidence tracks; the parent remains
+The command prints the route/quota matrix before launching; the read-only
+workflow is authorized to launch its evidence
+tracks. The host owns only read-only evidence tracks; the parent remains
 responsible for findings, edits, and gates.
 Do this handoff before a parent-wide Context Mode or regex/search inventory;
 parent-owned scans are follow-up evidence, not a substitute for the routed
 track reports.
 
-For a second-pass adversarial review of this audit, use the
-`documentation-adversarial-review` preset with the parent findings in the task
-context. Launch all three tracks concurrently in the background-capable host,
-then inspect the route report before accepting any claim of independent-model
-confirmation.
+For a second-pass adversarial review of this audit, launch a distinct-route
+review track with the parent findings in the task context. Launch all three
+tracks concurrently in the background-capable host, then inspect the route
+report before accepting any claim of independent-model confirmation.
 
 ## Evidence and claims
 

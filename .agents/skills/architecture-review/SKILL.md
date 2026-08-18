@@ -106,8 +106,8 @@ Default to **both**, ranked.
 
 ### Optional parallel discovery
 
-After scope confirmation, use the `architecture-review` preset from
-`.agents/runtime-router/adapters/kilo/route_subagents.py` for bounded, read-only discovery tracks:
+After scope confirmation, fan out bounded, read-only discovery tracks through
+the host's native parallel task surface:
 backend/domain/trading/persistence; HTTP/SSR/frontend/flows; and
 product/security/operations. The parent owns the as-is architecture map,
 cross-track synthesis, alternatives, recommendations, and the mandatory

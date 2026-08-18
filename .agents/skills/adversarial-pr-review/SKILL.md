@@ -94,50 +94,35 @@ several small, independently useful reports:
 
 ## Agent selection and launch
 
-**MUST — no exceptions.** For every Kilo CLI session, you MUST invoke the
-receipt-managed ARR launcher (`.agents/.agent-runtime-router/run.py --python`
-wrapping `.agents/runtime-router/adapters/kilo/route_subagents.py`) with
-`--workflow adversarial-pr-review --approve` (and `--approve-cost` for paid routes, or
-`--free-only` for free routes) to launch independent review tracks. You MUST NOT use the
-native `Task` / `task` tool, `ctx_batch_execute`, `ctx_execute`, or any in-process parallel
-scan as a substitute for the routed launcher. A role label (e.g. `adversarial-reviewer-a`)
-or a Kilo Auto tier does not select a provider/model route; only the launcher’s
-exact route plan satisfies the model-selection gate. If it reports
-`INCOMPLETE`, `NO_ROUTE`, or an execution error, stop and preserve that status;
+**MUST — no exceptions.** For every Kilo CLI session, you MUST select a concrete
+provider/model route through the host’s native model-selection gate and launch
+independent review tracks through the host’s native parallel task surface with
+that route. You MUST NOT use an unselected role-only `Task` / `task` tool,
+`ctx_batch_execute`, `ctx_execute`, or any in-process parallel
+scan as a substitute for a selected route. A role label (e.g. `adversarial-reviewer-a`)
+or a Kilo Auto tier does not select a provider/model route; only the host’s
+exact exposed route satisfies the model-selection gate. If the host cannot
+expose the route, stop and preserve that status;
 do not silently fall back to same-model native subagents.
 
-Before that approved launch, run the same command once in plan mode (omit
-`--approve` and `--refresh`) and inspect every track's exact candidate, billing,
-quota, TPS, tool-readiness, effort, cost estimates, and rejection evidence. A missing/stale
-catalog requires separate bounded discovery approval. A `NO_ROUTE` caused by
-missing free TPS or tool-readiness evidence requires the separate
-`--prepare-evidence --approve` step described in the target ARR adapter docs;
-that step never launches workers. Kilo discovery and readiness can legitimately
-take several minutes, so do not use a 10–15 second shell timeout, start a
-duplicate job, or replace the adapter with `kilo auto`/native role-only
-delegation. Rerun the plan without `--refresh` after evidence is ready, then
-obtain the exact worker-launch approval.
+Before launching the review tracks, state the candidate route plan to the user
+and obtain explicit approval. A missing/stale route or evidence requires
+separate bounded approval. Do not use a 10–15 second shell timeout, start a
+duplicate job, or replace the selected route with `kilo auto`/native role-only
+delegation.
 
-For `adversarial-pr-review`, the approval gate is the user's explicit request
-to run an adversarial/multi-agent PR review. That request authorizes `--approve`
-immediately; you do NOT need to ask for additional permission. Omit `--approve`
-only when the workflow explicitly requires a separate human route decision
-that the user has not yet provided.
+For `adversarial-pr-review`, the approval gate is the user’s explicit request
+to run an adversarial/multi-agent PR review. That request authorizes the
+parallel launch immediately; you do NOT need to ask for additional permission.
 
 For Kilo CLI sessions this handoff is **mandatory**: launch the independent
-tracks through the `adversarial-pr-review` preset using the receipt-managed
-`.agents/.agent-runtime-router/run.py --python` wrapper and the target ARR
-adapter (with `--approve` and `--approve-cost` or `--free-only` after the exact-route
-gate passes) per the target ARR adapter docs. Do not substitute raw
-role-only `Task` calls for the preset — a role label does not select a
-provider/model route. Include the track matrix in the parent task so agents do
-not redo one another's work.
+tracks with the selected concrete routes through the host’s native parallel
+task surface, and include the track matrix in the parent task so agents do not
+redo one another’s work.
 
-While the launcher runs, the parent MUST keep checking observability instead of
-sitting idle: poll the per-run status file printed at launch (or the
-the target ARR harness-state status pointer) every
-60–90 seconds and read the background-process `logs` between polls (see "While
-workers run" in the target ARR adapter docs). Status transitions
+While the workers run, the parent MUST keep checking observability instead of
+sitting idle: poll the background-process status and logs every 60–90 seconds
+(see "While workers run" in the parent’s launch notes). Status transitions
 decide when to stop polling; a stalled run is stopped and retried once, not
 waited on blindly.
 
@@ -153,9 +138,9 @@ The routing rules below are harness-neutral. Named agent types are repository
 or Kilo/OpenCode examples only; Cursor, Claude Code, Copilot, and other hosts
 should map the same capabilities to their own read-only Task/equivalent agents.
 Preserve the bounded scope, stop condition, report cap, and parent ownership
-regardless of the host. **For Kilo CLI sessions the preset in
-the target ARR adapter workflow is the required launch path (see below);
-the role table is only a mapping aid for hosts that launch natively.**
+regardless of the host. **For Kilo CLI sessions the host's selected route is
+the required launch path (see above); the role table is only a mapping aid for
+hosts that launch natively.**
 
 Prefer a repository-specialized read-only role when its contract matches the
 track. A generic role is only a last-resort role mapping after the native
@@ -173,7 +158,7 @@ authorize a material or parallel launch when route selection is unavailable.
 
 When running under Google Antigravity (AGY), launch reviewer tracks natively
 using built-in `invoke_subagent` tool calls; do NOT execute
-the Kilo-specific ARR workflow launcher. For other
+a Kilo-specific workflow launcher. For other
 non-Kilo, non-AGY hosts, use the host's native parallel task delegation. Include
 the track matrix in the parent task so agents do not redo one another's work.
 A prompt must contain:
@@ -252,8 +237,7 @@ Repeat only for affected tracks:
 3. **Triage** — the parent verifies each finding against source and removes
    duplicates, false positives, and style preferences that contradict project
    conventions. Worker findings are not in the route report: read them from
-   the worker session database per "Reading worker findings" in
-   the target ARR adapter documentation.
+   the worker session results per the parent's launch notes.
 4. **Targeted verification** — disputed or high-impact findings get a focused
    second verifier. It receives only the finding and affected paths.
 5. **Fix** — the parent applies legitimate critical/warning fixes and small
