@@ -12,9 +12,8 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class FakeKrakenServiceTest :
-    StringSpec() {
-        init {
+class FakeKrakenServiceTest : StringSpec() {
+    init {
         isolationMode = IsolationMode.InstancePerTest
 
         val baseTime = Instant.parse("2026-06-01T00:00:00Z")
@@ -69,5 +68,5 @@ class FakeKrakenServiceTest :
                 fake.getLastLedgerTotalCount() shouldBe 51
             }
         }
-        }
     }
+}

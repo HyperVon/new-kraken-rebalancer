@@ -11,9 +11,8 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 
-class CsrfTokenIssuanceTest :
-    StringSpec() {
-        init {
+class CsrfTokenIssuanceTest : StringSpec() {
+    init {
 
         "currentToken returns existing cookie when present and non-blank" {
             val call = mockk<ApplicationCall>(relaxed = true)
@@ -58,5 +57,5 @@ class CsrfTokenIssuanceTest :
             token.isNotBlank() shouldBe true
             verify { call.response.header(HttpHeaders.SetCookie, any<String>()) }
         }
-        }
     }
+}
