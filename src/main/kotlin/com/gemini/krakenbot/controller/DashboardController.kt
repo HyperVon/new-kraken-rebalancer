@@ -160,7 +160,7 @@ class DashboardController(
                 handleGetOrderIntents()
             }
 
-            post("${Routes.API_ORDER_INTENTS}/{id}/resolve") {
+            post(Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE) {
                 handlePostOrderIntentResolution()
             }
 

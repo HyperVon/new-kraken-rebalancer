@@ -11,6 +11,7 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.HtmxValues
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.span
@@ -97,8 +98,9 @@ class DashboardFragmentComponent(
                         if (!intent.errorMessage.isNullOrBlank()) {
                             p { +"Error: ${intent.errorMessage}" }
                         }
-                        form(action = "/api/order-intents/$intentId/resolve", method = FormMethod.post) {
-                            attributes[HtmxAttrs.HX_POST] = "/api/order-intents/$intentId/resolve"
+                        val resolveUrl = Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE.replace("{id}", "$intentId")
+                        form(action = resolveUrl, method = FormMethod.post) {
+                            attributes[HtmxAttrs.HX_POST] = resolveUrl
                             attributes[HtmxAttrs.HX_TARGET] = "body"
                             if (csrfToken != null) {
                                 input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) {
