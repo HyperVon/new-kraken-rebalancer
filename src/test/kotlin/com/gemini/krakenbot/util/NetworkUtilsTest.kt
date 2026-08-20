@@ -74,6 +74,10 @@ class NetworkUtilsTest : StringSpec() {
         "should allow origins via explicit allowlist and allow-all flag" {
             isLocalOrPrivateOrigin("https://trusted.example.com", setOf("https://trusted.example.com")) shouldBe true
             isLocalOrPrivateOrigin("https://trusted.example.com", setOf("trusted.example.com")) shouldBe true
+            // A bare-host entry authorizes the HTTPS origin only — not its plaintext twin.
+            isLocalOrPrivateOrigin("http://trusted.example.com", setOf("trusted.example.com")) shouldBe false
+            isLocalOrPrivateOrigin("http://trusted.example.com", setOf("http://trusted.example.com")) shouldBe true
+            isLocalOrPrivateOrigin("https://trusted.example.com", setOf("http://trusted.example.com")) shouldBe false
             isLocalOrPrivateOrigin("https://kraken.com", setOf("https://kraken.com")) shouldBe true
             isLocalOrPrivateOrigin("https://kraken.com", setOf("https://other.com")) shouldBe false
             isLocalOrPrivateOrigin(

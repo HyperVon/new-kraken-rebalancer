@@ -11,13 +11,17 @@ import java.net.URI
  * Env `REBALANCER_ALLOWED_ORIGINS` (comma-separated exact origins, e.g.
  * `https://trusted.example.com,https://app.internal`) adds explicit allowlist entries
  * on top of the private-network rules. Use it instead of widening `*.local` when the LAN
- * is untrusted. `REBALANCER_ALLOW_ALL_ORIGINS=true` is a break-glass for lab use and must
- * never be enabled with live keys.
+ * is untrusted. Scheme-explicit entries match exactly; a bare-host entry such as
+ * `trusted.example.com` authorizes its HTTPS origin only — plaintext HTTP must be
+ * allowlisted explicitly. `REBALANCER_ALLOW_ALL_ORIGINS=true` is a break-glass for lab
+ * use and must never be enabled with live keys; startup logs a warning when set.
  */
 fun isLocalOrPrivateOrigin(origin: String): Boolean {
-    val allowAll = System.getenv("REBALANCER_ALLOW_ALL_ORIGINS")?.equals("true", ignoreCase = true) == true
-    return isLocalOrPrivateOrigin(origin, parseAllowedOriginsFromEnv(), allowAll)
+    return isLocalOrPrivateOrigin(origin, parseAllowedOriginsFromEnv(), isAllowAllOriginsEnabled())
 }
+
+fun isAllowAllOriginsEnabled(): Boolean =
+    System.getenv("REBALANCER_ALLOW_ALL_ORIGINS")?.equals("true", ignoreCase = true) == true
 
 internal fun isLocalOrPrivateOrigin(origin: String, allowedOrigins: Set<String>, allowAll: Boolean = false): Boolean {
     if (allowAll || isExplicitlyAllowedOrigin(origin, allowedOrigins)) return true
@@ -49,9 +53,9 @@ private fun isExplicitlyAllowedOrigin(origin: String, allowedOrigins: Set<String
     return allowedOrigins.any { candidate ->
         val trimmed = candidate.trim().removeSuffix("/")
         normalizedOrigin.equals(trimmed, ignoreCase = true) ||
-            // Allow bare-host entries like "trusted.example.com" to match "https://trusted.example.com"
-            normalizedOrigin.equals("https://$trimmed", ignoreCase = true) ||
-            normalizedOrigin.equals("http://$trimmed", ignoreCase = true)
+            // Bare-host entries like "trusted.example.com" authorize the HTTPS origin only;
+            // the plaintext http:// twin must be allowlisted explicitly.
+            (!trimmed.contains("://") && normalizedOrigin.equals("https://$trimmed", ignoreCase = true))
     }
 }
 
