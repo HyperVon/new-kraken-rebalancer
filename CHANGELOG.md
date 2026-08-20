@@ -8,9 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
+### Removed
 
-- **ARR adapter no longer logs financial account balances**: `route_subagents.py` stopped looking up and printing `account_balance`/`ending_balance` from quota evidence in the dry-run plan and post-execution cost reports, removing a cleartext exposure of balance data. Added `py/clear-text-logging-sensitive-data` suppressions at the routing-metadata print sinks in both ARR Kilo adapters (the payloads are bounded route IDs, cost estimates, and redacted worker reports — never the prompt, credentials, or provider errors).
+- **Agent runtime router removed**: The `route-kilo` / `route-subagents` routing skills and the `.agents/runtime-router/` adapter tree (Kilo adapters, tests, and router documentation) were deleted; agents select models through their host's native model-selection rules (`.agents/OPERATING.md`, "Native model selection") instead of routing through ARR. This subsumes the interim billing-redaction fixes to those adapters (`ffca8330`, `4e798929`, `633fc16d`), whose files no longer exist.
 
 ## [6.17.5] - 2026-08-16
 

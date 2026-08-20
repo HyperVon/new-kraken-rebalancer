@@ -12,6 +12,15 @@ description: >-
 
 # Continuous quality (QA loop)
 
+## How this differs from nearby skills
+
+| Skill | Role |
+| :--- | :--- |
+| **continuous-quality** (this) | Recurring QA-hardening cycle: full gates → bug hunt → new coverage → PR, with a persistent backlog |
+| [continuous-improvement](../continuous-improvement/SKILL.md) | Product / docs / deps enhancement cycle (polish, not correctness hunting) |
+| [comprehensive-quality-overhaul](../comprehensive-quality-overhaul/SKILL.md) | One-shot full-repo audit sweep producing triaged candidate PRs for approval |
+| [write-kotest](../write-kotest/SKILL.md) | Authoring individual Kotest specs (child skill this cycle sequences) |
+
 Orchestrator skill. It **does not replace** individual skills — it sequences
 them. Prefer this when the user wants an end-to-end test → bug-hunt → cover →
 PR loop with light supervision; run child skills alone for a narrow pass
