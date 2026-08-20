@@ -197,7 +197,10 @@ class OrderExecutorImpl(
         availableVolume: BigDecimal?,
     ): OrderResult? {
         val price = context.prices[symbol] ?: BigDecimal.ZERO
-        if (price.signum() == 0) return null
+        if (price.signum() == 0) {
+            context.actionLog.add(ActionLogFormatter.formatSkippedMissingPrice(side, symbol))
+            return null
+        }
 
         // Never place a zero/negative-value order (e.g. minimumOrderSizeUSD=0 lets a $0 amount past
         // the dust guard, or a budget-trimmed buy lands at $0). A zero volume would still hit the

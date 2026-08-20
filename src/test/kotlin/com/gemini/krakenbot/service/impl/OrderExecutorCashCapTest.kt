@@ -104,6 +104,24 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
+        "should log a skipped order when the ticker price is missing" {
+            runTest {
+                val actionLog = mutableListOf<String>()
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
+                    sellOrders = emptyMap<String, BigDecimal>(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("1000.00")),
+                    prices = emptyMap(),
+                    settings = TestFixtures.settings(),
+                    actionLog = actionLog,
+                )
+
+                krakenService.executedOrders.size shouldBe 0
+                actionLog.single() shouldBe "Skipping — no price for buy ETH"
+            }
+        }
+
         "should not reduce buys that already sit under the 99% cash reserve" {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->

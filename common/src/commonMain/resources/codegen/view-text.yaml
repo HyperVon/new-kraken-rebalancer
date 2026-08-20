@@ -83,6 +83,7 @@ ViewText:
   ACTION_COST_LABEL: "Cost"
   ACTION_FAILED_PREFIX: "FAILED "
   ACTION_SKIPPING_DUST_PREFIX: "Skipping dust "
+  ACTION_SKIPPED_NO_PRICE_PREFIX: "Skipping — no price for "
   ACTION_FOR_SUFFIX: " for "
   ACTION_NO_COUNTERBALANCING_ASSETS: "Fiat correction: no counter-balancing candidates"
   # Table headers
