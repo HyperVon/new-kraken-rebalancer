@@ -10,6 +10,8 @@ import com.google.devtools.ksp.symbol.KSDeclaration
 import com.google.devtools.ksp.symbol.KSFile
 import java.io.OutputStreamWriter
 
+internal const val FILE_NAME_ARGUMENT = "fileName"
+
 internal data class CatalogInput(
     val declaration: KSClassDeclaration,
     val sourceFile: KSFile,

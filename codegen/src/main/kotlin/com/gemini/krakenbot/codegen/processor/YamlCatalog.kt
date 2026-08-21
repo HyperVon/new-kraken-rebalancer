@@ -87,6 +87,8 @@ internal fun escapeKotlinString(value: String): String = buildString {
     }
 }
 
+private val KOTLIN_IDENTIFIER_REGEX = Regex("[A-Za-z_][A-Za-z0-9_]*")
+
 internal fun isKotlinIdentifier(value: String): Boolean = KOTLIN_IDENTIFIER_REGEX.matches(value)
 
 internal fun failCatalog(message: String): Nothing = throw CatalogSchemaException(message)

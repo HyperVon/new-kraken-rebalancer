@@ -14,10 +14,18 @@ import com.google.devtools.ksp.symbol.KSDeclaration
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import java.io.OutputStreamWriter
+import java.math.BigDecimal
+import java.time.Instant
 
 private const val ANNOTATION_NAME = "com.gemini.krakenbot.codegen.GenerateApiMapper"
 private const val GENERATED_API_MAPPER_COMMENT =
     "/** Generated from @GenerateApiMapper; only target constructor properties are emitted. */"
+private const val ASSET_NAME = "com.gemini.krakenbot.model.Asset"
+private val BIG_DECIMAL_NAME = BigDecimal::class.qualifiedName!!
+private val INSTANT_NAME = Instant::class.qualifiedName!!
+private val STRING_NAME = String::class.qualifiedName!!
+private val LIST_NAME = List::class.qualifiedName!!
+private val MAP_NAME = Map::class.qualifiedName!!
 
 class ApiMapperProcessorProvider : SymbolProcessorProvider {
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
