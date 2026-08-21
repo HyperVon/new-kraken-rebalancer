@@ -9,6 +9,7 @@ import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.glassPanel
+import com.gemini.krakenbot.view.util.solidColorForSymbol
 import com.gemini.krakenbot.view.util.symbolColorMap
 import kotlinx.html.DIV
 import kotlinx.html.style

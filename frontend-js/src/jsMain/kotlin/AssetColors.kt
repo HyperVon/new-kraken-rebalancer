@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.view.util.ChartProps
+import com.gemini.krakenbot.view.util.backgroundColorForSymbol
+import com.gemini.krakenbot.view.util.borderColorForSymbol
 
 private val assetColorMap: Map<String, String> by lazy {
     val global = js("window.${ChartProps.ASSET_COLORS_GLOBAL_KEY}")

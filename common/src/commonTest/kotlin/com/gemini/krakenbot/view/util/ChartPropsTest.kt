@@ -79,4 +79,11 @@ class ChartPropsTest {
 
         assertEquals(expected, expected.indices.map { ChartProps.backgroundColorForSymbol("OTHER", it) })
     }
+
+    @Test
+    fun handlesNegativeFallbackIndicesSafely() {
+        assertEquals("#e879f9", ChartProps.solidColorForSymbol("OTHER", -1))
+        assertEquals("rgba(232, 121, 249, 1)", ChartProps.borderColorForSymbol("OTHER", -1))
+        assertEquals("rgba(232, 121, 249, 0.1)", ChartProps.backgroundColorForSymbol("OTHER", -1))
+    }
 }
