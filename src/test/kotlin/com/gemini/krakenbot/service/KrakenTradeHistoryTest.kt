@@ -191,7 +191,7 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
                 val service = createService(responseJson)
                 val trades = service.getTradeHistory()
 
-                trades.size shouldBe 2
+                trades.size shouldBe 3
 
                 val ethTrade = trades.first { it.pair == "XETHZUSD" }
                 ethTrade.symbol shouldBe "ETH"
@@ -202,6 +202,11 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
                 dogeTrade.symbol shouldBe "DOGE"
                 dogeTrade.volume.shouldBeEqualComparingTo(BigDecimal("100"))
                 dogeTrade.usdAmount.shouldBeEqualComparingTo(BigDecimal("10.00"))
+
+                val ltcTrade = trades.first { it.pair == "XLTCZUSD" }
+                ltcTrade.symbol shouldBe "LTC"
+                ltcTrade.volume.shouldBeEqualComparingTo(BigDecimal("1.00000000"))
+                ltcTrade.usdAmount.shouldBeEqualComparingTo(BigDecimal("100.00"))
             }
         }
 
@@ -331,10 +336,9 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
             }
         }
 
-        "getTradeHistory_FallbackSymbols_HardcodedBtcEthDoge" {
+        "getTradeHistory_GenericUsdPairResolution_ResolvesAllTrades" {
             runTest {
-                // Allocations omit BTC/ETH/DOGE so parseSymbolFromPair uses hardcoded pair fallbacks;
-                // LTC has no fallback and must be dropped.
+                // When configured for SOL, trades for other USD pairs (BTC, ETH, DOGE, LTC) still resolve generically.
                 val responseJson = """
                     {
                         "error": [],
@@ -344,14 +348,14 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
                                     "pair": "XXBTZUSD",
                                     "time": 1700000000.1234,
                                     "type": "buy",
-                                    "price": "50000.00",
-                                    "cost": "5000.00",
-                                    "vol": "0.10000000"
+                                    "price": "30000.00",
+                                    "cost": "300.00",
+                                    "vol": "0.01000000"
                                 },
                                 "T2": {
                                     "pair": "XETHZUSD",
                                     "time": 1700000001.1234,
-                                    "type": "sell",
+                                    "type": "buy",
                                     "price": "2000.00",
                                     "cost": "200.00",
                                     "vol": "0.10000000"
@@ -407,10 +411,11 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
 
                 val trades = service.getTradeHistory()
 
-                trades.size shouldBe 3
+                trades.size shouldBe 4
                 trades.any { it.symbol == "BTC" }.shouldBeTrue()
                 trades.any { it.symbol == "ETH" }.shouldBeTrue()
                 trades.any { it.symbol == "DOGE" }.shouldBeTrue()
+                trades.any { it.symbol == "LTC" }.shouldBeTrue()
             }
         }
 

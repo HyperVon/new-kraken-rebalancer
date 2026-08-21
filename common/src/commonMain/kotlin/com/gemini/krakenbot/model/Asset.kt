@@ -46,9 +46,25 @@ value class Asset(val value: String) {
         private val CANONICAL_SYMBOL_BY_ALIAS = mapOf(
             XBT to BTC,
             XDG to DOGE,
+            "XXBT" to BTC,
+            "XXDG" to DOGE,
+            "XETH" to ETH,
+            "XLTC" to LTC,
+            "XXRP" to XRP,
+            "XXLM" to "XLM",
+            "XXMR" to "XMR",
+            "XZEC" to "ZEC",
+            "XETC" to "ETC",
+            "XREP" to "REP",
+            "XMLN" to "MLN",
+            "ZUSD" to USD,
+            "ZEUR" to "EUR",
+            "ZCAD" to "CAD",
+            "ZGBP" to "GBP",
+            "ZJPY" to "JPY",
+            "ZCHF" to "CHF",
+            "ZAUD" to "AUD",
         )
-
-        private val FALLBACK_SYMBOLS = listOf(BTC, ETH, DOGE)
 
         operator fun invoke(value: String): Asset = Asset(value)
 
@@ -71,20 +87,40 @@ value class Asset(val value: String) {
 
         /**
          * Map an exchange pair string to an allocation symbol.
-         * Tries non-USD allocations, then USD, then [FALLBACK_SYMBOLS]; null if nothing matches.
+         * Tries non-USD allocations, then USD; if not in allocations, extracts and canonicalizes
+         * the base symbol for any USD-quoted market pair (e.g. `SOLUSD` → `SOL`, `XXBTZUSD` → `BTC`).
+         * Returns null for non-USD quoted pairs (e.g. `ADAEUR`, `XBTUSDT`).
          */
         fun fromTradingPair(pair: String, allocations: List<String>): String? {
-            val normalizedPair = pair.uppercase()
+            val normalizedPair = pair.trim().uppercase()
+            if (normalizedPair.isEmpty()) return null
 
-            return allocations
+            // 1. Try matching against user's configured allocations first
+            allocations
                 .filterNot(::isUsdSymbol)
                 .firstOrNull { symbol -> matchesTradingPair(normalizedPair, symbol) }
-                ?.let(::canonicalSymbol)
-                ?: allocations
-                    .firstOrNull { symbol -> isUsdSymbol(symbol) && matchesTradingPair(normalizedPair, symbol) }
-                    ?.let(::canonicalSymbol)
-                ?: FALLBACK_SYMBOLS
-                    .firstOrNull { symbol -> matchesTradingPair(normalizedPair, symbol) }
+                ?.let { return canonicalSymbol(it) }
+
+            allocations
+                .firstOrNull { symbol -> isUsdSymbol(symbol) && matchesTradingPair(normalizedPair, symbol) }
+                ?.let { return canonicalSymbol(it) }
+
+            // 2. Generic USD-quoted market extraction: e.g. "XETHZUSD" -> "XETH", "SOLUSD" -> "SOL"
+            val base = when {
+                normalizedPair.endsWith("Z$USD") && normalizedPair.length > ("Z$USD").length ->
+                    normalizedPair.removeSuffix("Z$USD")
+
+                normalizedPair.endsWith(USD) && normalizedPair.length > USD.length ->
+                    normalizedPair.removeSuffix(USD)
+
+                else -> null
+            } ?: return null
+
+            val canonical = normalizeLedgerAsset(base)
+            if (matchesTradingPair(normalizedPair, canonical)) {
+                return canonical
+            }
+            return null
         }
 
         private fun normalizedSymbol(symbol: String): String = symbol.uppercase()
@@ -129,33 +165,27 @@ value class Asset(val value: String) {
             ).distinct()
         }
 
-        /** Assets the application can track; ledger entries for anything else are stored raw. */
-        private val KNOWN_LEDGER_ASSETS =
-            setOf(USD, BTC, ETH, DOGE, SOL, USDT, USDC, ADA, XRP, DOT, LINK, LTC, XBT, XDG)
-
         /**
          * Earn-migration suffixes: Kraken balances/ledger entries use e.g. `DOT.S`, `USDT.F` for
          * read-only yield-bearing assets; the base asset remains the transactable one.
          */
-        private val EARN_ASSET_SUFFIXES = listOf(".S", ".M", ".F", ".B")
+        private val EARN_ASSET_SUFFIXES = listOf(".S", ".M", ".F", ".B", ".P")
 
         /**
          * Normalize a Kraken Ledgers asset code to the application symbol: strips Earn-migration
-         * suffixes (`DOT.S` → `DOT`) and legacy X/Z prefixes (`XXBT` → `BTC`, `ZUSD` → `USD`).
-         * Unknown or foreign assets (e.g. `ZGBP`) pass through unchanged so they are never
-         * mis-attributed to a tracked symbol.
+         * suffixes (`DOT.S` → `DOT`, `AVAX.S` → `AVAX`) and maps legacy Kraken ISO-4217 prefixes
+         * (`XXBT` → `BTC`, `ZUSD` → `USD`, `XETH` → `ETH`).
          */
         fun normalizeLedgerAsset(asset: String): String {
-            val upper = asset.uppercase()
+            var upper = asset.trim().uppercase()
+            if (upper.isEmpty()) return upper
+
             EARN_ASSET_SUFFIXES.firstOrNull(upper::endsWith)?.let { suffix ->
-                val base = upper.removeSuffix(suffix)
-                if (base in KNOWN_LEDGER_ASSETS) return canonicalSymbol(base)
+                if (upper.length > suffix.length) {
+                    upper = upper.removeSuffix(suffix)
+                }
             }
-            if (upper.length > 1 && (upper[0] == 'X' || upper[0] == 'Z')) {
-                val stripped = upper.substring(1)
-                if (stripped in KNOWN_LEDGER_ASSETS) return canonicalSymbol(stripped)
-            }
-            return CANONICAL_SYMBOL_BY_ALIAS[upper] ?: upper
+            return canonicalSymbol(upper)
         }
     }
 }

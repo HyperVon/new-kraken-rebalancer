@@ -321,7 +321,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 entries.first { it.ledgerId == "L2" }.asset shouldBe "USDT"
                 entries.first { it.ledgerId == "L3" }.asset shouldBe "BTC"
                 entries.first { it.ledgerId == "L4" }.asset shouldBe "USD"
-                entries.first { it.ledgerId == "L5" }.asset shouldBe "ZGBP"
+                entries.first { it.ledgerId == "L5" }.asset shouldBe "GBP"
                 service.getLastLedgerTotalCount() shouldBe 5
             }
         }
