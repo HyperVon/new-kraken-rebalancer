@@ -8,7 +8,6 @@ import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
 import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
@@ -138,7 +137,7 @@ class RebalancerEngineTest : StringSpec() {
             val prices = mapOf(Asset.BTC to BigDecimal("60000"), Asset.ETH to BigDecimal.ZERO)
             val result = RebalancerEngine.calculatePortfolioValues(balances, prices, allocations)
             val failure = result.shouldBeInstanceOf<Result.Failure<*>>()
-            failure.exception.message shouldBe "${ViewText.PRICE_NOT_FOUND_PREFIX}${Asset.ETH}"
+            failure.exception.message shouldBe "Price not found for ${Asset.ETH}"
         }
 
         "calculatePortfolioValues accumulates raw values before rounding the total once" {

@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.domain.ActionLogFormatter
 import com.gemini.krakenbot.domain.AssetPrices
 import com.gemini.krakenbot.domain.AssetValues
 import com.gemini.krakenbot.domain.OrderResult
@@ -23,6 +22,7 @@ import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.view.util.ActionLogFormatter
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext

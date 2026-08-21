@@ -1,5 +1,6 @@
-package com.gemini.krakenbot.domain
+package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.domain.RebalanceEvent
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe

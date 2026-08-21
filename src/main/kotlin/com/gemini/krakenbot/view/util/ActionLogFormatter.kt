@@ -1,7 +1,9 @@
-package com.gemini.krakenbot.domain
+package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.domain.toCryptoScale
+import com.gemini.krakenbot.domain.toPercentScale
+import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.view.util.ViewText
 import java.math.BigDecimal
 
 object ActionLogFormatter {

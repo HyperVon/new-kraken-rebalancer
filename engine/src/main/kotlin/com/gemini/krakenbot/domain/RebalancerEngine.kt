@@ -6,7 +6,6 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.view.util.ViewText
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -18,6 +17,7 @@ import kotlin.math.pow
  * logic rather than a pure functional core.
  */
 object RebalancerEngine {
+    private const val MISSING_PRICE_MESSAGE_PREFIX = "Price not found for "
     private val log = LoggerFactory.getLogger(RebalancerEngine::class.java)
 
     fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal {
@@ -54,7 +54,7 @@ object RebalancerEngine {
                         symbol,
                     )
                     return Result.Failure(
-                        IllegalStateException("${ViewText.PRICE_NOT_FOUND_PREFIX}$symbol"),
+                        IllegalStateException("$MISSING_PRICE_MESSAGE_PREFIX$symbol"),
                     )
                 }
                 price = p
