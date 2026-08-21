@@ -133,6 +133,7 @@ class TradeHistorySyncServiceTest : StringSpec() {
             sync.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe fixedNow.epochSecond.toString()
             val seedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
             coVerify(exactly = 1) { krakenService.getTradeHistory(seedBound, 0) }
+            coVerify(exactly = 1) { krakenService.getTradeHistory(seedBound, 50) }
         }
 
         "deduplicates a fill re-emitted across page boundaries" {

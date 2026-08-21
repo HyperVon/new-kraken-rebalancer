@@ -139,7 +139,7 @@ class RateLimiterTest : StringSpec() {
         "acquireWithCost does not hold mutex across delay (no HOL blocking)" {
             runTest {
                 val safeLimit = 2.0
-                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0)
+                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0, clock = { currentTime })
                 // Fill so next cost=1.0 needs ~0.5s wait (same math as limit-exceeded test).
                 limiter.acquireWithCost(1.5)
 
