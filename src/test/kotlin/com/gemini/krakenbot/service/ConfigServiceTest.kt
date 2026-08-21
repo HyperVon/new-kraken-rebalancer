@@ -913,7 +913,7 @@ class ConfigServiceTest : StringSpec() {
                 // Release the lock: with the NonCancellable cleanup guarantee the pending decrement must
                 // still run, publishing the staged config instead of stranding depth above zero.
                 lockHoldGate.complete(Unit)
-                runCurrent()
+                blocker.join()
                 sessionJob.join()
 
                 service.getConfig().settings.loopDelaySeconds shouldBe 999L
