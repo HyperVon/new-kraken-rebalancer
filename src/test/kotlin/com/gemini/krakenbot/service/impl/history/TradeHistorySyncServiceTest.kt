@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -56,7 +57,7 @@ class TradeHistorySyncServiceTest : StringSpec() {
         }
     }
 
-    private fun stubConfig(config: com.gemini.krakenbot.config.AppConfig = appConfig) {
+    private fun stubConfig(config: AppConfig = appConfig) {
         every { configService.getConfig() } returns config
     }
 
