@@ -68,7 +68,7 @@ private class CssClassProcessor(codeGenerator: CodeGenerator, logger: KSPLogger,
             input.definitions,
             header = { group -> "sealed class $group(override val value: String) : $CSS_CLASS_NAME(value)" },
             entry = { definition, group ->
-                "object ${definition.name} : $group(\"${escapeKotlinString(definition.value)}\")"
+                "object ${definition.name} : $group(\"${escapeKotlinString(definition.value.toString())}\")"
             },
         )
     }

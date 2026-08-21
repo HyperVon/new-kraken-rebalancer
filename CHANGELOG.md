@@ -6,10 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.17.6] - 2026-08-21
 
 ### Changed
 
+- **ChartProps migrated to CodeGen catalog**: `ChartProps` is now generated at build time via `@GenerateStringConstants` from `common/src/commonMain/resources/codegen/chart-props.yaml`. The `:codegen` KSP processor was enhanced to support typed scalar values (strings, numbers, booleans) and specialized catalog structures (palette arrays and asset color resolution helpers), eliminating the handwritten `ChartProps.kt` while preserving 100% backward compatibility and exact `const val` semantics for all existing callers.
 - **DatabaseConfig split into focused units**: The 896-line `DatabaseConfig` object now delegates to `SchemaMigrations` (versioned migration records), `LegacyDataRepair` (provenance backfill, legacy trade-ID linking, terminal-intent reconciliation, submission-guard import, pending-intent recovery), `IndexRepair` (expected-index definitions and repair), and `MigrationBackup` (pre-migration backup decisioning). `DatabaseConfig.init()` remains the sole public entry point and orchestrates the same sequence in the same order. JaCoCo exclusions were synced so the previously-excluded bootstrap logic stays excluded under its new file names, while the fully-covered migration-record and index-repair units now count toward bundle coverage.
 
 ### Fixed
