@@ -39,7 +39,17 @@ description: >-
 
    **For regressions and intermittent failures:**
    - *Regression bisection:* For regressions after recent changes, inspect git commit history and diffs across the failing subsystem. Reproduce the test on the last known-working commit to confirm that the failure is a genuine regression rather than an environment issue.
+   - `git bisect` (with a run script) is the preferred deterministic tool for isolating the regressing commit; use it instead of manual history scanning for non-trivial histories.
    - *Intermittent / CI-only failures:* Compare environment differences (OS, architecture, lockfiles, timezone, concurrency). Execute the reproduction under a stress loop (20–50 iterations) to establish an empirical baseline failure rate before testing fixes.
+
+   **Repository-state safety during history debugging:**
+   Treat history traversal as temporary diagnostic state, not as the new working state. Before `git bisect`, checking out an older revision, or otherwise moving HEAD:
+   1. Record the starting branch or commit and `git status --short`.
+   2. Do not begin history traversal in a dirty working tree if the operation could mix, hide, or overwrite those changes. Prefer an isolated worktree for non-trivial investigations.
+   3. Record any environment, fixture, dependency, or generated-state change needed to reproduce older revisions; a checkout alone does not prove the historical environment is equivalent.
+   4. Always leave the repository in the starting state when the diagnostic experiment ends. For `git bisect`, run `git bisect reset` even after an error, timeout, or successful identification of the culprit.
+   5. Before applying a fix, verify that HEAD, branch, and working-tree state are the intended implementation state rather than an intermediate diagnostic revision.
+   A correctly identified regressing commit does not justify leaving the caller's repository in detached HEAD, bisect mode, or a modified diagnostic state.
 4. Establish the change and data path. Inspect the relevant diff, recent
    changes, configuration, dependencies, and a known-working neighboring path.
    Trace the bad value or state backward to its first incorrect origin.
