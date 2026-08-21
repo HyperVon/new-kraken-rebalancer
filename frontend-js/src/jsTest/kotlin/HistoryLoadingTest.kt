@@ -5,7 +5,6 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -240,7 +239,7 @@ class HistoryLoadingTest : StringSpec() {
 
             try {
                 loadAll(TimeRange.ALL.key).await()
-                document.getElementById("stat-ath-title")?.textContent shouldBe ViewText.HISTORY_ALL_TIME_HIGH
+                document.getElementById("stat-ath-title")?.textContent shouldBe "All-Time High"
 
                 window.asDynamic().fetch = { url: String ->
                     if (url.contains("snapshots")) {
@@ -259,7 +258,7 @@ class HistoryLoadingTest : StringSpec() {
                 }
 
                 currentRange shouldBe TimeRange.ALL.key
-                document.getElementById("stat-ath-title")?.textContent shouldBe ViewText.HISTORY_ALL_TIME_HIGH
+                document.getElementById("stat-ath-title")?.textContent shouldBe "All-Time High"
                 document.getElementById("stat-ath")?.textContent shouldBe "$9,000.00"
             } finally {
                 document.body!!.removeChild(container)
@@ -371,8 +370,8 @@ class HistoryLoadingTest : StringSpec() {
                 document.getElementById("stat-total-volume")?.textContent shouldBe "$2,002.00"
                 document.getElementById("stat-total-fees")?.textContent shouldBe "$32.00"
                 document.getElementById("stat-avg-fee-rate")?.textContent shouldBe "0.02%"
-                document.getElementById("stat-avg-slippage")?.textContent shouldBe ViewText.PLACEHOLDER_DASHES
-                document.getElementById("stat-ath-title")?.textContent shouldBe ViewText.PERIOD_HIGH
+                document.getElementById("stat-avg-slippage")?.textContent shouldBe "--"
+                document.getElementById("stat-ath-title")?.textContent shouldBe "Period High"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()

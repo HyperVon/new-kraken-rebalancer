@@ -2,6 +2,9 @@ package com.gemini.krakenbot.view.util
 
 import com.gemini.krakenbot.codegen.GenerateStringConstants
 
+@GenerateStringConstants(fileName = "ActionLogFormat", resource = "codegen/action-log-format.yaml")
+internal object ActionLogFormatSchema
+
 @GenerateStringConstants(fileName = "ChartProps", resource = "codegen/chart-props.yaml")
 internal object ChartPropsSchema
 

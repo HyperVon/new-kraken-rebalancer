@@ -387,7 +387,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             getShellResponse.status shouldBe HttpStatusCode.OK
             getShellResponse.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
             val bodyShell = getShellResponse.bodyAsText()
-            bodyShell shouldContain ViewText.APP_TITLE
+            bodyShell shouldContain "Kraken Rebalancer"
 
             // 2. POST Valid Settings (Hot-Reload)
             val testKey = "api-reloaded"

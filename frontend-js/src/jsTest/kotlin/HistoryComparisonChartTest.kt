@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.frontend
 
-import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -93,11 +92,12 @@ class HistoryComparisonChartTest : StringSpec() {
                 chartArea?.classList?.contains("hidden") shouldBe true
 
                 val deltaEl = document.getElementById("comparison-latest-difference")
-                deltaEl?.textContent shouldBe ViewText.EM_DASH
+                deltaEl?.textContent shouldBe "—"
 
                 val unavailableDiv = document.getElementById("comparison-availability-message")
                 unavailableDiv?.classList?.contains("visible") shouldBe true
-                unavailableDiv?.textContent shouldContain ViewText.UNAVAILABLE_INSUFFICIENT_SNAPSHOTS
+                unavailableDiv?.textContent shouldContain
+                    "Not enough history exists in this range to compare strategies."
 
                 val scrubber = document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
                 scrubber.disabled shouldBe true
@@ -162,7 +162,7 @@ class HistoryComparisonChartTest : StringSpec() {
                 buildRebalancerComparisonChart(available.copy(confidence = "ESTIMATED"))
                 val confidenceBadge = document.getElementById("comparison-confidence-badge")
                 confidenceBadge?.classList?.contains("visible") shouldBe true
-                confidenceBadge?.textContent shouldBe ViewText.COMPARISON_CONFIDENCE_ESTIMATED
+                confidenceBadge?.textContent shouldBe "Estimated (external balance changes may affect precision)"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -170,15 +170,22 @@ class HistoryComparisonChartTest : StringSpec() {
         }
 
         "unavailableReasonText maps all reason strings to text" {
-            unavailableReasonText("INSUFFICIENT_SNAPSHOTS") shouldBe ViewText.UNAVAILABLE_INSUFFICIENT_SNAPSHOTS
-            unavailableReasonText("NON_POSITIVE_BASELINE") shouldBe ViewText.UNAVAILABLE_NON_POSITIVE_BASELINE
-            unavailableReasonText("BASELINE_MISMATCH") shouldBe ViewText.UNAVAILABLE_BASELINE_MISMATCH
-            unavailableReasonText("MISSING_PRICE") shouldBe ViewText.UNAVAILABLE_MISSING_PRICE
-            unavailableReasonText("ASSET_UNIVERSE_CHANGED") shouldBe ViewText.UNAVAILABLE_ASSET_UNIVERSE_CHANGED
-            unavailableReasonText("UNSUPPORTED_TRADE") shouldBe ViewText.UNAVAILABLE_UNSUPPORTED_TRADE
-            unavailableReasonText("UNEXPLAINED_BALANCE_CHANGE") shouldBe ViewText.UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE
-            unavailableReasonText("unknown_reason") shouldBe ViewText.UNAVAILABLE_INVALID_RESPONSE
-            unavailableReasonText(null) shouldBe ViewText.UNAVAILABLE_INVALID_RESPONSE
+            unavailableReasonText("INSUFFICIENT_SNAPSHOTS") shouldBe
+                "Not enough history exists in this range to compare strategies."
+            unavailableReasonText("NON_POSITIVE_BASELINE") shouldBe
+                "The comparison needs a positive starting portfolio value."
+            unavailableReasonText("BASELINE_MISMATCH") shouldBe
+                "Starting holdings do not reconcile with the recorded portfolio value."
+            unavailableReasonText("MISSING_PRICE") shouldBe
+                "A required historical asset price is missing."
+            unavailableReasonText("ASSET_UNIVERSE_CHANGED") shouldBe
+                "The configured asset set changed during this range."
+            unavailableReasonText("UNSUPPORTED_TRADE") shouldBe
+                "A recorded trade cannot be reconciled safely."
+            unavailableReasonText("UNEXPLAINED_BALANCE_CHANGE") shouldBe
+                "A deposit, withdrawal, transfer, or incomplete trade history may exist."
+            unavailableReasonText("unknown_reason") shouldBe "Comparison data could not be validated."
+            unavailableReasonText(null) shouldBe "Comparison data could not be validated."
         }
     }
 }

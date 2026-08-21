@@ -1,0 +1,10 @@
+ActionLogFormat:
+  VOLUME_MARKER: "Volume:"
+  VALUE_MARKER: "Value:"
+  COST_MARKER: "Cost:"
+  DRY_RUN_PREFIX: "[DRY RUN] "
+  INFO_DEVIATION_PREFIX: "Deviation: "
+  INFO_FIAT_CORRECTION_ENFORCED: "USD Deviation Triggered. Enforcing fiat correction."
+  INFO_DISTRIBUTING_FIAT_PREFIX: "Distributing Fiat Correction ($"
+  INFO_DISTRIBUTING_FIAT_MIDDLE: ") among "
+  INFO_CANDIDATES_SUFFIX: " candidates."

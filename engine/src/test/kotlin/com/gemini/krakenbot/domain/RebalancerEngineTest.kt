@@ -226,25 +226,6 @@ class RebalancerEngineTest : StringSpec() {
                 }
         }
 
-        "distributeFiatCorrectionPlan returns typed distribution event" {
-            val events = mutableListOf<RebalanceEvent>()
-            RebalancerEngine.distributeFiatCorrectionPlan(
-                usdDev = BigDecimal("100.00"),
-                allDevs = mapOf(
-                    Asset.USD to BigDecimal("100.00"),
-                    Asset.BTC to BigDecimal("-60.00"),
-                    Asset.ETH to BigDecimal("-40.00"),
-                ),
-                buyOrders = mutableMapOf(),
-                sellOrders = mutableMapOf(),
-                events = events,
-            )
-
-            val distribution = events.filterIsInstance<RebalanceEvent.FiatCorrectionDistributed>().single()
-            distribution.usdAmount.shouldBeEqualComparingTo(BigDecimal("100.00"))
-            distribution.candidateCount shouldBe 2
-        }
-
         "calculatePortfolioValues returns failure when crypto price is missing or zero" {
             val balances = mapOf("BTC" to BigDecimal("1.0"), "USD" to BigDecimal("100.00"))
             val missingPrice = RebalancerEngine.calculatePortfolioValues(

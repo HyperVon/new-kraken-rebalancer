@@ -19,15 +19,6 @@ walkthrough of Dashboard, Settings, History, and safety modes
 
 ## Why Use Kraken Rebalancer?
 
-A target-allocation portfolio does not stay on target by itself: market moves,
-deposits, and withdrawals continually change each asset's share. Keeping the
-original plan manually means checking balances, calculating trades, and deciding
-when to act—work that is easy to postpone or turn into an emotional market-timing
-decision.
-
-Kraken Rebalancer turns that plan into a repeatable process. It is useful if you
-want to:
-
 - **Stay disciplined automatically** — define the mix you want and let the bot
   correct meaningful drift instead of reacting to headlines or price swings.
 - **Optionally put cash to work gradually during drawdowns** — configure the bot
@@ -155,14 +146,13 @@ Development during this phase used feature branches merged via pull requests:
 - `large_refactor` (PR #13) — TypeScript migration, Tailwind CSS v4 integration,
   Lombok adoption, and 95%+ coverage enforcement across both frontend and backend
 
-> **If you are evaluating my backend skills**, the early commit history
-> showcases idiomatic Java, Spring Boot dependency injection,
-> service/repository layering, JUnit 5 testing patterns, and Maven build
-> configuration — the technologies I work with daily.
+> The early commit history showcases idiomatic Java, Spring Boot dependency
+> injection, service/repository layering, JUnit 5 testing patterns, and Maven
+> build configuration.
 
 ### Phase 2 — Kotlin / Ktor / Koin / Gradle *(May 2026)*
 
-I migrated the entire codebase from Java to **Kotlin 2.x**, **Ktor** (Netty
+The entire codebase was migrated from Java to **Kotlin 2.x**, **Ktor** (Netty
 engine), **Koin** (DI), **Gradle** (Kotlin DSL), and **Kotest / MockK** for
 testing. This migration was developed on the `kotlin-migration` branch and
 merged via PR #15. Kotlin's coroutines replaced Java's
@@ -192,28 +182,28 @@ The Kotlin phase continued with several focused branches:
 
 ### Phase 3 — Go *(Jun 2026, experimental)*
 
-To explore a completely different paradigm, I rewrote the application in
-**Go 1.26** — goroutines, `net/http`, `html/template`, `encoding/json`,
-`log/slog`, and `shopspring/decimal`. This taught me Go's explicit error
-handling, interface-based polymorphism, and `context.Context` propagation. The
-Go version achieved 98.2% test coverage with strict per-package gates. The
-complete Go codebase is preserved on the
-[`go-rewrite`](../../tree/go-rewrite) branch (9 commits).
+The application was rewritten in **Go 1.26** — goroutines, `net/http`,
+`html/template`, `encoding/json`, `log/slog`, and `shopspring/decimal`. The Go
+version achieved 98.2% test coverage with strict per-package gates. The complete
+Go codebase is preserved on the [`go-rewrite`](../../tree/go-rewrite) branch
+(10 commits).
 
 ### Phase 4 — TypeScript / Node.js / NestJS *(Jun 2026, experimental)*
 
-I then rewrote the application in **TypeScript** with **Node.js**, starting with
-a plain Express backend and React/Vite frontend, then migrating to **NestJS**
-with **Tailwind CSS v4**. This gave me hands-on experience with Zod schema
-validation, the NestJS module/controller/service pattern, and native `fetch` in
-Node.js. The complete TypeScript/NestJS codebase is preserved on the
+The application was then rewritten in **TypeScript** with **Node.js**, starting
+with a plain Express backend and React/Vite frontend, then migrating to
+**NestJS** with **Tailwind CSS v4**, using Zod schema validation, the NestJS
+module/controller/service pattern, and native `fetch` in Node.js. The complete
+TypeScript/NestJS codebase is preserved on the
 [`feature/typescript-rewrite`](../../tree/feature/typescript-rewrite) branch
 (8 commits).
 
 ### Phase 5 — 100% Kotlin & Kotlin Multiplatform *(Jun 2026 – present)*
 
-After building the same application three different ways, I returned to
-**Kotlin / Ktor** as the permanent stack. To eliminate client-side JavaScript entirely, I migrated all remaining frontend scripts to **Kotlin/JS** using **Kotlin Multiplatform (KMP)**. The codebase is now **100% Kotlin**, offering the best balance of:
+After building the same application three different ways, **Kotlin / Ktor**
+became the permanent stack. To eliminate client-side JavaScript entirely, all
+remaining frontend scripts were migrated to **Kotlin/JS** using **Kotlin
+Multiplatform (KMP)**. The codebase is now **100% Kotlin**, offering the best balance of:
 
 - **Kotlin Multiplatform** — compiling a `:frontend-js` subproject directly to JavaScript via the Kotlin JS IR backend, replacing legacy browser scripts with type-safe Kotlin code.
 - **Conciseness** — data classes, extension functions, and coroutines dramatically reduce boilerplate compared to Java.
@@ -228,9 +218,6 @@ logic across three languages and ecosystems.
 Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and flow-based trade history pagination directly into the `main` branch. Additionally, the remaining client-side Javascript logic was rewritten to Kotlin/JS under the `:frontend-js` subproject, achieving a 100% Kotlin codebase.
 
 ### Technologies Explored
-
-Building the same application across multiple stacks gave me hands-on experience
-with a wide range of tools and paradigms:
 
 | Category               | Technologies Used                                                                                                                     |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -709,7 +696,7 @@ Or if you wish to build and execute the Fat JAR manually:
 ./gradlew fatJar
 
 # Run using the JVM (includes optimal JVM parameters for native SQLite memory access)
-java -Xshare:off --enable-native-access=ALL-UNNAMED -jar build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
+java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
 ```
 
 For a local quality-gated release build, use `./gradlew build fatJar` without

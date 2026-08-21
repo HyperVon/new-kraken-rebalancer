@@ -3,7 +3,6 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -51,8 +50,8 @@ class HistoryTradeRenderingTest : StringSpec() {
                 val firstRow = tbody.rows.item(0) as HTMLTableRowElement
                 firstRow.cells.length shouldBe PrecisionConstants.TRADE_TABLE_COLSPAN
                 tbody.innerHTML shouldContain "badge-slippage-adverse"
-                tbody.innerHTML shouldContain ViewText.EM_DASH
-                tbody.innerHTML shouldContain ViewText.TRADE_FAILED_TITLE_PREFIX + "Insufficient funds"
+                tbody.innerHTML shouldContain "—"
+                tbody.innerHTML shouldContain "Error: Insufficient funds"
             } finally {
                 document.body!!.removeChild(container)
             }

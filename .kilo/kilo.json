@@ -26,16 +26,6 @@
       "url": "https://mcp.grep.app",
       "enabled": true
     },
-    "sqlite": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "mcp-server-sqlite-npx",
-        "build/kilo-disposable.db"
-      ],
-      "enabled": true
-    },
     "playwright": {
       "type": "local",
       "command": [
@@ -46,10 +36,7 @@
       "enabled": true
     }
   },
-  "permission": {
-    "sqlite_write_query": "deny",
-    "sqlite_create_table": "deny"
-  },
+  "permission": {},
   "plugin": [
     "context-mode"
   ],

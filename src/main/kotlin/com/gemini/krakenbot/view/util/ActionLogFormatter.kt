@@ -9,15 +9,15 @@ import java.math.BigDecimal
 object ActionLogFormatter {
     fun formatDeviationTrigger(symbol: String, deviationPercent: BigDecimal): String {
         val formatted = deviationPercent.toPercentScale().stripTrailingZeros().toPlainString()
-        return "${ViewText.ACTION_DEVIATION_PREFIX}$symbol $formatted%"
+        return "${ActionLogFormat.INFO_DEVIATION_PREFIX}$symbol $formatted%"
     }
 
-    fun formatFiatCorrectionEnforced(): String = ViewText.ACTION_FIAT_CORRECTION_ENFORCED
+    fun formatFiatCorrectionEnforced(): String = ActionLogFormat.INFO_FIAT_CORRECTION_ENFORCED
 
     fun formatFiatCorrectionDistribution(deviationAbs: BigDecimal, candidateCount: Int): String {
         val formattedAmount = deviationAbs.toUsdScale().toPlainString()
-        return "${ViewText.ACTION_DISTRIBUTING_FIAT_PREFIX}$formattedAmount" +
-            "${ViewText.ACTION_DISTRIBUTING_FIAT_MIDDLE}$candidateCount${ViewText.ACTION_CANDIDATES_SUFFIX}"
+        return "${ActionLogFormat.INFO_DISTRIBUTING_FIAT_PREFIX}$formattedAmount" +
+            "${ActionLogFormat.INFO_DISTRIBUTING_FIAT_MIDDLE}$candidateCount${ActionLogFormat.INFO_CANDIDATES_SUFFIX}"
     }
 
     fun formatNoCounterBalancingAssets(): String = ViewText.ACTION_NO_COUNTERBALANCING_ASSETS
@@ -29,11 +29,12 @@ object ActionLogFormatter {
         usdAmount: BigDecimal,
         isDryRun: Boolean,
     ): String {
-        val prefix = if (isDryRun) ViewText.DRY_RUN_PREFIX else ""
-        val valueLabel = if (side == OrderSide.SELL) ViewText.ACTION_VALUE_LABEL else ViewText.ACTION_COST_LABEL
+        val prefix = if (isDryRun) ActionLogFormat.DRY_RUN_PREFIX else ""
+        val valueMarker = if (side == OrderSide.SELL) ActionLogFormat.VALUE_MARKER else ActionLogFormat.COST_MARKER
         val formattedVolume = volume.toCryptoScale().stripTrailingZeros().toPlainString()
         val formattedUsd = usdAmount.toUsdScale().toPlainString()
-        return "${prefix}${side.uppercaseName} $symbol Volume: $formattedVolume $valueLabel: $$formattedUsd"
+        val volumeMarker = ActionLogFormat.VOLUME_MARKER
+        return "${prefix}${side.uppercaseName} $symbol $volumeMarker $formattedVolume $valueMarker $$formattedUsd"
     }
 
     fun formatOrderFailure(side: OrderSide, symbol: String, errorMessage: String?): String =

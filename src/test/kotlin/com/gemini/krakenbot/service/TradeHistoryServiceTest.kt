@@ -22,7 +22,6 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
-import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode

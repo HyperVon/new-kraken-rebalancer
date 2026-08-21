@@ -3,7 +3,6 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.api.PortfolioSnapshot
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.view.util.ChartProps
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -473,8 +472,8 @@ class HistoryChartsTest : StringSpec() {
                 tick3(-5.6, 0, null).toString() shouldBe "-5.6%"
                 (driftConfig.options.scales.y.beginAtZero as Boolean) shouldBe true
                 val gridColor3 = driftConfig.options.scales.y.grid.color
-                gridColor3(json("tick" to json("value" to 0))).toString() shouldBe ChartProps.COLOR_ZERO_LINE
-                gridColor3(json("tick" to json("value" to 1))).toString() shouldBe ChartProps.COLOR_GRID_LINE
+                gridColor3(json("tick" to json("value" to 0))).toString() shouldBe "rgba(148, 163, 184, 0.65)"
+                gridColor3(json("tick" to json("value" to 1))).toString() shouldBe "rgba(51, 65, 85, 0.3)"
 
                 val plConfig = window.asDynamic().chartConfigs[3]
                 val tick4 = plConfig.options.scales.y.ticks.callback
