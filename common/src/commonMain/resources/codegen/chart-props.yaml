@@ -1,0 +1,154 @@
+ChartProps:
+  # Chart.js option keys
+  LABEL: "label"
+  DATA: "data"
+  BORDER_COLOR: "borderColor"
+  BACKGROUND_COLOR: "backgroundColor"
+  FILL: "fill"
+  TENSION: "tension"
+  BORDER_WIDTH: "borderWidth"
+  BORDER_DASH: "borderDash"
+  POINT_RADIUS: "pointRadius"
+  POINT_HOVER_RADIUS: "pointHoverRadius"
+  POINT_HIT_RADIUS: "pointHitRadius"
+  TRANSPARENT: "transparent"
+  RESPONSIVE: "responsive"
+  MAINTAIN_ASPECT_RATIO: "maintainAspectRatio"
+  PLUGINS: "plugins"
+  LEGEND: "legend"
+  LABELS: "labels"
+  COLOR: "color"
+  FONT: "font"
+  FAMILY: "family"
+  SIZE: "size"
+  TOOLTIP: "tooltip"
+  TITLE_COLOR: "titleColor"
+  BODY_COLOR: "bodyColor"
+  BODY_FONT: "bodyFont"
+  PADDING: "padding"
+  CORNER_RADIUS: "cornerRadius"
+  SCALES: "scales"
+  X: "x"
+  Y: "y"
+  TYPE: "type"
+  TIME: "time"
+  TOOLTIP_FORMAT: "tooltipFormat"
+  GRID: "grid"
+  TICKS: "ticks"
+  MAX_TICKS_LIMIT: "maxTicksLimit"
+  BEGIN_AT_ZERO: "beginAtZero"
+  USE_POINT_STYLE: "usePointStyle"
+  POINT_STYLE: "pointStyle"
+  POINT_STYLE_WIDTH: "pointStyleWidth"
+  FILTER: "filter"
+
+  # Time formatting & units
+  TIME_TYPE: "time"
+  TIME_FORMAT_DEFAULT: "MMM d, yyyy HH:mm"
+  TIME_UNIT_HOUR: "hour"
+  TIME_UNIT_MINUTE: "minute"
+  TIME_UNIT_DAY: "day"
+
+  # Default layout & dimension constants
+  FONT_SIZE_LEGEND: 12
+  BORDER_WIDTH_TOOLTIP: 1
+  PADDING_TOOLTIP: 12
+  CORNER_RADIUS_TOOLTIP: 8
+  MAX_TICKS_LIMIT_DEFAULT: 8
+  LEGEND_POINT_STYLE_LINE: "line"
+  LEGEND_POINT_STYLE_WIDTH: 24
+
+  TENSION_CURVED: 0.3
+  BORDER_WIDTH_PRIMARY: 2.0
+  BORDER_WIDTH_SECONDARY: 1.5
+  BORDER_DASH_SEGMENT: 6
+  BORDER_DASH_GAP: 4
+  POINT_RADIUS_PRIMARY: 4
+  POINT_RADIUS_SECONDARY: 3
+  POINT_HOVER_RADIUS_PRIMARY: 6
+  POINT_HOVER_RADIUS_SECONDARY: 5
+  POINT_HIT_RADIUS_DEFAULT: 10
+  POINT_RADIUS_HIDDEN: 0
+
+  # Density thresholds
+  POINT_DENSITY_FULL_MAX: 24
+  POINT_DENSITY_HALF_MAX: 48
+
+  # chartjs-plugin-zoom option keys
+  ZOOM: "zoom"
+  PAN: "pan"
+  WHEEL: "wheel"
+  PINCH: "pinch"
+  DRAG: "drag"
+  ENABLED: "enabled"
+  MODE: "mode"
+  MODE_X: "x"
+  LIMITS: "limits"
+  MIN_RANGE: "minRange"
+  MIN: "min"
+  MAX: "max"
+  ORIGINAL: "original"
+  ON_ZOOM_COMPLETE: "onZoomComplete"
+  TRANSITION_NONE: "none"
+
+  # Zoom factors & bounds
+  ZOOM_MIN_RANGE_MS: 3600000
+  ZOOM_FACTOR_IN: 1.2
+  ZOOM_FACTOR_OUT: 0.8
+  DATASET_VISIBILITY_DEFAULT: "*"
+
+  # Fonts & theme colors
+  FONT_INTER: "'Inter', sans-serif"
+  FONT_MONO: "'Roboto Mono', monospace"
+  COLOR_LEGEND_LABEL: "#94a3b8"
+  COLOR_TOOLTIP_BG: "rgba(15, 23, 42, 0.9)"
+  COLOR_TOOLTIP_BORDER: "rgba(255, 255, 255, 0.1)"
+  COLOR_TOOLTIP_TITLE: "#f8fafc"
+  COLOR_TOOLTIP_BODY: "#cbd5e1"
+  COLOR_GRID_LINE: "rgba(51, 65, 85, 0.3)"
+  COLOR_ZERO_LINE: "rgba(148, 163, 184, 0.65)"
+  COLOR_TICK: "#64748b"
+
+  # Color palette
+  COLOR_BLUE: "rgba(96, 165, 250, 1)"
+  COLOR_EMERALD: "rgba(52, 211, 153, 1)"
+  COLOR_AMBER: "rgba(251, 191, 36, 1)"
+  COLOR_VIOLET: "rgba(167, 139, 250, 1)"
+  COLOR_RED: "rgba(248, 113, 113, 1)"
+  COLOR_TEAL: "rgba(45, 212, 191, 1)"
+  COLOR_ORANGE: "rgba(251, 146, 60, 1)"
+  COLOR_FUCHSIA: "rgba(232, 121, 249, 1)"
+  COLOR_SLATE: "rgba(148, 163, 184, 1)"
+
+  COLOR_BLUE_BG: "rgba(96, 165, 250, 0.08)"
+  COLOR_GREEN_BG: "rgba(52, 211, 153, 0.08)"
+
+  COLOR_BLUE_BG_PALETTE: "rgba(96, 165, 250, 0.1)"
+  COLOR_EMERALD_BG_PALETTE: "rgba(52, 211, 153, 0.1)"
+  COLOR_AMBER_BG_PALETTE: "rgba(251, 191, 36, 0.1)"
+  COLOR_VIOLET_BG_PALETTE: "rgba(167, 139, 250, 0.1)"
+  COLOR_RED_BG_PALETTE: "rgba(248, 113, 113, 0.1)"
+  COLOR_TEAL_BG_PALETTE: "rgba(45, 212, 191, 0.1)"
+  COLOR_ORANGE_BG_PALETTE: "rgba(251, 146, 60, 0.1)"
+  COLOR_FUCHSIA_BG_PALETTE: "rgba(232, 121, 249, 0.1)"
+  COLOR_SLATE_BG_PALETTE: "rgba(148, 163, 184, 0.12)"
+
+  # Solid hex colors
+  SOLID_BLUE: "#60a5fa"
+  SOLID_EMERALD: "#34d399"
+  SOLID_AMBER: "#fbbf24"
+  SOLID_VIOLET: "#a78bfa"
+  SOLID_RED: "#f87171"
+  SOLID_TEAL: "#2dd4bf"
+  SOLID_ORANGE: "#fb923c"
+  SOLID_FUCHSIA: "#e879f9"
+  SOLID_SLATE: "#94a3b8"
+  SOLID_YELLOW: "#facc15"
+  SOLID_SKY: "#38bdf8"
+
+  ASSET_COLORS_GLOBAL_KEY: "__ASSET_COLORS__"
+
+  SOLID_BTC: "#fbbf24"
+  SOLID_ETH: "#a78bfa"
+  SOLID_USD: "#94a3b8"
+  SOLID_FALLBACK: "#60a5fa"

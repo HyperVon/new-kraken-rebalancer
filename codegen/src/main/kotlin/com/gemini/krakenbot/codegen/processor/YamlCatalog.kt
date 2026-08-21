@@ -5,7 +5,7 @@ import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.SafeConstructor
 import java.io.File
 
-internal data class CatalogDefinition(val group: String, val name: String, val value: String)
+internal data class CatalogDefinition(val group: String, val name: String, val value: Any)
 
 internal fun loadYamlCatalog(resource: String, resourceRoot: String): List<CatalogDefinition> {
     val resourceFile = resolveCatalogFile(resource, resourceRoot)
@@ -66,8 +66,8 @@ private fun parseGroupDefinitions(group: String, entries: Map<*, *>, resource: S
                 ?: failCatalog("Catalog constant names must be strings: $catalogLocation")
             validateIdentifier(name, "constant", catalogLocation)
 
-            val value = rawValue as? String
-                ?: failCatalog("Catalog values must be strings: $catalogLocation.$name")
+            val value = rawValue?.takeIf { it is String || it is Number || it is Boolean }
+                ?: failCatalog("Catalog values must be scalars (string, number, boolean): $catalogLocation.$name")
 
             add(CatalogDefinition(group, name, value))
         }

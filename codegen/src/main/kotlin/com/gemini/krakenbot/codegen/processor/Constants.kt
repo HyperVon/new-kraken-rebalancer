@@ -7,6 +7,8 @@ internal const val FILE_NAME_ARGUMENT = "fileName"
 
 internal const val CSS_THEME_FILE_NAME = "CssTheme"
 internal const val CSS_THEME_VARS_FILE_NAME = "CssThemeVars"
+internal const val CHART_PROPS_FILE_NAME = "ChartProps"
+internal const val ASSET_IMPORT = "import com.gemini.krakenbot.model.Asset"
 
 internal const val CSS_VARIABLE_PREFIX = "--"
 internal const val CSS_RADIUS_PREFIX = "radius"

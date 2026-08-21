@@ -2,6 +2,9 @@ package com.gemini.krakenbot.view.util
 
 import com.gemini.krakenbot.codegen.GenerateStringConstants
 
+@GenerateStringConstants(fileName = "ChartProps", resource = "codegen/chart-props.yaml")
+internal object ChartPropsSchema
+
 @GenerateStringConstants(fileName = "CssThemeVars", resource = "codegen/css-theme.yaml")
 internal object CssThemeVarsSchema
 

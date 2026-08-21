@@ -51,24 +51,117 @@ private class StringConstantProcessor(private val support: CatalogProcessorSuppo
         }.toString()
 
     private fun KotlinSourceBuilder.renderThemeImportsIfNeeded(fileName: String) {
-        if (fileName != CSS_THEME_FILE_NAME) return
+        when (fileName) {
+            CSS_THEME_FILE_NAME -> {
+                listOf(
+                    CSS_THEME_VARS_IMPORT,
+                    COLOR_IMPORT,
+                    CSS_BUILDER_IMPORT,
+                    PX_IMPORT,
+                    REM_IMPORT,
+                ).forEach(::line)
+                line()
+            }
 
-        listOf(
-            CSS_THEME_VARS_IMPORT,
-            COLOR_IMPORT,
-            CSS_BUILDER_IMPORT,
-            PX_IMPORT,
-            REM_IMPORT,
-        ).forEach(::line)
-
-        line()
+            CHART_PROPS_FILE_NAME -> {
+                line(ASSET_IMPORT)
+                line()
+            }
+        }
     }
 
     private fun KotlinSourceBuilder.renderGeneratedBody(input: CatalogInput, fileName: String) {
         when (fileName) {
             CSS_THEME_VARS_FILE_NAME -> renderCssThemeVars(input, fileName)
             CSS_THEME_FILE_NAME -> renderCssTheme(input, fileName)
+            CHART_PROPS_FILE_NAME -> renderChartProps(input, fileName)
             else -> renderDefaultGroups(input)
+        }
+    }
+
+    private fun KotlinSourceBuilder.renderChartProps(input: CatalogInput, fileName: String) {
+        block("object $fileName") {
+            input.definitions.forEach { definition ->
+                line(renderDefinition(definition))
+            }
+
+            line()
+            line("val PALETTE_BORDER_COLORS = arrayOf(")
+            line("    COLOR_BLUE,")
+            line("    COLOR_EMERALD,")
+            line("    COLOR_AMBER,")
+            line("    COLOR_VIOLET,")
+            line("    COLOR_RED,")
+            line("    COLOR_TEAL,")
+            line("    COLOR_ORANGE,")
+            line("    COLOR_FUCHSIA,")
+            line(")")
+            line()
+            line("val PALETTE_BG_COLORS = arrayOf(")
+            line("    COLOR_BLUE_BG_PALETTE,")
+            line("    COLOR_EMERALD_BG_PALETTE,")
+            line("    COLOR_AMBER_BG_PALETTE,")
+            line("    COLOR_VIOLET_BG_PALETTE,")
+            line("    COLOR_RED_BG_PALETTE,")
+            line("    COLOR_TEAL_BG_PALETTE,")
+            line("    COLOR_ORANGE_BG_PALETTE,")
+            line("    COLOR_FUCHSIA_BG_PALETTE,")
+            line(")")
+            line()
+            line("private val SOLID_FALLBACK_PALETTE =")
+            line("    arrayOf(")
+            line("        SOLID_BLUE,")
+            line("        SOLID_EMERALD,")
+            line("        SOLID_AMBER,")
+            line("        SOLID_VIOLET,")
+            line("        SOLID_RED,")
+            line("        SOLID_TEAL,")
+            line("        SOLID_ORANGE,")
+            line("        SOLID_FUCHSIA,")
+            line("    )")
+            line()
+            line(
+                "private class SymbolColors(val btc: String, val eth: String, val usd: String, val fallbackPalette: Array<String>)",
+            )
+            line()
+            line("private val BORDER_COLORS = SymbolColors(")
+            line("    btc = COLOR_AMBER,")
+            line("    eth = COLOR_VIOLET,")
+            line("    usd = COLOR_SLATE,")
+            line("    fallbackPalette = PALETTE_BORDER_COLORS,")
+            line(")")
+            line()
+            line("private val BG_COLORS = SymbolColors(")
+            line("    btc = COLOR_AMBER_BG_PALETTE,")
+            line("    eth = COLOR_VIOLET_BG_PALETTE,")
+            line("    usd = COLOR_SLATE_BG_PALETTE,")
+            line("    fallbackPalette = PALETTE_BG_COLORS,")
+            line(")")
+            line()
+            line("private val SOLID_COLORS = SymbolColors(")
+            line("    btc = SOLID_BTC,")
+            line("    eth = SOLID_ETH,")
+            line("    usd = SOLID_USD,")
+            line("    fallbackPalette = SOLID_FALLBACK_PALETTE,")
+            line(")")
+            line()
+            line("private fun colorForSymbol(symbol: String, fallbackIndex: Int, colors: SymbolColors): String =")
+            line("    when (symbol.uppercase()) {")
+            line("        Asset.BTC -> colors.btc")
+            line("        Asset.ETH -> colors.eth")
+            line("        Asset.USD -> colors.usd")
+            line("        else -> colors.fallbackPalette[fallbackIndex % colors.fallbackPalette.size]")
+            line("    }")
+            line()
+            line("/** Default per-asset chart colors; Settings-stored colors override when present. */")
+            line("fun borderColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =")
+            line("    colorForSymbol(symbol, fallbackIndex, BORDER_COLORS)")
+            line()
+            line("fun backgroundColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =")
+            line("    colorForSymbol(symbol, fallbackIndex, BG_COLORS)")
+            line()
+            line("fun solidColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =")
+            line("    colorForSymbol(symbol, fallbackIndex, SOLID_COLORS)")
         }
     }
 
@@ -77,7 +170,7 @@ private class StringConstantProcessor(private val support: CatalogProcessorSuppo
 
         block("object $objectName") {
             input.definitions.forEach { definition ->
-                line(renderStringDefinition(definition))
+                line(renderDefinition(definition))
             }
 
             line()
@@ -111,26 +204,28 @@ private class StringConstantProcessor(private val support: CatalogProcessorSuppo
     private fun renderCssThemeDefinition(definition: CatalogDefinition): String = when {
         definition.name.startsWith(CSS_RADIUS_PREFIX) -> renderRadiusDefinition(definition)
         definition.name.startsWith(CSS_COLOR_PREFIX) -> renderColorDefinition(definition)
-        else -> renderStringDefinition(definition)
+        else -> renderDefinition(definition)
     }
 
     private fun renderRadiusDefinition(definition: CatalogDefinition): String {
-        val escapedValue = escapeKotlinString(definition.value)
-        val renderedValue = renderRadiusValue(definition.value, escapedValue)
+        val strValue = definition.value.toString()
+        val escapedValue = escapeKotlinString(strValue)
+        val renderedValue = renderRadiusValue(strValue, escapedValue)
 
         return "val ${definition.name} = $renderedValue"
     }
 
     private fun renderColorDefinition(definition: CatalogDefinition): String {
-        val escapedValue = escapeKotlinString(definition.value)
+        val escapedValue = escapeKotlinString(definition.value.toString())
 
         return "val ${definition.name} = Color(\"$escapedValue\")"
     }
 
-    private fun renderStringDefinition(definition: CatalogDefinition): String {
-        val escapedValue = escapeKotlinString(definition.value)
-
-        return "const val ${definition.name} = \"$escapedValue\""
+    private fun renderDefinition(definition: CatalogDefinition): String = when (val value = definition.value) {
+        is Number -> "const val ${definition.name} = $value"
+        is Boolean -> "const val ${definition.name} = $value"
+        is String -> "const val ${definition.name} = \"${escapeKotlinString(value)}\""
+        else -> "const val ${definition.name} = \"${escapeKotlinString(value.toString())}\""
     }
 
     private fun KotlinSourceBuilder.renderRootVariablesFunction() {
@@ -145,7 +240,7 @@ private class StringConstantProcessor(private val support: CatalogProcessorSuppo
         renderGroups(
             input.definitions,
             header = { group -> "object $group" },
-            entry = { definition, _ -> renderStringDefinition(definition) },
+            entry = { definition, _ -> renderDefinition(definition) },
         )
     }
 
