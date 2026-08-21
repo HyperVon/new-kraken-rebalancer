@@ -162,13 +162,4 @@ private fun RebalancerComparison.hasCompletePointData(): Boolean = points.all { 
         dynamicNumber(point.differencePercent) != null
 }
 
-internal fun unavailableReasonText(reason: String?): String = when (reason) {
-    ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS.name -> ViewText.UNAVAILABLE_INSUFFICIENT_SNAPSHOTS
-    ComparisonUnavailableReason.NON_POSITIVE_BASELINE.name -> ViewText.UNAVAILABLE_NON_POSITIVE_BASELINE
-    ComparisonUnavailableReason.BASELINE_MISMATCH.name -> ViewText.UNAVAILABLE_BASELINE_MISMATCH
-    ComparisonUnavailableReason.MISSING_PRICE.name -> ViewText.UNAVAILABLE_MISSING_PRICE
-    ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED.name -> ViewText.UNAVAILABLE_ASSET_UNIVERSE_CHANGED
-    ComparisonUnavailableReason.UNSUPPORTED_TRADE.name -> ViewText.UNAVAILABLE_UNSUPPORTED_TRADE
-    ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE.name -> ViewText.UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE
-    else -> ViewText.UNAVAILABLE_INVALID_RESPONSE
-}
+internal fun unavailableReasonText(reason: String?): String = ComparisonUnavailableReason.displayTextFor(reason)
