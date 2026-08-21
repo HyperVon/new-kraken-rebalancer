@@ -1,6 +1,11 @@
 package com.gemini.krakenbot.repository.table
 
+import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentState
+import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
+import java.time.Instant
 
 object OrderIntentTable : Table("order_intents") {
     val id = integer("id").autoIncrement()
@@ -29,4 +34,43 @@ object OrderIntentTable : Table("order_intents") {
     }
 
     override val primaryKey = PrimaryKey(id)
+
+    fun toModel(row: ResultRow): OrderIntent = OrderIntent(
+        id = row[id],
+        cycleId = row[cycleId],
+        clientOrderId = row[clientOrderId],
+        clientOrderIdAmbiguous = row[clientOrderIdAmbiguous],
+        pair = row[pair],
+        symbol = row[symbol],
+        side = row[side],
+        volume = row[volume],
+        usdAmount = row[usdAmount],
+        expectedPrice = row[expectedPrice],
+        createdAt = Instant.ofEpochMilli(row[createdAt]),
+        state = OrderIntentState.valueOf(row[state]),
+        orderTxid = row[orderTxid],
+        errorMessage = row[errorMessage],
+        resolvedAt = row[resolvedAt]?.let(Instant::ofEpochMilli),
+        resolutionEvidence = row[resolutionEvidence],
+        localTradeId = row[localTradeId],
+    )
+
+    fun applyPending(builder: UpdateBuilder<*>, intent: OrderIntent) {
+        builder[cycleId] = intent.cycleId
+        builder[clientOrderId] = intent.clientOrderId
+        builder[clientOrderIdAmbiguous] = intent.clientOrderIdAmbiguous
+        builder[pair] = intent.pair
+        builder[symbol] = intent.symbol
+        builder[side] = intent.side
+        builder[volume] = intent.volume
+        builder[usdAmount] = intent.usdAmount
+        builder[expectedPrice] = intent.expectedPrice
+        builder[createdAt] = intent.createdAt.toEpochMilli()
+        builder[state] = OrderIntentState.PENDING.name
+        builder[orderTxid] = null
+        builder[errorMessage] = null
+        builder[resolvedAt] = null
+        builder[resolutionEvidence] = null
+        builder[localTradeId] = intent.localTradeId
+    }
 }

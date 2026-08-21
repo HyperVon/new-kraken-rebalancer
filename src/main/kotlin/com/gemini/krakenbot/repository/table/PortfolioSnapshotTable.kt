@@ -1,6 +1,10 @@
 package com.gemini.krakenbot.repository.table
 
+import com.gemini.krakenbot.model.PortfolioSnapshot
+import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
+import java.time.Instant
 
 object PortfolioSnapshotTable : Table("portfolio_snapshots") {
     val id = integer("id").autoIncrement()
@@ -15,4 +19,26 @@ object PortfolioSnapshotTable : Table("portfolio_snapshots") {
     }
 
     override val primaryKey = PrimaryKey(id)
+
+    fun toModel(
+        row: ResultRow,
+        assets: Map<String, PortfolioSnapshot.AssetSnapshot>,
+        actions: List<String>,
+    ): PortfolioSnapshot = PortfolioSnapshot(
+        timestamp = Instant.ofEpochMilli(row[timestamp]),
+        totalValueUSD = row[totalValueUSD],
+        assets = assets,
+        actions = actions,
+        drawdownPercent = row[drawdownPercent],
+        fiatDeploymentPercent = row[fiatDeploymentPercent],
+        effectiveUsdTargetPercent = row[effectiveUsdTargetPercent],
+    )
+
+    fun applyTo(builder: UpdateBuilder<*>, snapshot: PortfolioSnapshot) {
+        builder[timestamp] = snapshot.timestamp.toEpochMilli()
+        builder[totalValueUSD] = snapshot.totalValueUSD
+        builder[drawdownPercent] = snapshot.drawdownPercent
+        builder[fiatDeploymentPercent] = snapshot.fiatDeploymentPercent
+        builder[effectiveUsdTargetPercent] = snapshot.effectiveUsdTargetPercent
+    }
 }

@@ -187,17 +187,36 @@ override fun setSyncMetadata(key: String, value: String) {
 }
 ```
 
-## UpdateBuilder Helpers
+## Co-located Table Mappers (`toModel` & `applyTo`)
 
-Extract repeated column assignments into `UpdateBuilder` extension methods:
+Define entity mapping methods directly on `Table` singleton objects:
+
+- `toModel(row: ResultRow): Model`
+- `applyTo(builder: UpdateBuilder<*>, model: Model)`
+
+This couples the SQL column definitions directly with model mapping logic, eliminates repetitive `Table.` prefix boilerplate in repository implementations, and enables clean functional references like `.map(TradeTable::toModel)`:
 
 ```kotlin
-private fun UpdateBuilder<*>.applyTradeFields(trade: TradeRecord) {
-    this[TradeTable.timestamp] = trade.timestamp.toEpochMilli()
-    this[TradeTable.pair] = trade.pair
-    this[TradeTable.side] = trade.side
-    this[TradeTable.volume] = trade.volume
+// In Table definition:
+object TradeTable : Table("trades") {
+    val id = integer("id").autoIncrement()
+    val timestamp = long("timestamp")
+    val pair = varchar("pair", 16)
+
+    fun toModel(row: ResultRow): TradeRecord = TradeRecord(
+        timestamp = Instant.ofEpochMilli(row[timestamp]),
+        pair = row[pair],
+    )
+
+    fun applyTo(builder: UpdateBuilder<*>, trade: TradeRecord) {
+        builder[timestamp] = trade.timestamp.toEpochMilli()
+        builder[pair] = trade.pair
+    }
 }
+
+// In Repository:
+TradeTable.insert { TradeTable.applyTo(it, trade) }
+TradeTable.selectAll().map(TradeTable::toModel)
 ```
 
 ## Aggregate Queries

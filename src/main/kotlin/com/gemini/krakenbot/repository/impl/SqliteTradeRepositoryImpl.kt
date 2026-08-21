@@ -49,28 +49,6 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     private val log =
         LoggerFactory.getLogger(SqliteTradeRepositoryImpl::class.java)
 
-    private fun UpdateBuilder<*>.applyTradeFields(trade: TradeRecord) {
-        this[TradeTable.timestamp] = trade.timestamp.toEpochMilli()
-        this[TradeTable.pair] = trade.pair
-        this[TradeTable.side] = OrderSide.normalize(trade.side)
-        this[TradeTable.symbol] = trade.symbol
-        this[TradeTable.volume] = trade.volume
-        this[TradeTable.usdAmount] = trade.usdAmount
-        this[TradeTable.success] = trade.success
-        this[TradeTable.dryRun] = trade.dryRun
-        this[TradeTable.errorMessage] = trade.errorMessage
-        this[TradeTable.price] = trade.price
-        this[TradeTable.fee] = trade.fee
-        this[TradeTable.slippagePercent] = trade.slippagePercent
-        this[TradeTable.expectedPrice] = trade.expectedPrice
-        this[TradeTable.tradeSource] = trade.source?.name
-        this[TradeTable.cycleId] = trade.cycleId
-        this[TradeTable.orderTxid] = trade.orderTxid
-        this[TradeTable.tradeId] = trade.tradeId
-        this[TradeTable.clientOrderId] = trade.clientOrderId
-        this[TradeTable.submissionState] = trade.submissionState?.name
-    }
-
     override suspend fun save(history: List<PortfolioSnapshot>) {
         database.safeTransactionIO(log, "Failed to save history to database") {
             for (snapshot in history) {
@@ -115,7 +93,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun saveTrade(trade: TradeRecord): Int =
         database.safeTransactionIO(log, "Failed to save trade to database") {
             TradeTable.insert {
-                it.applyTradeFields(trade)
+                TradeTable.applyTo(it, trade)
             }[TradeTable.id]
         }
 
@@ -133,7 +111,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                         (TradeTable.volume eq oldTrade.volume)
                 }
             }) {
-                it.applyTradeFields(newTrade)
+                TradeTable.applyTo(it, newTrade)
             }
             check(updatedRows == 1) {
                 "Expected to update one trade row, but updated $updatedRows for trade ${oldTrade.id}"
@@ -196,7 +174,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 (TradeTable.timestamp greaterEq from.toEpochMilli()) and
                     (TradeTable.timestamp lessEq to.toEpochMilli())
             }.orderBy(TradeTable.timestamp, SortOrder.DESC)
-            .map { row -> buildTradeFromRow(row) }
+            .map(TradeTable::toModel)
     }
 
     override suspend fun getTradeSummaryStats(): TradeSummaryStats = getTradeSummaryStats(Instant.EPOCH, Instant.now())
@@ -303,31 +281,18 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     private fun insertSnapshotWithChildren(snapshot: PortfolioSnapshot) {
         val snapshotId =
             PortfolioSnapshotTable.insert {
-                it[timestamp] = snapshot.timestamp.toEpochMilli()
-                it[totalValueUSD] = snapshot.totalValueUSD
-                it[drawdownPercent] = snapshot.drawdownPercent
-                it[fiatDeploymentPercent] = snapshot.fiatDeploymentPercent
-                it[effectiveUsdTargetPercent] = snapshot.effectiveUsdTargetPercent
+                PortfolioSnapshotTable.applyTo(it, snapshot)
             }[PortfolioSnapshotTable.id]
 
         for ((_, assetSnapshot) in snapshot.assets) {
             AssetSnapshotTable.insert {
-                it[AssetSnapshotTable.snapshotId] = snapshotId
-                it[symbol] = assetSnapshot.symbol.value
-                it[balance] = assetSnapshot.balance
-                it[price] = assetSnapshot.price
-                it[valueUSD] = assetSnapshot.valueUSD
-                it[targetPercent] = assetSnapshot.targetPercent
-                it[currentPercent] = assetSnapshot.currentPercent
-                it[deviationPercent] = assetSnapshot.deviationPercent
-                it[deviationUSD] = assetSnapshot.deviationUSD
+                AssetSnapshotTable.applyTo(it, snapshotId, assetSnapshot)
             }
         }
 
         for (action in snapshot.actions) {
             ActionLogTable.insert {
-                it[ActionLogTable.snapshotId] = snapshotId
-                it[message] = action
+                ActionLogTable.applyTo(it, snapshotId, action)
             }
         }
     }
@@ -354,58 +319,12 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             val assetRows = allAssetSnapshots[snapshotId] ?: emptyList()
             val actionRows = allActionLogs[snapshotId] ?: emptyList()
 
-            val assetSnapshots =
-                assetRows.associate { assetRow ->
-                    val symbol = assetRow[AssetSnapshotTable.symbol]
-                    symbol to
-                        PortfolioSnapshot.AssetSnapshot(
-                            symbol = Asset(symbol),
-                            balance = assetRow[AssetSnapshotTable.balance],
-                            price = assetRow[AssetSnapshotTable.price],
-                            valueUSD = assetRow[AssetSnapshotTable.valueUSD],
-                            targetPercent = assetRow[AssetSnapshotTable.targetPercent],
-                            currentPercent = assetRow[AssetSnapshotTable.currentPercent],
-                            deviationPercent = assetRow[AssetSnapshotTable.deviationPercent],
-                            deviationUSD = assetRow[AssetSnapshotTable.deviationUSD],
-                        )
-                }
-
+            val assetSnapshots = assetRows.associate(AssetSnapshotTable::toModel)
             val actions = actionRows.map { it[ActionLogTable.message] }
 
-            PortfolioSnapshot(
-                timestamp = Instant.ofEpochMilli(row[PortfolioSnapshotTable.timestamp]),
-                totalValueUSD = row[PortfolioSnapshotTable.totalValueUSD],
-                assets = assetSnapshots,
-                actions = actions,
-                drawdownPercent = row[PortfolioSnapshotTable.drawdownPercent],
-                fiatDeploymentPercent = row[PortfolioSnapshotTable.fiatDeploymentPercent],
-                effectiveUsdTargetPercent = row[PortfolioSnapshotTable.effectiveUsdTargetPercent],
-            )
+            PortfolioSnapshotTable.toModel(row, assetSnapshots, actions)
         }
     }
-
-    private fun buildTradeFromRow(row: ResultRow): TradeRecord = TradeRecord(
-        timestamp = Instant.ofEpochMilli(row[TradeTable.timestamp]),
-        pair = row[TradeTable.pair],
-        side = OrderSide.normalize(row[TradeTable.side]),
-        symbol = row[TradeTable.symbol],
-        volume = row[TradeTable.volume],
-        usdAmount = row[TradeTable.usdAmount],
-        success = row[TradeTable.success],
-        dryRun = row[TradeTable.dryRun],
-        errorMessage = row[TradeTable.errorMessage],
-        price = row[TradeTable.price],
-        fee = row[TradeTable.fee],
-        slippagePercent = row[TradeTable.slippagePercent],
-        expectedPrice = row[TradeTable.expectedPrice],
-        source = TradeSource.fromDbValue(row[TradeTable.tradeSource]),
-        id = row[TradeTable.id],
-        cycleId = row[TradeTable.cycleId],
-        orderTxid = row[TradeTable.orderTxid],
-        tradeId = row[TradeTable.tradeId],
-        clientOrderId = row[TradeTable.clientOrderId],
-        submissionState = row[TradeTable.submissionState]?.let(OrderSubmissionState::valueOf),
-    )
 
     override suspend fun getLatestTradeTime(): Instant? = database.readTransactionIO {
         // Only successful non-dry-run rows can advance the exchange-fill cursor. Failed attempts
@@ -465,7 +384,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun cleanupDuplicateTrades() {
         database.safeTransactionIO(log, "Failed to cleanup duplicate trades") {
             val allTradeRows = TradeTable.selectAll().orderBy(TradeTable.timestamp, SortOrder.ASC).toList()
-            val allRecords = allTradeRows.map { buildTradeFromRow(it) }
+            val allRecords = allTradeRows.map(TradeTable::toModel)
                 .filter { it.submissionState == null }
             val toDelete = TradeDeduplicator.findDuplicateTradeIds(allRecords)
 

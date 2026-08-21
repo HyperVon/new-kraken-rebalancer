@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository.table
 
 import org.jetbrains.exposed.v1.core.ReferenceOption
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 
 object ActionLogTable : Table("action_logs") {
     val id = integer("id").autoIncrement()
@@ -15,4 +16,9 @@ object ActionLogTable : Table("action_logs") {
     }
 
     override val primaryKey = PrimaryKey(id)
+
+    fun applyTo(builder: UpdateBuilder<*>, snapshotId: Int, messageText: String) {
+        builder[ActionLogTable.snapshotId] = snapshotId
+        builder[message] = messageText
+    }
 }

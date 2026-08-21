@@ -1,6 +1,10 @@
 package com.gemini.krakenbot.repository.table
 
+import com.gemini.krakenbot.model.LedgerEvent
+import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
+import java.time.Instant
 
 object LedgerTable : Table("ledgers") {
     val id = integer("id").autoIncrement()
@@ -22,4 +26,30 @@ object LedgerTable : Table("ledgers") {
     }
 
     override val primaryKey = PrimaryKey(id)
+
+    fun toModel(row: ResultRow): LedgerEvent = LedgerEvent(
+        ledgerId = row[ledgerId],
+        refid = row[refid],
+        time = Instant.ofEpochMilli(row[timestamp]),
+        type = row[type],
+        subtype = row[subtype],
+        aclass = row[aclass],
+        asset = row[asset],
+        amount = row[amount],
+        fee = row[fee],
+        balance = row[balance],
+    )
+
+    fun applyTo(builder: UpdateBuilder<*>, event: LedgerEvent) {
+        builder[timestamp] = event.time.toEpochMilli()
+        builder[ledgerId] = event.ledgerId
+        builder[refid] = event.refid
+        builder[type] = event.type
+        builder[subtype] = event.subtype
+        builder[aclass] = event.aclass
+        builder[asset] = event.asset
+        builder[amount] = event.amount
+        builder[fee] = event.fee
+        builder[balance] = event.balance
+    }
 }

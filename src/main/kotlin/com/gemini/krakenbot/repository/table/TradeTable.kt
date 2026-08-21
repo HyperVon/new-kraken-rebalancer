@@ -1,6 +1,13 @@
 package com.gemini.krakenbot.repository.table
 
+import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderSubmissionState
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
+import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
+import java.time.Instant
 
 object TradeTable : Table("trades") {
     val id = integer("id").autoIncrement()
@@ -34,4 +41,49 @@ object TradeTable : Table("trades") {
     }
 
     override val primaryKey = PrimaryKey(id)
+
+    fun toModel(row: ResultRow): TradeRecord = TradeRecord(
+        timestamp = Instant.ofEpochMilli(row[timestamp]),
+        pair = row[pair],
+        side = OrderSide.normalize(row[side]),
+        symbol = row[symbol],
+        volume = row[volume],
+        usdAmount = row[usdAmount],
+        success = row[success],
+        dryRun = row[dryRun],
+        errorMessage = row[errorMessage],
+        price = row[price],
+        fee = row[fee],
+        slippagePercent = row[slippagePercent],
+        expectedPrice = row[expectedPrice],
+        source = TradeSource.fromDbValue(row[tradeSource]),
+        id = row[id],
+        cycleId = row[cycleId],
+        orderTxid = row[orderTxid],
+        tradeId = row[tradeId],
+        clientOrderId = row[clientOrderId],
+        submissionState = row[submissionState]?.let(OrderSubmissionState::valueOf),
+    )
+
+    fun applyTo(builder: UpdateBuilder<*>, trade: TradeRecord) {
+        builder[timestamp] = trade.timestamp.toEpochMilli()
+        builder[pair] = trade.pair
+        builder[side] = OrderSide.normalize(trade.side)
+        builder[symbol] = trade.symbol
+        builder[volume] = trade.volume
+        builder[usdAmount] = trade.usdAmount
+        builder[success] = trade.success
+        builder[dryRun] = trade.dryRun
+        builder[errorMessage] = trade.errorMessage
+        builder[price] = trade.price
+        builder[fee] = trade.fee
+        builder[slippagePercent] = trade.slippagePercent
+        builder[expectedPrice] = trade.expectedPrice
+        builder[tradeSource] = trade.source?.name
+        builder[cycleId] = trade.cycleId
+        builder[orderTxid] = trade.orderTxid
+        builder[tradeId] = trade.tradeId
+        builder[clientOrderId] = trade.clientOrderId
+        builder[submissionState] = trade.submissionState?.name
+    }
 }
