@@ -139,7 +139,7 @@ object KrakenParsers {
         return ledgerList to count
     }
 
-    fun parseOHLC(root: JsonNode): List<Pair<Long, BigDecimal>> {
+    fun parseOHLC(root: JsonNode, pair: String? = null): List<Pair<Long, BigDecimal>> {
         val resultNode = root.path(KrakenApiConstants.FIELD_RESULT)
         if (!resultNode.isObject) return emptyList()
 
@@ -154,10 +154,18 @@ object KrakenParsers {
                     try {
                         BigDecimal(entry.get(4).asText())
                     } catch (_: Exception) {
-                        log.warn(
-                            "Skipping OHLC entry with unparseable close price: {}",
-                            entry.get(4).asText(),
-                        )
+                        if (pair == null) {
+                            log.warn(
+                                "Skipping OHLC entry with unparseable close price: {}",
+                                entry.get(4).asText(),
+                            )
+                        } else {
+                            log.warn(
+                                "Skipping OHLC entry for {} with unparseable close price: {}",
+                                pair,
+                                entry.get(4).asText(),
+                            )
+                        }
                         return@forEach
                     }
                 priceList.add(Pair(time, closePrice))

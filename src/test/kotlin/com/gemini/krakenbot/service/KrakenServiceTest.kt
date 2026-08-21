@@ -522,7 +522,15 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val successJson =
                     "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}"
                 var attempt = 0
-                val mockEngine = MockEngine { _ ->
+                val nonces = mutableListOf<Long>()
+                val mockEngine = MockEngine { request ->
+                    val body = (request.body as TextContent).text
+                    Regex("""(?:^|&)${KrakenApiConstants.PARAM_NONCE}=([^&]+)""")
+                        .find(body)
+                        ?.groupValues
+                        ?.get(1)
+                        ?.toLong()
+                        ?.let(nonces::add)
                     val content = if (attempt++ == 0) errorJson else successJson
                     respond(
                         content = content,
@@ -555,13 +563,17 @@ class KrakenServiceTest : KrakenServiceTestBase() {
 
                 val balances = service.getBalances()
                 balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
+                nonces.size shouldBe 2
+                nonces[1] - nonces[0] shouldBe 100_000_001L
             }
         }
 
         "queryPrivate_InvalidNonce_RetryExceeded" {
             runTest {
                 val errorJson = "{\"error\":[\"EAPI:Invalid nonce\"]}"
+                var attempt = 0
                 val mockEngine = MockEngine {
+                    attempt++
                     respond(
                         content = errorJson,
                         status = HttpStatusCode.OK,
@@ -593,6 +605,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
 
                 val ex = shouldThrow<RuntimeException> { service.getBalances() }
                 ex.message?.contains("Invalid nonce")?.shouldBeTrue()
+                attempt shouldBe 6
             }
         }
     }

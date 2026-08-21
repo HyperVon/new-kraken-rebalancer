@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -251,14 +253,10 @@ class KrakenServiceImpl(
                 cause is JsonProcessingException
         }
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<com.gemini.krakenbot.model.TradeRecord> =
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
         getTradeHistoryUntil(startSec, offset, null)
 
-    override suspend fun getTradeHistoryUntil(
-        startSec: Long?,
-        offset: Int?,
-        endSec: Long?,
-    ): List<com.gemini.krakenbot.model.TradeRecord> {
+    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
         if (!configService.getConfig().kraken.hasValidCredentials()) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history fetch.")
             return emptyList()
@@ -323,7 +321,7 @@ class KrakenServiceImpl(
     private suspend fun queryLedgerPage(
         params: Map<String, String>,
         expectedTypes: Set<String>?,
-    ): Pair<List<com.gemini.krakenbot.model.LedgerEvent>, Int> {
+    ): Pair<List<LedgerEvent>, Int> {
         val result =
             try {
                 queryPrivate(KrakenApiConstants.PATH_LEDGERS, params)
@@ -354,7 +352,7 @@ class KrakenServiceImpl(
                 return emptyList()
             }
 
-        return KrakenParsers.parseOHLC(root)
+        return KrakenParsers.parseOHLC(root, pair)
     }
 
     private suspend fun queryPublic(path: String): JsonNode = retryWithFlow("queryPublic($path)") {

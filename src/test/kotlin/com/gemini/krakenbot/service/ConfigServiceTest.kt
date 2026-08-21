@@ -868,6 +868,7 @@ class ConfigServiceTest : StringSpec() {
         "endExecutionSession completes despite cancellation while configLock is held by updateConfig" {
             runTest {
                 val lockHoldGate = CompletableDeferred<Unit>()
+                val writerEntered = CompletableDeferred<Unit>()
                 // Delegate real parsing so construction reads the on-disk config, but block the atomic
                 // write so updateConfig holds configLock for the duration of the contention.
                 val mapper = mockk<ObjectMapper>()
@@ -881,6 +882,7 @@ class ConfigServiceTest : StringSpec() {
                     objectMapper.writeValueAsString(firstArg<Any>())
                 }
                 coEvery { writer.writeValue(any<File>(), any()) } coAnswers {
+                    writerEntered.complete(Unit)
                     lockHoldGate.await()
                 }
                 val service = ConfigServiceImpl(mapper, tempFile.absolutePath)
@@ -894,7 +896,7 @@ class ConfigServiceTest : StringSpec() {
                 val blocker = launch {
                     service.updateConfig(updated)
                 }
-                runCurrent()
+                writerEntered.await()
 
                 // Cleanup contends with the lock held by blocker and is then cancelled, as a rebalance
                 // worker cancelled mid-cycle would be.
