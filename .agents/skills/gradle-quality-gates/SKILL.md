@@ -21,12 +21,12 @@ description: >-
 ## Formatting & compiler
 
 - **Spotless** + **ktlint 1.8.0**, `max_line_length = 120`
-- Targets: `src/**/*.kt`, `common/src/**/*.kt`, `frontend-js/src/**/*.kt`, and
-  `codegen/src/**/*.kt`
-- Excludes: none (all Kotlin under `src/**`, `common/src/**`, `frontend-js/src/**`, and
-  `codegen/src/**`)
+- Targets: `src/**/*.kt`, `common/src/**/*.kt`, `frontend-js/src/**/*.kt`,
+  `codegen/src/**/*.kt`, and `engine/src/**/*.kt`
+- Excludes: none (all Kotlin under `src/**`, `common/src/**`, `frontend-js/src/**`,
+  `codegen/src/**`, and `engine/src/**`)
 - Apply: `./gradlew spotlessApply` — check: `./gradlew spotlessCheck`
-- **`allWarningsAsErrors`** enabled in root, `:common`, `:frontend-js`, and `:codegen`
+- **`allWarningsAsErrors`** enabled in root, `:common`, `:frontend-js`, `:codegen`, and `:engine`
 
 ## Build performance
 
@@ -84,15 +84,15 @@ Minimums in `build.gradle.kts` `jacocoTestCoverageVerification`:
 ### JaCoCo exclusion sync rule
 
 Exclusions live in the shared `coverageExcludes` list in root
-`build.gradle.kts`. **Both** `jacocoTestReport` and
+`build.gradle.kts` and `:engine` `build.gradle.kts`. **Both** `jacocoTestReport` and
 `jacocoTestCoverageVerification` must use the same
 `fileTree { exclude(coverageExcludes) }`.
 
-Current exclusions:
+Current root exclusions:
 
-- `**/config/DatabaseConfig*`, `**/config/KtorConfigKt*`
+- `**/config/DatabaseConfig*`, `**/config/MigrationBackupKt*`, `**/config/LegacyDataRepairKt*`, `**/config/KtorConfigKt*`
 - `**/repository/table/**`
-- `**/service/KrakenService*`, `**/service/impl/KrakenServiceImpl*`
+- `**/service/KrakenService*`, `**/service/*Service.class`, `**/service/OrderExecutor.class`, `**/repository/*Repository.class`, `**/*$DefaultImpls*`
 - `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`
 - `**/KrakenRebalancerApplication*`
 
@@ -141,7 +141,7 @@ Node diagnostics.
 ## CodeQL
 
 **Enabled** — `.github/workflows/codeql.yml` runs the `java-kotlin` analysis on
-`main` pushes and pull requests using CodeQL Action **v4.37.4**, JDK **25**, and
+`main` pushes and pull requests using CodeQL Action **v4.37.7**, JDK **25**, and
 `build-mode: manual`. Keep the workflow SHA pin, language, and manual build
 steps aligned with the workflow.
 
