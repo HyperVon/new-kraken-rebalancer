@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **DatabaseConfig split into focused units**: The 896-line `DatabaseConfig` object now delegates to `SchemaMigrations` (versioned migration records), `LegacyDataRepair` (provenance backfill, legacy trade-ID linking, terminal-intent reconciliation, submission-guard import, pending-intent recovery), `IndexRepair` (expected-index definitions and repair), and `MigrationBackup` (pre-migration backup decisioning). `DatabaseConfig.init()` remains the sole public entry point and orchestrates the same sequence in the same order. JaCoCo exclusions were synced so the previously-excluded bootstrap logic stays excluded under its new file names, while the fully-covered migration-record and index-repair units now count toward bundle coverage.
+
+### Fixed
+
+- **Pre-migration probe failures are no longer silent**: A failure inside the migration-state probe (corruption, lock, IO error) previously fell into a bare `catch { true }` that absorbed real database faults into the backup decision without any log. `MigrationBackup` now logs a warning with the underlying exception before creating the precautionary backup, and a new test pins that a corrupt database file fails loudly with the backup error instead of proceeding silently.
+
 ### Removed
 
 - **Agent runtime router removed**: The `route-kilo` / `route-subagents` routing skills and the `.agents/runtime-router/` adapter tree (Kilo adapters, tests, and router documentation) were deleted; agents select models through their host's native model-selection rules (`.agents/OPERATING.md`, "Native model selection") instead of routing through ARR. This subsumes the interim billing-redaction fixes to those adapters (`ffca8330`, `4e798929`, `633fc16d`), whose files no longer exist.

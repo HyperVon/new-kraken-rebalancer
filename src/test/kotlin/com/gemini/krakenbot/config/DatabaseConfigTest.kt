@@ -1,5 +1,9 @@
 package com.gemini.krakenbot.config
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
@@ -7,7 +11,9 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import kotlinx.coroutines.test.runTest
+import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.sql.DriverManager
 import java.time.Instant
@@ -29,20 +35,98 @@ class DatabaseConfigTest : StringSpec() {
             db shouldNotBe null
         }
 
-        "records the current schema version and creates the order intent journal" {
-            val databaseUrl = "jdbc:sqlite:file:schema-version-${UUID.randomUUID()}?mode=memory&cache=shared"
-            DatabaseConfig.init(databaseUrl)
+        "creates a fresh schema with every migration and expected index" {
+            val databaseUrl = "jdbc:sqlite:file:fresh-schema-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl) shouldNotBe null
+            DatabaseConfig.init(databaseUrl) shouldNotBe null
 
             DriverManager.getConnection(databaseUrl).use { connection ->
                 connection.createStatement().use { statement ->
-                    statement.executeQuery("SELECT MAX(version) FROM schema_migrations").use { resultSet ->
-                        resultSet.next() shouldBe true
-                        resultSet.getInt(1) shouldBe 5
+                    val migrations = buildList {
+                        statement.executeQuery(
+                            "SELECT version, name FROM schema_migrations ORDER BY version",
+                        ).use { resultSet ->
+                            while (resultSet.next()) {
+                                add(resultSet.getInt("version") to resultSet.getString("name"))
+                            }
+                        }
                     }
+                    migrations shouldBe listOf(
+                        1 to "baseline",
+                        2 to "order-intent-journal",
+                        3 to "legacy-submission-guard-import",
+                        4 to "legacy-trade-identity",
+                        5 to "ambiguous-legacy-client-order-id",
+                    )
+
+                    val expectedTables = setOf(
+                        "schema_migrations",
+                        "portfolio_snapshots",
+                        "asset_snapshots",
+                        "trades",
+                        "ledgers",
+                        "portfolio_stats",
+                        "action_logs",
+                        "history_sync_metadata",
+                        "order_intents",
+                    )
+                    val actualTables = buildSet {
+                        statement.executeQuery(
+                            "SELECT name FROM sqlite_master WHERE type = 'table'",
+                        ).use { resultSet ->
+                            while (resultSet.next()) add(resultSet.getString("name"))
+                        }
+                    }
+                    actualTables.containsAll(expectedTables) shouldBe true
+
                     statement.executeQuery(
                         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'order_intents'",
                     ).use { resultSet ->
                         resultSet.next() shouldBe true
+                    }
+
+                    val expectedIndexes = listOf(
+                        Triple("portfolio_snapshots", "idx_snapshots_timestamp", listOf("timestamp")),
+                        Triple("ledgers", "idx_ledgers_timestamp", listOf("timestamp")),
+                        Triple("ledgers", "idx_ledgers_refid", listOf("refid")),
+                        Triple("ledgers", "idx_ledgers_dedupe", listOf("ledger_id", "timestamp", "asset", "type")),
+                        Triple("trades", "idx_trades_timestamp", listOf("timestamp")),
+                        Triple(
+                            "trades",
+                            "idx_trades_pair_side_timestamp",
+                            listOf("pair", "side", "timestamp"),
+                        ),
+                        Triple("trades", "idx_trades_success", listOf("success")),
+                        Triple("trades", "idx_trades_cycle_id", listOf("cycle_id")),
+                        Triple("trades", "idx_trades_trade_id", listOf("trade_id")),
+                        Triple("trades", "idx_trades_submission_state", listOf("submission_state")),
+                        Triple("order_intents", "idx_order_intents_state", listOf("state")),
+                        Triple("order_intents", "idx_order_intents_created_at", listOf("created_at")),
+                        Triple("order_intents", "idx_order_intents_local_trade_id", listOf("local_trade_id")),
+                        Triple("order_intents", "ux_order_intents_client_order_id", listOf("client_order_id")),
+                        Triple("action_logs", "idx_actionlogs_snapshot_id", listOf("snapshot_id")),
+                        Triple("asset_snapshots", "idx_assetsnapshots_snapshot_id", listOf("snapshot_id")),
+                    )
+                    expectedIndexes.forEach { (table, index, columns) ->
+                        statement.executeQuery("PRAGMA index_list('$table')").use { resultSet ->
+                            val indexFound = generateSequence {
+                                if (resultSet.next()) {
+                                    resultSet.getString("name") to (resultSet.getInt("unique") != 0)
+                                } else {
+                                    null
+                                }
+                            }.firstOrNull { it.first == index }
+                            indexFound shouldNotBe null
+                            if (index == "ux_order_intents_client_order_id") {
+                                indexFound?.second shouldBe true
+                            }
+                        }
+                        val actualColumns = buildList {
+                            statement.executeQuery("PRAGMA index_info('$index')").use { resultSet ->
+                                while (resultSet.next()) add(resultSet.getString("name"))
+                            }
+                        }
+                        actualColumns shouldBe columns
                     }
                 }
             }
@@ -441,6 +525,36 @@ class DatabaseConfigTest : StringSpec() {
                     files.anyMatch { it.fileName.toString().startsWith("rebalancer.db.pre-migration-") } shouldBe true
                 }
             } finally {
+                Files.walk(directory).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+            }
+        }
+
+        "warns and fails loudly when the pre-migration probe hits a real database fault" {
+            val directory = Files.createTempDirectory("kraken-db-corrupt-")
+            val migrationLog = LoggerFactory.getLogger("com.gemini.krakenbot.config.MigrationBackup") as Logger
+            val events = ListAppender<ILoggingEvent>().apply { start() }
+            migrationLog.addAppender(events)
+            try {
+                val corruptDb = directory.resolve("corrupt.db")
+                Files.write(corruptDb, "not a sqlite database at all".toByteArray())
+                val originalBytes = Files.readAllBytes(corruptDb)
+
+                val exception =
+                    requireNotNull(runCatching { DatabaseConfig.init(corruptDb.toString()) }.exceptionOrNull()) {
+                        "Expected init to throw for a corrupt database file"
+                    }
+                exception::class shouldBe IllegalStateException::class
+                exception.message shouldContain "Cannot create pre-migration database backup"
+                events.list.count {
+                    it.level == Level.WARN && it.formattedMessage.contains("Pre-migration probe failed")
+                } shouldBe 1
+                Files.readAllBytes(corruptDb) shouldBe originalBytes
+                Files.list(directory).use { files ->
+                    files.anyMatch { it.fileName.toString().contains(".pre-migration-") } shouldBe false
+                }
+            } finally {
+                migrationLog.detachAppender(events)
+                events.stop()
                 Files.walk(directory).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
             }
         }
