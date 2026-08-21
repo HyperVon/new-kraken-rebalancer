@@ -13,6 +13,15 @@ description: >-
 
 # Comprehensive Quality Overhaul
 
+## How this differs from nearby skills
+
+| Skill | Role |
+| :--- | :--- |
+| **comprehensive-quality-overhaul** (this) | One-shot full-repo audit sweep across all project skills → triaged candidate PRs awaiting approval |
+| [continuous-improvement](../continuous-improvement/SKILL.md) | Recurring enhance → test → PR cycles with a persistent backlog |
+| [continuous-quality](../continuous-quality/SKILL.md) | Recurring QA-hardening cycles with a persistent backlog |
+| [autonomous-code-optimizer](../autonomous-code-optimizer/SKILL.md) | Converging refactor loop until a full cycle finds zero issues; no multi-skill fan-out |
+
 Orchestrate a full repository quality sweep across isolated tracks, then
 integrate evidence into reviewable candidate PRs. The default host-native
 fan-out uses read-only snapshots rather than writable worktrees. This skill
@@ -44,7 +53,7 @@ This skill:
 | Trigger | Full-repository quality sweep requests listed above |
 | Inputs | Repository state, current main/base, applicable project skills, and explicit approval for L-class changes |
 | Outputs | Findings report, S/M candidate fixes, L proposals, PR triage, verification evidence, and separately authorized PR actions |
-| Routing | Worker fan-out uses verified free routes or user-authorized paid routes with cost reporting; follow the native model-selection gate rules in ORCHESTRATION.md |
+| Routing | Worker fan-out uses verified free routes or user-authorized paid routes with cost reporting; follow the native model-selection gate rules in [OPERATING.md](../../OPERATING.md) §8 |
 | Isolation | Five read-only audit tracks. The default host-native launcher gives each a temporary snapshot; a separate approved workflow is required for writable worktrees. |
 | Stop | All tracks report, findings are triaged, approved changes are verified, and unresolved L items are presented as proposals |
 | Parent owns | Integration, app boot, final gates, branch/commit/push/PR decisions, and teardown |

@@ -94,7 +94,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | CI-26-C04 | S | done | common | Remove unused `Result.exceptionOrNull()` accessor; update tests to `fold` | 26 | — |
 | CI-26-CM1 | S | done | comments | Convert bare section-header labels in `ChartProps.kt` to KDoc group comments | 26 | — |
 | CI-26-D01 | S | done | docs | Fix README `:codegen` description (JVM-only, not KMP) in tech table + project tree | 26 | — |
-| CI-26-D02 | S | done | docs | Refresh README `.kilo/` project-structure tree (setup-script, run-script, agent-manager.json, runtime-router, command, agent) | 26 | — |
+| CI-26-D02 | S | done | docs | Refresh README `.kilo/` project-structure tree (setup-script, run-script, agent-manager.json, runtime-router, command, agent) *(historical — `runtime-router` has since been removed from the repo)* | 26 | — |
 | CI-26-D03 | S | done | docs | Document `kraken.server.port` JVM property override in README Getting Started | 26 | — |
 | CI-26-U01 | S | done | css | Add `flex-wrap: wrap` + `max-width: 100%` to `.time-range-selector` in `NavigationStyles` | 26 | — |
 | CI-26-U02 | S | done | css | Tokenize 22 literal radii into `CssTheme` (`radiusXs/Sm/Md/Lg/Xl`) and reference across CSS files | 26 | — |

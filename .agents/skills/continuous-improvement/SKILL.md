@@ -11,6 +11,16 @@ description: >-
 
 # Continuous improvement (“the whole shebang”)
 
+## How this differs from nearby skills
+
+| Skill | Role |
+| :--- | :--- |
+| **continuous-improvement** (this) | Recurring end-to-end enhance → test → PR cycle across code / UI / docs / deps with a persistent backlog |
+| [continuous-quality](../continuous-quality/SKILL.md) | QA-only hardening cycle: tests, regressions, evaluation gaps, defect fixes |
+| [comprehensive-quality-overhaul](../comprehensive-quality-overhaul/SKILL.md) | One-shot full-repo audit sweep producing triaged candidate PRs for approval |
+| [autonomous-code-optimizer](../autonomous-code-optimizer/SKILL.md) | Converging multi-pass refactor loop until zero issues; no backlog or PR orchestration |
+| [code-review](../code-review/SKILL.md) | Single review pass over a diff / audit |
+
 Orchestrator skill. It **does not replace** individual skills — it sequences
 them. Prefer this when the user wants an end-to-end enhance → test → PR loop
 with light supervision; run child skills alone when they want a narrow pass.

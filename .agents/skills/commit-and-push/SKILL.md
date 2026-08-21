@@ -25,7 +25,7 @@ Ensure you are on the intended branch (not detached HEAD).
 
 - Update `CHANGELOG.md` (Keep a Changelog).
 - Update `README.md` when features, stack, or package trees change.
-- Sync `docs/ALGORITHM.md` / `FLOWS.md` / `EVALUATION.md` when behavior changes.
+- Sync `docs/ALGORITHM.md` / `docs/FLOWS.md` / `docs/EVALUATION.md` when behavior changes.
 - Update JaCoCo exclusions in `build.gradle.kts` when packages move.
 - Agent rules: `.agents/AGENTS.md` (not root `AGENTS.md`).
 
