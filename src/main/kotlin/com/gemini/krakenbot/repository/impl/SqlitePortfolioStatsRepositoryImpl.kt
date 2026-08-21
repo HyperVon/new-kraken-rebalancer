@@ -36,7 +36,7 @@ class SqlitePortfolioStatsRepositoryImpl(
                 PortfolioStatsTable
                     .selectAll()
                     .firstOrNull()
-                    ?.let { PortfolioStats(it[PortfolioStatsTable.allTimeHigh] ?: BigDecimal.ZERO) }
+                    ?.let(PortfolioStatsTable::toModel)
             }
         if (dbStats != null) {
             return dbStats
@@ -92,11 +92,11 @@ class SqlitePortfolioStatsRepositoryImpl(
                 PortfolioStatsTable.update({
                     PortfolioStatsTable.id eq existing[PortfolioStatsTable.id]
                 }) {
-                    it[allTimeHigh] = stats.allTimeHigh
+                    PortfolioStatsTable.applyTo(it, stats)
                 }
             } else {
                 PortfolioStatsTable.insert {
-                    it[allTimeHigh] = stats.allTimeHigh
+                    PortfolioStatsTable.applyTo(it, stats)
                 }
             }
         }

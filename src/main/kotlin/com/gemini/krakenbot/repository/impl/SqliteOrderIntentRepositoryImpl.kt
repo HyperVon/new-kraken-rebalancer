@@ -38,22 +38,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
     override suspend fun savePending(intent: OrderIntent): Int =
         database.safeTransactionIO(log, "Failed to save order intent") {
             OrderIntentTable.insert {
-                it[cycleId] = intent.cycleId
-                it[clientOrderId] = intent.clientOrderId
-                it[clientOrderIdAmbiguous] = intent.clientOrderIdAmbiguous
-                it[pair] = intent.pair
-                it[symbol] = intent.symbol
-                it[side] = intent.side
-                it[volume] = intent.volume
-                it[usdAmount] = intent.usdAmount
-                it[expectedPrice] = intent.expectedPrice
-                it[createdAt] = intent.createdAt.toEpochMilli()
-                it[state] = OrderIntentState.PENDING.name
-                it[orderTxid] = null
-                it[errorMessage] = null
-                it[resolvedAt] = null
-                it[resolutionEvidence] = null
-                it[localTradeId] = intent.localTradeId
+                OrderIntentTable.applyPending(it, intent)
             }[OrderIntentTable.id]
         }
 
@@ -71,7 +56,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                     (OrderIntentTable.state eq OrderIntentState.PENDING.name)
             }
             .firstOrNull()
-            ?.let(::buildIntent)
+            ?.let(OrderIntentTable::toModel)
         val updatedRows = OrderIntentTable.update({
             (OrderIntentTable.id eq id) and
                 (OrderIntentTable.state eq OrderIntentState.PENDING.name)
@@ -122,7 +107,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
             .selectAll()
             .where { OrderIntentTable.state inList unresolvedStates() }
             .orderBy(OrderIntentTable.createdAt, SortOrder.ASC)
-            .map(::buildIntent)
+            .map(OrderIntentTable::toModel)
     }
 
     override suspend fun resolve(
@@ -139,7 +124,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                     (OrderIntentTable.state eq OrderIntentState.UNCERTAIN.name)
             }
             .firstOrNull()
-            ?.let(::buildIntent)
+            ?.let(OrderIntentTable::toModel)
         val resolved = OrderIntentTable.update({
             (OrderIntentTable.id eq id) and
                 (OrderIntentTable.state eq OrderIntentState.UNCERTAIN.name)
@@ -322,26 +307,6 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         }
         return unkeyedCandidates.size == 1
     }
-
-    private fun buildIntent(row: ResultRow): OrderIntent = OrderIntent(
-        id = row[OrderIntentTable.id],
-        cycleId = row[OrderIntentTable.cycleId],
-        clientOrderId = row[OrderIntentTable.clientOrderId],
-        clientOrderIdAmbiguous = row[OrderIntentTable.clientOrderIdAmbiguous],
-        pair = row[OrderIntentTable.pair],
-        symbol = row[OrderIntentTable.symbol],
-        side = row[OrderIntentTable.side],
-        volume = row[OrderIntentTable.volume],
-        usdAmount = row[OrderIntentTable.usdAmount],
-        expectedPrice = row[OrderIntentTable.expectedPrice],
-        createdAt = Instant.ofEpochMilli(row[OrderIntentTable.createdAt]),
-        state = OrderIntentState.valueOf(row[OrderIntentTable.state]),
-        orderTxid = row[OrderIntentTable.orderTxid],
-        errorMessage = row[OrderIntentTable.errorMessage],
-        resolvedAt = row[OrderIntentTable.resolvedAt]?.let(Instant::ofEpochMilli),
-        resolutionEvidence = row[OrderIntentTable.resolutionEvidence],
-        localTradeId = row[OrderIntentTable.localTradeId],
-    )
 
     private fun unresolvedStates(): List<String> = listOf(
         OrderIntentState.PENDING.name,
