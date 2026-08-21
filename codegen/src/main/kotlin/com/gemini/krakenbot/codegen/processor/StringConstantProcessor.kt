@@ -10,6 +10,26 @@ private const val ANNOTATION_NAME = "com.gemini.krakenbot.codegen.GenerateString
 private const val GENERATED_SOURCE_COMMENT =
     "/** Generated from @GenerateStringConstants; edit the YAML resource instead. */"
 
+private const val CSS_THEME_FILE_NAME = "CssTheme"
+private const val CSS_THEME_VARS_FILE_NAME = "CssThemeVars"
+
+private const val CSS_VARIABLE_PREFIX = "--"
+private const val CSS_RADIUS_PREFIX = "radius"
+private const val CSS_COLOR_PREFIX = "color"
+
+private const val PIXEL_SUFFIX = "px"
+private const val REM_SUFFIX = "rem"
+
+private const val CSS_THEME_VARS_IMPORT = "import com.gemini.krakenbot.view.util.CssThemeVars"
+private const val COLOR_IMPORT = "import kotlinx.css.Color"
+private const val CSS_BUILDER_IMPORT = "import kotlinx.css.CssBuilder"
+private const val PX_IMPORT = "import kotlinx.css.px"
+private const val REM_IMPORT = "import kotlinx.css.rem"
+
+private val LOWER_TO_UPPER_BOUNDARY_REGEX = Regex("([a-z])([A-Z])")
+private val LETTER_TO_DIGIT_BOUNDARY_REGEX = Regex("([a-zA-Z])(\\d)")
+private const val PLACEHOLDER_FORMAT = "$1-$2"
+
 class StringConstantProcessorProvider : SymbolProcessorProvider {
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor = StringConstantProcessor(
         CatalogProcessorSupport(

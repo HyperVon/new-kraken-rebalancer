@@ -12,6 +12,15 @@ private const val ANNOTATION_NAME = "com.gemini.krakenbot.view.util.GenerateCssC
 private const val PACKAGE_NAME = "com.gemini.krakenbot.view.util"
 private const val GENERATED_CSS_CLASSES_COMMENT =
     "/** Generated from @GenerateCssClasses; edit the YAML resource instead. */"
+private const val CSS_CLASSES_FILE_NAME = "CssClasses"
+private const val CSS_CLASS_NAME = "CssClass"
+private const val COMPOSITE_CLASS_NAME = "Composite"
+private const val TO_STRING_DECLARATION = "override fun toString(): String = value"
+private const val QUERY_SELECTOR_DECLARATION = "val querySelector: String"
+private const val QUERY_SELECTOR_GETTER =
+    $$"""    get() = value.split(" ").filter { it.isNotBlank() }.joinToString("") { ".$it" }"""
+private const val CSS_CLASS_PLUS_OPERATOR =
+    $$"operator fun plus(other: CssClass): CssClass = Composite(\"$value ${other.value}\".trim())"
 
 class CssClassProcessorProvider : SymbolProcessorProvider {
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
