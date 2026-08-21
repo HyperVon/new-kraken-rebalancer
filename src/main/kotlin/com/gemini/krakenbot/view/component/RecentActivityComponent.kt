@@ -152,7 +152,8 @@ class RecentActivityComponent {
             val symbol = parts[1]
             val volume = parts[3]
             val amount = parts[5]
-            if (parts[2] != "Volume:" || (parts[4] != "Value:" && parts[4] != "Cost:")) return action
+            val amountLabels = setOf("${ViewText.ACTION_VALUE_LABEL}:", "${ViewText.ACTION_COST_LABEL}:")
+            if (parts[2] != "${ViewText.ACTION_VOLUME_LABEL}:" || parts[4] !in amountLabels) return action
             return try {
                 val quantity = BigDecimal(volume).stripTrailingZeros().toPlainString()
                 val currency = Formatter.formatCurrency(BigDecimal(amount.removePrefix("$")))

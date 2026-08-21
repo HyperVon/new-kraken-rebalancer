@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.7] - 2026-08-21
+
+### Changed
+
+- **Unify asset color defaults on the generated catalog**: `AssetColorAssigner` now references `ChartProps.SOLID_BTC` / `SOLID_ETH` / `SOLID_USD` instead of hand-synced hex literals, so server-assigned allocation colors can no longer drift from dashboard chart colors.
+- **Share activity-log volume marker via ViewText**: added `ViewText.ACTION_VOLUME_LABEL`; `ActionLogFormatter` emits it and `RecentActivityComponent.humanizeTradeAction` matches against `ACTION_VOLUME_LABEL` / `ACTION_VALUE_LABEL` / `ACTION_COST_LABEL` instead of hardcoded `"Volume:"` / `"Value:"` / `"Cost:"` literals.
+- **De-mirror test assertions from shared catalogs**: contract assertions in `DashboardControllerTest`, `FormatterTest`, `HistoryPageComponentTest`, `EvaluationScenarios1To7`, and the Kotlin/JS specs (`SettingsTest`, `HistoryLoadingTest`, `HistoryTradeRenderingTest`, `HistoryComparisonChartTest`, `HistoryChartsTest`, `HistoryZoomTest`) now use independent raw expected strings per `.agents/AGENTS.md` §7; setup-side catalog references remain.
+- **Rewrite Copilot harness stub**: `.github/copilot-instructions.md` now lists the canonical rule files explicitly instead of relying on Claude-style `@` imports that GitHub Copilot does not process.
+- **Quote markdownlint globs in gradle-quality-gates skill**: the verify command now quotes `'**'` glob patterns so nested `.agents/skills/**/*.md` files are linted under plain bash.
+
+### Fixed
+
+- README: corrected `go-rewrite` branch commit count (10, was 9), aligned the manual Fat JAR run example with `start.sh` JVM flags (`--sun-misc-unsafe-memory-access=allow`), removed first-person portfolio-pitch narrative, and trimmed the motivational preamble ahead of the capability bullets.
+- EvaluationScenariosTest comment updated to the actual scenario count (41).
+- Removed unused `SimulatedKrakenService` import in `TradeHistoryServiceTest`.
+
+### Removed
+
+- Coverage-padding tests asserting compiler-generated behavior only (`EngineModelTest` property/tautology blocks, `CommonApiModelsTest` construct-and-read-back tests) and a duplicate fiat-correction test in `RebalancerEngineTest`; `PortfolioManagerLoopTest` exception-handling test gained an explicit completion assertion.
+- Added `/engine/bin/` to `.gitignore` and deleted the stray untracked compiler-output mirror.
+
 ## [6.17.6] - 2026-08-21
 
 ### Changed

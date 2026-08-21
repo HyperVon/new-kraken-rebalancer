@@ -35,6 +35,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -153,9 +154,13 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val job = launch {
                     portfolioManager.runLoop()
                 }
-                yield()
+                runCurrent()
+                advanceTimeBy(60_001)
+                runCurrent()
                 portfolioManager.stopRebalancingLoop()
                 job.join()
+
+                coVerify(atLeast = 2) { tradeHistoryService.syncTradesFromKraken() }
             }
         }
 

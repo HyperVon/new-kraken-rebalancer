@@ -38,7 +38,7 @@ internal fun evaluationTempPath(prefix: String): File = File.createTempFile("sce
 }
 
 class EvaluationScenariosTest : StringSpec() {
-    // SingleInstance: the mocks and mapper below are shared by all 40 scenarios, so a scenario that
+    // SingleInstance: the mocks and mapper below are shared by all 41 scenarios, so a scenario that
     // captures calls (snapshot actions, order lists) must build its own mock instead of reusing them.
     override fun isolationMode() = IsolationMode.SingleInstance
 

@@ -33,7 +33,9 @@ object ActionLogFormatter {
         val valueLabel = if (side == OrderSide.SELL) ViewText.ACTION_VALUE_LABEL else ViewText.ACTION_COST_LABEL
         val formattedVolume = volume.toCryptoScale().stripTrailingZeros().toPlainString()
         val formattedUsd = usdAmount.toUsdScale().toPlainString()
-        return "${prefix}${side.uppercaseName} $symbol Volume: $formattedVolume $valueLabel: $$formattedUsd"
+        val volumeLabel = "${ViewText.ACTION_VOLUME_LABEL}:"
+        val valueSuffix = "$valueLabel: $$formattedUsd"
+        return "${prefix}${side.uppercaseName} $symbol $volumeLabel $formattedVolume $valueSuffix"
     }
 
     fun formatOrderFailure(side: OrderSide, symbol: String, errorMessage: String?): String =
