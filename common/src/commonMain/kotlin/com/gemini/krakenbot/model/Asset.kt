@@ -37,47 +37,18 @@ value class Asset(val value: String) {
         const val SYMBOL_PATTERN_STRING = "^[A-Z0-9]{1,16}$"
 
         // Kraken's own ticker codes differ from common symbols for these two.
-        private val KRAKEN_TICKER_BY_SYMBOL = mapOf(
-            BTC to XBT,
-            DOGE to XDG,
-        )
-
-        // Keep allocation symbols on the application side of Kraken's ticker aliases.
-        private val CANONICAL_SYMBOL_BY_ALIAS = mapOf(
-            XBT to BTC,
-            XDG to DOGE,
-            "XXBT" to BTC,
-            "XXDG" to DOGE,
-            "XETH" to ETH,
-            "XLTC" to LTC,
-            "XXRP" to XRP,
-            "XXLM" to "XLM",
-            "XXMR" to "XMR",
-            "XZEC" to "ZEC",
-            "XETC" to "ETC",
-            "XREP" to "REP",
-            "XMLN" to "MLN",
-            "ZUSD" to USD,
-            "ZEUR" to "EUR",
-            "ZCAD" to "CAD",
-            "ZGBP" to "GBP",
-            "ZJPY" to "JPY",
-            "ZCHF" to "CHF",
-            "ZAUD" to "AUD",
-        )
-
         operator fun invoke(value: String): Asset = Asset(value)
 
         /** BTC→XBT, DOGE→XDG; other symbols pass through uppercased. */
         fun toKrakenTicker(symbol: String): String {
             val normalizedSymbol = normalizedSymbol(symbol)
-            return KRAKEN_TICKER_BY_SYMBOL[normalizedSymbol] ?: normalizedSymbol
+            return KrakenAssetAliases.KRAKEN_TICKER_BY_SYMBOL[normalizedSymbol] ?: normalizedSymbol
         }
 
         /** Uppercase a symbol and map Kraken ticker aliases to the application symbol. */
         fun canonicalSymbol(symbol: String): String {
             val normalizedSymbol = normalizedSymbol(symbol)
-            return CANONICAL_SYMBOL_BY_ALIAS[normalizedSymbol] ?: normalizedSymbol
+            return KrakenAssetAliases.CANONICAL_BY_KRAKEN_ALIAS[normalizedSymbol] ?: normalizedSymbol
         }
 
         fun tradingPair(symbol: String): String = "${toKrakenTicker(symbol)}$USD"
@@ -166,12 +137,6 @@ value class Asset(val value: String) {
         }
 
         /**
-         * Earn-migration suffixes: Kraken balances/ledger entries use e.g. `DOT.S`, `USDT.F` for
-         * read-only yield-bearing assets; the base asset remains the transactable one.
-         */
-        private val EARN_ASSET_SUFFIXES = listOf(".S", ".M", ".F", ".B", ".P")
-
-        /**
          * Normalize a Kraken Ledgers asset code to the application symbol: strips Earn-migration
          * suffixes (`DOT.S` → `DOT`, `AVAX.S` → `AVAX`) and maps legacy Kraken ISO-4217 prefixes
          * (`XXBT` → `BTC`, `ZUSD` → `USD`, `XETH` → `ETH`).
@@ -180,9 +145,10 @@ value class Asset(val value: String) {
             var upper = asset.trim().uppercase()
             if (upper.isEmpty()) return upper
 
-            EARN_ASSET_SUFFIXES.firstOrNull(upper::endsWith)?.let { suffix ->
-                if (upper.length > suffix.length) {
+            for (suffix in KrakenAssetAliases.EARN_ASSET_SUFFIXES) {
+                if (upper.endsWith(suffix) && upper.length > suffix.length) {
                     upper = upper.removeSuffix(suffix)
+                    break
                 }
             }
             return canonicalSymbol(upper)

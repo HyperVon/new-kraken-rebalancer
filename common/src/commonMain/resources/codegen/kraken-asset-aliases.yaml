@@ -1,0 +1,56 @@
+KrakenAssetAliases:
+  BTC: "BTC"
+  XBT: "XBT"
+  XXBT: "XXBT"
+
+  DOGE: "DOGE"
+  XDG: "XDG"
+  XXDG: "XXDG"
+
+  ETH: "ETH"
+  XETH: "XETH"
+
+  LTC: "LTC"
+  XLTC: "XLTC"
+
+  XRP: "XRP"
+  XXRP: "XXRP"
+
+  XLM: "XLM"
+  XXLM: "XXLM"
+
+  XMR: "XMR"
+  XXMR: "XXMR"
+
+  ZEC: "ZEC"
+  XZEC: "XZEC"
+
+  ETC: "ETC"
+  XETC: "XETC"
+
+  REP: "REP"
+  XREP: "XREP"
+
+  MLN: "MLN"
+  XMLN: "XMLN"
+
+  USD: "USD"
+  ZUSD: "ZUSD"
+
+  EUR: "EUR"
+  ZEUR: "ZEUR"
+
+  CAD: "CAD"
+  ZCAD: "ZCAD"
+
+  GBP: "GBP"
+  ZGBP: "ZGBP"
+
+  JPY: "JPY"
+  ZJPY: "ZJPY"
+
+  CHF: "CHF"
+  ZCHF: "ZCHF"
+
+  AUD: "AUD"
+  ZAUD: "ZAUD"

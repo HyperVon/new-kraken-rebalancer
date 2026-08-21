@@ -31,12 +31,21 @@ Path: `common/src/commonMain/kotlin/com/gemini/krakenbot/`.
 | Precision | `PrecisionConstants` |
 | View util | `CssClass`, `HtmlQueries`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `FormFields`, `QueryParamKeys`, `ChartProps` |
 
-## Generated catalog boundary
+## Generated catalog boundary & CodeGen pattern
 
-Large pure string catalogs are maintained as explicit YAML resources under
-`common/src/commonMain/resources/codegen/` and generated into common-compatible
-Kotlin by the JVM-only `codegen` KSP module. The annotations and resources are
-build inputs; `:common` must not depend on the processor at compile time.
+Constant catalogs (UI strings, HTML attributes/IDs, CSS classes, routes, metadata keys, chart properties, exchange ticker aliases) are maintained as declarative YAML resources under `common/src/commonMain/resources/codegen/` and generated into pure KMP Kotlin by the JVM-only `codegen` KSP processor.
+
+### When to move things to CodeGen
+
+- **Static Constant Groups**: Any group of 3+ related string or scalar constants (`ViewText`, `HtmlAttrs`, `HtmlIds`, `Routes`, `SyncMetadataKeys`, `ChartProps`, `KrakenAssetAliases`). Do not write handwritten `object Foo { const val ... }` in Kotlin.
+- **CSS Class Tokens**: Hierarchical CSS class tokens (`CssClassSchema` → `css-classes.yaml`).
+- **Exchange Asset / Symbol Aliases**: Known ticker aliases and exchange codes (`KrakenAssetAliases` → `kraken-asset-aliases.yaml`).
+
+### The standard 3-step pattern
+
+1. **Declarative YAML Resource**: Add `common/src/commonMain/resources/codegen/<name>.yaml` with explicit key-value pairs.
+2. **Schema Declaration**: Add `@GenerateStringConstants(fileName = "<Name>", resource = "codegen/<name>.yaml")` in `StringConstantSchemas.kt` (or `@GenerateCssClasses` in `CssClassSchema.kt`).
+3. **Runtime Extensions / Helpers (if needed)**: If the constants are consumed in maps, lists, or functions, place those in a dedicated handwritten `<Name>Mappings.kt` (e.g. `KrakenAssetMappings.kt`) or `<Name>Extensions.kt` (e.g. `ChartColors.kt`), referencing the generated `const val` properties directly.
 
 - Preserve public names and `const val` semantics for generated string catalogs.
 - Keep every group/name/value explicit. Do not infer composite CSS classes,

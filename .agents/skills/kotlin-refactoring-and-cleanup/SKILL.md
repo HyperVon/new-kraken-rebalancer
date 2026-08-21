@@ -27,18 +27,23 @@ For **exhaustive** repo-wide multi-pass convergence until a clean cycle, use
 
 Use imports unless resolving a true name collision.
 
-## 2. Magic strings → `:common`
+## 2. Magic strings & constant catalogs → `:common` CodeGen
 
-Move UI labels, HTML IDs/attrs, CSS classes, routes, and shared enums into
-`common/src/commonMain/` (`ViewText`, `HtmlIds`, `CssClass`, `Routes`,
-`TimeRange`, `OrderSide`, `PrecisionConstants`, …). See common-kmp-module skill.
+Move UI labels, HTML IDs/attrs, CSS classes, routes, metadata keys, chart properties,
+and exchange aliases into `common/src/commonMain/` (`ViewText`, `HtmlIds`, `CssClass`,
+`Routes`, `SyncMetadataKeys`, `ChartProps`, `KrakenAssetAliases`, …).
 
-For a large pure string catalog, use the explicit YAML/KSP catalog path already
-used by `:common` rather than hand-maintaining another pile of `const val`
-declarations. Preserve names and compile-time `const val` behavior, and keep
-catalog entries explicit. Leave mixed semantic objects such as numeric
-precision data, chart behavior, CSS DSL values, and derived API paths manual
-unless a typed generator has a mechanically checked equivalent.
+**Use CodeGen for constant catalogs**:
+
+- Rather than hand-maintaining `object Foo { const val ... }` files, declare groups of
+  static string/scalar constants in `common/src/commonMain/resources/codegen/<name>.yaml`
+  and annotate a schema object in `StringConstantSchemas.kt` with `@GenerateStringConstants`.
+- If the constants are used in lookup maps, lists, or helpers, place those in a dedicated
+  handwritten `<Name>Mappings.kt` or `<Name>Extensions.kt` file (e.g. `KrakenAssetMappings.kt`,
+  `ChartColors.kt`), referencing the generated `const val` properties directly.
+- Preserve names and compile-time `const val` behavior, and keep catalog entries explicit.
+- Leave mixed semantic objects such as numeric precision data, CSS DSL values, and derived
+  API paths manual unless a typed generator has a mechanically checked equivalent.
 
 ## 3. Warnings & null safety
 

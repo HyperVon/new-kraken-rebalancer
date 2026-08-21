@@ -92,4 +92,13 @@ class CommonAssetTest {
         assertNull(Asset.fromTradingPair("", emptyList()))
         assertNull(Asset.fromTradingPair("USD", emptyList()))
     }
+
+    @Test
+    fun krakenAssetAliasesTickerMapping() {
+        assertEquals("XBT", KrakenAssetAliases.KRAKEN_TICKER_BY_SYMBOL[KrakenAssetAliases.BTC])
+        assertEquals("XDG", KrakenAssetAliases.KRAKEN_TICKER_BY_SYMBOL[KrakenAssetAliases.DOGE])
+        assertEquals(2, KrakenAssetAliases.KRAKEN_TICKER_BY_SYMBOL.size)
+        assertEquals("BTC", KrakenAssetAliases.CANONICAL_BY_KRAKEN_ALIAS[KrakenAssetAliases.XXBT])
+        assertEquals("USD", KrakenAssetAliases.CANONICAL_BY_KRAKEN_ALIAS[KrakenAssetAliases.ZUSD])
+    }
 }
