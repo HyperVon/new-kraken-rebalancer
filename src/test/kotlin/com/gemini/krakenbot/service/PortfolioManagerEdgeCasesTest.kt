@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.OrderResult
+import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -101,7 +102,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     allDevs = allDevs,
                     buyOrders = buyOrders,
                     sellOrders = sellOrders,
-                    actionLog = mutableListOf(),
+                    events = mutableListOf<RebalanceEvent>(),
                 )
 
                 buyOrders.isEmpty().shouldBeTrue()
@@ -300,7 +301,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 val cryptoScale = BigDecimal.ONE
                 val buyOrders = mutableMapOf<String, BigDecimal>()
                 val sellOrders = mutableMapOf<String, BigDecimal>()
-                val actionLog = mutableListOf<String>()
+                val events = mutableListOf<RebalanceEvent>()
 
                 val allocs = listOf(
                     Allocation(Asset.USD, 50.0),
@@ -320,7 +321,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
                 buyOrders.putAll(result.buyOrders)
                 sellOrders.putAll(result.sellOrders)
-                actionLog.addAll(result.actionLog)
+                events.addAll(result.events)
 
                 buyOrders.isEmpty() shouldBe false
             }

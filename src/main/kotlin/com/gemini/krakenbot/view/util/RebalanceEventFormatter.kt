@@ -1,4 +1,6 @@
-package com.gemini.krakenbot.domain
+package com.gemini.krakenbot.view.util
+
+import com.gemini.krakenbot.domain.RebalanceEvent
 
 /** Presentation adapter for legacy snapshot action-log strings. */
 object RebalanceEventFormatter {

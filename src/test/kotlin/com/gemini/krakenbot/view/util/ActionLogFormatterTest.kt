@@ -1,4 +1,4 @@
-package com.gemini.krakenbot.domain
+package com.gemini.krakenbot.view.util
 
 import com.gemini.krakenbot.model.OrderSide
 import io.kotest.core.spec.IsolationMode
@@ -11,7 +11,6 @@ class ActionLogFormatterTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-
         "formatDeviationTrigger should format deviation message" {
             val msg = ActionLogFormatter.formatDeviationTrigger("BTC", BigDecimal("5.2"))
             msg shouldBe "Deviation: BTC 5.2%"

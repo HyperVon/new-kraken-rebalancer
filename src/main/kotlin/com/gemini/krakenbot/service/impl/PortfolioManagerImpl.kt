@@ -11,6 +11,7 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.view.util.RebalanceEventFormatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -350,14 +351,15 @@ class PortfolioManagerImpl(
         val cryptoScaleFactor =
             portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
 
-        val (buyOrders, sellOrders, cycleActions) =
-            portfolioAnalyzer.analyzeDeviations(
-                totalPortfolioValueUSD = totalPortfolioValueUSD,
-                currentValuesUSD = currentValuesUSD,
-                effectiveUsdTarget = effectiveUsdTarget,
-                cryptoScaleFactor = cryptoScaleFactor,
-            )
-        actionLog.addAll(cycleActions)
+        val plan = portfolioAnalyzer.analyzeDeviations(
+            totalPortfolioValueUSD = totalPortfolioValueUSD,
+            currentValuesUSD = currentValuesUSD,
+            effectiveUsdTarget = effectiveUsdTarget,
+            cryptoScaleFactor = cryptoScaleFactor,
+        )
+        val buyOrders = plan.buyOrders
+        val sellOrders = plan.sellOrders
+        actionLog.addAll(plan.events.map(RebalanceEventFormatter::format))
 
         currentCoroutineContext().ensureActive()
         try {

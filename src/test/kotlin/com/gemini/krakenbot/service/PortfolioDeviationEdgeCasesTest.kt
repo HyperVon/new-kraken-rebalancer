@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -111,7 +112,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 val cryptoScale = BigDecimal.valueOf(0.5)
                 val buyOrders = mutableMapOf<String, BigDecimal>()
                 val sellOrders = mutableMapOf<String, BigDecimal>()
-                val actionLog = mutableListOf<String>()
+                val events = mutableListOf<RebalanceEvent>()
 
                 val allocs = listOf(
                     Allocation(Asset.USD, 50.0),
@@ -130,7 +131,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
                 buyOrders.putAll(result.buyOrders)
                 sellOrders.putAll(result.sellOrders)
-                actionLog.addAll(result.actionLog)
+                events.addAll(result.events)
                 buyOrders[Asset.BTC]?.compareTo(
                     BigDecimal("250.0"),
                 ) shouldBe 0
@@ -157,7 +158,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
                 val buyOrders = mutableMapOf<String, BigDecimal>()
                 val sellOrders = mutableMapOf<String, BigDecimal>()
-                val actionLog = mutableListOf<String>()
+                val events = mutableListOf<RebalanceEvent>()
 
                 val result = portfolioAnalyzer.analyzeDeviations(
                     totalPortfolioValueUSD = BigDecimal("1000.0"),
@@ -167,7 +168,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
                 buyOrders.putAll(result.buyOrders)
                 sellOrders.putAll(result.sellOrders)
-                actionLog.addAll(result.actionLog)
+                events.addAll(result.events)
 
                 buyOrders.isNotEmpty() shouldBe true
                 buyOrders[Asset.BTC]!!.compareTo(
@@ -204,7 +205,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
 
                 result.buyOrders[Asset.BTC]!!.shouldBeEqualComparingTo(BigDecimal("60.0"))
-                result.actionLog.any { it == "USD Deviation Triggered. Enforcing fiat correction." } shouldBe false
+                result.events.any { it is RebalanceEvent.FiatCorrectionEnforced } shouldBe false
             }
         }
 
@@ -232,7 +233,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
 
                 result.buyOrders.containsKey(Asset.BTC) shouldBe false
                 result.sellOrders.containsKey(Asset.BTC) shouldBe false
-                result.actionLog.any { it.contains("Deviation: BTC") } shouldBe false
+                result.events.any { it is RebalanceEvent.DeviationTriggered && it.symbol == Asset.BTC } shouldBe false
             }
         }
 
@@ -264,7 +265,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
 
                 result.buyOrders.isEmpty() shouldBe true
                 result.sellOrders.isEmpty() shouldBe true
-                result.actionLog.none { it.contains("USD Dev") } shouldBe true
+                result.events.none { it is RebalanceEvent.DeviationTriggered && it.symbol == Asset.USD } shouldBe true
             }
         }
     }

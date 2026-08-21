@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.domain.AnalysisResult
 import com.gemini.krakenbot.domain.AssetDeviations
 import com.gemini.krakenbot.domain.AssetPrices
 import com.gemini.krakenbot.domain.AssetValues
@@ -9,6 +8,8 @@ import com.gemini.krakenbot.domain.MutableRebalanceOrders
 import com.gemini.krakenbot.domain.PortfolioValues
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.domain.RebalanceEvent
+import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import java.math.BigDecimal
@@ -37,14 +38,14 @@ interface PortfolioAnalyzer {
         currentValuesUSD: AssetValues,
         effectiveUsdTarget: BigDecimal,
         cryptoScaleFactor: BigDecimal,
-    ): AnalysisResult
+    ): RebalancePlan
 
     fun distributeFiatCorrection(
         usdDev: BigDecimal,
         allDevs: AssetDeviations,
         buyOrders: MutableRebalanceOrders,
         sellOrders: MutableRebalanceOrders,
-        actionLog: MutableList<String>,
+        events: MutableList<RebalanceEvent>,
     )
 
     fun buildSnapshot(

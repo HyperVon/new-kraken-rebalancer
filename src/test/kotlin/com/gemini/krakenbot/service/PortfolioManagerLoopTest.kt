@@ -7,8 +7,8 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.domain.AnalysisResult
 import com.gemini.krakenbot.domain.PortfolioValues
+import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.joinRebalancingWorker
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.Result
@@ -495,10 +495,10 @@ class PortfolioManagerLoopTest : StringSpec() {
                 lateinit var cycleJob: Job
                 every { analyzer.analyzeDeviations(any(), any(), any(), any()) } answers {
                     cycleJob.cancel()
-                    AnalysisResult(
+                    RebalancePlan(
                         buyOrders = mapOf(TestFixtures.A to BigDecimal("10.00")),
                         sellOrders = emptyMap(),
-                        actionLog = emptyList(),
+                        events = emptyList(),
                     )
                 }
 
