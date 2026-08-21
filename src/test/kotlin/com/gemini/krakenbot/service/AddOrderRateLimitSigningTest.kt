@@ -75,6 +75,7 @@ class AddOrderRateLimitSigningTest : KrakenServiceTestBase() {
                 val limiter = RecordingRateLimiter()
                 var capturedApiKey: String? = null
                 var capturedApiSign: String? = null
+                var capturedContentType: ContentType? = null
                 var capturedBody = ""
                 configService = mockk(relaxed = true)
                 val credentials = KrakenCredentials(
@@ -89,7 +90,9 @@ class AddOrderRateLimitSigningTest : KrakenServiceTestBase() {
                 val mockEngine = MockEngine { request ->
                     capturedApiKey = request.headers[KrakenApiConstants.HEADER_API_KEY]
                     capturedApiSign = request.headers[KrakenApiConstants.HEADER_API_SIGN]
-                    capturedBody = (request.body as TextContent).text
+                    val body = request.body as TextContent
+                    capturedContentType = body.contentType
+                    capturedBody = body.text
                     respond(
                         content = SUCCESS_BODY,
                         status = HttpStatusCode.OK,
@@ -114,6 +117,7 @@ class AddOrderRateLimitSigningTest : KrakenServiceTestBase() {
                 limiter.acquiredCosts shouldBe listOf(1.0)
                 capturedApiKey shouldBe TestConstants.API_KEY
                 capturedApiSign.shouldNotBeNull()
+                capturedContentType?.toString() shouldBe KrakenApiConstants.CONTENT_TYPE_FORM_URLENCODED
                 capturedBody shouldContain "${KrakenApiConstants.PARAM_NONCE}="
             }
         }
