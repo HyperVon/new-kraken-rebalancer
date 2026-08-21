@@ -11,7 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Unify asset color defaults on the generated catalog**: `AssetColorAssigner` now references `ChartProps.SOLID_BTC` / `SOLID_ETH` / `SOLID_USD` instead of hand-synced hex literals, so server-assigned allocation colors can no longer drift from dashboard chart colors.
-- **Share activity-log volume marker via ViewText**: added `ViewText.ACTION_VOLUME_LABEL`; `ActionLogFormatter` emits it and `RecentActivityComponent.humanizeTradeAction` matches against `ACTION_VOLUME_LABEL` / `ACTION_VALUE_LABEL` / `ACTION_COST_LABEL` instead of hardcoded `"Volume:"` / `"Value:"` / `"Cost:"` literals.
+- **Pin the persisted action-log grammar in a dedicated catalog**: added the generated `ActionLogFormat` markers (`VOLUME_MARKER` / `VALUE_MARKER` / `COST_MARKER`); `ActionLogFormatter` emits them and `RecentActivityComponent.humanizeTradeAction` parses against them, so historical `action_logs` rows keep rendering correctly even if display copy changes. A new `RecentActivityComponentTest` pins the grammar with raw legacy strings.
 - **De-mirror test assertions from shared catalogs**: contract assertions in `DashboardControllerTest`, `FormatterTest`, `HistoryPageComponentTest`, `EvaluationScenarios1To7`, and the Kotlin/JS specs (`SettingsTest`, `HistoryLoadingTest`, `HistoryTradeRenderingTest`, `HistoryComparisonChartTest`, `HistoryChartsTest`, `HistoryZoomTest`) now use independent raw expected strings per `.agents/AGENTS.md` §7; setup-side catalog references remain.
 - **Rewrite Copilot harness stub**: `.github/copilot-instructions.md` now lists the canonical rule files explicitly instead of relying on Claude-style `@` imports that GitHub Copilot does not process.
 - **Quote markdownlint globs in gradle-quality-gates skill**: the verify command now quotes `'**'` glob patterns so nested `.agents/skills/**/*.md` files are linted under plain bash.
@@ -25,7 +25,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Removed
 
 - Coverage-padding tests asserting compiler-generated behavior only (`EngineModelTest` property/tautology blocks, `CommonApiModelsTest` construct-and-read-back tests) and a duplicate fiat-correction test in `RebalancerEngineTest`; `PortfolioManagerLoopTest` exception-handling test gained an explicit completion assertion.
-- Added `/engine/bin/` to `.gitignore` and deleted the stray untracked compiler-output mirror.
+- Added `/engine/bin/` to `.gitignore` so stray compiler output is not committed.
 
 ## [6.17.6] - 2026-08-21
 

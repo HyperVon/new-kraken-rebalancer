@@ -30,12 +30,11 @@ object ActionLogFormatter {
         isDryRun: Boolean,
     ): String {
         val prefix = if (isDryRun) ViewText.DRY_RUN_PREFIX else ""
-        val valueLabel = if (side == OrderSide.SELL) ViewText.ACTION_VALUE_LABEL else ViewText.ACTION_COST_LABEL
+        val valueMarker = if (side == OrderSide.SELL) ActionLogFormat.VALUE_MARKER else ActionLogFormat.COST_MARKER
         val formattedVolume = volume.toCryptoScale().stripTrailingZeros().toPlainString()
         val formattedUsd = usdAmount.toUsdScale().toPlainString()
-        val volumeLabel = "${ViewText.ACTION_VOLUME_LABEL}:"
-        val valueSuffix = "$valueLabel: $$formattedUsd"
-        return "${prefix}${side.uppercaseName} $symbol $volumeLabel $formattedVolume $valueSuffix"
+        val volumeMarker = ActionLogFormat.VOLUME_MARKER
+        return "${prefix}${side.uppercaseName} $symbol $volumeMarker $formattedVolume $valueMarker $$formattedUsd"
     }
 
     fun formatOrderFailure(side: OrderSide, symbol: String, errorMessage: String?): String =

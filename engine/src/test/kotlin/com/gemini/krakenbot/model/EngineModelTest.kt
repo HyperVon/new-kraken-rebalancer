@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.model
 
+import com.gemini.krakenbot.api.toApiDto
 import com.gemini.krakenbot.domain.EngineTestFixtures
 import com.gemini.krakenbot.domain.OrderResult
 import io.kotest.core.spec.IsolationMode
@@ -312,63 +313,6 @@ class EngineModelTest : StringSpec() {
             OrderSubmissionState.values().size shouldBe 2
         }
 
-        "TradeRecord carries durable live-order provenance fields" {
-            val record =
-                TradeRecord(
-                    timestamp = Instant.EPOCH,
-                    pair = "XXBTZUSD",
-                    side = "BUY",
-                    symbol = "BTC",
-                    volume = BigDecimal("0.25"),
-                    usdAmount = BigDecimal("10000.00"),
-                    success = true,
-                    dryRun = false,
-                    source = TradeSource.API_FILL,
-                    id = 7,
-                    cycleId = "cycle-9",
-                    orderTxid = "OTXN-1",
-                    tradeId = "TTXN-1",
-                    clientOrderId = "cycle-9|BTC|buy",
-                    submissionState = OrderSubmissionState.UNCERTAIN,
-                )
-            record.id shouldBe 7
-            record.cycleId shouldBe "cycle-9"
-            record.orderTxid shouldBe "OTXN-1"
-            record.tradeId shouldBe "TTXN-1"
-            record.clientOrderId shouldBe "cycle-9|BTC|buy"
-            record.submissionState shouldBe OrderSubmissionState.UNCERTAIN
-        }
-
-        "PortfolioSnapshot exposes aggregates consumed by history reconstruction" {
-            val btc =
-                PortfolioSnapshot.AssetSnapshot(
-                    symbol = "BTC",
-                    balance = BigDecimal("1.5"),
-                    price = BigDecimal("50000.00"),
-                    valueUSD = BigDecimal("75000.00"),
-                    targetPercent = BigDecimal("50.00"),
-                    currentPercent = BigDecimal("60.00"),
-                    deviationPercent = BigDecimal("10.00"),
-                    deviationUSD = BigDecimal("5000.00"),
-                )
-            val snapshot =
-                PortfolioSnapshot(
-                    timestamp = Instant.EPOCH,
-                    totalValueUSD = BigDecimal("125000.00"),
-                    assets = mapOf("BTC" to btc),
-                    actions = listOf("BUY BTC"),
-                    drawdownPercent = BigDecimal("12.50"),
-                    fiatDeploymentPercent = BigDecimal("25.00"),
-                    effectiveUsdTargetPercent = BigDecimal("40.00"),
-                )
-            snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("125000.00"))
-            snapshot.assets shouldBe mapOf("BTC" to btc)
-            snapshot.actions shouldBe listOf("BUY BTC")
-            snapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("12.50"))
-            snapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("25.00"))
-            snapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("40.00"))
-        }
-
         "isPairAliasDuplicateOf guards trade-id conflicts and provenance differences" {
             val base =
                 EngineTestFixtures.tradeRecord(
@@ -386,6 +330,64 @@ class EngineModelTest : StringSpec() {
                 fee = BigDecimal("80.50"),
             ).isPairAliasDuplicateOf(alias.copy(source = TradeSource.API_FILL)) shouldBe
                 true
+        }
+
+        "OrderResult defaults keep pre-submission outcomes unclaimed" {
+            val pendingSuccess = OrderResult.Success("XBTUSD", "BUY", BigDecimal.ONE)
+            pendingSuccess.dryRun shouldBe false
+            pendingSuccess.orderTxid shouldBe null
+            pendingSuccess.submissionUncertain shouldBe false
+
+            val submittedFailure = OrderResult.Failure(
+                "XXBTZUSD",
+                "SELL",
+                BigDecimal.ONE,
+                errorMessage = "Insufficient funds",
+            )
+            submittedFailure.orderTxid shouldBe null
+            submittedFailure.submissionUncertain shouldBe false
+            submittedFailure.errorMessage shouldBe "Insufficient funds"
+        }
+
+        "generated wire mapping carries snapshot aggregates to the API boundary" {
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.parse("2026-08-21T00:00:00Z"),
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = mapOf(
+                    "BTC" to PortfolioSnapshot.AssetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("0.02"),
+                        price = BigDecimal("50000.00"),
+                        valueUSD = BigDecimal("1000.00"),
+                        targetPercent = BigDecimal("50.00"),
+                        currentPercent = BigDecimal("100.00"),
+                        deviationPercent = BigDecimal("50.00"),
+                        deviationUSD = BigDecimal("500.00"),
+                    ),
+                ),
+                actions = listOf("BUY BTC Volume: 0.1 Cost: \$5000.00"),
+                drawdownPercent = BigDecimal("12.50"),
+                fiatDeploymentPercent = BigDecimal("25.00"),
+                effectiveUsdTargetPercent = BigDecimal("40.00"),
+            )
+
+            val dto = snapshot.toApiDto()
+            dto.timestamp shouldBe "2026-08-21T00:00:00Z"
+            dto.totalValueUSD shouldBe "1000.00"
+            dto.assets.keys shouldBe setOf("BTC")
+            dto.actions shouldBe listOf("BUY BTC Volume: 0.1 Cost: \$5000.00")
+            dto.drawdownPercent shouldBe "12.50"
+            dto.fiatDeploymentPercent shouldBe "25.00"
+            dto.effectiveUsdTargetPercent shouldBe "40.00"
+        }
+
+        "generated wire mapping carries trade identity for history endpoints" {
+            val trade = EngineTestFixtures.tradeRecord(id = 7, tradeId = "TTXN-1")
+
+            val dto = trade.toApiDto()
+            dto.id shouldBe 7
+            dto.pair shouldBe "XBTUSD"
+            dto.source shouldBe "LOCAL_ESTIMATE"
         }
     }
 }

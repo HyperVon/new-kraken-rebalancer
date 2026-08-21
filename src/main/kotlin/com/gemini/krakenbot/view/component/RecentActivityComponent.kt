@@ -2,6 +2,7 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.view.util.ActionLogFormat
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
@@ -152,8 +153,8 @@ class RecentActivityComponent {
             val symbol = parts[1]
             val volume = parts[3]
             val amount = parts[5]
-            val amountLabels = setOf("${ViewText.ACTION_VALUE_LABEL}:", "${ViewText.ACTION_COST_LABEL}:")
-            if (parts[2] != "${ViewText.ACTION_VOLUME_LABEL}:" || parts[4] !in amountLabels) return action
+            val amountMarkers = setOf(ActionLogFormat.VALUE_MARKER, ActionLogFormat.COST_MARKER)
+            if (parts[2] != ActionLogFormat.VOLUME_MARKER || parts[4] !in amountMarkers) return action
             return try {
                 val quantity = BigDecimal(volume).stripTrailingZeros().toPlainString()
                 val currency = Formatter.formatCurrency(BigDecimal(amount.removePrefix("$")))
