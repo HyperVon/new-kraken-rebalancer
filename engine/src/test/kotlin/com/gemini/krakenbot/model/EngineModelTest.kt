@@ -24,14 +24,11 @@ class EngineModelTest : StringSpec() {
                     dryRun = true,
                     orderTxid = "TX-1",
                 )
-            successResult.success shouldBe true
+            (successResult as OrderResult.Success).orderTxid shouldBe "TX-1"
             successResult.pair shouldBe "XBTUSD"
             successResult.side shouldBe "BUY"
             successResult.volume.shouldBeEqualComparingTo(BigDecimal.ONE)
             successResult.dryRun shouldBe true
-            successResult.orderTxid shouldBe "TX-1"
-            successResult.submissionUncertain shouldBe false
-            successResult.errorMessage shouldBe null
 
             val failureResult =
                 OrderResult(
@@ -39,19 +36,15 @@ class EngineModelTest : StringSpec() {
                     pair = "XXBTZUSD",
                     side = "SELL",
                     volume = BigDecimal.TEN,
-                    dryRun = true,
                     errorMessage = "Insufficient funds",
-                    orderTxid = "TX-2",
                     submissionUncertain = true,
                 )
             failureResult.success shouldBe false
+            (failureResult as OrderResult.Failure).submissionUncertain shouldBe true
             failureResult.pair shouldBe "XXBTZUSD"
             failureResult.side shouldBe "SELL"
             failureResult.volume.shouldBeEqualComparingTo(BigDecimal.TEN)
-            failureResult.dryRun shouldBe true
-            failureResult.errorMessage shouldBe "Insufficient funds"
-            failureResult.orderTxid shouldBe "TX-2"
-            failureResult.submissionUncertain shouldBe true
+            failureResult.dryRun shouldBe false
 
             val defaultFailure =
                 OrderResult(
@@ -60,9 +53,7 @@ class EngineModelTest : StringSpec() {
                     side = "BUY",
                     volume = BigDecimal.ONE,
                 )
-            defaultFailure.dryRun shouldBe false
-            defaultFailure.orderTxid shouldBe null
-            defaultFailure.submissionUncertain shouldBe false
+            defaultFailure.success shouldBe false
             (defaultFailure as OrderResult.Failure).errorMessage shouldBe "Unknown error"
         }
 

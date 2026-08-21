@@ -21,11 +21,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - README: corrected `go-rewrite` branch commit count (10, was 9), aligned the manual Fat JAR run example with `start.sh` JVM flags (`--sun-misc-unsafe-memory-access=allow`), removed first-person portfolio-pitch narrative, and trimmed the motivational preamble ahead of the capability bullets.
 - EvaluationScenariosTest comment updated to the actual scenario count (41).
 - Removed unused `SimulatedKrakenService` import in `TradeHistoryServiceTest`.
+- Added `/engine/bin/` to `.gitignore` so stray compiler output is not committed.
 
 ### Removed
 
 - Coverage-padding tests asserting compiler-generated behavior only (`EngineModelTest` property/tautology blocks, `CommonApiModelsTest` construct-and-read-back tests) and a duplicate fiat-correction test in `RebalancerEngineTest`; `PortfolioManagerLoopTest` exception-handling test gained an explicit completion assertion.
-- Added `/engine/bin/` to `.gitignore` so stray compiler output is not committed.
 
 ## [6.17.6] - 2026-08-21
 
