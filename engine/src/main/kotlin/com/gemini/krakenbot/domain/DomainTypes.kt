@@ -11,5 +11,3 @@ typealias RebalanceOrders = Map<String, BigDecimal>
 typealias MutableRebalanceOrders = MutableMap<String, BigDecimal>
 
 data class PortfolioValues(val totalValueUSD: BigDecimal, val currentValuesUSD: AssetValues)
-
-data class AnalysisResult(val buyOrders: RebalanceOrders, val sellOrders: RebalanceOrders, val actionLog: List<String>)

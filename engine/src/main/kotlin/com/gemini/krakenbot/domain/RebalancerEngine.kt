@@ -159,22 +159,6 @@ object RebalancerEngine {
         }
     }
 
-    fun analyzeDeviations(
-        totalPortfolioValueUSD: BigDecimal,
-        currentValuesUSD: AssetValues,
-        effectiveUsdTarget: BigDecimal,
-        cryptoScaleFactor: BigDecimal,
-        allocations: List<Allocation>,
-        settings: Settings,
-    ): AnalysisResult = analyzeDeviationsPlan(
-        totalPortfolioValueUSD = totalPortfolioValueUSD,
-        currentValuesUSD = currentValuesUSD,
-        effectiveUsdTarget = effectiveUsdTarget,
-        cryptoScaleFactor = cryptoScaleFactor,
-        allocations = allocations,
-        settings = settings,
-    ).toAnalysisResult()
-
     fun analyzeDeviationsPlan(
         totalPortfolioValueUSD: BigDecimal,
         currentValuesUSD: AssetValues,
@@ -279,24 +263,6 @@ object RebalancerEngine {
         }
 
         return RebalancePlan(buyOrders, sellOrders, events)
-    }
-
-    private fun RebalancePlan.toAnalysisResult(): AnalysisResult = AnalysisResult(
-        buyOrders = buyOrders,
-        sellOrders = sellOrders,
-        actionLog = events.map(RebalanceEventFormatter::format),
-    )
-
-    fun distributeFiatCorrection(
-        usdDev: BigDecimal,
-        allDevs: AssetDeviations,
-        buyOrders: MutableRebalanceOrders,
-        sellOrders: MutableRebalanceOrders,
-        actionLog: MutableList<String>,
-    ) {
-        val events = mutableListOf<RebalanceEvent>()
-        distributeFiatCorrectionPlan(usdDev, allDevs, buyOrders, sellOrders, events)
-        actionLog.addAll(events.map(RebalanceEventFormatter::format))
     }
 
     fun distributeFiatCorrectionPlan(

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import io.kotest.core.spec.IsolationMode
@@ -58,7 +59,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = mutableListOf(),
+                events = mutableListOf<RebalanceEvent>(),
             )
 
             buyOrders.containsKey("B").shouldBeTrue()
@@ -86,7 +87,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = mutableListOf(),
+                events = mutableListOf<RebalanceEvent>(),
             )
 
             sellOrders.containsKey("A").shouldBeTrue()
@@ -118,7 +119,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = mutableListOf(),
+                events = mutableListOf<RebalanceEvent>(),
             )
 
             buyOrders.getOrDefault("A", BigDecimal.ZERO).shouldBeEqualComparingTo(BigDecimal.valueOf(80.0))
@@ -145,7 +146,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = mutableMapOf(),
-                actionLog = mutableListOf(),
+                events = mutableListOf<RebalanceEvent>(),
             )
 
             buyOrders.getValue("A").scale() shouldBe 2
@@ -175,7 +176,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = mutableListOf(),
+                events = mutableListOf<RebalanceEvent>(),
             )
 
             buyOrders.containsKey("TINY") shouldBe false
@@ -207,7 +208,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = mutableListOf(),
+                events = mutableListOf<RebalanceEvent>(),
             )
 
             sellOrders.containsKey("TINY") shouldBe false
@@ -239,7 +240,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = mutableMapOf(),
-                actionLog = mutableListOf(),
+                events = mutableListOf<RebalanceEvent>(),
             )
 
             buyOrders.values.none { it.signum() == 0 }.shouldBeTrue()

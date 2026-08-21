@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.domain.AnalysisResult
 import com.gemini.krakenbot.domain.AssetDeviations
 import com.gemini.krakenbot.domain.AssetPrices
 import com.gemini.krakenbot.domain.AssetValues
@@ -10,6 +9,8 @@ import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.domain.PortfolioValues
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.domain.RebalanceEvent
+import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -113,9 +114,9 @@ class PortfolioAnalyzerImpl(
         currentValuesUSD: AssetValues,
         effectiveUsdTarget: BigDecimal,
         cryptoScaleFactor: BigDecimal,
-    ): AnalysisResult {
+    ): RebalancePlan {
         val config = configService.getConfig()
-        return RebalancerEngine.analyzeDeviations(
+        return RebalancerEngine.analyzeDeviationsPlan(
             totalPortfolioValueUSD = totalPortfolioValueUSD,
             currentValuesUSD = currentValuesUSD,
             effectiveUsdTarget = effectiveUsdTarget,
@@ -130,9 +131,9 @@ class PortfolioAnalyzerImpl(
         allDevs: AssetDeviations,
         buyOrders: MutableRebalanceOrders,
         sellOrders: MutableRebalanceOrders,
-        actionLog: MutableList<String>,
+        events: MutableList<RebalanceEvent>,
     ) {
-        RebalancerEngine.distributeFiatCorrection(usdDev, allDevs, buyOrders, sellOrders, actionLog)
+        RebalancerEngine.distributeFiatCorrectionPlan(usdDev, allDevs, buyOrders, sellOrders, events)
     }
 
     override fun buildSnapshot(

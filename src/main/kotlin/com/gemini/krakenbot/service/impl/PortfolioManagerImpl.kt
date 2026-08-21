@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.domain.RawBalances
+import com.gemini.krakenbot.domain.RebalanceEventFormatter
 import com.gemini.krakenbot.domain.toPercentScale
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -350,14 +351,15 @@ class PortfolioManagerImpl(
         val cryptoScaleFactor =
             portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
 
-        val (buyOrders, sellOrders, cycleActions) =
-            portfolioAnalyzer.analyzeDeviations(
-                totalPortfolioValueUSD = totalPortfolioValueUSD,
-                currentValuesUSD = currentValuesUSD,
-                effectiveUsdTarget = effectiveUsdTarget,
-                cryptoScaleFactor = cryptoScaleFactor,
-            )
-        actionLog.addAll(cycleActions)
+        val plan = portfolioAnalyzer.analyzeDeviations(
+            totalPortfolioValueUSD = totalPortfolioValueUSD,
+            currentValuesUSD = currentValuesUSD,
+            effectiveUsdTarget = effectiveUsdTarget,
+            cryptoScaleFactor = cryptoScaleFactor,
+        )
+        val buyOrders = plan.buyOrders
+        val sellOrders = plan.sellOrders
+        actionLog.addAll(plan.events.map(RebalanceEventFormatter::format))
 
         currentCoroutineContext().ensureActive()
         try {
