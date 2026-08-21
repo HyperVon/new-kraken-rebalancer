@@ -35,6 +35,9 @@ not treat this skill’s checklist as a substitute.
 - SRP: `PortfolioManagerImpl` / `PortfolioAnalyzerImpl` / `OrderExecutorImpl` /
   `PortfolioCalculations` boundaries respected.
 - No FQNs; magic UI/domain strings live in `:common`.
+- **Constant catalogs in CodeGen**: groups of static string/scalar constants, UI copy,
+  routes, or exchange aliases must be declared in `resources/codegen/*.yaml` via
+  `@GenerateStringConstants` (not handwritten Kotlin `object Foo { const val ... }`).
 - `commonMain` stays pure KMP (no JVM/JS-only imports).
 - No absolute user paths or machine hostnames.
 - Comments: only non-obvious complexity; flag wrong/stale/noisy comments (see

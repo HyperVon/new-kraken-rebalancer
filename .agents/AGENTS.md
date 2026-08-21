@@ -175,9 +175,12 @@ Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAt
 
 `commonMain` must stay **pure KMP** — no JVM-only (`java.math.BigDecimal`, SLF4J) or JS-only DOM imports.
 
-Large pure string catalogs may use the explicit YAML/KSP resources under
-`common/src/commonMain/resources/codegen/`; the JVM-only `codegen` module is a
-build-time processor, not a `:common` compile dependency. Keep generated output
+Large pure string catalogs and static constant groups must use explicit
+YAML/KSP resources under `common/src/commonMain/resources/codegen/` and `@GenerateStringConstants`
+(or `@GenerateCssClasses`). The JVM-only `codegen` module is a build-time processor,
+not a `:common` compile dependency. Keep declarative constant data in YAML; place any
+runtime extensions (maps, lists, calculation helpers) in a dedicated handwritten
+`<Name>Mappings.kt` or `<Name>Extensions.kt` file under `:common`. Keep generated output
 KMP-compatible and leave mixed semantic catalogs explicit.
 
 ---
@@ -245,6 +248,10 @@ domain skills.
 ## 7. Code quality invariants
 
 - **No FQNs** unless resolving a name collision — use imports.
+- **Prefer CodeGen for constant catalogs**: When introducing or refactoring groups of
+  static string/scalar constants or symbol mappings, declare them as YAML resources in
+  `common/src/commonMain/resources/codegen/` rather than handwritten Kotlin constant objects.
+  Keep declarative data in YAML and runtime logic/maps in Kotlin extension files.
 - **Use canonical constants directly**: production code must reference shared
   `:common` catalogs such as `ViewText`, `CssClass`, `HtmlIds`, `HtmlAttrs`,
   `Routes`, and `PrecisionConstants` at the use site. Do not create a local
