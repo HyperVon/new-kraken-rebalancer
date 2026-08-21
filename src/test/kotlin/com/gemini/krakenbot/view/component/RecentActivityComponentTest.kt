@@ -1,10 +1,8 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.ActionLogFormat
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import kotlinx.html.div
@@ -51,10 +49,25 @@ class RecentActivityComponentTest : StringSpec() {
             htmlString shouldContain "Volume: abc"
         }
 
-        "persisted action grammar markers stay fixed for historical rows" {
-            ActionLogFormat.VOLUME_MARKER shouldBe "Volume:"
-            ActionLogFormat.VALUE_MARKER shouldBe "Value:"
-            ActionLogFormat.COST_MARKER shouldBe "Cost:"
+        "historical deviation row humanizes to drift text" {
+            val htmlString = renderActions("Deviation: BTC -5%")
+
+            htmlString shouldContain "BTC -5% drift detected"
+            htmlString shouldNotContain "Deviation:"
+        }
+
+        "historical fiat-correction row humanizes to cash-drift text" {
+            val htmlString = renderActions("USD Deviation Triggered. Enforcing fiat correction.")
+
+            htmlString shouldContain "Cash drift detected; applying correction"
+            htmlString shouldNotContain "Enforcing fiat correction"
+        }
+
+        "historical distributing row humanizes to correction-distributed text" {
+            val htmlString = renderActions("Distributing Fiat Correction (\$100.00) among 2 candidates.")
+
+            htmlString shouldContain "Cash correction distributed across underweight assets"
+            htmlString shouldNotContain "Distributing Fiat Correction"
         }
     }
 }

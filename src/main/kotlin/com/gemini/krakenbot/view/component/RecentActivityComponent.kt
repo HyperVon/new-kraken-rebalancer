@@ -35,7 +35,7 @@ class RecentActivityComponent {
             fun from(action: String): TradeAction {
                 val stripped =
                     action.uppercase()
-                        .removePrefix(ViewText.DRY_RUN_PREFIX.uppercase())
+                        .removePrefix(ActionLogFormat.DRY_RUN_PREFIX.uppercase())
                         .trim()
                 return when {
                     stripped.startsWith(OrderSide.BUY.uppercaseName) -> BUY
@@ -127,15 +127,15 @@ class RecentActivityComponent {
             if (count == 1) ViewText.ACTIVITY_ACTION_SUFFIX else ViewText.ACTIVITY_ACTIONS_SUFFIX
 
         fun humanizeInfoAction(action: String): String {
-            val normalized = action.removePrefix(ViewText.DRY_RUN_PREFIX)
+            val normalized = action.removePrefix(ActionLogFormat.DRY_RUN_PREFIX)
             return when {
-                normalized.startsWith(ViewText.ACTION_DEVIATION_PREFIX) ->
-                    normalized.removePrefix(ViewText.ACTION_DEVIATION_PREFIX) + " drift detected"
+                normalized.startsWith(ActionLogFormat.INFO_DEVIATION_PREFIX) ->
+                    normalized.removePrefix(ActionLogFormat.INFO_DEVIATION_PREFIX) + " drift detected"
 
-                normalized == ViewText.ACTION_FIAT_CORRECTION_ENFORCED ->
+                normalized == ActionLogFormat.INFO_FIAT_CORRECTION_ENFORCED ->
                     "Cash drift detected; applying correction"
 
-                normalized.startsWith(ViewText.ACTION_DISTRIBUTING_FIAT_PREFIX) ->
+                normalized.startsWith(ActionLogFormat.INFO_DISTRIBUTING_FIAT_PREFIX) ->
                     "Cash correction distributed across underweight assets"
 
                 else -> normalized
@@ -143,8 +143,8 @@ class RecentActivityComponent {
         }
 
         fun humanizeTradeAction(action: String): String {
-            val dryRun = action.startsWith(ViewText.DRY_RUN_PREFIX)
-            val normalized = action.removePrefix(ViewText.DRY_RUN_PREFIX)
+            val dryRun = action.startsWith(ActionLogFormat.DRY_RUN_PREFIX)
+            val normalized = action.removePrefix(ActionLogFormat.DRY_RUN_PREFIX)
             val parts = normalized.split(' ')
             if (parts.size < 6 || parts[0] !in setOf(OrderSide.BUY.uppercaseName, OrderSide.SELL.uppercaseName)) {
                 return action
