@@ -1,8 +1,11 @@
 package com.gemini.krakenbot.view.css
 
+import com.gemini.krakenbot.view.css.ActivityFeedStyles.applyActivityFeedStyles
 import com.gemini.krakenbot.view.css.ComponentStyles.applyComponentStyles
 import com.gemini.krakenbot.view.css.CssTheme.applyRootVariables
+import com.gemini.krakenbot.view.css.FeedbackStyles.applyFeedbackStyles
 import com.gemini.krakenbot.view.css.FormStyles.applyFormStyles
+import com.gemini.krakenbot.view.css.HeroStyles.applyHeroStyles
 import com.gemini.krakenbot.view.css.HistoryChartStyles.applyHistoryChartStyles
 import com.gemini.krakenbot.view.css.HistoryComparisonStyles.applyHistoryComparisonStyles
 import com.gemini.krakenbot.view.css.HistoryContentStyles.applyHistoryContentStyles
@@ -31,6 +34,9 @@ object CssStyles {
         applyRootVariables()
         applyLayoutStyles()
         applyComponentStyles()
+        applyHeroStyles()
+        applyFeedbackStyles()
+        applyActivityFeedStyles()
         applyTableStyles()
         applyFormStyles()
         applyNavigationStyles()
