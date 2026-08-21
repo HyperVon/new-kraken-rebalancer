@@ -18,8 +18,8 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 
-class CsrfProtectionTest :
-    StringSpec({
+class CsrfProtectionTest : StringSpec() {
+    init {
         "isValid_WithValidOrigin_AcceptsRequest" {
             testApplication {
                 routing {
@@ -248,4 +248,5 @@ class CsrfProtectionTest :
                 response.status shouldBe HttpStatusCode.Forbidden
             }
         }
-    })
+    }
+}

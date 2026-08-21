@@ -11,6 +11,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.math.absoluteValue
@@ -56,7 +57,7 @@ class RateLimiterTest : StringSpec() {
         "acquireWithCost delays when limit exceeded" {
             runTest {
                 val safeLimit = 2.0
-                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0)
+                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0, clock = { currentTime })
                 limiter.acquireWithCost(1.5)
 
                 // Second call asks for 1.0, total 2.5 > 2.0. Needs delay.
@@ -71,7 +72,7 @@ class RateLimiterTest : StringSpec() {
         "subsequent acquire after limit wait raises counter or lands at safeLimit plus cost" {
             runTest {
                 val safeLimit = 2.0
-                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0)
+                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0, clock = { currentTime })
                 limiter.acquireWithCost(1.5)
                 limiter.acquireWithCost(1.0)
                 advanceUntilIdle()
@@ -138,7 +139,7 @@ class RateLimiterTest : StringSpec() {
         "acquireWithCost does not hold mutex across delay (no HOL blocking)" {
             runTest {
                 val safeLimit = 2.0
-                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0)
+                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0, clock = { currentTime })
                 // Fill so next cost=1.0 needs ~0.5s wait (same math as limit-exceeded test).
                 limiter.acquireWithCost(1.5)
 

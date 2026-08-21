@@ -128,7 +128,6 @@ class ConfigServiceTest : StringSpec() {
         "loadConfig_Success" {
             runTest {
                 configService.loadConfig()
-                configService.getConfig().shouldNotBeNull()
                 configService.getConfig().allocations.first().symbol.value shouldBe Asset.USD
             }
         }

@@ -1,10 +1,13 @@
 package com.gemini.krakenbot.view.css
 
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.string.shouldContain
 import kotlinx.css.CssBuilder
 
 class CssBuilderExtensionsTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
     init {
         "raw extension helpers emit the correct CSS property name" {
             val css =

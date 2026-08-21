@@ -56,7 +56,6 @@ class KrakenRebalancerApplicationTest :
                     modules(appModule)
                 }
                 val pm: PortfolioManager by inject()
-                pm.shouldNotBeNull()
                 pm.shouldBeInstanceOf<PortfolioManagerImpl>()
                 val krakenField = PortfolioManagerImpl::class.java.getDeclaredField("krakenService")
                 krakenField.isAccessible = true
