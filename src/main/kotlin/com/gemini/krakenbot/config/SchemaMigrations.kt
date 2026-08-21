@@ -13,6 +13,26 @@ import java.time.Instant
 
 internal const val CURRENT_SCHEMA_VERSION = 5
 
+internal data class SchemaMigration(
+    val version: Int,
+    val name: String,
+    val action: (JdbcTransaction.() -> Unit)? = null,
+)
+
+internal val SCHEMA_MIGRATIONS = listOf(
+    SchemaMigration(1, "baseline"),
+    SchemaMigration(2, "order-intent-journal") {
+        if (!OrderIntentTable.exists()) {
+            currentDialectMetadata.resetCaches()
+            SchemaUtils.createStatements(OrderIntentTable).forEach { exec(it) }
+            currentDialectMetadata.resetCaches()
+        }
+    },
+    SchemaMigration(3, "legacy-submission-guard-import"),
+    SchemaMigration(4, "legacy-trade-identity"),
+    SchemaMigration(5, "ambiguous-legacy-client-order-id"),
+)
+
 internal fun JdbcTransaction.applySchemaMigrations() {
     val appliedVersion =
         SchemaMigrationTable
@@ -23,49 +43,15 @@ internal fun JdbcTransaction.applySchemaMigrations() {
             ?.get(SchemaMigrationTable.version)
             ?: 0
 
-    if (appliedVersion < 1) {
-        SchemaMigrationTable.insert {
-            it[version] = 1
-            it[name] = "baseline"
-            it[appliedAt] = Instant.now().toEpochMilli()
+    val now = Instant.now().toEpochMilli()
+    SCHEMA_MIGRATIONS
+        .filter { it.version > appliedVersion }
+        .forEach { migration ->
+            migration.action?.invoke(this)
+            SchemaMigrationTable.insert {
+                it[version] = migration.version
+                it[name] = migration.name
+                it[appliedAt] = now
+            }
         }
-    }
-
-    if (!OrderIntentTable.exists()) {
-        currentDialectMetadata.resetCaches()
-        SchemaUtils.createStatements(OrderIntentTable).forEach { exec(it) }
-        currentDialectMetadata.resetCaches()
-    }
-
-    if (appliedVersion < 2) {
-        SchemaMigrationTable.insert {
-            it[version] = 2
-            it[name] = "order-intent-journal"
-            it[appliedAt] = Instant.now().toEpochMilli()
-        }
-    }
-
-    if (appliedVersion < 3) {
-        SchemaMigrationTable.insert {
-            it[version] = 3
-            it[name] = "legacy-submission-guard-import"
-            it[appliedAt] = Instant.now().toEpochMilli()
-        }
-    }
-
-    if (appliedVersion < 4) {
-        SchemaMigrationTable.insert {
-            it[version] = 4
-            it[name] = "legacy-trade-identity"
-            it[appliedAt] = Instant.now().toEpochMilli()
-        }
-    }
-
-    if (appliedVersion < 5) {
-        SchemaMigrationTable.insert {
-            it[version] = 5
-            it[name] = "ambiguous-legacy-client-order-id"
-            it[appliedAt] = Instant.now().toEpochMilli()
-        }
-    }
 }
