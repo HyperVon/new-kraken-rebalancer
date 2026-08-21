@@ -42,4 +42,7 @@ object ActionLogFormatter {
         return "${ViewText.ACTION_SKIPPING_DUST_PREFIX}${side.apiValue}" +
             "${ViewText.ACTION_FOR_SUFFIX}$symbol ($$formattedUsd)"
     }
+
+    fun formatSkippedMissingPrice(side: OrderSide, symbol: String): String =
+        "${ViewText.ACTION_SKIPPED_NO_PRICE_PREFIX}${side.apiValue} $symbol"
 }

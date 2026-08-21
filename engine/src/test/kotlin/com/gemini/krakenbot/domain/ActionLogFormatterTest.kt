@@ -67,5 +67,10 @@ class ActionLogFormatterTest : StringSpec() {
             val msg = ActionLogFormatter.formatSkippedDust(OrderSide.BUY, "DOGE", BigDecimal("0.50"))
             msg shouldBe "Skipping dust buy for DOGE ($0.50)"
         }
+
+        "formatSkippedMissingPrice should format missing-price message" {
+            val msg = ActionLogFormatter.formatSkippedMissingPrice(OrderSide.SELL, "XBT")
+            msg shouldBe "Skipping — no price for sell XBT"
+        }
     }
 }
