@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.config
 
 import com.fasterxml.jackson.databind.SerializationFeature
+import com.gemini.krakenbot.util.isAllowAllOriginsEnabled
 import com.gemini.krakenbot.util.isLocalOrPrivateOrigin
 import io.ktor.http.CacheControl
 import io.ktor.http.ContentType
@@ -18,6 +19,9 @@ import io.ktor.server.plugins.compression.minimumSize
 import io.ktor.server.plugins.conditionalheaders.ConditionalHeaders
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
+import org.slf4j.LoggerFactory
+
+private val log = LoggerFactory.getLogger("KtorConfig")
 
 fun Application.configureSerialization() {
     install(ContentNegotiation) {
@@ -29,6 +33,13 @@ fun Application.configureSerialization() {
 }
 
 fun Application.configureCORS() {
+    if (isAllowAllOriginsEnabled()) {
+        log.warn(
+            "REBALANCER_ALLOW_ALL_ORIGINS=true disables ALL dashboard origin checks. " +
+                "Any website you visit can call this dashboard's API from your browser. " +
+                "Never enable this outside an isolated lab environment, and never with live API keys.",
+        )
+    }
     install(CORS) {
         // The unauthenticated dashboard assumes local/private-network trust. CORS limits browser
         // cross-origin access accordingly; deployment still controls direct network reachability.

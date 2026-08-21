@@ -11,13 +11,16 @@ import java.net.URI
  * Env `REBALANCER_ALLOWED_ORIGINS` (comma-separated exact origins, e.g.
  * `https://trusted.example.com,https://app.internal`) adds explicit allowlist entries
  * on top of the private-network rules. Use it instead of widening `*.local` when the LAN
- * is untrusted. `REBALANCER_ALLOW_ALL_ORIGINS=true` is a break-glass for lab use and must
- * never be enabled with live keys.
+ * is untrusted. Scheme-explicit entries match exactly; a bare-host entry such as
+ * `trusted.example.com` authorizes its HTTPS origin only — plaintext HTTP must be
+ * allowlisted explicitly. `REBALANCER_ALLOW_ALL_ORIGINS=true` is a break-glass for lab
+ * use and must never be enabled with live keys; startup logs a warning when set.
  */
-fun isLocalOrPrivateOrigin(origin: String): Boolean {
-    val allowAll = System.getenv("REBALANCER_ALLOW_ALL_ORIGINS")?.equals("true", ignoreCase = true) == true
-    return isLocalOrPrivateOrigin(origin, parseAllowedOriginsFromEnv(), allowAll)
-}
+fun isLocalOrPrivateOrigin(origin: String): Boolean =
+    isLocalOrPrivateOrigin(origin, parseAllowedOriginsFromEnv(), isAllowAllOriginsEnabled())
+
+fun isAllowAllOriginsEnabled(): Boolean =
+    System.getenv("REBALANCER_ALLOW_ALL_ORIGINS")?.equals("true", ignoreCase = true) == true
 
 internal fun isLocalOrPrivateOrigin(origin: String, allowedOrigins: Set<String>, allowAll: Boolean = false): Boolean {
     if (allowAll || isExplicitlyAllowedOrigin(origin, allowedOrigins)) return true
@@ -45,14 +48,20 @@ private fun parseAllowedOriginsFromEnv(): Set<String> {
 
 private fun isExplicitlyAllowedOrigin(origin: String, allowedOrigins: Set<String>): Boolean {
     if (allowedOrigins.isEmpty()) return false
-    val normalizedOrigin = origin.trim().removeSuffix("/")
+    val normalizedOrigin = normalizeAllowlistOrigin(origin) ?: return false
     return allowedOrigins.any { candidate ->
-        val trimmed = candidate.trim().removeSuffix("/")
+        val trimmed = normalizeAllowlistOrigin(candidate) ?: return@any false
         normalizedOrigin.equals(trimmed, ignoreCase = true) ||
-            // Allow bare-host entries like "trusted.example.com" to match "https://trusted.example.com"
-            normalizedOrigin.equals("https://$trimmed", ignoreCase = true) ||
-            normalizedOrigin.equals("http://$trimmed", ignoreCase = true)
+            // Bare-host entries like "trusted.example.com" authorize the HTTPS origin only;
+            // the plaintext http:// twin must be allowlisted explicitly.
+            (!trimmed.contains("://") && normalizedOrigin.equals("https://$trimmed", ignoreCase = true))
     }
+}
+
+private fun normalizeAllowlistOrigin(value: String): String? {
+    val normalized = value.trim().removeSuffix("/")
+    if (normalized.isEmpty()) return null
+    return normalized.takeIf { parseOrigin(it) != null }
 }
 
 private fun parseOrigin(origin: String): URI? {
@@ -61,18 +70,28 @@ private fun parseOrigin(origin: String): URI? {
     val candidate = if (SCHEME_PATTERN.containsMatchIn(trimmed)) trimmed else "http://$trimmed"
     val uri = runCatching { URI(candidate) }.getOrNull() ?: return null
     if (uri.scheme?.lowercase() !in ALLOWED_SCHEMES || uri.rawUserInfo != null) return null
+    if (uri.host == null) return null
     if (!uri.rawPath.isNullOrEmpty() || uri.rawQuery != null || uri.rawFragment != null) return null
     return uri
 }
 
 private fun parseIpv4(host: String): List<Int>? {
     if (!IPV4_SHAPE.matches(host)) return null
-    val octets = host.split('.').map { it.toIntOrNull() ?: return null }
+    val components = host.split('.')
+    if (components.any { it.length > 1 && it.startsWith('0') }) return null
+    val octets = components.map { it.toIntOrNull() ?: return null }
     return octets.takeIf { values -> values.all { it in 0..255 } }
 }
 
 private fun isIpv6Loopback(host: String): Boolean {
     if (!IPV6_CHARS.matches(host)) return false
+    val parts = host.split("::")
+    if (parts.size > 2) return false
+    val leftGroups = parts[0].split(':').filter { it.isNotEmpty() }
+    val rightGroups = parts.getOrNull(1)?.split(':')?.filter { it.isNotEmpty() } ?: emptyList()
+    if ((leftGroups + rightGroups).any { it.length > 4 }) return false
+    if (parts.size == 1 && leftGroups.size != 8) return false
+    if (parts.size == 2 && leftGroups.size + rightGroups.size >= 8) return false
     return normalizeIpv6(host) == IPV6_LOOPBACK_EXPANDED
 }
 
