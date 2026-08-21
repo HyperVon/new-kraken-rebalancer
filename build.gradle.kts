@@ -241,7 +241,7 @@ val httpCoreVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)(?:[-+].*)?""")
 val (httpCoreSecurityMajor, httpCoreSecurityMinor, httpCoreSecurityPatch) =
     httpCoreVersionPattern.matchEntire(httpCoreSecurityFloor)!!.destructured
 
-val httpClientSecurityFloor = "5.6.3"
+val httpClientSecurityFloor = "5.6.4"
 val httpClientVersionPattern = Regex("""(\d+)\.(\d+)\.(\d+)(?:[-+].*)?""")
 val (httpClientSecurityMajor, httpClientSecurityMinor, httpClientSecurityPatch) =
     httpClientVersionPattern.matchEntire(httpClientSecurityFloor)!!.destructured
@@ -305,7 +305,7 @@ configurations.all {
                 if (isBelowSecurityFloor) {
                     useVersion(httpClientSecurityFloor)
                     because(
-                        "Keep Apache HttpComponents Client at 5.6.3 or newer for CVE-2026-64607 / GHSA-hjcp-jmpx-g3qm (pool exhaustion DoS)",
+                        "Keep Apache HttpComponents Client at 5.6.4 or newer for CVE-2026-64607 / GHSA-hjcp-jmpx-g3qm (pool exhaustion DoS)",
                     )
                 }
             }

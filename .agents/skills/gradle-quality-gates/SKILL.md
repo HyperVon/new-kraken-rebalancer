@@ -141,7 +141,7 @@ Node diagnostics.
 ## CodeQL
 
 **Enabled** — `.github/workflows/codeql.yml` runs the `java-kotlin` analysis on
-`main` pushes and pull requests using CodeQL Action **v4.37.4**, JDK **25**, and
+`main` pushes and pull requests using CodeQL Action **v4.37.7**, JDK **25**, and
 `build-mode: manual`. Keep the workflow SHA pin, language, and manual build
 steps aligned with the workflow.
 

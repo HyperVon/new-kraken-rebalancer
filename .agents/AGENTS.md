@@ -96,7 +96,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 - **Engine**: Pure Kotlin JVM domain calculation library (`:engine`) housing `RebalancerEngine`, `PortfolioCalculations`, and typed planning models with independent 95/90 JaCoCo gates
 - **Frontend/codegen**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.11** is required for Kotlin/JS Kotest discovery and the experimental JVM/common catalog processors
 - **Testing**: Kotest **6.2.4**, MockK **1.14.11**, Karma/Istanbul
-- **Formatting**: Spotless **8.9.0** + ktlint **1.8.0**, **120**-char line length; `allWarningsAsErrors` in all modules
+- **Formatting**: Spotless **8.10.0** + ktlint **1.8.0**, **120**-char line length; `allWarningsAsErrors` in all modules
 
 ### Architecture names (SRP)
 
@@ -200,7 +200,7 @@ frontend browser tests, Spotless, markdownlint including `.agents/OPERATING.md`
 and harness stubs).
 
 **CodeQL**: enabled for Java/Kotlin analysis on `main` pushes and pull requests
-with CodeQL Action **v4.37.4**. The workflow uses the `java-kotlin` language,
+with CodeQL Action **v4.37.7**. The workflow uses the `java-kotlin` language,
 `manual` build mode, and JDK **25**; keep its SHA pin and build steps aligned
 with the workflow.
 

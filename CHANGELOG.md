@@ -10,6 +10,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Toolchain & dependency upgrades**:
+  - **Gradle Wrapper**: `9.7.0` → `9.7.1` (patch release addressing `ant.taskdef` classpath isolation and `Option` annotation ordering).
+  - **Spotless Gradle Plugin**: `8.9.0` → `8.10.0` (minor release adding `shortenFullyQualifiedTypes` and embedded Eclipse JDT lockfiles).
+  - **Jackson BOM**: `2.22.1` → `2.22.2` (maintenance release with bug fixes for `@JsonView`, `@JsonIncludeProperties` ordering, and `Locale` handling in `JsonFormat`).
+  - **Kotlin CSS JVM**: `2026.8.0` → `2026.8.3` (patch updates to JetBrains Kotlin wrappers).
+  - **Apache HttpClient Security Floor**: `5.6.3` → `5.6.4` (raising security floor to the latest stable release for TLS async upgrade fixes).
+  - **CodeQL GitHub Action**: `v4.37.4` → `v4.37.7` (`ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd`, CodeQL Bundle v2.26.3).
+  - **Dependency checker script**: Updated `check_updates.py` to parse `gradle/libs.versions.toml` catalogs, support semver ranges and managed platform dependencies, and provide robust SSL fallback on macOS. Verified all 52 dependencies across Maven Central, Gradle Plugin Portal, npm registry, and services.gradle.org with 0 open Dependabot alerts.
 - **Co-locate Exposed table mappers on Table schemas**: Co-located `toModel` and `applyTo` / `applyPending` entity mapping logic inside `TradeTable`, `OrderIntentTable`, `PortfolioStatsTable`, `PortfolioSnapshotTable`, `AssetSnapshotTable`, `ActionLogTable`, and `LedgerTable`. This eliminates repetitive `Table.` column qualifier boilerplate and private row-builder methods across all SQLite repository implementations (`SqliteTradeRepositoryImpl`, `SqliteOrderIntentRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `SqliteLedgerRepositoryImpl`), keeping SQL column definitions coupled directly with their serialization/deserialization logic.
 - **Declarative schema migrations pipeline**: Replaced repeated `if (appliedVersion < N)` conditional insertion blocks in `SchemaMigrations.kt` with a typed, declarative `SCHEMA_MIGRATIONS` record list and sequential filter/apply execution. Added targeted unit tests in `SchemaMigrationsTest.kt` verifying migration sequencing and idempotency.
 - **Bind comparison unavailable display text directly on enum**: `ComparisonUnavailableReason` in `:common` now declares `val displayText: String` constructor parameters mapped directly to `ViewText` constants, along with a `displayTextFor(reason: String?)` companion helper. This eliminates manual string-based `when` matching in client JavaScript (`HistoryComparisonChart.kt`) and guarantees exhaustive, domain-owned display text mappings across all platforms.
