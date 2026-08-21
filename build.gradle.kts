@@ -159,6 +159,10 @@ val coverageExcludes =
         // Only the pure interface is excluded; synthetic HTML-DSL lambdas are handled
         // via `*Kt$*` in tight scopes if ever needed rather than whole-class excludes.
         "**/config/DatabaseConfig*",
+        // Split out of DatabaseConfig; carries the same bootstrap/legacy-repair logic
+        // that remains impractical to exercise to the same bundle thresholds.
+        "**/config/MigrationBackupKt*",
+        "**/config/LegacyDataRepairKt*",
         "**/config/KtorConfigKt*",
         "**/repository/table/**",
         "**/service/KrakenService*",

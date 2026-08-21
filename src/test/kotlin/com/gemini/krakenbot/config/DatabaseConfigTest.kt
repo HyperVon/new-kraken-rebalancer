@@ -1,5 +1,8 @@
 package com.gemini.krakenbot.config
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
@@ -7,7 +10,9 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import kotlinx.coroutines.test.runTest
+import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.sql.DriverManager
 import java.time.Instant
@@ -441,6 +446,32 @@ class DatabaseConfigTest : StringSpec() {
                     files.anyMatch { it.fileName.toString().startsWith("rebalancer.db.pre-migration-") } shouldBe true
                 }
             } finally {
+                Files.walk(directory).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+            }
+        }
+
+        "warns and fails loudly when the pre-migration probe hits a real database fault" {
+            val directory = Files.createTempDirectory("kraken-db-corrupt-")
+            val migrationLog =
+                LoggerFactory.getLogger("com.gemini.krakenbot.config.MigrationBackup") as ch.qos.logback.classic.Logger
+            val events = ListAppender<ILoggingEvent>().apply { start() }
+            migrationLog.addAppender(events)
+            try {
+                val corruptDb = directory.resolve("corrupt.db")
+                Files.write(corruptDb, "not a sqlite database at all".toByteArray())
+
+                val exception =
+                    requireNotNull(runCatching { DatabaseConfig.init(corruptDb.toString()) }.exceptionOrNull()) {
+                        "Expected init to throw for a corrupt database file"
+                    }
+                exception::class shouldBe IllegalStateException::class
+                exception.message shouldContain "Cannot create pre-migration database backup"
+                events.list.count {
+                    it.level == Level.WARN && it.formattedMessage.contains("Pre-migration probe failed")
+                } shouldBe 1
+            } finally {
+                migrationLog.detachAppender(events)
+                events.stop()
                 Files.walk(directory).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
             }
         }
