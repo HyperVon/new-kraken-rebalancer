@@ -1,4 +1,0 @@
-interface:
-  display_name: "Agent Guidance Maintenance"
-  short_description: "Maintain adopted Agent Guidance Kit content"
-  default_prompt: "Use $agent-guidance-maintenance to audit or update adopted guidance safely."

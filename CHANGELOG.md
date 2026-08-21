@@ -10,6 +10,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Promote adopted agent skills to primary repository guidance**: `security-review` and `systematic-debugging` were moved from a legacy receipt-managed footer into the primary skill index table in `.agents/AGENTS.md`. Both skills were synchronized with the latest upstream safety patterns from `agent-guidance-kit` (reviewer artifact hygiene, secrets in model context, and repository-state safety during `git bisect` history traversal).
 - **ChartProps migrated to CodeGen catalog and ChartColors extensions**: `ChartProps` is now generated at build time via `@GenerateStringConstants` from `common/src/commonMain/resources/codegen/chart-props.yaml` using generic constant generation for all typed scalar properties. Complex runtime Kotlin logic (palette arrays, `SymbolColors`, and asset color resolution helpers `borderColorForSymbol`, `backgroundColorForSymbol`, `solidColorForSymbol`) was cleanly extracted into a dedicated handwritten `ChartColors.kt` extension file under `:common`, keeping the `:codegen` processor completely free of hardcoded Kotlin code string templates while preserving 100% backward compatibility and exact `const val` semantics.
 - **DatabaseConfig split into focused units**: The 896-line `DatabaseConfig` object now delegates to `SchemaMigrations` (versioned migration records), `LegacyDataRepair` (provenance backfill, legacy trade-ID linking, terminal-intent reconciliation, submission-guard import, pending-intent recovery), `IndexRepair` (expected-index definitions and repair), and `MigrationBackup` (pre-migration backup decisioning). `DatabaseConfig.init()` remains the sole public entry point and orchestrates the same sequence in the same order. JaCoCo exclusions were synced so the previously-excluded bootstrap logic stays excluded under its new file names, while the fully-covered migration-record and index-repair units now count toward bundle coverage.
 
@@ -19,6 +20,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- **Discontinued Agent Guidance Kit receipts lifecycle**: Removed obsolete `.agents/.agent-guidance-kit/receipts/` JSON files and the discontinued `.agents/skills/agent-guidance-maintenance/` skill directory, aligning with upstream `agent-guidance-kit`'s direct copy/adapt library model.
 - **Agent runtime router removed**: The `route-kilo` / `route-subagents` routing skills and the `.agents/runtime-router/` adapter tree (Kilo adapters, tests, and router documentation) were deleted; agents select models through their host's native model-selection rules (`.agents/OPERATING.md`, "Native model selection") instead of routing through ARR. This subsumes the interim billing-redaction fixes to those adapters (`ffca8330`, `4e798929`, `633fc16d`), whose files no longer exist.
 
 ## [6.17.5] - 2026-08-16

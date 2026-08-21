@@ -195,16 +195,10 @@ harnesses.
 | [`open-pr`](../.agents/skills/open-pr/SKILL.md) | Fully verified pull-request creation with structured evidence |
 | [`product-opportunity-review`](../.agents/skills/product-opportunity-review/SKILL.md) | User-needs discovery, feature opportunities, prioritization, and product roadmaps |
 | [`rules-and-skills-audit`](../.agents/skills/rules-and-skills-audit/SKILL.md) | Structural conflicts, redundancy, stale guidance, and consolidation |
+| [`security-review`](../.agents/skills/security-review/SKILL.md) | Evidence-backed security boundary, secrets, and data-flow audits |
 | [`skill-authoring`](../.agents/skills/skill-authoring/SKILL.md) | Approved creation and modification of project skills, routing, safety, and validation |
 | [`skill-reviewer`](../.agents/skills/skill-reviewer/SKILL.md) | Content improvements for the project agent playbook |
 | [`skill-optimizer`](../.agents/skills/skill-optimizer/SKILL.md) | Context-cost measurement and safe compression of agent guidance |
-
-### Receipt-managed skills
-
-| Skill | What it covers |
-| :--- | :--- |
-| [`agent-guidance-maintenance`](../.agents/skills/agent-guidance-maintenance/SKILL.md) | Adopt, audit, refresh, or update Agent Guidance Kit content |
-| [`security-review`](../.agents/skills/security-review/SKILL.md) | Evidence-backed security boundary, secrets, and data-flow audits |
 | [`systematic-debugging`](../.agents/skills/systematic-debugging/SKILL.md) | Root-cause diagnosis for test/build failures and performance regressions |
 
 ### Orchestration and continuous work
