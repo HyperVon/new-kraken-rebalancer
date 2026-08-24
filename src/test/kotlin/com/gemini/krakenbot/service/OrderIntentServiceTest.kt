@@ -12,6 +12,7 @@ import io.mockk.*
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 
+@Suppress("unused")
 class OrderIntentServiceTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

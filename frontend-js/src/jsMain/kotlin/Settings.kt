@@ -5,7 +5,6 @@ import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document

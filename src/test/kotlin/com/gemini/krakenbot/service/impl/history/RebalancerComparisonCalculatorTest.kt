@@ -70,7 +70,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            (result.latestDifferenceUSD!!.compareTo(BigDecimal.ZERO) > 0) shouldBe true
+            (result.latestDifferenceUSD!! > BigDecimal.ZERO) shouldBe true
         }
 
         "underperformance: rebalancer ends below buy & hold" {
@@ -106,7 +106,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            (result.latestDifferenceUSD!!.compareTo(BigDecimal.ZERO) < 0) shouldBe true
+            (result.latestDifferenceUSD!! < BigDecimal.ZERO) shouldBe true
         }
 
         "range rebasing: suffix uses its own first snapshot as baseline" {

@@ -172,7 +172,6 @@ class EngineModelTest : StringSpec() {
         }
 
         "tradeRecord provenance and effectiveSource inference" {
-            val now = Instant.now()
             val withExplicitSource = EngineTestFixtures.tradeRecord(source = TradeSource.API_FILL)
             withExplicitSource.effectiveSource() shouldBe TradeSource.API_FILL
             withExplicitSource.isSettledApiFill() shouldBe true
@@ -301,7 +300,7 @@ class EngineModelTest : StringSpec() {
         "OrderSubmissionState enum values" {
             OrderSubmissionState.PENDING.name shouldBe "PENDING"
             OrderSubmissionState.UNCERTAIN.name shouldBe "UNCERTAIN"
-            OrderSubmissionState.values().size shouldBe 2
+            OrderSubmissionState.entries.size shouldBe 2
         }
 
         "isPairAliasDuplicateOf guards trade-id conflicts and provenance differences" {

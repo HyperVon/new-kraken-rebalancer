@@ -103,7 +103,7 @@ class DashboardFragmentComponent(
                         if (!intent.errorMessage.isNullOrBlank()) {
                             p {
                                 +ViewText.UNRESOLVED_INTENT_ERROR_PREFIX
-                                +"${intent.errorMessage}"
+                                +intent.errorMessage
                             }
                         }
                         val resolveUrl = Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE.replace("{id}", "$intentId")

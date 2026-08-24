@@ -20,12 +20,10 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@Suppress("unused")
 class FakeKrakenLedgerSyncIntegrationTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

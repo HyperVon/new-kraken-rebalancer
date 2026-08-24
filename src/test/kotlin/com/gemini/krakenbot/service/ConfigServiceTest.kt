@@ -289,8 +289,8 @@ class ConfigServiceTest : StringSpec() {
             runTest {
                 val secretFromEnv = System.getenv("PATH") ?: "fallback-path"
                 writeRawConfig(
-                    apiKey = "\${PATH:fallback-path}",
-                    privateKey = "\${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
+                    apiKey = $$"${PATH:fallback-path}",
+                    privateKey = $$"${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
                 )
 
                 val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
@@ -355,7 +355,7 @@ class ConfigServiceTest : StringSpec() {
         "updateConfig preserves each unchanged env credential during partial rotation" {
             runTest {
                 listOf("api", "private").forEach { rotatedField ->
-                    writeRawConfig(apiKey = "\${PATH:api-default}", privateKey = "\${PATH:private-default}")
+                    writeRawConfig(apiKey = $$"${PATH:api-default}", privateKey = $$"${PATH:private-default}")
                     val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
                     val current = service.getConfig()
                     val rotated =
@@ -735,8 +735,8 @@ class ConfigServiceTest : StringSpec() {
 
         "loadConfig_ResolveEnvVars" {
             writeRawConfig(
-                apiKey = "\${TEST_KRAKEN_API_KEY:default-api-key}",
-                privateKey = "\${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
+                apiKey = $$"${TEST_KRAKEN_API_KEY:default-api-key}",
+                privateKey = $$"${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
             )
 
             val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
@@ -746,14 +746,14 @@ class ConfigServiceTest : StringSpec() {
 
         "loadConfig_ResolveEnvVars_WithActualEnvValue" {
             val pathValue = System.getenv("PATH") ?: "fallback"
-            writeRawConfig(apiKey = "\${PATH:fallback-path}", privateKey = "some-private-key")
+            writeRawConfig(apiKey = $$"${PATH:fallback-path}", privateKey = "some-private-key")
 
             val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
             service.getConfig().kraken.apiKey.value shouldBe pathValue
         }
 
         "loadConfig_ResolveEnvVars_NoDefaultValue" {
-            writeRawConfig(apiKey = "\${NON_EXISTENT_VAR_NO_DEFAULT}", privateKey = "some-private-key")
+            writeRawConfig(apiKey = $$"${NON_EXISTENT_VAR_NO_DEFAULT}", privateKey = "some-private-key")
 
             val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
             service.getConfig().kraken.apiKey.value shouldBe ""
@@ -764,7 +764,7 @@ class ConfigServiceTest : StringSpec() {
             try {
                 every { System.getenv("SOME_BLANK_VAR") } returns "  "
 
-                writeRawConfig(apiKey = "\${SOME_BLANK_VAR:default-val}", privateKey = "some-private-key")
+                writeRawConfig(apiKey = $$"${SOME_BLANK_VAR:default-val}", privateKey = "some-private-key")
 
                 val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
                 service.getConfig().kraken.apiKey.value shouldBe "default-val"
@@ -936,7 +936,7 @@ class ConfigServiceTest : StringSpec() {
                 )
                 cases.forEach { (key, value) ->
                     every { System.getenv(key) } returns value
-                    writeRawConfig(apiKey = "\${$key}", privateKey = "static-private")
+                    writeRawConfig(apiKey = $$"${$$key}", privateKey = "static-private")
                     val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
                     withClue(key) {
                         service.getConfig().kraken.apiKey.value shouldBe value

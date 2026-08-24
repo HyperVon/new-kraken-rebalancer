@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class OrderExecutorFillSettlementTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

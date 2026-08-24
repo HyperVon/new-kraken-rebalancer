@@ -5,13 +5,12 @@ import com.gemini.krakenbot.model.LedgerEvent
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@Suppress("unused")
 class FakeKrakenServiceTest : StringSpec() {
     init {
         isolationMode = IsolationMode.InstancePerTest

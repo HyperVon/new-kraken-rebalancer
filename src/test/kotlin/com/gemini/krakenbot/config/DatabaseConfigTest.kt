@@ -20,6 +20,7 @@ import java.time.Instant
 import java.util.Comparator
 import java.util.UUID
 
+@Suppress("unused")
 class DatabaseConfigTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

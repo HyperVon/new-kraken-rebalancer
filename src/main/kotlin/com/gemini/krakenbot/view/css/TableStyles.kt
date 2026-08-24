@@ -47,7 +47,6 @@ import kotlinx.css.td
 import kotlinx.css.textAlign
 import kotlinx.css.th
 import kotlinx.css.thead
-import kotlinx.css.tr
 import kotlinx.css.width
 
 object TableStyles {

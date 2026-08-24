@@ -29,22 +29,22 @@ class RecentActivityComponentTest : StringSpec() {
 
     init {
         "legacy live cost row humanizes and hides persisted markers" {
-            val htmlString = renderActions("BUY BTC Volume: 0.1 Cost: \$5000.00")
+            val htmlString = renderActions($$"BUY BTC Volume: 0.1 Cost: $5000.00")
 
-            htmlString shouldContain "BUY BTC · 0.1 · \$5,000.00"
+            htmlString shouldContain $$"BUY BTC · 0.1 · $5,000.00"
             htmlString shouldNotContain "Volume:"
-            htmlString shouldNotContain "Cost: \$5000.00"
+            htmlString shouldNotContain $$"Cost: $5000.00"
         }
 
         "legacy dry-run value row humanizes and keeps the DRY RUN badge" {
-            val htmlString = renderActions("[DRY RUN] SELL ETH Volume: 1.5 Value: \$3000.00")
+            val htmlString = renderActions($$"[DRY RUN] SELL ETH Volume: 1.5 Value: $3000.00")
 
-            htmlString shouldContain "SELL ETH · 1.5 · \$3,000.00"
+            htmlString shouldContain $$"SELL ETH · 1.5 · $3,000.00"
             htmlString shouldContain "· DRY RUN"
         }
 
         "unparseable volume falls back to the raw stored action" {
-            val htmlString = renderActions("BUY BTC Volume: abc Cost: \$5.00")
+            val htmlString = renderActions($$"BUY BTC Volume: abc Cost: $5.00")
 
             htmlString shouldContain "Volume: abc"
         }
@@ -64,7 +64,7 @@ class RecentActivityComponentTest : StringSpec() {
         }
 
         "historical distributing row humanizes to correction-distributed text" {
-            val htmlString = renderActions("Distributing Fiat Correction (\$100.00) among 2 candidates.")
+            val htmlString = renderActions($$"Distributing Fiat Correction ($100.00) among 2 candidates.")
 
             htmlString shouldContain "Cash correction distributed across underweight assets"
             htmlString shouldNotContain "Distributing Fiat Correction"

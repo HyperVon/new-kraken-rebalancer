@@ -1,5 +1,6 @@
-package com.gemini.krakenbot.util
+package com.gemini.krakenbot.domain
 
+import com.gemini.krakenbot.util.PrecisionConstants
 import java.math.BigDecimal
 
 private val CACHED_CASH_RESERVE_FACTOR: BigDecimal = BigDecimal.valueOf(PrecisionConstants.CASH_RESERVE_FACTOR_DOUBLE)

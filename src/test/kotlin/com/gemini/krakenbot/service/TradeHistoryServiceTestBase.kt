@@ -1,7 +1,6 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
@@ -15,7 +14,6 @@ import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.mockk.*
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -23,7 +21,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    protected val objectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
+    protected val objectMapper: ObjectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
     protected val repository = mockk<TradeRepository>(relaxed = true)
     protected val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     protected val ledgerRepository = mockk<LedgerRepository>(relaxed = true)

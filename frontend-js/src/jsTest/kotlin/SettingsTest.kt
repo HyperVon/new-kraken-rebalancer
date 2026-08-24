@@ -227,8 +227,6 @@ class SettingsTest : StringSpec() {
                 val numInput = firstRow.querySelector("input[name=\"targets\"]") as HTMLInputElement
                 numInput.min shouldBe "0"
                 numInput.max shouldBe "100"
-
-                val colorInput = firstRow.querySelector("input[type=\"color\"]") as HTMLInputElement
             } finally {
                 document.body!!.removeChild(container)
             }

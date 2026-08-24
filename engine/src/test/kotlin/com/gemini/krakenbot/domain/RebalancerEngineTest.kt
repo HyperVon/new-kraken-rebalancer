@@ -3,10 +3,6 @@ package com.gemini.krakenbot.domain
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
-import com.gemini.krakenbot.util.ALLOCATION_TOLERANCE
-import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
-import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
-import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec

@@ -9,6 +9,7 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
+@Suppress("unused")
 class KrakenParsersTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

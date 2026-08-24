@@ -2,7 +2,6 @@ package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.ktor.client.plugins.sse.sse

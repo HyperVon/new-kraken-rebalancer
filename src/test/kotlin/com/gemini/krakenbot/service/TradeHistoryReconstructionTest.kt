@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
@@ -23,12 +21,12 @@ import io.mockk.just
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
+@Suppress("unused")
 class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
 
     init {

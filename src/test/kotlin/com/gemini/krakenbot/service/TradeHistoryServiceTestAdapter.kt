@@ -14,7 +14,7 @@ import java.time.Instant
 /**
  * Test-only [TradeHistoryService] that forwards the durable live-order journal surface
  * ([saveTrade] / [updateTrade] / [hasPendingSubmissions]) and [getTradesInRange] straight to a
- * real [TradeRepository]. Everything else is stubbed — used to drive [OrderExecutorImpl]
+ * real [TradeRepository]. Everything else is stubbed — used to drive [com.gemini.krakenbot.service.impl.OrderExecutorImpl]
  * against a real SQLite repository in E2E submission-journal tests without wiring the full
  * [com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl] façade
  * (which needs [com.gemini.krakenbot.service.KrakenService] / portfolioAnalyzer / stats repo).

@@ -6,6 +6,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
+@Suppress("unused")
 class RebalanceEventFormatterTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.service.impl
 
-import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.domain.OrderResult
@@ -250,8 +249,7 @@ class KrakenServiceImpl(
         .any { cause ->
             cause is AmbiguousOrderSubmissionException ||
                 cause is IOException ||
-                cause is ResponseException ||
-                cause is JsonProcessingException
+                cause is ResponseException
         }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =

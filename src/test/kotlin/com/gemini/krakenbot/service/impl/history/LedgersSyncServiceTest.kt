@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures
@@ -19,12 +17,11 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
+@Suppress("unused")
 class LedgersSyncServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

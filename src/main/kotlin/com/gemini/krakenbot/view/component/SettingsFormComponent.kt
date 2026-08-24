@@ -28,7 +28,6 @@ import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
 import kotlinx.html.BODY
-import kotlinx.html.ButtonType
 import kotlinx.html.ButtonType.button
 import kotlinx.html.ButtonType.submit
 import kotlinx.html.DIV

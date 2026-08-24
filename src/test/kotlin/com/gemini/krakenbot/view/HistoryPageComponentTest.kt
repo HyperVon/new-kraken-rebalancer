@@ -2,7 +2,6 @@ package com.gemini.krakenbot.view
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.component.HistoryPageComponent
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec

@@ -49,6 +49,7 @@ import org.koin.dsl.module
 private const val TEST_CSRF_TOKEN = "test-token"
 private const val TEST_CSRF_COOKIE = "rebalancer-csrf=$TEST_CSRF_TOKEN"
 
+@Suppress("unused")
 class ServerFeaturesIntegrationTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

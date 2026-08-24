@@ -6,7 +6,6 @@ import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import kotlinx.coroutines.delay

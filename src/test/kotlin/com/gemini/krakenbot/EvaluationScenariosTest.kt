@@ -22,7 +22,6 @@ import io.kotest.core.spec.Spec
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.core.test.TestCase
 import io.kotest.engine.test.TestResult
-import io.ktor.client.request.get
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.mockk.mockk

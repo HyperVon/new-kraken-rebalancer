@@ -12,6 +12,7 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class SqliteLedgerRepositoryImplTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
