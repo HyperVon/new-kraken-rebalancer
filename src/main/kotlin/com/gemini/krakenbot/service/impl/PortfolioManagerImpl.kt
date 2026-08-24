@@ -185,7 +185,8 @@ class PortfolioManagerImpl(
     }
 
     private suspend fun runLoopBody() {
-        // Startup syncs run unpinned; they are not part of a rebalance cycle.
+        // Startup syncs establish their own session/backend pin; they are not grouped under the
+        // cycle-wide execution session/backend pin.
         synchronizeLedgers("on startup")
         synchronizeTrades("on startup")
         synchronizeHistoricalSnapshots("on startup")

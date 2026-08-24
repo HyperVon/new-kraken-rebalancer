@@ -1,6 +1,5 @@
 KrakenApiConstants:
   API_URL: "https://api.kraken.com"
-  API_VERSION: "0"
   PATH_BALANCE: "/0/private/Balance"
   PATH_TICKER: "/0/public/Ticker"
   PATH_ADD_ORDER: "/0/private/AddOrder"
