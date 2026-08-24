@@ -93,7 +93,8 @@ not treat this skill’s checklist as a substitute.
 
 #### Backend pinning & modes (money path)
 
-- [ ] Full rebalance cycle wrapped in `krakenService.withStableBackend { … }`
+- [ ] Normal cycle-wide session wraps in-cycle sync plus the full rebalance in
+      `krakenService.withStableBackend { … }`
 - [ ] Trade sync during a cycle uses the same pin
 - [ ] Nested `withStableBackend` reuses the outer pin — never re-resolves
 - [ ] `simulation` selects the backend in `DynamicKrakenService`; `dryRun` is

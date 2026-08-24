@@ -416,7 +416,10 @@ only updates stream-chip timing; it never opens an EventSource.
 ````markdown
 ### When the backend is (not) pinned
 
-- **Pinned:** `performRebalanceCycle`, `syncTradesFromKraken`,
+- **Pinned:** the normal cycle-wide sequence owned by
+  `performCycleWithStableSession` (in-cycle sync, reconstruction, analysis,
+  orders, and post-trade reads); startup/top-level sync and reconstruction
+  entry points (each with its own pin); and top-level
   `OrderExecutor.executeOrders` (nested pins reuse the outer pin).
 - **Unpinned:** dashboard balance/price reads, health checks — each call
   re-resolves from config at invocation time.
