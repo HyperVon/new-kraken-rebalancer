@@ -36,16 +36,20 @@ Settings.simulation == false → KrakenServiceImpl
 
 DI: `AppModule` binds `KrakenService` → `DynamicKrakenService(live, simulated, configService)`.
 
-`PortfolioManagerImpl.performRebalanceCycle` and `TradeHistoryServiceImpl.syncTradesFromKraken`
-wrap their full bodies in `DynamicKrakenService.withStableBackend` when the injected
-`KrakenService` is Dynamic. That installs a **coroutine-context pin** so all reads
-and writes in the cycle/sync use one backend.
+`PortfolioManagerImpl.performCycleWithStableSession()` owns the normal
+cycle-wide boundary: in-cycle ledger sync, trade sync, historical
+reconstruction, and `performRebalanceCycle()` run inside one
+`ConfigService` execution session and one `DynamicKrakenService.withStableBackend`
+pin. Nested sync, reconstruction, and order-executor calls reuse that
+coroutine-context backend pin, so all reads and writes in the cycle use one
+backend. Startup syncs and standalone/top-level sync entry points independently
+establish their own execution session and backend pin; they are not unpinned.
 
 Normal settings saves/reloads are also staged by `ConfigServiceImpl` while an
-execution session is active and publish when the cycle or standalone paginated
-trade sync exits. The backend pin remains a defense-in-depth invariant for
-concurrent callers, custom/test config providers, and any future config path
-that does not share that session boundary.
+execution session is active and publish when the **outermost** session exits.
+The backend pin remains a defense-in-depth invariant for concurrent callers,
+custom/test config providers, and any future config path that does not share
+that session boundary.
 
 `OrderExecutor.executeOrders` also wraps sell→buy in `withStableBackend`. Nested
 calls **reuse the outer pin** (they do not re-resolve), so OrderExecutor cannot
@@ -57,7 +61,10 @@ cannot change placement mode. Outside a stable block, each call still re-reads
 
 ### When the backend is (not) pinned
 
-- **Pinned:** `performRebalanceCycle`, `syncTradesFromKraken`,
+- **Pinned:** the normal cycle-wide sequence owned by
+  `performCycleWithStableSession` (in-cycle sync, reconstruction, analysis,
+  orders, and post-trade reads); startup/top-level sync and reconstruction
+  entry points (each with its own pin); and top-level
   `OrderExecutor.executeOrders` (nested pins reuse the outer pin).
 - **Unpinned:** dashboard balance/price reads, health checks — each call
   re-resolves from config at invocation time.

@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.domain.TradeCalculator
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
@@ -14,8 +15,8 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.getTradeHistoryUntil
-import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import com.gemini.krakenbot.service.withExecutionSession
+import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
@@ -23,6 +24,7 @@ import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 class TradeHistorySyncService(
@@ -35,11 +37,6 @@ class TradeHistorySyncService(
     private val log = LoggerFactory.getLogger(TradeHistorySyncService::class.java)
     private val syncMutex = Mutex()
     private var lastSyncTime: Instant = Instant.EPOCH
-
-    // Seed/initial history pulls are bounded to this lookback: filled trades older than
-    // HISTORICAL_DAYS_BACK (90d) are pruned and reconstruction only reaches ~95 days, so pulling
-    // more than this would fetch data that is immediately discarded.
-    private val SEED_HISTORY_LOOKBACK: Duration = Duration.ofDays(96)
 
     suspend fun syncTradesFromKraken() = syncMutex.withLock {
         syncTradesFromKrakenLocked()
@@ -105,7 +102,7 @@ class TradeHistorySyncService(
         // discarded. Incremental syncs still overlap the previous watermark by 5 minutes so fills
         // near it are re-fetched and reconciled rather than double-inserted.
         // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
-        val seedBound = nowProvider().minus(SEED_HISTORY_LOOKBACK)
+        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond ?: seedBound.epochSecond
         // A numeric progress cursor marks an interrupted seed. Recovery only applies while the
         // database is unseeded: once seeding completed, an orphaned numeric offset (e.g. the process

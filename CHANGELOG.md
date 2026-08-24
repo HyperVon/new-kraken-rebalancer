@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.8] - 2026-08-24
+
+### Changed
+
+- **Cycle-wide execution consistency**: Normal rebalance iterations now share one execution session and one stable live/simulation backend across in-cycle ledger and trade synchronization, historical reconstruction, analysis, order placement, and post-trade reads. Startup and standalone sync entry points retain independent nested-safe sessions and backend pins; settings can persist during an active session, but runtime and flow publication wait until the outermost session exits.
+- **Generated integration catalogs**: Kraken API constants and shared UI/HTML string constants are sourced from declarative codegen catalogs, keeping cross-module spellings in one KMP-compatible source.
+- **Guidance and flow documentation**: Agent skills and `docs/FLOWS.md` now describe the cycle-wide ownership boundary, nested pin reuse, and `collectLatest` publication timing.
+
+### Fixed
+
+- **Fail-closed ATH persistence**: A portfolio ATH persistence failure now aborts the cycle instead of allowing drawdown/deployment planning against an ATH that was not stored.
+
 ## [6.17.7] - 2026-08-21
 
 ### Changed

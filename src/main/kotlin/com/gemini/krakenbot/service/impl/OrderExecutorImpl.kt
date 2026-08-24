@@ -390,7 +390,11 @@ class OrderExecutorImpl(
                     message = "Order intent was resolved before the exchange outcome was recorded",
                 )
                 log.error("Order intent {} was already resolved; aborting the remaining order batch", intentId)
-                context.actionLog.add("ERROR: Order intent $intentId was already resolved; order batch aborted")
+                context.actionLog.add(
+                    ViewText.ERROR_ORDER_INTENT_ALREADY_RESOLVED_PREFIX +
+                        intentId +
+                        ViewText.ERROR_ORDER_INTENT_ALREADY_RESOLVED_SUFFIX,
+                )
                 return staleOutcome
             }
         }

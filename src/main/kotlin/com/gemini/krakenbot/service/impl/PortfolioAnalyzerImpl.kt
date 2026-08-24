@@ -94,7 +94,10 @@ class PortfolioAnalyzerImpl(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            log.warn("Failed to persist portfolio ATH; continuing with in-memory ATH", e)
+            // Fail closed: a lost ATH understates drawdown and would over-deploy crypto into a
+            // real drawdown next cycle. The cycle must not plan against an ATH it could not store.
+            log.error("Failed to persist portfolio ATH; aborting the cycle", e)
+            throw e
         }
 
         return RebalancerEngine.calculateDrawdown(totalPortfolioValueUSD, ath)

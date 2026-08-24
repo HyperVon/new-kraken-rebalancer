@@ -1,9 +1,0 @@
-# Taste Guidelines
-
-- Prefers read-only adversarial code reviews to inspect the exact requested HEAD or working tree, with no file edits, commits, pushes, PRs, builds, servers, or mutating commands unless explicitly authorized. Confidence: 0.99
-- Prefers review results to be concise and strictly actionable, with severity labels, precise path/line evidence, coverage boundaries, and an explicit convergence status; follows exact output templates when provided. Confidence: 0.99
-- Prefers implementation choices that match the repository’s established patterns and DSLs (for example, using Exposed DSL rather than introducing raw SQL when practical). Confidence: 0.95
-- Wants changes from recently merged work included and conflicts reconciled before continuing repository work. Confidence: 0.9
-- Prefers bounded, quota-conscious agent orchestration; avoid spawning large numbers of subagents and clean up unnecessary workers promptly. Confidence: 0.98
-- For a personal deployment on a trusted private LAN, is comfortable with an assumed no-login/no-auth access model, while still expecting relevant mutation protections and security tradeoffs to be considered. Confidence: 0.9
-- Prefers discussing questions directly in chat when an interactive canvas or visual document is not usable. Confidence: 0.9

@@ -11,7 +11,9 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.view.util.RebalanceEventFormatter
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -43,7 +45,6 @@ class PortfolioManagerImpl(
 
     companion object {
         const val CYCLE_ID_MDC_KEY = "cycleId"
-        private const val ERROR_PERSIST_TRADE_HISTORY_PREFIX = "ERROR: Failed to persist trade history: "
     }
 
     // The monitor covers synchronous start/stop Job ownership; the Mutex rejects duplicate coroutine callers.
@@ -184,6 +185,8 @@ class PortfolioManagerImpl(
     }
 
     private suspend fun runLoopBody() {
+        // Startup syncs establish their own session/backend pin; they are not grouped under the
+        // cycle-wide execution session/backend pin.
         synchronizeLedgers("on startup")
         synchronizeTrades("on startup")
         synchronizeHistoricalSnapshots("on startup")
@@ -198,10 +201,10 @@ class PortfolioManagerImpl(
                             "Starting Rebalance Cycle. DryRun: {}",
                             settings.dryRun,
                         )
-                        synchronizeLedgers("during cycle")
-                        synchronizeTrades("during cycle")
-                        synchronizeHistoricalSnapshots("during cycle")
-                        performRebalanceCycle()
+                        // One execution session + backend pin covers the in-cycle syncs and the
+                        // rebalance so a settings save cannot make placement resolve a different
+                        // backend than the trade/ledger sync that just ran.
+                        performCycleWithStableSession()
                     } catch (e: CancellationException) {
                         // Cancellation drives collectLatest restarts and shutdown; never treat it
                         // as a cycle error, or a config change would leave the old loop running.
@@ -215,6 +218,31 @@ class PortfolioManagerImpl(
         } catch (e: CancellationException) {
             log.info("Rebalancing loop coroutine cancelled. Shutting down loop.")
             throw e
+        }
+    }
+
+    /**
+     * Runs the in-cycle syncs and the rebalance under one execution session so
+     * `ConfigService` does not publish a staged config between them, and pins a
+     * single live/simulation backend for the whole sequence (nested
+     * `withStableBackend` calls inside the syncs and executor reuse the pin).
+     */
+    private suspend fun performCycleWithStableSession() {
+        configService.withExecutionSession {
+            val ks = krakenService
+            if (ks != null) {
+                ks.withStableBackend {
+                    synchronizeLedgers("during cycle")
+                    synchronizeTrades("during cycle")
+                    synchronizeHistoricalSnapshots("during cycle")
+                    performRebalanceCycle()
+                }
+            } else {
+                synchronizeLedgers("during cycle")
+                synchronizeTrades("during cycle")
+                synchronizeHistoricalSnapshots("during cycle")
+                performRebalanceCycle()
+            }
         }
     }
 
@@ -264,16 +292,10 @@ class PortfolioManagerImpl(
             lastCycleStartedAt = startedAt,
             lastCycleError = null,
         )
-        configService.beginExecutionSession()
         val cycleId = UUID.randomUUID().toString()
         MDC.put(CYCLE_ID_MDC_KEY, cycleId)
         try {
-            val ks = krakenService
-            val snapshot = if (ks != null) {
-                ks.withStableBackend { performRebalanceCyclePinned(cycleId) }
-            } else {
-                performRebalanceCyclePinned(cycleId)
-            }
+            val snapshot = performRebalanceCyclePinned(cycleId)
             if (snapshot == null) {
                 operationalStatus = operationalStatus.copy(
                     lastCycleError = operationalStatus.lastCycleError ?: "Cycle produced no snapshot",
@@ -296,7 +318,6 @@ class PortfolioManagerImpl(
             throw e
         } finally {
             MDC.remove(CYCLE_ID_MDC_KEY)
-            configService.endExecutionSession()
         }
     }
 
@@ -378,7 +399,7 @@ class PortfolioManagerImpl(
         } catch (e: Exception) {
             log.error("Order execution failed; continuing with a snapshot", e)
             markCycleError("Order execution failed")
-            actionLog.add("ERROR: Order execution failed: ${e.message ?: e.javaClass.simpleName}")
+            actionLog.add(ViewText.ERROR_ORDER_EXECUTION_FAILED_PREFIX + (e.message ?: e.javaClass.simpleName))
         }
 
         val finalState =
@@ -427,7 +448,7 @@ class PortfolioManagerImpl(
         } catch (e: IOException) {
             log.error("Failed to persist trade history snapshot", e)
             markCycleError("Trade history persistence failed")
-            actionLog.add("$ERROR_PERSIST_TRADE_HISTORY_PREFIX${e.message}")
+            actionLog.add(ViewText.ERROR_PERSIST_TRADE_HISTORY_PREFIX + e.message)
         }
 
         log.info("--- Cycle Complete ---")

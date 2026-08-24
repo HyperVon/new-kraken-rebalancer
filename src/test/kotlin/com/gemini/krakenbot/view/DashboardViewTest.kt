@@ -528,6 +528,11 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "SELL 1.0 ETH (~$2500.00)"
             html shouldContain "/api/order-intents/42/resolve"
             html shouldContain "/api/order-intents/43/resolve"
+            html shouldContain "Resolve Intent #42"
+            html shouldContain "CONFIRMED (Order filled on exchange)"
+            html shouldContain "REJECTED (Order failed / not on exchange)"
+            html shouldContain "Kraken Order TxID (optional)"
+            html shouldContain "Resolution Evidence (e.g. Verified on Kraken Web UI)"
             html shouldContain testCsrfToken
         }
 

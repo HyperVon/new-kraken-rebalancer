@@ -8,6 +8,7 @@ HtmlAttrs:
   DATA_ZOOM_ACTION: "data-zoom-action"
   DATASET_SORT_VALUE: "sortValue"
   CROSSORIGIN: "crossorigin"
+  INTEGRITY: "integrity"
   DATA_SORT: "data-sort"
   TAB_INDEX: "tabindex"
   TITLE: "title"

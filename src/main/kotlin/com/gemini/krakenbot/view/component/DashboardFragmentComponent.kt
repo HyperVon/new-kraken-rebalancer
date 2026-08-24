@@ -80,23 +80,31 @@ class DashboardFragmentComponent(
     private fun renderUnresolvedIntentsBanner(intents: List<OrderIntent>, csrfToken: String?) {
         div.div(CssClass.Utility.ErrorBanner) {
             h3 {
-                +"⚠️ Action Required: Unresolved Live Order Intent (${intents.size})"
+                +ViewText.UNRESOLVED_INTENT_BANNER_TITLE_PREFIX
+                +"${intents.size}"
+                +ViewText.UNRESOLVED_INTENT_BANNER_TITLE_SUFFIX
             }
             p {
-                +"Live trading is paused because a Kraken order submission had an ambiguous outcome. "
-                +"Inspect the exchange to verify whether the order filled or failed, then resolve the intent below."
+                +ViewText.UNRESOLVED_INTENT_BANNER_BODY
             }
             div {
                 for (intent in intents) {
                     val intentId = intent.id ?: continue
                     div {
                         p {
-                            strong { +"Intent #$intentId: " }
+                            strong {
+                                +ViewText.UNRESOLVED_INTENT_LINE_PREFIX
+                                +"$intentId"
+                                +ViewText.UNRESOLVED_INTENT_LINE_SUFFIX
+                            }
                             +"${intent.side} ${intent.volume} ${intent.symbol} "
                             +"(~$${intent.usdAmount}) • State: ${intent.state}"
                         }
                         if (!intent.errorMessage.isNullOrBlank()) {
-                            p { +"Error: ${intent.errorMessage}" }
+                            p {
+                                +ViewText.UNRESOLVED_INTENT_ERROR_PREFIX
+                                +"${intent.errorMessage}"
+                            }
                         }
                         val resolveUrl = Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE.replace("{id}", "$intentId")
                         form(action = resolveUrl, method = FormMethod.post) {
@@ -111,24 +119,25 @@ class DashboardFragmentComponent(
                                 name = FormFields.ORDER_INTENT_STATE
                                 option {
                                     value = OrderIntentState.CONFIRMED.name
-                                    +"CONFIRMED (Order filled on exchange)"
+                                    +ViewText.RESOLVE_INTENT_CONFIRMED_OPTION
                                 }
                                 option {
                                     value = OrderIntentState.REJECTED.name
-                                    +"REJECTED (Order failed / not on exchange)"
+                                    +ViewText.RESOLVE_INTENT_REJECTED_OPTION
                                 }
                             }
                             input(type = InputType.text, classes = CssClass.Form.InputGlass.value) {
                                 name = FormFields.ORDER_INTENT_ORDER_TXID
-                                placeholder = "Kraken Order TxID (optional)"
+                                placeholder = ViewText.RESOLVE_INTENT_TXID_PLACEHOLDER
                             }
                             input(type = InputType.text, classes = CssClass.Form.InputGlass.value) {
                                 name = FormFields.ORDER_INTENT_EVIDENCE
-                                placeholder = "Resolution Evidence (e.g. Verified on Kraken Web UI)"
+                                placeholder = ViewText.RESOLVE_INTENT_EVIDENCE_PLACEHOLDER
                                 required = true
                             }
                             button(type = ButtonType.submit, classes = CssClass.Button.Primary.value) {
-                                +"Resolve Intent #$intentId"
+                                +ViewText.RESOLVE_INTENT_BUTTON_PREFIX
+                                +"$intentId"
                             }
                         }
                     }

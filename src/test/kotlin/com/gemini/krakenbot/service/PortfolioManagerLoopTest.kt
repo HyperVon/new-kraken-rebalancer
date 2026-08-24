@@ -2,20 +2,27 @@
 
 package com.gemini.krakenbot.service
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.PortfolioValues
 import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.joinRebalancingWorker
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.service.impl.ConfigServiceImpl
+import com.gemini.krakenbot.service.impl.DynamicKrakenService
+import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -33,6 +40,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
@@ -41,6 +49,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import java.math.BigDecimal
+import java.nio.file.Files
 import kotlin.time.Duration.Companion.milliseconds
 
 class PortfolioManagerLoopTest : StringSpec() {
@@ -467,6 +476,152 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
+        "cycle pins config and backend across sync and staged config publication" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                val configFile = Files.createTempDirectory("cycle-pin").resolve("config.json").toFile()
+                val initialConfig = TestFixtures.config(
+                    settings = TestFixtures.settings(
+                        dryRun = true,
+                        simulation = true,
+                        loopDelaySeconds = 3600L,
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0),
+                    ),
+                )
+                objectMapper.writeValue(configFile, initialConfig)
+                val realConfigService = ConfigServiceImpl(objectMapper, configFile.absolutePath)
+                val runtimeInitialConfig = realConfigService.getConfig()
+                val initialSettings = runtimeInitialConfig.settings
+                val realBackend = mockk<KrakenServiceImpl>(relaxed = true)
+                val simulatedBackend = mockk<SimulatedKrakenService>(relaxed = true)
+                val dynamicKrakenService = DynamicKrakenService(realBackend, simulatedBackend, realConfigService)
+                val balances = mapOf(
+                    Asset.BTC to BigDecimal("0.12"),
+                    Asset.USD to BigDecimal("4000.00"),
+                )
+                val prices = mapOf(Asset.BTC_USD_PAIR to BigDecimal("50000.00"))
+
+                coEvery { simulatedBackend.getBalances() } returns balances
+                var realBalanceCalls = 0
+                coEvery { realBackend.getBalances() } coAnswers {
+                    realBalanceCalls++
+                    balances
+                }
+                coEvery { simulatedBackend.getTickerPrices(any()) } returns prices
+                coEvery { realBackend.getTickerPrices(any()) } returns prices
+                coEvery { simulatedBackend.getLedgers(any(), any(), any(), any()) } returns emptyList()
+                coEvery { realBackend.getLedgers(any(), any(), any(), any()) } returns emptyList()
+                coEvery { simulatedBackend.getTradeHistory(any(), any()) } returns emptyList()
+                coEvery { realBackend.getTradeHistory(any(), any()) } returns emptyList()
+                val successfulOrder = OrderResult(
+                    success = true,
+                    pair = Asset.BTC_USD_PAIR,
+                    side = "sell",
+                    volume = BigDecimal("0.02"),
+                    dryRun = true,
+                )
+                coEvery {
+                    simulatedBackend.executeOrder(any(), any(), any(), any(), any(), any())
+                } returns successfulOrder
+                coEvery {
+                    realBackend.executeOrder(any(), any(), any(), any(), any(), any())
+                } returns successfulOrder
+
+                val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+                coEvery { statsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
+                val syncEntered = CompletableDeferred<Unit>()
+                val releaseSync = CompletableDeferred<Unit>()
+                val snapshotAdded = CompletableDeferred<Unit>()
+                val releaseSnapshot = CompletableDeferred<Unit>()
+                var ledgerSyncCalls = 0
+                coEvery { tradeHistoryService.syncLedgersFromKraken() } coAnswers {
+                    ledgerSyncCalls++
+                    dynamicKrakenService.getLedgers()
+                    if (ledgerSyncCalls == 2) {
+                        syncEntered.complete(Unit)
+                        releaseSync.await()
+                    }
+                }
+                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers {
+                    dynamicKrakenService.getTradeHistory()
+                }
+                coEvery { tradeHistoryService.addSnapshot(any()) } coAnswers {
+                    snapshotAdded.complete(Unit)
+                    releaseSnapshot.await()
+                }
+                val analyzer = PortfolioAnalyzerImpl(
+                    krakenService = dynamicKrakenService,
+                    configService = realConfigService,
+                    portfolioStatsRepository = statsRepository,
+                )
+                val manager = PortfolioManagerImpl(
+                    configService = realConfigService,
+                    tradeHistoryService = tradeHistoryService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = OrderExecutorImpl(dynamicKrakenService, tradeHistoryService),
+                    krakenService = dynamicKrakenService,
+                )
+
+                val publishedSettings = initialSettings.copy(
+                    simulation = false,
+                    loopDelaySeconds = 7200L,
+                )
+                val publishedConfig = runtimeInitialConfig.copy(settings = publishedSettings)
+                val configEvents = mutableListOf<Settings>()
+                val publication = CompletableDeferred<Unit>()
+                val configCollector = launch {
+                    realConfigService.watchConfigChanges().collect { settings ->
+                        configEvents += settings
+                        if (settings == publishedSettings) publication.complete(Unit)
+                    }
+                }
+                runCurrent()
+                configEvents shouldBe listOf(initialSettings)
+
+                val worker = manager.startRebalancingLoop(this)
+                syncEntered.await()
+
+                realConfigService.updateConfig(publishedConfig)
+                runCurrent()
+                objectMapper.readValue(configFile, AppConfig::class.java) shouldBe publishedConfig
+                realConfigService.getConfig() shouldBe runtimeInitialConfig
+                configEvents shouldBe listOf(initialSettings)
+
+                releaseSync.complete(Unit)
+                snapshotAdded.await()
+                coVerify(atLeast = 2) { simulatedBackend.getLedgers(any(), any(), any(), any()) }
+                coVerify(atLeast = 2) { simulatedBackend.getTradeHistory(any(), any()) }
+                coVerify(atLeast = 1) { simulatedBackend.getBalances() }
+                coVerify(atLeast = 1) { simulatedBackend.getTickerPrices(any()) }
+                coVerify {
+                    simulatedBackend.executeOrder(any(), any(), any(), any(), true, any())
+                }
+                coVerify(exactly = 0) { realBackend.getLedgers(any(), any(), any(), any()) }
+                coVerify(exactly = 0) { realBackend.getTradeHistory(any(), any()) }
+                coVerify(exactly = 0) { realBackend.getBalances() }
+                coVerify(exactly = 0) { realBackend.getTickerPrices(any()) }
+                coVerify(exactly = 0) {
+                    realBackend.executeOrder(any(), any(), any(), any(), any(), any())
+                }
+
+                releaseSnapshot.complete(Unit)
+                publication.await()
+                realConfigService.getConfig() shouldBe publishedConfig
+                configEvents shouldBe listOf(initialSettings, publishedSettings)
+                manager.stopRebalancingLoop()
+                worker.join()
+                configCollector.cancel()
+
+                val realBalanceCallsBeforeUnpinnedRead = realBalanceCalls
+                dynamicKrakenService.getBalances()
+                realBalanceCalls shouldBe realBalanceCallsBeforeUnpinnedRead + 1
+            }
+        }
+
         "cancellation after analysis prevents order execution" {
             runTest {
                 val settings = TestFixtures.settings(loopDelaySeconds = 60L)
@@ -513,8 +668,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                 coVerify(exactly = 0) {
                     executor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
                 }
-                coVerify(exactly = 1) { configService.beginExecutionSession() }
-                coVerify(exactly = 1) { configService.endExecutionSession() }
+                // The session is owned by the loop body, not by performRebalanceCycle.
+                coVerify(exactly = 0) { configService.beginExecutionSession() }
+                coVerify(exactly = 0) { configService.endExecutionSession() }
             }
         }
 
