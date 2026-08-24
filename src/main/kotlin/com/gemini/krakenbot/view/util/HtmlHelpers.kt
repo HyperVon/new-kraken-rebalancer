@@ -25,7 +25,7 @@ fun HEAD.commonMetadataAndStyles() {
 
 fun HEAD.cdnScript(src: String, integrity: String) {
     script(src = src) {
-        attributes["integrity"] = integrity
+        attributes[HtmlAttrs.INTEGRITY] = integrity
         attributes[HtmlAttrs.CROSSORIGIN] = "anonymous"
     }
 }

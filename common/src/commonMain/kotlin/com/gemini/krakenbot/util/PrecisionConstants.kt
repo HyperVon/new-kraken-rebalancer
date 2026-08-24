@@ -46,4 +46,11 @@ object PrecisionConstants {
     const val LAST_SECOND_OF_MINUTE = 59
     const val DEFAULT_USD_TARGET_PERCENT = 5.0
     const val MIN_CRYPTO_DECIMAL_PLACES = 4
+
+    /**
+     * Seed/initial history-pull window (days) for trades and ledgers: filled trades
+     * older than HISTORICAL_DAYS_BACK are pruned and reconstruction only reaches
+     * ~95 days, so pulling more than this would fetch data that is immediately discarded.
+     */
+    const val SEED_HISTORY_LOOKBACK_DAYS = 96
 }

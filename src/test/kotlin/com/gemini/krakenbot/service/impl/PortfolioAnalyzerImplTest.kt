@@ -69,14 +69,14 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
-        "updateAth continues with stored ATH when save fails" {
+        "updateAth rethrows a save failure so the cycle aborts instead of planning on an unpersisted ATH" {
             runTest {
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000"))
                 coEvery { portfolioStatsRepository.save(any()) } throws RuntimeException("boom")
 
-                val drawdown = analyzer.updateAthAndCalculateDrawdown(BigDecimal("900"))
-
-                drawdown.shouldBeEqualComparingTo(BigDecimal("10.0000"))
+                shouldThrow<RuntimeException> {
+                    analyzer.updateAthAndCalculateDrawdown(BigDecimal("900"))
+                }
                 coVerify { portfolioStatsRepository.save(match { it.allTimeHigh.compareTo(BigDecimal("1000")) == 0 }) }
             }
         }

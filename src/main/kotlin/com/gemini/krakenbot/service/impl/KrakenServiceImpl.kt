@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
@@ -288,7 +289,7 @@ class KrakenServiceImpl(
         offset: Int?,
         endSec: Long?,
         types: Set<String>?,
-    ): List<com.gemini.krakenbot.model.LedgerEvent> {
+    ): List<LedgerEvent> {
         if (!configService.getConfig().kraken.hasValidCredentials()) {
             log.warn("Kraken API key is blank or placeholder. Skipping ledger fetch.")
             return emptyList()

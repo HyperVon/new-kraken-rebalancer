@@ -6,7 +6,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.service.impl.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.krakenPrivateEndpointCost
 import io.kotest.assertions.throwables.shouldThrow

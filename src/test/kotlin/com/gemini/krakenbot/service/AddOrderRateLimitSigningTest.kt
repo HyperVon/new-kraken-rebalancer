@@ -7,9 +7,9 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
-import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.test.TestConstants
 import io.kotest.matchers.booleans.shouldBeFalse

@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.ConfigService
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ResponseException

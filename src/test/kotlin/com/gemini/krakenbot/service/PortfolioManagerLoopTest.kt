@@ -513,8 +513,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                 coVerify(exactly = 0) {
                     executor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
                 }
-                coVerify(exactly = 1) { configService.beginExecutionSession() }
-                coVerify(exactly = 1) { configService.endExecutionSession() }
+                // The session is owned by the loop body, not by performRebalanceCycle.
+                coVerify(exactly = 0) { configService.beginExecutionSession() }
+                coVerify(exactly = 0) { configService.endExecutionSession() }
             }
         }
 

@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
-import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
