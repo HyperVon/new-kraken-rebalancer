@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.service.impl
 
-import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.toPercentScale
 import com.gemini.krakenbot.domain.toUsdScale
@@ -204,7 +203,7 @@ class PortfolioManagerImpl(
                         // One execution session + backend pin covers the in-cycle syncs and the
                         // rebalance so a settings save cannot make placement resolve a different
                         // backend than the trade/ledger sync that just ran.
-                        performCycleWithStableSession(settings)
+                        performCycleWithStableSession()
                     } catch (e: CancellationException) {
                         // Cancellation drives collectLatest restarts and shutdown; never treat it
                         // as a cycle error, or a config change would leave the old loop running.
@@ -227,7 +226,7 @@ class PortfolioManagerImpl(
      * single live/simulation backend for the whole sequence (nested
      * `withStableBackend` calls inside the syncs and executor reuse the pin).
      */
-    private suspend fun performCycleWithStableSession(settings: Settings) {
+    private suspend fun performCycleWithStableSession() {
         configService.withExecutionSession {
             val ks = krakenService
             if (ks != null) {

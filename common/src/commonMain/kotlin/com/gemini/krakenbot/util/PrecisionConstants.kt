@@ -52,5 +52,5 @@ object PrecisionConstants {
      * older than HISTORICAL_DAYS_BACK are pruned and reconstruction only reaches
      * ~95 days, so pulling more than this would fetch data that is immediately discarded.
      */
-    const val SEED_HISTORY_LOOKBACK_DAYS = 96
+    const val SEED_HISTORY_LOOKBACK_DAYS = 96L
 }

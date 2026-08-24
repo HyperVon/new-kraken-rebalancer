@@ -76,7 +76,7 @@ class LedgersSyncService(
         // re-fetched and deduplicated rather than missed. Unseeded initial sync and recovery both
         // bound to SEED_HISTORY_LOOKBACK_DAYS like TradeHistorySyncService to avoid fetching
         // historical entries that would be immediately pruned.
-        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS.toLong(), ChronoUnit.DAYS)
+        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
         val paginationStartSec = if (isRecoveringInitialSync) {

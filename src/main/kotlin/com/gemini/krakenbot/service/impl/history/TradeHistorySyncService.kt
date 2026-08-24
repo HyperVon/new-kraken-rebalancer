@@ -102,7 +102,7 @@ class TradeHistorySyncService(
         // discarded. Incremental syncs still overlap the previous watermark by 5 minutes so fills
         // near it are re-fetched and reconciled rather than double-inserted.
         // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
-        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS.toLong(), ChronoUnit.DAYS)
+        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond ?: seedBound.epochSecond
         // A numeric progress cursor marks an interrupted seed. Recovery only applies while the
         // database is unseeded: once seeding completed, an orphaned numeric offset (e.g. the process
