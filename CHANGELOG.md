@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.9] - 2026-08-26
+
+### Changed
+
+- **View no longer parses stored action strings**: `ActionLogFormatter` and `RebalanceEventFormatter` moved to `com.gemini.krakenbot.util` and grew symmetric `renderTradeAction` / `renderInfoAction` functions; `RecentActivityComponent` now delegates to the formatter instead of positionally splitting action-log text. New generated `ViewText.ACTIVITY_DRIFT_DETECTED_SUFFIX`, `ACTIVITY_CASH_CORRECTION_ENFORCED`, `ACTIVITY_CASH_CORRECTION_DISTRIBUTED`, and `ACTIVITY_DRY_RUN_MARKER` replace the inline activity copy.
+- **Kraken API and chart constants in YAML**: `LEDGER_TYPE_STAKING`, `LEDGER_TYPE_DIVIDEND`, `CHART_TYPE_LINE`, `INSERT_ADJACENT_BEFORE_END`, `BEFORE_UNLOAD`, `VISIBILITY_CHANGE`, and `VISIBILITY_HIDDEN` declared in `codegen/*.yaml`; Kotlin source references the generated constants.
+- **Kraken asset alias tables hoisted**: `KRAKEN_TICKER_BY_SYMBOL` and `CANONICAL_BY_KRAKEN_ALIAS` now build once into an internal table; accessors delegate instead of rebuilding maps per call.
+- **Engine module dependency-light**: `RebalancerEngine` no longer pulls SLF4J/logback; diagnostics travel through `Result.Failure` messages.
+
+### Fixed
+
+- **Settle helper falls through to balance poll on truncated fills**: when fill-confirmed USD falls below `projectedCash × 0.95`, the helper logs a warning and runs the balance-poll tier so a delayed Kraken trade-history index can no longer shrink the cycle buy budget.
+- **`foreign_keys` enforcement on every init connection**: `DatabaseConfig.init` now forces `PRAGMA foreign_keys = ON` via Exposed's `setupConnection` callback so FK/CASCADE behavior matches the URL-append path; one FK-violation test asserts the result end-to-end.
+- **Submit volume rounds DOWN to match the executor's sell cap**: `KrakenServiceImpl.executeOrder` uses `RoundingMode.DOWN` at scale 8.
+- **Order error messages bounded to 500 chars** so a verbose Kraken response can't fill the dashboard payload.
+- **Owner-only config file permissions fail loudly on non-POSIX** filesystems instead of silently writing the credentials file with default permissions.
+- **Loud warn log when `executeOrder` is called without a `dryRun` argument**; the previous config-re-read fallback is now visible.
+- **JaCoCo `*Service.class` exclusion narrowed to concrete interfaces** so `DynamicKrakenService` and `SimulatedKrakenService` re-enter the coverage gate; README exclusion prose synced.
+- **Config upper bounds for `fiatDeploymentExponent` and `deviationTriggerPercent`** prevent huge finite values from overflowing the `Math.pow` deployment sizing.
+- **Migration-recovery tests assert post-init intent and trade row state** instead of only "no exception".
+- **`PrecisionRoundingFuzzTest` asserts the exact submitted volume** so rounding regressions surface.
+- **Dead `SUBSTRING_CLOSED_ORDERS` cost tier removed** from `KrakenTransport` and the rate-limit skill.
+- **De-mirrored frontend magic strings**: chart point `"x"/"y"` keys, `insertAdjacentHTML` position, `beforeunload`/`visibilitychange`/`hidden` literals, and the `ACTIVE` CSS class alias are all sourced from generated catalogs.
+
 ## [6.17.8] - 2026-08-24
 
 ### Changed

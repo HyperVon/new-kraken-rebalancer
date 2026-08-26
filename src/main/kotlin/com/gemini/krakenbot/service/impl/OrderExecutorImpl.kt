@@ -20,8 +20,8 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.view.util.ActionLogFormatter
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext

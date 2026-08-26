@@ -28,8 +28,6 @@ private val historyChartIds =
         HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART,
     )
 
-private val ACTIVE = CssClass.Utility.Active.value
-
 internal fun historyCurrentRange(): String = currentRange
 
 internal fun captureChartVisibility(chart: dynamic): MutableMap<String, Boolean> {
@@ -120,9 +118,9 @@ internal fun syncTimeRangeButtons(range: String) {
         val btn = buttons.item(i) as? HTMLElement ?: return@repeat
         val btnRange = btn.getAttribute(HtmlAttrs.DATA_RANGE)
         if (btnRange == range) {
-            btn.classList.add(ACTIVE)
+            btn.classList.add(CssClass.Utility.Active.value)
         } else {
-            btn.classList.remove(ACTIVE)
+            btn.classList.remove(CssClass.Utility.Active.value)
         }
     }
     try {

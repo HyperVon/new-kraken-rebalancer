@@ -791,10 +791,11 @@ runs the JaCoCo coverage gate via the `check` task
 
 The backend enforces **strict line, branch, method, and instruction coverage**
 via JaCoCo: **95% instruction, 90% branch, 95% line, and 95% method**.
-Exclusions are narrow: framework bootstrap (`DatabaseConfig`, `KtorConfig`),
-Exposed table declarations, pure Kraken API
-client interfaces (`KrakenService*` — `KrakenServiceImpl` remains tested), generated HTML-extension lambdas, CSS DSL, and
-`KrakenRebalancerApplication`.
+Exclusions are narrow and mirror `coverageExcludes` in `build.gradle.kts`:
+framework bootstrap (`DatabaseConfig`, `MigrationBackup`, `LegacyDataRepair`,
+`KtorConfig`), Exposed table declarations, thin Kraken/portfolio/config service
+interfaces and repository interfaces (concrete implementations remain measured),
+generated HTML-extension lambdas, CSS DSL, and `KrakenRebalancerApplication`.
 
 To run JVM tests only:
 

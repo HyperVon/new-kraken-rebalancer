@@ -31,6 +31,7 @@ ChartProps:
   X: "x"
   Y: "y"
   TYPE: "type"
+  CHART_TYPE_LINE: "line"
   TIME: "time"
   TOOLTIP_FORMAT: "tooltipFormat"
   GRID: "grid"

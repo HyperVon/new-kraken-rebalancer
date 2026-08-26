@@ -48,7 +48,7 @@ DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
 
 Per-endpoint **cost** (in `KrakenServiceImpl.queryPrivate`):
 
-- **2.0** if path contains `TradesHistory`, `Ledgers`, or `ClosedOrders`
+- **2.0** if path contains `TradesHistory` or `Ledgers`
 - **1.0** otherwise
 
 ---

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
@@ -130,7 +131,10 @@ class KrakenParsersTest : StringSpec() {
                 """.trimIndent(),
             )
 
-            val (entries, count) = KrakenParsers.parseLedgerPage(response, setOf(LedgerEvent.TYPE_STAKING))
+            val (entries, count) = KrakenParsers.parseLedgerPage(
+                response,
+                setOf(KrakenApiConstants.LEDGER_TYPE_STAKING),
+            )
 
             count shouldBe 2
             entries.size shouldBe 1

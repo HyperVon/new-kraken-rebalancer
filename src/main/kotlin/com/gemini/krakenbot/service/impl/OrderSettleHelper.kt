@@ -54,32 +54,50 @@ internal object OrderSettleHelper {
         sellOrderTxids: List<String>,
     ): BigDecimal {
         if (sellOrderTxids.isNotEmpty()) {
+            val targetThreshold = projectedCash.multiply(EARLY_ACCEPT_PROPORTION)
             val fillConfirmed = pollFillConfirmedUsd(backend, openingUsd, projectedCash, sellOrderTxids).last()
             if (fillConfirmed > BigDecimal.ZERO) {
                 val balancePeek = peekUsdBalance(backend)
-                if (balancePeek != null) {
-                    val capped = fillConfirmed.min(balancePeek)
-                    if (capped < fillConfirmed) {
-                        log.info(
-                            "Capping fill-confirmed USD {} to observed balance {}",
-                            fillConfirmed,
-                            balancePeek,
-                        )
+                val settled =
+                    if (balancePeek != null) {
+                        val capped = fillConfirmed.min(balancePeek)
+                        if (capped < fillConfirmed) {
+                            log.info(
+                                "Capping fill-confirmed USD {} to observed balance {}",
+                                fillConfirmed,
+                                balancePeek,
+                            )
+                        }
+                        capped
+                    } else {
+                        // No spendable balance peek available due to API exception: fallback to projected cash cap
+                        val cappedToProjected = fillConfirmed.min(projectedCash)
+                        if (cappedToProjected < fillConfirmed) {
+                            log.info(
+                                "Capping fill-confirmed USD {} to projected cash {}",
+                                fillConfirmed,
+                                projectedCash,
+                            )
+                        }
+                        cappedToProjected
                     }
-                    return capped
+                // Fill confirmation can quietly under-report when Kraken trade history indexing lags
+                // or a deep page offset hides fills (10-minute window, 5-page cap). Only the balance
+                // poll sees the full ledger effect, so treat a materially short fill total as evidence
+                // of a truncated view and fall through to the balance-polling tier.
+                if (settled >= targetThreshold) {
+                    return settled
                 }
-                // No spendable balance peek available due to API exception: fallback to projected cash cap
-                val cappedToProjected = fillConfirmed.min(projectedCash)
-                if (cappedToProjected < fillConfirmed) {
-                    log.info(
-                        "Capping fill-confirmed USD {} to projected cash {}",
-                        fillConfirmed,
-                        projectedCash,
-                    )
-                }
-                return cappedToProjected
+                log.warn(
+                    "Fill-confirmed USD {} is below the {} settle threshold ({}); " +
+                        "falling back to balance poll",
+                    settled,
+                    targetThreshold,
+                    EARLY_ACCEPT_PROPORTION,
+                )
+            } else {
+                log.warn("Fill confirmation returned no positive USD; falling back to balance poll")
             }
-            log.warn("Fill confirmation returned no positive USD; falling back to balance poll")
         }
         return pollUsdBalanceAfterSells(backend, projectedCash).last()
     }

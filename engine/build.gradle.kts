@@ -14,7 +14,6 @@ dependencies {
     ksp(project(":codegen"))
     compileOnly(project(":codegen"))
     implementation(project(":common"))
-    implementation(libs.logback.classic)
 
     testImplementation(libs.kotest.runner.junit5)
     testImplementation(libs.kotest.assertions.core)

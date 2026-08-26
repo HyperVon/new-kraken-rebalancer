@@ -128,7 +128,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
                     LedgerEvent(
                         ledgerId = "SIM-SEED-LEDGER-$assetIndex-$eventIndex",
                         time = now.minus(hoursAgo, ChronoUnit.HOURS),
-                        type = LedgerEvent.TYPE_STAKING,
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
                         subtype = "reward",
                         aclass = "currency",
                         asset = symbol,

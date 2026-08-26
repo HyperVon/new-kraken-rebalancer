@@ -2,9 +2,9 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.view.util.ActionLogFormat
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Routes
@@ -16,7 +16,6 @@ import com.gemini.krakenbot.view.util.h3
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.span
 import kotlinx.html.DIV
-import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -113,8 +112,8 @@ class RecentActivityComponent {
             }
             span(CssClass.Activity.ItemText) {
                 +when {
-                    tradeAction == TradeAction.INFO -> humanizeInfoAction(action)
-                    else -> humanizeTradeAction(action)
+                    tradeAction == TradeAction.INFO -> ActionLogFormatter.renderInfoAction(action)
+                    else -> ActionLogFormatter.renderTradeAction(action)
                 }
             }
         }
@@ -125,53 +124,6 @@ class RecentActivityComponent {
 
         fun tradeSuffix(count: Int): String =
             if (count == 1) ViewText.ACTIVITY_ACTION_SUFFIX else ViewText.ACTIVITY_ACTIONS_SUFFIX
-
-        fun humanizeInfoAction(action: String): String {
-            val normalized = action.removePrefix(ActionLogFormat.DRY_RUN_PREFIX)
-            return when {
-                normalized.startsWith(ActionLogFormat.INFO_DEVIATION_PREFIX) ->
-                    normalized.removePrefix(ActionLogFormat.INFO_DEVIATION_PREFIX) + " drift detected"
-
-                normalized == ActionLogFormat.INFO_FIAT_CORRECTION_ENFORCED ->
-                    "Cash drift detected; applying correction"
-
-                normalized.startsWith(ActionLogFormat.INFO_DISTRIBUTING_FIAT_PREFIX) ->
-                    "Cash correction distributed across underweight assets"
-
-                else -> normalized
-            }
-        }
-
-        fun humanizeTradeAction(action: String): String {
-            val dryRun = action.startsWith(ActionLogFormat.DRY_RUN_PREFIX)
-            val normalized = action.removePrefix(ActionLogFormat.DRY_RUN_PREFIX)
-            val parts = normalized.split(' ')
-            if (parts.size < 6 || parts[0] !in setOf(OrderSide.BUY.uppercaseName, OrderSide.SELL.uppercaseName)) {
-                return action
-            }
-            val side = parts[0]
-            val symbol = parts[1]
-            val volume = parts[3]
-            val amount = parts[5]
-            val amountMarkers = setOf(ActionLogFormat.VALUE_MARKER, ActionLogFormat.COST_MARKER)
-            if (parts[2] != ActionLogFormat.VOLUME_MARKER || parts[4] !in amountMarkers) return action
-            return try {
-                val quantity = BigDecimal(volume).stripTrailingZeros().toPlainString()
-                val currency = Formatter.formatCurrency(BigDecimal(amount.removePrefix("$")))
-                buildString {
-                    append(side)
-                    append(' ')
-                    append(symbol)
-                    append(" · ")
-                    append(quantity)
-                    append(" · $")
-                    append(currency)
-                    if (dryRun) append(" · DRY RUN")
-                }
-            } catch (_: NumberFormatException) {
-                action
-            }
-        }
 
         fun relativeTime(timestamp: Instant, now: Instant): String {
             val seconds = Duration.between(timestamp, now).seconds.coerceAtLeast(0)

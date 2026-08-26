@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.core.spec.IsolationMode
@@ -428,7 +429,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val entries = simulatedService.getLedgers(null, null, null, null)
 
             entries.size shouldBe 5
-            entries.all { it.type == LedgerEvent.TYPE_STAKING } shouldBe true
+            entries.all { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING } shouldBe true
             entries.map { it.time }.zipWithNext { newer, older -> !newer.isBefore(older) }
                 .all { it } shouldBe true
             entries.all { it.amount > BigDecimal.ZERO } shouldBe true
@@ -441,9 +442,9 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             val simulatedService = SimulatedKrakenService(configService)
 
-            simulatedService.getLedgers(null, null, null, setOf(LedgerEvent.TYPE_DIVIDEND))
+            simulatedService.getLedgers(null, null, null, setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND))
                 .isEmpty() shouldBe true
-            simulatedService.getLedgers(null, null, null, setOf(LedgerEvent.TYPE_STAKING))
+            simulatedService.getLedgers(null, null, null, setOf(KrakenApiConstants.LEDGER_TYPE_STAKING))
                 .size shouldBe 5
         }
 

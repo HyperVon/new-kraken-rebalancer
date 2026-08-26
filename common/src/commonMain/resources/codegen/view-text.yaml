@@ -78,6 +78,10 @@ ViewText:
   ACTION_SKIPPED_NO_PRICE_PREFIX: "Skipping — no price for "
   ACTION_FOR_SUFFIX: " for "
   ACTION_NO_COUNTERBALANCING_ASSETS: "Fiat correction: no counter-balancing candidates"
+  ACTIVITY_DRIFT_DETECTED_SUFFIX: " drift detected"
+  ACTIVITY_CASH_CORRECTION_ENFORCED: "Cash drift detected; applying correction"
+  ACTIVITY_CASH_CORRECTION_DISTRIBUTED: "Cash correction distributed across underweight assets"
+  ACTIVITY_DRY_RUN_MARKER: " · DRY RUN"
   # Table headers
   HEADER_ASSET: "Asset"
   HEADER_PRICE: "Price"

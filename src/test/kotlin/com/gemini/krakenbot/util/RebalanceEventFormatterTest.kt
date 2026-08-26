@@ -1,4 +1,4 @@
-package com.gemini.krakenbot.view.util
+package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.domain.RebalanceEvent
 import io.kotest.core.spec.IsolationMode

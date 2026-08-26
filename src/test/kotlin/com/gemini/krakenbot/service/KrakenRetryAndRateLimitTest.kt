@@ -474,13 +474,11 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
             }
         }
 
-        "krakenPrivateEndpointCost_TradesHistory_Ledgers_ClosedOrders_are2" {
+        "krakenPrivateEndpointCost_TradesHistory_Ledgers_are2" {
             krakenPrivateEndpointCost(KrakenApiConstants.PATH_TRADES_HISTORY) shouldBe 2.0
             krakenPrivateEndpointCost("/0/private/Ledgers") shouldBe 2.0
-            krakenPrivateEndpointCost("/0/private/ClosedOrders") shouldBe 2.0
             KrakenApiConstants.SUBSTRING_TRADES_HISTORY shouldBe "TradesHistory"
             KrakenApiConstants.SUBSTRING_LEDGERS shouldBe "Ledgers"
-            KrakenApiConstants.SUBSTRING_CLOSED_ORDERS shouldBe "ClosedOrders"
         }
 
         "krakenPrivateEndpointCost_Balance_and_AddOrder_are1" {

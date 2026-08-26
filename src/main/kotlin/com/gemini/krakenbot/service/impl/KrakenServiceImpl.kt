@@ -38,6 +38,11 @@ class KrakenServiceImpl(
 
     private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1_000_000L)
 
+    /** Bounds exception text persisted into order error rows / dashboard payloads. */
+    private companion object {
+        const val MAX_ERROR_MESSAGE_LENGTH = 500
+    }
+
     private val transport = KrakenTransport(
         configService = configService,
         objectMapper = objectMapper,
@@ -154,10 +159,12 @@ class KrakenServiceImpl(
             volume
                 .setScale(
                     PrecisionConstants.SCALE_CRYPTO,
-                    RoundingMode.HALF_UP,
+                    RoundingMode.DOWN,
                 ).stripTrailingZeros()
 
-        val isDryRun = dryRun ?: configService.getConfig().settings.dryRun
+        val isDryRun = dryRun ?: configService.getConfig().settings.dryRun.also {
+            log.warn("executeOrder called without a dryRun argument; resolved from live config: {}", it)
+        }
         if (isDryRun) {
             log.info(
                 "[DRY RUN] Would execute order: {} {} {} volume={} cl_ord_id={}",
@@ -225,7 +232,7 @@ class KrakenServiceImpl(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            val message = e.message.orEmpty().ifEmpty { e.javaClass.simpleName }
+            val message = e.message.orEmpty().ifEmpty { e.javaClass.simpleName }.take(MAX_ERROR_MESSAGE_LENGTH)
             log.error(
                 "Failed to execute order: {} {} {} volume={}",
                 type,

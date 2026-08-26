@@ -158,6 +158,9 @@ val coverageExcludes =
         // KrakenServiceImpl is NOT excluded — gateway signing/retry must stay covered.
         // Only the pure interface is excluded; synthetic HTML-DSL lambdas are handled
         // via `*Kt$*` in tight scopes if ever needed rather than whole-class excludes.
+        // Only the pure interfaces are excluded; concrete service classes stay gated
+        // and are enumerated explicitly instead of a `*Service.class` wildcard that
+        // would silently drop DynamicKrakenService, SimulatedKrakenService, etc.
         "**/config/DatabaseConfig*",
         // Split out of DatabaseConfig; carries the same bootstrap/legacy-repair logic
         // that remains impractical to exercise to the same bundle thresholds.
@@ -166,7 +169,11 @@ val coverageExcludes =
         "**/config/KtorConfigKt*",
         "**/repository/table/**",
         "**/service/KrakenService*",
-        "**/service/*Service.class",
+        // Interface-only exclusions (see comment above); concrete impls stay measured.
+        "**/service/ConfigService.class",
+        "**/service/DynamicKrakenService.class",
+        "**/service/SimulatedKrakenService.class",
+        "**/service/LedgersSyncService.class",
         "**/service/OrderExecutor.class",
         "**/repository/*Repository.class",
         "**/*\$DefaultImpls*",

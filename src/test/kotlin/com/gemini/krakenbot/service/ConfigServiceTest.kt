@@ -483,6 +483,8 @@ class ConfigServiceTest : StringSpec() {
                     "minimum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = -1.0),
                     "maximum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = 101.0),
                     "fiatDeploymentExponent" to settings.copy(fiatDeploymentExponent = 0.0),
+                    "fiatDeploymentExponent ceiling" to settings.copy(fiatDeploymentExponent = 101.0),
+                    "deviationTriggerPercent ceiling" to settings.copy(deviationTriggerPercent = 101.0),
                 )
             }
         }

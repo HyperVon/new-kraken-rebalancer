@@ -548,8 +548,9 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         orderTxid = sellTxid,
                         tradeId = "T-SHIFTED",
                     )
+                val pageSize = KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
                 val padding =
-                    List(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE - 1) { index ->
+                    List(pageSize - 1) { index ->
                         duplicateFill.copy(
                             side = "BUY",
                             orderTxid = "OID-PADDING-$index",
@@ -563,6 +564,10 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         fee = BigDecimal.ZERO,
                         tradeId = null,
                     )
+                krakenService.tradeHistoryTotalCountOverride = pageSize + 1
+                // The fill view is complete across every poll attempt (first page: matching fill +
+                // padding; second page: shifted duplicate + the two id-less legs). Returning the
+                // same pages on re-polls models a settled, fully-visible history.
                 krakenService.tradeHistorySupplier = { _, offset ->
                     when (offset ?: 0) {
                         0 -> listOf(duplicateFill) + padding
@@ -573,6 +578,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         else -> emptyList()
                     }
                 }
+                // Peek empty → cap to projected ($200); net fill would be $199.
                 krakenService.balanceSupplier = { emptyMap() }
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
@@ -598,8 +604,13 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                     actionLog = mutableListOf(),
                 )
 
-                // Opening $100 + ($99 unique identified leg + two distinct $10 id-less legs) = $219.
-                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.21681"))
+                // Opening $100 + ($99 unique identified leg + two distinct $10 id-less legs) = $219,
+                // but the sell intent was $500 → projected $600, so the $219 fill total is far below
+                // the 95% threshold ($570). The settle helper treats this as a truncated fill view and
+                // falls through to the balance poll; the poll observes $0 (empty balance) and the buy
+                // phase fails closed — only the sell was placed.
+                krakenService.executedOrders.size shouldBe 1
+                krakenService.executedOrders[0].side shouldBe TestFixtures.SELL
             }
         }
 

@@ -1,4 +1,4 @@
-package com.gemini.krakenbot.view.util
+package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.model.OrderSide
 import io.kotest.core.spec.IsolationMode
@@ -71,6 +71,55 @@ class ActionLogFormatterTest : StringSpec() {
         "formatSkippedMissingPrice should format missing-price message" {
             val msg = ActionLogFormatter.formatSkippedMissingPrice(OrderSide.SELL, "XBT")
             msg shouldBe "Skipping — no price for sell XBT"
+        }
+
+        "renderTradeAction reformats a stored execution line for the feed" {
+            val stored = ActionLogFormatter.formatOrderExecution(
+                side = OrderSide.SELL,
+                symbol = "ETH",
+                volume = BigDecimal("1.5"),
+                usdAmount = BigDecimal("3000"),
+                isDryRun = true,
+            )
+            ActionLogFormatter.renderTradeAction(stored) shouldBe
+                "SELL ETH · 1.5 · $3,000.00 · DRY RUN"
+        }
+
+        "renderTradeAction preserves buy cost label and live lines" {
+            val stored = ActionLogFormatter.formatOrderExecution(
+                side = OrderSide.BUY,
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                isDryRun = false,
+            )
+            ActionLogFormatter.renderTradeAction(stored) shouldBe "BUY BTC · 0.1 · $5,000.00"
+        }
+
+        "renderTradeAction returns unknown shapes unchanged" {
+            ActionLogFormatter.renderTradeAction("Mystery cycle line") shouldBe "Mystery cycle line"
+        }
+
+        "renderInfoAction rewrites deviation, fiat, and dry-run variants" {
+            ActionLogFormatter.renderInfoAction("Deviation: BTC 10.5%") shouldBe "BTC 10.5% drift detected"
+
+            ActionLogFormatter.renderInfoAction("[DRY RUN] Deviation: ETH -6.2%") shouldBe
+                "ETH -6.2% drift detected"
+
+            ActionLogFormatter.renderInfoAction("USD Deviation Triggered. Enforcing fiat correction.") shouldBe
+                "Cash drift detected; applying correction"
+
+            ActionLogFormatter.renderInfoAction(
+                ActionLogFormatter.formatFiatCorrectionDistribution(BigDecimal("500.00"), 2),
+            ) shouldBe "Cash correction distributed across underweight assets"
+        }
+
+        "renderInfoAction passes failure and dust lines through verbatim" {
+            val failed = ActionLogFormatter.formatOrderFailure(OrderSide.BUY, "SOL", "Insufficient funds")
+            ActionLogFormatter.renderInfoAction(failed) shouldBe failed
+
+            val dust = ActionLogFormatter.formatSkippedDust(OrderSide.BUY, "DOGE", BigDecimal("0.50"))
+            ActionLogFormatter.renderInfoAction(dust) shouldBe dust
         }
     }
 }

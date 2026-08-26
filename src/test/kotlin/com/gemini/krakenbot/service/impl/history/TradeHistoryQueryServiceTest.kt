@@ -4,6 +4,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.LedgerRepository
@@ -111,7 +112,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 val staking = ledgerEvent("L1", now.plusSeconds(600), "BTC", "0.1")
-                val dividend = ledgerEvent("L2", now.plusSeconds(1200), "STRC", "1.25", LedgerEvent.TYPE_DIVIDEND)
+                val dividend =
+                    ledgerEvent("L2", now.plusSeconds(1200), "STRC", "1.25", KrakenApiConstants.LEDGER_TYPE_DIVIDEND)
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(staking, dividend)
 
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(1800))
@@ -128,7 +130,15 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
-                    listOf(ledgerEvent("L1", now.plusSeconds(600), "STRC", "1.25", LedgerEvent.TYPE_DIVIDEND))
+                    listOf(
+                        ledgerEvent(
+                            "L1",
+                            now.plusSeconds(600),
+                            "STRC",
+                            "1.25",
+                            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+                        ),
+                    )
 
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(1800))
 
@@ -172,7 +182,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         timestamp: Instant,
         asset: String,
         amount: String,
-        type: String = LedgerEvent.TYPE_STAKING,
+        type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
     ): LedgerEvent = LedgerEvent(
         ledgerId = ledgerId,
         time = timestamp,

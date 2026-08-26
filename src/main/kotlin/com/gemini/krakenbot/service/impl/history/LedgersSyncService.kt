@@ -195,7 +195,7 @@ class LedgersSyncService(
 
     /** Cold paginated Kraken ledger history — per-type cursors; progress is durable until the first seed completes. */
     private fun getLedgersPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<LedgerEvent>> = flow {
-        val ledgerTypes = listOf(LedgerEvent.TYPE_STAKING, LedgerEvent.TYPE_DIVIDEND)
+        val ledgerTypes = listOf(KrakenApiConstants.LEDGER_TYPE_STAKING, KrakenApiConstants.LEDGER_TYPE_DIVIDEND)
         val perTypeOffset = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
         val perTypeTotal = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
         val perTypeDone = mutableMapOf<String, Boolean>().apply { ledgerTypes.forEach { this[it] = false } }

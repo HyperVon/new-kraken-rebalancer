@@ -21,8 +21,7 @@ internal class AmbiguousOrderSubmissionException(message: String) : RuntimeExcep
 
 internal fun krakenPrivateEndpointCost(path: String): Double = when {
     path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) ||
-        path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) ||
-        path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 2.0
+        path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) -> 2.0
 
     else -> 1.0
 }
