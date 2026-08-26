@@ -248,10 +248,12 @@ failure.
    cash is capped to `min(fill-confirmed, balance)`. When the peek is empty or
    fails, cash is capped to **projected cash** so history cannot invent liquidity
    beyond this cycle's sell intents. Early-accept at **≥95%** of
-   projected. If txids exist but no positive fills appear, **fall back** to the
-   legacy USD **balance poll** (same attempt/backoff/≥95% rules). **Abort buys**
-   if neither path confirms positive USD (fail-closed). When no sell txids are
-   available (e.g. some test doubles), go straight to the balance poll. Skipped
+   projected. If txids exist but no positive fills appear, or the capped
+   fill-confirmed amount is below the 95% threshold, **fall back** to the legacy
+   USD **balance poll** (same attempt/backoff/≥95% rules); a short result can mean
+   Kraken's history index or pagination is lagging. **Abort buys** if neither
+   path confirms positive USD (fail-closed). When no sell txids are available
+   (e.g. some test doubles), go straight to the balance poll. Skipped
    entirely when no sell succeeded or `dryRun` is true (buys use projected cash).
    Successful sells record `cycleId` and `orderTxid` on persisted trade rows.
    Repeated nonblank Kraken trade IDs caused by shifting offset pages count

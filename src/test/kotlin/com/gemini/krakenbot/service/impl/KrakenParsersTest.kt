@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
@@ -49,6 +50,26 @@ class KrakenParsersTest : StringSpec() {
             )
             prices.keys shouldBe setOf("XXBTZUSD")
             prices["XXBTZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("65000.12345678"))
+        }
+
+        "parses extended balances as spendable amounts" {
+            val balances = KrakenParsers.parseSpendableBalances(
+                objectMapper.readTree(
+                    """
+                    {
+                      "ZUSD": {"balance": "100.00", "credit": "5.00", "credit_used": "2.00", "hold_trade": "30.00"},
+                      "XXBT": {"balance": "1.00", "hold_trade": "0.25"},
+                      "ZERO": {"balance": "1.00", "hold_trade": "1.00"},
+                      "BAD": "not-an-object"
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            balances["ZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("73.00"))
+            balances["XXBT"]!!.shouldBeEqualComparingTo(BigDecimal("0.75"))
+            balances.containsKey("ZERO").shouldBeFalse()
+            balances.containsKey("BAD").shouldBeFalse()
         }
 
         "parses trade history golden response into API fills with stable identity" {

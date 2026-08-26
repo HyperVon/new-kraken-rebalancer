@@ -21,13 +21,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`foreign_keys` enforcement on every init connection**: `DatabaseConfig.init` now forces `PRAGMA foreign_keys = ON` via Exposed's `setupConnection` callback so FK/CASCADE behavior matches the URL-append path; one FK-violation test asserts the result end-to-end.
 - **Submit volume rounds DOWN to match the executor's sell cap**: `KrakenServiceImpl.executeOrder` uses `RoundingMode.DOWN` at scale 8.
 - **Order error messages bounded to 500 chars** so a verbose Kraken response can't fill the dashboard payload.
-- **Owner-only config file permissions fail loudly on non-POSIX** filesystems instead of silently writing the credentials file with default permissions.
+- **Cross-platform owner-only config file permissions**: POSIX files use owner read/write permissions; ACL-capable non-POSIX filesystems use a current-owner ACL; unsupported filesystems fail safely before credentials are written.
 - **Loud warn log when `executeOrder` is called without a `dryRun` argument**; the previous config-re-read fallback is now visible.
-- **JaCoCo `*Service.class` exclusion narrowed to concrete interfaces** so `DynamicKrakenService` and `SimulatedKrakenService` re-enter the coverage gate; README exclusion prose synced.
+- **JaCoCo service exclusions now match actual interface paths** so concrete implementations, including `DynamicKrakenService`, `SimulatedKrakenService`, and `LedgersSyncService`, remain measured; README and agent guidance are synced.
 - **Config upper bounds for `fiatDeploymentExponent` and `deviationTriggerPercent`** prevent huge finite values from overflowing the `Math.pow` deployment sizing.
 - **Migration-recovery tests assert post-init intent and trade row state** instead of only "no exception".
 - **`PrecisionRoundingFuzzTest` asserts the exact submitted volume** so rounding regressions surface.
-- **Dead `SUBSTRING_CLOSED_ORDERS` cost tier removed** from `KrakenTransport` and the rate-limit skill.
+- **Restored the higher internal rate-limit cost for `ClosedOrders`**, keeping it aligned with `TradesHistory` and `Ledgers` as Kraken account-history endpoints.
 - **De-mirrored frontend magic strings**: chart point `"x"/"y"` keys, `insertAdjacentHTML` position, `beforeunload`/`visibilitychange`/`hidden` literals, and the `ACTIVE` CSS class alias are all sourced from generated catalogs.
 
 ## [6.17.8] - 2026-08-24

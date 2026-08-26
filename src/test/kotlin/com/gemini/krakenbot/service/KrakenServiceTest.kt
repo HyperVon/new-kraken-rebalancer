@@ -66,6 +66,18 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
+        "getSpendableBalances_Success" {
+            runTest {
+                val responseJson =
+                    """{"error":[],"result":{"ZUSD":{"balance":"100.0","credit":"5.0","credit_used":"2.0","hold_trade":"30.0"}}}"""
+                val service = createService(responseJson)
+
+                val balances = (service as SpendableBalanceService).getSpendableBalances()
+
+                balances["ZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("73.0"))
+            }
+        }
+
         "getTickerPrices_Success" {
             runTest {
                 val responseJson =

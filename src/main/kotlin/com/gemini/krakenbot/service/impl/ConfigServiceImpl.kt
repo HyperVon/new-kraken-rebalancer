@@ -25,14 +25,12 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.PosixFileAttributeView
-import java.nio.file.attribute.PosixFilePermission
-import java.nio.file.attribute.PosixFilePermissions
 import kotlin.math.abs
 
-class ConfigServiceImpl(
+class ConfigServiceImpl internal constructor(
     private val objectMapper: ObjectMapper,
     private val configFilePath: String = DEFAULT_CONFIG_FILE_PATH,
+    private val filePermissionStrategy: ConfigFilePermissionStrategy = NioConfigFilePermissionStrategy(),
 ) : ConfigService {
     private val log = LoggerFactory.getLogger(ConfigServiceImpl::class.java)
     private val configLock = Mutex()
@@ -83,7 +81,11 @@ class ConfigServiceImpl(
         withContext(Dispatchers.IO) {
             configLock.withLock {
                 val validatedConfig = validateAndNormalize(newConfig)
-                val previousKraken = pendingConfig?.kraken ?: appConfig.kraken
+                // Compare against the active config exposed to callers. A staged update is not
+                // visible through getConfig(), so using pendingConfig here could treat a later
+                // settings-only update built from the active config as a credential rotation and
+                // persist its resolved value over an earlier staged rotation.
+                val previousKraken = appConfig.kraken
                 val persistedConfig = configForPersistence(validatedConfig, previousKraken)
                 writeConfigAtomically(persistedConfig)
                 persistedKrakenCredentials = persistedConfig.kraken
@@ -140,7 +142,7 @@ class ConfigServiceImpl(
         // another user (deployed via root, run as a service account) would otherwise turn a benign
         // load into a hard boot failure. The write path still enforces owner-only permissions.
         try {
-            setOwnerOnlyPermissions(configFile.toPath())
+            filePermissionStrategy.enforceOwnerOnly(configFile.toPath())
         } catch (e: IOException) {
             log.warn("Could not enforce owner-only permissions on '$configFilePath' while reading; continuing.", e)
         }
@@ -251,7 +253,7 @@ class ConfigServiceImpl(
             objectMapper
                 .writerWithDefaultPrettyPrinter()
                 .writeValue(tempFile, config)
-            setOwnerOnlyPermissions(tempFile.toPath())
+            filePermissionStrategy.enforceOwnerOnly(tempFile.toPath())
 
             Files.move(
                 tempFile.toPath(),
@@ -259,7 +261,6 @@ class ConfigServiceImpl(
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE,
             )
-            setOwnerOnlyPermissions(targetPath)
         } catch (e: IOException) {
             primaryFailure = e
             throw RuntimeException("Failed to save configuration", e)
@@ -273,33 +274,7 @@ class ConfigServiceImpl(
     }
 
     private fun createOwnerOnlyFile(path: Path) {
-        if (Files.exists(path)) {
-            setOwnerOnlyPermissions(path)
-            return
-        }
-
-        try {
-            Files.createFile(path, PosixFilePermissions.asFileAttribute(OWNER_ONLY_PERMISSIONS))
-        } catch (e: UnsupportedOperationException) {
-            // POSIX permissions are unavailable (e.g. Windows/NTFS). The temp file holds
-            // plaintext credentials, so fail loudly instead of silently persisting at default
-            // permissions — the operator must know the file is not owner-protected.
-            log.error("Owner-only permissions are unsupported on this filesystem; refusing to write config", e)
-            throw RuntimeException(
-                "Cannot secure configuration file permissions on this filesystem; refusing to write credentials.",
-                e,
-            )
-        }
-        setOwnerOnlyPermissions(path)
-    }
-
-    private fun setOwnerOnlyPermissions(path: Path) {
-        val view = Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
-        if (view != null) {
-            view.setPermissions(OWNER_ONLY_PERMISSIONS)
-        } else {
-            log.error("No POSIX attribute view for {}; configuration file is NOT owner-protected", path)
-        }
+        filePermissionStrategy.createOwnerOnlyFile(path)
     }
 
     private fun validateConfig(config: AppConfig) {
@@ -394,9 +369,5 @@ class ConfigServiceImpl(
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()
         private val SYMBOL_PATTERN = Asset.SYMBOL_PATTERN_STRING.toRegex()
-        private val OWNER_ONLY_PERMISSIONS = setOf(
-            PosixFilePermission.OWNER_READ,
-            PosixFilePermission.OWNER_WRITE,
-        )
     }
 }

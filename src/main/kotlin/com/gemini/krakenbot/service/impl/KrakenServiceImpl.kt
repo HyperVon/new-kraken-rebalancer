@@ -11,6 +11,7 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.util.PrecisionConstants
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ResponseException
@@ -33,6 +34,7 @@ class KrakenServiceImpl(
     private val httpClient: HttpClient,
     private val rateLimiter: RateLimiter = RateLimiter(),
 ) : KrakenService,
+    SpendableBalanceService,
     BoundedTradeHistoryService {
     private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
 
@@ -139,6 +141,11 @@ class KrakenServiceImpl(
         val path = KrakenApiConstants.PATH_BALANCE
         val response = queryPrivate(path, emptyMap())
         return KrakenParsers.parseBalances(response)
+    }
+
+    override suspend fun getSpendableBalances(): RawBalances {
+        val response = queryPrivate(KrakenApiConstants.PATH_BALANCE_EX, emptyMap())
+        return KrakenParsers.parseSpendableBalances(response)
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {

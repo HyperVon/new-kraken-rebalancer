@@ -8,6 +8,7 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
@@ -21,7 +22,8 @@ class DynamicKrakenService(
     private val simulatedService: SimulatedKrakenService,
     private val configService: ConfigService,
 ) : KrakenService,
-    BoundedTradeHistoryService {
+    BoundedTradeHistoryService,
+    SpendableBalanceService {
     // `simulation` picks the backend; `dryRun` is enforced inside that backend's executeOrder, not here.
     private fun resolveFromConfig(): KrakenService = if (configService.getConfig().settings.simulation) {
         simulatedService
@@ -64,6 +66,11 @@ class DynamicKrakenService(
     }
 
     override suspend fun getBalances(): RawBalances = currentBackend().getBalances()
+
+    override suspend fun getSpendableBalances(): RawBalances {
+        val backend = currentBackend()
+        return (backend as? SpendableBalanceService)?.getSpendableBalances() ?: backend.getBalances()
+    }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices = currentBackend().getTickerPrices(pairs)
 

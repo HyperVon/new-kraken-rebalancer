@@ -133,8 +133,9 @@ effectively than spreading across all pairs.
    - Dry-run or no sells: skip settle; buys budget off projected cash only.
 2. **USD settle** (`OrderSettleHelper.settleUsdAfterSells`) — only when **≥1 sell succeeded** and **not** dry-run:
    prefer **fill-confirmed** sell proceeds (trade history matched by order
-   txid, net of fee); fall back to USD **balance poll** when no txids or fill
-   confirm is empty. Both cold polls: up to **3** attempts from **250ms**
+   txid, net of fee); fall back to USD **balance poll** when no txids, fill
+   confirmation is empty, or its spendable/projected-cash-capped result is below
+   95% of projected cash. Both cold polls: up to **3** attempts from **250ms**
    doubling backoff; track best positive; accept early at **≥95%** of
    projected; **abort buys** (fail-closed) if none. Skip settle (use projected
    cash) when dry-run or no sell succeeded. Poll/Flow mechanics:

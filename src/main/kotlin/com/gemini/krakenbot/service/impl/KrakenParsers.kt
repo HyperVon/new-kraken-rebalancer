@@ -24,6 +24,18 @@ object KrakenParsers {
             if (amount > BigDecimal.ZERO) key to amount else null
         }.toMap()
 
+    fun parseSpendableBalances(result: JsonNode): RawBalances = result
+        .properties()
+        .mapNotNull { (key, value) ->
+            if (!value.isObject) return@mapNotNull null
+            val balance = safeParseBigDecimal(value.path(KrakenApiConstants.FIELD_BALANCE).asText())
+            val credit = safeParseBigDecimal(value.path(KrakenApiConstants.FIELD_CREDIT).asText())
+            val creditUsed = safeParseBigDecimal(value.path(KrakenApiConstants.FIELD_CREDIT_USED).asText())
+            val holdTrade = safeParseBigDecimal(value.path(KrakenApiConstants.FIELD_HOLD_TRADE).asText())
+            val available = balance.add(credit).subtract(creditUsed).subtract(holdTrade)
+            if (available > BigDecimal.ZERO) key to available else null
+        }.toMap()
+
     fun parseTickerPrices(resultNode: JsonNode): RawPrices = resultNode
         .properties()
         .mapNotNull { (key, value) ->

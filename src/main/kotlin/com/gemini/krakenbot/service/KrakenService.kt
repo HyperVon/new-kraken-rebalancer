@@ -65,6 +65,11 @@ interface KrakenService {
     suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
 }
 
+/** Optional capability for account balances reduced to amounts currently available for trading. */
+interface SpendableBalanceService {
+    suspend fun getSpendableBalances(): RawBalances
+}
+
 /** Optional capability for backends that can pass an inclusive TradesHistory end bound. */
 interface BoundedTradeHistoryService {
     suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord>

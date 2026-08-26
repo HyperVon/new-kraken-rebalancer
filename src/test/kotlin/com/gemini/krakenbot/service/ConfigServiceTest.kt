@@ -12,7 +12,11 @@ import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.service.impl.ConfigFileAttributeViews
+import com.gemini.krakenbot.service.impl.ConfigFilePermissionStrategy
+import com.gemini.krakenbot.service.impl.ConfigFileSecurityException
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
+import com.gemini.krakenbot.service.impl.NioConfigFilePermissionStrategy
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.IsolationMode
@@ -36,8 +40,14 @@ import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.AclEntry
+import java.nio.file.attribute.AclEntryPermission
+import java.nio.file.attribute.AclEntryType
+import java.nio.file.attribute.AclFileAttributeView
 import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.UserPrincipal
 
 class ConfigServiceTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -173,6 +183,7 @@ class ConfigServiceTest : StringSpec() {
                 readBack.allocations.size shouldBe 2
                 readBack.kraken.apiKey.value shouldBe "k"
                 readBack.kraken.privateKey.value shouldBe "s"
+                File("${tempFile.absolutePath}.tmp").exists() shouldBe false
             }
         }
 
@@ -336,6 +347,106 @@ class ConfigServiceTest : StringSpec() {
             }
         }
 
+        "loadConfig continues when existing config permissions cannot be hardened" {
+            val service = ConfigServiceImpl(
+                objectMapper,
+                tempFile.absolutePath,
+                object : ConfigFilePermissionStrategy {
+                    override fun createOwnerOnlyFile(path: Path) = error("write path must not run")
+
+                    override fun enforceOwnerOnly(path: Path): Unit = throw ConfigFileSecurityException()
+                },
+            )
+
+            service.getConfig().allocations.single().symbol.value shouldBe Asset.USD
+        }
+
+        "NIO permission strategy creates POSIX files with owner-only permissions" {
+            val path = tempFile.toPath().resolveSibling("posix-config.tmp")
+            path.toFile().deleteOnExit()
+            if (Files.getFileAttributeView(path, PosixFileAttributeView::class.java) != null) {
+                try {
+                    NioConfigFilePermissionStrategy().createOwnerOnlyFile(path)
+
+                    Files.getPosixFilePermissions(path) shouldBe ownerOnlyPermissions
+                } finally {
+                    Files.deleteIfExists(path)
+                }
+            }
+        }
+
+        "NIO permission strategy uses an owner ACL when POSIX permissions are unavailable" {
+            val aclView = mockk<AclFileAttributeView>(relaxed = true)
+            val owner = object : UserPrincipal {
+                override fun getName(): String = "test-owner"
+            }
+            var observedAcl: List<AclEntry>? = null
+            every { aclView.setAcl(any()) } answers {
+                observedAcl = firstArg()
+            }
+
+            val strategy = NioConfigFilePermissionStrategy(
+                attributeViews = object : ConfigFileAttributeViews {
+                    override fun posix(path: Path): PosixFileAttributeView? = null
+
+                    override fun acl(path: Path): AclFileAttributeView = aclView
+
+                    override fun owner(path: Path): UserPrincipal = owner
+                },
+                createWithPosixPermissions = { throw UnsupportedOperationException("POSIX unavailable") },
+                createWithDefaultPermissions = {},
+            )
+
+            strategy.createOwnerOnlyFile(tempFile.toPath().resolveSibling("acl-config.tmp"))
+
+            observedAcl!!.single().principal() shouldBe owner
+            observedAcl!!.single().type() shouldBe AclEntryType.ALLOW
+            observedAcl!!.single().permissions() shouldBe AclEntryPermission.values().toSet()
+        }
+
+        "NIO permission strategy fails safely when no secure permission mechanism is available" {
+            val strategy = NioConfigFilePermissionStrategy(
+                attributeViews = object : ConfigFileAttributeViews {
+                    override fun posix(path: Path): PosixFileAttributeView? = null
+
+                    override fun acl(path: Path): AclFileAttributeView? = null
+
+                    override fun owner(path: Path): UserPrincipal = error("owner lookup must not run")
+                },
+                createWithPosixPermissions = { throw UnsupportedOperationException("POSIX unavailable") },
+                createWithDefaultPermissions = {},
+            )
+
+            val exception = shouldThrow<ConfigFileSecurityException> {
+                strategy.createOwnerOnlyFile(tempFile.toPath().resolveSibling("unsupported-config.tmp"))
+            }
+
+            exception.message shouldNotContain "credential"
+            exception.message shouldNotContain "secret"
+        }
+
+        "config permission failures never expose credential values" {
+            val secretApiKey = "api-key-that-must-not-appear"
+            val secretPrivateKey = "private-key-that-must-not-appear"
+            val failingStrategy = object : ConfigFilePermissionStrategy {
+                override fun createOwnerOnlyFile(path: Path): Unit = throw ConfigFileSecurityException()
+
+                override fun enforceOwnerOnly(path: Path): Unit = throw ConfigFileSecurityException()
+            }
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath, failingStrategy)
+
+            val exception = shouldThrow<RuntimeException> {
+                service.updateConfig(
+                    service.getConfig().copy(
+                        kraken = KrakenCredentials(secretApiKey, secretPrivateKey),
+                    ),
+                )
+            }
+
+            exception.stackTraceToString() shouldNotContain secretApiKey
+            exception.stackTraceToString() shouldNotContain secretPrivateKey
+        }
+
         "updateConfig_PersistsUserChangedCredentials" {
             runTest {
                 val oldConfig = configService.getConfig()
@@ -376,6 +487,33 @@ class ConfigServiceTest : StringSpec() {
                         rawSaved.kraken.privateKey.value shouldBe "new-private-key"
                     }
                 }
+            }
+        }
+
+        "updateConfig preserves a staged credential rotation across a stale second update" {
+            runTest {
+                val apiPlaceholder = $$"${MISSING_API_KEY:api-default}"
+                val privatePlaceholder = $$"${MISSING_PRIVATE_KEY:private-default}"
+                writeRawConfig(apiKey = apiPlaceholder, privateKey = privatePlaceholder)
+                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                val activeConfig = service.getConfig()
+
+                service.beginExecutionSession()
+                service.updateConfig(
+                    activeConfig.copy(
+                        kraken = KrakenCredentials("rotated-api-key", activeConfig.kraken.privateKey.value),
+                    ),
+                )
+                service.updateConfig(
+                    activeConfig.copy(
+                        settings = activeConfig.settings.copy(loopDelaySeconds = 61L),
+                    ),
+                )
+
+                val rawSaved = objectMapper.readValue(tempFile, AppConfig::class.java)
+                rawSaved.kraken.apiKey.value shouldBe "rotated-api-key"
+                rawSaved.kraken.privateKey.value shouldBe privatePlaceholder
+                service.endExecutionSession()
             }
         }
 
