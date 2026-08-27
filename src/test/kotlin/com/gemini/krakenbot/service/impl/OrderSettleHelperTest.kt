@@ -115,5 +115,38 @@ class OrderSettleHelperTest : StringSpec() {
                 settled.shouldBeEqualComparingTo(BigDecimal("2000.00"))
             }
         }
+
+        "settleUsdAfterSells falls through to balance poll when fills are below the 95% threshold" {
+            runTest {
+                // Truncated trade-history view: only $3,000 of a $5,000 projected sell is visible.
+                val txid = "tx-truncated"
+                val partialTrade = TradeRecord(
+                    timestamp = Instant.now(),
+                    pair = "XXBTZUSD",
+                    side = OrderSide.SELL.name,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.06"),
+                    usdAmount = BigDecimal("3000.00"),
+                    success = true,
+                    dryRun = false,
+                    orderTxid = txid,
+                    fee = BigDecimal("6.00"),
+                    tradeId = "t-3",
+                )
+                coEvery { backend.getTradeHistory(any(), any()) } returns listOf(partialTrade)
+                coEvery { backend.getLastTradeHistoryTotalCount() } returns 1
+                coEvery { backend.getBalances() } returns mapOf(TestFixtures.USD to BigDecimal("4990.00"))
+
+                val settled = OrderSettleHelper.settleUsdAfterSells(
+                    backend = backend,
+                    openingUsd = BigDecimal("0.00"),
+                    projectedCash = BigDecimal("5000.00"),
+                    sellOrderTxids = listOf(txid),
+                )
+
+                // The balance poll sees the full ledger effect and outbids the truncated fill total.
+                settled.shouldBeEqualComparingTo(BigDecimal("4990.00"))
+            }
+        }
     }
 }

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.TradeSummaryStats
@@ -220,7 +221,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 val stakingEvent = LedgerEvent(
                     ledgerId = "L1",
                     time = Instant.now().minus(4, ChronoUnit.DAYS),
-                    type = LedgerEvent.TYPE_STAKING,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
                     asset = "BTC",
                     amount = BigDecimal("0.05"),
                 )

@@ -92,7 +92,7 @@ Current root exclusions:
 
 - `**/config/DatabaseConfig*`, `**/config/MigrationBackupKt*`, `**/config/LegacyDataRepairKt*`, `**/config/KtorConfigKt*`
 - `**/repository/table/**`
-- `**/service/KrakenService*`, `**/service/*Service.class`, `**/service/OrderExecutor.class`, `**/repository/*Repository.class`, `**/*$DefaultImpls*`
+- `**/service/KrakenService*`, `**/service/ConfigService.class`, `**/service/OrderExecutor.class`, `**/repository/*Repository.class`, `**/*$DefaultImpls*`
 - `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`
 - `**/KrakenRebalancerApplication*`
 

@@ -485,6 +485,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
 
         "krakenPrivateEndpointCost_Balance_and_AddOrder_are1" {
             krakenPrivateEndpointCost(KrakenApiConstants.PATH_BALANCE) shouldBe 1.0
+            krakenPrivateEndpointCost(KrakenApiConstants.PATH_BALANCE_EX) shouldBe 1.0
             krakenPrivateEndpointCost(KrakenApiConstants.PATH_ADD_ORDER) shouldBe 1.0
         }
     }

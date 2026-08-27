@@ -333,8 +333,10 @@ for unresolved intents.
    paginate up to 5 pages of at most 50 rows) → optional balance peek
    `min(fillConfirmed, balance)` when spendable USD is visible → else cap to
    `projectedCash`.
-2. **Fallback:** when no txids, or fill confirmation returns no positive USD →
-   `pollUsdBalanceAfterSells().last()` (below).
+2. **Fallback:** when no txids, fill confirmation returns no positive USD, or
+   its balance/projected-cash-capped result is below 95% of projected cash →
+   `pollUsdBalanceAfterSells().last()` (below). A materially short fill result
+   may reflect lagging or truncated Kraken trade-history pagination.
 
 Skipped when dry-run or no sell succeeded (buys use projected cash). Fail-closed:
 abort buys if neither path confirms positive USD.
@@ -355,15 +357,14 @@ sequenceDiagram
             Fill->>Fill: delay(backoffMs)
             Fill->>Hist: pages by count or page-size fallback, max 5
             Hist-->>Fill: matched fills (up to 50 per page, cost - fee)
-            alt "cash >= 95% of projected"
-                Fill->>OE: emit(bestCash)
-                Fill->>OE: (flow completes early)
-            else "positive but below 95%"
-                Fill->>OE: emit(bestCash)
-            end
         end
-        OE->>Bal: peekUsdBalance (once)
-        note over OE: min(fillConfirmed, balance) when balance > 0<br/>else min(fillConfirmed, projectedCash)
+        OSH->>Bal: peekUsdBalance (once when fills are positive)
+        Bal-->>OSH: spendable USD or transient error
+        alt "capped fill >= 95% of projected"
+            OSH->>OE: return capped fill-confirmed cash
+        else "zero or positive but below 95%"
+            OSH->>Bal: pollUsdBalanceAfterSells (3 attempts)
+        end
     else "no txids or fillConfirmed = 0"
         OE->>OE: pollUsdBalanceAfterSells (Flow 5b)
     end

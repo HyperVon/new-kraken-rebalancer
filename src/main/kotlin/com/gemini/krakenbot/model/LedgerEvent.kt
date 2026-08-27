@@ -27,9 +27,4 @@ data class LedgerEvent(
     val amount: BigDecimal,
     val fee: BigDecimal = BigDecimal.ZERO,
     val balance: BigDecimal = BigDecimal.ZERO,
-) {
-    companion object {
-        const val TYPE_STAKING = "staking"
-        const val TYPE_DIVIDEND = "dividend"
-    }
-}
+)

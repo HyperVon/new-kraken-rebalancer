@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
@@ -29,7 +30,7 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
         ledgerId: String,
         asset: String = "XBT",
         amount: String = "0.1",
-        type: String = LedgerEvent.TYPE_STAKING,
+        type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
     ): LedgerEvent = LedgerEvent(
         ledgerId = ledgerId,
         time = timestamp,
@@ -96,7 +97,7 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
                     ledgerId = "ledger-x",
                     refid = "tx-ref",
                     time = t1,
-                    type = LedgerEvent.TYPE_DIVIDEND,
+                    type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
                     subtype = "in-kind",
                     aclass = "currency",
                     asset = "STRC",

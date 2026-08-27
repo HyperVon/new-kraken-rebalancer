@@ -25,14 +25,12 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.PosixFileAttributeView
-import java.nio.file.attribute.PosixFilePermission
-import java.nio.file.attribute.PosixFilePermissions
 import kotlin.math.abs
 
-class ConfigServiceImpl(
+class ConfigServiceImpl internal constructor(
     private val objectMapper: ObjectMapper,
     private val configFilePath: String = DEFAULT_CONFIG_FILE_PATH,
+    private val filePermissionStrategy: ConfigFilePermissionStrategy = NioConfigFilePermissionStrategy(),
 ) : ConfigService {
     private val log = LoggerFactory.getLogger(ConfigServiceImpl::class.java)
     private val configLock = Mutex()
@@ -83,11 +81,15 @@ class ConfigServiceImpl(
         withContext(Dispatchers.IO) {
             configLock.withLock {
                 val validatedConfig = validateAndNormalize(newConfig)
-                val previousKraken = pendingConfig?.kraken ?: appConfig.kraken
+                // Compare against the active config exposed to callers. A staged update is not
+                // visible through getConfig(), so using pendingConfig here could treat a later
+                // settings-only update built from the active config as a credential rotation and
+                // persist its resolved value over an earlier staged rotation.
+                val previousKraken = appConfig.kraken
                 val persistedConfig = configForPersistence(validatedConfig, previousKraken)
                 writeConfigAtomically(persistedConfig)
                 persistedKrakenCredentials = persistedConfig.kraken
-                publishOrStage(validatedConfig)
+                publishOrStage(configForRuntime(validatedConfig, previousKraken))
             }
         }
     }
@@ -140,7 +142,7 @@ class ConfigServiceImpl(
         // another user (deployed via root, run as a service account) would otherwise turn a benign
         // load into a hard boot failure. The write path still enforces owner-only permissions.
         try {
-            setOwnerOnlyPermissions(configFile.toPath())
+            filePermissionStrategy.enforceOwnerOnly(configFile.toPath())
         } catch (e: IOException) {
             log.warn("Could not enforce owner-only permissions on '$configFilePath' while reading; continuing.", e)
         }
@@ -174,6 +176,18 @@ class ConfigServiceImpl(
                 },
             )
         return config.copy(kraken = krakenToPersist)
+    }
+
+    private fun configForRuntime(config: AppConfig, previousKraken: KrakenCredentials): AppConfig {
+        val stagedKraken = pendingConfig?.kraken ?: previousKraken
+        return config.copy(
+            kraken = KrakenCredentials(
+                apiKey = config.kraken.apiKey.takeIf { it.value != previousKraken.apiKey.value }
+                    ?: stagedKraken.apiKey,
+                privateKey = config.kraken.privateKey.takeIf { it.value != previousKraken.privateKey.value }
+                    ?: stagedKraken.privateKey,
+            ),
+        )
     }
 
     private fun parseConfig(content: String): AppConfig {
@@ -251,7 +265,7 @@ class ConfigServiceImpl(
             objectMapper
                 .writerWithDefaultPrettyPrinter()
                 .writeValue(tempFile, config)
-            setOwnerOnlyPermissions(tempFile.toPath())
+            filePermissionStrategy.enforceOwnerOnly(tempFile.toPath())
 
             Files.move(
                 tempFile.toPath(),
@@ -259,7 +273,6 @@ class ConfigServiceImpl(
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE,
             )
-            setOwnerOnlyPermissions(targetPath)
         } catch (e: IOException) {
             primaryFailure = e
             throw RuntimeException("Failed to save configuration", e)
@@ -273,22 +286,7 @@ class ConfigServiceImpl(
     }
 
     private fun createOwnerOnlyFile(path: Path) {
-        if (Files.exists(path)) {
-            setOwnerOnlyPermissions(path)
-            return
-        }
-
-        try {
-            Files.createFile(path, PosixFilePermissions.asFileAttribute(OWNER_ONLY_PERMISSIONS))
-        } catch (_: UnsupportedOperationException) {
-            Files.createFile(path)
-        }
-        setOwnerOnlyPermissions(path)
-    }
-
-    private fun setOwnerOnlyPermissions(path: Path) {
-        Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
-            ?.setPermissions(OWNER_ONLY_PERMISSIONS)
+        filePermissionStrategy.createOwnerOnlyFile(path)
     }
 
     private fun validateConfig(config: AppConfig) {
@@ -306,6 +304,8 @@ class ConfigServiceImpl(
             (settings.loopDelaySeconds > 0) to "Loop delay must be a positive integer.",
             settings.deviationTriggerPercent.isFinite() to "Deviation trigger percent must be finite.",
             (settings.deviationTriggerPercent >= 0) to "Deviation trigger percent must be non-negative.",
+            (settings.deviationTriggerPercent <= MAX_TRIGGER_PERCENT) to
+                "Deviation trigger percent must not exceed $MAX_TRIGGER_PERCENT%.",
             settings.minimumOrderSizeUSD.isFinite() to "Minimum order size USD must be finite.",
             (settings.minimumOrderSizeUSD >= 2.0) to $$"Minimum order size USD must be at least $2.",
             settings.fiatMaxDrawdown.isFinite() to "Fiat max drawdown must be finite.",
@@ -313,6 +313,8 @@ class ConfigServiceImpl(
                 "Fiat max drawdown must be between 0% and 100%.",
             settings.fiatDeploymentExponent.isFinite() to "Fiat deployment exponent must be finite.",
             (settings.fiatDeploymentExponent > 0) to "Fiat deployment exponent must be positive.",
+            (settings.fiatDeploymentExponent <= MAX_DEPLOYMENT_EXPONENT) to
+                "Fiat deployment exponent must not exceed $MAX_DEPLOYMENT_EXPONENT.",
         )
     }
 
@@ -374,12 +376,10 @@ class ConfigServiceImpl(
         private const val NEW_MINIMUM_ORDER_SIZE_KEY = "minimumOrderSizeUSD"
         private const val MIN_PERCENT = 0.0
         private const val MAX_PERCENT = 100.0
+        private const val MAX_TRIGGER_PERCENT = 100.0
+        private const val MAX_DEPLOYMENT_EXPONENT = 100.0
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()
         private val SYMBOL_PATTERN = Asset.SYMBOL_PATTERN_STRING.toRegex()
-        private val OWNER_ONLY_PERMISSIONS = setOf(
-            PosixFilePermission.OWNER_READ,
-            PosixFilePermission.OWNER_WRITE,
-        )
     }
 }

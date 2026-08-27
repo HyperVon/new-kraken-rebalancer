@@ -53,11 +53,11 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
     }
 
     val rebalancerData = comparison.points.map { point ->
-        json("x" to point.timestamp, "y" to dynamicNumber(point.rebalancerValueUSD))
+        json(ChartProps.X to point.timestamp, ChartProps.Y to dynamicNumber(point.rebalancerValueUSD))
     }.toTypedArray()
 
     val buyAndHoldData = comparison.points.map { point ->
-        json("x" to point.timestamp, "y" to dynamicNumber(point.buyAndHoldValueUSD))
+        json(ChartProps.X to point.timestamp, ChartProps.Y to dynamicNumber(point.buyAndHoldValueUSD))
     }.toTypedArray()
 
     val datasets = arrayOf(

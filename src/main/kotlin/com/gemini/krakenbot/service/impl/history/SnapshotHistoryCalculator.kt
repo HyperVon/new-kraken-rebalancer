@@ -6,6 +6,7 @@ import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.isNegative
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -53,7 +54,7 @@ object SnapshotHistoryCalculator {
             .map { TimelineEvent.TradeEvent(it.timestamp, it) }
             .toMutableList<TimelineEvent>()
         events += historicalRewards
-            .filter { it.type == LedgerEvent.TYPE_STAKING }
+            .filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
             .map { TimelineEvent.RewardEvent(it.time, it) }
         events += (0..PrecisionConstants.HISTORICAL_DAYS_BACK).mapNotNull { day ->
             val dailyTime =

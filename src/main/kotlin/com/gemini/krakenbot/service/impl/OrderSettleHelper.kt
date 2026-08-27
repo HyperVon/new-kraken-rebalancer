@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -44,8 +45,9 @@ internal object OrderSettleHelper {
      * 3. **Safety Cap 2 (Projected Cash Cap)**: If the spendable balance peek encounters a transient API error,
      *    caps the confirmed proceeds to `min(fillConfirmed, projectedCash)` as a defensive safety upper bound.
      * 4. **Fallback Tier (Balance-Polling Heuristic)**: When [sellOrderTxids] is empty (e.g. mock/emulator paths
-     *    omitting txids) or fill confirmation yields zero positive cash, polls live balances up to
-     *    [MAX_REFRESH_ATTEMPTS] with exponential backoff until observed cash is >= 95% of [projectedCash].
+     *    omitting txids), fill confirmation yields no positive cash, or the capped confirmation is below 95% of
+     *    [projectedCash], polls live balances up to [MAX_REFRESH_ATTEMPTS] with exponential backoff. The latter
+     *    case treats a materially short fill history as potentially truncated while Kraken indexes or paginates it.
      */
     suspend fun settleUsdAfterSells(
         backend: KrakenService,
@@ -54,38 +56,56 @@ internal object OrderSettleHelper {
         sellOrderTxids: List<String>,
     ): BigDecimal {
         if (sellOrderTxids.isNotEmpty()) {
+            val targetThreshold = projectedCash.multiply(EARLY_ACCEPT_PROPORTION)
             val fillConfirmed = pollFillConfirmedUsd(backend, openingUsd, projectedCash, sellOrderTxids).last()
             if (fillConfirmed > BigDecimal.ZERO) {
                 val balancePeek = peekUsdBalance(backend)
-                if (balancePeek != null) {
-                    val capped = fillConfirmed.min(balancePeek)
-                    if (capped < fillConfirmed) {
-                        log.info(
-                            "Capping fill-confirmed USD {} to observed balance {}",
-                            fillConfirmed,
-                            balancePeek,
-                        )
+                val settled =
+                    if (balancePeek != null) {
+                        val capped = fillConfirmed.min(balancePeek)
+                        if (capped < fillConfirmed) {
+                            log.info(
+                                "Capping fill-confirmed USD {} to observed balance {}",
+                                fillConfirmed,
+                                balancePeek,
+                            )
+                        }
+                        capped
+                    } else {
+                        // No spendable balance peek available due to API exception: fallback to projected cash cap
+                        val cappedToProjected = fillConfirmed.min(projectedCash)
+                        if (cappedToProjected < fillConfirmed) {
+                            log.info(
+                                "Capping fill-confirmed USD {} to projected cash {}",
+                                fillConfirmed,
+                                projectedCash,
+                            )
+                        }
+                        cappedToProjected
                     }
-                    return capped
+                // Fill confirmation can quietly under-report when Kraken trade history indexing lags
+                // or a deep page offset hides fills (10-minute window, 5-page cap). Only the balance
+                // poll sees the full ledger effect, so treat a materially short fill total as evidence
+                // of a truncated view and fall through to the balance-polling tier.
+                if (settled >= targetThreshold) {
+                    return settled
                 }
-                // No spendable balance peek available due to API exception: fallback to projected cash cap
-                val cappedToProjected = fillConfirmed.min(projectedCash)
-                if (cappedToProjected < fillConfirmed) {
-                    log.info(
-                        "Capping fill-confirmed USD {} to projected cash {}",
-                        fillConfirmed,
-                        projectedCash,
-                    )
-                }
-                return cappedToProjected
+                log.warn(
+                    "Fill-confirmed USD {} is below the {} settle threshold ({}); " +
+                        "falling back to balance poll",
+                    settled,
+                    targetThreshold,
+                    EARLY_ACCEPT_PROPORTION,
+                )
+            } else {
+                log.warn("Fill confirmation returned no positive USD; falling back to balance poll")
             }
-            log.warn("Fill confirmation returned no positive USD; falling back to balance poll")
         }
         return pollUsdBalanceAfterSells(backend, projectedCash).last()
     }
 
     private suspend fun peekUsdBalance(backend: KrakenService): BigDecimal? = try {
-        val balances = backend.getBalances()
+        val balances = backend.getSpendableBalancesForSettlement()
         resolveBalanceOrNull(Asset.USD, balances)
     } catch (e: CancellationException) {
         throw e
@@ -172,7 +192,7 @@ internal object OrderSettleHelper {
         bestLog = "Using best observed USD balance after sell refresh: {}",
         noneLog = "No positive USD balance observed after sell refresh",
         resolve = { attempt ->
-            val usdBalance = resolveBalance(Asset.USD, backend.getBalances())
+            val usdBalance = resolveBalance(Asset.USD, backend.getSpendableBalancesForSettlement())
             if (usdBalance > BigDecimal.ZERO) {
                 log.info("Updated USD balance after sells (attempt {}): $$usdBalance", attempt + 1)
                 usdBalance
@@ -215,4 +235,7 @@ internal object OrderSettleHelper {
             log.error(noneLog)
         }
     }
+
+    private suspend fun KrakenService.getSpendableBalancesForSettlement() =
+        (this as? SpendableBalanceService)?.getSpendableBalances() ?: getBalances()
 }

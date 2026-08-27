@@ -17,13 +17,14 @@ class FakeKrakenServiceTest : StringSpec() {
 
         val baseTime = Instant.parse("2026-06-01T00:00:00Z")
 
-        fun event(index: Int, type: String = LedgerEvent.TYPE_STAKING, asset: String = "XBT") = LedgerEvent(
-            ledgerId = "ledger-$index",
-            time = baseTime.plus(index.toLong(), ChronoUnit.MINUTES),
-            type = type,
-            asset = asset,
-            amount = BigDecimal("0.1"),
-        )
+        fun event(index: Int, type: String = KrakenApiConstants.LEDGER_TYPE_STAKING, asset: String = "XBT") =
+            LedgerEvent(
+                ledgerId = "ledger-$index",
+                time = baseTime.plus(index.toLong(), ChronoUnit.MINUTES),
+                type = type,
+                asset = asset,
+                amount = BigDecimal("0.1"),
+            )
 
         "getLedgers returns empty until entries are seeded" {
             runTest {
@@ -40,13 +41,13 @@ class FakeKrakenServiceTest : StringSpec() {
                 fake.seedLedgerEntries(
                     listOf(
                         event(1),
-                        event(2, type = LedgerEvent.TYPE_DIVIDEND, asset = "STRC"),
+                        event(2, type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND, asset = "STRC"),
                         event(3),
                     ),
                 )
                 val windowStart = baseTime.plus(2, ChronoUnit.MINUTES).epochSecond
 
-                val staking = fake.getLedgers(windowStart, null, null, setOf(LedgerEvent.TYPE_STAKING))
+                val staking = fake.getLedgers(windowStart, null, null, setOf(KrakenApiConstants.LEDGER_TYPE_STAKING))
 
                 staking.map { it.ledgerId } shouldBe listOf("ledger-3")
                 fake.getLastLedgerTotalCount() shouldBe 1

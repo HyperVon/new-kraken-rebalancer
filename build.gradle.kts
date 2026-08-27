@@ -166,7 +166,9 @@ val coverageExcludes =
         "**/config/KtorConfigKt*",
         "**/repository/table/**",
         "**/service/KrakenService*",
-        "**/service/*Service.class",
+        // Thin interfaces are excluded at their actual package paths; implementations under
+        // service/impl (including service/impl/history) remain measured by both JaCoCo tasks.
+        "**/service/ConfigService.class",
         "**/service/OrderExecutor.class",
         "**/repository/*Repository.class",
         "**/*\$DefaultImpls*",

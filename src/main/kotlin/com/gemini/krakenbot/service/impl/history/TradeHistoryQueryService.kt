@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.HistoryStats
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
@@ -46,7 +47,7 @@ class TradeHistoryQueryService(
         val rewards =
             ledgerRepository
                 .getLedgersInRange(firstTimestamp, lastTimestamp)
-                .filter { it.type == LedgerEvent.TYPE_STAKING }
+                .filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
         return RebalancerComparisonCalculator.calculate(snapshots, trades, rewards)
     }
 
@@ -55,7 +56,7 @@ class TradeHistoryQueryService(
         val stakingEvents =
             ledgerRepository
                 .getLedgersInRange(from, to)
-                .filter { it.type == LedgerEvent.TYPE_STAKING }
+                .filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
                 .sortedBy { it.time }
         val cumulativeByAsset = mutableMapOf<String, BigDecimal>()
         var eventIndex = 0

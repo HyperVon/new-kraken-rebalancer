@@ -219,7 +219,7 @@ internal fun getClonedChartOptions(): dynamic {
 
 internal fun createLineChartConfig(datasets: Array<dynamic>, options: dynamic): dynamic {
     val config: dynamic = json()
-    config.type = "line"
+    config.type = ChartProps.CHART_TYPE_LINE
     config.data = json()
     config.data.datasets = datasets
     config.options = options

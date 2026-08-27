@@ -42,6 +42,18 @@ data class HistoryViewsStore(val defaultId: String, val views: List<HistoryViewD
  * Persistence key: [ViewText.HISTORY_VIEWS_STORAGE_KEY].
  */
 object HistoryViewPrefs {
+    /** JSON payload keys for [HistoryViewsStore] persistence. Shared by writer/reader. */
+    internal object StoreKeys {
+        const val DEFAULT_ID = "defaultId"
+        const val VIEWS = "views"
+        const val ID = "id"
+        const val NAME = "name"
+        const val BUILT_IN = "builtIn"
+        const val RANGE = "range"
+        const val SHOW_DRY_RUN = "showDryRun"
+        const val VISIBILITY = "visibility"
+    }
+
     // Old ids persisted in localStorage by earlier builds; migrated on load so saved presets
     // and default selections survive the rename to the net-cash-flow chart.
     private const val LEGACY_MONTH_PNL_ID = "month-pnl"
@@ -163,8 +175,8 @@ object HistoryViewPrefs {
     }
 
     fun parseStore(raw: dynamic): HistoryViewsStore {
-        val defaultId = (raw.defaultId as? String) ?: HistoryViewIds.OVERVIEW
-        val viewsArr = raw.views
+        val defaultId = (raw[StoreKeys.DEFAULT_ID] as? String) ?: HistoryViewIds.OVERVIEW
+        val viewsArr = raw[StoreKeys.VIEWS]
         val views = mutableListOf<HistoryViewDef>()
         if (viewsArr != null && viewsArr != undefined) {
             val length: Int = (viewsArr.length).unsafeCast<Int>()
@@ -177,12 +189,12 @@ object HistoryViewPrefs {
 
     private fun parseView(raw: dynamic): HistoryViewDef? {
         if (raw == null || raw == undefined) return null
-        val id = raw.id as? String ?: return null
-        val name = raw.name as? String ?: return null
-        val builtIn = (raw.builtIn as? Boolean) ?: false
-        val range = (raw.range as? String) ?: TimeRange.THIRTY_DAYS.key
-        val showDryRun = (raw.showDryRun as? Boolean) ?: true
-        val visibility = parseVisibility(raw.visibility)
+        val id = raw[StoreKeys.ID] as? String ?: return null
+        val name = raw[StoreKeys.NAME] as? String ?: return null
+        val builtIn = (raw[StoreKeys.BUILT_IN] as? Boolean) ?: false
+        val range = (raw[StoreKeys.RANGE] as? String) ?: TimeRange.THIRTY_DAYS.key
+        val showDryRun = (raw[StoreKeys.SHOW_DRY_RUN] as? Boolean) ?: true
+        val visibility = parseVisibility(raw[StoreKeys.VISIBILITY])
         return HistoryViewDef(
             id = id,
             name = name,
@@ -225,15 +237,15 @@ object HistoryViewPrefs {
             store.views
                 .map { view ->
                     json(
-                        "id" to view.id,
-                        "name" to view.name,
-                        "builtIn" to view.builtIn,
-                        "range" to view.range,
-                        "showDryRun" to view.showDryRun,
-                        "visibility" to visibilityToJson(view.visibility),
+                        StoreKeys.ID to view.id,
+                        StoreKeys.NAME to view.name,
+                        StoreKeys.BUILT_IN to view.builtIn,
+                        StoreKeys.RANGE to view.range,
+                        StoreKeys.SHOW_DRY_RUN to view.showDryRun,
+                        StoreKeys.VISIBILITY to visibilityToJson(view.visibility),
                     )
                 }.toTypedArray()
-        return json("defaultId" to store.defaultId, "views" to views)
+        return json(StoreKeys.DEFAULT_ID to store.defaultId, StoreKeys.VIEWS to views)
     }
 
     private fun visibilityToJson(visibility: Map<String, Map<String, Boolean>>): Json {

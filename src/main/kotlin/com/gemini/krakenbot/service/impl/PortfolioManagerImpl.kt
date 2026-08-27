@@ -12,7 +12,7 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.withExecutionSession
-import com.gemini.krakenbot.view.util.RebalanceEventFormatter
+import com.gemini.krakenbot.util.RebalanceEventFormatter
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

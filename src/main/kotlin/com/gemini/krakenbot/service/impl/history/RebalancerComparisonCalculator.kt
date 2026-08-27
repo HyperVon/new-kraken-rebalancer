@@ -4,6 +4,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -44,7 +45,10 @@ object RebalancerComparisonCalculator {
         val priceError = validatePrices(orderedSnapshots, baseline)
         if (priceError != null) return priceError
 
-        val periodRewards = rewards.filter { it.type == LedgerEvent.TYPE_STAKING && it.time > baseline.timestamp }
+        val periodRewards = rewards.filter {
+            it.type == KrakenApiConstants.LEDGER_TYPE_STAKING &&
+                it.time > baseline.timestamp
+        }
 
         val balanceResult =
             validateTrackedBalanceChanges(orderedSnapshots, trades, periodRewards) ?: return unavailable(
@@ -190,7 +194,7 @@ object RebalancerComparisonCalculator {
         rewards: List<LedgerEvent>,
     ): Boolean? {
         val successfulTrades = trades.filter { it.success && !it.dryRun }
-        val stakingRewards = rewards.filter { it.type == LedgerEvent.TYPE_STAKING }
+        val stakingRewards = rewards.filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
         var allReconciled = true
 
         for (i in 1 until snapshots.size) {
@@ -300,7 +304,7 @@ object RebalancerComparisonCalculator {
     private fun cumulativeRewardsByAsset(rewards: List<LedgerEvent>, upTo: Instant): Map<String, BigDecimal> {
         val cumulative = mutableMapOf<String, BigDecimal>()
         for (event in rewards) {
-            if (event.type != LedgerEvent.TYPE_STAKING || event.time > upTo) continue
+            if (event.type != KrakenApiConstants.LEDGER_TYPE_STAKING || event.time > upTo) continue
             val symbol = event.asset.uppercase()
             cumulative[symbol] = (cumulative[symbol] ?: BigDecimal.ZERO).add(event.amount)
         }

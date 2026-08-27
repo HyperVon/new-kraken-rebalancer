@@ -63,14 +63,14 @@ internal fun setupSyncProgressAndLoad() {
     // Persist session on page hide/unload so legend toggles and other ephemeral UI
     // captured from live charts are not lost when navigating away.
     try {
-        window.addEventListener("beforeunload", {
+        window.addEventListener(HtmlEvents.BEFORE_UNLOAD, {
             try {
                 HistorySessionState.save()
             } catch (_: Throwable) {
             }
         })
-        document.addEventListener("visibilitychange", {
-            if (document.asDynamic().visibilityState == "hidden") {
+        document.addEventListener(HtmlEvents.VISIBILITY_CHANGE, {
+            if (document.asDynamic().visibilityState == HtmlEvents.VISIBILITY_HIDDEN) {
                 try {
                     HistorySessionState.save()
                 } catch (_: Throwable) {

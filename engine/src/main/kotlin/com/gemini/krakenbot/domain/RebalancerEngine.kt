@@ -5,19 +5,17 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.util.PrecisionConstants
-import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.pow
 
 /**
- * Domain calculator for portfolio rebalancing math with no network or database
- * dependencies. Logging is retained for cycle diagnostics; treat as calculation
- * logic rather than a pure functional core.
+ * Pure domain calculator for portfolio rebalancing math — no network, database, or
+ * logging dependencies. Diagnostics travel through [Result.Failure] messages instead
+ * of SLF4J so the module stays dependency-free apart from `:common`.
  */
 object RebalancerEngine {
     private const val MISSING_PRICE_MESSAGE_PREFIX = "Price not found for "
-    private val log = LoggerFactory.getLogger(RebalancerEngine::class.java)
 
     fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal {
         val expectedPair = Asset.tradingPair(symbol)
@@ -48,10 +46,6 @@ object RebalancerEngine {
             if (!asset.isUsd) {
                 val p = prices[symbol] ?: BigDecimal.ZERO
                 if (p.signum() == 0) {
-                    log.error(
-                        "Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.",
-                        symbol,
-                    )
                     return Result.Failure(
                         IllegalStateException("$MISSING_PRICE_MESSAGE_PREFIX$symbol"),
                     )
@@ -190,14 +184,6 @@ object RebalancerEngine {
 
             allDeviations[symbolVal] = metrics.deviationUSD
 
-            log.info(
-                "Analysis [{}]: Dev: {}% ($ {}). Threshold: {}%",
-                symbolVal,
-                metrics.deviationPercent,
-                metrics.deviationUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
-                settings.deviationTriggerPercent,
-            )
-
             // Both gates required: |Dev%| ≥ trigger and |DevUSD| ≥ dust (isSignificant).
             val triggerThreshold = BigDecimal.valueOf(settings.deviationTriggerPercent)
             val isTriggered =
@@ -215,25 +201,11 @@ object RebalancerEngine {
             if (symbol.isUsd) {
                 // USD never becomes a buy/sell row; only flags a fiat-correction candidate.
                 if (isTriggered) {
-                    log.info(
-                        "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
-                        metrics.deviationPercent,
-                        settings.deviationTriggerPercent,
-                        metrics.deviationUSD,
-                    )
                     usdTriggered = true
                     usdDeviationAmount = metrics.deviationUSD
                 }
             } else {
                 if (isTriggered) {
-                    log.info(
-                        "Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
-                        symbolVal,
-                        metrics.deviationPercent,
-                        settings.deviationTriggerPercent,
-                        metrics.deviationUSD,
-                    )
-
                     // Overweight (positive DevUSD) → sell excess; underweight → buy deficit.
                     if (metrics.deviationUSD > BigDecimal.ZERO) {
                         sellOrders[symbolVal] = metrics.deviationUSD
@@ -247,10 +219,6 @@ object RebalancerEngine {
         // Fiat correction only when USD alone triggered (deposit/withdrawal); skip if crypto
         // already produced orders so we do not double-spend the same cash move.
         if (buyOrders.isEmpty() && sellOrders.isEmpty() && usdTriggered) {
-            log.info(
-                "USD Deviation triggered but no individual asset triggers. " +
-                    "Enforcing fiat correction.",
-            )
             events.add(RebalanceEvent.FiatCorrectionEnforced)
             distributeFiatCorrectionPlan(
                 usdDev = usdDeviationAmount,
@@ -290,27 +258,10 @@ object RebalancerEngine {
         }
 
         if (totalCounterDev.signum() == 0) {
-            log.info(
-                "Fiat correction required but no suitable " +
-                    "counter-balancing assets found.",
-            )
             events.add(RebalanceEvent.NoCounterBalancingAssets)
             return
         }
 
-        log.info(
-            "Distributing Fiat Correction ($${
-                deviationAbs.setScale(
-                    PrecisionConstants.SCALE_USD,
-                    RoundingMode.HALF_UP,
-                )
-            }) among ${candidates.size} candidates. Total Counter-Dev: $${
-                totalCounterDev.setScale(
-                    PrecisionConstants.SCALE_USD,
-                    RoundingMode.HALF_UP,
-                )
-            }",
-        )
         events.add(
             RebalanceEvent.FiatCorrectionDistributed(
                 usdAmount = deviationAbs,
