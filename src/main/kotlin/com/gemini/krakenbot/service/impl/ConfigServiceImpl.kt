@@ -89,7 +89,7 @@ class ConfigServiceImpl internal constructor(
                 val persistedConfig = configForPersistence(validatedConfig, previousKraken)
                 writeConfigAtomically(persistedConfig)
                 persistedKrakenCredentials = persistedConfig.kraken
-                publishOrStage(validatedConfig)
+                publishOrStage(configForRuntime(validatedConfig, previousKraken))
             }
         }
     }
@@ -176,6 +176,18 @@ class ConfigServiceImpl internal constructor(
                 },
             )
         return config.copy(kraken = krakenToPersist)
+    }
+
+    private fun configForRuntime(config: AppConfig, previousKraken: KrakenCredentials): AppConfig {
+        val stagedKraken = pendingConfig?.kraken ?: previousKraken
+        return config.copy(
+            kraken = KrakenCredentials(
+                apiKey = config.kraken.apiKey.takeIf { it.value != previousKraken.apiKey.value }
+                    ?: stagedKraken.apiKey,
+                privateKey = config.kraken.privateKey.takeIf { it.value != previousKraken.privateKey.value }
+                    ?: stagedKraken.privateKey,
+            ),
+        )
     }
 
     private fun parseConfig(content: String): AppConfig {

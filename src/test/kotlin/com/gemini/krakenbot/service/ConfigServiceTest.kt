@@ -514,6 +514,44 @@ class ConfigServiceTest : StringSpec() {
                 rawSaved.kraken.apiKey.value shouldBe "rotated-api-key"
                 rawSaved.kraken.privateKey.value shouldBe privatePlaceholder
                 service.endExecutionSession()
+
+                service.getConfig().kraken.apiKey.value shouldBe "rotated-api-key"
+                service.getConfig().settings.loopDelaySeconds shouldBe 61L
+                objectMapper.readValue(tempFile, AppConfig::class.java).kraken.apiKey.value shouldBe "rotated-api-key"
+            }
+        }
+
+        "updateConfig preserves a staged private-key rotation across a stale second update" {
+            runTest {
+                val apiPlaceholder = $$"${MISSING_API_KEY:api-default}"
+                val privatePlaceholder = $$"${MISSING_PRIVATE_KEY:private-default}"
+                writeRawConfig(apiKey = apiPlaceholder, privateKey = privatePlaceholder)
+                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                val activeConfig = service.getConfig()
+
+                service.beginExecutionSession()
+                service.updateConfig(
+                    activeConfig.copy(
+                        kraken = KrakenCredentials(activeConfig.kraken.apiKey.value, "rotated-private-key"),
+                    ),
+                )
+                service.updateConfig(
+                    activeConfig.copy(
+                        settings = activeConfig.settings.copy(loopDelaySeconds = 62L),
+                    ),
+                )
+
+                val rawSaved = objectMapper.readValue(tempFile, AppConfig::class.java)
+                rawSaved.kraken.apiKey.value shouldBe apiPlaceholder
+                rawSaved.kraken.privateKey.value shouldBe "rotated-private-key"
+                service.endExecutionSession()
+
+                service.getConfig().kraken.apiKey.value shouldBe "api-default"
+                service.getConfig().kraken.privateKey.value shouldBe "rotated-private-key"
+                service.getConfig().settings.loopDelaySeconds shouldBe 62L
+                val persisted = objectMapper.readValue(tempFile, AppConfig::class.java)
+                persisted.kraken.apiKey.value shouldBe apiPlaceholder
+                persisted.kraken.privateKey.value shouldBe "rotated-private-key"
             }
         }
 
