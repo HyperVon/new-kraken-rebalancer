@@ -1,9 +1,13 @@
 # Taste Guidelines
-
 - Prefers read-only adversarial code reviews to inspect the exact requested HEAD or working tree, with no file edits, commits, pushes, PRs, builds, servers, or mutating commands unless explicitly authorized. Confidence: 0.99
 - Prefers review results to be concise and strictly actionable, with severity labels, precise path/line evidence, coverage boundaries, and an explicit convergence status; follows exact output templates when provided. Confidence: 0.99
 - Prefers implementation choices that match the repository’s established patterns and DSLs (for example, using Exposed DSL rather than introducing raw SQL when practical). Confidence: 0.95
 - Wants changes from recently merged work included and conflicts reconciled before continuing repository work. Confidence: 0.9
 - Prefers bounded, quota-conscious agent orchestration; avoid spawning large numbers of subagents and clean up unnecessary workers promptly. Confidence: 0.98
+- Prefers launching parallel review subagents in the foreground so their results come straight back, rather than background launches that can get lost (e.g., during connection errors) and strand the workflow waiting. Confidence: 0.8
 - For a personal deployment on a trusted private LAN, is comfortable with an assumed no-login/no-auth access model, while still expecting relevant mutation protections and security tradeoffs to be considered. Confidence: 0.9
 - Prefers discussing questions directly in chat when an interactive canvas or visual document is not usable. Confidence: 0.9
+- After a code review produces findings, expects the agent to implement fixes for all of the identified issues and verify with the full build, test, coverage, and formatting gates (e.g., `./gradlew build jacocoTestCoverageVerification`, Spotless, lint, JS tests) before declaring done. Confidence: 0.9
+- For financial/money-path and persistence code, prefers fail-closed behavior — abort or skip deployment rather than continue on a save/execution failure that could understate risk (e.g., rethrow ATH persist failures instead of proceeding with in-memory state). Confidence: 0.85
+- Prefers migrating handwritten string-constant catalogs into the repo's codegen YAML pipeline (schema marker + generated object) rather than leaving static Kotlin constant objects. Confidence: 0.85
+- In multi-step backend workflows, requires the whole sequence (e.g., sync + rebalance) to share one pinned backend session so a config change cannot publish mid-sequence or make a later step resolve a different backend than the one that just ran. Confidence: 0.8

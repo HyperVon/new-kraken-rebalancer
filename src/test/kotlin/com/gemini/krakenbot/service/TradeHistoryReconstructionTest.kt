@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
@@ -7,6 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.TradeSummaryStats
@@ -23,12 +22,12 @@ import io.mockk.just
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
+@Suppress("unused")
 class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
 
     init {
@@ -222,7 +221,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 val stakingEvent = LedgerEvent(
                     ledgerId = "L1",
                     time = Instant.now().minus(4, ChronoUnit.DAYS),
-                    type = LedgerEvent.TYPE_STAKING,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
                     asset = "BTC",
                     amount = BigDecimal("0.05"),
                 )

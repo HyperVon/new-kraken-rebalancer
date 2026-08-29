@@ -6,6 +6,7 @@ import io.kotest.core.spec.style.StringSpec
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class RebalancerComparisonTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

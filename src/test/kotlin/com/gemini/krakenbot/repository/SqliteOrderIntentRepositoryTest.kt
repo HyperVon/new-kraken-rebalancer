@@ -22,6 +22,7 @@ import java.sql.DriverManager
 import java.time.Instant
 import java.util.UUID
 
+@Suppress("unused")
 class SqliteOrderIntentRepositoryTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

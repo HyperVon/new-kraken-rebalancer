@@ -92,7 +92,7 @@ Current root exclusions:
 
 - `**/config/DatabaseConfig*`, `**/config/MigrationBackupKt*`, `**/config/LegacyDataRepairKt*`, `**/config/KtorConfigKt*`
 - `**/repository/table/**`
-- `**/service/KrakenService*`, `**/service/*Service.class`, `**/service/OrderExecutor.class`, `**/repository/*Repository.class`, `**/*$DefaultImpls*`
+- `**/service/KrakenService*`, `**/service/ConfigService.class`, `**/service/OrderExecutor.class`, `**/repository/*Repository.class`, `**/*$DefaultImpls*`
 - `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`
 - `**/KrakenRebalancerApplication*`
 
@@ -124,7 +124,7 @@ tests instead.
 ./gradlew build jacocoTestCoverageVerification
 ./gradlew :frontend-js:jsBrowserTest
 ./gradlew spotlessCheck
-npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md
+npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md 'docs/*.md' '.agents/skills/**/SKILL.md' '.agents/skills/**/*.md'
 ```
 
 `check` depends on JaCoCo verification and frontend browser tests.

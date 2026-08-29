@@ -7,12 +7,17 @@ import ch.qos.logback.core.read.ListAppender
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
+import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
+import com.gemini.krakenbot.repository.table.SchemaMigrationTable
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import kotlinx.coroutines.test.runTest
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.sql.DriverManager
@@ -20,6 +25,7 @@ import java.time.Instant
 import java.util.Comparator
 import java.util.UUID
 
+@Suppress("unused")
 class DatabaseConfigTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
@@ -30,9 +36,37 @@ class DatabaseConfigTest : StringSpec() {
             db shouldNotBe null
         }
 
+        "forces foreign_keys ON on app-managed connections for caller-supplied JDBC URLs" {
+            val databaseUrl = "jdbc:sqlite:file:fk-pragma-${UUID.randomUUID()}?mode=memory&cache=shared"
+            val db = DatabaseConfig.init(databaseUrl)
+
+            // `foreign_keys` is per-connection and not reliably applied from the URL by the driver;
+            // DatabaseConfig must force it via setupConnection on every app connection. Verify by
+            // inserting a child row referencing a missing parent through the app-managed connection:
+            // with FKs ON it must fail.
+            transaction(db) {
+                exec(
+                    "CREATE TABLE fk_parent (id INTEGER PRIMARY KEY)",
+                )
+                exec(
+                    "CREATE TABLE fk_child (id INTEGER PRIMARY KEY, parent_id INTEGER " +
+                        "REFERENCES fk_parent(id))",
+                )
+                shouldThrow<java.sql.SQLException> {
+                    exec("INSERT INTO fk_child (id, parent_id) VALUES (1, 999)")
+                }
+            }
+        }
+
         "should initialize in-memory database" {
             val db = DatabaseConfig.init(TestFixtures.MEMORY_)
             db shouldNotBe null
+
+            // Verify the schema actually materialized instead of only connecting.
+            transaction(db) {
+                SchemaMigrationTable.selectAll().count() shouldBe SCHEMA_MIGRATIONS.size
+                PortfolioSnapshotTable.selectAll().count() shouldBe 0
+            }
         }
 
         "creates a fresh schema with every migration and expected index" {
@@ -510,10 +544,10 @@ class DatabaseConfigTest : StringSpec() {
             val directory = Files.createTempDirectory("kraken-db-backup-")
             try {
                 val databasePath = directory.resolve("rebalancer.db")
-                val databaseUrl = "jdbc:sqlite:$databasePath"
+                val databaseUrl = databasePath.toString()
                 DatabaseConfig.init(databaseUrl)
 
-                DriverManager.getConnection(databaseUrl).use { connection ->
+                DriverManager.getConnection("jdbc:sqlite:$databaseUrl").use { connection ->
                     connection.createStatement().use { statement ->
                         statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 5")
                     }
@@ -640,6 +674,26 @@ class DatabaseConfigTest : StringSpec() {
 
             // 3. Re-run init — must succeed without throwing IllegalStateException
             DatabaseConfig.init(databaseUrl)
+
+            // 4. Recovery must not mangle the terminal intent or the referenced row.
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT state, order_txid, resolution_evidence FROM order_intents WHERE local_trade_id = 999",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("state") shouldBe "CONFIRMED"
+                        resultSet.getString("order_txid") shouldBe "OYDOVZ-Q5PT4-HUCR6Z"
+                        resultSet.getString("resolution_evidence") shouldBe "Matched Kraken fill"
+                    }
+                    statement.executeQuery(
+                        "SELECT COUNT(*) FROM order_intents WHERE local_trade_id = 999",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 1
+                    }
+                }
+            }
         }
 
         "handles terminal order intents when referenced local trade was already reconciled to API_FILL" {
@@ -683,6 +737,28 @@ class DatabaseConfigTest : StringSpec() {
 
             // 3. Re-run init — must succeed without throwing IllegalStateException
             DatabaseConfig.init(databaseUrl)
+
+            // 4. Recovery must not mangle the reconciled intent or its linked trade.
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT state, local_trade_id, resolution_evidence FROM order_intents " +
+                            "WHERE client_order_id = '21d7013c-f728-3b0e-ae3c-ed37f3cb811e'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("state") shouldBe "CONFIRMED"
+                        resultSet.getInt("local_trade_id") shouldBe 904
+                        resultSet.getString("resolution_evidence") shouldBe "Matched Kraken fill"
+                    }
+                    statement.executeQuery(
+                        "SELECT source, submission_state FROM trades WHERE id = 904",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("source") shouldBe "API_FILL"
+                        resultSet.getString("submission_state") shouldBe null
+                    }
+                }
+            }
         }
     }
 }

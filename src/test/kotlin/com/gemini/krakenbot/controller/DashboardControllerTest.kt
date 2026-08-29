@@ -8,7 +8,6 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -24,7 +23,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.formUrlEncode
 import io.ktor.http.parametersOf
-import io.ktor.server.application.Application
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -94,9 +92,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 val response = client.get(Routes.ROOT)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
-                response.bodyAsText() shouldContain ViewText.APP_TITLE
+                response.bodyAsText() shouldContain "Kraken Rebalancer"
                 response.bodyAsText() shouldContain "sse-connect=\"${Routes.API_STATUS_STREAM}\""
-                response.bodyAsText() shouldContain ViewText.MODE_DRY_RUN
+                response.bodyAsText() shouldContain "DRY RUN"
                 response.bodyAsText() shouldContain "id=\"loop-control\""
                 response.bodyAsText() shouldContain "hx-post=\"/api/pause\""
             }
@@ -112,7 +110,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 val response = client.get(Routes.FRAGMENT_DASHBOARD)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
-                response.bodyAsText() shouldContain ViewText.WAITING_FIRST_CYCLE
+                response.bodyAsText() shouldContain "Waiting for first rebalance cycle"
             }
         }
 
@@ -170,9 +168,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
 
                 val body = response.bodyAsText()
-                body shouldContain ViewText.TOTAL_PORTFOLIO
-                body shouldContain ViewText.CASH_USD
-                body shouldContain ViewText.CRYPTO_ASSETS
+                body shouldContain "Total Portfolio"
+                body shouldContain "Cash (USD)"
+                body shouldContain "Crypto Assets"
                 body shouldContain "BUY BTC 0.1"
 
                 body shouldContain "data-epoch=\"${nowTime.toEpochMilli()}\""
@@ -204,7 +202,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 val response = client.get(Routes.SETTINGS)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
-                response.bodyAsText() shouldContain ViewText.GLOBAL_PARAMETERS
+                response.bodyAsText() shouldContain "Global Parameters"
                 response.bodyAsText() shouldContain FormFields.LOOP_DELAY_SECONDS
             }
         }
@@ -223,7 +221,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.Forbidden
-                response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                response.bodyAsText() shouldContain "Settings session expired. Reload the page and try again."
                 response.bodyAsText() shouldContain "name=\"${FormFields.CSRF_TOKEN}\""
                 response.headers[HttpHeaders.SetCookie].shouldNotBeNull()
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -256,7 +254,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         ?.get(1)
                         ?: error("CSRF recovery response did not contain a token")
                 response.status shouldBe HttpStatusCode.Forbidden
-                responseBody shouldContain ViewText.CSRF_SESSION_EXPIRED
+                responseBody shouldContain "Settings session expired. Reload the page and try again."
                 response.headers[HtmxHeaders.HX_REFRESH] shouldBe HtmxValues.TRUE
                 response.headers[HtmxHeaders.HX_RESWAP] shouldBe HtmxValues.INNER_HTML
                 response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
@@ -305,7 +303,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.Forbidden
-                response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                response.bodyAsText() shouldContain "Settings session expired. Reload the page and try again."
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
@@ -393,7 +391,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     )
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
-                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+                response.bodyAsText() shouldContain
+                    "Invalid allocation fields: symbols, targets, and supplied colors must have matching entries."
 
                 val invalidColorResponse =
                     client.post(Routes.SETTINGS) {
@@ -414,7 +413,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
-                invalidColorResponse.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_COLOR
+                invalidColorResponse.bodyAsText() shouldContain
+                    "Invalid allocation fields: supplied colors must use six-digit hex format."
             }
 
             coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -511,7 +511,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
-                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+                response.bodyAsText() shouldContain
+                    "Invalid allocation fields: symbols, targets, and supplied colors must have matching entries."
             }
 
             coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -546,7 +547,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
-                response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
+                response.bodyAsText() shouldContain
+                    "Invalid settings field: deviation trigger percent is required and must be a finite number."
             }
 
             coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -658,7 +660,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
-                response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
+                response.bodyAsText() shouldContain
+                    "Invalid settings field: deviation trigger percent is required and must be a finite number."
             }
 
             coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -699,7 +702,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
-                response.bodyAsText() shouldContain ViewText.INVALID_MINIMUM_ORDER_SIZE
+                response.bodyAsText() shouldContain
+                    "Invalid settings field: minimum order size USD is required and must be a finite number."
             }
 
             coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -732,7 +736,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
-                response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
+                response.bodyAsText() shouldContain
+                    "Invalid settings field: deviation trigger percent is required and must be a finite number."
             }
 
             coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -781,7 +786,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
-                response.bodyAsText() shouldContain ViewText.INVALID_CONFIGURATION_FALLBACK
+                response.bodyAsText() shouldContain "Invalid configuration"
             }
 
             capturedConfig.captured.settings.deviationTriggerPercent shouldBe 5.0
@@ -830,7 +835,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.Forbidden
-                response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                response.bodyAsText() shouldContain "Settings session expired. Reload the page and try again."
                 response.headers[HttpHeaders.SetCookie].shouldNotBeNull()
                 coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
@@ -864,7 +869,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
-                response.bodyAsText() shouldContain ViewText.INVALID_LOOP_DELAY
+                response.bodyAsText() shouldContain
+                    "Invalid settings field: loop delay is required and must be an integer."
             }
         }
 
@@ -896,7 +902,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
-                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_COLOR
+                response.bodyAsText() shouldContain
+                    "Invalid allocation fields: supplied colors must use six-digit hex format."
             }
         }
 
@@ -910,8 +917,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
                 val response = client.get(Routes.FRAGMENT_DASHBOARD)
                 response.status shouldBe HttpStatusCode.OK
-                response.bodyAsText() shouldContain ViewText.WAITING_FIRST_CYCLE
-                response.bodyAsText() shouldContain ViewText.REBALANCER_RUNNING
+                response.bodyAsText() shouldContain "Waiting for first rebalance cycle"
+                response.bodyAsText() shouldContain
+                    "The rebalancer is running. Portfolio data will appear here after the first cycle completes."
             }
         }
     }

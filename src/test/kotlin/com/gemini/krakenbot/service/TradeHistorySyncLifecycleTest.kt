@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
@@ -9,17 +7,15 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import io.kotest.matchers.shouldBe
-import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
-import io.mockk.just
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
 
     init {
@@ -107,14 +103,13 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
         "init_MigratesTradeHistoryJsonIfEmpty" {
             runTest {
                 val tmpFile = File.createTempFile("lifecycle-migrate-", ".json").apply { deleteOnExit() }
-                val file = tmpFile
                 val bakFile = File("${tmpFile.absolutePath}.bak")
                 try {
                     bakFile.delete()
 
                     val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("15000.00"))
 
-                    file.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
+                    tmpFile.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
 
                     val tradeHistoryService = createService(tradeHistoryFilePath = tmpFile.absolutePath)
                     coEvery { repository.load() } returns emptyList()
@@ -123,10 +118,10 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
 
                     coVerify(exactly = 1) { repository.save(any()) }
 
-                    file.exists() shouldBe false
+                    tmpFile.exists() shouldBe false
                     bakFile.exists() shouldBe true
                 } finally {
-                    file.delete()
+                    tmpFile.delete()
                     bakFile.delete()
                 }
             }
@@ -135,14 +130,13 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
         "init_MigrationSaveFailureLeavesJsonUnrenamed" {
             runTest {
                 val tmpFile = File.createTempFile("lifecycle-migrate-fail-", ".json").apply { deleteOnExit() }
-                val file = tmpFile
                 val bakFile = File("${tmpFile.absolutePath}.bak")
                 try {
                     bakFile.delete()
 
                     val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("15000.00"))
 
-                    file.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
+                    tmpFile.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
 
                     val tradeHistoryService = createService(tradeHistoryFilePath = tmpFile.absolutePath)
                     coEvery { repository.load() } returns emptyList()
@@ -151,10 +145,10 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                     tradeHistoryService.init()
 
                     coVerify(exactly = 1) { repository.save(any()) }
-                    file.exists() shouldBe true
+                    tmpFile.exists() shouldBe true
                     bakFile.exists() shouldBe false
                 } finally {
-                    file.delete()
+                    tmpFile.delete()
                     bakFile.delete()
                 }
             }

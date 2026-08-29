@@ -117,10 +117,10 @@ private fun isValidLocalHostname(host: String): Boolean =
     host.length <= MAX_HOST_LENGTH && host.split('.').all { label -> DNS_LABEL.matches(label) }
 
 private const val IPV4_LOOPBACK_PREFIX = 127
+private const val IPV6_LOOPBACK_EXPANDED = "0:0:0:0:0:0:0:1"
 private const val MAX_HOST_LENGTH = 253
 private val ALLOWED_SCHEMES = setOf("http", "https")
 private val SCHEME_PATTERN = Regex("^[A-Za-z][A-Za-z0-9+.-]*://")
 private val IPV4_SHAPE = Regex("^[0-9]+(?:\\.[0-9]+){3}$")
 private val IPV6_CHARS = Regex("^[0-9a-fA-F:]+$")
 private val DNS_LABEL = Regex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
-private val IPV6_LOOPBACK_EXPANDED = "0:0:0:0:0:0:0:1"

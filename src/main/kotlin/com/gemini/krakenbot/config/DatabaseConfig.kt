@@ -63,7 +63,15 @@ object DatabaseConfig {
         val url = buildSqliteUrl(dbPath)
         maintainMemoryDatabase(url)
 
-        return Database.connect(url).also { database ->
+        return Database.connect(
+            url,
+            setupConnection = { connection ->
+                // `foreign_keys` is a per-connection SQLite pragma: the URL parameter alone does not
+                // apply it to connections opened by Exposed/connection pools. Force it on every new
+                // connection so FK/CASCADE enforcement is uniform across all init paths.
+                connection.createStatement().use { statement -> statement.execute("PRAGMA foreign_keys = ON") }
+            },
+        ).also { database ->
             // SchemaUtils.createMissingTablesAndColumns is deprecated; use the non-deprecated
             // building blocks sequentially within one transaction instead.
             transaction(database) {
@@ -113,10 +121,12 @@ object DatabaseConfig {
     /**
      * Builds an SQLite JDBC URL.
      *
-     * - `:memory:` generates a shared in-memory database and enables foreign keys.
-     * - Strings already starting with `jdbc:sqlite:` are returned unchanged, as they are treated
-     *   as fully formed URLs provided by the caller.
+     * - `:memory:` generates a shared in-memory database.
+     * - Strings already starting with `jdbc:sqlite:` are kept as fully formed caller URLs.
      * - Partial SQLite URLs/file paths get the `foreign_keys=true` parameter appended.
+     *
+     * Note: `foreign_keys` is a per-connection SQLite pragma; the URL parameter alone is not
+     * reliably applied by the JDBC driver, so [init] also forces it via `setupConnection`.
      */
     private fun buildSqliteUrl(dbPath: String): String = when {
         dbPath == ":memory:" -> {

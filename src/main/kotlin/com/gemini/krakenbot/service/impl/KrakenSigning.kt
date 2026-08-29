@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.model.KrakenApiConstants
 import java.security.MessageDigest
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec

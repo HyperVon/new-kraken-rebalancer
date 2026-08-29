@@ -45,7 +45,6 @@ import kotlinx.html.script
 import kotlinx.html.select
 import kotlinx.html.table
 import kotlinx.html.tbody
-import kotlinx.html.td
 import kotlinx.html.th
 import kotlinx.html.thead
 import kotlinx.html.title

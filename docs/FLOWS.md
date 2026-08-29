@@ -35,6 +35,7 @@ flowchart TB
 
     subgraph Core["🔄 Core Application Logic"]
         PM["PortfolioManagerImpl\nrunLoop()"]
+        Cycle["performCycleWithStableSession()\nouter ConfigService session\n+ stable backend pin"]
         OE["OrderExecutorImpl\n(delegates to OrderSettleHelper)"]
         OSH["OrderSettleHelper\nsettleUsdAfterSells()"]
     end
@@ -61,14 +62,17 @@ flowchart TB
     CS -->|"HOT: tryEmit(settings)\nalways succeeds synchronously"| CS
     CS -->|"watchConfigChanges()\ncollectLatest { settings → }"| PM
 
-    %% Rebalance loop
+    %% Rebalance loop and session/backend ownership
     PM -->|"loop delay\nsettings.loopDelaySeconds"| PM
-    PM -->|"performRebalanceCycle()"| OE
+    PM -->|"startup syncs\n(each own session + backend pin)"| THS
+    PM -->|"normal iteration"| Cycle
+    Cycle -->|"in-cycle ledger/trade sync +\nhistorical reconstruction"| THS
+    Cycle -->|"performRebalanceCycle()\n(nested pin reused)"| OE
     OE -->|"place buy/sell orders"| Kraken
     OE -->|"COLD poll after successful sell\n(not dry-run); best of 3 / early 95 pct"| Kraken
 
     %% Snapshot emission (façade delegates to SnapshotStore)
-    PM -->|"addSnapshot(snapshot)"| THS
+    Cycle -->|"addSnapshot(snapshot)"| THS
     THS -->|"delegate"| Store
     Store -->|"saveSnapshot()"| Repo
     Store -->|"HOT: tryEmit(snapshot)\nalways succeeds synchronously"| Store
@@ -124,11 +128,16 @@ sequenceDiagram
         note over CS: tryEmit(settings)<br/>guaranteed to succeed<br/>(DROP_OLDEST strategy)
         CS-->>PM: SharedFlow emits new Settings
     else active execution session
-        CS->>CS: stage runtime config until session exits
+        CS->>CS: stage runtime config (no flow emission)
+        note over CS: Disk state may be newer while the active cycle or<br/>standalone sync still reads the old runtime config.
     end
 
-    note over PM: collectLatest cancels the<br/>sleeping delay() in the active<br/>loop and immediately restarts<br/>with the new settings
-    PM->>PM: restart loop with new settings
+    opt outermost execution session exits
+        CS->>CS: publish staged runtime config
+        CS-->>PM: SharedFlow emits new Settings
+        note over PM: collectLatest does not cancel an active cycle merely<br/>because persistence completed, it restarts after publication,<br/>once the current session-owned work has returned.
+        PM->>PM: cancel sleeping delay() and restart with new settings
+    end
 ```
 
 **Key design choices:**
@@ -137,8 +146,13 @@ sequenceDiagram
 - Config’s `MutableSharedFlow` uses **no** `extraBufferCapacity` (default 0) with `DROP_OLDEST`; snapshot flow uses `extraBufferCapacity = 16` so slow SSE clients do not stall emitters.
 - `collectLatest` (not `collect`) is used so that a settings change during a long loop `delay()`
   takes effect immediately. During an active rebalance session, config saves/reloads persist to disk
-  but defer runtime publication until the session exits; unrelated coroutine cancellation still
-  propagates normally.
+  but defer runtime publication until the **outermost** session exits. Persistence can therefore
+  complete during a cycle without cancelling it; after publication, `collectLatest` restarts the
+  loop with the new settings. Unrelated coroutine cancellation still propagates normally.
+- Normal iterations enter `performCycleWithStableSession()`, whose execution session and stable
+  backend pin cover in-cycle ledger sync, trade sync, historical reconstruction, the rebalance body,
+  and nested order/post-trade reads. Startup syncs and standalone/top-level syncs establish their own
+  sessions and pins; nested guards reuse the outer cycle boundary.
 - Real-live order placement writes `PENDING` plus the deterministic `cl_ord_id` before AddOrder.
   Definite exchange rejections resolve the row immediately; transport/response failures become
   `UNCERTAIN` and immediately abort the remaining batch. An unresolved row is excluded from
@@ -233,9 +247,11 @@ sequenceDiagram
   have elapsed since `lastSyncTime` (5-minute throttle).
 - Live sync is skipped when credentials are invalid and `simulation` is false;
   simulation mode never hits Kraken for history.
-- A non-no-op sync opens a nested-safe `ConfigService` execution session before
-  collecting pages and closes it in `finally`. Config and credential updates
-  therefore publish only after the whole account pagination finishes.
+- A non-no-op standalone sync opens a nested-safe `ConfigService` execution
+  session and backend pin before collecting pages and closes them in `finally`.
+  When the sync is called from `performCycleWithStableSession()`, those guards
+  reuse the outer session and pin. Config and credential updates therefore
+  publish only after the outermost session covering the current work finishes.
 - Incremental sync uses a **300-second overlap** window from the **effective**
   watermark (`latestTradeTime` is the latest successful non-dry-run trade time,
   including local estimates; it falls back to `sync_watermark_epoch_sec` when
@@ -317,8 +333,10 @@ for unresolved intents.
    paginate up to 5 pages of at most 50 rows) → optional balance peek
    `min(fillConfirmed, balance)` when spendable USD is visible → else cap to
    `projectedCash`.
-2. **Fallback:** when no txids, or fill confirmation returns no positive USD →
-   `pollUsdBalanceAfterSells().last()` (below).
+2. **Fallback:** when no txids, fill confirmation returns no positive USD, or
+   its balance/projected-cash-capped result is below 95% of projected cash →
+   `pollUsdBalanceAfterSells().last()` (below). A materially short fill result
+   may reflect lagging or truncated Kraken trade-history pagination.
 
 Skipped when dry-run or no sell succeeded (buys use projected cash). Fail-closed:
 abort buys if neither path confirms positive USD.
@@ -339,15 +357,14 @@ sequenceDiagram
             Fill->>Fill: delay(backoffMs)
             Fill->>Hist: pages by count or page-size fallback, max 5
             Hist-->>Fill: matched fills (up to 50 per page, cost - fee)
-            alt "cash >= 95% of projected"
-                Fill->>OE: emit(bestCash)
-                Fill->>OE: (flow completes early)
-            else "positive but below 95%"
-                Fill->>OE: emit(bestCash)
-            end
         end
-        OE->>Bal: peekUsdBalance (once)
-        note over OE: min(fillConfirmed, balance) when balance > 0<br/>else min(fillConfirmed, projectedCash)
+        OSH->>Bal: peekUsdBalance (once when fills are positive)
+        Bal-->>OSH: spendable USD or transient error
+        alt "capped fill >= 95% of projected"
+            OSH->>OE: return capped fill-confirmed cash
+        else "zero or positive but below 95%"
+            OSH->>Bal: pollUsdBalanceAfterSells (3 attempts)
+        end
     else "no txids or fillConfirmed = 0"
         OE->>OE: pollUsdBalanceAfterSells (Flow 5b)
     end
@@ -420,6 +437,9 @@ trade synchronization, but it has separate metadata and insert-only semantics:
 - `PortfolioManagerImpl` invokes it at startup and once per rebalance cycle;
   `LedgersSyncService` skips calls made within **300 seconds** of the previous
   completed sync.
+- The startup call and a standalone top-level call establish their own
+  execution session and stable backend pin. The normal-cycle call reuses the
+  cycle-wide session/backend boundary owned by `performCycleWithStableSession()`.
 - The first successful pass fetches the full ledger history, records durable
   page progress, and marks the ledger store seeded. A resumed seed restarts from
   page zero because new rows can shift Kraken offsets.

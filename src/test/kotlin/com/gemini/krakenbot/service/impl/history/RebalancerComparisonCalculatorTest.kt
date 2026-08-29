@@ -4,6 +4,7 @@ import com.gemini.krakenbot.TestFixtures.assetSnapshot
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
@@ -70,7 +71,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            (result.latestDifferenceUSD!!.compareTo(BigDecimal.ZERO) > 0) shouldBe true
+            (result.latestDifferenceUSD!! > BigDecimal.ZERO) shouldBe true
         }
 
         "underperformance: rebalancer ends below buy & hold" {
@@ -106,7 +107,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            (result.latestDifferenceUSD!!.compareTo(BigDecimal.ZERO) < 0) shouldBe true
+            (result.latestDifferenceUSD!! < BigDecimal.ZERO) shouldBe true
         }
 
         "range rebasing: suffix uses its own first snapshot as baseline" {
@@ -778,7 +779,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     ),
                 ),
             )
-            val rewards = listOf(ledgerEvent(now.plusSeconds(1800), "BTC", "0.1", LedgerEvent.TYPE_DIVIDEND))
+            val rewards =
+                listOf(ledgerEvent(now.plusSeconds(1800), "BTC", "0.1", KrakenApiConstants.LEDGER_TYPE_DIVIDEND))
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards)
 
@@ -929,7 +931,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         timestamp: Instant,
         asset: String,
         amount: String,
-        type: String = LedgerEvent.TYPE_STAKING,
+        type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
     ): LedgerEvent = LedgerEvent(
         ledgerId = "ledger-$timestamp-$asset",
         time = timestamp,

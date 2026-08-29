@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.domain.CASH_RESERVE_FACTOR
+import com.gemini.krakenbot.domain.HUNDRED
 import com.gemini.krakenbot.domain.OrderResult
-import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
-import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec

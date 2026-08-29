@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
@@ -24,14 +22,13 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
-import io.mockk.verify
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
+@Suppress("unused")
 class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
 
     init {
@@ -112,21 +109,20 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
         "init_MigratesEmptyTradeHistoryJsonWithoutSaving" {
             runTest {
                 val tmpFile = File.createTempFile("edge-empty-", ".json").apply { deleteOnExit() }
-                val file = tmpFile
                 val bakFile = File("${tmpFile.absolutePath}.bak")
                 try {
                     bakFile.delete()
-                    file.writeText("[]")
+                    tmpFile.writeText("[]")
 
                     val tradeHistoryService = createService(tradeHistoryFilePath = tmpFile.absolutePath)
                     coEvery { repository.load() } returns emptyList()
                     tradeHistoryService.init()
 
                     coVerify(exactly = 0) { repository.save(any()) }
-                    file.exists() shouldBe true
+                    tmpFile.exists() shouldBe true
                     bakFile.exists() shouldBe false
                 } finally {
-                    file.delete()
+                    tmpFile.delete()
                     bakFile.delete()
                 }
             }
@@ -135,20 +131,19 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
         "init_MigratesNullTradeHistoryJsonWithoutSaving" {
             runTest {
                 val tmpFile = File.createTempFile("edge-null-", ".json").apply { deleteOnExit() }
-                val file = tmpFile
                 val bakFile = File("${tmpFile.absolutePath}.bak")
                 try {
                     bakFile.delete()
-                    file.writeText("null")
+                    tmpFile.writeText("null")
 
                     val tradeHistoryService = createService(tradeHistoryFilePath = tmpFile.absolutePath)
                     coEvery { repository.load() } returns emptyList()
                     tradeHistoryService.init()
 
                     coVerify(exactly = 0) { repository.save(any()) }
-                    file.exists() shouldBe true
+                    tmpFile.exists() shouldBe true
                 } finally {
-                    file.delete()
+                    tmpFile.delete()
                     bakFile.delete()
                 }
             }

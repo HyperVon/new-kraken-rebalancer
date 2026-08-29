@@ -387,7 +387,7 @@ class HistoryZoomTest : StringSpec() {
                 chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_DAY
                 updateTimeUnitForChart(chart)
                 // After update, should be hour since span < ONE_DAY_MS
-                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+                chart.options.scales.x.time.unit.toString() shouldBe "hour"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -429,7 +429,7 @@ class HistoryZoomTest : StringSpec() {
                 chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_HOUR
                 updateTimeUnitForChart(chart)
                 // After update, should be day since span >= ONE_DAY_MS
-                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_DAY
+                chart.options.scales.x.time.unit.toString() shouldBe "day"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -483,7 +483,7 @@ class HistoryZoomTest : StringSpec() {
                     ),
                 )
                 // Callback should update time unit to hour
-                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+                chart.options.scales.x.time.unit.toString() shouldBe "hour"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -542,7 +542,7 @@ class HistoryZoomTest : StringSpec() {
                     }
                 }
                 // After zoom in, time unit should be hour (span < ONE_DAY_MS)
-                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+                chart.options.scales.x.time.unit.toString() shouldBe "hour"
 
                 // Click reset button
                 for (i in 0 until buttons.length) {
@@ -554,7 +554,7 @@ class HistoryZoomTest : StringSpec() {
                     }
                 }
 // After reset, time unit should be day (span >= ONE_DAY_MS)
-                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_DAY
+                chart.options.scales.x.time.unit.toString() shouldBe "day"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -593,7 +593,7 @@ class HistoryZoomTest : StringSpec() {
                 val chart = charts["portfolio-value-chart"]!!
                 chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_DAY
                 updateTimeUnitForChart(chart)
-                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_MINUTE
+                chart.options.scales.x.time.unit.toString() shouldBe "minute"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -632,7 +632,7 @@ class HistoryZoomTest : StringSpec() {
                 val chart = charts["portfolio-value-chart"]!!
                 chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_MINUTE
                 updateTimeUnitForChart(chart)
-                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+                chart.options.scales.x.time.unit.toString() shouldBe "hour"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -683,7 +683,7 @@ class HistoryZoomTest : StringSpec() {
                         "chart" to json("canvas" to document.getElementById("portfolio-value-chart")),
                     ),
                 )
-                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_MINUTE
+                chart.options.scales.x.time.unit.toString() shouldBe "minute"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -802,7 +802,7 @@ class HistoryZoomTest : StringSpec() {
 
                 scrubber.disabled shouldBe false
                 val chart = charts["portfolio-value-chart"]!!
-                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+                chart.options.scales.x.time.unit.toString() shouldBe "hour"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()

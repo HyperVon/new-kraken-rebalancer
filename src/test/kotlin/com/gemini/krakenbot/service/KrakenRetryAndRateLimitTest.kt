@@ -6,7 +6,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.service.impl.KrakenApiConstants
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.krakenPrivateEndpointCost
 import io.kotest.assertions.throwables.shouldThrow
@@ -485,6 +485,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
 
         "krakenPrivateEndpointCost_Balance_and_AddOrder_are1" {
             krakenPrivateEndpointCost(KrakenApiConstants.PATH_BALANCE) shouldBe 1.0
+            krakenPrivateEndpointCost(KrakenApiConstants.PATH_BALANCE_EX) shouldBe 1.0
             krakenPrivateEndpointCost(KrakenApiConstants.PATH_ADD_ORDER) shouldBe 1.0
         }
     }

@@ -5,7 +5,7 @@ import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
@@ -66,7 +66,7 @@ fun addAssetRow() {
 
     val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) ?: return
     container.insertAdjacentHTML(
-        "beforeend",
+        HtmlEvents.INSERT_ADJACENT_BEFORE_END,
         AllocationEditor.editRow(canonical, pickColorForNewAsset(), DEFAULT_NEW_ALLOCATION_TARGET),
     )
     symbolInput.value = ""

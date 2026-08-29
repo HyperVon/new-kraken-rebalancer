@@ -4,33 +4,24 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
-import com.gemini.krakenbot.service.impl.OrderExecutorImpl
-import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.toBigDecimalMap
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.spec.IsolationMode
-import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
-import io.mockk.just
 import io.mockk.slot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.yield
 import java.io.IOException
 import java.math.BigDecimal
 import kotlin.time.Duration.Companion.milliseconds
@@ -102,7 +93,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     allDevs = allDevs,
                     buyOrders = buyOrders,
                     sellOrders = sellOrders,
-                    events = mutableListOf<RebalanceEvent>(),
+                    events = mutableListOf(),
                 )
 
                 buyOrders.isEmpty().shouldBeTrue()
@@ -501,9 +492,9 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     "Save failed",
                 )
 
-                val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("800.0"))
-
-                drawdown.shouldBeEqualComparingTo(BigDecimal("20.0000"))
+                shouldThrow<IOException> {
+                    portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("800.0"))
+                }
                 coVerify {
                     portfolioStatsRepository.save(
                         match { it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0 },
@@ -519,9 +510,9 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
                 coEvery { portfolioStatsRepository.save(any()) } throws IOException("Save failed")
 
-                val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
-
-                drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                shouldThrow<IOException> {
+                    portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
+                }
                 coVerify {
                     portfolioStatsRepository.save(
                         match { it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0 },

@@ -4,6 +4,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeRecord
@@ -18,6 +19,7 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
+@Suppress("unused")
 class SnapshotHistoryCalculatorTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -451,7 +453,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 LedgerEvent(
                     ledgerId = "ledger-stake",
                     time = now.minus(2, ChronoUnit.DAYS),
-                    type = LedgerEvent.TYPE_STAKING,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
                     asset = "XBT",
                     amount = BigDecimal("0.1"),
                 )
@@ -459,7 +461,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 LedgerEvent(
                     ledgerId = "ledger-div",
                     time = now.minus(1, ChronoUnit.DAYS),
-                    type = LedgerEvent.TYPE_DIVIDEND,
+                    type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
                     asset = "STRC",
                     amount = BigDecimal("1.25"),
                 )
@@ -484,7 +486,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 LedgerEvent(
                     ledgerId = "ledger-stake",
                     time = rewardTime,
-                    type = LedgerEvent.TYPE_STAKING,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
                     asset = "BTC",
                     amount = BigDecimal("0.1"),
                 )
@@ -590,7 +592,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 LedgerEvent(
                     ledgerId = "ledger-stake-unnorm",
                     time = rewardTime,
-                    type = LedgerEvent.TYPE_STAKING,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
                     asset = "DOT.S", // Earn-staking suffix un-normalized asset
                     amount = BigDecimal("0.5"),
                 )

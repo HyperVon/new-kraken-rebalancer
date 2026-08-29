@@ -3,10 +3,6 @@ package com.gemini.krakenbot.domain
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
-import com.gemini.krakenbot.util.ALLOCATION_TOLERANCE
-import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
-import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
-import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -224,25 +220,6 @@ class RebalancerEngineTest : StringSpec() {
                     it.usdAmount.shouldBeEqualComparingTo(BigDecimal("100.00"))
                     it.candidateCount shouldBe 2
                 }
-        }
-
-        "distributeFiatCorrectionPlan returns typed distribution event" {
-            val events = mutableListOf<RebalanceEvent>()
-            RebalancerEngine.distributeFiatCorrectionPlan(
-                usdDev = BigDecimal("100.00"),
-                allDevs = mapOf(
-                    Asset.USD to BigDecimal("100.00"),
-                    Asset.BTC to BigDecimal("-60.00"),
-                    Asset.ETH to BigDecimal("-40.00"),
-                ),
-                buyOrders = mutableMapOf(),
-                sellOrders = mutableMapOf(),
-                events = events,
-            )
-
-            val distribution = events.filterIsInstance<RebalanceEvent.FiatCorrectionDistributed>().single()
-            distribution.usdAmount.shouldBeEqualComparingTo(BigDecimal("100.00"))
-            distribution.candidateCount shouldBe 2
         }
 
         "calculatePortfolioValues returns failure when crypto price is missing or zero" {

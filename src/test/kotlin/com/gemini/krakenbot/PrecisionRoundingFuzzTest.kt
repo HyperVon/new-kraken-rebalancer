@@ -15,11 +15,11 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
-import io.ktor.client.request.url
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
@@ -27,6 +27,7 @@ import io.ktor.http.headersOf
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import java.math.BigDecimal
 import java.util.Base64
 
 class PrecisionRoundingFuzzTest : StringSpec() {
@@ -150,6 +151,10 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                         capturedOrderPayload,
                     )
                 volumeMatch.shouldNotBeNull()
+                // A $4,299.11 BTC deviation at the $68,453.12 ticker floors to 0.06280370 BTC at
+                // crypto scale 8; assert the actual submitted volume, not just the wire shape.
+                val submittedVolume = volumeMatch.groupValues[1].toBigDecimal()
+                submittedVolume shouldBeEqualComparingTo BigDecimal("0.06280370")
             }
         }
     }

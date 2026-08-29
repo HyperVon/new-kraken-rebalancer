@@ -7,6 +7,7 @@ import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.toCryptoScale
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
@@ -127,7 +128,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
                     LedgerEvent(
                         ledgerId = "SIM-SEED-LEDGER-$assetIndex-$eventIndex",
                         time = now.minus(hoursAgo, ChronoUnit.HOURS),
-                        type = LedgerEvent.TYPE_STAKING,
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
                         subtype = "reward",
                         aclass = "currency",
                         asset = symbol,

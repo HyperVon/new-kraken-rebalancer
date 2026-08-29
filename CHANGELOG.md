@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.17.7] - 2026-08-29
+## [6.17.10] - 2026-08-29
 
 ### Added
 
@@ -38,6 +38,64 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `skill-authoring`: Added instruction rigidity calibration (Prescriptive, Guiding, Autonomous), 3-part description formula, and companion layout conventions.
   - `skill-reviewer`: Added `external` review mode for candidate intake linked to `references/external-skill-intake.md`.
   - `systematic-debugging`: Added performance profiling discipline and execution safety during history bisection.
+
+## [6.17.9] - 2026-08-26
+
+### Changed
+
+- **View no longer parses stored action strings**: `ActionLogFormatter` and `RebalanceEventFormatter` moved to `com.gemini.krakenbot.util` and grew symmetric `renderTradeAction` / `renderInfoAction` functions; `RecentActivityComponent` now delegates to the formatter instead of positionally splitting action-log text. New generated `ViewText.ACTIVITY_DRIFT_DETECTED_SUFFIX`, `ACTIVITY_CASH_CORRECTION_ENFORCED`, `ACTIVITY_CASH_CORRECTION_DISTRIBUTED`, and `ACTIVITY_DRY_RUN_MARKER` replace the inline activity copy.
+- **Kraken API and chart constants in YAML**: `LEDGER_TYPE_STAKING`, `LEDGER_TYPE_DIVIDEND`, `CHART_TYPE_LINE`, `INSERT_ADJACENT_BEFORE_END`, `BEFORE_UNLOAD`, `VISIBILITY_CHANGE`, and `VISIBILITY_HIDDEN` declared in `codegen/*.yaml`; Kotlin source references the generated constants.
+- **Kraken asset alias tables hoisted**: `KRAKEN_TICKER_BY_SYMBOL` and `CANONICAL_BY_KRAKEN_ALIAS` now build once into an internal table; accessors delegate instead of rebuilding maps per call.
+- **Engine module dependency-light**: `RebalancerEngine` no longer pulls SLF4J/logback; diagnostics travel through `Result.Failure` messages.
+
+### Fixed
+
+- **Settle helper falls through to balance poll on truncated fills**: when fill-confirmed USD falls below `projectedCash × 0.95`, the helper logs a warning and runs the balance-poll tier so a delayed Kraken trade-history index can no longer shrink the cycle buy budget.
+- **`foreign_keys` enforcement on every init connection**: `DatabaseConfig.init` now forces `PRAGMA foreign_keys = ON` via Exposed's `setupConnection` callback so FK/CASCADE behavior matches the URL-append path; one FK-violation test asserts the result end-to-end.
+- **Submit volume rounds DOWN to match the executor's sell cap**: `KrakenServiceImpl.executeOrder` uses `RoundingMode.DOWN` at scale 8.
+- **Order error messages bounded to 500 chars** so a verbose Kraken response can't fill the dashboard payload.
+- **Cross-platform owner-only config file permissions**: POSIX files use owner read/write permissions; ACL-capable non-POSIX filesystems use a current-owner ACL; unsupported filesystems fail safely before credentials are written.
+- **Loud warn log when `executeOrder` is called without a `dryRun` argument**; the previous config-re-read fallback is now visible.
+- **JaCoCo service exclusions now match actual interface paths** so concrete implementations, including `DynamicKrakenService`, `SimulatedKrakenService`, and `LedgersSyncService`, remain measured; README and agent guidance are synced.
+- **Config upper bounds for `fiatDeploymentExponent` and `deviationTriggerPercent`** prevent huge finite values from overflowing the `Math.pow` deployment sizing.
+- **Migration-recovery tests assert post-init intent and trade row state** instead of only "no exception".
+- **`PrecisionRoundingFuzzTest` asserts the exact submitted volume** so rounding regressions surface.
+- **Restored the higher internal rate-limit cost for `ClosedOrders`**, keeping it aligned with `TradesHistory` and `Ledgers` as Kraken account-history endpoints.
+- **De-mirrored frontend magic strings**: chart point `"x"/"y"` keys, `insertAdjacentHTML` position, `beforeunload`/`visibilitychange`/`hidden` literals, and the `ACTIVE` CSS class alias are all sourced from generated catalogs.
+
+## [6.17.8] - 2026-08-24
+
+### Changed
+
+- **Cycle-wide execution consistency**: Normal rebalance iterations now share one execution session and one stable live/simulation backend across in-cycle ledger and trade synchronization, historical reconstruction, analysis, order placement, and post-trade reads. Startup and standalone sync entry points retain independent nested-safe sessions and backend pins; settings can persist during an active session, but runtime and flow publication wait until the outermost session exits.
+- **Generated integration catalogs**: Kraken API constants and shared UI/HTML string constants are sourced from declarative codegen catalogs, keeping cross-module spellings in one KMP-compatible source.
+- **Guidance and flow documentation**: Agent skills and `docs/FLOWS.md` now describe the cycle-wide ownership boundary, nested pin reuse, and `collectLatest` publication timing.
+
+### Fixed
+
+- **Fail-closed ATH persistence**: A portfolio ATH persistence failure now aborts the cycle instead of allowing drawdown/deployment planning against an ATH that was not stored.
+
+## [6.17.7] - 2026-08-21
+
+### Changed
+
+- **Unify asset color defaults on the generated catalog**: `AssetColorAssigner` now references `ChartProps.SOLID_BTC` / `SOLID_ETH` / `SOLID_USD` instead of hand-synced hex literals, so server-assigned allocation colors can no longer drift from dashboard chart colors.
+- **Pin the persisted action-log grammar in a dedicated catalog**: added the generated `ActionLogFormat` markers (`VOLUME_MARKER` / `VALUE_MARKER` / `COST_MARKER`); `ActionLogFormatter` emits them and `RecentActivityComponent.humanizeTradeAction` parses against them, so historical `action_logs` rows keep rendering correctly even if display copy changes. A new `RecentActivityComponentTest` pins the grammar with raw legacy strings.
+- **De-mirror test assertions from shared catalogs**: contract assertions in `DashboardControllerTest`, `FormatterTest`, `HistoryPageComponentTest`, `EvaluationScenarios1To7`, and the Kotlin/JS specs (`SettingsTest`, `HistoryLoadingTest`, `HistoryTradeRenderingTest`, `HistoryComparisonChartTest`, `HistoryChartsTest`, `HistoryZoomTest`) now use independent raw expected strings per `.agents/AGENTS.md` §7; setup-side catalog references remain.
+- **Rewrite Copilot harness stub**: `.github/copilot-instructions.md` now lists the canonical rule files explicitly instead of relying on Claude-style `@` imports that GitHub Copilot does not process.
+- **Quote markdownlint globs in gradle-quality-gates skill**: the verify command now quotes `'**'` glob patterns so nested `.agents/skills/**/*.md` files are linted under plain bash.
+
+### Fixed
+
+- README: corrected `go-rewrite` branch commit count (10, was 9), aligned the manual Fat JAR run example with `start.sh` JVM flags (`--sun-misc-unsafe-memory-access=allow`), removed first-person portfolio-pitch narrative, and trimmed the motivational preamble ahead of the capability bullets.
+- EvaluationScenariosTest comment updated to the actual scenario count (41).
+- Removed unused `SimulatedKrakenService` import in `TradeHistoryServiceTest`.
+- Added `/engine/bin/` to `.gitignore` so stray compiler output is not committed.
+
+### Removed
+
+- Coverage-padding tests asserting compiler-generated behavior only (`EngineModelTest` property/tautology blocks, `CommonApiModelsTest` construct-and-read-back tests) and a duplicate fiat-correction test in `RebalancerEngineTest`; `PortfolioManagerLoopTest` exception-handling test gained an explicit completion assertion.
+>>>>>>> origin/main
 
 ## [6.17.6] - 2026-08-21
 

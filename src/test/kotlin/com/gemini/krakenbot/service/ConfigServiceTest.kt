@@ -12,7 +12,11 @@ import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.service.impl.ConfigFileAttributeViews
+import com.gemini.krakenbot.service.impl.ConfigFilePermissionStrategy
+import com.gemini.krakenbot.service.impl.ConfigFileSecurityException
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
+import com.gemini.krakenbot.service.impl.NioConfigFilePermissionStrategy
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.IsolationMode
@@ -36,8 +40,14 @@ import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.AclEntry
+import java.nio.file.attribute.AclEntryPermission
+import java.nio.file.attribute.AclEntryType
+import java.nio.file.attribute.AclFileAttributeView
 import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.UserPrincipal
 
 class ConfigServiceTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -173,6 +183,7 @@ class ConfigServiceTest : StringSpec() {
                 readBack.allocations.size shouldBe 2
                 readBack.kraken.apiKey.value shouldBe "k"
                 readBack.kraken.privateKey.value shouldBe "s"
+                File("${tempFile.absolutePath}.tmp").exists() shouldBe false
             }
         }
 
@@ -289,8 +300,8 @@ class ConfigServiceTest : StringSpec() {
             runTest {
                 val secretFromEnv = System.getenv("PATH") ?: "fallback-path"
                 writeRawConfig(
-                    apiKey = "\${PATH:fallback-path}",
-                    privateKey = "\${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
+                    apiKey = $$"${PATH:fallback-path}",
+                    privateKey = $$"${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
                 )
 
                 val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
@@ -336,6 +347,106 @@ class ConfigServiceTest : StringSpec() {
             }
         }
 
+        "loadConfig continues when existing config permissions cannot be hardened" {
+            val service = ConfigServiceImpl(
+                objectMapper,
+                tempFile.absolutePath,
+                object : ConfigFilePermissionStrategy {
+                    override fun createOwnerOnlyFile(path: Path) = error("write path must not run")
+
+                    override fun enforceOwnerOnly(path: Path): Unit = throw ConfigFileSecurityException()
+                },
+            )
+
+            service.getConfig().allocations.single().symbol.value shouldBe Asset.USD
+        }
+
+        "NIO permission strategy creates POSIX files with owner-only permissions" {
+            val path = tempFile.toPath().resolveSibling("posix-config.tmp")
+            path.toFile().deleteOnExit()
+            if (Files.getFileAttributeView(path, PosixFileAttributeView::class.java) != null) {
+                try {
+                    NioConfigFilePermissionStrategy().createOwnerOnlyFile(path)
+
+                    Files.getPosixFilePermissions(path) shouldBe ownerOnlyPermissions
+                } finally {
+                    Files.deleteIfExists(path)
+                }
+            }
+        }
+
+        "NIO permission strategy uses an owner ACL when POSIX permissions are unavailable" {
+            val aclView = mockk<AclFileAttributeView>(relaxed = true)
+            val owner = object : UserPrincipal {
+                override fun getName(): String = "test-owner"
+            }
+            var observedAcl: List<AclEntry>? = null
+            every { aclView.setAcl(any()) } answers {
+                observedAcl = firstArg()
+            }
+
+            val strategy = NioConfigFilePermissionStrategy(
+                attributeViews = object : ConfigFileAttributeViews {
+                    override fun posix(path: Path): PosixFileAttributeView? = null
+
+                    override fun acl(path: Path): AclFileAttributeView = aclView
+
+                    override fun owner(path: Path): UserPrincipal = owner
+                },
+                createWithPosixPermissions = { throw UnsupportedOperationException("POSIX unavailable") },
+                createWithDefaultPermissions = {},
+            )
+
+            strategy.createOwnerOnlyFile(tempFile.toPath().resolveSibling("acl-config.tmp"))
+
+            observedAcl!!.single().principal() shouldBe owner
+            observedAcl!!.single().type() shouldBe AclEntryType.ALLOW
+            observedAcl!!.single().permissions() shouldBe AclEntryPermission.values().toSet()
+        }
+
+        "NIO permission strategy fails safely when no secure permission mechanism is available" {
+            val strategy = NioConfigFilePermissionStrategy(
+                attributeViews = object : ConfigFileAttributeViews {
+                    override fun posix(path: Path): PosixFileAttributeView? = null
+
+                    override fun acl(path: Path): AclFileAttributeView? = null
+
+                    override fun owner(path: Path): UserPrincipal = error("owner lookup must not run")
+                },
+                createWithPosixPermissions = { throw UnsupportedOperationException("POSIX unavailable") },
+                createWithDefaultPermissions = {},
+            )
+
+            val exception = shouldThrow<ConfigFileSecurityException> {
+                strategy.createOwnerOnlyFile(tempFile.toPath().resolveSibling("unsupported-config.tmp"))
+            }
+
+            exception.message shouldNotContain "credential"
+            exception.message shouldNotContain "secret"
+        }
+
+        "config permission failures never expose credential values" {
+            val secretApiKey = "api-key-that-must-not-appear"
+            val secretPrivateKey = "private-key-that-must-not-appear"
+            val failingStrategy = object : ConfigFilePermissionStrategy {
+                override fun createOwnerOnlyFile(path: Path): Unit = throw ConfigFileSecurityException()
+
+                override fun enforceOwnerOnly(path: Path): Unit = throw ConfigFileSecurityException()
+            }
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath, failingStrategy)
+
+            val exception = shouldThrow<RuntimeException> {
+                service.updateConfig(
+                    service.getConfig().copy(
+                        kraken = KrakenCredentials(secretApiKey, secretPrivateKey),
+                    ),
+                )
+            }
+
+            exception.stackTraceToString() shouldNotContain secretApiKey
+            exception.stackTraceToString() shouldNotContain secretPrivateKey
+        }
+
         "updateConfig_PersistsUserChangedCredentials" {
             runTest {
                 val oldConfig = configService.getConfig()
@@ -355,7 +466,7 @@ class ConfigServiceTest : StringSpec() {
         "updateConfig preserves each unchanged env credential during partial rotation" {
             runTest {
                 listOf("api", "private").forEach { rotatedField ->
-                    writeRawConfig(apiKey = "\${PATH:api-default}", privateKey = "\${PATH:private-default}")
+                    writeRawConfig(apiKey = $$"${PATH:api-default}", privateKey = $$"${PATH:private-default}")
                     val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
                     val current = service.getConfig()
                     val rotated =
@@ -376,6 +487,71 @@ class ConfigServiceTest : StringSpec() {
                         rawSaved.kraken.privateKey.value shouldBe "new-private-key"
                     }
                 }
+            }
+        }
+
+        "updateConfig preserves a staged credential rotation across a stale second update" {
+            runTest {
+                val apiPlaceholder = $$"${MISSING_API_KEY:api-default}"
+                val privatePlaceholder = $$"${MISSING_PRIVATE_KEY:private-default}"
+                writeRawConfig(apiKey = apiPlaceholder, privateKey = privatePlaceholder)
+                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                val activeConfig = service.getConfig()
+
+                service.beginExecutionSession()
+                service.updateConfig(
+                    activeConfig.copy(
+                        kraken = KrakenCredentials("rotated-api-key", activeConfig.kraken.privateKey.value),
+                    ),
+                )
+                service.updateConfig(
+                    activeConfig.copy(
+                        settings = activeConfig.settings.copy(loopDelaySeconds = 61L),
+                    ),
+                )
+
+                val rawSaved = objectMapper.readValue(tempFile, AppConfig::class.java)
+                rawSaved.kraken.apiKey.value shouldBe "rotated-api-key"
+                rawSaved.kraken.privateKey.value shouldBe privatePlaceholder
+                service.endExecutionSession()
+
+                service.getConfig().kraken.apiKey.value shouldBe "rotated-api-key"
+                service.getConfig().settings.loopDelaySeconds shouldBe 61L
+                objectMapper.readValue(tempFile, AppConfig::class.java).kraken.apiKey.value shouldBe "rotated-api-key"
+            }
+        }
+
+        "updateConfig preserves a staged private-key rotation across a stale second update" {
+            runTest {
+                val apiPlaceholder = $$"${MISSING_API_KEY:api-default}"
+                val privatePlaceholder = $$"${MISSING_PRIVATE_KEY:private-default}"
+                writeRawConfig(apiKey = apiPlaceholder, privateKey = privatePlaceholder)
+                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                val activeConfig = service.getConfig()
+
+                service.beginExecutionSession()
+                service.updateConfig(
+                    activeConfig.copy(
+                        kraken = KrakenCredentials(activeConfig.kraken.apiKey.value, "rotated-private-key"),
+                    ),
+                )
+                service.updateConfig(
+                    activeConfig.copy(
+                        settings = activeConfig.settings.copy(loopDelaySeconds = 62L),
+                    ),
+                )
+
+                val rawSaved = objectMapper.readValue(tempFile, AppConfig::class.java)
+                rawSaved.kraken.apiKey.value shouldBe apiPlaceholder
+                rawSaved.kraken.privateKey.value shouldBe "rotated-private-key"
+                service.endExecutionSession()
+
+                service.getConfig().kraken.apiKey.value shouldBe "api-default"
+                service.getConfig().kraken.privateKey.value shouldBe "rotated-private-key"
+                service.getConfig().settings.loopDelaySeconds shouldBe 62L
+                val persisted = objectMapper.readValue(tempFile, AppConfig::class.java)
+                persisted.kraken.apiKey.value shouldBe apiPlaceholder
+                persisted.kraken.privateKey.value shouldBe "rotated-private-key"
             }
         }
 
@@ -483,6 +659,8 @@ class ConfigServiceTest : StringSpec() {
                     "minimum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = -1.0),
                     "maximum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = 101.0),
                     "fiatDeploymentExponent" to settings.copy(fiatDeploymentExponent = 0.0),
+                    "fiatDeploymentExponent ceiling" to settings.copy(fiatDeploymentExponent = 101.0),
+                    "deviationTriggerPercent ceiling" to settings.copy(deviationTriggerPercent = 101.0),
                 )
             }
         }
@@ -735,8 +913,8 @@ class ConfigServiceTest : StringSpec() {
 
         "loadConfig_ResolveEnvVars" {
             writeRawConfig(
-                apiKey = "\${TEST_KRAKEN_API_KEY:default-api-key}",
-                privateKey = "\${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
+                apiKey = $$"${TEST_KRAKEN_API_KEY:default-api-key}",
+                privateKey = $$"${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
             )
 
             val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
@@ -746,14 +924,14 @@ class ConfigServiceTest : StringSpec() {
 
         "loadConfig_ResolveEnvVars_WithActualEnvValue" {
             val pathValue = System.getenv("PATH") ?: "fallback"
-            writeRawConfig(apiKey = "\${PATH:fallback-path}", privateKey = "some-private-key")
+            writeRawConfig(apiKey = $$"${PATH:fallback-path}", privateKey = "some-private-key")
 
             val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
             service.getConfig().kraken.apiKey.value shouldBe pathValue
         }
 
         "loadConfig_ResolveEnvVars_NoDefaultValue" {
-            writeRawConfig(apiKey = "\${NON_EXISTENT_VAR_NO_DEFAULT}", privateKey = "some-private-key")
+            writeRawConfig(apiKey = $$"${NON_EXISTENT_VAR_NO_DEFAULT}", privateKey = "some-private-key")
 
             val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
             service.getConfig().kraken.apiKey.value shouldBe ""
@@ -764,7 +942,7 @@ class ConfigServiceTest : StringSpec() {
             try {
                 every { System.getenv("SOME_BLANK_VAR") } returns "  "
 
-                writeRawConfig(apiKey = "\${SOME_BLANK_VAR:default-val}", privateKey = "some-private-key")
+                writeRawConfig(apiKey = $$"${SOME_BLANK_VAR:default-val}", privateKey = "some-private-key")
 
                 val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
                 service.getConfig().kraken.apiKey.value shouldBe "default-val"
@@ -936,7 +1114,7 @@ class ConfigServiceTest : StringSpec() {
                 )
                 cases.forEach { (key, value) ->
                     every { System.getenv(key) } returns value
-                    writeRawConfig(apiKey = "\${$key}", privateKey = "static-private")
+                    writeRawConfig(apiKey = $$"${$$key}", privateKey = "static-private")
                     val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
                     withClue(key) {
                         service.getConfig().kraken.apiKey.value shouldBe value

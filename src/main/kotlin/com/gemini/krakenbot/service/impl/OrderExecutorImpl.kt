@@ -3,12 +3,12 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.AssetPrices
 import com.gemini.krakenbot.domain.AssetValues
+import com.gemini.krakenbot.domain.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RebalanceOrders
 import com.gemini.krakenbot.domain.TradeCalculator
 import com.gemini.krakenbot.domain.resolveBalance
-import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
@@ -20,9 +20,8 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
+import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.view.util.ActionLogFormatter
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -390,7 +389,11 @@ class OrderExecutorImpl(
                     message = "Order intent was resolved before the exchange outcome was recorded",
                 )
                 log.error("Order intent {} was already resolved; aborting the remaining order batch", intentId)
-                context.actionLog.add("ERROR: Order intent $intentId was already resolved; order batch aborted")
+                context.actionLog.add(
+                    ViewText.ERROR_ORDER_INTENT_ALREADY_RESOLVED_PREFIX +
+                        intentId +
+                        ViewText.ERROR_ORDER_INTENT_ALREADY_RESOLVED_SUFFIX,
+                )
                 return staleOutcome
             }
         }

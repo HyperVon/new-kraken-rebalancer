@@ -28,43 +28,6 @@ class CommonApiModelsTest {
     }
 
     @Test
-    fun tradeRecordPreservesAllFieldsIncludingOptionals() {
-        val record =
-            TradeRecord(
-                timestamp = "2024-01-01T00:00:00Z",
-                pair = "XBTUSD",
-                side = "sell",
-                symbol = "BTC",
-                volume = "0.1",
-                usdAmount = "5000",
-                success = false,
-                dryRun = true,
-                errorMessage = "boom",
-                price = "50000",
-                fee = "5",
-                slippagePercent = "0.1",
-                expectedPrice = "49900",
-                source = "API_FILL",
-                id = 42,
-            )
-        assertEquals("boom", record.errorMessage)
-        assertEquals("50000", record.price)
-        assertEquals("5", record.fee)
-        assertEquals("0.1", record.slippagePercent)
-        assertEquals("49900", record.expectedPrice)
-        assertEquals("API_FILL", record.source)
-        assertEquals(42, record.id)
-    }
-
-    @Test
-    fun tradeRecordsAreEqualByValue() {
-        val a = TradeRecord("t", "p", "buy", "B", "1", "2", true, false)
-        val b = TradeRecord("t", "p", "buy", "B", "1", "2", true, false)
-        assertEquals(a, b)
-        assertEquals(a.hashCode(), b.hashCode())
-    }
-
-    @Test
     fun historyStatsAppliesOptionalDefaults() {
         val stats =
             HistoryStats(

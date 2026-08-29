@@ -2,15 +2,15 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.view.util.ChartProps
 import kotlin.math.abs
 
 object AssetColorAssigner {
 
-    // Keep in sync with ChartProps.SOLID_* (defaults live here to avoid service → view coupling).
     private val knownDefaults = mapOf(
-        Asset.BTC to "#fbbf24",
-        Asset.ETH to "#a78bfa",
-        Asset.USD to "#94a3b8",
+        Asset.BTC to ChartProps.SOLID_BTC,
+        Asset.ETH to ChartProps.SOLID_ETH,
+        Asset.USD to ChartProps.SOLID_USD,
     )
 
     private val HEX_COLOR = Regex("^#[0-9a-f]{6}$")

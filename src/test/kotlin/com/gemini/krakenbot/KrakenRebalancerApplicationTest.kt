@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot
 
 import com.gemini.krakenbot.config.appModule
@@ -8,7 +6,6 @@ import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CompletableDeferred
@@ -25,6 +22,8 @@ import org.koin.test.KoinTest
 import org.koin.test.inject
 import java.io.File
 
+@OptIn(ExperimentalCoroutinesApi::class)
+@Suppress("unused")
 class KrakenRebalancerApplicationTest :
     StringSpec(),
     KoinTest {

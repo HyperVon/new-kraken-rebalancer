@@ -23,6 +23,7 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
+@Suppress("unused")
 class TradeHistorySyncServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

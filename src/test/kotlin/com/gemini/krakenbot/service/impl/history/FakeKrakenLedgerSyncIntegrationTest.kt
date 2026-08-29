@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -20,12 +21,10 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@Suppress("unused")
 class FakeKrakenLedgerSyncIntegrationTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -54,7 +53,7 @@ class FakeKrakenLedgerSyncIntegrationTest : StringSpec() {
                 listOf(
                     ledgerEntry(1, baseTime),
                     ledgerEntry(2, baseTime.plusSeconds(600)),
-                    ledgerEntry(3, baseTime.plusSeconds(1200), LedgerEvent.TYPE_DIVIDEND, "STRC", "1.25"),
+                    ledgerEntry(3, baseTime.plusSeconds(1200), KrakenApiConstants.LEDGER_TYPE_DIVIDEND, "STRC", "1.25"),
                     ledgerEntry(4, baseTime.plusSeconds(1800), "trade", "XBT"),
                 ),
             )
@@ -65,7 +64,8 @@ class FakeKrakenLedgerSyncIntegrationTest : StringSpec() {
 
             val stored = ledgerRepository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(86400))
             stored.size shouldBe 3
-            stored.map { it.type }.toSet() shouldBe setOf(LedgerEvent.TYPE_STAKING, LedgerEvent.TYPE_DIVIDEND)
+            stored.map { it.type }.toSet() shouldBe
+                setOf(KrakenApiConstants.LEDGER_TYPE_STAKING, KrakenApiConstants.LEDGER_TYPE_DIVIDEND)
             stored.map { it.ledgerId }.toSet() shouldBe setOf("ledger-1", "ledger-2", "ledger-3")
 
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED) shouldBe "true"
@@ -85,7 +85,7 @@ class FakeKrakenLedgerSyncIntegrationTest : StringSpec() {
                 listOf(
                     ledgerEntry(1, baseTime, asset = "BTC"),
                     ledgerEntry(2, baseTime.plusSeconds(900), asset = "BTC"),
-                    ledgerEntry(3, baseTime.plusSeconds(1800), LedgerEvent.TYPE_DIVIDEND, "STRC", "1.25"),
+                    ledgerEntry(3, baseTime.plusSeconds(1800), KrakenApiConstants.LEDGER_TYPE_DIVIDEND, "STRC", "1.25"),
                 ),
             )
             LedgersSyncService(ledgerRepository, fakeKraken, configService, nowProvider = { fixedNow })
@@ -108,7 +108,7 @@ class FakeKrakenLedgerSyncIntegrationTest : StringSpec() {
     private fun ledgerEntry(
         index: Int,
         time: Instant,
-        type: String = LedgerEvent.TYPE_STAKING,
+        type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
         asset: String = "XBT",
         amount: String = "0.1",
     ): LedgerEvent = LedgerEvent(

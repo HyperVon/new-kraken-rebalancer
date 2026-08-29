@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
+@Suppress("unused")
 class TradeHistoryFlowTest : TradeHistoryServiceTestBase() {
 
     init {

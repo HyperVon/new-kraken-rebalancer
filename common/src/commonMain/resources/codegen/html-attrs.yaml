@@ -8,6 +8,7 @@ HtmlAttrs:
   DATA_ZOOM_ACTION: "data-zoom-action"
   DATASET_SORT_VALUE: "sortValue"
   CROSSORIGIN: "crossorigin"
+  INTEGRITY: "integrity"
   DATA_SORT: "data-sort"
   TAB_INDEX: "tabindex"
   TITLE: "title"
@@ -22,6 +23,10 @@ HtmlEvents:
   INPUT: "input"
   DOM_CONTENT_LOADED: "DOMContentLoaded"
   HTMX_AFTER_SWAP: "htmx:afterSwap"
+  BEFORE_UNLOAD: "beforeunload"
+  VISIBILITY_CHANGE: "visibilitychange"
+  VISIBILITY_HIDDEN: "hidden"
+  INSERT_ADJACENT_BEFORE_END: "beforeend"
 HtmlKeys:
   ENTER: "Enter"
   SPACE: " "

@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -19,7 +17,6 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import java.util.*
 
 abstract class KrakenServiceTestBase : StringSpec() {

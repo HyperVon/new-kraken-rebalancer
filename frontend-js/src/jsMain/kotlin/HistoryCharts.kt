@@ -72,7 +72,7 @@ internal fun mapSnapshotsToPoints(
     valueSelector: (PortfolioSnapshot) -> Double,
 ): Array<dynamic> = snapshots
     .map { snapshot ->
-        json("x" to snapshot.timestamp, "y" to valueSelector(snapshot))
+        json(ChartProps.X to snapshot.timestamp, ChartProps.Y to valueSelector(snapshot))
     }.toTypedArray()
 
 internal fun buildPortfolioValueChart(snapshots: List<PortfolioSnapshot>) {
@@ -281,7 +281,7 @@ private inline fun calculateSignedCashFlowSeries(
                 else -> continue
             }
         cumulative += adjustDelta(trade, delta)
-        points.add(json("x" to trade.timestamp, "y" to cumulative))
+        points.add(json(ChartProps.X to trade.timestamp, ChartProps.Y to cumulative))
     }
 
     return points.toTypedArray()
@@ -351,7 +351,12 @@ internal fun buildRewardsChart(rewards: RewardsOverTime) {
 
     val points =
         rewards.points
-            .map { point -> json("x" to point.timestamp, "y" to (dynamicNumber(point.cumulativeUSD) ?: 0.0)) }
+            .map { point ->
+                json(
+                    ChartProps.X to point.timestamp,
+                    ChartProps.Y to (dynamicNumber(point.cumulativeUSD) ?: 0.0),
+                )
+            }
             .toTypedArray()
     if (points.isEmpty()) {
         clearChart(HtmlIds.REWARDS_CHART)

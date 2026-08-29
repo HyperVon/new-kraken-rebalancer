@@ -18,7 +18,6 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.ktor.client.plugins.sse.sse
-import io.ktor.server.application.install
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.every

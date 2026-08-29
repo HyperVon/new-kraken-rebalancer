@@ -9,9 +9,9 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
-import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.RateLimiter
 import com.gemini.krakenbot.service.impl.krakenPrivateEndpointCost
@@ -63,6 +63,18 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
                 balances["XETHZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("3000.0"))
                 balances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("5000.0"))
+            }
+        }
+
+        "getSpendableBalances_Success" {
+            runTest {
+                val responseJson =
+                    """{"error":[],"result":{"ZUSD":{"balance":"100.0","credit":"5.0","credit_used":"2.0","hold_trade":"30.0"}}}"""
+                val service = createService(responseJson)
+
+                val balances = (service as SpendableBalanceService).getSpendableBalances()
+
+                balances["ZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("73.0"))
             }
         }
 

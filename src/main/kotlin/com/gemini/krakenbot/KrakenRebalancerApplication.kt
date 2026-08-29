@@ -29,6 +29,7 @@ import org.koin.core.context.stopKoin
 import org.koin.core.qualifier.named
 import org.koin.logger.slf4jLogger
 import org.slf4j.LoggerFactory
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val REBALANCING_SHUTDOWN_TIMEOUT_MILLIS = 5_000L
 
@@ -39,7 +40,7 @@ internal suspend fun joinRebalancingWorker(
     hasPendingSubmissions: suspend () -> Boolean = { false },
     hasUnresolvedOrderIntents: suspend () -> Boolean = { false },
 ): Boolean {
-    val joinedWithinBudget = withTimeoutOrNull(REBALANCING_SHUTDOWN_TIMEOUT_MILLIS) {
+    val joinedWithinBudget = withTimeoutOrNull(REBALANCING_SHUTDOWN_TIMEOUT_MILLIS.milliseconds) {
         workerJob?.join()
         true
     } ?: false

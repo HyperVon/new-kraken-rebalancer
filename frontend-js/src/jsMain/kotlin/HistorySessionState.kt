@@ -26,6 +26,15 @@ data class HistorySessionData(
 
 object HistorySessionState {
 
+    /** JSON payload keys for session persistence. Shared by writer/reader. */
+    internal object SessionKeys {
+        const val RANGE = "range"
+        const val SHOW_DRY_RUN = "showDryRun"
+        const val VISIBILITY = "visibility"
+        const val SELECTED_VIEW_ID = "selectedViewId"
+        const val HAS_USER_INTERACTED = "hasUserInteracted"
+    }
+
     fun save() {
         try {
             val range = try {
@@ -40,11 +49,11 @@ object HistorySessionState {
             val hasUserInteracted = HistoryViewPrefs.hasUserInteracted()
             val visibility = captureCurrentVisibility()
             val payload = json(
-                "range" to range,
-                "showDryRun" to showDryRun,
-                "visibility" to visibilityToJson(visibility),
-                "selectedViewId" to selectedViewId,
-                "hasUserInteracted" to hasUserInteracted,
+                SessionKeys.RANGE to range,
+                SessionKeys.SHOW_DRY_RUN to showDryRun,
+                SessionKeys.VISIBILITY to visibilityToJson(visibility),
+                SessionKeys.SELECTED_VIEW_ID to selectedViewId,
+                SessionKeys.HAS_USER_INTERACTED to hasUserInteracted,
             )
             sessionStorage.setItem(ViewText.HISTORY_SESSION_STORAGE_KEY, JSON.stringify(payload))
         } catch (_: Throwable) {
@@ -57,12 +66,12 @@ object HistorySessionState {
 
             @Suppress("UNCHECKED_CAST_TO_EXTERNAL_INTERFACE")
             val parsed = JSON.parse<dynamic>(raw)
-            val range = parsed.range as? String ?: return null
+            val range = parsed[SessionKeys.RANGE] as? String ?: return null
             if (TimeRange.entries.none { it.key == range }) return null
-            val showDryRun = parsed.showDryRun as? Boolean ?: true
-            val selectedViewId = parsed.selectedViewId as? String ?: ""
-            val hasUserInteracted = parsed.hasUserInteracted as? Boolean ?: false
-            val visibility = parseVisibility(parsed.visibility)
+            val showDryRun = parsed[SessionKeys.SHOW_DRY_RUN] as? Boolean ?: true
+            val selectedViewId = parsed[SessionKeys.SELECTED_VIEW_ID] as? String ?: ""
+            val hasUserInteracted = parsed[SessionKeys.HAS_USER_INTERACTED] as? Boolean ?: false
+            val visibility = parseVisibility(parsed[SessionKeys.VISIBILITY])
             return HistorySessionData(range, showDryRun, visibility, selectedViewId, hasUserInteracted)
         } catch (_: Throwable) {
             return null

@@ -7,6 +7,7 @@ import io.kotest.matchers.shouldNotBe
 import java.sql.DriverManager
 import java.util.UUID
 
+@Suppress("unused")
 class SchemaMigrationsTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

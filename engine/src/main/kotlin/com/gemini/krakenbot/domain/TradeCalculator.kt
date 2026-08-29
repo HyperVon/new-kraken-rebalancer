@@ -3,8 +3,6 @@ package com.gemini.krakenbot.domain
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
-import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
-import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import java.math.BigDecimal
 import java.math.RoundingMode

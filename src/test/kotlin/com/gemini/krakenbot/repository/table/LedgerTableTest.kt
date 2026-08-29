@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository.table
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -13,6 +14,7 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class LedgerTableTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
@@ -23,7 +25,7 @@ class LedgerTableTest : StringSpec() {
                 ledgerId = "ledger-123",
                 refid = "tx-456",
                 time = Instant.parse("2026-06-15T12:00:00Z"),
-                type = LedgerEvent.TYPE_STAKING,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
                 subtype = "auto-compound",
                 aclass = "currency",
                 asset = "DOT",

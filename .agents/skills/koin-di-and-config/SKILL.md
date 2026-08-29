@@ -91,15 +91,21 @@ runtime or raw-credential state.
 
 ### Active execution sessions
 
-`PortfolioManagerImpl.performRebalanceCycle()` brackets each cycle, and
-`TradeHistorySyncService` brackets each non-no-op standalone paginated sync,
-with `beginExecutionSession()` / `endExecutionSession()`. While the session
-depth is positive, `updateConfig()` still validates and persists atomically, and
-`loadConfig()` still validates disk content, but both stage the runtime value in
-`pendingConfig`; they must not replace `appConfig` or emit `_configFlow`. The
-outermost `endExecutionSession()` publishes the last staged config and emits
-its settings. This keeps one money-moving cycle or multi-page account sync on
-one coherent config and credential version.
+`PortfolioManagerImpl.performCycleWithStableSession()` owns the outer,
+cycle-wide `beginExecutionSession()` / `endExecutionSession()` boundary. It
+covers the in-cycle ledger sync, trade sync, historical reconstruction, and
+`performRebalanceCycle()` body. The same normal-cycle boundary owns the outer
+`DynamicKrakenService.withStableBackend` pin; nested sync, reconstruction, and
+order-executor pins reuse it. Startup syncs run before that method, and
+standalone/top-level sync entry points establish their own nested-safe session
+and backend pin.
+
+While the session depth is positive, `updateConfig()` still validates and
+persists atomically, and `loadConfig()` still validates disk content, but both
+stage the runtime value in `pendingConfig`; they must not replace `appConfig`
+or emit `_configFlow`. The outermost `endExecutionSession()` publishes the
+last staged config and emits its settings. This keeps one money-moving cycle or
+multi-page account sync on one coherent config and credential version.
 
 File is gitignored — never commit secrets.
 

@@ -46,7 +46,11 @@ DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
   `delay` so waiters do not HOL-block other private calls)
 - Waits until `callCounter + cost ≤ safeLimit`
 
-Per-endpoint **cost** (in `KrakenServiceImpl.queryPrivate`):
+Per-endpoint **cost** (in `KrakenServiceImpl.queryPrivate`), preserving the
+project's normalized 2.0-vs-1.0 model for Kraken's higher-cost account-history
+group:
+
+Kraken's current [Spot API rate-limit guidance](https://support.kraken.com/au/articles/206548367-what-are-the-api-rate-limits-) lists `Ledgers`, `TradesHistory`, and `ClosedOrders` together as account-history endpoints (`+4`); this application normalizes that relative tier to `2.0`.
 
 - **2.0** if path contains `TradesHistory`, `Ledgers`, or `ClosedOrders`
 - **1.0** otherwise

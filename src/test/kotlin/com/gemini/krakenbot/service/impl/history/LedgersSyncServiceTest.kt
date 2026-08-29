@@ -1,11 +1,10 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
@@ -19,12 +18,11 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
+@Suppress("unused")
 class LedgersSyncServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -58,7 +56,7 @@ class LedgersSyncServiceTest : StringSpec() {
     private fun event(index: Int, time: Instant = baseTime): LedgerEvent = LedgerEvent(
         ledgerId = "ledger-$index",
         time = time,
-        type = LedgerEvent.TYPE_STAKING,
+        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
         asset = "XBT",
         amount = BigDecimal("0.1"),
     )
@@ -144,13 +142,20 @@ class LedgersSyncServiceTest : StringSpec() {
             // Staking has 75 (2 pages), dividend has 10 (1 page) — exercises the `continue` branch when perTypeDone[dividend] becomes true.
             val stakingPageOne = (0 until 50).map { event(it, time = baseTime) }
             val stakingPageTwo = (50 until 75).map { event(it, time = baseTime) }
-            val dividendPage = (100 until 110).map { event(it, time = baseTime).copy(type = LedgerEvent.TYPE_DIVIDEND) }
-
-            coEvery { krakenService.getLedgers(any(), any(), any(), eq(setOf(LedgerEvent.TYPE_STAKING))) } coAnswers {
-                val offset = secondArg<Int?>() ?: 0
-                if (offset == 0) stakingPageOne else stakingPageTwo
+            val dividendPage = (100 until 110).map {
+                event(it, time = baseTime).copy(type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND)
             }
-            coEvery { krakenService.getLedgers(any(), any(), any(), eq(setOf(LedgerEvent.TYPE_DIVIDEND))) } returns
+
+            coEvery {
+                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)))
+            } coAnswers
+                {
+                    val offset = secondArg<Int?>() ?: 0
+                    if (offset == 0) stakingPageOne else stakingPageTwo
+                }
+            coEvery {
+                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND)))
+            } returns
                 dividendPage
             var callCount = 0
             coEvery { krakenService.getLastLedgerTotalCount() } coAnswers {
@@ -169,8 +174,12 @@ class LedgersSyncServiceTest : StringSpec() {
 
             repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 85
             // Dividend done after first page, second iteration only fetches staking pageTwo.
-            coVerify(exactly = 1) { krakenService.getLedgers(any(), 0, any(), eq(setOf(LedgerEvent.TYPE_DIVIDEND))) }
-            coVerify(exactly = 2) { krakenService.getLedgers(any(), any(), any(), eq(setOf(LedgerEvent.TYPE_STAKING))) }
+            coVerify(exactly = 1) {
+                krakenService.getLedgers(any(), 0, any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND)))
+            }
+            coVerify(exactly = 2) {
+                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)))
+            }
         }
 
         "recovering an interrupted seed restarts from 96-day bounded history" {

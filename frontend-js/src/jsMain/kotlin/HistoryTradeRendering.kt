@@ -13,7 +13,6 @@ import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import org.w3c.dom.*
-import kotlin.js.Date
 
 fun formatPair(trade: TradeRecord): String {
     if (trade.symbol.isNotBlank()) return "${trade.symbol}/USD"

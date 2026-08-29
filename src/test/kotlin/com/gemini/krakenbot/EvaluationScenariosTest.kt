@@ -22,7 +22,6 @@ import io.kotest.core.spec.Spec
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.core.test.TestCase
 import io.kotest.engine.test.TestResult
-import io.ktor.client.request.get
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.mockk.mockk
@@ -38,7 +37,7 @@ internal fun evaluationTempPath(prefix: String): File = File.createTempFile("sce
 }
 
 class EvaluationScenariosTest : StringSpec() {
-    // SingleInstance: the mocks and mapper below are shared by all 40 scenarios, so a scenario that
+    // SingleInstance: the mocks and mapper below are shared by all 41 scenarios, so a scenario that
     // captures calls (snapshot actions, order lists) must build its own mock instead of reusing them.
     override fun isolationMode() = IsolationMode.SingleInstance
 

@@ -4,13 +4,12 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.ApplicationRequest
-import io.ktor.server.response.ApplicationResponse
 import io.ktor.server.response.header
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 
+@Suppress("unused")
 class CsrfTokenIssuanceTest : StringSpec() {
     init {
 

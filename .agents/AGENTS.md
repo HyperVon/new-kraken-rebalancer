@@ -169,9 +169,15 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
   **Never** flip `dryRun = false` casually in examples/tests aimed at live
   paths. Live trading moves real money — treat credential + live mode changes
   as high risk.
+- `PortfolioManagerImpl.performCycleWithStableSession()` owns the normal
+  cycle-wide execution session/backend pin across in-cycle sync,
+  reconstruction, and rebalance work. Startup syncs and standalone/top-level
+  sync entry points establish independent nested-safe sessions/pins.
 - `ConfigServiceImpl` defers runtime publication of saved/reloaded config while
-  a rebalance or paginated history-sync execution session is active. Do not
-  remove that boundary or let one cycle/sync mix settings or credentials.
+  any such execution session is active. Disk persistence may complete during
+  the session, but `appConfig` and `_configFlow` publication wait for the
+  outermost session exit. Do not remove that boundary or let one cycle/sync
+  mix settings or credentials.
 
 ---
 

@@ -1,11 +1,10 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -19,10 +18,10 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.content.TextContent
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
+@Suppress("unused")
 class KrakenLedgerTest : KrakenServiceTestBase() {
 
     init {
@@ -63,7 +62,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 val entries = service.getLedgers()
 
                 entries.size shouldBe 2
-                val staking = entries.first { it.type == LedgerEvent.TYPE_STAKING }
+                val staking = entries.first { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
                 staking.ledgerId shouldBe "L1"
                 staking.refid shouldBe "R1"
                 staking.time.toEpochMilli() shouldBe 1700000000123L
@@ -73,7 +72,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 staking.amount.shouldBeEqualComparingTo(BigDecimal("0.1"))
                 staking.fee.shouldBeEqualComparingTo(BigDecimal("0"))
                 staking.balance.shouldBeEqualComparingTo(BigDecimal("10.5"))
-                val dividend = entries.first { it.type == LedgerEvent.TYPE_DIVIDEND }
+                val dividend = entries.first { it.type == KrakenApiConstants.LEDGER_TYPE_DIVIDEND }
                 dividend.ledgerId shouldBe "L2"
                 dividend.refid shouldBe "R2"
                 dividend.subtype.shouldBeNull()
@@ -114,10 +113,10 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                     }
                 """.trimIndent()
                 val service = createService(responseJson)
-                val entries = service.getLedgers(types = setOf(LedgerEvent.TYPE_STAKING))
+                val entries = service.getLedgers(types = setOf(KrakenApiConstants.LEDGER_TYPE_STAKING))
 
                 entries.size shouldBe 1
-                entries.first().type shouldBe LedgerEvent.TYPE_STAKING
+                entries.first().type shouldBe KrakenApiConstants.LEDGER_TYPE_STAKING
                 service.getLastLedgerTotalCount() shouldBe 2
             }
         }
@@ -136,7 +135,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 val service = createService(responseJson) { request ->
                     capturedBody = (request.body as TextContent).text
                 }
-                service.getLedgers(types = setOf(LedgerEvent.TYPE_STAKING))
+                service.getLedgers(types = setOf(KrakenApiConstants.LEDGER_TYPE_STAKING))
 
                 capturedBody shouldContain "type=staking"
             }
@@ -206,17 +205,19 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                     httpClient = HttpClient(engine),
                 )
 
-                val entries = service.getLedgers(types = setOf(LedgerEvent.TYPE_STAKING, LedgerEvent.TYPE_DIVIDEND))
+                val entries = service.getLedgers(
+                    types = setOf(KrakenApiConstants.LEDGER_TYPE_STAKING, KrakenApiConstants.LEDGER_TYPE_DIVIDEND),
+                )
 
                 requestBodies.size shouldBe 2
                 requestBodies.any { it.contains("type=staking") }.shouldBeTrue()
                 requestBodies.any { it.contains("type=dividend") }.shouldBeTrue()
                 requestBodies.none { it.contains("staking,dividend") }.shouldBeTrue()
                 entries.size shouldBe 2
-                val staking = entries.first { it.type == LedgerEvent.TYPE_STAKING }
+                val staking = entries.first { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
                 staking.ledgerId shouldBe "S1"
                 staking.asset shouldBe "BTC"
-                val dividend = entries.first { it.type == LedgerEvent.TYPE_DIVIDEND }
+                val dividend = entries.first { it.type == KrakenApiConstants.LEDGER_TYPE_DIVIDEND }
                 dividend.ledgerId shouldBe "D1"
                 dividend.asset shouldBe "STRC"
                 service.getLastLedgerTotalCount() shouldBe 296

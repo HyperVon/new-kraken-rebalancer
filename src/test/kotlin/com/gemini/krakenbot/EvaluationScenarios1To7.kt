@@ -35,8 +35,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.formUrlEncode
 import io.ktor.http.parametersOf
-import io.ktor.server.application.Application
-import io.ktor.server.application.install
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -387,7 +385,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             getShellResponse.status shouldBe HttpStatusCode.OK
             getShellResponse.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
             val bodyShell = getShellResponse.bodyAsText()
-            bodyShell shouldContain ViewText.APP_TITLE
+            bodyShell shouldContain "Kraken Rebalancer"
 
             // 2. POST Valid Settings (Hot-Reload)
             val testKey = "api-reloaded"

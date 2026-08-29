@@ -7,6 +7,7 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.math.RoundingMode
 
+@Suppress("unused")
 class MathUtilsTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

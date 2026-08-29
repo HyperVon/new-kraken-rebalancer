@@ -9,6 +9,7 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class TradeCalculatorTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -164,6 +165,34 @@ class TradeCalculatorTest : StringSpec() {
             )
             trade.expectedPrice shouldBe BigDecimal.ZERO
             trade.slippagePercent shouldBe BigDecimal.ZERO
+        }
+
+        "createTradeRecord propagates order outcome and cycle provenance into the durable record" {
+            val result = OrderResult(
+                success = true,
+                pair = "XXBTZUSD",
+                side = "buy",
+                volume = BigDecimal("0.5"),
+                orderTxid = "TX-9",
+            )
+
+            val trade = TradeCalculator.createTradeRecord(
+                result = result,
+                symbol = "BTC",
+                pair = "XXBTZUSD",
+                side = "buy",
+                volume = BigDecimal("0.5"),
+                usdAmount = BigDecimal("25000.00"),
+                prices = mapOf("BTC" to BigDecimal("50000")),
+                timestamp = Instant.parse("2026-08-21T00:00:00Z"),
+                cycleId = "cycle-7",
+            )
+
+            trade.orderTxid shouldBe "TX-9"
+            trade.cycleId shouldBe "cycle-7"
+            trade.success shouldBe true
+            trade.source shouldBe TradeSource.LOCAL_ESTIMATE
+            trade.price.shouldBeEqualComparingTo(BigDecimal("50000"))
         }
     }
 }

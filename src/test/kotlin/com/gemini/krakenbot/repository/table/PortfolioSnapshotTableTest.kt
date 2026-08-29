@@ -14,6 +14,7 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class PortfolioSnapshotTableTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

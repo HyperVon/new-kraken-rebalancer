@@ -2,9 +2,7 @@ package com.gemini.krakenbot.view
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.component.HistoryPageComponent
-import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -48,9 +46,9 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "history-chart-scrubber-input"
             htmlString shouldContain "id=\"stat-avg-fee-rate\""
             htmlString shouldContain "id=\"stat-avg-slippage\""
-            htmlString shouldContain ViewText.HEADER_PRICE
-            htmlString shouldContain ViewText.HEADER_FEE
-            htmlString shouldContain ViewText.HEADER_SLIPPAGE
+            htmlString shouldContain "Price"
+            htmlString shouldContain "Fee"
+            htmlString shouldContain "Slippage"
             htmlString shouldContain "rebalancer.js"
             htmlString shouldContain "id=\"loop-control\""
             htmlString shouldContain "hx-post=\"/api/resume\""
@@ -61,7 +59,8 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "comparison-chart-content"
             htmlString shouldContain "comparison-availability-message"
             htmlString shouldContain "comparison-confidence-badge"
-            htmlString shouldContain ViewText.COMPARISON_CAPTION
+            htmlString shouldContain
+                "Based on stored snapshots and recorded trades. Starting quantities are frozen at the first snapshot in the selected range."
             Regex("\\sid=\"rebalancer-comparison-chart\"").findAll(htmlString).count() shouldBe 1
         }
 

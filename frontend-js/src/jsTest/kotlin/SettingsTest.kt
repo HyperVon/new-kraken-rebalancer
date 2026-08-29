@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -228,8 +227,6 @@ class SettingsTest : StringSpec() {
                 val numInput = firstRow.querySelector("input[name=\"targets\"]") as HTMLInputElement
                 numInput.min shouldBe "0"
                 numInput.max shouldBe "100"
-
-                val colorInput = firstRow.querySelector("input[type=\"color\"]") as HTMLInputElement
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -250,7 +247,7 @@ class SettingsTest : StringSpec() {
                 symbolInput.value = "BTC-USD"
                 addAssetRow()
 
-                alertMessage shouldBe ViewText.INVALID_SYMBOL_ALERT
+                alertMessage shouldBe "Invalid symbol. Symbols must be alphanumeric and up to 16 characters."
                 allocations.childElementCount shouldBe 0
                 symbolInput.value shouldBe "BTC-USD"
             } finally {

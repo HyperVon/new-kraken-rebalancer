@@ -223,7 +223,7 @@ object HeroStyles {
         // the bare class name, and a missing dot emits a type selector that
         // matches nothing.
         val barTracks = ".${CssClass.Hero.TileBarTrack.value}, .${CssClass.AllocationChart.BarTrack.value}"
-        "$barTracks" {
+        barTracks {
             flexGrow = 1.0
             background = CssTheme.barTrackGradient
             borderRadius = CssTheme.radiusPill
@@ -232,7 +232,7 @@ object HeroStyles {
         }
 
         val barFills = ".${CssClass.Hero.TileBarFill.value}, .${CssClass.AllocationChart.BarFill.value}"
-        "$barFills" {
+        barFills {
             position = Position.relative
             height = 100.pct
             borderRadius = CssTheme.radiusPill
@@ -244,7 +244,7 @@ object HeroStyles {
 
         val barFillSheens =
             ".${CssClass.Hero.TileBarFill.value}::after, .${CssClass.AllocationChart.BarFill.value}::after"
-        "$barFillSheens" {
+        barFillSheens {
             contentRaw("\"\"")
             position = Position.absolute
             left = 8.pct

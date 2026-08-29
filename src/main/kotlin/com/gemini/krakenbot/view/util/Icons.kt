@@ -6,7 +6,6 @@ import kotlinx.html.unsafe
 object Icons {
     private fun loadIcon(name: String): String = Icons::class.java.getResource("/icons/$name")?.readText() ?: ""
 
-    val COG = loadIcon("cog.svg")
     val TREND_UP = loadIcon("trend_up.svg")
     val WALLET = loadIcon("wallet.svg")
     val CIRCLES = loadIcon("circles.svg")

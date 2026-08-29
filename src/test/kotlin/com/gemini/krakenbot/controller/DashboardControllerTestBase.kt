@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.controller
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.service.ConfigService
@@ -51,7 +52,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
     protected val configService = mockk<ConfigService>(relaxed = true)
     protected val portfolioManager = mockk<PortfolioManager>(relaxed = true)
     protected val orderIntentService = mockk<OrderIntentService>(relaxed = true)
-    protected val objectMapper =
+    protected val objectMapper: ObjectMapper =
         jacksonObjectMapper().registerModule(JavaTimeModule())
 
     // Route tests intentionally omit app-wide CORS: the dashboard has no user auth, and the

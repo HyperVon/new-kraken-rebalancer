@@ -27,6 +27,7 @@ import io.mockk.every
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class DashboardOperationalApiTest : DashboardControllerTestBase() {
     init {
         "readiness reports ready only after a running loop has a snapshot and no unresolved state" {

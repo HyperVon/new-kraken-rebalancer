@@ -1,12 +1,12 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -74,9 +74,9 @@ class LedgersSyncService(
         val effectiveLatest = calculateEffectiveLatestTime()
         // Incremental sync overlaps by 5 minutes so entries near the previous watermark are
         // re-fetched and deduplicated rather than missed. Unseeded initial sync and recovery both
-        // bound to 96 days (SEED_HISTORY_LOOKBACK) like TradeHistorySyncService to avoid fetching
+        // bound to SEED_HISTORY_LOOKBACK_DAYS like TradeHistorySyncService to avoid fetching
         // historical entries that would be immediately pruned.
-        val seedBound = nowProvider().minus(96, ChronoUnit.DAYS)
+        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
         val paginationStartSec = if (isRecoveringInitialSync) {
@@ -195,7 +195,7 @@ class LedgersSyncService(
 
     /** Cold paginated Kraken ledger history — per-type cursors; progress is durable until the first seed completes. */
     private fun getLedgersPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<LedgerEvent>> = flow {
-        val ledgerTypes = listOf(LedgerEvent.TYPE_STAKING, LedgerEvent.TYPE_DIVIDEND)
+        val ledgerTypes = listOf(KrakenApiConstants.LEDGER_TYPE_STAKING, KrakenApiConstants.LEDGER_TYPE_DIVIDEND)
         val perTypeOffset = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
         val perTypeTotal = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
         val perTypeDone = mutableMapOf<String, Boolean>().apply { ledgerTypes.forEach { this[it] = false } }

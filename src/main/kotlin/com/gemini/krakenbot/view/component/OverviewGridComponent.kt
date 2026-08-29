@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.view.component
 
+import com.gemini.krakenbot.domain.ALLOCATION_TOLERANCE
+import com.gemini.krakenbot.domain.HUNDRED // extension import for PrecisionConstants.HUNDRED
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.util.ALLOCATION_TOLERANCE
-import com.gemini.krakenbot.util.HUNDRED // extension import for PrecisionConstants.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
