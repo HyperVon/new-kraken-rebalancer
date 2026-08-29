@@ -56,12 +56,20 @@ Canonical deep docs:
 | Refactor / cleanup | [kotlin-refactoring-and-cleanup](skills/kotlin-refactoring-and-cleanup/SKILL.md) |
 | Reduce code size / split large files | [reduce-code-size](skills/reduce-code-size/SKILL.md) |
 | Code review | [code-review](skills/code-review/SKILL.md) |
+| Review feedback resolution & triage | [review-feedback-resolution](skills/review-feedback-resolution/SKILL.md) |
 | Security review (secrets, boundaries, data flows) | [security-review](skills/security-review/SKILL.md) |
+| Threat modeling (STRIDE / abuse paths) | [threat-modeling](skills/threat-modeling/SKILL.md) |
 | Systematic debugging & root-cause analysis | [systematic-debugging](skills/systematic-debugging/SKILL.md) |
 | Architecture review (third-party / redesign) | [architecture-review](skills/architecture-review/SKILL.md) |
+| Requirements & design approach | [requirements-and-design](skills/requirements-and-design/SKILL.md) |
+| Implementation planning (approved designs) | [implementation-planning](skills/implementation-planning/SKILL.md) |
+| Codebase orientation, mapping, onboarding | [codebase-orientation](skills/codebase-orientation/SKILL.md) |
 | Product opportunity review / feature roadmap | [product-opportunity-review](skills/product-opportunity-review/SKILL.md) |
 | Create or modify an approved project skill | [skill-authoring](skills/skill-authoring/SKILL.md) |
+| Skill discovery & catalog expansion research | [skill-discovery](skills/skill-discovery/SKILL.md) |
 | Skill / agent-files review (skills, rules, AGENTS) | [skill-reviewer](skills/skill-reviewer/SKILL.md) |
+| Repository guidance authoring (AGENTS.md, instructions) | [repository-guidance-authoring](skills/repository-guidance-authoring/SKILL.md) |
+| Harness discovery & entrypoint adaptation | [harness-adaptation](skills/harness-adaptation/SKILL.md) |
 | Rules / skills structural audit | [rules-and-skills-audit](skills/rules-and-skills-audit/SKILL.md) |
 | Agent-guidance compression / context reduction | [skill-optimizer](skills/skill-optimizer/SKILL.md) |
 | Adversarial PR review (adaptive bounded multi-agent loop) | [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |

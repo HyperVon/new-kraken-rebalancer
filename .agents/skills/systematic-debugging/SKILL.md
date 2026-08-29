@@ -55,8 +55,11 @@ description: >-
    Trace the bad value or state backward to its first incorrect origin.
 5. State one falsifiable hypothesis: “X is the root cause because Y.” Run the
    smallest diagnostic or test that can distinguish it from the alternatives.
-   For performance regressions, capture a comparable baseline and change one
-   variable at a time. Do not bundle multiple fixes into the experiment.
+   For performance regressions, capture a comparable baseline (equivalent warmup,
+   CPU/memory profiling, fixed input size) and change one variable at a time.
+   Do not bundle multiple speculative optimizations into one experiment.
+   During historical commit execution, ensure diagnostic runs do not execute
+   untrusted build hooks or mutate shared databases.
 6. Once the cause is confirmed, add or update the smallest regression test or
    repeatable reproduction at the failing seam. Apply the minimal root-cause
    correction, then run the focused test, the original reproduction, and the

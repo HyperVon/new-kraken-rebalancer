@@ -74,15 +74,32 @@ extend the existing skill instead of creating another one.
 
 ## Step 2 — Write for progressive disclosure
 
-Keep the frontmatter short and routeable:
+Keep the frontmatter short and routeable using the **three-part description formula**:
+`[What it does] + [When to use] + [When NOT to use / where to route instead]`.
 
 ```yaml
 ---
 name: exact-directory-name
 description: >-
-  One concrete capability and its trigger. Mention important boundaries.
+  [What it does in 1 concise sentence]. Use when [clear trigger scenarios].
+  Do not use for [nearby out-of-scope tasks] (route to [other-skill] instead);
+  [scope boundary reminder].
 ---
 ```
+
+### Instruction rigidity calibration
+
+Calibrate modal verbs intentionally according to task risk:
+
+- **Prescriptive (`MUST`, `ALWAYS`, `NEVER`):** Use for safety invariants, money math, security boundaries, rate limits, schema migrations, and non-negotiable verification gates.
+- **Guiding / Heuristic (`PREFER`, `SHOULD`, `TYPICAL`):** Use for design patterns, refactoring approaches, review feedback framing, and performance optimizations.
+- **Autonomous / Open (`EXPLORE`, `DISCOVER`, `CONSIDER`):** Use for research, brainstorming alternatives, and initial problem framing.
+
+### Sibling references and scripts layout
+
+- **`references/<topic>.md`:** Deep conceptual guides, capability contracts, or detailed background loaded on-demand.
+- **`examples/<topic>.md`:** Templates, sample output reports, or body blueprints.
+- **`scripts/<name>.sh` / `.py`:** Standalone executable helpers; must be non-interactive, shellcheck/linter clean, and handle failures gracefully.
 
 Use this body order unless the workflow has a strong reason not to:
 

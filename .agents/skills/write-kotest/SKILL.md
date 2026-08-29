@@ -86,6 +86,8 @@ val fakeKraken = FakeKrakenService().apply {
   test targets failure mapping.
 - For services:
   `coEvery { kraken.withStableBackend(any()) } coAnswers { firstArg<suspend (KrakenService) -> Any>().invoke(fakeKraken) }`
+- **Mock contract fidelity:** Assert observable domain effects and returned contracts, not just invocation counts (`coVerify(exactly = 1)`). Do not construct deep mock hierarchies where a fake or in-memory instance is cleaner.
+- **Timing & flakiness discipline:** Never resolve async test races by inserting arbitrary `Thread.sleep()` or extending fixed delays; use `advanceUntilIdle()` inside `runTest` or deterministic polling.
 
 ## Coroutines & Flows
 

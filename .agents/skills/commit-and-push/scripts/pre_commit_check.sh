@@ -26,6 +26,9 @@ while IFS= read -r file; do
 done < <(git ls-files -- '*.md' '*.mdc')
 npx markdownlint-cli "${markdown_files[@]}"
 
+echo "=== Step 1.25: Validating Agent Skills & Links ==="
+python3 .agents/scripts/validate_skills.py
+
 echo "=== Step 1.5: Running Kotlin Code Formatting & Line-Length Check (Spotless / ktlint) ==="
 ./gradlew spotlessCheck
 

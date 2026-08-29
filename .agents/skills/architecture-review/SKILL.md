@@ -271,9 +271,24 @@ For each real pain found, generate 2–4 options spanning:
   messaging for the loop
 - **Greenfield** — new architecture/stack when evolution cannot pay back
 
-Name concrete shapes (hexagonal ports, event-sourced trade log, CQRS for
-dashboard reads, pure domain lib + thin adapters, SPA + JSON API, etc.) only
-when they map to an observed problem.
+Evaluate viable candidates across structural dimensions:
+
+| Dimension | Keep Current | Evolve (Iterative) | Replace (Targeted) | Greenfield (Rewrite) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Operational Complexity** | Baseline | Low/Medium delta | Medium/High delta | High (new stack/ops) |
+| **Migration Risk & Downtime** | None | Low (in-place) | Medium (dual-write/cutover) | High (big-bang/backfill) |
+| **Reversibility / Rollback** | N/A | High (feature flag) | Medium (strangler fig) | Low / Hard escape hatch |
+| **Blast Radius of Failure** | Known failure modes | Scoped to module | Service boundary | Entire subsystem |
+| **State & Data Consistency** | Existing schema | Backward-compatible | Dual-write sync hazards | Complex data migration |
+| **Cognitive Load & Churn** | Familiar | Minimal delta | Moderate onboarding | Full team retraining |
+
+Before recommending an **Evolve** or **Replace** path, evaluate:
+
+- *Dual-write split-brain:* Are there race conditions or partial failure scenarios where legacy and new stores diverge during transition?
+- *Strangler Fig stall risk:* Can the migration be completed in bounded phases, or does it risk a permanent two-system maintenance burden?
+- *Data-at-rest migration:* Does the plan require lossy schema transformation or offline table locking?
+- *Network boundary inflation:* Does the proposal convert fast in-process method calls into distributed RPCs without latency/circuit-breaker justification?
+- *Avoid solution-anchoring:* Reframe the user's proposed solution into the underlying outcome before comparing options; do not let prompt vocabulary pre-select the alternative set.
 
 ### Step 5: Filter (quality bar)
 

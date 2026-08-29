@@ -63,6 +63,15 @@ Before launching, write a compact parent-side matrix:
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | … | … | low / medium / high | … | none / track … | … |
 
+## Adversarial inspection lenses
+
+When delegating track scopes, assign each worker a concrete adversarial lens based on track risk:
+
+- **Boundary & Exploit Lens:** Test for unvalidated input boundaries, path traversal, injection, unauthorized state mutation, missing rate limits, and unauthenticated side-effects.
+- **Failure & Silent Corruption Lens:** Hunt for swallowed exceptions, fallback defaults that mask upstream errors, unlogged catch blocks, and missing rollback logic on partial failures.
+- **State & Concurrency Lens:** Inspect shared mutable state, race conditions, TOCTOU vulnerabilities, unhandled async task cancellations, and database transaction isolation leaks.
+- **False-Confidence & Slop Lens:** Challenge tests that assert only mock interactions, tautological assertions, tests missing assertion statements, or tests that pass regardless of broken contract logic.
+
 ## Context and delegation guardrails
 
 These rules are mandatory because a stalled near-limit subagent is worse than
@@ -234,10 +243,12 @@ Repeat only for affected tracks:
 1. **Inventory** — the parent captures the merge base, changed paths, risk
    areas, and the track matrix.
 2. **Fan out** — launch N bounded, read-only tracks in parallel when independent.
-3. **Triage** — the parent verifies each finding against source and removes
-   duplicates, false positives, and style preferences that contradict project
-   conventions. Worker findings are not in the route report: read them from
-   the worker session results per the parent's launch notes.
+3. **Triage** — the parent verifies each candidate finding against the diff and codebase:
+   - *Line anchor check:* Verify that referenced line and code snippet match HEAD/merge-base diff.
+   - *Reachability check:* Verify whether caller context, type definitions, or upstream middleware neutralize the defect.
+   - *Contract verification:* Reject findings based on personal style or ungrounded assumptions; require a concrete failing scenario or violated invariant.
+   - *Intentional contract-change check:* Treat a PR description or issue as evidence of intent, not proof of correctness. Verify affected callers/consumers, migration/compatibility handling, tests, documentation, and rollback/recovery when breaking changes or deprecations are introduced.
+   - *Deduplication:* Merge duplicate findings across track boundaries into a single anchored item with primary ownership.
 4. **Targeted verification** — disputed or high-impact findings get a focused
    second verifier. It receives only the finding and affected paths.
 5. **Fix** — the parent applies legitimate critical/warning fixes and small

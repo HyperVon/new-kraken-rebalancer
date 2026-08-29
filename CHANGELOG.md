@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.10] - 2026-08-29
+
+### Added
+
+- **Adopt 8 new agent skills from `agent-guidance-kit`**:
+  - `codebase-orientation`: Evidence-backed mapping, architecture explanation, and newcomer onboarding for unfamiliar repositories.
+  - `harness-adaptation`: Guidance adaptation and discovery across coding harnesses via thin pointers, capability contracts, and normalized profiles (`references/capability-contract.md`).
+  - `implementation-planning`: Converting approved designs and requirements into execution-ready task breakdowns with explicit ownership and verification steps.
+  - `repository-guidance-authoring`: Authoring canonical `AGENTS.md`, repository instructions, and onboarding docs from repository evidence with strict separation of facts and policy.
+  - `requirements-and-design`: Clarifying desired outcomes, non-functional requirements, and constraints, and selecting design approaches before implementation.
+  - `review-feedback-resolution`: Anchored evaluation, triage, and disposition of review comments (`accepted`, `rejected-with-evidence`, `deferred`).
+  - `skill-discovery`: Proactive external guidance research with clean-room synthesis and provenance tracking.
+  - `threat-modeling`: Design-time STRIDE, PASTA, and LINDDUN threat models, trust boundaries, attacker capabilities, and abuse paths.
+  - `external-skill-intake`: Structured external skill intake procedure (`references/external-skill-intake.md`) for candidate evaluation.
+- **Skill catalog validator tool**: Added `.agents/scripts/validate_skills.py` to validate skill frontmatter, naming conventions, directory structure, markdown links, and 1:1 synchronization with the `.agents/AGENTS.md` index. Integrated into the pre-commit quality gate script (`.agents/skills/commit-and-push/scripts/pre_commit_check.sh`).
+
+### Changed
+
+- **Synchronize agent guidance catalog**: Updated `.agents/AGENTS.md` and `docs/AGENTIC_DEVELOPMENT.md` to reflect all 52 active project skills.
+- **Enrich 15 existing skills with upstream patterns**:
+  - `adversarial-pr-review`: Added adversarial inspection lenses (Boundary & Exploit, Failure & Silent Corruption, State & Concurrency, False-Confidence & Slop) and intentional contract-change verification.
+  - `architecture-review`: Added structured comparison matrix (Keep, Evolve, Replace, Greenfield) and migration hazard checks (dual-write split-brain, strangler fig stall, data-at-rest migration, network boundary inflation).
+  - `code-review`: Added high-risk defect categories and reviewer anti-patterns (style nitpicking, speculative vulnerabilities, phantom verification).
+  - `dependency-upgrade`: Added license change verification on upgrades, lockfile churn inspection, and additive schema expansion sequences.
+  - `documentation-review`: Added code snippet export/signature matching, CLI flag validation, config syntax validation, and link/anchor verification.
+  - `ui-visual-review` & `ui-manual-qa`: Added async freshness checks, late response invalidation, form submit protection, and semantic HTML (no ARIA).
+  - `commit-and-push` & `open-pr`: Added author identity verification, worktree safety, backup branch creation, issue closing keywords (`Fixes #123`), and candidate diff freeze checks.
+  - `continuous-quality` & `write-kotest`: Added interrupted-state & retry probes, mock contract fidelity, and timing/flakiness rules (`advanceUntilIdle()`).
+  - `security-review`: Added confirmed credential exposure containment protocol.
+  - `skill-authoring`: Added instruction rigidity calibration (Prescriptive, Guiding, Autonomous), 3-part description formula, and companion layout conventions.
+  - `skill-reviewer`: Added `external` review mode for candidate intake linked to `references/external-skill-intake.md`.
+  - `systematic-debugging`: Added performance profiling discipline and execution safety during history bisection.
+
 ## [6.17.9] - 2026-08-26
 
 ### Changed

@@ -173,10 +173,16 @@ or manually:
 ./gradlew test :frontend-js:jsBrowserTest
 ```
 
-Backend coverage (JaCoCo: 95% line/method/instruction, 90% branch) and Kotlin/JS
-Karma gates (90% statements/lines, 80% functions, 75% branches) must pass. If a bump
-breaks something you cannot resolve, revert that single bump and report it
-rather than lowering quality gates.
+- Backend coverage (JaCoCo: 95% line/method/instruction, 90% branch) and Kotlin/JS
+  Karma gates (90% statements/lines, 80% functions, 75% branches) must pass.
+- **Lockfile churn inspection:** Inspect `git diff kotlin-js-store/yarn.lock` to verify
+  that only targeted npm dependencies and their direct trees changed. Reject unexpected
+  sweeping changes to unrelated packages.
+- **License change triage:** Check package license changes on minor/major upgrades. If
+  a dependency changes from a permissive license (MIT, Apache-2.0, BSD) to copyleft or
+  proprietary (GPL, AGPL, SSPL, BSL), stop and request explicit approval.
+- **Schema & data shape changes:** For persistence updates, use an additive expand →
+  backfill → contract sequence. Keep old and new code valid at each deploy step.
 
 ### Step 7: Update docs
 
@@ -188,3 +194,5 @@ Update the version numbers in `.agents/AGENTS.md` §1, `README.md` (tech stack),
 - Do not bump only some artifacts of a shared version variable — keep families in lockstep.
 - Do not delete a security-motivated version pin to make a build pass.
 - Do not silence new deprecation warnings with `@Suppress`; migrate the code instead.
+- Do not accept a non-permissive license change without explicit approval.
+- Do not mix dependency bumps with feature or refactor work in the same commit.
