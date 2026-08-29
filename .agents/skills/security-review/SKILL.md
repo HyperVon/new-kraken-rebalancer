@@ -53,6 +53,12 @@ description: >-
    - *Reviewer artifact hygiene:* Never place real credentials, tokens, PII, or
      production URLs into test fixtures, eval inputs, or report excerpts you author.
      Use clearly fake placeholders (e.g., `AKIA-EXAMPLE-XXXX`, `user@example.com`).
+
+   **Confirmed credential exposure protocol:**
+   If a real, live secret (API key, private key, token, credential) is discovered committed to git or exposed in plain text:
+   1. Stop analysis immediately — do NOT copy, echo, log, or paste the secret value into chat, logs, or artifact summaries.
+   2. Notify the operator immediately with the file location and a generic reference (e.g. `found Kraken API secret key in src/...`).
+   3. Instruct the operator to revoke/rotate the credential at the provider immediately and scrub git history/backups.
 6. Try to disprove each candidate finding with a minimal safe local check.
    Record the precondition, evidence for and against it, confidence, and any
    missing deployment context. Distinguish a confirmed defect from a question,

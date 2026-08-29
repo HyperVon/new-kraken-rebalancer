@@ -161,6 +161,21 @@ not treat this skill’s checklist as a substitute.
 - CodeQL Java/Kotlin analysis runs on `main`; verify the workflow's Action/bundle
   pin and Kotlin compiler support before changing it.
 
+### High-risk defect categories
+
+- *Concurrency & atomicity:* unlocked mutexes/locks on early return or exception paths; check-then-act (TOCTOU) races; coroutine/thread leaks without lifecycle termination; unhandled async task failures.
+- *State transitions & persistence:* partial multi-step persistence writes lacking transaction rollback; missing database connection/file handle release in `finally` blocks; idempotency failures during retries.
+- *Input & boundary validation:* missing bounds, size, or type checks on untrusted payloads; unescaped inputs reaching regex/SQL/shell parsers; sensitive data leaked into log lines.
+- *Error propagation:* swallowed exceptions returning synthetic default values that masquerade as success; missing error wrapping that loses operational root cause.
+- *Effective fix / behavior change:* trace the reported root cause to changed lines and confirm the diff actually alters the behavior that produces it; adding only logging, formatting, or comments is an incomplete fix.
+
+### Reviewer anti-patterns to avoid
+
+- **Style nitpicking:** Do not report formatting, identifier casing, or subjective syntax preferences if automated linters (`spotlessCheck`) pass and code matches local conventions.
+- **Speculative vulnerabilities:** Do not report security flaws without demonstrating a concrete untrusted data flow, unverified input, or reachable abuse path.
+- **Scope creep & unsolicited redesign:** Do not demand an architectural rewrite when reviewing a localized bug fix or narrow feature addition.
+- **Phantom verification:** Never claim tests passed or code is verified without running the exact test command and inspecting output.
+
 ## Output template
 
 ````markdown

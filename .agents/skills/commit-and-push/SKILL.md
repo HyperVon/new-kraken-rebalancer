@@ -17,9 +17,11 @@ this workflow in order. Do NOT skip steps.
 ```bash
 git status
 git branch --show-current
+git config user.name
+git config user.email
 ```
 
-Ensure you are on the intended branch (not detached HEAD).
+Ensure you are on the intended branch (not detached HEAD) and author identity matches the user's intended git author. Never use destructive commands (`git reset --hard`, `git clean -fd`) without explicit user direction. If forced updates are authorized on a branch, create a backup branch (`git branch backup/<branch>-$(date +%Y%m%d)`) first.
 
 ## Step 1: Documentation
 

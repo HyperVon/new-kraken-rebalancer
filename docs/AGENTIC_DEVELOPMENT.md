@@ -161,9 +161,11 @@ harnesses.
 
 | Skill | What it covers |
 | :--- | :--- |
+| [`codebase-orientation`](../.agents/skills/codebase-orientation/SKILL.md) | Evidence-backed mapping, architecture explanation, and onboarding for unfamiliar codebases |
 | [`complex-code-comments`](../.agents/skills/complex-code-comments/SKILL.md) | Useful why-comments, stale comments, and comment noise |
 | [`dependency-upgrade`](../.agents/skills/dependency-upgrade/SKILL.md) | Stable dependency and toolchain upgrades plus API migrations |
 | [`gradle-quality-gates`](../.agents/skills/gradle-quality-gates/SKILL.md) | Spotless, ktlint, JaCoCo, Karma, CI, and coverage verification |
+| [`implementation-planning`](../.agents/skills/implementation-planning/SKILL.md) | Converting approved designs into execution-ready task breakdowns with verification steps |
 | [`kotlin-refactoring-and-cleanup`](../.agents/skills/kotlin-refactoring-and-cleanup/SKILL.md) | Idiomatic Kotlin cleanup, shared constants, warnings, and duplication |
 | [`reduce-code-size`](../.agents/skills/reduce-code-size/SKILL.md) | Behavior-preserving deletion, reuse, and cohesive file decomposition |
 | [`todo-resolution`](../.agents/skills/todo-resolution/SKILL.md) | Discovery, implementation, verification, and retirement of actionable TODO comments |
@@ -192,14 +194,20 @@ harnesses.
 | [`architecture-review`](../.agents/skills/architecture-review/SKILL.md) | Independent system redesign ideas without automatic implementation |
 | [`code-review`](../.agents/skills/code-review/SKILL.md) | Project-specific diff review for correctness, safety, and conventions |
 | [`commit-and-push`](../.agents/skills/commit-and-push/SKILL.md) | Documentation sync, full gates, deliberate commits, and branch pushes |
+| [`harness-adaptation`](../.agents/skills/harness-adaptation/SKILL.md) | Making canonical guidance discoverable by coding harnesses via thin pointers and capability profiling |
 | [`open-pr`](../.agents/skills/open-pr/SKILL.md) | Fully verified pull-request creation with structured evidence |
 | [`product-opportunity-review`](../.agents/skills/product-opportunity-review/SKILL.md) | User-needs discovery, feature opportunities, prioritization, and product roadmaps |
+| [`repository-guidance-authoring`](../.agents/skills/repository-guidance-authoring/SKILL.md) | Generating canonical AGENTS.md, rules, and onboarding instructions from repository evidence |
+| [`requirements-and-design`](../.agents/skills/requirements-and-design/SKILL.md) | Clarifying outcomes, non-functional requirements, constraints, and selecting design approaches |
+| [`review-feedback-resolution`](../.agents/skills/review-feedback-resolution/SKILL.md) | Anchored evaluation and disposition of review comments (accept, reject-with-evidence, defer) |
 | [`rules-and-skills-audit`](../.agents/skills/rules-and-skills-audit/SKILL.md) | Structural conflicts, redundancy, stale guidance, and consolidation |
 | [`security-review`](../.agents/skills/security-review/SKILL.md) | Evidence-backed security boundary, secrets, and data-flow audits |
 | [`skill-authoring`](../.agents/skills/skill-authoring/SKILL.md) | Approved creation and modification of project skills, routing, safety, and validation |
+| [`skill-discovery`](../.agents/skills/skill-discovery/SKILL.md) | Proactive external guidance research with clean-room synthesis and provenance tracking |
 | [`skill-reviewer`](../.agents/skills/skill-reviewer/SKILL.md) | Content improvements for the project agent playbook |
 | [`skill-optimizer`](../.agents/skills/skill-optimizer/SKILL.md) | Context-cost measurement and safe compression of agent guidance |
 | [`systematic-debugging`](../.agents/skills/systematic-debugging/SKILL.md) | Root-cause diagnosis for test/build failures and performance regressions |
+| [`threat-modeling`](../.agents/skills/threat-modeling/SKILL.md) | Design-time STRIDE/PASTA/LINDDUN threat models, trust boundaries, and abuse paths |
 
 ### Orchestration and continuous work
 

@@ -107,6 +107,13 @@ For **each** PNG under `$REVIEW_DIR`:
 3. Optionally open the live page in the browser for hover/focus states the PNG
    misses — still ground findings in what you saw.
 
+#### Async freshness & interaction review checklist
+
+- **Async freshness:** When asynchronous responses arrive (SSE updates, HTMX swaps), verify that late responses cannot overwrite newer state and that filter changes (e.g. History timeframe) invalidate superseded in-flight work.
+- **Async mutation protection:** Verify submit buttons indicate pending state during in-flight requests to prevent double submission.
+- **Keyboard navigation & focus:** Interactive elements must be reachable via `Tab`/`Enter`/`Space`; visible focus styles must never be suppressed with `outline: none` without a visible replacement.
+- **Semantic HTML (No ARIA):** Rely on semantic HTML elements (`<button>`, `<a>`, `<label for="...">`); do not add `aria-*` attributes per repository invariants.
+
 ### Step 4: Findings report
 
 Present findings to the user **before** any implementation. Use this structure:

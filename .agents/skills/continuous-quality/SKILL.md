@@ -254,6 +254,13 @@ disjoint. Suggested discovery tracks (pick what fits timebox):
 2. What happens on **failure** (partial sell, USD poll timeout, bad signature, corrupt JSON)?
 3. What happens on **mode mix-ups** (`simulation` + `dryRun`, live + dryRun)?
 4. What **use case** would a careful operator hit that no scenario names?
+5. **Interrupted-state & retry probes:** Probe multi-step transitions at intermediate failure points (e.g. durable live-order intent recorded but AddOrder network timeout; retry after partial fill; repeated delivery; rollback/compensation).
+
+**Mock contract fidelity & timing rules:**
+
+- Prefer testing against real public seams and in-memory fakes (`FakeKrakenService`) over deep mock hierarchies.
+- Do not assert only that a mock method was called; assert the observable state, returned value, or protocol side effect.
+- Never resolve a flaky test by adding arbitrary `Thread.sleep()` or bumping timeouts; use `advanceUntilIdle()` for coroutines or condition-based polling with bounded timeouts.
 
 Prefer **one sharp assertion** over snapshot soup. Prefer `FakeKrakenService` over
 brittle MockK for exchange behavior ([write-kotest](../write-kotest/SKILL.md)).

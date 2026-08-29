@@ -81,6 +81,9 @@ Keep these visible contracts in mind while running cases:
 6. **History** — Six summary cards; chart title + zoom in one header row; net
    cash flow caption; successful trade rows use a subtle status dot; zero USD
    price/fee show em dash; failed/dry-run badges remain.
+7. **Async freshness & protection** — Verify timeframe changes cleanly cancel/supersede
+   in-flight queries; Settings submit buttons indicate pending state during in-flight saves;
+   semantic HTML used without `aria-*` attributes.
 
 ---
 

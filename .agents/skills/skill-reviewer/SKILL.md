@@ -26,6 +26,7 @@ unless the user asks (or picks Apply on a decisions canvas).
 | :--- | :--- | :--- |
 | **`content`** (default) | “Enhance skills”, “add more guidance”, first full review | ≥70% findings = draft content to add |
 | **`meta`** | “Index drift”, “routing only”, prefer-table sync | Structure / discoverability only |
+| **`external`** | “Review external skill / guidance repo”, intake candidate | Behavioral comparison → evidence table → intake disposition per [external-skill-intake.md](references/external-skill-intake.md) |
 | **`full`** | Explicit “full scope” / “everything” | Content + meta; content still leads |
 
 If the user does not name a mode, use **`content`**. Do **not** ship a report

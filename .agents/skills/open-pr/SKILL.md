@@ -80,9 +80,11 @@ affected tracks until that skill converges.
 
 Conventional title (`feat:`, `fix:`, `docs:`, …). Body template:
 `examples/sample_pr_body.md` (overview, changes, verification including
-coverage/lint).
+coverage/lint). Use explicit issue closing keywords (`Closes #123`, `Fixes #456`)
+when addressing tracked backlog items.
 
 **Test plan rule:** only checked items. Every `[x]` must already be done.
+Confirm candidate `BASE_SHA...HEAD_SHA` diff has converged and all gates passed.
 
 ## Step 6: Create via `gh`
 

@@ -198,6 +198,13 @@ High-risk mismatch examples:
   `SimulationEvaluationScenariosTest`
 - Config template missing keys present on `Settings`
 
+#### Code snippet, flag, and link verification
+
+- **Export & signature match:** Verify that imported symbols, class names, method signatures, and parameter names match current source exports exactly.
+- **CLI flag validation:** Compare flags against CLI help output (`--help`) or argument parser definitions.
+- **Config syntax validation:** Parse configuration examples (`rebalancer-config-template.json`) against current parser models (`Settings`, `AppConfig`).
+- **Link and anchor verification:** Verify that every relative file link resolves to a tracked file and heading anchors match exact slugified header text. Run `python3 .agents/scripts/validate_skills.py` to verify links deterministically.
+
 #### Mermaid compatibility
 
 GitHub ships a modern Mermaid, but IDE preview panes may still bundle 8.x, where a
@@ -337,6 +344,9 @@ Do not declare complete until markdown lint is clean on touched files.
   (use docs-screenshot-refresh instead)
 - Shipping Mermaid that only renders on GitHub (skipping `validate_mermaid.py`
   against 8.x / IDE preview)
+- **Narrative bloat:** adding conversational fluff or tutorial walkthroughs to reference docs
+- **Internal leak:** copying internal test fixtures or private developer paths into public guides
+- **Duplicate truth:** copying full procedural text across multiple docs instead of linking to the canonical owner
 
 ---
 
