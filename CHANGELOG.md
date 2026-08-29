@@ -95,7 +95,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Removed
 
 - Coverage-padding tests asserting compiler-generated behavior only (`EngineModelTest` property/tautology blocks, `CommonApiModelsTest` construct-and-read-back tests) and a duplicate fiat-correction test in `RebalancerEngineTest`; `PortfolioManagerLoopTest` exception-handling test gained an explicit completion assertion.
->>>>>>> origin/main
 
 ## [6.17.6] - 2026-08-21
 

@@ -1,4 +1,5 @@
 # Taste Guidelines
+
 - Prefers read-only adversarial code reviews to inspect the exact requested HEAD or working tree, with no file edits, commits, pushes, PRs, builds, servers, or mutating commands unless explicitly authorized. Confidence: 0.99
 - Prefers review results to be concise and strictly actionable, with severity labels, precise path/line evidence, coverage boundaries, and an explicit convergence status; follows exact output templates when provided. Confidence: 0.99
 - Prefers implementation choices that match the repository’s established patterns and DSLs (for example, using Exposed DSL rather than introducing raw SQL when practical). Confidence: 0.95
