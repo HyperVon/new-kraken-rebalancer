@@ -112,6 +112,8 @@ def _parse_frontmatter_fallback(frontmatter: str) -> dict:
                 data[current_key] = " ".join(multiline_val).strip()
                 multiline_val = []
             current_key = key_match.group(1)
+            if current_key in data:
+                raise ValueError(f"found duplicate key {current_key!r}")
             val = key_match.group(2).strip()
             if val:
                 multiline_val.append(val)
@@ -185,9 +187,14 @@ def _validate_metadata(metadata: dict, skill_dir: Path | None = None) -> tuple[s
                 f"Description exceeds {MAX_DESCRIPTION_LENGTH} character limit ({len(metadata['description'])} chars)"
             )
 
-    for field in ("license", "allowed-tools"):
-        if field in metadata and not isinstance(metadata[field], str):
-            errors.append(f"Field '{field}' must be a string")
+    for field in ("license", "allowed-tools", "compatibility"):
+        if field in metadata:
+            if not isinstance(metadata[field], str):
+                errors.append(f"Field '{field}' must be a string")
+            elif field == "compatibility" and len(metadata[field]) > MAX_COMPATIBILITY_LENGTH:
+                errors.append(
+                    f"Field 'compatibility' exceeds {MAX_COMPATIBILITY_LENGTH} character limit"
+                )
 
     if errors:
         raise ValueError("; ".join(errors))

@@ -25,7 +25,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Synchronize agent guidance catalog**: Updated `.agents/AGENTS.md` and `docs/AGENTIC_DEVELOPMENT.md` to reflect all 52 active project skills.
-- **Enrich 11 existing skills with upstream patterns**:
+- **Enrich 15 existing skills with upstream patterns**:
   - `adversarial-pr-review`: Added adversarial inspection lenses (Boundary & Exploit, Failure & Silent Corruption, State & Concurrency, False-Confidence & Slop) and intentional contract-change verification.
   - `architecture-review`: Added structured comparison matrix (Keep, Evolve, Replace, Greenfield) and migration hazard checks (dual-write split-brain, strangler fig stall, data-at-rest migration, network boundary inflation).
   - `code-review`: Added high-risk defect categories and reviewer anti-patterns (style nitpicking, speculative vulnerabilities, phantom verification).
