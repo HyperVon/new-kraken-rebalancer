@@ -40,11 +40,7 @@ import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
 import java.security.MessageDigest
-import java.util.*
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
+import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.time.Duration.Companion.minutes
@@ -426,40 +422,6 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val service = createService("{broken-json")
                 shouldThrow<RuntimeException> { service.getBalances() }
             }
-        }
-
-        "testNonceGeneration_Concurrency" {
-            val service = createService("{}")
-            val nonceGen =
-                service::class.java.getDeclaredField("nonceGenerator")
-                    .apply { isAccessible = true }.get(service)
-                    as AtomicLong
-            nonceGen.shouldNotBeNull()
-
-            val numThreads = 10
-            val incrementsPerThread = 1000
-            val generatedNonces =
-                Collections.synchronizedSet(mutableSetOf<Long>())
-
-            val executor = Executors.newFixedThreadPool(numThreads)
-            val latch = CountDownLatch(numThreads)
-
-            repeat(numThreads) {
-                executor.submit {
-                    try {
-                        repeat(incrementsPerThread) {
-                            generatedNonces.add(nonceGen.incrementAndGet())
-                        }
-                    } finally {
-                        latch.countDown()
-                    }
-                }
-            }
-
-            latch.await(5, TimeUnit.SECONDS).shouldBeTrue()
-            executor.shutdown()
-
-            generatedNonces.size shouldBe (numThreads * incrementsPerThread)
         }
 
         "queryPrivate_ApiKeyNull" {

@@ -150,8 +150,8 @@ effectively than spreading across all pairs.
    - **Pre-flight order guards** (`OrderExecutorImpl.executeSingleOrder` via `RebalanceSessionContext`): after
      the dust check, abort when `usdAmount.signum() <= 0` or the computed
      `volume.signum() <= 0` — return `null`; do not call `executeOrder`.
-   - Applies when `minimumOrderSizeUSD = 0`, or when a buy is trimmed to $0 by the
-     99% cycle budget.
+   - Applies in test doubles where `minimumOrderSizeUSD` is configured to 0, or in
+     production when a buy is trimmed to $0 by the 99% cycle budget.
    - Anti-pattern: relying on Kraken to reject zero volume — the app would still
      persist a `TradeRecord`.
 5. **Live submission journal** — when `!dryRun && !simulation`, persist a

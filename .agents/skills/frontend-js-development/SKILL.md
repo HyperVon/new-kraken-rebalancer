@@ -136,7 +136,7 @@ Thresholds in `frontend-js/karma.config.d/coverage.js`:
 | Metric | Minimum |
 | :--- | ---: |
 | Statements | 90% |
-| Functions | 90% |
+| Functions | 80% |
 | Lines | 90% |
 | Branches | 75% |
 

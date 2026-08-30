@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.11] - 2026-08-29
+
+### Added
+
+- **New edge-case tests**: Settle failure on negative/empty balance poll (`PortfolioExecutionEdgeCasesTest`), cancellation propagation in health/readiness endpoints (`DashboardOperationalApiTest`), malformed legacy submission-state migration, and cancellation during durable intent persistence (`OrderSubmissionJournalE2ETest`).
+- **KDoc**: RFC 8259 explanation on `escapeJsonStringValue` in `ConfigServiceImpl`.
+
+### Changed
+
+- **Legacy-order safety**: Replaced query-proven forced unwraps in `LegacyDataRepair.kt` with explicit invariant checks; malformed live-order state is never defaulted to `CONFIRMED` or silently discarded.
+- **NonCancellable logging protection**: Wrapped `markSubmissionFailureWithoutMasking` in `withContext(NonCancellable)` in `OrderExecutorImpl` to prevent cancellation from swallowing failure diagnostics.
+- **CSRF cookie hardening**: Added explicit `Max-Age=86400` to CSRF cookie in `CsrfProtection`.
+- **README package tree sync**: Added `IndexRepair.kt`, `LegacyDataRepair.kt`, `MigrationBackup.kt`, `SchemaMigrations.kt` to `config/`; removed orphan `KrakenApiConstants.kt` from `service/impl/`; added transport/security/parser classes; alphabetized listing.
+- **SECURITY.md runbook**: Corrected intent resolution section to document the dashboard Action Required banner and form.
+- **ALGORITHM.md**: Documented `fiatDeploymentExponent ≤ 0` disabling condition alongside `fiatMaxDrawdown ≤ 0`.
+- **Skills alignment**: Unified Istanbul function threshold to 80% across 5 skills, removed volatile `/tmp` path in `kraken-api-integration`, made `validate_mermaid.py` fail-secure on TLS/download errors with consistent cache validation, restored cross-workflow issue deduplication and partial-resolution guidance, and standardized model-selection rule titles in `.cursor/` and `.clinerules/`.
+- **Evaluation scenario reorganization**: Renamed split files from 29–34/35–38 to 29–35/36–41 for sequential consistency.
+
+### Removed
+
+- **Test slop**: Removed `AtomicLong` reflection concurrency test (tested JDK, not app code), private COLUMNS and `loadIcon` reflection tests from `DashboardViewTest`.
+- **Duplicate YAML**: Deleted `src/main/resources/codegen/css-theme.yaml` (`:common` YAML is canonical).
+
 ## [6.17.10] - 2026-08-29
 
 ### Added

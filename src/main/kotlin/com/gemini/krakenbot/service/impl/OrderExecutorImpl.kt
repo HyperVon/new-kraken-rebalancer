@@ -302,11 +302,13 @@ class OrderExecutorImpl(
             try {
                 orderIntentService?.savePending(intent)
             } catch (e: Exception) {
-                markSubmissionFailureWithoutMasking(
-                    pending.copy(submissionState = OrderSubmissionState.PENDING),
-                    pendingId,
-                    e,
-                )
+                withContext(NonCancellable) {
+                    markSubmissionFailureWithoutMasking(
+                        pending.copy(submissionState = OrderSubmissionState.PENDING),
+                        pendingId,
+                        e,
+                    )
+                }
                 throw e
             }
         } else {

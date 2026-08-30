@@ -24,6 +24,7 @@ import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import kotlinx.coroutines.CancellationException
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -574,6 +575,22 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+        }
+
+        "health and readiness expose diagnostic cancellation as an internal server error" {
+            coEvery { tradeHistoryService.getHistoryStats() } throws CancellationException("Parent job cancelled")
+
+            testApplication {
+                application { configureTestEnv() }
+
+                // testApplication converts the unhandled CancellationException to HTTP 500; the
+                // route must not swallow it and fabricate a normal diagnostic response.
+                val healthResponse = client.get("/api/health")
+                healthResponse.status shouldBe HttpStatusCode.InternalServerError
+
+                val readinessResponse = client.get("/api/readiness")
+                readinessResponse.status shouldBe HttpStatusCode.InternalServerError
             }
         }
     }

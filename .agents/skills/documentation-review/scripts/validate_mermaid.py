@@ -43,6 +43,7 @@ PROJECT_ROOT = SCRIPT_DIR.parents[3]
 MERMAID_VERSION = "8.8.0"
 MERMAID_URL = f"https://unpkg.com/mermaid@{MERMAID_VERSION}/dist/mermaid.min.js"
 MERMAID_CACHE = Path(f"/tmp/mermaid-{MERMAID_VERSION}.js")
+MIN_MERMAID_BYTES = 100_000
 DEFAULT_FILES = (
     PROJECT_ROOT / "README.md",
     PROJECT_ROOT / "docs" / "ALGORITHM.md",
@@ -68,11 +69,36 @@ def find_chrome(explicit: Path | None) -> Path:
     sys.exit("Chrome/Chromium not found. Pass --chrome PATH or set CHROME_PATH.")
 
 
+def is_valid_mermaid_artifact(path: Path) -> bool:
+    try:
+        return path.is_file() and path.stat().st_size > MIN_MERMAID_BYTES
+    except OSError:
+        return False
+
+
 def ensure_mermaid() -> Path:
-    if MERMAID_CACHE.is_file() and MERMAID_CACHE.stat().st_size > 100_000:
+    if is_valid_mermaid_artifact(MERMAID_CACHE):
         return MERMAID_CACHE
     print(f"Downloading Mermaid {MERMAID_VERSION} → {MERMAID_CACHE}")
-    urllib.request.urlretrieve(MERMAID_URL, MERMAID_CACHE)
+    try:
+        # urllib uses the platform/Python trust store here; certificate failures must remain fatal.
+        with urllib.request.urlopen(MERMAID_URL, timeout=15) as response:
+            artifact = response.read()
+        if len(artifact) <= MIN_MERMAID_BYTES:
+            raise ValueError(
+                f"Downloaded Mermaid artifact is suspiciously short ({len(artifact)} bytes; "
+                f"expected more than {MIN_MERMAID_BYTES})."
+            )
+        MERMAID_CACHE.write_bytes(artifact)
+    except Exception as err:
+        if is_valid_mermaid_artifact(MERMAID_CACHE):
+            print(f"Warning: Failed to download Mermaid ({err}), using existing cached file {MERMAID_CACHE}")
+            return MERMAID_CACHE
+        sys.exit(
+            f"Error: Unable to download Mermaid {MERMAID_VERSION} from {MERMAID_URL} ({err}).\n"
+            f"If working offline, place a valid mermaid.min.js manually at {MERMAID_CACHE}, "
+            "or configure Python's trusted CA store."
+        )
     return MERMAID_CACHE
 
 

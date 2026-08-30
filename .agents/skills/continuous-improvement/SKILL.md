@@ -121,24 +121,25 @@ Track work in **two places** with different roles:
 
 ### GitHub issue rules
 
-1. Ensure labels exist (create once if missing):
+1. Ensure tracking labels exist (`continuous-improvement`, `size/S`, `size/M`, `size/L`):
 
    ```bash
-   gh label create "continuous-improvement" --color "0E8A16" --description "From continuous-improvement cycles" 2>/dev/null || true
-   gh label create "size/S" --color "C2E0C6" --description "Small continuous-improvement item" 2>/dev/null || true
-   gh label create "size/M" --color "FEF2C0" --description "Medium continuous-improvement item" 2>/dev/null || true
-   gh label create "size/L" --color "F9D0C4" --description "Large / needs approval" 2>/dev/null || true
+   for l in "continuous-improvement:0E8A16" "size/S:C2E0C6" "size/M:FEF2C0" "size/L:F9D0C4"; do
+     IFS=: read -r name color <<< "$l"
+     gh label create "$name" --color "$color" 2>/dev/null || true
+   done
    ```
 
-2. Before creating, **dedupe**:
+2. Before creating, dedupe against all related tracking surfaces:
 
    ```bash
    gh issue list --state open --label continuous-improvement --limit 50
-   # also: gh issue list --state open --search "keyword from summary"
+   gh issue list --state open --search "keyword from summary"
+   # also check continuous-quality issues for the same bug or finding
+   gh issue list --state open --label continuous-quality --limit 50
    ```
 
-3. Create an issue for each **L** or cross-cycle **deferred** item that has no
-   Issue link yet:
+3. Create an issue for each **L** or cross-cycle **deferred** item without an issue link:
 
    ```bash
    gh issue create \
@@ -163,12 +164,11 @@ Track work in **two places** with different roles:
    )"
    ```
 
-4. Write the issue number into the backlog `Issue` column (`#NN`).
-5. **Do not** open issues for S/M items that will ship in the same cycle PR
-   unless the user asks — the backlog file is enough.
-6. When a PR ships an item: comment on linked issues and `gh issue close N`
-   (or leave open if only partially addressed). Reference issues in the PR body
-   (`Closes #NN` when fully done).
+4. Record the issue number in the backlog `Issue` column (`#NN`).
+5. **Do not** open issues for S/M items shipping in the same cycle PR — the backlog file suffices.
+6. When shipping, distinguish resolution status:
+   - Fully resolved: reference with `Closes #NN` and close via `gh issue close N`.
+   - Partially resolved: comment what shipped, update the remaining scope, and keep the issue open.
 
 ### Discover-only mode
 

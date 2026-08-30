@@ -245,6 +245,55 @@ class DatabaseConfigTest : StringSpec() {
             }
         }
 
+        "does not promote null or unknown legacy submission states to CONFIRMED" {
+            val databaseUrl = "jdbc:sqlite:file:malformed-legacy-guard-${UUID.randomUUID()}?mode=memory&cache=shared"
+            val db = DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES
+                        (
+                            1700000002000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'missing state', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            'cycle-null-state', NULL, NULL, 'client-null-state', NULL
+                        ), (
+                            1700000003000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'unknown state', '50000.00000000', '0.0000', NULL, '50000.00000000', 'LOCAL_ESTIMATE',
+                            'cycle-unknown-state', NULL, NULL, 'client-unknown-state', 'UNKNOWN'
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("SELECT COUNT(*) FROM order_intents").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 0
+                    }
+                    statement.executeQuery("SELECT submission_state FROM trades ORDER BY id").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString(1) shouldBe null
+                        resultSet.next() shouldBe true
+                        resultSet.getString(1) shouldBe "UNKNOWN"
+                    }
+                }
+            }
+
+            runTest {
+                SqliteTradeRepositoryImpl(db).hasPendingSubmissions() shouldBe true
+            }
+        }
+
         "imports duplicate legacy guards without collapsing their local trade identities" {
             val databaseUrl = "jdbc:sqlite:file:duplicate-legacy-guard-${UUID.randomUUID()}?mode=memory&cache=shared"
             DatabaseConfig.init(databaseUrl)

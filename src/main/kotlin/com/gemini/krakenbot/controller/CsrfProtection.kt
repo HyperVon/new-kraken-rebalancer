@@ -33,7 +33,7 @@ internal object CsrfProtection {
         val secureAttr = if (isSecure) "; Secure" else ""
         call.response.header(
             HttpHeaders.SetCookie,
-            "$COOKIE_NAME=$token; Path=/; HttpOnly; SameSite=Strict$secureAttr",
+            "$COOKIE_NAME=$token; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400$secureAttr",
         )
         return token
     }

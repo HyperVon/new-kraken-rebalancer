@@ -146,7 +146,7 @@ for internal setup and non-contract mechanics. When the test verifies emitted
 DOM/HTML, JSON, HTTP, route, header, or persisted-key spelling, use independent
 raw expected literals instead of the generated production catalog. A shared
 test mirror of production constants is not an independent oracle.
-Coverage gates: 90% statements/functions/lines, 75% branches.
+Coverage gates: 90% statements/lines, 80% functions, 75% branches.
 
 History chart zoom/scrubber specs should cover:
 

@@ -227,6 +227,17 @@ class ConfigServiceImpl internal constructor(
         escapeJsonStringValue(resolvedValue)
     }
 
+    /**
+     * Escapes a raw string value for safe in-place substitution inside JSON text.
+     *
+     * Delegates serialization to Jackson's [ObjectMapper.writeValueAsString] so every JSON string
+     * control character (quotes, backslashes, newlines, carriage returns, tabs, backspaces, and
+     * ISO control characters U+0000..U+001F) is strictly and correctly escaped according to RFC 8259.
+     * This avoids injection vulnerabilities or syntax corruption when environment variable placeholders
+     * are resolved into raw JSON templates prior to model parsing and atomic configuration file writes.
+     * Jackson emits a fully escaped JSON string literal including surrounding double quotes; stripping
+     * only those outer quotes yields the safe in-place content.
+     */
     private fun escapeJsonStringValue(value: String): String {
         // Substitute through Jackson rather than a hand-maintained table so every JSON string
         // control character (quote, backslash, newline, carriage return, tab, backspace, U+0000..001F)
