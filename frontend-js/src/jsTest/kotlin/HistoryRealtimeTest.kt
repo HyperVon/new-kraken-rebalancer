@@ -266,106 +266,67 @@ class HistoryRealtimeTest : StringSpec() {
             }
         }
 
-        "EventSource lifecycle wires callbacks and cleanup" {
+        "HTMX SSE messages refresh History and listener cleanup is idempotent" {
             resetHistoryUiState()
             teardownHistoryRealtimeUpdates()
             val container = document.createElement("div")
-            container.innerHTML = TestDomBuilders.historyDom()
+            container.innerHTML = TestDomBuilders.historyRealtimeDom()
             document.body!!.appendChild(container)
-            val createdUrls = mutableListOf<String>()
-            val sources = mutableListOf<dynamic>()
-            var closeCalls = 0
-            // Expose fake constructor on both window and globalThis for js(\"new EventSource\") lookup.
-            window.asDynamic().EventSource = { url: String ->
-                val source: dynamic = jsObject {
-                    close = { closeCalls++ }
-                    onmessage = null
-                    onerror = null
-                }
-                createdUrls.add(url)
-                sources.add(source)
-                source
-            }
-            js("globalThis.EventSource = window.EventSource")
             window.asDynamic().Chart = mockChartConstructor()
+            var snapshotRangeSeen: String? = null
+            var fetchCalls = 0
+            window.asDynamic().fetch = mockFetch { url ->
+                fetchCalls++
+                if (url.contains("snapshots")) {
+                    snapshotRangeSeen = url.substringAfter("range=")
+                }
+                mockHistoryFetchHandler(syncProgress = json("seeded" to true))(url)
+            }
+            registerHistoryGlobals()
             val originalSetTimeout = window.asDynamic().setTimeout
             val originalClearTimeout = window.asDynamic().clearTimeout
-            val originalAddEventListener = window.asDynamic().addEventListener
-            val originalRemoveEventListener = window.asDynamic().removeEventListener
             var nextTimeoutId = 0
-            var reconnectCallback: (() -> Unit)? = null
-            val beforeUnloadCallbacks = mutableListOf<dynamic>()
-            val activeBeforeUnloadCallbacks = mutableListOf<dynamic>()
-            val clearCalls = mutableListOf<Int>()
-            window.asDynamic().setTimeout = { callback: () -> Unit, delay: Int ->
+            val timeoutCallbacks = mutableMapOf<Int, () -> Unit>()
+            val canceledTimeoutIds = mutableSetOf<Int>()
+            window.asDynamic().setTimeout = { callback: () -> Unit, _: Int ->
                 nextTimeoutId++
-                if (delay == HISTORY_REALTIME_RECONNECT_MS) reconnectCallback = callback
+                timeoutCallbacks[nextTimeoutId] = callback
                 nextTimeoutId
             }
             window.asDynamic().clearTimeout = { id: Int ->
-                clearCalls.add(id)
-            }
-            window.asDynamic().addEventListener = { type: String, callback: dynamic ->
-                if (type == "beforeunload") {
-                    beforeUnloadCallbacks.add(callback)
-                    activeBeforeUnloadCallbacks.add(callback)
-                }
-            }
-            window.asDynamic().removeEventListener = { type: String, callback: dynamic ->
-                if (type == "beforeunload") activeBeforeUnloadCallbacks.remove(callback)
+                canceledTimeoutIds.add(id)
             }
             try {
                 (document.getElementById("sync-progress-banner") as HTMLElement)
                     .classList.add(CssClass.Utility.Hidden.value)
+                currentRange = TimeRange.SEVEN_DAYS.key
+                loadedRange = TimeRange.SEVEN_DAYS.key
+                val root = document.getElementById("history-realtime-root")!!
+
                 setupHistoryRealtimeUpdates()
                 historyRealtimeActiveForTest() shouldBe true
-                createdUrls shouldBe listOf("/api/status/stream")
-                sources.size shouldBe 1
-                beforeUnloadCallbacks.size shouldBe 1
-                activeBeforeUnloadCallbacks.size shouldBe 1
-                (sources[0].onmessage != null) shouldBe true
-                (sources[0].onerror != null) shouldBe true
-
-                sources[0].onmessage(null)
+                // Reinitialization must replace the old listener rather than accumulate one.
+                setupHistoryRealtimeUpdates()
+                root.asDynamic().dispatchEvent(js("new Event('sse:message')"))
+                nextTimeoutId shouldBe 1
                 historyRealtimeDebouncePendingForTest() shouldBe true
+                timeoutCallbacks[1]!!.invoke()
+                fetchCalls shouldBe 5
+                awaitPromiseQueue()
+                Promise.resolve(Unit).await()
+                awaitPromiseQueue()
+                snapshotRangeSeen shouldBe TimeRange.SEVEN_DAYS.key
 
-                sources[0].onerror(null)
-                closeCalls shouldBe 1
+                val timeoutCountBeforeTeardown = nextTimeoutId
+                teardownHistoryRealtimeUpdates()
                 historyRealtimeActiveForTest() shouldBe false
-                reconnectCallback!!.invoke()
-                historyRealtimeActiveForTest() shouldBe true
-                createdUrls shouldBe listOf("/api/status/stream", "/api/status/stream")
-                sources.size shouldBe 2
-                beforeUnloadCallbacks.size shouldBe 2
-                activeBeforeUnloadCallbacks.size shouldBe 1
-                (sources[1].onmessage != null) shouldBe true
-                (sources[1].onerror != null) shouldBe true
-                clearCalls.size shouldBe 1
-
-                // An old source message must not refresh over the replacement source.
-                val timeoutCountBeforeStaleMessage = nextTimeoutId
-                sources[0].onmessage(null)
-                nextTimeoutId shouldBe timeoutCountBeforeStaleMessage
                 historyRealtimeDebouncePendingForTest() shouldBe false
-
-                // An old source error must not tear down or reconnect the current source.
-                sources[0].onerror(null)
-                closeCalls shouldBe 1
-                historyRealtimeActiveForTest() shouldBe true
-
-                activeBeforeUnloadCallbacks[0](null)
-                historyRealtimeActiveForTest() shouldBe false
-                closeCalls shouldBe 2
-                historyRealtimeDebouncePendingForTest() shouldBe false
-                activeBeforeUnloadCallbacks.size shouldBe 0
+                root.asDynamic().dispatchEvent(js("new Event('sse:message')"))
+                nextTimeoutId shouldBe timeoutCountBeforeTeardown
             } finally {
                 teardownHistoryRealtimeUpdates()
                 window.asDynamic().setTimeout = originalSetTimeout
                 window.asDynamic().clearTimeout = originalClearTimeout
-                window.asDynamic().addEventListener = originalAddEventListener
-                window.asDynamic().removeEventListener = originalRemoveEventListener
-                window.asDynamic().EventSource = js("undefined")
-                js("globalThis.EventSource = undefined")
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
             }
@@ -375,17 +336,10 @@ class HistoryRealtimeTest : StringSpec() {
             resetHistoryUiState()
             teardownHistoryRealtimeUpdates()
             document.body!!.innerHTML = "<div>not history</div>"
-            window.asDynamic().EventSource = { _: String ->
-                // should not be called
-                throw RuntimeException("EventSource should not be created off history page")
-            }
-            js("globalThis.EventSource = window.EventSource")
             try {
                 setupHistoryRealtimeUpdates()
                 historyRealtimeActiveForTest() shouldBe false
             } finally {
-                window.asDynamic().EventSource = js("undefined")
-                js("globalThis.EventSource = undefined")
                 teardownHistoryRealtimeUpdates()
                 document.body!!.innerHTML = ""
                 resetHistoryUiState()

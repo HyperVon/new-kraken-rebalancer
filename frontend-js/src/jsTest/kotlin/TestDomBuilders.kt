@@ -69,6 +69,13 @@ object TestDomBuilders {
         ${historyDom()}
         """.trimIndent()
 
+    fun historyRealtimeDom(): String =
+        """
+        <div id="history-realtime-root" hx-ext="sse" sse-connect="/api/status/stream">
+            ${historyViewsDom()}
+        </div>
+        """.trimIndent()
+
     fun settingsDom(): String =
         """
         <span id="mode-plate" class="mode-plate mode-dry-run" title="${ViewText.MODE_DRY_RUN_TITLE}">

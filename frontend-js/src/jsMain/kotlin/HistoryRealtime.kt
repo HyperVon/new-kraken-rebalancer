@@ -1,19 +1,17 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.Routes
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.HTMLElement
 
 internal const val HISTORY_REALTIME_DEBOUNCE_MS: Int = 450
-internal const val HISTORY_REALTIME_RECONNECT_MS: Int = 4000
 
-private var historyEventSource: dynamic = null
 private var historyRealtimeDebounceId: Int? = null
-private var historyRealtimeReconnectId: Int? = null
-private var historyRealtimeBeforeUnloadHandler: dynamic = null
+private var historyRealtimeRoot: HTMLElement? = null
+private var historyRealtimeEventListener: dynamic = null
 
 internal fun isHistoryPage(): Boolean = document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART) != null
 
@@ -42,70 +40,32 @@ internal fun scheduleHistoryRealtimeReload() {
 internal fun teardownHistoryRealtimeUpdates() {
     historyRealtimeDebounceId?.let { window.clearTimeout(it) }
     historyRealtimeDebounceId = null
-    historyRealtimeReconnectId?.let { window.clearTimeout(it) }
-    historyRealtimeReconnectId = null
-    if (historyRealtimeBeforeUnloadHandler != null) {
-        val handler = historyRealtimeBeforeUnloadHandler
+    val root = historyRealtimeRoot
+    val listener = historyRealtimeEventListener
+    if (root != null && listener != null) {
         try {
-            window.asDynamic().removeEventListener("beforeunload", handler)
+            root.asDynamic().removeEventListener(HtmlEvents.SSE_MESSAGE, listener)
         } catch (_: Throwable) {
         }
-        historyRealtimeBeforeUnloadHandler = null
     }
-    try {
-        historyEventSource?.close?.call(historyEventSource)
-    } catch (_: Throwable) {
-    }
-    historyEventSource = null
+    historyRealtimeRoot = null
+    historyRealtimeEventListener = null
 }
 
 internal fun setupHistoryRealtimeUpdates() {
-    if (!isHistoryPage()) return
     teardownHistoryRealtimeUpdates()
+    if (!isHistoryPage()) return
+    val root = document.getElementById(HtmlIds.HISTORY_REALTIME_ROOT) as? HTMLElement ?: return
     try {
-        val url = Routes.API_STATUS_STREAM
-        val es: dynamic = js("new (window.EventSource || EventSource)(url)")
-        historyEventSource = es
-        es.onmessage = { _: dynamic ->
-            if (historyEventSource === es) {
-                scheduleHistoryRealtimeReload()
-            }
-        }
-        es.onerror = { _: dynamic ->
-            if (historyEventSource === es) {
-                try {
-                    es.close()
-                } catch (_: Throwable) {
-                }
-                historyEventSource = null
-                historyRealtimeReconnectId?.let { window.clearTimeout(it) }
-                historyRealtimeReconnectId = window.setTimeout({
-                    historyRealtimeReconnectId = null
-                    if (isHistoryPage()) {
-                        try {
-                            setupHistoryRealtimeUpdates()
-                        } catch (_: Throwable) {
-                        }
-                    }
-                }, HISTORY_REALTIME_RECONNECT_MS)
-            }
-        }
-        // Ensure cleanup when navigating away.
-        if (historyRealtimeBeforeUnloadHandler == null) {
-            val handler: dynamic = { _: dynamic ->
-                teardownHistoryRealtimeUpdates()
-            }
-            try {
-                window.asDynamic().addEventListener("beforeunload", handler)
-                historyRealtimeBeforeUnloadHandler = handler
-            } catch (_: Throwable) {
-            }
-        }
+        val listener: dynamic = { _: dynamic -> scheduleHistoryRealtimeReload() }
+        root.asDynamic().addEventListener(HtmlEvents.SSE_MESSAGE, listener)
+        historyRealtimeRoot = root
+        historyRealtimeEventListener = listener
     } catch (_: Throwable) {
-        // EventSource unavailable in this environment (e.g. jsTest); degrade silently.
+        // HTMX SSE may be unavailable in a non-browser test environment; degrade silently.
     }
 }
 
-internal fun historyRealtimeActiveForTest(): Boolean = historyEventSource != null
+internal fun historyRealtimeActiveForTest(): Boolean = historyRealtimeEventListener != null
 
 internal fun historyRealtimeDebouncePendingForTest(): Boolean = historyRealtimeDebounceId != null

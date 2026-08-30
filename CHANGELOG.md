@@ -10,12 +10,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Real-time History page (QO-HIST01)**: History charts, trade table, and summary cards now refresh automatically via SSE when new snapshots/trades arrive — `frontend-js/src/jsMain/kotlin/HistoryRealtime.kt` subscribes to `GET /api/status/stream` (`TradeHistorySnapshotStore.snapshotFlow`), debounces (450 ms) and calls `loadAll(historyCurrentRange())` while preserving legend visibility (`visibilityStates`), selected `TimeRange`, show-dry-run checkbox, and view preset (`HistorySessionState`); skips while `SYNC_PROGRESS_BANNER` is visible, auto-reconnects on `onerror` (4 s), and tears down on `beforeunload`; reuses existing backend SSE (no new endpoint) — existing `DashboardController.handleSseStream` → `tradeHistoryService.getHistoryFlow()` already broadcasts.
-- **Frontend tests**: `HistoryRealtimeTest.kt` covers `isHistoryPage`/`isHistorySyncReady`, debounce coalescing, sync-banner guard, off-page no-op, and EventSource setup/teardown.
+- **Real-time History page (QO-HIST01)**: History charts, trade table, and summary cards now refresh automatically via the HTMX SSE extension when new snapshots/trades arrive — the History root connects to `GET /api/status/stream` (`TradeHistorySnapshotStore.snapshotFlow`), while `frontend-js/src/jsMain/kotlin/HistoryRealtime.kt` listens for `sse:message`, debounces (450 ms), and calls `loadAll(historyCurrentRange())` while preserving legend visibility (`visibilityStates`), selected `TimeRange`, show-dry-run checkbox, and view preset (`HistorySessionState`); it skips while `SYNC_PROGRESS_BANNER` is visible and reuses the existing backend SSE (no new endpoint) — existing `DashboardController.handleSseStream` → `tradeHistoryService.getHistoryFlow()` already broadcasts.
+- **Frontend tests**: `HistoryRealtimeTest.kt` covers `isHistoryPage`/`isHistorySyncReady`, debounce coalescing, sync-banner guard, off-page no-op, HTMX SSE message handling, listener reinitialization/cleanup, and state preservation.
 
 ### Fixed
 
-- **History realtime refresh reliability**: handled rejected asynchronous reloads and covered EventSource callback/reconnect/cleanup plus preservation of chart visibility, dry-run filtering, and view selection.
+- **History realtime refresh reliability**: handled rejected asynchronous reloads and covered stale/cancelled debounce callbacks plus preservation of chart visibility, dry-run filtering, and view selection.
 
 ## [6.17.11] - 2026-08-29
 
