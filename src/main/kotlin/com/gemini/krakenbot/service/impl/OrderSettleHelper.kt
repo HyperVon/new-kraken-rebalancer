@@ -158,17 +158,29 @@ internal object OrderSettleHelper {
         var offset = 0
         var matchedProceeds = BigDecimal.ZERO
         val seenTradeIds = mutableSetOf<String>()
-        for (page in 0 until MAX_FILL_HISTORY_PAGES) {
-            val fills = backend.getTradeHistoryUntil(startSec = startSec, offset = offset, endSec = endSec)
+
+        repeat(MAX_FILL_HISTORY_PAGES) {
+            val fills = backend.getTradeHistoryUntil(
+                startSec = startSec,
+                offset = offset,
+                endSec = endSec,
+            )
             val totalCount = backend.getLastTradeHistoryTotalCount()
+
             for (fill in fills) {
                 val txid = fill.orderTxid ?: continue
                 if (!fill.success || !OrderSide.isSell(fill.side) || txid !in txidSet) continue
+
                 val tradeId = fill.tradeId?.takeIf { it.isNotBlank() }
                 if (tradeId != null && !seenTradeIds.add(tradeId)) continue
-                val netProceeds = fill.usdAmount.subtract(fill.fee).max(BigDecimal.ZERO)
+
+                val netProceeds = fill.usdAmount
+                    .subtract(fill.fee)
+                    .max(BigDecimal.ZERO)
+
                 matchedProceeds = matchedProceeds.add(netProceeds)
             }
+
             val nextOffset = offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
             val hasMorePages =
                 if (totalCount > 0) {
@@ -176,9 +188,14 @@ internal object OrderSettleHelper {
                 } else {
                     fills.size >= KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
                 }
-            if (!hasMorePages) break
+
+            if (!hasMorePages) {
+                return matchedProceeds
+            }
+
             offset = nextOffset
         }
+
         return matchedProceeds
     }
 

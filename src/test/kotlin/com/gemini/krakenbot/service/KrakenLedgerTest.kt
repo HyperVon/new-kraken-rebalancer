@@ -5,7 +5,6 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.KrakenApiConstants
-import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo

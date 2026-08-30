@@ -3,7 +3,6 @@ package com.gemini.krakenbot.service.impl.history
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
-import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository

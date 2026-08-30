@@ -109,6 +109,6 @@ internal class NioConfigFilePermissionStrategy(
             PosixFilePermission.OWNER_READ,
             PosixFilePermission.OWNER_WRITE,
         )
-        private val OWNER_ONLY_ACL_PERMISSIONS = AclEntryPermission.values().toSet()
+        private val OWNER_ONLY_ACL_PERMISSIONS = AclEntryPermission.entries.toSet()
     }
 }

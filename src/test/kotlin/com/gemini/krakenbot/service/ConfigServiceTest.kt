@@ -377,11 +377,9 @@ class ConfigServiceTest : StringSpec() {
 
         "NIO permission strategy uses an owner ACL when POSIX permissions are unavailable" {
             val aclView = mockk<AclFileAttributeView>(relaxed = true)
-            val owner = object : UserPrincipal {
-                override fun getName(): String = "test-owner"
-            }
+            val owner = UserPrincipal { "test-owner" }
             var observedAcl: List<AclEntry>? = null
-            every { aclView.setAcl(any()) } answers {
+            every { aclView.acl = any() } answers {
                 observedAcl = firstArg()
             }
 
@@ -401,7 +399,7 @@ class ConfigServiceTest : StringSpec() {
 
             observedAcl!!.single().principal() shouldBe owner
             observedAcl!!.single().type() shouldBe AclEntryType.ALLOW
-            observedAcl!!.single().permissions() shouldBe AclEntryPermission.values().toSet()
+            observedAcl!!.single().permissions() shouldBe AclEntryPermission.entries.toSet()
         }
 
         "NIO permission strategy fails safely when no secure permission mechanism is available" {

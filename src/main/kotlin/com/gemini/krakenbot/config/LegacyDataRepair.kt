@@ -294,10 +294,8 @@ internal fun JdbcTransaction.reconcileTerminalOrderIntents() {
                     return@forEach
                 }
                 val currentSubmissionState = currentTrade[TradeTable.submissionState]
-                if (currentSubmissionState == null) {
-                    // The local trade row was already reconciled (submission_state cleared or updated by sync).
+                    ?: // The local trade row was already reconciled (submission_state cleared or updated by sync).
                     return@forEach
-                }
                 val clientOrderMatches = when {
                     resolvedIntent.clientOrderIdAmbiguous -> true
 

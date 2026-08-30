@@ -7,7 +7,6 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.impl.history.SnapshotHistoryCalculator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode

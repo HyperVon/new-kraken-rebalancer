@@ -1,10 +1,7 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
-
 package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
@@ -13,12 +10,8 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
-import com.gemini.krakenbot.service.impl.RateLimiter
-import com.gemini.krakenbot.service.impl.krakenPrivateEndpointCost
 import com.gemini.krakenbot.test.TestConstants
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.spec.IsolationMode
-import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -26,16 +19,10 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
-import io.ktor.client.network.sockets.SocketTimeoutException
-import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.statement.HttpResponse
 import io.ktor.http.*
 import io.ktor.http.content.TextContent
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
@@ -43,7 +30,6 @@ import java.security.MessageDigest
 import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
-import kotlin.time.Duration.Companion.minutes
 
 class KrakenServiceTest : KrakenServiceTestBase() {
 

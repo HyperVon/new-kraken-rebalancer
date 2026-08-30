@@ -2,7 +2,6 @@ package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.model.KrakenApiConstants
-import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
