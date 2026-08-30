@@ -63,7 +63,7 @@ repositories {
 }
 
 ksp {
-    arg("codegenResourceRoot", layout.projectDirectory.dir("src/main/resources").asFile.absolutePath)
+    arg("codegenResourceRoot", layout.projectDirectory.dir("common/src/commonMain/resources").asFile.absolutePath)
 }
 
 dependencies {

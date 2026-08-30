@@ -492,5 +492,58 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 propagated.shouldBeInstanceOf<CancellationException>()
             }
         }
+
+        "executeOrders aborts buys when settleUsdAfterSells balance poll returns negative or empty across retries" {
+            runTest {
+                val buyOrders = mapOf(Asset.ETH to BigDecimal.valueOf(100.0))
+                val sellOrders = mapOf(Asset.BTC to BigDecimal.valueOf(100.0))
+                val currentValuesUSD = mapOf(
+                    Asset.USD to BigDecimal.valueOf(100.0),
+                    Asset.BTC to BigDecimal.valueOf(100.0),
+                )
+                val prices = mapOf(
+                    Asset.BTC to BigDecimal.valueOf(1000.0),
+                    Asset.ETH to BigDecimal.valueOf(1000.0),
+                )
+                val settings = TestFixtures.settings(dryRun = false)
+                val actionLog = mutableListOf<String>()
+
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        dryRun = false,
+                        orderTxid = "TXID-SELL-1",
+                    )
+                }
+
+                krakenService.getBalancesCallCount = 0
+                var pollAttempt = 0
+                krakenService.balanceSupplier = {
+                    pollAttempt++
+                    when (pollAttempt) {
+                        1 -> mapOf(Asset.USD to -50.0)
+                        2 -> emptyMap()
+                        else -> mapOf(Asset.USD to 0.0)
+                    }
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = buyOrders,
+                    sellOrders = sellOrders,
+                    currentValuesUSD = currentValuesUSD,
+                    prices = prices,
+                    settings = settings,
+                    actionLog = actionLog,
+                )
+
+                // 1 sell order executed, 0 buy orders executed (buys aborted fail-closed)
+                krakenService.executedOrders.size shouldBe 1
+                krakenService.executedOrders.single().side shouldBe OrderSide.SELL.apiValue
+                krakenService.getBalancesCallCount shouldBe 3
+            }
+        }
     }
 }

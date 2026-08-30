@@ -90,7 +90,9 @@ get `EAPI:Invalid key`:
    Ticker pair keys are canonical (`XXBTZUSD`, `XETHZUSD`, `XXRPZUSD`,
    `SOLUSD`, ...) — map the balance asset to its actual response key.
 
-A working reference script pattern lives at `/tmp/kraken_truth_full.py`.
+A working reference pattern lives at
+`.agents/skills/kraken-api-integration/examples/KrakenApiExample.kt` and test
+fixtures in `KrakenServiceTest.kt`.
 
 ---
 

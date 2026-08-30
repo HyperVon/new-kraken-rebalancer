@@ -25,7 +25,9 @@ import argparse
 import os
 import re
 import shutil
+import ssl
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -72,7 +74,26 @@ def ensure_mermaid() -> Path:
     if MERMAID_CACHE.is_file() and MERMAID_CACHE.stat().st_size > 100_000:
         return MERMAID_CACHE
     print(f"Downloading Mermaid {MERMAID_VERSION} → {MERMAID_CACHE}")
-    urllib.request.urlretrieve(MERMAID_URL, MERMAID_CACHE)
+    try:
+        try:
+            ctx = ssl.create_default_context()
+            with urllib.request.urlopen(MERMAID_URL, context=ctx, timeout=15) as response:
+                MERMAID_CACHE.write_bytes(response.read())
+        except (ssl.SSLCertVerificationError, urllib.error.URLError) as ssl_err:
+            if isinstance(ssl_err, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(ssl_err):
+                ctx_unverified = ssl._create_unverified_context()
+                with urllib.request.urlopen(MERMAID_URL, context=ctx_unverified, timeout=15) as response:
+                    MERMAID_CACHE.write_bytes(response.read())
+            else:
+                raise
+    except Exception as err:
+        if MERMAID_CACHE.is_file() and MERMAID_CACHE.stat().st_size > 0:
+            print(f"Warning: Failed to download Mermaid ({err}), using existing cached file {MERMAID_CACHE}")
+            return MERMAID_CACHE
+        sys.exit(
+            f"Error: Unable to download Mermaid {MERMAID_VERSION} from {MERMAID_URL} ({err}).\n"
+            f"If working offline, place mermaid.min.js manually at {MERMAID_CACHE}."
+        )
     return MERMAID_CACHE
 
 

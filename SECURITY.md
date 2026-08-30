@@ -158,7 +158,9 @@ blocks later live submissions. If this occurs:
 Resolving an intent is a deliberate local-recovery action, not an order retry.
 The endpoint updates the application's SQLite journal and its associated local
 trade record; it does **not** submit, cancel, or change an order at Kraken.
-There is currently no dashboard button for this action.
+Operators can inspect and resolve unresolved intents directly via the Dashboard
+Action Required banner and form or programmatically via the
+`POST /api/order-intents/{id}/resolve` endpoint.
 
 Before sending a resolution request:
 

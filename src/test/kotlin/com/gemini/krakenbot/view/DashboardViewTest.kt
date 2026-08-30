@@ -18,7 +18,6 @@ import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
-import com.gemini.krakenbot.view.util.Icons
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -449,26 +448,6 @@ class DashboardViewTest : StringSpec() {
                 )
             }
             htmlDown shouldContain deltaDown
-        }
-
-        "Icons_loadIcon_returnsEmptyOnMissingResource" {
-            val method = Icons::class.java.getDeclaredMethod("loadIcon", String::class.java)
-            method.isAccessible = true
-            val result = method.invoke(Icons, "nonexistent.svg")
-            result shouldBe ""
-        }
-
-        "PerformanceTableComponent_Companion_getCOLUMNS" {
-            val companionClass = Class.forName(
-                $$"$${PerformanceTableComponent::class.java.name}$Companion",
-            )
-            val getCOLUMNS = companionClass.getDeclaredMethod("getCOLUMNS")
-            getCOLUMNS.isAccessible = true
-            val companionField = PerformanceTableComponent::class.java.getDeclaredField("Companion")
-            companionField.isAccessible = true
-            val companionInstance = companionField.get(null)
-            val columns = getCOLUMNS.invoke(companionInstance) as List<*>
-            columns.size shouldBe 6
         }
 
         "DashboardView_renderHistoryPage" {

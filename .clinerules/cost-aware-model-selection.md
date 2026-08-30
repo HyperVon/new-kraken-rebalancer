@@ -1,4 +1,4 @@
-# Cost-aware model selection
+# Native model selection
 
 Prefer a genuinely local route that clears the task's capability and risk
 thresholds; escalate to cloud only for a capability gap, then use the **least

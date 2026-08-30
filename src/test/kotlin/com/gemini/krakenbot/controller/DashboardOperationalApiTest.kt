@@ -8,6 +8,7 @@ import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.view.util.FormFields
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.client.request.get
@@ -24,6 +25,7 @@ import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import kotlinx.coroutines.CancellationException
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -574,6 +576,20 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+        }
+
+        "health and readiness endpoints rethrow CancellationException during diagnostics" {
+            coEvery { tradeHistoryService.getHistoryStats() } throws CancellationException("Parent job cancelled")
+
+            testApplication {
+                application { configureTestEnv() }
+
+                val healthResponse = client.get("/api/health")
+                healthResponse.status shouldBe HttpStatusCode.InternalServerError
+
+                val readinessResponse = client.get("/api/readiness")
+                readinessResponse.status shouldBe HttpStatusCode.InternalServerError
             }
         }
     }

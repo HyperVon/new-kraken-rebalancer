@@ -153,8 +153,8 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    `Deployment % = (Drawdown % / Max Drawdown %) ^ Exponent` (Capped at 100%)
 
    Fractional exponents use `Double.pow`, then the result is re-entered as
-   `BigDecimal` at percent scale (`SCALE_PERCENT = 4`). When `fiatMaxDrawdown ≤ 0`,
-   deployment is **disabled** (`Deploy% = 0`).
+   `BigDecimal` at percent scale (`SCALE_PERCENT = 4`). When `fiatMaxDrawdown ≤ 0`
+   or `fiatDeploymentExponent ≤ 0`, deployment is **disabled** (`Deploy% = 0`).
 
    **Examples (Max Drawdown = 30%)**:
 

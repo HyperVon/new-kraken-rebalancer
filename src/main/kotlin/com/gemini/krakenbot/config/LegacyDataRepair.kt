@@ -61,7 +61,7 @@ internal fun JdbcTransaction.backfillLegacyTradeIds() {
     val assignedTradeIds = OrderIntentTable
         .select(OrderIntentTable.localTradeId)
         .where { OrderIntentTable.localTradeId.isNotNull() }
-        .map { it[OrderIntentTable.localTradeId]!! }
+        .mapNotNull { it.getOrNull(OrderIntentTable.localTradeId) }
         .toMutableSet()
     val intentCandidates = OrderIntentTable
         .selectAll()
@@ -215,9 +215,10 @@ internal fun JdbcTransaction.reconcileTerminalOrderIntents() {
                 )
                 ) and OrderIntentTable.localTradeId.isNotNull()
         }
-        .map { row ->
+        .mapNotNull { row ->
+            val localTradeId = row.getOrNull(OrderIntentTable.localTradeId) ?: return@mapNotNull null
             TerminalIntent(
-                localTradeId = row[OrderIntentTable.localTradeId]!!,
+                localTradeId = localTradeId,
                 clientOrderId = row[OrderIntentTable.clientOrderId],
                 clientOrderIdAmbiguous = row[OrderIntentTable.clientOrderIdAmbiguous],
                 createdAt = row[OrderIntentTable.createdAt],
@@ -448,7 +449,7 @@ internal fun JdbcTransaction.reconcileLegacySubmissionGuards() {
                 it[OrderIntentTable.usdAmount] = row[TradeTable.usdAmount]
                 it[OrderIntentTable.expectedPrice] = row[TradeTable.expectedPrice]
                 it[OrderIntentTable.createdAt] = row[TradeTable.timestamp]
-                it[OrderIntentTable.state] = row[TradeTable.submissionState]!!
+                it[OrderIntentTable.state] = row[TradeTable.submissionState] ?: OrderIntentState.CONFIRMED.name
                 it[OrderIntentTable.orderTxid] = row[TradeTable.orderTxid]
                 it[OrderIntentTable.errorMessage] = if (ambiguousClientOrderId) {
                     ambiguityMessage + (row[TradeTable.errorMessage] ?: "")

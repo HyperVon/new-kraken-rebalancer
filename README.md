@@ -574,7 +574,11 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── AppModule.kt                  # Koin dependency injection module
 │   │   ├── DatabaseConfig.kt             # SQLite connect + Exposed schema migrate
 │   │   ├── ErrorHandlingConfig.kt        # Ktor status pages
+│   │   ├── IndexRepair.kt                # SQLite index validation and rebuild
 │   │   ├── KtorConfig.kt                 # CORS, compression, content negotiation
+│   │   ├── LegacyDataRepair.kt           # Legacy submission state and trade id repair
+│   │   ├── MigrationBackup.kt            # Pre-migration database backup helper
+│   │   ├── SchemaMigrations.kt           # Versioned schema DDL migrations
 │   │   └── ServerConfig.kt               # Server port constant and JVM property key
 │   ├── controller/
 │   │   ├── DashboardController.kt        # HTTP handlers (pages, settings POST, SSE, history APIs)
@@ -587,18 +591,21 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   └── table/                         # Trade/OrderIntent tables, SchemaMigrationTable, snapshot/stat/history tables
 │   ├── service/                           # Interfaces, OrderIntentService, and AssetColorAssigner
 │   │   └── impl/                          # Service implementations (coroutine-aware)
-│   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
-│   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
-│   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
-│   │       ├── OrderSettleHelper.kt      # Settle proceeds polling, backoff, and pagination
-│   │       ├── RebalanceSessionContext.kt# Immutable per-cycle session context
-│   │       ├── OrderIntentServiceImpl.kt # Durable ambiguous-order lifecycle
-│   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
-│   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
-│   │       ├── KrakenApiConstants.kt     # Kraken REST path/cost constants
-│   │       ├── SimulatedKrakenService.kt # Offline exchange emulator
-│   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
+│   │       ├── ConfigFilePermissionStrategy.kt # Cross-platform owner-only file permissions
 │   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
+│   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
+│   │       ├── KrakenParsers.kt          # Response parsing and error mapping
+│   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
+│   │       ├── KrakenSigning.kt          # HMAC-SHA512 request signing
+│   │       ├── KrakenTransport.kt        # HTTP execution, nonce handling, and private endpoint routing
+│   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
+│   │       ├── OrderIntentServiceImpl.kt # Durable ambiguous-order lifecycle
+│   │       ├── OrderSettleHelper.kt      # Settle proceeds polling, backoff, and pagination
+│   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
+│   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
+│   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
+│   │       ├── RebalanceSessionContext.kt# Immutable per-cycle session context
+│   │       ├── SimulatedKrakenService.kt # Offline exchange emulator
 │   │       ├── SimulationDefaults.kt     # Shared simulation default prices
 │   │       └── history/                  # Trade history façade + collaborators
 │   │           ├── TradeHistoryServiceImpl.kt # Thin façade (Sync / SnapshotStore / Query / Reconstruction)
@@ -609,7 +616,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │           ├── TradeHistoryReconstructionService.kt
 │   │           ├── RebalancerComparisonCalculator.kt # Rebalancer vs Buy & Hold comparison
 │   │           └── SnapshotHistoryCalculator.kt # History reconstruction helpers
-│   ├── util/                              # NetworkUtils, TradeDeduplicator
+│   ├── util/                              # Formatters, NetworkUtils, TradeDeduplicator
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Shell, Grid, Form, History, charts, activity, performance

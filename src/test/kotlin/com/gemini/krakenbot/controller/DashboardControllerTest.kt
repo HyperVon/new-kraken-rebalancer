@@ -807,7 +807,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 setCookie shouldContain "HttpOnly"
                 setCookie shouldContain "SameSite=Strict"
                 setCookie shouldNotContain "Secure"
-                setCookie shouldNotContain "Max-Age"
+                setCookie shouldContain "Max-Age=86400"
                 setCookie shouldNotContain "Domain="
             }
         }
