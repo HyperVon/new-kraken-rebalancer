@@ -5,4 +5,5 @@ fun initHistory() {
     setupZoomButtons()
     setupChartScrubbers()
     setupSyncProgressAndLoad()
+    setupHistoryRealtimeUpdates()
 }

@@ -49,7 +49,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | QO-ARCH04 | M/L | deferred | architecture | Tiered exchange gateway SPI & WebSocket tickers | QO-1 | Roadmap: Later |
 | QO-ARCH05 | L | deferred | architecture | Rebalance lifecycle FSM with persisted step journals | QO-1 | Roadmap: Later |
 | QO-PROD07 | S/M | deferred | product | Advanced historical telemetry & alpha analytics (Sharpe, Sortino, fee drag, rebalancing alpha) | QO-1 | User may consider |
-| QO-HIST01 | M | open | frontend | Real-time History page updates — subscribe to `snapshotFlow` / trade events via SSE so charts, trade table, and summary cards refresh automatically when trades occur without requiring manual navigation | QO-1 | Backend `TradeHistorySnapshotStore.snapshotFlow` already emits; needs SSE endpoint + client listener + state-preserving refresh |
+| QO-HIST01 | M | in_progress | frontend | Real-time History page updates — subscribe to `snapshotFlow` / trade events via SSE so charts, trade table, and summary cards refresh automatically when trades occur without requiring manual navigation | QO-1 | `feature/history-realtime-sse` — reuses `GET /api/status/stream`; adds `HistoryRealtime.kt` debounced client listener with state-preserving `loadAll(currentRange)`; preserves legend visibility, TimeRange, dry-run checkbox, view preset via `visibilityStates`/`HistorySessionState` |
 
 ## Done (recent)
 
