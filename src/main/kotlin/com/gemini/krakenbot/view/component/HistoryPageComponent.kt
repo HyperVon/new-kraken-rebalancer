@@ -10,13 +10,9 @@ import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
-import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.HtmxAttrs
-import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.ZoomActions
 import com.gemini.krakenbot.view.util.brandWithMode
@@ -68,7 +64,6 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
             cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
-            cdnScript(CdnUrls.HTMX_SSE, CdnIntegrity.HTMX_SSE)
             cdnScript(CdnUrls.CHART_JS, CdnIntegrity.CHART_JS)
             cdnScript(CdnUrls.CHART_JS_DATE_FNS, CdnIntegrity.CHART_JS_DATE_FNS)
             cdnScript(CdnUrls.HAMMER_JS, CdnIntegrity.HAMMER_JS)
@@ -76,10 +71,6 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
         }
         html.body {
             div(CssClass.Layout.Container) {
-                id = HtmlIds.HISTORY_REALTIME_ROOT
-                attributes[HtmxAttrs.HX_EXT] = HtmxValues.EXT_SSE
-                attributes[HtmxAttrs.SSE_CONNECT] = Routes.API_STATUS_STREAM
-                attributes[HtmxAttrs.HX_TRIGGER] = HtmlEvents.SSE_MESSAGE
                 renderHeader(settings, csrfToken, paused)
                 renderSyncProgressBanner()
                 renderToolbar()

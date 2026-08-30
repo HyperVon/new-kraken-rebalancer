@@ -410,7 +410,6 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)
 - **Cumulative Net Cash Flow** (gross signed cash flow plus dashed **Net After Fees** series)
 - **Comprehensive Trade Log Table** (showing all executions, with a toggle to filter/show dry-run trades)
-- **Live History refresh** — while the page is open, the existing HTMX SSE stream triggers debounced chart, summary-card, comparison, rewards, and trade-table reloads while preserving the selected range, view, dry-run filter, and chart legend visibility
 
 <p><a href="docs/images/history.png"><img src="docs/images/history.png" alt="History overview" width="720"></a></p>
 
@@ -495,10 +494,6 @@ two complementary `SharedFlow` channels:
    `sse-connect="/api/status/stream"`. A div with `sse-swap="message"` and
    `hx-trigger="sse:message"` automatically fetches updated dashboard fragments
    from `/fragments/dashboard` whenever a new snapshot arrives.
-4. **History realtime refresh**: The History root uses the same HTMX SSE stream.
-   Kotlin/JS listens for the resulting `sse:message` event only to debounce a
-   state-preserving `loadAll(historyCurrentRange())` reload; HTMX owns the browser
-   connection and reconnection behavior.
 
 #### Config Hot-Reload Loop Restart (not SSE)
 
@@ -560,7 +555,6 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── Dashboard.kt                   # Stats card age calculation & table sorting
 │   │   ├── Settings.kt                    # Targets validation & dynamic row actions
 │   │   ├── History.kt                     # History page wiring (initHistory)
-│   │   ├── HistoryRealtime.kt              # HTMX SSE event handling & debounced History refresh
 │   │   ├── HistoryChartConfig.kt          # Chart.js defaults and option builders
 │   │   ├── HistoryChartState.kt           # Chart state, series visibility, and time range
 │   │   ├── HistoryCharts.kt               # Snapshot, rewards, and net-cash-flow chart builders
