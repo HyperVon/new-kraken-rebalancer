@@ -13,6 +13,7 @@ internal const val HISTORY_REALTIME_RECONNECT_MS: Int = 4000
 private var historyEventSource: dynamic = null
 private var historyRealtimeDebounceId: Int? = null
 private var historyRealtimeReconnectId: Int? = null
+private var historyRealtimeBeforeUnloadHandler: dynamic = null
 
 internal fun isHistoryPage(): Boolean = document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART) != null
 
@@ -30,7 +31,9 @@ internal fun scheduleHistoryRealtimeReload() {
         if (!isHistoryPage()) return@setTimeout
         if (!isHistorySyncReady()) return@setTimeout
         try {
-            loadAll(historyCurrentRange())
+            loadAll(historyCurrentRange()).`catch` { error ->
+                console.error("Error refreshing history after realtime update", error)
+            }
         } catch (_: Throwable) {
         }
     }, HISTORY_REALTIME_DEBOUNCE_MS)
@@ -41,6 +44,14 @@ internal fun teardownHistoryRealtimeUpdates() {
     historyRealtimeDebounceId = null
     historyRealtimeReconnectId?.let { window.clearTimeout(it) }
     historyRealtimeReconnectId = null
+    if (historyRealtimeBeforeUnloadHandler != null) {
+        val handler = historyRealtimeBeforeUnloadHandler
+        try {
+            window.asDynamic().removeEventListener("beforeunload", handler)
+        } catch (_: Throwable) {
+        }
+        historyRealtimeBeforeUnloadHandler = null
+    }
     try {
         historyEventSource?.close?.call(historyEventSource)
     } catch (_: Throwable) {
@@ -56,33 +67,39 @@ internal fun setupHistoryRealtimeUpdates() {
         val es: dynamic = js("new (window.EventSource || EventSource)(url)")
         historyEventSource = es
         es.onmessage = { _: dynamic ->
-            scheduleHistoryRealtimeReload()
+            if (historyEventSource === es) {
+                scheduleHistoryRealtimeReload()
+            }
         }
         es.onerror = { _: dynamic ->
-            try {
-                es.close()
-            } catch (_: Throwable) {
-            }
             if (historyEventSource === es) {
-                historyEventSource = null
-            }
-            historyRealtimeReconnectId?.let { window.clearTimeout(it) }
-            historyRealtimeReconnectId = window.setTimeout({
-                historyRealtimeReconnectId = null
-                if (isHistoryPage()) {
-                    try {
-                        setupHistoryRealtimeUpdates()
-                    } catch (_: Throwable) {
-                    }
+                try {
+                    es.close()
+                } catch (_: Throwable) {
                 }
-            }, HISTORY_REALTIME_RECONNECT_MS)
+                historyEventSource = null
+                historyRealtimeReconnectId?.let { window.clearTimeout(it) }
+                historyRealtimeReconnectId = window.setTimeout({
+                    historyRealtimeReconnectId = null
+                    if (isHistoryPage()) {
+                        try {
+                            setupHistoryRealtimeUpdates()
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }, HISTORY_REALTIME_RECONNECT_MS)
+            }
         }
         // Ensure cleanup when navigating away.
-        try {
-            window.addEventListener("beforeunload", {
+        if (historyRealtimeBeforeUnloadHandler == null) {
+            val handler: dynamic = { _: dynamic ->
                 teardownHistoryRealtimeUpdates()
-            })
-        } catch (_: Throwable) {
+            }
+            try {
+                window.asDynamic().addEventListener("beforeunload", handler)
+                historyRealtimeBeforeUnloadHandler = handler
+            } catch (_: Throwable) {
+            }
         }
     } catch (_: Throwable) {
         // EventSource unavailable in this environment (e.g. jsTest); degrade silently.

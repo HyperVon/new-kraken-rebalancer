@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.CssClass
 import io.kotest.core.spec.IsolationMode
@@ -9,6 +10,9 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.await
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.HTMLSelectElement
+import org.w3c.dom.HTMLTableSectionElement
 import kotlin.js.Promise
 import kotlin.js.json
 
@@ -101,12 +105,14 @@ class HistoryRealtimeTest : StringSpec() {
             resetHistoryUiState()
             teardownHistoryRealtimeUpdates()
             val container = document.createElement("div")
-            container.innerHTML = TestDomBuilders.historyDom()
+            container.innerHTML = TestDomBuilders.historyViewsDom()
             document.body!!.appendChild(container)
             window.asDynamic().Chart = mockChartConstructor()
             // Track fetches
             var snapshotRangeSeen: String? = null
+            var fetchCalls = 0
             window.asDynamic().fetch = mockFetch { url ->
+                fetchCalls++
                 if (url.contains("snapshots")) {
                     snapshotRangeSeen = url.substringAfter("range=")
                 }
@@ -115,7 +121,10 @@ class HistoryRealtimeTest : StringSpec() {
                         arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))
 
                     url.contains("trades") ->
-                        arrayOf(tradeRecordToDynamic(mockTradeRecord()))
+                        arrayOf(
+                            tradeRecordToDynamic(mockTradeRecord(symbol = Asset.BTC, dryRun = false)),
+                            tradeRecordToDynamic(mockTradeRecord(symbol = Asset.ETH, dryRun = true)),
+                        )
 
                     url.contains("comparison") ->
                         rebalancerComparisonToDynamic(mockAvailableComparison())
@@ -132,16 +141,22 @@ class HistoryRealtimeTest : StringSpec() {
             // Stub setTimeout to capture callbacks instead of wall-clock waiting.
             val originalSetTimeout = window.asDynamic().setTimeout
             val originalClearTimeout = window.asDynamic().clearTimeout
-            var lastCb: (() -> Unit)? = null
-            var lastId = 0
-            var clearCalls = mutableListOf<Int>()
+            val timeoutCallbacks = mutableMapOf<Int, () -> Unit>()
+            val canceledTimeoutIds = mutableSetOf<Int>()
+            var nextTimeoutId = 0
+            val clearCalls = mutableListOf<Int>()
             window.asDynamic().setTimeout = { cb: () -> Unit, _: Int ->
-                lastCb = cb
-                lastId++
-                lastId
+                nextTimeoutId++
+                timeoutCallbacks[nextTimeoutId] = cb
+                nextTimeoutId
             }
             window.asDynamic().clearTimeout = { id: Int ->
                 clearCalls.add(id)
+                canceledTimeoutIds.add(id)
+            }
+
+            fun fireTimeout(id: Int) {
+                if (id !in canceledTimeoutIds) timeoutCallbacks[id]?.invoke()
             }
 
             try {
@@ -150,16 +165,38 @@ class HistoryRealtimeTest : StringSpec() {
                     .classList.add(CssClass.Utility.Hidden.value)
                 currentRange = TimeRange.SEVEN_DAYS.key
                 loadedRange = TimeRange.SEVEN_DAYS.key
+                visibilityStates["portfolio-value-chart"] = mutableMapOf(Asset.BTC to false)
+                val selectedViewId = HistoryViewPrefs.builtInViews()
+                    .first { it.range == TimeRange.SEVEN_DAYS.key }
+                    .id
+                (selectedViewId == HistoryViewPrefs.defaultStore().defaultId) shouldBe false
+                HistoryViewPrefs.refreshSelect(
+                    HistoryViewsStore(
+                        defaultId = HistoryViewPrefs.defaultStore().defaultId,
+                        views = HistoryViewPrefs.builtInViews(),
+                    ),
+                    selectedId = selectedViewId,
+                )
+                (document.getElementById("show-dry-run-checkbox") as HTMLInputElement).checked = false
 
                 scheduleHistoryRealtimeReload()
                 historyRealtimeDebouncePendingForTest() shouldBe true
+                val firstTimeoutId = nextTimeoutId
                 // Second rapid call should clear previous timeout and keep pending
                 scheduleHistoryRealtimeReload()
-                clearCalls.size shouldBe 1
+                val secondTimeoutId = nextTimeoutId
+                clearCalls shouldBe listOf(firstTimeoutId)
+                canceledTimeoutIds.contains(firstTimeoutId) shouldBe true
                 historyRealtimeDebouncePendingForTest() shouldBe true
 
-                // Fire the debounced callback
-                lastCb!!.invoke()
+                // A canceled callback must not cause a duplicate reload.
+                fireTimeout(firstTimeoutId)
+                fetchCalls shouldBe 0
+                historyRealtimeDebouncePendingForTest() shouldBe true
+
+                // Fire the surviving debounced callback.
+                fireTimeout(secondTimeoutId)
+                fetchCalls shouldBe 5
                 // loadAll is async; wait for its Promise queue
                 awaitPromiseQueue()
                 // give Promises from fetch a chance to resolve
@@ -168,6 +205,18 @@ class HistoryRealtimeTest : StringSpec() {
 
                 snapshotRangeSeen shouldBe TimeRange.SEVEN_DAYS.key
                 historyRealtimeDebouncePendingForTest() shouldBe false
+                (document.getElementById("show-dry-run-checkbox") as HTMLInputElement).checked shouldBe false
+                (document.getElementById("history-views-select") as HTMLSelectElement).value shouldBe selectedViewId
+                visibilityStates["portfolio-value-chart"]?.get(Asset.BTC) shouldBe false
+                val tradeTable = document.getElementById("trade-table-body") as HTMLTableSectionElement
+                tradeTable.rows.length shouldBe 1
+                tradeTable.innerHTML.contains("${Asset.BTC}/${Asset.USD}") shouldBe true
+                tradeTable.innerHTML.contains("${Asset.ETH}/${Asset.USD}") shouldBe false
+                val portfolioDatasets = charts["portfolio-value-chart"]!!.data.datasets
+                val btcIndex = (0 until (portfolioDatasets.length as Int)).first { index ->
+                    portfolioDatasets[index].label.toString() == Asset.BTC
+                }
+                (portfolioDatasets[btcIndex].hidden as? Boolean) shouldBe true
             } finally {
                 window.asDynamic().setTimeout = originalSetTimeout
                 window.asDynamic().clearTimeout = originalClearTimeout
@@ -177,38 +226,147 @@ class HistoryRealtimeTest : StringSpec() {
             }
         }
 
-        "teardown clears debounce and closes EventSource" {
+        "scheduleHistoryRealtimeReload handles a rejected reload promise" {
             resetHistoryUiState()
             teardownHistoryRealtimeUpdates()
             val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.historyDom()
             document.body!!.appendChild(container)
-            val fakeEs: dynamic = json("close" to {}, "onmessage" to null, "onerror" to null)
+            window.asDynamic().Chart = mockChartConstructor()
+            registerHistoryGlobals()
+            val originalSetTimeout = window.asDynamic().setTimeout
+            val originalConsoleError = window.asDynamic().console.error
+            var reloadCallback: (() -> Unit)? = null
+            var errorCalls = 0
+            window.asDynamic().setTimeout = { callback: () -> Unit, _: Int ->
+                reloadCallback = callback
+                1
+            }
+            window.asDynamic().console.error = { _: dynamic, _: dynamic -> errorCalls++ }
+            window.asDynamic().fetch = { _: String ->
+                Promise.reject(RuntimeException("history refresh failed"))
+            }
+            try {
+                (document.getElementById("sync-progress-banner") as HTMLElement)
+                    .classList.add(CssClass.Utility.Hidden.value)
+                scheduleHistoryRealtimeReload()
+                reloadCallback!!.invoke()
+                awaitPromiseQueue()
+                Promise.resolve(Unit).await()
+                awaitPromiseQueue()
+
+                errorCalls shouldBe 1
+                historyRealtimeDebouncePendingForTest() shouldBe false
+            } finally {
+                window.asDynamic().setTimeout = originalSetTimeout
+                window.asDynamic().console.error = originalConsoleError
+                document.body!!.removeChild(container)
+                teardownHistoryRealtimeUpdates()
+                resetHistoryUiState()
+            }
+        }
+
+        "EventSource lifecycle wires callbacks and cleanup" {
+            resetHistoryUiState()
+            teardownHistoryRealtimeUpdates()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.historyDom()
+            document.body!!.appendChild(container)
+            val createdUrls = mutableListOf<String>()
+            val sources = mutableListOf<dynamic>()
+            var closeCalls = 0
             // Expose fake constructor on both window and globalThis for js(\"new EventSource\") lookup.
-            window.asDynamic().EventSource = { _: String -> fakeEs }
+            window.asDynamic().EventSource = { url: String ->
+                val source: dynamic = jsObject {
+                    close = { closeCalls++ }
+                    onmessage = null
+                    onerror = null
+                }
+                createdUrls.add(url)
+                sources.add(source)
+                source
+            }
             js("globalThis.EventSource = window.EventSource")
             window.asDynamic().Chart = mockChartConstructor()
+            val originalSetTimeout = window.asDynamic().setTimeout
+            val originalClearTimeout = window.asDynamic().clearTimeout
+            val originalAddEventListener = window.asDynamic().addEventListener
+            val originalRemoveEventListener = window.asDynamic().removeEventListener
+            var nextTimeoutId = 0
+            var reconnectCallback: (() -> Unit)? = null
+            val beforeUnloadCallbacks = mutableListOf<dynamic>()
+            val activeBeforeUnloadCallbacks = mutableListOf<dynamic>()
+            val clearCalls = mutableListOf<Int>()
+            window.asDynamic().setTimeout = { callback: () -> Unit, delay: Int ->
+                nextTimeoutId++
+                if (delay == HISTORY_REALTIME_RECONNECT_MS) reconnectCallback = callback
+                nextTimeoutId
+            }
+            window.asDynamic().clearTimeout = { id: Int ->
+                clearCalls.add(id)
+            }
+            window.asDynamic().addEventListener = { type: String, callback: dynamic ->
+                if (type == "beforeunload") {
+                    beforeUnloadCallbacks.add(callback)
+                    activeBeforeUnloadCallbacks.add(callback)
+                }
+            }
+            window.asDynamic().removeEventListener = { type: String, callback: dynamic ->
+                if (type == "beforeunload") activeBeforeUnloadCallbacks.remove(callback)
+            }
             try {
                 (document.getElementById("sync-progress-banner") as HTMLElement)
                     .classList.add(CssClass.Utility.Hidden.value)
                 setupHistoryRealtimeUpdates()
                 historyRealtimeActiveForTest() shouldBe true
-                val origSetTimeout = window.asDynamic().setTimeout
-                window.asDynamic().setTimeout = { _: () -> Unit, _: Int ->
-                    99
-                }
-                scheduleHistoryRealtimeReload()
-                historyRealtimeDebouncePendingForTest() shouldBe true
-                window.asDynamic().setTimeout = origSetTimeout
+                createdUrls shouldBe listOf("/api/status/stream")
+                sources.size shouldBe 1
+                beforeUnloadCallbacks.size shouldBe 1
+                activeBeforeUnloadCallbacks.size shouldBe 1
+                (sources[0].onmessage != null) shouldBe true
+                (sources[0].onerror != null) shouldBe true
 
-                teardownHistoryRealtimeUpdates()
+                sources[0].onmessage(null)
+                historyRealtimeDebouncePendingForTest() shouldBe true
+
+                sources[0].onerror(null)
+                closeCalls shouldBe 1
                 historyRealtimeActiveForTest() shouldBe false
+                reconnectCallback!!.invoke()
+                historyRealtimeActiveForTest() shouldBe true
+                createdUrls shouldBe listOf("/api/status/stream", "/api/status/stream")
+                sources.size shouldBe 2
+                beforeUnloadCallbacks.size shouldBe 2
+                activeBeforeUnloadCallbacks.size shouldBe 1
+                (sources[1].onmessage != null) shouldBe true
+                (sources[1].onerror != null) shouldBe true
+                clearCalls.size shouldBe 1
+
+                // An old source message must not refresh over the replacement source.
+                val timeoutCountBeforeStaleMessage = nextTimeoutId
+                sources[0].onmessage(null)
+                nextTimeoutId shouldBe timeoutCountBeforeStaleMessage
                 historyRealtimeDebouncePendingForTest() shouldBe false
+
+                // An old source error must not tear down or reconnect the current source.
+                sources[0].onerror(null)
+                closeCalls shouldBe 1
+                historyRealtimeActiveForTest() shouldBe true
+
+                activeBeforeUnloadCallbacks[0](null)
+                historyRealtimeActiveForTest() shouldBe false
+                closeCalls shouldBe 2
+                historyRealtimeDebouncePendingForTest() shouldBe false
+                activeBeforeUnloadCallbacks.size shouldBe 0
             } finally {
+                teardownHistoryRealtimeUpdates()
+                window.asDynamic().setTimeout = originalSetTimeout
+                window.asDynamic().clearTimeout = originalClearTimeout
+                window.asDynamic().addEventListener = originalAddEventListener
+                window.asDynamic().removeEventListener = originalRemoveEventListener
                 window.asDynamic().EventSource = js("undefined")
                 js("globalThis.EventSource = undefined")
                 document.body!!.removeChild(container)
-                teardownHistoryRealtimeUpdates()
                 resetHistoryUiState()
             }
         }
