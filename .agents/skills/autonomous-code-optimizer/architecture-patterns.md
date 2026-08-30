@@ -182,7 +182,7 @@ See [koin-di-and-config](../koin-di-and-config/SKILL.md).
 - **Errors:** use domain `Result` / `OrderResult` on analysis/order paths; do
   not swallow exceptions with empty `catch`. Always rethrow
   `CancellationException` before other catches.
-- **Nulls:** prefer `?.` / `?:` / early `return`; avoid `!!` in `src/main`
+- **Nulls:** prefer `?.` / `?:` / early `return`; avoid `!!` in `backend/src/main/`
   (scan with `rg '\!\!'`).
 - **Concurrency:** no `GlobalScope`; blocking DB/network under `Dispatchers.IO`
   via `safeTransactionIO` / `withContext`; structured concurrency for loops.

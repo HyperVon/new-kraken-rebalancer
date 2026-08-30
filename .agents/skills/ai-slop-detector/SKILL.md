@@ -40,7 +40,7 @@ task into a full audit without evidence or a matching request.
 
 This skill covers **all repository artifacts**, including:
 
-1. **Source code**: Kotlin JVM (`src/main/`), KMP `:common` (`common/src/`), and Kotlin/JS (`frontend-js/src/`).
+1. **Source code**: Kotlin JVM (`backend/src/main/`), KMP `:common` (`common/src/`), and Kotlin/JS (`frontend-js/src/`).
 2. **Tests**: Kotest JVM specs, Karma/Istanbul JS tests, and Evaluation scenarios (`docs/EVALUATION.md`, `EvaluationScenariosTest`).
 3. **Documentation**: Technical and end-user documentation (`docs/*`, `README.md`, `CHANGELOG.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/USER_GUIDE.md`, `docs/ALGORITHM.md`, `docs/FLOWS.md`).
 4. **Agent skills**: Skill instructions and resources (`.agents/skills/*/SKILL.md`, supporting scripts/examples/references).

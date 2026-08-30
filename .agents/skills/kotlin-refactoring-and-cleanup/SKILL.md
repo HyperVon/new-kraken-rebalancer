@@ -97,11 +97,11 @@ persistence, money); inside them, code stays lean and fails hard. See
 ### Additional scans (run during cleanup)
 
 ```bash
-rg '\!\!' src/main/ common/src/commonMain/ --glob '*.kt'
-rg 'GlobalScope' src/ common/ frontend-js/ --glob '*.kt'
-rg '\.toDouble\(\)' src/main/ common/src/commonMain/ --glob '*.kt'
-rg 'shouldBeEqualByComparingTo' src/test/ --glob '*.kt'
-rg 'dryRun\s*=\s*false' src/test/ src/main/ --glob '*.kt'
+rg '\!\!' backend/src/main/ common/src/commonMain/ --glob '*.kt'
+rg 'GlobalScope' backend/src/ common/ frontend-js/ --glob '*.kt'
+rg '\.toDouble\(\)' backend/src/main/ common/src/commonMain/ --glob '*.kt'
+rg 'shouldBeEqualByComparingTo' backend/src/test/ --glob '*.kt'
+rg 'dryRun\s*=\s*false' backend/src/test/ backend/src/main/ --glob '*.kt'
 ```
 
 ## Checklist

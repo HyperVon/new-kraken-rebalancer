@@ -13,7 +13,7 @@ The target pull request refactors the `OrderExecutorImpl` class to enforce stric
 ### [MAJOR] BigDecimal Comparison in Unit Assertions
 
 - **Category**: `Bug Detection & Financial Math Safety`
-- **Location**: `src/test/kotlin/com/gemini/krakenbot/service/OrderExecutorTest.kt:45`
+- **Location**: `backend/src/test/kotlin/com/gemini/krakenbot/service/OrderExecutorTest.kt:45`
 - **Issue**: The test compares calculated USD balance with `.equals()`: `executedOrder.usdAmount.equals(BigDecimal("100.50"))`. Because scale differences (e.g. `100.5` vs `100.50`) cause `.equals()` to return false, this test is fragile.
 - **Impact**: Potential false-negative unit test build failures during automated CI/CD runs.
 - **Suggested Fix**:
@@ -26,8 +26,8 @@ executedOrder.usdAmount shouldBeEqualComparingTo BigDecimal("100.50")
 ### [MINOR] Hardcoded User Directory Path in Test Asset
 
 - **Category**: `Code Quality & Cleanliness`
-- **Location**: `src/test/kotlin/com/gemini/krakenbot/service/OrderExecutorTest.kt:18`
-- **Issue**: A hardcoded developer-workspace path to `src/test/resources/mock_ticker.json` was found in mock setup.
+- **Location**: `backend/src/test/kotlin/com/gemini/krakenbot/service/OrderExecutorTest.kt:18`
+- **Issue**: A hardcoded developer-workspace path to `backend/src/test/resources/mock_ticker.json` was found in mock setup.
 - **Impact**: Tests fail on other developers' machines or GitHub Actions CI containers where that workspace path does not exist.
 - **Suggested Fix**:
 

@@ -113,8 +113,8 @@ selection is unavailable, keep the scan parent-owned.
 
 ## Pass 2 — Financial & concurrency
 
-- [ ] No `Double` / `Float` in production money paths (`src/main`,
-      `common/commonMain`); use `BigDecimal` + `toUsdScale()` / `toCryptoScale()`
+- [ ] No `Double` / `Float` in production money paths (`backend/src/main/`,
+      `common/src/commonMain/`); use `BigDecimal` + `toUsdScale()` / `toCryptoScale()`
 - [ ] Tests use only `shouldBeEqualComparingTo` for `BigDecimal`
 - [ ] Sell-first → settle (95% / 3× / 250ms) → 99% buy cap intact
 - [ ] `withStableBackend` wraps full cycles/sync; no unpinned
