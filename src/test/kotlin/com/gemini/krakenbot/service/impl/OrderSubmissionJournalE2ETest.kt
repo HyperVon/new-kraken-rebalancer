@@ -18,7 +18,12 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
@@ -214,24 +219,39 @@ class OrderSubmissionJournalE2ETest : StringSpec() {
                 val tradeHistoryService = TradeHistoryServiceTestAdapter(repository)
                 val orderIntentService = mockk<OrderIntentService>(relaxed = true)
                 val cancellation = CancellationException("intent save cancelled")
+                val cancellationIssued = CompletableDeferred<Unit>()
+                val thrown = CompletableDeferred<Throwable>()
                 coEvery { orderIntentService.hasUnresolvedIntents() } returns false
-                coEvery { orderIntentService.savePending(any()) } throws cancellation
+                coEvery { orderIntentService.savePending(any()) } coAnswers {
+                    currentCoroutineContext().cancel(cancellation)
+                    cancellationIssued.complete(Unit)
+                    yield()
+                    error("unreachable")
+                }
                 val orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
                 val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
 
-                val thrown = shouldThrow<CancellationException> {
-                    orderExecutor.executeOrders(
-                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
-                        sellOrders = emptyMap(),
-                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
-                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
-                        settings = TestFixtures.settings(dryRun = false),
-                        actionLog = mutableListOf(),
-                        cycleId = "cancelled-intent-save",
-                    )
+                val execution = launch {
+                    try {
+                        orderExecutor.executeOrders(
+                            buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                            sellOrders = emptyMap(),
+                            currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                            prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                            settings = TestFixtures.settings(dryRun = false),
+                            actionLog = mutableListOf(),
+                            cycleId = "cancelled-intent-save",
+                        )
+                    } catch (cause: Throwable) {
+                        thrown.complete(cause)
+                        throw cause
+                    }
                 }
 
-                thrown shouldBe cancellation
+                cancellationIssued.await()
+                execution.join()
+                thrown.await() shouldBe cancellation
+                execution.isCancelled shouldBe true
                 val persisted = repository.getTradesInRange(now.minusSeconds(5), now.plusSeconds(5)).single()
                 persisted.success shouldBe false
                 persisted.submissionState shouldBe OrderSubmissionState.UNCERTAIN
