@@ -55,7 +55,7 @@ jobs:
         if: matrix.language == 'java-kotlin'
         run: |
           chmod +x gradlew
-          ./gradlew clean :codegen:assemble :common:compileKotlinJvm :compileKotlin
+          ./gradlew clean :codegen:assemble :common:compileKotlinJvm :backend:compileKotlin
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7

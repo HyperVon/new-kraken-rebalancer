@@ -130,12 +130,12 @@ Workflow:
    ```
 
 2. Refresh the outcomes table in `docs/EVALUATION.md` from
-   `build/reports/scenarios_evaluation_report.md`.
+   `backend/build/reports/scenarios_evaluation_report.md`.
 3. Prefer `FakeKrakenService` + `TestFixtures.DEFAULT_TEST_SETTINGS`; never a
    file-backed DB in unit tests.
 
 - Suite: `EvaluationScenariosTest` (40 scenarios)
-- Report: `build/reports/scenarios_evaluation_report.md` (absolute paths redacted)
+- Report: `backend/build/reports/scenarios_evaluation_report.md` (absolute paths redacted)
 - Principles: no absolute paths, FakeKraken, virtual time, SSE multi-subscriber checks
 
 ## Kotlin/JS tests

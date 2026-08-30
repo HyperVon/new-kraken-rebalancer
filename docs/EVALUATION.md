@@ -2,9 +2,9 @@
 
 The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 41 highly realistic market scenarios and operational conditions.
 
-Implemented in [EvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
+Implemented in [EvaluationScenariosTest.kt](../backend/src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../backend/src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
 
-A complementary suite, [SimulationEvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/SimulationEvaluationScenariosTest.kt), exercises the production [SimulatedKrakenService](../src/main/kotlin/com/gemini/krakenbot/service/impl/SimulatedKrakenService.kt) emulator with real TradeHistory + in-memory SQLite (invariant assertions; it uses a fixed seeded trade pattern while balances and prices drift randomly). See the architecture section below for the six named cases.
+A complementary suite, [SimulationEvaluationScenariosTest.kt](../backend/src/test/kotlin/com/gemini/krakenbot/SimulationEvaluationScenariosTest.kt), exercises the production [SimulatedKrakenService](../backend/src/main/kotlin/com/gemini/krakenbot/service/impl/SimulatedKrakenService.kt) emulator with real TradeHistory + in-memory SQLite (invariant assertions; it uses a fixed seeded trade pattern while balances and prices drift randomly). See the architecture section below for the six named cases.
 
 ---
 
@@ -17,7 +17,7 @@ You can run the full evaluation suite locally with Gradle:
 ./gradlew test --tests "com.gemini.krakenbot.SimulationEvaluationScenariosTest"
 ```
 
-Upon completion, the suite automatically compiles and updates a detailed report showing status and evidence at `build/reports/scenarios_evaluation_report.md`.
+Upon completion, the suite automatically compiles and updates a detailed report showing status and evidence at `backend/build/reports/scenarios_evaluation_report.md`.
 
 ---
 
@@ -52,7 +52,7 @@ FakeKraken exact-math cases:
 Below is the report of the current 41 scenarios run by the suite and their results.
 The latest run recorded 41/41 PASS. Generated order-client UUIDs are omitted
 from this stable summary; refresh it from
-`build/reports/scenarios_evaluation_report.md` after suite changes and redact
+`backend/build/reports/scenarios_evaluation_report.md` after suite changes and redact
 absolute paths or temporary identifiers.
 
 | Scenario | Name | Status | Key Evidence / Invariants |

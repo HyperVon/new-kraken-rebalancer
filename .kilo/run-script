@@ -12,13 +12,13 @@ fi
 
 cd "$WORKTREE_PATH"
 
-if ! ./gradlew --no-daemon fatJar >/dev/null 2>&1; then
+if ! ./gradlew --no-daemon :backend:fatJar >/dev/null 2>&1; then
     printf '%s\n' 'Agent Manager run failed.' >&2
     exit 1
 fi
 
 JAR_PATH=
-for candidate in "$WORKTREE_PATH"/build/libs/kraken-bot-*-all.jar; do
+for candidate in "$WORKTREE_PATH"/backend/build/libs/kraken-bot-*-all.jar; do
     if [ -f "$candidate" ]; then
         JAR_PATH=$candidate
         break

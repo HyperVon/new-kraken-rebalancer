@@ -21,12 +21,12 @@ description: >-
 ## Formatting & compiler
 
 - **Spotless** + **ktlint 1.8.0**, `max_line_length = 120`
-- Targets: `src/**/*.kt`, `common/src/**/*.kt`, `frontend-js/src/**/*.kt`,
+- Targets: `backend/src/**/*.kt`, `common/src/**/*.kt`, `frontend-js/src/**/*.kt`,
   `codegen/src/**/*.kt`, and `engine/src/**/*.kt`
-- Excludes: none (all Kotlin under `src/**`, `common/src/**`, `frontend-js/src/**`,
+- Excludes: none (all Kotlin under `backend/src/**`, `common/src/**`, `frontend-js/src/**`,
   `codegen/src/**`, and `engine/src/**`)
 - Apply: `./gradlew spotlessApply` — check: `./gradlew spotlessCheck`
-- **`allWarningsAsErrors`** enabled in root, `:common`, `:frontend-js`, `:codegen`, and `:engine`
+- **`allWarningsAsErrors`** enabled in `:backend`, `:common`, `:frontend-js`, `:codegen`, and `:engine` (root is aggregator-only)
 
 ## Build performance
 
@@ -34,10 +34,10 @@ description: >-
   is also enabled.
 - JVM tests use up to two forks by default. Override with `-PtestForks=1` and
   `-PtestMaxHeap=1g` on constrained hosts.
-- Routine release build: `./gradlew build fatJar` (no `clean`). Use `clean` only
+- Routine release build: `./gradlew build :backend:fatJar` (no `clean`). Use `clean` only
   when diagnosing stale outputs; it discards Kotlin/JS, Webpack, compile, and
   test caches.
-- When CI is already green and only packaging is needed: `./gradlew fatJar`.
+- When CI is already green and only packaging is needed: `./gradlew :backend:fatJar`.
 
 ### Multi-agent / CI verification
 

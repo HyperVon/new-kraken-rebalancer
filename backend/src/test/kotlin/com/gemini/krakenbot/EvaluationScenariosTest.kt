@@ -58,21 +58,11 @@ class EvaluationScenariosTest : StringSpec() {
         private const val FAIL = "FAIL"
         private val scenarioNamePattern = Regex("""^(Scenario \d+): (.+)$""")
 
-        data class ScenarioResult(
-            val name: String,
-            val description: String,
-            val status: String,
-            val evidence: String,
-        )
+        data class ScenarioResult(val name: String, val description: String, val status: String, val evidence: String)
 
         /** Rewrites the whole report after each scenario so an aborted run still leaves the results so far. */
         @Synchronized
-        fun recordResult(
-            name: String,
-            description: String,
-            status: String,
-            evidence: String,
-        ) {
+        fun recordResult(name: String, description: String, status: String, evidence: String) {
             registeredScenarios[name] = description
             results[name] = ScenarioResult(name, description, status, evidence)
             writeReport()
@@ -108,12 +98,18 @@ class EvaluationScenariosTest : StringSpec() {
             sb.append("## Evaluation Rubric & Status\n\n")
             sb.append("| Scenario | Description | Status | Details / Evidence |\n")
             sb.append("| :--- | :--- | :--- | :--- |\n")
-            for ((name, description, status, evidence) in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
+            for ((name, description, status, evidence) in results.values.sortedBy {
+                it.name.substringAfter(" ").toIntOrNull()
+                    ?: 0
+            }) {
                 val statusStr = if (status == TestFixtures.PASS) "🟢 **PASS**" else "🔴 **FAIL**"
                 sb.append("| $name | $description | $statusStr | ${sanitizeEvidence(evidence)} |\n")
             }
             sb.append("\n## Detailed Evidence for Each Scenario\n\n")
-            for ((name, description, status, evidence) in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
+            for ((name, description, status, evidence) in results.values.sortedBy {
+                it.name.substringAfter(" ").toIntOrNull()
+                    ?: 0
+            }) {
                 sb.append("### $name: $description\n\n")
                 sb.append("**Status**: $status\n\n")
                 sb.append("```text\n")

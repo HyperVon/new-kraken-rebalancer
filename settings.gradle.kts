@@ -1,2 +1,2 @@
 rootProject.name = "kraken-bot"
-include("common", "frontend-js", "codegen", "engine")
+include("common", "frontend-js", "codegen", "engine", "backend")

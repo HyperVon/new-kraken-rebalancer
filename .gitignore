@@ -36,6 +36,7 @@ portfolio-stats.json
 
 .junie/
 src/main/resources/static/rebalancer.js
+backend/src/main/resources/static/rebalancer.js
 node_modules/
 
 # Python

@@ -568,65 +568,67 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── HistoryViewPrefs.kt            # Browser-local History view presets
 │   │   └── DomExtensions.kt               # Shared DOM helpers for Kotlin/JS
 │   └── build.gradle.kts                   # Kotlin Multiplatform JS compilation configuration
-├── src/main/kotlin/com/gemini/krakenbot/
-│   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
-│   ├── config/
-│   │   ├── AppModule.kt                  # Koin dependency injection module
-│   │   ├── DatabaseConfig.kt             # SQLite connect + Exposed schema migrate
-│   │   ├── ErrorHandlingConfig.kt        # Ktor status pages
-│   │   ├── IndexRepair.kt                # SQLite index validation and rebuild
-│   │   ├── KtorConfig.kt                 # CORS, compression, content negotiation
-│   │   ├── LegacyDataRepair.kt           # Legacy submission state and trade id repair
-│   │   ├── MigrationBackup.kt            # Pre-migration database backup helper
-│   │   ├── SchemaMigrations.kt           # Versioned schema DDL migrations
-│   │   └── ServerConfig.kt               # Server port constant and JVM property key
-│   ├── controller/
-│   │   ├── DashboardController.kt        # HTTP handlers (pages, settings POST, SSE, history APIs)
-│   │   ├── CsrfProtection.kt              # Double-submit protection for settings mutations
-│   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
-│   ├── api/                               # Generated history mappers + custom sync-progress response mapping
-│   ├── model/                             # OrderIntent, LedgerEvent, RewardsOverTime, HistoryStats, RebalancerComparison, PortfolioStats
-│   ├── repository/                        # TradeRepository, OrderIntentRepository, LedgerRepository, PortfolioStatsRepository
-│   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
-│   │   └── table/                         # Trade/OrderIntent tables, SchemaMigrationTable, snapshot/stat/history tables
-│   ├── service/                           # Interfaces, OrderIntentService, and AssetColorAssigner
-│   │   └── impl/                          # Service implementations (coroutine-aware)
-│   │       ├── ConfigFilePermissionStrategy.kt # Cross-platform owner-only file permissions
-│   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
-│   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
-│   │       ├── KrakenParsers.kt          # Response parsing and error mapping
-│   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
-│   │       ├── KrakenSigning.kt          # HMAC-SHA512 request signing
-│   │       ├── KrakenTransport.kt        # HTTP execution, nonce handling, and private endpoint routing
-│   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
-│   │       ├── OrderIntentServiceImpl.kt # Durable ambiguous-order lifecycle
-│   │       ├── OrderSettleHelper.kt      # Settle proceeds polling, backoff, and pagination
-│   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
-│   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
-│   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
-│   │       ├── RebalanceSessionContext.kt# Immutable per-cycle session context
-│   │       ├── SimulatedKrakenService.kt # Offline exchange emulator
-│   │       ├── SimulationDefaults.kt     # Shared simulation default prices
-│   │       └── history/                  # Trade history façade + collaborators
-│   │           ├── TradeHistoryServiceImpl.kt # Thin façade (Sync / SnapshotStore / Query / Reconstruction)
-│   │           ├── TradeHistorySyncService.kt
-│   │           ├── LedgersSyncService.kt
-│   │           ├── TradeHistorySnapshotStore.kt
-│   │           ├── TradeHistoryQueryService.kt
-│   │           ├── TradeHistoryReconstructionService.kt
-│   │           ├── RebalancerComparisonCalculator.kt # Rebalancer vs Buy & Hold comparison
-│   │           └── SnapshotHistoryCalculator.kt # History reconstruction helpers
-│   ├── util/                              # Formatters, NetworkUtils, TradeDeduplicator
-│   ├── view/                              # HTML templates & components (kotlinx.html DSL)
-│   │   ├── DashboardView.kt              # Facade class delegating to components
-│   │   ├── component/                    # Shell, Grid, Form, History, charts, activity, performance
-│   │   ├── css/                          # CssTheme, CssStyles, ComponentStyles, LayoutStyles, TableStyles, FormStyles, NavigationStyles, MediaQueries
-│   │   └── util/                         # AllocationExtensions, Formatter, HtmlExtensions, HtmlHelpers, Icons, Layouts (shared IDs/Routes live in :common)
-├── src/test/kotlin/                       # JVM integration / E2E / evaluation tests (JaCoCo gates)
-├── src/main/resources/                    # Static resources
-│   └── static/
-│       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL
-│       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
+├── backend/                                 # Ktor JVM backend (:backend)
+│   ├── src/main/kotlin/com/gemini/krakenbot/
+│   │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
+│   │   ├── config/
+│   │   │   ├── AppModule.kt                  # Koin dependency injection module
+│   │   │   ├── DatabaseConfig.kt             # SQLite connect + Exposed schema migrate
+│   │   │   ├── ErrorHandlingConfig.kt        # Ktor status pages
+│   │   │   ├── IndexRepair.kt                # SQLite index validation and rebuild
+│   │   │   ├── KtorConfig.kt                 # CORS, compression, content negotiation
+│   │   │   ├── LegacyDataRepair.kt           # Legacy submission state and trade id repair
+│   │   │   ├── MigrationBackup.kt            # Pre-migration database backup helper
+│   │   │   ├── SchemaMigrations.kt           # Versioned schema DDL migrations
+│   │   │   └── ServerConfig.kt               # Server port constant and JVM property key
+│   │   ├── controller/
+│   │   │   ├── DashboardController.kt        # HTTP handlers (pages, settings POST, SSE, history APIs)
+│   │   │   ├── CsrfProtection.kt              # Double-submit protection for settings mutations
+│   │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
+│   │   ├── api/                               # Generated history mappers + custom sync-progress response mapping
+│   │   ├── model/                             # OrderIntent, LedgerEvent, RewardsOverTime, HistoryStats, RebalancerComparison, PortfolioStats
+│   │   ├── repository/                        # TradeRepository, OrderIntentRepository, LedgerRepository, PortfolioStatsRepository
+│   │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
+│   │   │   └── table/                         # Trade/OrderIntent tables, SchemaMigrationTable, snapshot/stat/history tables
+│   │   ├── service/                           # Interfaces, OrderIntentService, and AssetColorAssigner
+│   │   │   └── impl/                          # Service implementations (coroutine-aware)
+│   │   │       ├── ConfigFilePermissionStrategy.kt # Cross-platform owner-only file permissions
+│   │   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
+│   │   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
+│   │   │       ├── KrakenParsers.kt          # Response parsing and error mapping
+│   │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
+│   │   │       ├── KrakenSigning.kt          # HMAC-SHA512 request signing
+│   │   │       ├── KrakenTransport.kt        # HTTP execution, nonce handling, and private endpoint routing
+│   │   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
+│   │   │       ├── OrderIntentServiceImpl.kt # Durable ambiguous-order lifecycle
+│   │   │       ├── OrderSettleHelper.kt      # Settle proceeds polling, backoff, and pagination
+│   │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
+│   │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
+│   │   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
+│   │   │       ├── RebalanceSessionContext.kt# Immutable per-cycle session context
+│   │   │       ├── SimulatedKrakenService.kt # Offline exchange emulator
+│   │   │       ├── SimulationDefaults.kt     # Shared simulation default prices
+│   │   │       └── history/                  # Trade history façade + collaborators
+│   │   │           ├── TradeHistoryServiceImpl.kt # Thin façade (Sync / SnapshotStore / Query / Reconstruction)
+│   │   │           ├── TradeHistorySyncService.kt
+│   │   │           ├── LedgersSyncService.kt
+│   │   │           ├── TradeHistorySnapshotStore.kt
+│   │   │           ├── TradeHistoryQueryService.kt
+│   │   │           ├── TradeHistoryReconstructionService.kt
+│   │   │           ├── RebalancerComparisonCalculator.kt # Rebalancer vs Buy & Hold comparison
+│   │   │           └── SnapshotHistoryCalculator.kt # History reconstruction helpers
+│   │   ├── util/                              # Formatters, NetworkUtils, TradeDeduplicator
+│   │   └── view/                              # HTML templates & components (kotlinx.html DSL)
+│   │       ├── DashboardView.kt              # Facade class delegating to components
+│   │       ├── component/                    # Shell, Grid, Form, History, charts, activity, performance
+│   │       ├── css/                          # CssTheme, CssStyles, ComponentStyles, LayoutStyles, TableStyles, FormStyles, NavigationStyles, MediaQueries
+│   │       └── util/                         # AllocationExtensions, Formatter, HtmlExtensions, HtmlHelpers, Icons, Layouts (shared IDs/Routes live in :common)
+│   ├── src/test/kotlin/                       # JVM integration / E2E / evaluation tests (JaCoCo gates)
+│   ├── src/main/resources/                    # Static resources
+│   │   └── static/
+│   │       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL
+│   │       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
+│   └── build.gradle.kts                       # Backend JVM build (JaCoCo, fatJar, copyJsBundle)
 ├── docs/                                  # Project documentation and architecture guides
 │   ├── AGENTIC_DEVELOPMENT.md             # Human guide to the AI-assisted development system
 │   ├── USER_GUIDE.md                      # End-user walkthrough (Dashboard, Settings, History)
@@ -635,7 +637,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   ├── ALGORITHM.md                       # Detailed algorithm documentation
 │   └── EVALUATION.md                      # Scenario evaluation suite documentation
 ├── rebalancer-config-template.json        # Configuration template
-└── build.gradle.kts                       # Gradle build with JaCoCo coverage enforcement
+└── build.gradle.kts                       # Root aggregator (Spotless + :backend/:frontend-js delegation)
 ```
 
 ---
@@ -703,10 +705,10 @@ Or if you wish to build and execute the Fat JAR manually:
 
 ```bash
 # Build the Fat JAR containing all dependencies
-./gradlew fatJar
+./gradlew :backend:fatJar
 
 # Run using the JVM (includes optimal JVM parameters for native SQLite memory access)
-java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
+java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar backend/build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
 ```
 
 For a local quality-gated release build, use `./gradlew build fatJar` without
@@ -736,7 +738,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 ./gradlew :frontend-js:jsBrowserProductionWebpack
 
 # Compile and copy the bundle directly into the Ktor JVM static resources folder
-./gradlew copyJsBundle
+./gradlew :backend:copyJsBundle
 ```
 
 ---
