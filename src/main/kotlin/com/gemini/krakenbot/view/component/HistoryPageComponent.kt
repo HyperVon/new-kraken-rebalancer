@@ -10,6 +10,7 @@ import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.HtmxValues
@@ -78,6 +79,7 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                 id = HtmlIds.HISTORY_REALTIME_ROOT
                 attributes[HtmxAttrs.HX_EXT] = HtmxValues.EXT_SSE
                 attributes[HtmxAttrs.SSE_CONNECT] = Routes.API_STATUS_STREAM
+                attributes[HtmxAttrs.HX_TRIGGER] = HtmlEvents.SSE_MESSAGE
                 renderHeader(settings, csrfToken, paused)
                 renderSyncProgressBanner()
                 renderToolbar()

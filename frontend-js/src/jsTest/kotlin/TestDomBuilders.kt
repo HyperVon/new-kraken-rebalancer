@@ -71,7 +71,7 @@ object TestDomBuilders {
 
     fun historyRealtimeDom(): String =
         """
-        <div id="history-realtime-root" hx-ext="sse" sse-connect="/api/status/stream">
+        <div id="history-realtime-root" hx-ext="sse" sse-connect="/api/status/stream" hx-trigger="sse:message">
             ${historyViewsDom()}
         </div>
         """.trimIndent()

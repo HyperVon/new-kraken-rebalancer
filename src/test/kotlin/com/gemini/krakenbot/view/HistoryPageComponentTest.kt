@@ -58,6 +58,7 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"
             htmlString shouldContain "hx-ext=\"sse\""
             htmlString shouldContain "sse-connect=\"/api/status/stream\""
+            htmlString shouldContain "hx-trigger=\"sse:message\""
             htmlString shouldContain "Rebalancer vs Buy &amp; Hold"
             htmlString shouldContain "comparison-latest-difference"
             htmlString shouldContain "comparison-chart-content"
