@@ -70,10 +70,10 @@ Copy this checklist and track progress:
 Gather facts from code/build (do not trust docs yet):
 
 1. **Versions** — `build.gradle.kts` (root aggregator), `backend/build.gradle.kts`,
-    `common/build.gradle.kts`, `frontend-js/build.gradle.kts`,
+    `common/build.gradle.kts`, `engine/build.gradle.kts`, `frontend-js/build.gradle.kts`,
     `gradle/wrapper/gradle-wrapper.properties`, JDK toolchain, Spotless/ktlint.
 2. **Architecture** — packages under `backend/src/main/kotlin/com/gemini/krakenbot/`,
-    `:common`, `:frontend-js`, `:backend`; key types (`PortfolioManagerImpl`,
+    `:common`, `:engine`, `:frontend-js`, `:backend`; key types (`PortfolioManagerImpl`,
    `PortfolioAnalyzerImpl`, `PortfolioCalculations`, `OrderExecutorImpl`,
    `DynamicKrakenService`, `RateLimiter`, `TradeHistoryServiceImpl`,
    `DashboardRoutes` / `DashboardController`, view components).
