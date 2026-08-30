@@ -205,7 +205,6 @@ sequenceDiagram
 - Each SSE `data` payload is Jackson-serialized **`PortfolioSnapshot` JSON** (`timestamp`, `totalValueUSD`, `assets`, `actions`, drawdown/deploy fields).
 - `replay = 1` + `extraBufferCapacity = 16` + `DROP_OLDEST` means late SSE subscribers still get the latest snapshot, and a slow browser connection **never** stalls the rebalancing loop. The portfolio manager can always `tryEmit()` and move on immediately.
 - Multiple browser tabs can all connect simultaneously — each gets its own `collect()` call which independently consumes from the same shared broadcast.
-- The History page uses the same HTMX SSE transport on its root wrapper. Its Kotlin/JS listener handles only `sse:message` to debounce a state-preserving `loadAll(historyCurrentRange())` refresh; HTMX remains responsible for the browser connection and reconnection behavior.
 
 ---
 

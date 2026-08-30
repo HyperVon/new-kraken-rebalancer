@@ -250,12 +250,6 @@ The History page is for longer-term review: performance charts and the full
 trade log. Use the **24h / 7d / 30d / 90d / All** pills to change the window —
 all six summary cards and the charts update together.
 
-While History is open, the page also refreshes automatically when the existing
-portfolio SSE stream reports a new snapshot. The refresh is debounced and keeps
-your selected range, view preset, show-dry-run filter, and chart legend
-visibility intact; the initial refresh is held until history synchronization is
-ready.
-
 ### Sync progress banner
 
 Immediately below the header, a banner appears while trade and ledger history is
