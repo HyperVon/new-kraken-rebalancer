@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.FakeKrakenService
+import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.TradeHistoryServiceTestAdapter
 import io.kotest.assertions.throwables.shouldThrow
@@ -15,11 +16,14 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * End-to-end coverage of the SQLite-backed durable live-order submission journal.
@@ -199,6 +203,52 @@ class OrderSubmissionJournalE2ETest : StringSpec() {
                 row.success shouldBe false
                 row.submissionState shouldBe OrderSubmissionState.UNCERTAIN
                 row.errorMessage shouldBe "connection reset after submission"
+            }
+        }
+
+        "cancellation while saving the durable intent persists an uncertain legacy guard and blocks retry" {
+            runTest {
+                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
+                val repository = SqliteTradeRepositoryImpl(db)
+                val krakenService = FakeKrakenService()
+                val tradeHistoryService = TradeHistoryServiceTestAdapter(repository)
+                val orderIntentService = mockk<OrderIntentService>(relaxed = true)
+                val cancellation = CancellationException("intent save cancelled")
+                coEvery { orderIntentService.hasUnresolvedIntents() } returns false
+                coEvery { orderIntentService.savePending(any()) } throws cancellation
+                val orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService, orderIntentService)
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+
+                val thrown = shouldThrow<CancellationException> {
+                    orderExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings = TestFixtures.settings(dryRun = false),
+                        actionLog = mutableListOf(),
+                        cycleId = "cancelled-intent-save",
+                    )
+                }
+
+                thrown shouldBe cancellation
+                val persisted = repository.getTradesInRange(now.minusSeconds(5), now.plusSeconds(5)).single()
+                persisted.success shouldBe false
+                persisted.submissionState shouldBe OrderSubmissionState.UNCERTAIN
+                persisted.errorMessage shouldBe cancellation.message
+                repository.hasPendingSubmissions() shouldBe true
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("25.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(Asset.ETH to BigDecimal("1000.00")),
+                    settings = TestFixtures.settings(dryRun = false),
+                    actionLog = mutableListOf(),
+                    cycleId = "blocked-after-cancelled-intent-save",
+                )
+                krakenService.executedOrders shouldHaveSize 0
+                repository.getTradesInRange(now.minusSeconds(5), now.plusSeconds(5)) shouldHaveSize 1
             }
         }
 

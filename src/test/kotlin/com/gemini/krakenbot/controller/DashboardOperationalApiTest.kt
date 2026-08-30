@@ -8,7 +8,6 @@ import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.view.util.FormFields
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.client.request.get
@@ -579,12 +578,14 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
             }
         }
 
-        "health and readiness endpoints rethrow CancellationException during diagnostics" {
+        "health and readiness expose diagnostic cancellation as an internal server error" {
             coEvery { tradeHistoryService.getHistoryStats() } throws CancellationException("Parent job cancelled")
 
             testApplication {
                 application { configureTestEnv() }
 
+                // testApplication converts the unhandled CancellationException to HTTP 500; the
+                // route must not swallow it and fabricate a normal diagnostic response.
                 val healthResponse = client.get("/api/health")
                 healthResponse.status shouldBe HttpStatusCode.InternalServerError
 

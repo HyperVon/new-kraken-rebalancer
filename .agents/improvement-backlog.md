@@ -31,13 +31,24 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | CI-27-U03 | S | done | ui | Scrubber sync after zoom-reset | 27 | 222 |
 | CI-27-U04 | S | dropped | docs | Stale README screenshots | 27 | no CSS changed this cycle; no refresh needed |
 | CI-28-U04 | S | dropped | a11y | Sync banner `.hidden` toggle without `aria-live` | 28 | OPERATING.md §5 prohibits unsolicited ARIA |
+| QO-PROD01 | M | dropped | product | Multi-channel alerting (Telegram, Discord, Webhooks) | QO-1 | User not interested |
+| QO-PROD02 | M | dropped | product | Tax & accounting export hub (CSV, Koinly, CoinTracker) | QO-1 | User not interested |
+| QO-PROD03 | M | dropped | product | Dynamic risk controls (turnover caps, cooldown) | QO-1 | User not interested |
+| QO-PROD04 | M | dropped | product | Interactive "What-If" rebalance preview modal | QO-1 | User not interested |
+| QO-PROD05 | M/L | dropped | product | Cash-flow deposit rebalancing & per-asset corridors | QO-1 | User not interested |
+| QO-PROD06 | L | dropped | product | Multi-account & sub-account management | QO-1 | User not interested |
 
 ## Open
 
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
-| CI-28-C07 | S | dropped | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | superseded by CI-29-C01 (done 220) |
-| CI-28-U01 | S | done | css | Tokenize remaining raw `rgba()`/shadow literals in `ComponentStyles.kt` | 28 | 222 |
+| QO-ARCH01 | M | deferred | architecture | Extract `:backend` subproject & KMP alignment | QO-1 | Roadmap: Next |
+| QO-ARCH02 | S/M | deferred | architecture | Decouple simulation seeding & migration from `SnapshotStore` | QO-1 | Roadmap: Now |
+| QO-ARCH03 | M | deferred | architecture | Consolidated KSP entity mapping pipeline | QO-1 | Roadmap: Later |
+| QO-ARCH04 | M/L | deferred | architecture | Tiered exchange gateway SPI & WebSocket tickers | QO-1 | Roadmap: Later |
+| QO-ARCH05 | L | deferred | architecture | Rebalance lifecycle FSM with persisted step journals | QO-1 | Roadmap: Later |
+| QO-PROD07 | S/M | deferred | product | Advanced historical telemetry & alpha analytics (Sharpe, Sortino, fee drag, rebalancing alpha) | QO-1 | User may consider |
+| QO-HIST01 | M | open | frontend | Real-time History page updates — subscribe to `snapshotFlow` / trade events via SSE so charts, trade table, and summary cards refresh automatically when trades occur without requiring manual navigation | QO-1 | Backend `TradeHistorySnapshotStore.snapshotFlow` already emits; needs SSE endpoint + client listener + state-preserving refresh |
 
 ## Done (recent)
 

@@ -59,9 +59,13 @@ internal fun JdbcTransaction.markLegacyAmbiguousClientOrderIds() {
 
 internal fun JdbcTransaction.backfillLegacyTradeIds() {
     val assignedTradeIds = OrderIntentTable
-        .select(OrderIntentTable.localTradeId)
+        .select(OrderIntentTable.id, OrderIntentTable.localTradeId)
         .where { OrderIntentTable.localTradeId.isNotNull() }
-        .mapNotNull { it.getOrNull(OrderIntentTable.localTradeId) }
+        .map { row ->
+            checkNotNull(row.getOrNull(OrderIntentTable.localTradeId)) {
+                "Legacy order intent ${row[OrderIntentTable.id]} has a null local_trade_id despite the non-null query."
+            }
+        }
         .toMutableSet()
     val intentCandidates = OrderIntentTable
         .selectAll()
@@ -215,8 +219,11 @@ internal fun JdbcTransaction.reconcileTerminalOrderIntents() {
                 )
                 ) and OrderIntentTable.localTradeId.isNotNull()
         }
-        .mapNotNull { row ->
-            val localTradeId = row.getOrNull(OrderIntentTable.localTradeId) ?: return@mapNotNull null
+        .map { row ->
+            val localTradeId = checkNotNull(row.getOrNull(OrderIntentTable.localTradeId)) {
+                "Terminal order intent ${row[OrderIntentTable.id]} has a null local_trade_id " +
+                    "despite the non-null query."
+            }
             TerminalIntent(
                 localTradeId = localTradeId,
                 clientOrderId = row[OrderIntentTable.clientOrderId],
@@ -449,7 +456,9 @@ internal fun JdbcTransaction.reconcileLegacySubmissionGuards() {
                 it[OrderIntentTable.usdAmount] = row[TradeTable.usdAmount]
                 it[OrderIntentTable.expectedPrice] = row[TradeTable.expectedPrice]
                 it[OrderIntentTable.createdAt] = row[TradeTable.timestamp]
-                it[OrderIntentTable.state] = row[TradeTable.submissionState] ?: OrderIntentState.CONFIRMED.name
+                it[OrderIntentTable.state] = checkNotNull(row.getOrNull(TradeTable.submissionState)) {
+                    "Legacy live trade $tradeId has a null submission_state despite the PENDING/UNCERTAIN query."
+                }
                 it[OrderIntentTable.orderTxid] = row[TradeTable.orderTxid]
                 it[OrderIntentTable.errorMessage] = if (ambiguousClientOrderId) {
                     ambiguityMessage + (row[TradeTable.errorMessage] ?: "")

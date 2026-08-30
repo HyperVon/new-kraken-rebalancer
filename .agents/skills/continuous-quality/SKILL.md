@@ -144,10 +144,13 @@ Track work in **two places** with different roles:
    done
    ```
 
-2. Dedupe against open issues:
+2. Before creating, dedupe against all related tracking surfaces:
 
    ```bash
    gh issue list --state open --label continuous-quality --limit 50
+   gh issue list --state open --search "keyword from finding"
+   # also check continuous-improvement issues for the same bug or finding
+   gh issue list --state open --label continuous-improvement --limit 50
    ```
 
 3. Create an issue for each **L** or cross-cycle **deferred** item without an issue link:
@@ -156,12 +159,30 @@ Track work in **two places** with different roles:
    gh issue create \
      --title "[CQ-3-2] Short summary" \
      --label "continuous-quality,size/L" \
-     --body "## Summary\n...\n\n## Evidence\n...\n\n## Proposed approach\n..."
+     --body "$(cat <<'EOF'
+   ## Summary
+   …
+
+   ## Size / risk
+   L — …
+
+   ## Evidence
+   Failing idea / path / uncovered branch …
+
+   ## Proposed approach
+   Test first (…); then fix (…); or defer product change
+
+   ## Cycle
+   Discovered in quality cycle 3 on branch `quality/…`
+   EOF
+   )"
    ```
 
 4. Record the issue number in the backlog `Issue` column (`#NN`).
 5. **Do not** open issues for S/M items shipping in the same cycle PR — the backlog file suffices.
-6. When shipping: reference issues in the PR body (`Closes #NN`) and close via `gh issue close N`.
+6. When shipping, distinguish resolution status:
+   - Fully resolved: reference with `Closes #NN` and close via `gh issue close N`.
+   - Partially resolved: comment what shipped, update the remaining scope, and keep the issue open.
 
 ### Discover-only mode
 
