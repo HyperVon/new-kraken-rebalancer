@@ -711,7 +711,7 @@ Or if you wish to build and execute the Fat JAR manually:
 java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar backend/build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
 ```
 
-For a local quality-gated release build, use `./gradlew build fatJar` without
+For a local quality-gated release build, use `./gradlew build :backend:fatJar` without
 `clean` so Gradle can reuse compilation, Kotlin/JS, Webpack, and test outputs.
 Reserve `clean` for troubleshooting stale outputs. Gradle runs independent
 projects in parallel and uses up to two JVM test forks by default; override on

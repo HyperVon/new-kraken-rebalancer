@@ -25,7 +25,7 @@ Do **not** use the legacy `org.jetbrains.exposed.sql.*` packages.
 
 ## Table & Schema Definitions
 
-Define tables extending `Table` (this repo does **not** use `LongIdTable`) with an explicit auto-incrementing integer id and explicit precision / foreign key cascade rules. Use the real schema in `src/main/kotlin/com/gemini/krakenbot/repository/table/TradeTable.kt` as the canonical reference:
+Define tables extending `Table` (this repo does **not** use `LongIdTable`) with an explicit auto-incrementing integer id and explicit precision / foreign key cascade rules. Use the real schema in `backend/src/main/kotlin/com/gemini/krakenbot/repository/table/TradeTable.kt` as the canonical reference:
 
 ```kotlin
 object TradeTable : Table("trades") {

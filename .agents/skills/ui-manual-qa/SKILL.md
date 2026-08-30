@@ -101,7 +101,7 @@ Keep these visible contracts in mind while running cases:
 ### Step 1: Isolated simulation
 
 ```bash
-./gradlew fatJar
+./gradlew :backend:fatJar
 RUN_DIR=$(mktemp -d)
 cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
 # set simulation: true, loopDelaySeconds: 15

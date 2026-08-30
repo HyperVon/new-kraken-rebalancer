@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.JavaExec
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -24,6 +25,10 @@ application {
     mainClass.set("com.gemini.krakenbot.KrakenRebalancerApplicationKt")
     applicationDefaultJvmArgs =
         listOf("-Xshare:off", "--enable-native-access=ALL-UNNAMED")
+}
+
+tasks.named<JavaExec>("run") {
+    workingDir(rootProject.projectDir)
 }
 
 repositories {

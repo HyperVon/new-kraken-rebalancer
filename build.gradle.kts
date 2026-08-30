@@ -57,6 +57,13 @@ tasks.named("check") {
     dependsOn(":frontend-js:jsBrowserTest")
 }
 
+// Preserve `./gradlew run` at repo root (delegates to backend)
+tasks.register("run") {
+    group = "application"
+    description = "Delegates to :backend:run (workingDir = repo root for rebalancer-config.json lookup)"
+    dependsOn(":backend:run")
+}
+
 rootProject.plugins.withType<YarnPlugin> {
     rootProject.extensions.configure<YarnRootExtension> {
         // Bounded ranges keep Yarn 1 quiet while retaining the patched security floor;

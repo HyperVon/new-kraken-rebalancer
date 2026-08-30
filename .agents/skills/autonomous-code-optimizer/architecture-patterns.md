@@ -119,10 +119,10 @@ frontend-js →  DOM/Chart.js + :common Ids/text (no JVM services)
 Quick ripgrep (from repository root; treat hits as defects unless justified):
 
 ```bash
-rg 'KrakenService|OrderExecutor|TradeRepository' src/main/kotlin/com/gemini/krakenbot/view --glob '*.kt'
+rg 'KrakenService|OrderExecutor|TradeRepository' backend/src/main/kotlin/com/gemini/krakenbot/view --glob '*.kt'
 rg 'repository\.|KrakenService' engine/src/main/kotlin/com/gemini/krakenbot/domain/RebalancerEngine.kt \
   engine/src/main/kotlin/com/gemini/krakenbot/domain/PortfolioCalculations.kt
-rg 'KrakenServiceImpl|SimulatedKrakenService' src/main/kotlin/com/gemini/krakenbot/controller --glob '*.kt'
+rg 'KrakenServiceImpl|SimulatedKrakenService' backend/src/main/kotlin/com/gemini/krakenbot/controller --glob '*.kt'
 ```
 
 ---

@@ -1,8 +1,8 @@
 ---
 paths:
-  - "src/main/kotlin/com/gemini/krakenbot/view/**/*.kt"
-  - "src/main/kotlin/com/gemini/krakenbot/controller/DashboardController.kt"
-  - "src/main/kotlin/com/gemini/krakenbot/controller/DashboardRoutes.kt"
+  - "backend/src/main/kotlin/com/gemini/krakenbot/view/**/*.kt"
+  - "backend/src/main/kotlin/com/gemini/krakenbot/controller/DashboardController.kt"
+  - "backend/src/main/kotlin/com/gemini/krakenbot/controller/DashboardRoutes.kt"
   - "frontend-js/src/**/*.kt"
   - "common/src/commonMain/kotlin/com/gemini/krakenbot/view/util/**/*.kt"
 ---
