@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.13] - 2026-08-30
+
+### Changed
+
+- **ATH persistence fail-closed documentation alignment**: Reconciled `docs/ALGORITHM.md` to document strict fail-closed cycle abort on non-cancellation ATH persistence failure, matching `PortfolioAnalyzerImpl.kt` and `PortfolioAnalyzerImplTest.kt`.
+- **Skill scripts & wire DTO alignment**: Updated search directory paths in `.agents/skills/kotlin-refactoring-and-cleanup/scripts/find_anti_patterns.sh` and `.agents/skills/reduce-code-size/scripts/measure_code_size.sh` to include all active modules (`backend/ common/ frontend-js/ engine/ codegen/`), clarified `TestFixtures.kt` path in `.agents/skills/write-kotest/SKILL.md` (`backend/src/test/kotlin/com/gemini/krakenbot/TestFixtures.kt`), and added `RebalancerComparison`, `RewardsOverTime`, and `RewardsOverTimePoint` wire DTOs to `.agents/skills/common-kmp-module/SKILL.md`.
+
+### Fixed
+
+- **Documentation audit & quality verification**: Verified tech stack versions (Kotlin 2.4.20-RC, JDK 25, Ktor 3.5.2, Exposed 1.4.0, Koin 4.2.2, Kotest 6.2.4), Mermaid 8.x syntax across documentation, skill catalog integrity across all 52 skills, markdownlint formatting, and Spotless compliance.
+
 ## [6.17.12] - 2026-08-30
 
 ### Changed

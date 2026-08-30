@@ -140,10 +140,10 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    is reached. Missing or explicitly null stats represent an empty initial
    state. A database read or legacy-file migration failure aborts the analysis
    before ATH persistence or order planning, rather than treating the ATH as
-   zero. A non-cancellation ATH persistence failure is logged as a warning and
-   the cycle continues using the ATH selected in memory for that cycle: the
-   current portfolio value on a new high, otherwise the loaded stored ATH.
-   Cancellation still propagates so a cancelled cycle cannot continue.
+   zero. Any non-cancellation ATH persistence failure logs an error and aborts
+   the cycle (fail-closed) so the bot never plans orders against an unpersisted
+   All-Time High. Cancellation still propagates so a cancelled cycle cannot
+   continue.
 2. **Drawdown Calculation**:
    `Drawdown % = (ATH - Current Value) / ATH * 100`
    The numerator is multiplied by 100 before division so the result retains all

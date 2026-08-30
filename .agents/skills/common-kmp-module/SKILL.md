@@ -27,7 +27,7 @@ Path: `common/src/commonMain/kotlin/com/gemini/krakenbot/`.
 | :--- | :--- |
 | Config | `AppConfig`, `Settings`, `Allocation`, `KrakenCredentials` |
 | Domain | `TimeRange`, `OrderSide`, `OrderType`, `Asset`, `Result`, `TradeSource`, `SyncMetadataKeys` |
-| Wire DTOs (`api/`) | `PortfolioSnapshot`, `TradeRecord`, `HistoryStats`, `SyncProgressResponse` |
+| Wire DTOs (`api/`) | `PortfolioSnapshot`, `TradeRecord`, `RebalancerComparison`, `RewardsOverTime`, `RewardsOverTimePoint`, `HistoryStats`, `SyncProgressResponse` |
 | Precision | `PrecisionConstants` |
 | View util | `CssClass`, `HtmlQueries`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `FormFields`, `QueryParamKeys`, `ChartProps` |
 

@@ -33,7 +33,7 @@ reflection-based discovery does not require it on every spec.
 
 ## TestFixtures
 
-Use `backend/src/test/.../TestFixtures.kt` for shared credentials, pair symbols
+Use `backend/src/test/kotlin/com/gemini/krakenbot/TestFixtures.kt` for shared credentials, pair symbols
 (`XBTUSD`, `XXBTZUSD`), sync keys, and `DEFAULT_TEST_SETTINGS` /
 `DEFAULT_TEST_CONFIG`. Avoid duplicating magic test constants.
 

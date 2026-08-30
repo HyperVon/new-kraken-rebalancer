@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-roots=(src common frontend-js)
+roots=(backend common frontend-js engine codegen)
 existing=()
 for root in "${roots[@]}"; do
     [[ -d "$root" ]] && existing+=("$root")
