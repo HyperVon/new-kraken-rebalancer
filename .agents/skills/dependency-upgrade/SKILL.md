@@ -41,16 +41,13 @@ fixed immediately in `.agents/improvement-backlog.md` with a GitHub issue.
 
 ## Where versions live
 
-There is **no** Gradle version catalog. Versions are inline string literals spread across:
-
-- `build.gradle.kts` — JVM backend deps + `kotlin("jvm")`, `spotless` (ktlint), Jackson BOM, Netty pin (`resolutionStrategy`), yarn `resolution(...)` npm pins.
-- `common/build.gradle.kts` — KMP `:common` module.
-- `frontend-js/build.gradle.kts` — Kotlin/JS deps, `ksp`, `io.kotest` plugin, `npm(...)` / `devNpm(...)` packages.
-- `settings.gradle.kts` — Kotlin/plugin management if present.
-- `gradle/wrapper/gradle-wrapper.properties` — `distributionUrl` (Gradle version).
-- `build.gradle.kts` `java.toolchain.languageVersion` — JDK version.
-
-Many versions are declared once as a local `val`/`var` (e.g. `ktorVersion`, `koinVersion`, `exposedVersion`, `koTestVersion`, `kotlinXCoroutinesVersion`) and reused via `$var`. Update the variable, not each usage.
+Most library and plugin versions are centralized in the Gradle version catalog
+`gradle/libs.versions.toml`, and module build files consume them through `libs`
+aliases. Also inspect the build files for versions that remain outside the
+catalog: JDK 25 toolchains, Netty and Apache HttpComponents security floors,
+root Yarn resolutions, and direct `npm(...)` / `devNpm(...)` package versions.
+The wrapper version is in `gradle/wrapper/gradle-wrapper.properties`. The
+repository checker is `.agents/skills/dependency-upgrade/scripts/check_updates.py`.
 
 ## Workflow
 

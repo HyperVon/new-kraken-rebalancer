@@ -16,7 +16,7 @@ flowchart TD
         S3 --> S4["Sum → Total Portfolio Value"]
     end
 
-    SNAP --> ATH{New ATH?}
+    SNAP --> ATH{"New ATH?"}
     ATH -- Yes --> SAVE_ATH["Update ATH in SQLite database"]
     ATH -- No --> DD
     SAVE_ATH --> DD
@@ -310,9 +310,9 @@ failure.
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
 once every **300 seconds**, requesting `staking` and `dividend` entries in pages
-of **50**. The first sync scans the full available history and stores durable
-progress metadata; later syncs use the latest stored ledger time (or watermark)
-with a **300-second overlap**. SQLite enforces the `(ledger id, timestamp,
+of **50**. The first and recovered initial syncs use a bounded **96-day** seed
+window and store durable progress metadata; later syncs use the latest stored
+ledger time (or watermark) with a **300-second overlap**. SQLite enforces the `(ledger id, timestamp,
 asset, type)` identity so overlapping pages and retries are safe.
 
 The History `/api/history/rewards` endpoint currently charts `staking` entries.

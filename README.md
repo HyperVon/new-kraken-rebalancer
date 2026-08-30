@@ -350,7 +350,7 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   start at 10s and scale up to a 15-minute ceiling). AddOrder is the safety
   exception: it is attempted once because an ambiguous response may follow an
   accepted order
-- **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`, link-local `169.254.x.x`) to permit local Wi-Fi access from other devices while blocking public web threats
+- **CORS Restrictions** — by default, limits browser origins to local machine addresses (`localhost`, `127.0.0.1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`, link-local `169.254.x.x`). `REBALANCER_ALLOWED_ORIGINS` can add exact origins; `REBALANCER_ALLOW_ALL_ORIGINS=true` is a lab-only break-glass override that disables origin checks and must never be used with live keys. CORS is not authentication.
 - **No dashboard user auth** — trust model is local/private network; see [SECURITY.md](SECURITY.md)
 - **Database Indexing & Versioned Migrations** — schemas index timestamp
   columns; on startup `DatabaseConfig` records applied schema versions, runs
@@ -803,7 +803,7 @@ runs the JaCoCo coverage gate via the `check` task
 
 The backend enforces **strict line, branch, method, and instruction coverage**
 via JaCoCo: **95% instruction, 90% branch, 95% line, and 95% method**.
-Exclusions are narrow and mirror `coverageExcludes` in `build.gradle.kts`:
+Exclusions are narrow and mirror `coverageExcludes` in `backend/build.gradle.kts`:
 framework bootstrap (`DatabaseConfig`, `MigrationBackup`, `LegacyDataRepair`,
 `KtorConfig`), Exposed table declarations, selected thin service interfaces
 (`KrakenService*`, `ConfigService`, `OrderExecutor`), and repository interfaces

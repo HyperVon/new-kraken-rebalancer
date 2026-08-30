@@ -65,12 +65,12 @@ absolute paths or temporary identifiers.
 | Scenario 6 | Zero Target Allocation (Total Liquidation) | 🟢 **PASS** | ETH target percent was 0.00%.<br>Liquidated ETH volume 5.00000000; 1 sell order; generated client-order UUID omitted. |
 | Scenario 7 | Kraken Symbol Mapping Quirks (DOGE/BTC) | 🟢 **PASS** | Correctly mapped DOGE (XDG) and BTC (XXBT) pairs.<br>Executed 2 orders; generated client-order UUIDs omitted. |
 | Scenario 8 | Concurrent Multi-Asset Rebalance with Slippage | 🟢 **PASS** | Sell XBTUSD volume 0.34400000, then buy ETHUSD volume 3.96000000; generated client-order UUIDs omitted. |
-| Scenario 9 | Extreme Market Volatility (Massive Price Swings) | 🟢 **PASS** | BTC surged to $100,000; ETH crashed to $1,000.<br>Rebalancer successfully stabilized portfolio without negative cash or infinite loops.<br>Generated client-order UUIDs omitted. |
-| Scenario 10 | Complete Kraken API Outage (Graceful Degradation) | 🟢 **PASS** | Kraken API returned HTTP 500 across all endpoints.<br>Rebalancer logged failure and aborted cycle cleanly without crashing the daemon. |
-| Scenario 11 | Partial Kraken Rate Limiting (Exponential Backoff & Jitter) | 🟢 **PASS** | Kraken returned `EAPI:Rate limit exceeded`.<br>Rebalancer backed off, retried, and completed execution once limits recovered. |
-| Scenario 12 | Precision & Micro-Dust Order Filtering | 🟢 **PASS** | Portfolio deviation of $0.45 fell below $5.00 minimum order size.<br>No dust orders were executed. |
-| Scenario 13 | Rapid Consecutive Deposit/Withdrawal Shocks | 🟢 **PASS** | Successive fiat shocks of +$50,000 then -$20,000 handled gracefully across consecutive rebalance ticks. |
-| Scenario 14 | Rapid Settings Mutation During Active Rebalance Loop | 🟢 **PASS** | Loop delay and deviation triggers mutated concurrently while execution engine was running without race conditions. |
+| Scenario 9 | Run Loop Lifecycle & Timing | 🟢 **PASS** | Virtual time advanced through at least two 1-second cycles; `stopRebalancingLoop()` stopped the loop cleanly. |
+| Scenario 10 | Portfolio Stats Database Failure Resilience | 🟢 **PASS** | Dropping the in-memory `portfolio_stats` table made `save()` fail with the expected `IOException("Database write failed")`. |
+| Scenario 11 | Configuration Validation Edge Cases | 🟢 **PASS** | Invalid loop delay, deviation, drawdown, allocation total, and missing-USD configurations each raised `InvalidConfigurationException`. |
+| Scenario 12 | Precision and Rounding Tolerances | 🟢 **PASS** | 8-decimal BTC input and USD-scaled totals remained precise; the dry-run buy volume was `0.00001030` at the configured price. |
+| Scenario 13 | High Volatility Slippage Capping | 🟢 **PASS** | A BTC sell credited $250; the ETH buy used $350 settled cash × the 99% cap, producing the expected `0.17325000` volume. |
+| Scenario 14 | Config File Hot-Reload via `loadConfig()` | 🟢 **PASS** | After the file changed from a 60s to 120s loop delay, `loadConfig()` observed the updated settings without a filesystem watcher. |
 | Scenario 15 | Single Asset Dominance (Extreme Rebalance) | 🟢 **PASS** | One asset represented 99% of total portfolio value.<br>Order sequencing and projected cash correctly executed 1 sell and 2 buys; generated client-order UUIDs omitted. |
 | Scenario 16 | Trade History Storage and JSON Serialization | 🟢 **PASS** | Successfully logged 3 executed trades, verified deterministic UUIDs, and persisted valid JSON to storage. |
 | Scenario 17 | Partial Kraken API Failure (Individual Endpoint Failures) | 🟢 **PASS** | Ticker endpoint failed while Balance endpoint succeeded.<br>Rebalancer safely aborted cycle before placing any orders. |

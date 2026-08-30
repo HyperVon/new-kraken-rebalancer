@@ -98,10 +98,13 @@ order requires it if querying open orders directly).
 The dashboard and HTTP API do not have user authentication. They are designed
 for a single trusted operator on a local machine or private network.
 
-Browser cross-origin access is limited to local and private origins, including
-localhost, IPv4 and IPv6 loopback, `.local` hostnames, RFC1918 private ranges,
-and the `169.254.0.0/16` link-local range. This CORS policy is not a substitute
-for network access control.
+By default, browser cross-origin access is limited to local and private origins,
+including localhost, IPv4 and IPv6 loopback, `.local` hostnames, RFC1918 private
+ranges, and the `169.254.0.0/16` link-local range. `REBALANCER_ALLOWED_ORIGINS`
+can add exact, structurally parsed origins. `REBALANCER_ALLOW_ALL_ORIGINS=true`
+disables origin checks for an isolated lab and logs a warning; never enable it
+with live keys. CORS is not a substitute for network access control or user
+authentication.
 
 Settings, operator loop-control, and live-order-resolution mutations use a
 double-submit CSRF token. The

@@ -45,7 +45,7 @@ Rules:
 | Rebalance math / execution sequence | `docs/ALGORITHM.md` + portfolio-rebalancing-math skill |
 | Flow / SSE / SharedFlow wiring | `docs/FLOWS.md` + coroutines-flows-sse skill |
 | Evaluation scenarios / harness | `docs/EVALUATION.md` + write-kotest |
-| Non-tested packages added/moved | JaCoCo exclusions in `build.gradle.kts` (report **and** verification) |
+| Non-tested packages added/moved | JaCoCo exclusions in the owning module build (`backend/build.gradle.kts` or `engine/build.gradle.kts`) (report **and** verification) |
 | Stack version bumps | `.agents/AGENTS.md` § stack + README |
 | Agent workflows / quality paths | `.agents/AGENTS.md` and relevant skills |
 | Dashboard / Settings / History visuals | [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) (overwrite `docs/images/*.png`) |

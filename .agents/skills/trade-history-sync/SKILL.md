@@ -31,7 +31,7 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
     failed attempts and dry-run estimates never advance the exchange cursor.
   - `sync_watermark_epoch_sec` is written after every successful sync so
     dry-run-only accounts still advance.
-  - Both null → full history (`startSec` null).
+  - Both null → bounded initial seed from the last **96 days** (`SEED_HISTORY_LOOKBACK_DAYS`), not a full-history query.
   - otherwise → incremental from effective latest minus **300s** overlap so
     fills near the previous watermark are re-fetched and reconciled.
   - Anti-pattern: `max(latestTradeTime, watermark)` — shrinks overlap below the
@@ -83,9 +83,9 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   `/0/private/Ledgers`; it requests only `staking` and `dividend` types.
 - It uses the same **300s** throttle, coroutine `Mutex`, credential preflight,
   stable-backend selection, and execution-session boundary as trade sync.
-- The first pass is a full paginated seed. Numeric `ledger_offset` and
-  `ledger_total` progress markers are durable until completion; recovery
-  restarts from offset zero because newest-first pages can shift.
+- The first and recovered initial passes are bounded to the last **96 days**.
+  Numeric `ledger_offset` and `ledger_total` progress markers are durable until
+  completion; recovery restarts from offset zero because newest-first pages can shift.
 - Incremental passes use `latestLedgerTime ?: ledger_watermark_epoch_sec` minus
   **300s**, and persist `ledger_watermark_epoch_sec` after successful completion.
 - `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.

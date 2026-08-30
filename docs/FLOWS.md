@@ -440,9 +440,9 @@ trade synchronization, but it has separate metadata and insert-only semantics:
 - The startup call and a standalone top-level call establish their own
   execution session and stable backend pin. The normal-cycle call reuses the
   cycle-wide session/backend boundary owned by `performCycleWithStableSession()`.
-- The first successful pass fetches the full ledger history, records durable
-  page progress, and marks the ledger store seeded. A resumed seed restarts from
-  page zero because new rows can shift Kraken offsets.
+- The first and recovered initial passes fetch at most the **96-day** seed
+  window, record durable page progress, and mark the ledger store seeded. A
+  resumed seed restarts from page zero because new rows can shift Kraken offsets.
 - Incremental passes begin from the latest stored ledger time or watermark minus
   **300 seconds**, with a captured end time for stable newest-first pagination.
 - Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,

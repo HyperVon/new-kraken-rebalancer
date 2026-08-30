@@ -225,11 +225,14 @@ with the workflow.
 - **No user auth** on the dashboard/API — the security model is a single trusted
   operator on a local machine or private network. Do not present it as safe for
   unrestricted public hosting.
-- CORS must continue to use structurally parsed origins through
+- CORS defaults to structurally parsed local/private origins through
   `isLocalOrPrivateOrigin`: localhost, IPv4 and IPv6 loopback, RFC1918 IPv4,
-  IPv4 link-local `169.254.0.0/16`, and `*.local`. Reject paths, user-info
-  tricks, public origins, malformed IPs, and private-prefix hostname lookalikes.
-  Do not widen CORS as a substitute for authentication.
+  IPv4 link-local `169.254.0.0/16`, and `*.local`. `REBALANCER_ALLOWED_ORIGINS`
+  may add exact origins. `REBALANCER_ALLOW_ALL_ORIGINS=true` is a lab-only
+  break-glass override that bypasses origin checks and must never be enabled with
+  live keys. Without these explicit overrides, reject paths, user-info tricks,
+  public origins, malformed IPs, and private-prefix hostname lookalikes. CORS
+  is not a substitute for authentication.
 - Never hardcode or commit API keys, private keys, real account data, or the
   gitignored `rebalancer-config.json`. Committed tests, examples, documentation,
   screenshots, and issue/PR artifacts use placeholders or redacted values.

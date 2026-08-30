@@ -72,7 +72,8 @@ description: >-
 
 ## JVM coverage (JaCoCo)
 
-Minimums in `build.gradle.kts` `jacocoTestCoverageVerification`:
+Minimums in `backend/build.gradle.kts` and `engine/build.gradle.kts`
+`jacocoTestCoverageVerification`:
 
 | Metric | Min |
 | :--- | ---: |
@@ -83,18 +84,20 @@ Minimums in `build.gradle.kts` `jacocoTestCoverageVerification`:
 
 ### JaCoCo exclusion sync rule
 
-Exclusions live in the shared `coverageExcludes` list in root
-`build.gradle.kts` and `:engine` `build.gradle.kts`. **Both** `jacocoTestReport` and
-`jacocoTestCoverageVerification` must use the same
-`fileTree { exclude(coverageExcludes) }`.
+Backend exclusions live in `backend/build.gradle.kts`; the engine has a separate
+`coverageExcludes` list in `engine/build.gradle.kts`. Within each module, **both**
+`jacocoTestReport` and `jacocoTestCoverageVerification` must use that module's
+same `fileTree { exclude(coverageExcludes) }`.
 
-Current root exclusions:
+Current backend exclusions:
 
 - `**/config/DatabaseConfig*`, `**/config/MigrationBackupKt*`, `**/config/LegacyDataRepairKt*`, `**/config/KtorConfigKt*`
 - `**/repository/table/**`
 - `**/service/KrakenService*`, `**/service/ConfigService.class`, `**/service/OrderExecutor.class`, `**/repository/*Repository.class`, `**/*$DefaultImpls*`
 - `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`
 - `**/KrakenRebalancerApplication*`
+
+The engine exclusion is `**/api/*ApiMapperKt*`.
 
 When moving packages:
 

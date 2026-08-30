@@ -42,7 +42,7 @@ single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
 - The `KrakenService` port is always `DynamicKrakenService`; code needing
   stability calls `withStableBackend`.
 
-Koin version in `build.gradle.kts`: **4.2.2** — keep `.agents/AGENTS.md` in sync.
+Koin version in `gradle/libs.versions.toml`: **4.2.2** — keep `.agents/AGENTS.md` in sync.
 
 `OrderIntentRepository` and `OrderIntentService` are singleton bindings.
 Production `OrderExecutorImpl` receives the service explicitly so live attempts

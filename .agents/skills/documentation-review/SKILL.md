@@ -203,7 +203,7 @@ High-risk mismatch examples:
 - **Export & signature match:** Verify that imported symbols, class names, method signatures, and parameter names match current source exports exactly.
 - **CLI flag validation:** Compare flags against CLI help output (`--help`) or argument parser definitions.
 - **Config syntax validation:** Parse configuration examples (`rebalancer-config-template.json`) against current parser models (`Settings`, `AppConfig`).
-- **Link and anchor verification:** Verify that every relative file link resolves to a tracked file and heading anchors match exact slugified header text. Run `python3 .agents/scripts/validate_skills.py` to verify links deterministically.
+- **Link and anchor verification:** Verify that every relative file link resolves to a tracked file and heading anchors match exact slugified header text. Run `python3 .agents/scripts/validate_skills.py` to verify file targets deterministically, then perform a separate anchor check because the current script strips fragments and does not validate heading anchors.
 
 #### Mermaid compatibility
 

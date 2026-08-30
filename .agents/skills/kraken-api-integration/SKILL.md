@@ -84,8 +84,10 @@ get `EAPI:Invalid key`:
 3. **`Ledgers` / `TradesHistory` `start`/`end` are in SECONDS** (not ms), and
    `Ledgers` paginates by ledger id (`ofs`/`id`), not timestamp.
 4. Credentials for this project come from `rebalancer-config.json`
-   (`kraken.apiKey` / `kraken.privateKey`) — do not expect env overrides; the
-   config values are the real keys. Never print more than length/prefix/suffix.
+   (`kraken.apiKey` / `kraken.privateKey`). Placeholder values may use
+   `${ENV_VAR}` or `${ENV_VAR:default}` and are resolved from the environment
+   when the config is loaded; never print resolved credentials, beyond any
+   deliberately redacted length/prefix/suffix diagnostics.
 5. Public endpoints (`/0/public/Time`, `/0/public/Ticker`) need no auth.
    Ticker pair keys are canonical (`XXBTZUSD`, `XETHZUSD`, `XXRPZUSD`,
    `SOLUSD`, ...) — map the balance asset to its actual response key.
