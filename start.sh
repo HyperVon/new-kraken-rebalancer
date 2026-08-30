@@ -5,10 +5,10 @@
 cd "$(dirname "$0")"
 
 # Check if JAR exists, if not build it
-JAR_PATH="build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar"
+JAR_PATH="backend/build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar"
 if [ ! -f "$JAR_PATH" ]; then
     echo "Executable JAR not found. Building with Gradle..."
-    ./gradlew fatJar
+    ./gradlew :backend:fatJar
     if [ $? -ne 0 ]; then
         echo "Gradle build failed. Exiting."
         exit 1

@@ -5,10 +5,10 @@ rem Ensure we run from the script directory
 cd /d "%~dp0"
 
 rem Check if JAR exists, if not build it
-set JAR_PATH=build\libs\kraken-bot-0.0.1-SNAPSHOT-all.jar
+set JAR_PATH=backend\build\libs\kraken-bot-0.0.1-SNAPSHOT-all.jar
 if not exist "%JAR_PATH%" (
     echo Executable JAR not found. Building with Gradle...
-    call gradlew.bat fatJar
+    call gradlew.bat :backend:fatJar
     if errorlevel 1 (
         echo Gradle build failed. Exiting.
         pause

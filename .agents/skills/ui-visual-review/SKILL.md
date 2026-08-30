@@ -77,7 +77,7 @@ Reuse the screenshot skill’s isolation rules (`simulation: true`, throwaway
 `RUN_DIR`, fresh DB). Write captures **outside** `docs/images/`:
 
 ```bash
-./gradlew fatJar
+./gradlew :backend:fatJar
 RUN_DIR=$(mktemp -d)
 cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
 # set simulation: true, loopDelaySeconds: 15; dryRun optional

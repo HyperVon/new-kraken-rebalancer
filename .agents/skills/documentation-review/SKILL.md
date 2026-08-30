@@ -69,11 +69,11 @@ Copy this checklist and track progress:
 
 Gather facts from code/build (do not trust docs yet):
 
-1. **Versions** — `build.gradle.kts`, `common/build.gradle.kts`,
-   `frontend-js/build.gradle.kts`, `gradle/wrapper/gradle-wrapper.properties`,
-   JDK toolchain, Spotless/ktlint.
-2. **Architecture** — packages under `src/main/kotlin/com/gemini/krakenbot/`,
-   `:common`, `:frontend-js`; key types (`PortfolioManagerImpl`,
+1. **Versions** — `build.gradle.kts` (root aggregator), `backend/build.gradle.kts`,
+    `common/build.gradle.kts`, `engine/build.gradle.kts`, `frontend-js/build.gradle.kts`,
+    `gradle/wrapper/gradle-wrapper.properties`, JDK toolchain, Spotless/ktlint.
+2. **Architecture** — packages under `backend/src/main/kotlin/com/gemini/krakenbot/`,
+    `:common`, `:engine`, `:frontend-js`, `:backend`; key types (`PortfolioManagerImpl`,
    `PortfolioAnalyzerImpl`, `PortfolioCalculations`, `OrderExecutorImpl`,
    `DynamicKrakenService`, `RateLimiter`, `TradeHistoryServiceImpl`,
    `DashboardRoutes` / `DashboardController`, view components).
@@ -188,7 +188,7 @@ For every in-scope doc, classify findings:
 High-risk mismatch examples:
 
 - Stack versions in README/AGENTS ≠ Gradle
-- Package tree in README ≠ `src/main/kotlin` / `repository/table/`
+- Package tree in README ≠ `backend/src/main/kotlin` / `repository/table/`
 - `dryRun` confused with `simulation`
 - Rate limiting described as “Mutex only” without call-counter `RateLimiter`
 - Algorithm missing fiat deployment / fiat correction / dust / 99% buy / 95% settle
@@ -326,7 +326,7 @@ Do not declare complete until markdown lint is clean on touched files.
 | Flows / SSE | `ConfigServiceImpl`, `TradeHistoryServiceImpl`, `DashboardController` | `docs/FLOWS.md` |
 | Evaluation | `EvaluationScenariosTest` + `FakeKrakenService`; `SimulationEvaluationScenariosTest` + `SimulatedKrakenService` | `docs/EVALUATION.md` |
 | Config flags | `Settings`, `DynamicKrakenService` | README, template, dry-run skill |
-| Coverage | `build.gradle.kts` JaCoCo, `karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |
+| Coverage | `backend/build.gradle.kts` JaCoCo, `karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |
 | Security | `KtorConfig.configureCORS`, `SECURITY.md` | SECURITY, AGENTS security section |
 
 ---

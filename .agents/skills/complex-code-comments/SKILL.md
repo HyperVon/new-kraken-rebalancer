@@ -81,7 +81,7 @@ counter = applyDecay(counter)
 
 | Include | Exclude |
 | :--- | :--- |
-| `src/main/kotlin/**`, `frontend-js/src/**`, `common/src/**` | Generated / build output |
+| `backend/src/main/kotlin/**`, `frontend-js/src/**`, `common/src/**` | Generated / build output |
 | Complex test helpers / evaluation harnesses | Specs that only assert obvious behavior |
 | Non-trivial Gradle/Kotlin build logic | Boilerplate plugin blocks |
 

@@ -124,7 +124,7 @@ Fix failures before claiming visual success.
 ### Steps 4–5: Verify capture
 
 ```bash
-./gradlew fatJar
+./gradlew :backend:fatJar
 RUN_DIR=$(mktemp -d)
 cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
 # simulation: true; start jar from $RUN_DIR; health-check :8080

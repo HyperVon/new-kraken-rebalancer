@@ -114,7 +114,7 @@ in each document:
 directory, so run from a throwaway directory instead:
 
 ```bash
-./gradlew fatJar
+./gradlew :backend:fatJar
 RUN_DIR=$(mktemp -d)
 cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
 ```
@@ -143,7 +143,7 @@ for chart quality (see below).
 ```bash
 cd "$RUN_DIR" && java -Xshare:off --sun-misc-unsafe-memory-access=allow \
   --enable-native-access=ALL-UNNAMED \
-  -jar <project>/build/libs/kraken-bot-*-all.jar
+  -jar <project>/backend/build/libs/kraken-bot-*-all.jar
 ```
 
 An empty DB plus `simulation: true` seeds ~15 days of snapshots at 6-hour
