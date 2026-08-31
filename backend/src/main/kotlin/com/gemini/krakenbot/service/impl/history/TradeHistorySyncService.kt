@@ -1,10 +1,12 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.domain.OrderFillReconciler
 import com.gemini.krakenbot.domain.TradeCalculator
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.isLegacyUnknown
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -139,14 +142,16 @@ class TradeHistorySyncService(
 
         triggerReconstructionIfNeeded(config, backend)
 
-        finalizeSync(isSeeded)
+        // Persist the successful request horizon, not the later completion timestamp. A slow
+        // pagination/reconstruction phase must not move the next query window past unseen fills.
+        finalizeSync(isSeeded, queryNow)
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 
     private suspend fun calculateEffectiveLatestTime(): Instant? {
         val latestTradeTime = repository.getLatestTradeTime()
         val watermarkInstant = readSyncWatermark()
-        return listOfNotNull(latestTradeTime, watermarkInstant).maxOrNull()
+        return watermarkInstant ?: latestTradeTime
     }
 
     private suspend fun processApiTrades(
@@ -158,17 +163,39 @@ class TradeHistorySyncService(
     ): Pair<Int, Int> {
         var totalAdded = 0
         var totalReconciled = 0
-        // Fingerprints of API fills already handled in this sync. Kraken newest-first offset
-        // pagination can re-emit the last row of page N as the first of page N+1 when a fill
-        // lands mid-pagination; without this set that row is double-inserted (CQ-8-M1).
         val seenApiFillKeys = mutableSetOf<String>()
+        val orderMetadataByTxid = mutableMapOf<String, LocalOrderMetadata>()
+
+        originalLocalTrades
+            .filter { it.isSettledApiFill() && !it.orderTxid.isNullOrBlank() && !it.cycleId.isNullOrBlank() }
+            .groupBy { it.orderTxid!!.trim() }
+            .forEach { (txid, fills) ->
+                val first = fills.first()
+                if (fills.all { it.symbol == first.symbol && it.side == first.side && it.pair == first.pair }) {
+                    orderMetadataByTxid[txid] = LocalOrderMetadata(
+                        localTradeId = first.id,
+                        orderTxid = txid,
+                        pair = first.pair,
+                        symbol = first.symbol,
+                        side = first.side,
+                        expectedPrice = first.expectedPrice,
+                        cycleId = first.cycleId,
+                        clientOrderId = first.clientOrderId,
+                    )
+                }
+            }
 
         getTradeHistoryPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
             .collect { apiTrades ->
                 for (apiTrade: TradeRecord in apiTrades) {
                     if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
 
-                    val result = reconcileOrInsertApiTrade(apiTrade, originalLocalTrades, allocations)
+                    val result = reconcileOrInsertApiTrade(
+                        apiTrade = apiTrade,
+                        originalLocalTrades = originalLocalTrades,
+                        allocations = allocations,
+                        orderMetadataByTxid = orderMetadataByTxid,
+                    )
                     when (result) {
                         TradeReconciliationResult.INSERTED -> totalAdded++
                         TradeReconciliationResult.RECONCILED -> totalReconciled++
@@ -184,77 +211,295 @@ class TradeHistorySyncService(
         apiTrade: TradeRecord,
         originalLocalTrades: MutableList<TradeRecord>,
         allocations: List<String>,
+        orderMetadataByTxid: MutableMap<String, LocalOrderMetadata>,
     ): TradeReconciliationResult {
-        // Exact persisted fills must win before nearby local-estimate reconciliation;
-        // otherwise an overlapping fetch can rewrite a local row even though this API
-        // fill has already been stored (CQ-10-L2). Legacy-unknown rows are also kept
-        // intact when their conservative fingerprint matches a fetched fill.
         val persistedFill =
             originalLocalTrades.find { persisted ->
                 (persisted.isSettledApiFill() || persisted.isLegacyUnknown()) &&
                     hasSamePersistedFillIdentity(persisted, apiTrade)
             }
+
+        val localEstimates = originalLocalTrades.filter { local ->
+            local.submissionState == null && local.success && !local.dryRun && local.isLocalEstimate()
+        }
+
         if (persistedFill != null) {
+            validateExactOrderLocalIntegrityForPersistedFill(
+                persistedFill = persistedFill,
+                apiTrade = apiTrade,
+                localEstimates = localEstimates,
+                orderMetadataByTxid = orderMetadataByTxid,
+                allocations = allocations,
+            )
             originalLocalTrades.remove(persistedFill)
             return TradeReconciliationResult.ALREADY_PERSISTED
         }
 
-        val matchingLocalTrade = findMatchingLocalTrade(apiTrade, originalLocalTrades, allocations)
+        val resolution = resolveLocalOrderContextForApiFill(
+            apiTrade = apiTrade,
+            localEstimates = localEstimates,
+            orderMetadataByTxid = orderMetadataByTxid,
+            allocations = allocations,
+        )
 
-        return if (matchingLocalTrade != null) {
-            reconcileWithLocalTrade(apiTrade, matchingLocalTrade, originalLocalTrades)
-        } else {
-            repository.saveTrade(apiTrade)
-            TradeReconciliationResult.INSERTED
+        return when (resolution) {
+            is LocalOrderResolution.Conflict -> {
+                throw TradeReconciliationConflictException(resolution.message)
+            }
+
+            is LocalOrderResolution.ReconcileLocal -> {
+                reconcileWithLocalTrade(
+                    apiTrade = apiTrade,
+                    matchingLocalTrade = resolution.localTrade,
+                    metadata = resolution.metadata,
+                    originalLocalTrades = originalLocalTrades,
+                    orderMetadataByTxid = orderMetadataByTxid,
+                )
+                TradeReconciliationResult.RECONCILED
+            }
+
+            is LocalOrderResolution.EnrichedFromCache -> {
+                val enrichedTrade = OrderFillReconciler.enrichApiFill(
+                    apiFill = apiTrade,
+                    expectedPrice = resolution.metadata.expectedPrice,
+                    cycleId = resolution.metadata.cycleId,
+                    clientOrderId = resolution.metadata.clientOrderId,
+                    orderTxid = resolution.metadata.orderTxid,
+                )
+                repository.saveTrade(enrichedTrade)
+                TradeReconciliationResult.INSERTED
+            }
+
+            is LocalOrderResolution.None -> {
+                val matchingLocal = findHeuristicMatchingLocalTrade(
+                    apiTrade = apiTrade,
+                    localEstimates = localEstimates,
+                    allocations = allocations,
+                )
+                if (matchingLocal != null) {
+                    val metadata = LocalOrderMetadata(
+                        localTradeId = matchingLocal.id,
+                        orderTxid = matchingLocal.orderTxid ?: "",
+                        pair = matchingLocal.pair,
+                        symbol = matchingLocal.symbol,
+                        side = matchingLocal.side,
+                        expectedPrice = matchingLocal.expectedPrice,
+                        cycleId = matchingLocal.cycleId,
+                        clientOrderId = matchingLocal.clientOrderId,
+                    )
+                    reconcileWithLocalTrade(
+                        apiTrade = apiTrade,
+                        matchingLocalTrade = matchingLocal,
+                        metadata = metadata,
+                        originalLocalTrades = originalLocalTrades,
+                        orderMetadataByTxid = orderMetadataByTxid,
+                    )
+                    TradeReconciliationResult.RECONCILED
+                } else {
+                    repository.saveTrade(apiTrade)
+                    TradeReconciliationResult.INSERTED
+                }
+            }
         }
     }
 
-    private fun findMatchingLocalTrade(
+    private fun validateExactOrderLocalIntegrityForPersistedFill(
+        persistedFill: TradeRecord,
         apiTrade: TradeRecord,
-        originalLocalTrades: MutableList<TradeRecord>,
+        localEstimates: List<TradeRecord>,
+        orderMetadataByTxid: Map<String, LocalOrderMetadata>,
+        allocations: List<String>,
+    ) {
+        val apiOrderTxid = apiTrade.orderTxid?.trim()?.takeIf(String::isNotBlank) ?: return
+
+        val keyedLocals = localEstimates.filter { local ->
+            local.orderTxid?.trim()?.takeIf(String::isNotBlank) == apiOrderTxid
+        }
+        if (keyedLocals.size > 1) {
+            val localIds = keyedLocals.map { it.id }
+            throw TradeReconciliationConflictException(
+                "Cannot reconcile Kraken order $apiOrderTxid: authoritative API fill " +
+                    "(tradeId=${persistedFill.tradeId}) is already persisted, but multiple local order " +
+                    "estimates (IDs: $localIds) claim this order identity.",
+            )
+        }
+        if (keyedLocals.size == 1) {
+            val local = keyedLocals.single()
+            val isCompatible = OrderFillReconciler.isInstrumentCompatible(
+                orderSymbol = local.symbol,
+                orderSide = local.side,
+                orderPair = local.pair,
+                apiFill = apiTrade,
+                allocations = allocations,
+            )
+            if (!isCompatible) {
+                throw TradeReconciliationConflictException(
+                    "Cannot reconcile Kraken order $apiOrderTxid: authoritative API fill " +
+                        "(tradeId=${persistedFill.tradeId}, pair=${apiTrade.pair}, symbol=${apiTrade.symbol}, " +
+                        "side=${apiTrade.side}) is already persisted, but incompatible local order " +
+                        "estimate (ID: ${local.id}, pair=${local.pair}, symbol=${local.symbol}, " +
+                        "side=${local.side}) claims this order identity.",
+                )
+            }
+            throw TradeReconciliationConflictException(
+                "Cannot reconcile Kraken order $apiOrderTxid: authoritative API fill " +
+                    "(tradeId=${persistedFill.tradeId}) is already persisted, but un-superseded " +
+                    "local order estimate (ID: ${local.id}) claims this order identity.",
+            )
+        }
+
+        val cached = orderMetadataByTxid[apiOrderTxid]
+        if (cached != null) {
+            val isCachedCompatible = OrderFillReconciler.isInstrumentCompatible(
+                orderSymbol = cached.symbol,
+                orderSide = cached.side,
+                orderPair = cached.pair,
+                apiFill = apiTrade,
+                allocations = allocations,
+            )
+            if (!isCachedCompatible) {
+                throw TradeReconciliationConflictException(
+                    "Cannot reconcile Kraken order $apiOrderTxid: cached local order metadata " +
+                        "(tradeId=${cached.localTradeId}, pair=${cached.pair}, symbol=${cached.symbol}, " +
+                        "side=${cached.side}) is incompatible with already-persisted API fill " +
+                        "(tradeId=${apiTrade.tradeId}, pair=${apiTrade.pair}, symbol=${apiTrade.symbol}, " +
+                        "side=${apiTrade.side}).",
+                )
+            }
+        }
+    }
+
+    private fun resolveLocalOrderContextForApiFill(
+        apiTrade: TradeRecord,
+        localEstimates: List<TradeRecord>,
+        orderMetadataByTxid: Map<String, LocalOrderMetadata>,
+        allocations: List<String>,
+    ): LocalOrderResolution {
+        val apiOrderTxid = apiTrade.orderTxid?.trim()?.takeIf(String::isNotBlank)
+        if (apiOrderTxid == null) {
+            return LocalOrderResolution.None
+        }
+
+        val keyedLocals = localEstimates.filter { local ->
+            local.orderTxid?.trim()?.takeIf(String::isNotBlank) == apiOrderTxid
+        }
+
+        if (keyedLocals.size > 1) {
+            val localIds = keyedLocals.map { it.id }
+            return LocalOrderResolution.Conflict(
+                "Cannot reconcile Kraken order $apiOrderTxid: multiple local order estimates (IDs: $localIds) " +
+                    "claim this order identity.",
+            )
+        }
+
+        if (keyedLocals.size == 1) {
+            val local = keyedLocals.single()
+            val isCompatible = OrderFillReconciler.isInstrumentCompatible(
+                orderSymbol = local.symbol,
+                orderSide = local.side,
+                orderPair = local.pair,
+                apiFill = apiTrade,
+                allocations = allocations,
+            ) && apiTrade.volume <= local.volume.multiply(BigDecimal("1.01"))
+
+            if (!isCompatible) {
+                return LocalOrderResolution.Conflict(
+                    "Cannot reconcile Kraken order $apiOrderTxid: local order estimate (ID: ${local.id}, " +
+                        "pair=${local.pair}, symbol=${local.symbol}, side=${local.side}) is incompatible with " +
+                        "API fill (tradeId=${apiTrade.tradeId}, pair=${apiTrade.pair}, symbol=${apiTrade.symbol}, " +
+                        "side=${apiTrade.side}).",
+                )
+            }
+
+            val metadata = LocalOrderMetadata(
+                localTradeId = local.id,
+                orderTxid = apiOrderTxid,
+                pair = local.pair,
+                symbol = local.symbol,
+                side = local.side,
+                expectedPrice = local.expectedPrice,
+                cycleId = local.cycleId,
+                clientOrderId = local.clientOrderId,
+            )
+            return LocalOrderResolution.ReconcileLocal(local, metadata)
+        }
+
+        val cached = orderMetadataByTxid[apiOrderTxid]
+        if (cached != null) {
+            val isCachedCompatible = OrderFillReconciler.isInstrumentCompatible(
+                orderSymbol = cached.symbol,
+                orderSide = cached.side,
+                orderPair = cached.pair,
+                apiFill = apiTrade,
+                allocations = allocations,
+            )
+            if (!isCachedCompatible) {
+                return LocalOrderResolution.Conflict(
+                    "Cannot reconcile Kraken order $apiOrderTxid: cached local order metadata " +
+                        "(tradeId=${cached.localTradeId}, pair=${cached.pair}, symbol=${cached.symbol}, " +
+                        "side=${cached.side}) is incompatible with API fill (tradeId=${apiTrade.tradeId}, " +
+                        "pair=${apiTrade.pair}, symbol=${apiTrade.symbol}, side=${apiTrade.side}).",
+                )
+            }
+            return LocalOrderResolution.EnrichedFromCache(cached)
+        }
+
+        return LocalOrderResolution.None
+    }
+
+    private fun findHeuristicMatchingLocalTrade(
+        apiTrade: TradeRecord,
+        localEstimates: List<TradeRecord>,
         allocations: List<String>,
     ): TradeRecord? {
-        // A Kraken order id is authoritative when both sides have one. Otherwise use
-        // economics tolerances so legacy/id-less rows can still reconcile.
-        val localEstimates =
-            originalLocalTrades.filter { local ->
-                local.submissionState == null && local.success && !local.dryRun && local.isLocalEstimate()
+        val apiOrderTxid = apiTrade.orderTxid?.trim()?.takeIf(String::isNotBlank)
+        val matches = localEstimates.filter { local ->
+            val localOrderTxid = local.orderTxid?.trim()?.takeIf(String::isNotBlank)
+            if (apiOrderTxid != null && localOrderTxid != null && apiOrderTxid != localOrderTxid) {
+                false
+            } else {
+                OrderFillReconciler.matchesHeuristic(
+                    orderSymbol = local.symbol,
+                    orderSide = local.side,
+                    orderPair = local.pair,
+                    orderVolume = local.volume,
+                    orderUsdAmount = local.usdAmount,
+                    orderExpectedPrice = local.expectedPrice,
+                    orderTimestamp = local.timestamp,
+                    apiFill = apiTrade,
+                    allocations = allocations,
+                )
             }
-        val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
-        return apiOrderTxid?.let { txid ->
-            localEstimates.find { local -> local.orderTxid?.takeIf { it.isNotBlank() } == txid }
-        } ?: localEstimates
-            .asSequence()
-            .filter { local ->
-                apiOrderTxid == null || local.orderTxid.isNullOrBlank()
-            }.find { local ->
-                local.isMatchingApiTrade(apiTrade, allocations)
-            }
+        }
+        if (matches.size > 1) {
+            val localIds = matches.map { it.id }
+            throw TradeReconciliationConflictException(
+                "Cannot reconcile API fill ${apiTrade.tradeId}: multiple local order estimates " +
+                    "(IDs: $localIds) match heuristic criteria.",
+            )
+        }
+        return matches.singleOrNull()
     }
 
     private suspend fun reconcileWithLocalTrade(
         apiTrade: TradeRecord,
         matchingLocalTrade: TradeRecord,
+        metadata: LocalOrderMetadata,
         originalLocalTrades: MutableList<TradeRecord>,
-    ): TradeReconciliationResult {
-        val expectedPrice = matchingLocalTrade.expectedPrice
-        val reconciledSlippage =
-            expectedPrice?.let { expected ->
-                TradeCalculator.calculateSlippage(
-                    apiTrade.side,
-                    apiTrade.price,
-                    expected,
-                )
-            }
-        val reconciledTrade =
-            apiTrade.copy(
-                expectedPrice = expectedPrice,
-                slippagePercent = reconciledSlippage,
-                source = TradeSource.API_FILL,
-                // Keep local cycle linkage; prefer API ordertxid when present.
-                cycleId = matchingLocalTrade.cycleId,
-                orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
-            )
+        orderMetadataByTxid: MutableMap<String, LocalOrderMetadata>,
+    ) {
+        val effectiveTxid = (apiTrade.orderTxid ?: matchingLocalTrade.orderTxid)?.trim()?.takeIf(String::isNotBlank)
+        if (effectiveTxid != null) {
+            orderMetadataByTxid.putIfAbsent(effectiveTxid, metadata)
+        }
+
+        val reconciledTrade = OrderFillReconciler.enrichApiFill(
+            apiFill = apiTrade,
+            expectedPrice = metadata.expectedPrice,
+            cycleId = metadata.cycleId,
+            clientOrderId = metadata.clientOrderId,
+            orderTxid = effectiveTxid ?: apiTrade.orderTxid,
+        )
         log.info(
             "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
             matchingLocalTrade.timestamp,
@@ -264,10 +509,29 @@ class TradeHistorySyncService(
         )
 
         repository.updateTrade(matchingLocalTrade, reconciledTrade)
-        // Drop from the pending set after persistence so a DB failure leaves the
-        // in-memory view unchanged (pre-refactor update-then-remove order).
         originalLocalTrades.remove(matchingLocalTrade)
-        return TradeReconciliationResult.RECONCILED
+    }
+
+    private data class LocalOrderMetadata(
+        val localTradeId: Int?,
+        val orderTxid: String,
+        val pair: String,
+        val symbol: String,
+        val side: String,
+        val expectedPrice: BigDecimal?,
+        val cycleId: String?,
+        val clientOrderId: String?,
+    )
+
+    private sealed class LocalOrderResolution {
+        data object None : LocalOrderResolution()
+
+        data class ReconcileLocal(val localTrade: TradeRecord, val metadata: LocalOrderMetadata) :
+            LocalOrderResolution()
+
+        data class EnrichedFromCache(val metadata: LocalOrderMetadata) : LocalOrderResolution()
+
+        data class Conflict(val message: String) : LocalOrderResolution()
     }
 
     private enum class TradeReconciliationResult { INSERTED, RECONCILED, ALREADY_PERSISTED }
@@ -294,7 +558,7 @@ class TradeHistorySyncService(
         }
     }
 
-    private suspend fun finalizeSync(isSeeded: Boolean) {
+    private suspend fun finalizeSync(isSeeded: Boolean, successfulQueryHorizon: Instant) {
         if (!isSeeded) {
             repository.setHistorySeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
@@ -312,9 +576,10 @@ class TradeHistorySyncService(
             }
         }
         // Persist watermark even when no real fills exist so the next sync is incremental.
-        val completedAt = nowProvider()
-        writeSyncWatermark(completedAt)
-        lastSyncTime = completedAt
+        writeSyncWatermark(successfulQueryHorizon)
+        // Local throttling is based on completion; the durable cursor is based on the request
+        // horizon above and must never be advanced in a finally block after a failed pull.
+        lastSyncTime = nowProvider()
     }
 
     private suspend fun readSyncWatermark(): Instant? =
@@ -346,23 +611,33 @@ class TradeHistorySyncService(
     private fun hasSamePersistedFillIdentity(persisted: TradeRecord, apiTrade: TradeRecord): Boolean {
         val persistedTradeId = persisted.tradeId?.takeIf { it.isNotBlank() }
         val apiTradeId = apiTrade.tradeId?.takeIf { it.isNotBlank() }
-        return if (persistedTradeId != null && apiTradeId != null) {
-            persistedTradeId == apiTradeId
-        } else {
-            legacyApiFillFingerprint(persisted) == legacyApiFillFingerprint(apiTrade)
+        if (persistedTradeId != null && apiTradeId != null && persistedTradeId != apiTradeId) return false
+
+        val persistedOrderTxid = persisted.orderTxid?.takeIf { it.isNotBlank() }
+        val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
+        if (persistedOrderTxid != null && apiOrderTxid != null && persistedOrderTxid != apiOrderTxid) return false
+
+        if (persistedTradeId != null && apiTradeId != null) {
+            return true
         }
+
+        // An order can produce multiple fills. If either trade id is absent, a shared order txid
+        // alone is not enough to prove that two rows represent the same fill leg.
+        return legacyApiFillFingerprint(persisted) == legacyApiFillFingerprint(apiTrade)
     }
 
     private fun legacyApiFillFingerprint(trade: TradeRecord): String = listOf(
         trade.timestamp.toEpochMilli().toString(),
         trade.pair,
         OrderSide.normalize(trade.side),
-        trade.volume.toPlainString(),
-        trade.usdAmount.toPlainString(),
-        trade.price.toPlainString(),
-        trade.fee.toPlainString(),
+        canonicalDecimal(trade.volume),
+        canonicalDecimal(trade.usdAmount),
+        canonicalDecimal(trade.price),
+        canonicalDecimal(trade.fee),
         trade.orderTxid.orEmpty(),
     ).joinToString("|")
+
+    private fun canonicalDecimal(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
 
     /** Cold paginated Kraken history; progress is durable until the first seed completes. */
     private fun getTradeHistoryPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<TradeRecord>> =

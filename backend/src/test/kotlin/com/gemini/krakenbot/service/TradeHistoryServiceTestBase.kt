@@ -58,6 +58,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
             savedSnapshots.add(0, firstArg())
         }
         coEvery { repository.load() } answers { savedSnapshots.take(50) }
+        coEvery { repository.getLatestSnapshot() } coAnswers { repository.load().firstOrNull() }
 
         return TradeHistoryServiceImpl(
             repository,

@@ -7,9 +7,11 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.Runs
@@ -358,6 +360,58 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "syncTradesFromKraken_WatermarkUsesQueryHorizonAfterSlowCompletion" {
+            runTest {
+                val queryHorizon = Instant.parse("2033-05-01T12:00:00Z")
+                val completionTime = queryHorizon.plusSeconds(360)
+                val nextSyncTime = queryHorizon.plusSeconds(660)
+                var clockCalls = 0
+                val syncTimes = listOf(
+                    queryHorizon,
+                    queryHorizon,
+                    queryHorizon,
+                    completionTime,
+                    nextSyncTime,
+                    nextSyncTime,
+                    nextSyncTime,
+                    nextSyncTime,
+                )
+                val watermarks = mutableListOf<String>()
+                val service = createService(syncNowProvider = { syncTimes[clockCalls++].coerceAtMost(nextSyncTime) })
+                coEvery { repository.isHistorySeeded() } returns true
+                coEvery { repository.getLatestTradeTime() } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.load() } returns emptyList()
+                coEvery { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 0L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null,
+                )
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+                } answers { watermarks.lastOrNull() }
+                coEvery {
+                    repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, any())
+                } answers { watermarks += secondArg<String>() }
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
+
+                service.syncTradesFromKraken()
+                service.syncTradesFromKraken()
+
+                watermarks shouldBe listOf(
+                    queryHorizon.epochSecond.toString(),
+                    nextSyncTime.epochSecond.toString(),
+                )
+                coVerify(exactly = 1) {
+                    krakenService.getTradeHistory(
+                        startSec = queryHorizon.minusSeconds(300).epochSecond,
+                        offset = 0,
+                    )
+                }
+            }
+        }
+
         "syncTradesFromKraken_BoundsInitialPullAndReconciliationWindow" {
             runTest {
                 val fixedNow = Instant.parse("2033-05-01T12:00:00Z")
@@ -416,8 +470,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
             }
         }
 
-        // CQ-8-M2: when real fills exist, prefer latestTradeTime over a newer wall-clock watermark.
-        "syncTradesFromKraken_PrefersNewerWatermarkOverOlderTradeTime" {
+        // Once a successful-request watermark exists, stored trade time is only legacy/bootstrap
+        // evidence and must not move the next bounded overlap backward.
+        "syncTradesFromKraken_PrefersNewerWatermarkOverLatestTradeTime" {
             runTest {
                 val latestTradeSec = 1_700_000_000L
                 val newerWatermarkSec = latestTradeSec + 3_600L
@@ -599,6 +654,75 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "sync fails closed when keyed local estimate and API fill economics conflict" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val timestamp = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns timestamp
+                val localEstimate = TestFixtures.tradeRecord(
+                    timestamp = timestamp,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    orderTxid = "ORDER-KEYED",
+                )
+                val apiFill = localEstimate.copy(
+                    id = null,
+                    volume = BigDecimal("2"),
+                    usdAmount = BigDecimal("20"),
+                    source = TradeSource.API_FILL,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localEstimate)
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiFill)
+
+                shouldThrow<TradeReconciliationConflictException> {
+                    createService().syncTradesFromKraken()
+                }
+
+                coVerify(exactly = 0) { repository.updateTrade(any(), any()) }
+                coVerify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
+        "CQ-10-L2: conflicting persisted order ids do not suppress an API fill" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns latestTime
+                val persistedApiFill = TestFixtures.tradeRecord(
+                    timestamp = latestTime,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    price = BigDecimal.TEN,
+                    fee = BigDecimal("0.02"),
+                    source = TradeSource.API_FILL,
+                    id = 1,
+                    tradeId = "TRADE-SAME",
+                    orderTxid = "OID-A",
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(persistedApiFill)
+
+                val refetchedApiFill = persistedApiFill.copy(
+                    id = null,
+                    orderTxid = "OID-B",
+                )
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(refetchedApiFill)
+                val savedSlot = slot<TradeRecord>()
+                coEvery { repository.saveTrade(capture(savedSlot)) } returns 2
+
+                createService().syncTradesFromKraken()
+
+                savedSlot.captured shouldBe refetchedApiFill
+                coVerify(exactly = 0) { repository.updateTrade(any(), any()) }
+            }
+        }
+
         "CQ-10-L6: preserves distinct Kraken fill ids for economically identical order legs" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
@@ -626,6 +750,42 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
 
                 coVerify(exactly = 1) { repository.saveTrade(firstLeg) }
                 coVerify(exactly = 1) { repository.saveTrade(secondLeg) }
+            }
+        }
+
+        "CQ-10-L8: preserves a distinct fill leg when a persisted API row lacks its trade id" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val timestamp = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns timestamp
+                val persistedFillWithoutTradeId = TestFixtures.tradeRecord(
+                    timestamp = timestamp,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    price = BigDecimal.TEN,
+                    fee = BigDecimal("0.02"),
+                    source = TradeSource.API_FILL,
+                    orderTxid = "ORDER-SHARED",
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns
+                    listOf(persistedFillWithoutTradeId)
+
+                val distinctRefetchedLeg = persistedFillWithoutTradeId.copy(
+                    id = null,
+                    timestamp = timestamp.plusSeconds(1),
+                    volume = BigDecimal("2"),
+                    usdAmount = BigDecimal("20"),
+                    tradeId = "TRADE-TWO",
+                )
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(distinctRefetchedLeg)
+                coEvery { repository.saveTrade(any()) } returns 2
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 1) { repository.saveTrade(distinctRefetchedLeg) }
             }
         }
 
@@ -862,9 +1022,12 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 val dayStart = Instant.now().minus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS).epochSecond
                 coEvery { krakenService.getOHLC(TestFixtures.BTCUSD, 1440, any()) } returns
                     listOf(Pair(dayStart, BigDecimal("30000.0")))
-                coEvery { krakenService.getOHLC("ETHUSD", 1440, any()) } returns emptyList()
-                coEvery { krakenService.getOHLC("EURUSD", 1440, any()) } returns emptyList()
-                coEvery { krakenService.getOHLC("DOGEUSD", 1440, any()) } returns emptyList()
+                coEvery { krakenService.getOHLC("ETHUSD", 1440, any()) } returns
+                    listOf(Pair(dayStart, BigDecimal("2000.0")))
+                coEvery { krakenService.getOHLC("EURUSD", 1440, any()) } returns
+                    listOf(Pair(dayStart, BigDecimal("1.1")))
+                coEvery { krakenService.getOHLC("XDGUSD", 1440, any()) } returns
+                    listOf(Pair(dayStart, BigDecimal("0.1")))
 
                 val reconstructedSnapshots = slot<List<PortfolioSnapshot>>()
                 coEvery { repository.save(capture(reconstructedSnapshots)) } just Runs

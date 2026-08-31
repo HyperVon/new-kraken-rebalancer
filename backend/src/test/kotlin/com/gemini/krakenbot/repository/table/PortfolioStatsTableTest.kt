@@ -22,6 +22,7 @@ class PortfolioStatsTableTest : StringSpec() {
 
             transaction(db) {
                 PortfolioStatsTable.insert {
+                    it[PortfolioStatsTable.id] = 1
                     PortfolioStatsTable.applyTo(it, original)
                 }
 

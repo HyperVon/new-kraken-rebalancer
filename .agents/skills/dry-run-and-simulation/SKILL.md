@@ -24,7 +24,7 @@ These flags are **independent**. Do not treat them as synonyms.
 | Flag | Shipped template / Kotlin model | Effect |
 | :--- | :--- | :--- |
 | `simulation` | `false` / defaults to `false` | `DynamicKrakenService` delegates to **`SimulatedKrakenService`** (offline emulator). When `false`, uses **`KrakenServiceImpl`** (live API). |
-| `dryRun` | `true` / required constructor value (no Kotlin default) | Within the **active** backend, order placement is suppressed. **Server logs:** `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (sim). **Dashboard activity log** always uses `[DRY RUN]` (`ActionLogFormatter` / `ViewText.DRY_RUN_PREFIX`). Calculations still run. |
+| `dryRun` | `true` / non-null execution input | Within the **active** backend, order placement is suppressed. Production callers pass the cycle-captured value explicitly; there is no mutable config fallback during an active order. **Server logs:** `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (sim). **Dashboard activity log** always uses `[DRY RUN]` (`ActionLogFormatter` / `ViewText.DRY_RUN_PREFIX`). Calculations still run. |
 
 ## Routing
 
@@ -57,7 +57,9 @@ shadow a full cycle/sync pin. Concurrent top-level invocations each capture thei
 own entry-time backend (no process-global pin). `OrderExecutor` also passes the
 cycle’s `settings.dryRun` into each `executeOrder` so a mid-cycle dry-run flip
 cannot change placement mode. Outside a stable block, each call still re-reads
-`settings.simulation` (and `dryRun` when the override is omitted).
+`settings.simulation`; `executeOrder` uses its explicit `dryRun` input and does
+not re-read mutable configuration. Callers must always provide the dry-run
+decision explicitly.
 
 ### When the backend is (not) pinned
 
@@ -72,8 +74,8 @@ cannot change placement mode. Outside a stable block, each call still re-reads
   cycle (it does not); assuming a multi-step unpinned handler sees one stable
   backend (it does not).
 - Tests that assert **mid-sequence** backend stability should wrap the scenario
-  in `withStableBackend`. Mode-routing probes that intentionally call
-  `executeOrder` outside a pin may omit it.
+  in `withStableBackend`. Every `executeOrder` probe still supplies an explicit
+  `dryRun` value, whether or not the backend is pinned.
 
 ## dryRun order semantics
 

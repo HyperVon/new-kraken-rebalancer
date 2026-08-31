@@ -69,6 +69,7 @@ class EngineModelTest : StringSpec() {
                     usdAmount = BigDecimal("50000.00"),
                     id = 1,
                     fee = BigDecimal("10.00"),
+                    tradeId = "trade-1",
                 )
             val t2 =
                 EngineTestFixtures.tradeRecord(
@@ -80,6 +81,7 @@ class EngineModelTest : StringSpec() {
                     usdAmount = BigDecimal("50000.00"),
                     id = 2,
                     fee = BigDecimal("100.00"),
+                    tradeId = "trade-1",
                 )
             val t3 =
                 EngineTestFixtures.tradeRecord(
@@ -96,8 +98,8 @@ class EngineModelTest : StringSpec() {
             t1.isSameSymbolAndSide(t2) shouldBe true
             t1.isSameSymbolAndSide(t3) shouldBe false
 
-            // Different fees with identical provenance -> not an alias duplicate
-            t1.isPairAliasDuplicateOf(t2) shouldBe false
+            // A shared authoritative id is stronger evidence than a fee difference.
+            t1.isPairAliasDuplicateOf(t2) shouldBe true
             t1.isPairAliasDuplicateOf(t3) shouldBe false
             t1.copy(fee = t2.fee).isPairAliasDuplicateOf(t2) shouldBe true
 
@@ -165,10 +167,16 @@ class EngineModelTest : StringSpec() {
             base.isPairAliasDuplicateOf(alias(base.copy(usdAmount = BigDecimal("51000.00")))) shouldBe false
             base.isPairAliasDuplicateOf(alias(base.copy(fee = BigDecimal("101.00")))) shouldBe false
             base.isPairAliasDuplicateOf(alias(base.copy(price = BigDecimal("49000.00")))) shouldBe false
-            base.isPairAliasDuplicateOf(
-                alias(base.copy(source = TradeSource.LOCAL_ESTIMATE, slippagePercent = BigDecimal.ZERO)),
+            base.copy(tradeId = "fill-a").isPairAliasDuplicateOf(
+                alias(
+                    base.copy(
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        slippagePercent = BigDecimal.ZERO,
+                        tradeId = "fill-a",
+                    ),
+                ).copy(tradeId = "fill-a"),
             ) shouldBe true
-            base.isPairAliasDuplicateOf(alias(base)) shouldBe true
+            base.isPairAliasDuplicateOf(alias(base)) shouldBe false
         }
 
         "tradeRecord provenance and effectiveSource inference" {
@@ -203,6 +211,19 @@ class EngineModelTest : StringSpec() {
             )
             failureNoSource.effectiveSource() shouldBe null
 
+            EngineTestFixtures.tradeRecord(
+                source = null,
+                slippagePercent = null,
+                success = true,
+                dryRun = true,
+            ).effectiveSource() shouldBe null
+            EngineTestFixtures.tradeRecord(
+                source = null,
+                slippagePercent = null,
+                success = true,
+                errorMessage = "Failed",
+            ).effectiveSource() shouldBe null
+
             val localEst = EngineTestFixtures.tradeRecord(source = TradeSource.LOCAL_ESTIMATE)
             val apiFill = EngineTestFixtures.tradeRecord(source = TradeSource.API_FILL)
             localEst.hasDifferentTradeProvenanceFrom(apiFill) shouldBe true
@@ -231,6 +252,93 @@ class EngineModelTest : StringSpec() {
             t1.isLocalEstimateDuplicateOf(tDiffPair) shouldBe false
             t1.isLocalEstimateDuplicateOf(tDiffVol) shouldBe false
             t1.isLocalEstimateDuplicateOf(tDiffUsd) shouldBe false
+            t1.isLocalEstimateDuplicateOf(t1.copy(side = "SELL")) shouldBe false
+            t1.isLocalEstimateDuplicateOf(t1.copy(pair = "ETHUSD")) shouldBe false
+            t1.isLocalEstimateDuplicateOf(t1.copy(cycleId = "other-cycle")) shouldBe false
+            t1.copy(clientOrderId = "client-a").isLocalEstimateDuplicateOf(
+                t1.copy(clientOrderId = "client-b"),
+            ) shouldBe false
+        }
+
+        "trade identity and correlation guards cover authoritative and heuristic paths" {
+            val now = Instant.parse("2026-08-31T12:00:00Z")
+            val base = EngineTestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XBTUSD",
+                symbol = "BTC",
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("50000.00"),
+                cycleId = "cycle-a",
+            )
+            val alias = base.copy(pair = "XXBTZUSD")
+
+            base.hasSharedAuthoritativeIdentity(alias) shouldBe false
+            base.copy(tradeId = "trade-a").hasSharedAuthoritativeIdentity(alias.copy(tradeId = "trade-a")) shouldBe true
+            base.copy(tradeId = "trade-a").hasSharedAuthoritativeIdentity(alias.copy(tradeId = "trade-b")) shouldBe
+                false
+            base.copy(orderTxid = "order-a").hasSharedAuthoritativeIdentity(alias.copy(orderTxid = "order-a")) shouldBe
+                true
+            base.copy(orderTxid = "order-a").hasSharedAuthoritativeIdentity(alias.copy(orderTxid = "order-b")) shouldBe
+                false
+            base.copy(tradeId = "trade-a", orderTxid = "order-a").hasSharedAuthoritativeIdentity(
+                alias.copy(tradeId = "trade-a", orderTxid = "order-b"),
+            ) shouldBe false
+            base.copy(tradeId = " ").hasSharedAuthoritativeIdentity(alias.copy(tradeId = " ")) shouldBe false
+            base.copy(orderTxid = " ").hasSharedAuthoritativeIdentity(alias.copy(orderTxid = " ")) shouldBe false
+
+            val identified = base.copy(tradeId = "trade-a")
+            identified.isPairAliasDuplicateOf(alias.copy(tradeId = "trade-a", volume = BigDecimal("1.02"))) shouldBe
+                false
+            identified.isPairAliasDuplicateOf(
+                alias.copy(tradeId = "trade-a", usdAmount = BigDecimal("51000.00")),
+            ) shouldBe false
+            identified.isPairAliasDuplicateOf(
+                alias.copy(tradeId = "trade-a", orderTxid = "order-a"),
+            ) shouldBe true
+            identified.isPairAliasDuplicateOf(
+                alias.copy(tradeId = "trade-a", orderTxid = "order-a", cycleId = "cycle-b"),
+            ) shouldBe true
+            identified.isPairAliasDuplicateOf(
+                base.copy(pair = "BTCEUR", tradeId = "trade-a"),
+            ) shouldBe false
+
+            base.copy(cycleId = null).isLocalEstimateDuplicateOf(base) shouldBe true
+            base.copy(clientOrderId = "client-a").isLocalEstimateDuplicateOf(base) shouldBe true
+            base.copy(orderTxid = "order-a").isLocalEstimateDuplicateOf(
+                base.copy(source = TradeSource.API_FILL, orderTxid = "order-a"),
+            ) shouldBe true
+            base.copy(orderTxid = "order-a").isLocalEstimateDuplicateOf(
+                base.copy(source = TradeSource.API_FILL, tradeId = "trade-a"),
+            ) shouldBe false
+            base.copy(tradeId = "trade-a").isLocalEstimateDuplicateOf(
+                base.copy(source = TradeSource.API_FILL, orderTxid = "order-a"),
+            ) shouldBe false
+            base.copy(orderTxid = "order-a").isLocalEstimateDuplicateOf(
+                base.copy(source = TradeSource.API_FILL),
+            ) shouldBe true
+            base.isLocalEstimateDuplicateOf(
+                base.copy(source = TradeSource.API_FILL, tradeId = "trade-a"),
+            ) shouldBe true
+            base.copy(tradeId = "trade-a").isLocalEstimateDuplicateOf(
+                base.copy(source = TradeSource.API_FILL, tradeId = "trade-a"),
+            ) shouldBe true
+            base.copy(tradeId = "trade-a", orderTxid = "order-a").isLocalEstimateDuplicateOf(
+                base.copy(source = TradeSource.API_FILL, tradeId = "trade-a", orderTxid = "order-a"),
+            ) shouldBe true
+
+            val api = alias.copy(source = TradeSource.API_FILL)
+            base.copy(tradeId = "trade-a").isMatchingApiTrade(
+                api.copy(tradeId = "trade-b"),
+                listOf("BTC"),
+            ) shouldBe false
+            base.copy(cycleId = "cycle-a").isMatchingApiTrade(
+                api.copy(cycleId = "cycle-b"),
+                listOf("BTC"),
+            ) shouldBe false
+            base.copy(clientOrderId = "client-a").isMatchingApiTrade(
+                api.copy(clientOrderId = "client-b"),
+                listOf("BTC"),
+            ) shouldBe false
         }
 
         "isMatchingApiTrade tests all rejection branches" {
@@ -258,11 +366,56 @@ class EngineModelTest : StringSpec() {
             // Symbol mismatch
             local.copy(symbol = "ETH", pair = "ETHUSD").isMatchingApiTrade(api, listOf("BTC", "ETH")) shouldBe false
 
+            // Do not trust the pair-derived symbol when the stored symbol fields contradict it.
+            local.isMatchingApiTrade(api.copy(pair = local.pair, symbol = "ETH"), listOf("BTC", "ETH")) shouldBe false
+
             // Volume outside tolerance
             local.copy(volume = BigDecimal("1.5")).isMatchingApiTrade(api, listOf("BTC")) shouldBe false
 
             // Matching with exact volume and differing USD within tolerance
             local.isMatchingApiTrade(api.copy(usdAmount = BigDecimal("50100.00")), listOf("BTC")) shouldBe true
+        }
+
+        "isMatchingApiTrade falls back to valid stored symbols for non-USD exact pairs" {
+            val now = Instant.parse("2026-08-31T12:00:00Z")
+            val local = EngineTestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "BTCEUR",
+                symbol = "BTC",
+                source = TradeSource.LOCAL_ESTIMATE,
+            )
+            val api = local.copy(source = TradeSource.API_FILL)
+
+            local.isMatchingApiTrade(api, listOf("BTC")) shouldBe true
+        }
+
+        "isMatchingApiTrade rejects an exact pair with a missing API symbol" {
+            val now = Instant.parse("2026-08-31T12:00:00Z")
+            val local = EngineTestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "BTCEUR",
+                symbol = "BTC",
+                source = TradeSource.LOCAL_ESTIMATE,
+            )
+            val api = local.copy(symbol = "", source = TradeSource.API_FILL)
+
+            local.isMatchingApiTrade(api, listOf("BTC")) shouldBe false
+        }
+
+        "isMatchingApiTrade rejects different authoritative identity types" {
+            val now = Instant.parse("2026-08-31T12:00:00Z")
+            val local = EngineTestFixtures.tradeRecord(
+                timestamp = now,
+                orderTxid = "order-a",
+                source = TradeSource.LOCAL_ESTIMATE,
+            )
+            val api = local.copy(
+                orderTxid = null,
+                tradeId = "trade-a",
+                source = TradeSource.API_FILL,
+            )
+
+            local.isMatchingApiTrade(api, listOf("BTC")) shouldBe false
         }
 
         "feePercentDiffersMateriallyFrom edge cases" {
@@ -310,7 +463,7 @@ class EngineModelTest : StringSpec() {
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal("80.00"),
                 )
-            val alias = base.copy(pair = "XXBTZUSD", id = 2)
+            val alias = base.copy(pair = "XXBTZUSD", id = 2, tradeId = "T-1")
 
             base.copy(tradeId = "T-1").isPairAliasDuplicateOf(alias.copy(tradeId = "T-2")) shouldBe false
             base.copy(tradeId = "T-1").isPairAliasDuplicateOf(alias.copy(tradeId = "T-1")) shouldBe true
@@ -318,6 +471,7 @@ class EngineModelTest : StringSpec() {
                 false
             base.copy(
                 fee = BigDecimal("80.50"),
+                tradeId = "T-1",
             ).isPairAliasDuplicateOf(alias.copy(source = TradeSource.API_FILL)) shouldBe
                 true
         }

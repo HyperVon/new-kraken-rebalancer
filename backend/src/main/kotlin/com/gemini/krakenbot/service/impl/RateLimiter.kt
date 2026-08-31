@@ -8,7 +8,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Coroutine-safe Kraken call-counter limiter: counter decays linearly at [decayRate]/sec
- * (default 0.33) and blocks until `counter + cost ≤ [safeLimit]` (default 12, Intermediate tier).
+ * (default 0.5) and blocks until `counter + cost ≤ [safeLimit]` (default 20, standard account).
  *
  * The mutex is **not** held across [delay] so other callers are not head-of-line
  * blocked while one waiter sleeps (CQ-7-L1).
@@ -17,8 +17,8 @@ import kotlin.time.Duration.Companion.milliseconds
  * Open for test subclasses that record acquire costs without MockK.
  */
 open class RateLimiter(
-    private val safeLimit: Double = 12.0,
-    private val decayRate: Double = 0.33,
+    private val safeLimit: Double = 20.0,
+    private val decayRate: Double = 0.5,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     private val mutex = Mutex()
@@ -26,6 +26,7 @@ open class RateLimiter(
     // Guarded by [mutex] — every read and write must happen inside `mutex.withLock`.
     private var callCounter: Double = 0.0
     private var lastUpdateTimeMs: Long = clock()
+    private val maxDecayMillis = (safeLimit / decayRate * 1000).toLong()
 
     /**
      * Blocks until `callCounter + cost ≤ safeLimit`, then charges [cost] and returns the new counter.
@@ -39,15 +40,7 @@ open class RateLimiter(
             var acquired: Double? = null
             mutex.withLock {
                 val now = clock()
-                val rawElapsedMs = now - lastUpdateTimeMs
-                // Forward NTP jump would otherwise decay to 0 and permit a burst; cap forward
-                // decay to at most one safeLimit fill (safeLimit/decayRate seconds) and treat
-                // backward jumps as 0.
-                val elapsedMs = rawElapsedMs.coerceIn(0L, (safeLimit / decayRate * 1000).toLong())
-                val elapsedSeconds = elapsedMs / 1000.0
-                callCounter = maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
-                // Keep the internal baseline monotonic when the wall clock moves backward.
-                lastUpdateTimeMs = if (rawElapsedMs < 0) lastUpdateTimeMs else now
+                updateCounter(now)
 
                 if (callCounter + cost > safeLimit) {
                     val neededDecay = (callCounter + cost) - safeLimit
@@ -70,16 +63,27 @@ open class RateLimiter(
 
     /** Returns the decayed [callCounter] without charging — linear decay since last update. */
     suspend fun getCurrentCounter(): Double = mutex.withLock {
-        val now = clock()
-        val rawElapsedMs = now - lastUpdateTimeMs
-        val elapsedMs = rawElapsedMs.coerceIn(0L, (safeLimit / decayRate * 1000).toLong())
-        val elapsedSeconds = elapsedMs / 1000.0
-        return maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
+        updateCounter(clock())
+        callCounter
     }
 
     /** Resets the counter to zero and re-baselines the decay clock to `clock()`. */
     suspend fun reset() = mutex.withLock {
         callCounter = 0.0
         lastUpdateTimeMs = clock()
+    }
+
+    private fun updateCounter(now: Long) {
+        if (now < lastUpdateTimeMs) {
+            // A wall-clock rollback must become the new origin. Keeping the old future
+            // baseline would suspend waiters until the clock catches up to it.
+            lastUpdateTimeMs = now
+            return
+        }
+        // Cap forward decay to one full safe-limit fill so a large clock step cannot create a
+        // burst beyond the limiter's intended empty state, then rebase at the observed time.
+        val elapsedMs = (now - lastUpdateTimeMs).coerceAtMost(maxDecayMillis)
+        callCounter = maxOf(0.0, callCounter - (elapsedMs / 1000.0 * decayRate))
+        lastUpdateTimeMs = now
     }
 }

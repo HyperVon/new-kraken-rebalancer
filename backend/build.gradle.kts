@@ -79,6 +79,7 @@ dependencies {
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.slf4j)
 
     // SQLite + Exposed ORM
     implementation(libs.exposed.core)

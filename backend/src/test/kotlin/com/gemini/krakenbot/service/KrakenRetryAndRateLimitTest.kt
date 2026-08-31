@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
+import com.gemini.krakenbot.service.impl.PublicRateLimiter
 import com.gemini.krakenbot.service.impl.krakenPrivateEndpointCost
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -16,8 +17,7 @@ import io.kotest.matchers.shouldBe
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
 import io.ktor.client.network.sockets.SocketTimeoutException
-import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.statement.HttpResponse
+import io.ktor.client.plugins.ResponseException
 import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
@@ -25,13 +25,140 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import java.io.IOException
 import java.math.BigDecimal
 import java.util.*
 import kotlin.time.Duration.Companion.minutes
 
 class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
 
+    private fun configuredService(
+        mockEngine: MockEngine,
+        publicRateLimiter: PublicRateLimiter = PublicRateLimiter(minIntervalMs = 0),
+    ): KrakenServiceImpl {
+        val mockConfigService = mockk<ConfigService>(relaxed = true)
+        val credentials = KrakenCredentials(
+            "k",
+            Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
+        )
+        every { mockConfigService.getConfig() } returns AppConfig(
+            credentials,
+            TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
+            emptyList(),
+        )
+        return KrakenServiceImpl(
+            configService = mockConfigService,
+            objectMapper = jacksonObjectMapper(),
+            httpClient = HttpClient(mockEngine),
+            publicRateLimiter = publicRateLimiter,
+        )
+    }
+
     init {
+        "permanentHttpFailure_failsFastWithoutRetry" {
+            runTest {
+                var attempt = 0
+                val service = configuredService(
+                    MockEngine {
+                        attempt++
+                        respond(
+                            content = "unauthorized",
+                            status = HttpStatusCode.Unauthorized,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+
+                shouldThrow<ResponseException> { service.getBalances() }
+                attempt shouldBe 1
+                currentTime shouldBe 0L
+            }
+        }
+
+        "transientHttp5xx_retriesWithCappedClassifier" {
+            runTest {
+                var attempt = 0
+                val service = configuredService(
+                    MockEngine {
+                        if (attempt++ == 0) {
+                            respond(
+                                content = "server error",
+                                status = HttpStatusCode.InternalServerError,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        } else {
+                            respond(
+                                content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        }
+                    },
+                )
+
+                val balances = service.getBalances()
+                balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
+                attempt shouldBe 2
+                currentTime shouldBe 2_000L
+            }
+        }
+
+        "transientPublicHttp5xx_retriesWithCappedClassifier" {
+            runTest {
+                var attempt = 0
+                val service = configuredService(
+                    MockEngine {
+                        if (attempt++ == 0) {
+                            respond(
+                                content = "server error",
+                                status = HttpStatusCode.InternalServerError,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        } else {
+                            respond(
+                                content =
+                                "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1700000000,\"1\",\"2\",\"3\",\"50000.0\",\"4\",\"5\",6]],\"last\":1700000000}}",
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        }
+                    },
+                )
+
+                service.getOHLC(TestFixtures.XXBTZUSD, 1440, null).size shouldBe 1
+                attempt shouldBe 2
+                currentTime shouldBe 2_000L
+            }
+        }
+
+        "http429_usesRateLimitBackoff" {
+            runTest {
+                var attempt = 0
+                val service = configuredService(
+                    MockEngine {
+                        if (attempt++ == 0) {
+                            respond(
+                                content = "rate limited",
+                                status = HttpStatusCode.TooManyRequests,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        } else {
+                            respond(
+                                content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        }
+                    },
+                )
+
+                val balances = service.getBalances()
+                balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
+                attempt shouldBe 2
+                currentTime shouldBe 10_000L
+            }
+        }
+
         "retryOnTransientFailure_SucceedsOnSecondAttempt" {
             runTest {
                 var attempt = 0
@@ -278,8 +405,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                 var attempt = 0
                 val mockEngine = MockEngine {
                     if (attempt++ == 0) {
-                        val response = mockk<HttpResponse>(relaxed = true)
-                        throw ClientRequestException(response, "Simulated rate limit / error")
+                        throw IOException("Simulated transient network failure")
                     } else {
                         respond(
                             content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
@@ -327,8 +453,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
         "getOHLC_Error" {
             runTest {
                 val service = createService("invalid-json")
-                val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
-                ohlc.isEmpty().shouldBeTrue()
+                shouldThrow<RuntimeException> { service.getOHLC(TestFixtures.XXBTZUSD, 1440, null) }
             }
         }
 
@@ -460,7 +585,7 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
             }
         }
 
-        "queryPrivate_TradesHistory_acquiresWithCost2" {
+        "queryPrivate_TradesHistory_acquiresWithCost4" {
             runTest {
                 val limiter = RecordingRateLimiter()
                 val responseJson = """
@@ -470,23 +595,23 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
 
                 service.getTradeHistory()
 
-                limiter.acquiredCosts shouldBe listOf(2.0)
+                limiter.acquiredCosts shouldBe listOf(4.0)
             }
         }
 
-        "krakenPrivateEndpointCost_TradesHistory_Ledgers_ClosedOrders_are2" {
-            krakenPrivateEndpointCost(KrakenApiConstants.PATH_TRADES_HISTORY) shouldBe 2.0
-            krakenPrivateEndpointCost("/0/private/Ledgers") shouldBe 2.0
-            krakenPrivateEndpointCost("/0/private/ClosedOrders") shouldBe 2.0
+        "krakenPrivateEndpointCost_TradesHistory_Ledgers_ClosedOrders_are4" {
+            krakenPrivateEndpointCost(KrakenApiConstants.PATH_TRADES_HISTORY) shouldBe 4.0
+            krakenPrivateEndpointCost("/0/private/Ledgers") shouldBe 4.0
+            krakenPrivateEndpointCost("/0/private/ClosedOrders") shouldBe 4.0
             KrakenApiConstants.SUBSTRING_TRADES_HISTORY shouldBe "TradesHistory"
             KrakenApiConstants.SUBSTRING_LEDGERS shouldBe "Ledgers"
             KrakenApiConstants.SUBSTRING_CLOSED_ORDERS shouldBe "ClosedOrders"
         }
 
-        "krakenPrivateEndpointCost_Balance_and_AddOrder_are1" {
+        "krakenPrivateEndpointCost_Balance_is1_AddOrder_is0" {
             krakenPrivateEndpointCost(KrakenApiConstants.PATH_BALANCE) shouldBe 1.0
             krakenPrivateEndpointCost(KrakenApiConstants.PATH_BALANCE_EX) shouldBe 1.0
-            krakenPrivateEndpointCost(KrakenApiConstants.PATH_ADD_ORDER) shouldBe 1.0
+            krakenPrivateEndpointCost(KrakenApiConstants.PATH_ADD_ORDER) shouldBe 0.0
         }
     }
 }

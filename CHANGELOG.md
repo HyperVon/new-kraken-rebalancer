@@ -6,6 +6,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.14] - 2026-08-31
+
+### Changed
+
+- **History safety and consistency**: Historical reconstruction now validates a
+  trustworthy price for every tracked asset and required event before saving or
+  advancing its version marker; trade and ledger sync watermarks record the
+  successful query horizon rather than slow completion time. Dedupe now requires
+  authoritative identity for pair aliases, treats conflicting IDs as distinct,
+  normalizes ledger asset aliases, and protects trades linked from live-order
+  intents during cleanup.
+- **Kraken transport semantics**: Aligned private call costs with Kraken's
+  current guidance (`+4` for `Ledgers`, `TradesHistory`, and `ClosedOrders`,
+  `+1` for other private calls, and no account-counter charge for `AddOrder` or
+  `CancelOrder`), added a separate conservative public limiter, serialized
+  private nonce/sign/post handling, and capped retry backoffs. See the
+  [official rate-limit guidance](https://support.kraken.com/articles/206548367-what-are-the-api-rate-limits-?mobile_site=false).
+- **Operational and persistence hardening**: Missing private credentials now
+  report typed unavailability, cycle sync failures remain visible as warnings,
+  `dryRun` is an explicit non-null execution input, domain exceptions survive
+  repository transactions, large SQLite deletes are chunked, migrations reject
+  unsupported versions before mutation, and portfolio statistics use a stable
+  singleton row.
+- **Input and UI boundaries**: Query parameters are RFC 3986 encoded, history
+  preferences reject unsupported ranges, and manual order-intent evidence and
+  transaction IDs are bounded in both server validation and HTML forms.
+
+### Fixed
+
+- **Multi-fill order reconciliation & history sync**: Introduced `OrderFillReconciler`
+  to evaluate authoritative Kraken order execution collectively. Complete executions
+  require strict volume equality at crypto precision (scale 8) or USD precision (scale 2),
+  strictly rejecting partial executions (e.g. 99% or 99.9%) and overfills. Complete executions
+  resolve cleanly, enriching all distinct `API_FILL` records with order metadata (`cycleId`,
+  `clientOrderId`, `expectedPrice`, and independent slippage) while safely detaching and deleting
+  the single aggregate local placeholder trade to prevent duplicate accounting.
+- **Exact orderTxid dominance & unambiguous local identity**: Authoritative `orderTxid`
+  evidence outranks heuristic matching in manual recovery and normal history sync;
+  incompatible exact-order fills, duplicate local estimates for the same orderTxid,
+  incompatible metadata cache lookups, and un-superseded local estimates alongside
+  already-persisted authoritative fills fail closed immediately with dedicated domain
+  exceptions (`OrderIntentReconciliationException` / `TradeReconciliationConflictException`)
+  and never fall through to ID-less heuristic matching, apply incompatible metadata, or
+  permit stale local double accounting during overlap syncs.
+- **Trade repository deletion safety**: Added `deleteTrade` with active intent foreign-key
+  guards, preventing accidental removal of trades tied to unresolved (`PENDING` or `UNCERTAIN`)
+  order intents.
+- **Order-intent reconciliation**: A terminal confirmation evaluates multi-fill executions,
+  preserving all distinct executed fill legs with their exchange trade IDs while retaining
+  the durable intent audit record. Unresolved intents remain protected and fail closed.
+- Added regression coverage for missing historical prices, deterministic sync
+  horizons, identity-conflicting fills, multi-fill order reconciliation, precision-based
+  completeness boundaries, exact orderTxid dominance, unambiguous sync reconciliation,
+  persisted-fill exact-order validation, metadata cache isolation, partial fill failure,
+  asset aliases, foreign-key migration, rate semantics, nonce serialization,
+  cancellation/exception preservation, typed credential failures, mode pinning,
+  and malformed UI persistence.
+
 ## [6.17.13] - 2026-08-30
 
 ### Changed

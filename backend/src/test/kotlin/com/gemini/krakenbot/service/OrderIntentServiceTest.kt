@@ -20,6 +20,19 @@ class OrderIntentServiceTest : StringSpec() {
     private val service = OrderIntentServiceImpl(repository)
 
     init {
+        "rejects oversized manual resolution evidence and transaction ids" {
+            runTest {
+                val oversizedEvidence = "x".repeat(501)
+                shouldThrow<IllegalArgumentException> {
+                    service.resolve(20, OrderIntentState.CONFIRMED, oversizedEvidence)
+                }
+                shouldThrow<IllegalArgumentException> {
+                    service.resolve(20, OrderIntentState.CONFIRMED, "evidence", "t".repeat(65))
+                }
+                coVerify(exactly = 0) { repository.resolve(any(), any(), any(), any(), any()) }
+            }
+        }
+
         "rethrows reconciliation conflicts from a repository transaction wrapper" {
             runTest {
                 coEvery {

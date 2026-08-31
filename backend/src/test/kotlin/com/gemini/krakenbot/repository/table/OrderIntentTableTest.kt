@@ -34,10 +34,22 @@ class OrderIntentTableTest : StringSpec() {
                 expectedPrice = BigDecimal("3000.00000000"),
                 createdAt = Instant.parse("2026-07-02T15:30:00Z"),
                 state = OrderIntentState.PENDING,
-                localTradeId = 42,
+                localTradeId = 1,
             )
 
             transaction(db) {
+                TradeTable.insert {
+                    it[TradeTable.timestamp] = original.createdAt.toEpochMilli()
+                    it[TradeTable.pair] = original.pair
+                    it[TradeTable.side] = original.side
+                    it[TradeTable.symbol] = original.symbol
+                    it[TradeTable.volume] = original.volume
+                    it[TradeTable.usdAmount] = original.usdAmount
+                    it[TradeTable.success] = false
+                    it[TradeTable.dryRun] = false
+                    it[TradeTable.price] = original.expectedPrice ?: BigDecimal.ONE
+                    it[TradeTable.fee] = BigDecimal.ZERO
+                }
                 val insertedId = OrderIntentTable.insert {
                     OrderIntentTable.applyPending(it, original)
                 }[OrderIntentTable.id]
@@ -61,7 +73,7 @@ class OrderIntentTableTest : StringSpec() {
                 loaded.errorMessage shouldBe null
                 loaded.resolvedAt shouldBe null
                 loaded.resolutionEvidence shouldBe null
-                loaded.localTradeId shouldBe 42
+                loaded.localTradeId shouldBe 1
             }
         }
     }

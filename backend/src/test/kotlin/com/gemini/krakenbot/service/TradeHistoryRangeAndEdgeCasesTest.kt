@@ -687,7 +687,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 every { portfolioAnalyzer.resolveBalance(Asset.BTC, balances) } returns BigDecimal("0.5")
                 every { portfolioAnalyzer.resolveBalance(Asset.ETH, balances) } returns BigDecimal("2.0")
                 every { portfolioAnalyzer.resolveBalance(TestFixtures.USD, balances) } returns BigDecimal("1000.0")
-                // BTC ticker present (Kraken XBTUSD); ETH missing → ETH clamps to zero via currentPrices fallback
+                // BTC ticker present; ETH has no trustworthy OHLC, trade, or current price.
                 coEvery { krakenService.getTickerPrices(any()) } returns
                     mapOf(Asset.BTC_USD_PAIR to BigDecimal("30000.00"))
                 coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
@@ -695,12 +695,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
 
                 service.syncTradesFromKraken()
 
-                reconstructed.isCaptured.shouldBeTrue()
-                reconstructed.captured.first().assets.getValue(Asset.ETH).price
-                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
-                reconstructed.captured.any {
-                    it.assets[Asset.BTC]?.price?.compareTo(BigDecimal.ZERO) != 0
-                }.shouldBeTrue()
+                reconstructed.isCaptured shouldBe false
             }
         }
     }

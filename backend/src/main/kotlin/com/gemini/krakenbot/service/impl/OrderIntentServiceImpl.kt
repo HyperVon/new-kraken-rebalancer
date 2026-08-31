@@ -10,6 +10,11 @@ import java.io.IOException
 import java.time.Instant
 
 class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : OrderIntentService {
+    private companion object {
+        const val MAX_RESOLUTION_EVIDENCE_LENGTH = 500
+        const val MAX_ORDER_TXID_LENGTH = 64
+    }
+
     override suspend fun savePending(intent: OrderIntent): Int = repository.savePending(
         intent.copy(state = OrderIntentState.PENDING),
     )
@@ -40,7 +45,13 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
             "Only CONFIRMED or REJECTED outcomes can resolve an order intent."
         }
         require(evidence.isNotBlank()) { "Resolution evidence is required." }
+        require(evidence.length <= MAX_RESOLUTION_EVIDENCE_LENGTH) {
+            "Resolution evidence must be at most $MAX_RESOLUTION_EVIDENCE_LENGTH characters."
+        }
         val normalizedOrderTxid = orderTxid?.trim()?.takeIf(String::isNotEmpty)
+        require(normalizedOrderTxid == null || normalizedOrderTxid.length <= MAX_ORDER_TXID_LENGTH) {
+            "Order transaction id must be at most $MAX_ORDER_TXID_LENGTH characters."
+        }
         try {
             check(repository.resolve(id, state, evidence.trim(), Instant.now(), normalizedOrderTxid)) {
                 "Order intent $id is missing or already resolved."

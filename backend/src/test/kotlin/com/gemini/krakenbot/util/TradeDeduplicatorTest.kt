@@ -55,6 +55,7 @@ class TradeDeduplicatorTest : StringSpec() {
                 BigDecimal("1.0"),
                 BigDecimal("50000.00"),
                 id = 1,
+                tradeId = "same-fill",
             )
             val t2 = TestFixtures.tradeRecord(
                 now.plusSeconds(1),
@@ -64,6 +65,7 @@ class TradeDeduplicatorTest : StringSpec() {
                 BigDecimal("1.0"),
                 BigDecimal("50000.00"),
                 id = 2,
+                tradeId = "same-fill",
             )
 
             val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(t1, t2))
@@ -113,8 +115,7 @@ class TradeDeduplicatorTest : StringSpec() {
                 id = 203,
             )
 
-            TradeDeduplicator.findDuplicateTradeIds(listOf(first, bridge, legitimateLaterTrade)) shouldContainExactly
-                listOf(202)
+            TradeDeduplicator.findDuplicateTradeIds(listOf(first, bridge, legitimateLaterTrade)).isEmpty() shouldBe true
         }
 
         "CQ-10-L6: should keep pair-alias API fills with distinct Kraken trade IDs" {
@@ -221,7 +222,7 @@ class TradeDeduplicatorTest : StringSpec() {
             )
 
             val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill))
-            duplicates shouldContainExactly listOf(15)
+            duplicates.isEmpty() shouldBe true
         }
 
         "should preserve legitimate equal-sized fills with different financial details" {
@@ -319,6 +320,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 50,
+                    tradeId = "same-fill",
                 )
             val record2 =
                 TestFixtures.tradeRecord(
@@ -332,6 +334,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 51,
+                    tradeId = "same-fill",
                 )
 
             TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)) shouldContainExactly listOf(51)
@@ -373,12 +376,14 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("50000.00"),
                     fee = BigDecimal("100.00"),
                     id = 70,
+                    tradeId = "same-fill",
                 )
             val record2 =
                 record1.copy(
                     timestamp = now.plusMillis(300_000),
                     pair = "XXBTZUSD",
                     id = 71,
+                    tradeId = "same-fill",
                 )
 
             TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)) shouldContainExactly listOf(71)
@@ -438,7 +443,7 @@ class TradeDeduplicatorTest : StringSpec() {
             TradeDeduplicator.findDuplicateTradeIds(listOf(settledFill, localEstimate)) shouldContainExactly listOf(101)
         }
 
-        "CQ-3-8: should keep a local/API pair whose fee rates do not differ materially" {
+        "CQ-3-8: should deduplicate a local/API pair regardless of fee rates" {
             val now = Instant.now()
             val settledFill =
                 TestFixtures.tradeRecord(
@@ -466,10 +471,10 @@ class TradeDeduplicatorTest : StringSpec() {
                     id = 103,
                 )
 
-            TradeDeduplicator.findDuplicateTradeIds(listOf(settledFill, localEstimate)).isEmpty() shouldBe true
+            TradeDeduplicator.findDuplicateTradeIds(listOf(settledFill, localEstimate)) shouldContainExactly listOf(103)
         }
 
-        "CQ-3-21: should treat a fee-rate delta exactly at the 0.001 material threshold as a duplicate" {
+        "CQ-3-21: should deduplicate a local/API pair with different fees" {
             val now = Instant.now()
             val localEstimate =
                 TestFixtures.tradeRecord(
@@ -500,7 +505,7 @@ class TradeDeduplicatorTest : StringSpec() {
             TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill)) shouldContainExactly listOf(80)
         }
 
-        "CQ-3-21: should keep a pair whose fee-rate delta is one unit below the 0.001 material threshold" {
+        "CQ-3-21: should deduplicate a local/API pair with nearly equal fees" {
             val now = Instant.now()
             val localEstimate =
                 TestFixtures.tradeRecord(
@@ -528,7 +533,32 @@ class TradeDeduplicatorTest : StringSpec() {
                     id = 83,
                 )
 
-            TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill)).isEmpty() shouldBe true
+            TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill)) shouldContainExactly listOf(82)
+        }
+
+        "should not use estimate/fill heuristic when only one row has an authoritative id" {
+            val now = Instant.now()
+            val localEstimate = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY_UPPER,
+                symbol = Asset.BTC,
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("50000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                slippagePercent = BigDecimal.ZERO,
+                orderTxid = "LOCAL-ORDER",
+                id = 106,
+            )
+            val apiFill = localEstimate.copy(
+                timestamp = now.plusSeconds(2),
+                source = TradeSource.API_FILL,
+                orderTxid = null,
+                fee = BigDecimal("100.00"),
+                id = 107,
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, apiFill)).isEmpty() shouldBe true
         }
 
         "CQ-3-21: should treat a local estimate exactly at the 10-second window as a duplicate" {
@@ -823,7 +853,99 @@ class TradeDeduplicatorTest : StringSpec() {
                 id = 151,
             )
 
-            TradeDeduplicator.findDuplicateTradeIds(listOf(base, alias)) shouldContainExactly listOf(151)
+            TradeDeduplicator.findDuplicateTradeIds(listOf(base, alias)).isEmpty() shouldBe true
+        }
+
+        "startup cleanup skips a previously selected duplicate while scanning later candidates" {
+            val now = Instant.now()
+            val first = canonicalXbtApiFill(now).copy(id = 160, tradeId = "same-fill")
+            val unrelated = first.copy(
+                timestamp = now.plusMillis(100),
+                id = 161,
+                symbol = Asset.ETH,
+                pair = "ETHUSD",
+                tradeId = "other-fill",
+            )
+            val duplicate = first.copy(
+                timestamp = now.plusMillis(200),
+                id = 162,
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(first, unrelated, duplicate)) shouldContainExactly
+                listOf(162)
+        }
+
+        "authoritative identity does not override incompatible same-pair economics" {
+            val base = canonicalXbtApiFill(Instant.now()).copy(tradeId = "same-fill")
+
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(base.copy(id = 163), base.copy(id = 164, volume = BigDecimal("1.02"))),
+            ).isEmpty() shouldBe true
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(base.copy(id = 165), base.copy(id = 166, usdAmount = BigDecimal("51000.00"))),
+            ).isEmpty() shouldBe true
+        }
+
+        "authoritative identity removes an exact same-pair duplicate" {
+            val base = canonicalXbtApiFill(Instant.now()).copy(tradeId = "same-fill")
+
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(base.copy(id = 169), base.copy(id = 170, timestamp = base.timestamp.plusMillis(100))),
+            ) shouldContainExactly listOf(170)
+        }
+
+        "authoritative identity does not accept a negative-volume trade" {
+            val base = canonicalXbtApiFill(Instant.now()).copy(tradeId = "same-fill")
+
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(base.copy(id = 167), base.copy(id = 168, volume = BigDecimal("-1.0"))),
+            ).isEmpty() shouldBe true
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(base.copy(id = 173, volume = BigDecimal("-1.0")), base.copy(id = 174)),
+            ).isEmpty() shouldBe true
+        }
+
+        "startup cleanup keeps distinct id-less fill legs sharing an order id" {
+            val timestamp = Instant.now()
+            val firstLeg = canonicalXbtApiFill(timestamp).copy(
+                id = 175,
+                orderTxid = "shared-order",
+            )
+            val secondLeg = firstLeg.copy(
+                id = 176,
+                timestamp = timestamp.plusMillis(100),
+                volume = BigDecimal("1.005"),
+                usdAmount = BigDecimal("50250.00"),
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(firstLeg, secondLeg)).isEmpty() shouldBe true
+        }
+
+        "same-provenance fills with an exact shared-order fingerprint are duplicates" {
+            val timestamp = Instant.now()
+            val firstFill = canonicalXbtApiFill(timestamp).copy(
+                id = 177,
+                orderTxid = "exact-shared-order",
+            )
+            val duplicate = firstFill.copy(id = 178)
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(firstFill, duplicate)) shouldContainExactly listOf(178)
+        }
+
+        "authoritative identity does not merge a different asset" {
+            val base = canonicalXbtApiFill(Instant.now()).copy(tradeId = "same-fill")
+
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(base.copy(id = 171), base.copy(id = 172, symbol = Asset.ETH)),
+            ).isEmpty() shouldBe true
+        }
+
+        "authoritative identity does not merge an unrelated quote market" {
+            val base = canonicalXbtApiFill(Instant.now()).copy(tradeId = "same-fill")
+
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(base.copy(id = 179), base.copy(id = 180, pair = "BTCEUR")),
+            ).isEmpty() shouldBe true
         }
     }
 

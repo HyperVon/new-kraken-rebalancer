@@ -2,6 +2,7 @@
 
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.model.KrakenApiConstants
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -10,6 +11,7 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
@@ -119,6 +121,22 @@ class RateLimiterTest : StringSpec() {
             }
         }
 
+        "large forward clock steps decay the counter to the empty state" {
+            runTest {
+                var nowMs = 1_000_000L
+                val limiter = RateLimiter(
+                    safeLimit = 12.0,
+                    decayRate = 1.0,
+                    clock = { nowMs },
+                )
+                limiter.acquireWithCost(5.0)
+
+                nowMs += 60_000L
+
+                limiter.getCurrentCounter() shouldBe 0.0
+            }
+        }
+
         "backward clock movement does not inflate the counter" {
             runTest {
                 var nowMs = 1_000_000L
@@ -133,6 +151,29 @@ class RateLimiterTest : StringSpec() {
 
                 limiter.getCurrentCounter() shouldBe 5.0
                 limiter.acquireWithCost(1.0) shouldBe 6.0
+            }
+        }
+
+        "backward clock movement rebases a saturated waiter's decay baseline" {
+            runTest {
+                var nowMs = 1_000_000L
+                val limiter = RateLimiter(
+                    safeLimit = 2.0,
+                    decayRate = 1.0,
+                    clock = { nowMs },
+                )
+                limiter.acquireWithCost(1.5)
+
+                nowMs = 900_000L
+                val waiter = async { limiter.acquireWithCost(1.0) }
+                runCurrent()
+                waiter.isCompleted.shouldBeFalse()
+
+                // The clock advances from the rebased origin. The waiter must be released after
+                // the new 500ms decay interval, rather than waiting for the old future baseline.
+                nowMs = 900_500L
+                advanceTimeBy(500L)
+                waiter.await() shouldBe 2.0
             }
         }
 
@@ -186,6 +227,46 @@ class RateLimiterTest : StringSpec() {
                     limiter.acquireWithCost(15.0)
                 }
             }
+        }
+
+        "public limiter spaces requests by one second" {
+            runTest {
+                var nowMs = 10_000L
+                val limiter = PublicRateLimiter(clock = { nowMs })
+                limiter.acquire()
+
+                val waiter = async { limiter.acquire() }
+                runCurrent()
+                waiter.isCompleted.shouldBeFalse()
+
+                nowMs += 1_000L
+                advanceTimeBy(1_000L)
+                waiter.await()
+            }
+        }
+
+        "public limiter rebases after a backward clock step" {
+            runTest {
+                var nowMs = 10_000L
+                val limiter = PublicRateLimiter(clock = { nowMs })
+                limiter.acquire()
+
+                nowMs = 0L
+                val waiter = async { limiter.acquire() }
+                runCurrent()
+                waiter.isCompleted.shouldBeFalse()
+
+                nowMs = 1_000L
+                advanceTimeBy(1_000L)
+                waiter.await()
+            }
+        }
+
+        "private endpoint costs follow Kraken endpoint classes" {
+            krakenPrivateEndpointCost(KrakenApiConstants.PATH_ADD_ORDER) shouldBe 0.0
+            krakenPrivateEndpointCost("/0/private/CancelOrder") shouldBe 0.0
+            krakenPrivateEndpointCost("/0/private/TradesHistory") shouldBe 4.0
+            krakenPrivateEndpointCost("/0/private/Balance") shouldBe 1.0
         }
     }
 }

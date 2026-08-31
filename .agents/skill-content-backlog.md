@@ -830,10 +830,10 @@ When moving packages:
 ````markdown
 - `retryWithFlow` tracks `attempt` (network / rate limit) and `lockoutAttempt`
   separately — lockout doubles 10s → 15m without consuming the 5 network attempts.
-- `queryPublic` uses `retryWithFlow` but no RateLimiter; private calls always
-  `acquireWithCost` first.
-- `getTradeHistory` returns `emptyList()` when credentials are missing — do not
-  treat that as "no trades on the exchange".
+- `queryPublic` uses the separate `PublicRateLimiter`; private calls serialize
+  limiter, nonce, signing, POST, and response handling.
+- Missing private credentials raise typed unavailability; sync preflight may
+  skip live synchronization without treating unavailable history as empty.
 ````
 
 ### [CR-ROUND-1] Flag raw scaling in money code

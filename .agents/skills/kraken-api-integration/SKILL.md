@@ -2,7 +2,8 @@
 name: kraken-api-integration
 description: >-
   Kraken REST integration — symbol mapping, HMAC-SHA512 signing, RateLimiter
-  call-counter (safeLimit 12, decay 0.33), Mutex, retryWithFlow lockout backoff,
+  call-counter (safeLimit 20, decay 0.5), public pacing, serialized private
+  nonce/sign/post handling, retryWithFlow lockout backoff,
   AddOrder cl_ord_id open-order uniqueness (not userref), and public vs private
   paths. Use when changing KrakenServiceImpl, RateLimiter, DynamicKrakenService,
   OrderExecutorImpl client order ids, or exchange credentials handling.
@@ -25,9 +26,10 @@ Normalize UI/logs to clean `BASE/USD` display form.
 
 ## Public vs private
 
-- **Public** (`queryPublic`): ticker/OHLC — no rate limiter, no HMAC.
-- **Private** (`queryPrivate`): balances, orders, trades history — `RateLimiter` +
-  HMAC-SHA512 + `retryWithFlow`.
+- **Public** (`queryPublic`): ticker/OHLC — separate conservative `PublicRateLimiter`
+  (at most about one call per second), no HMAC.
+- **Private** (`queryPrivate`): balances, orders, trades history — serialized
+  `RateLimiter`/nonce/sign/POST/response handling + HMAC-SHA512 + `retryWithFlow`.
 
 DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
 `SimulatedKrakenService`).
@@ -38,22 +40,24 @@ DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
 
 `service/impl/RateLimiter.kt`:
 
-- `safeLimit = 12.0`, `decayRate = 0.33`; the counter decays linearly by
-  `elapsedSeconds × 0.33`
+- `safeLimit = 20.0`, `decayRate = 0.5`; the counter decays linearly by
+  `elapsedSeconds × 0.5` for the standard account counter
 - Negative wall-clock elapsed time is clamped to zero and the stored baseline
   stays monotonic, so clock rollback cannot inflate the counter.
 - All counter updates under coroutine **`Mutex`** (released **before** throttle
   `delay` so waiters do not HOL-block other private calls)
 - Waits until `callCounter + cost ≤ safeLimit`
 
-Per-endpoint **cost** (in `KrakenServiceImpl.queryPrivate`), preserving the
-project's normalized 2.0-vs-1.0 model for Kraken's higher-cost account-history
-group:
+Per-endpoint **cost** (in `KrakenTransport.queryPrivate`), aligned with
+[Kraken's current Spot API rate-limit guidance](https://support.kraken.com/articles/206548367-what-are-the-api-rate-limits-?mobile_site=false):
 
-Kraken's current [Spot API rate-limit guidance](https://support.kraken.com/au/articles/206548367-what-are-the-api-rate-limits-) lists `Ledgers`, `TradesHistory`, and `ClosedOrders` together as account-history endpoints (`+4`); this application normalizes that relative tier to `2.0`.
+- **4.0** for `Ledgers`, `TradesHistory`, and `ClosedOrders`
+- **1.0** for other private endpoints
+- **0.0** for `AddOrder` and `CancelOrder` on this account counter; trading
+  endpoints have separate interaction-point limits
 
-- **2.0** if path contains `TradesHistory`, `Ledgers`, or `ClosedOrders`
-- **1.0** otherwise
+Public calls use `PublicRateLimiter` independently; public and private limits
+must not be conflated.
 
 ---
 
@@ -81,8 +85,10 @@ get `EAPI:Invalid key`:
 2. **Nonce**: seed `timeMs * 1_000_000L` and increment per request (matches
    `KrakenServiceImpl`). Missing/inconsistent nonce persistence is not the
    issue; the message order is what breaks.
-3. **`Ledgers` / `TradesHistory` `start`/`end` are in SECONDS** (not ms), and
-   `Ledgers` paginates by ledger id (`ofs`/`id`), not timestamp.
+3. **`Ledgers` / `TradesHistory` `start`/`end` use epoch SECONDS when they are
+   timestamps** (not ms); Kraken also accepts ledger/trade IDs for those
+   bounds. Both endpoints paginate with the `ofs` result offset, so do not
+   advance pagination by timestamp.
 4. Credentials for this project come from `rebalancer-config.json`
    (`kraken.apiKey` / `kraken.privateKey`). Placeholder values may use
    `${ENV_VAR}` or `${ENV_VAR:default}` and are resolved from the environment
@@ -123,13 +129,14 @@ Defaults in `KrakenServiceImpl`:
 | :--- | :--- |
 | `maxAttempts` | 5 (network / rate-limit) |
 | `maxLockoutAttempts` | 9 |
-| `initialBackoffMs` | 2000 |
-| `rateLimitBackoffMs` | 10000 |
+| `initialBackoffMs` | 2000 (capped at 60s) |
+| `rateLimitBackoffMs` | 10000 (capped at 60s) |
 | Lockout start | **10_000** ms |
 | Lockout cap | **15 minutes** (doubles each lockout) |
 
-Retry on `IOException`, `ResponseException`, and messages containing
-`Rate limit exceeded` or `Temporary lockout`.
+Retry only on `IOException`, 429, temporary lockout, and relevant 5xx
+responses (500–504), plus the corresponding Kraken rate-limit/lockout error
+messages. Permanent 4xx responses such as 401/403 fail fast.
 
 `AddOrder` is the safety exception: it uses `maxAttempts = 1`. A transport or
 response failure may occur after Kraken accepted the order, and `cl_ord_id`
@@ -138,10 +145,11 @@ ambiguous AddOrder response. Journal it as unresolved and require reconciliation
 
 - `retryWithFlow` tracks `attempt` (network / rate limit) and `lockoutAttempt`
   separately — lockout doubles 10s → 15m without consuming the 5 network attempts.
-- `queryPublic` uses `retryWithFlow` but no RateLimiter; private calls always
-  `acquireWithCost` first.
-- `getTradeHistory` returns `emptyList()` when credentials are missing — do not
-  treat that as "no trades on the exchange".
+- `queryPublic` uses `PublicRateLimiter`; private calls serialize the limiter,
+  nonce generation, signing, POST, and response handling.
+- Missing private credentials raise typed unavailability; sync preflight may
+  skip live synchronization without converting unavailable history into an
+  empty successful result.
 
 ---
 
@@ -155,8 +163,9 @@ fields as follows (do **not** confuse Kotlin param names with Kraken keys):
 - `cl_ord_id` seed uses lowercase `side.apiValue` in
   `OrderExecutorImpl.clientOrderId(cycleId, symbol, side)`.
 - Volume: scale 8, `stripTrailingZeros()`, `toPlainString()` before POST.
-- A non-null `dryRun` argument overrides config; `OrderExecutor` always passes
-  `settings.dryRun` explicitly.
+- `dryRun` is a required, non-null execution input. Every caller must pass the
+  cycle-captured value explicitly, so no omitted argument or mutable config
+  fallback can change an active order.
 
 ---
 
@@ -185,7 +194,8 @@ stronger claim against current Kraken docs before shipping:
 ## Checklist
 
 - [ ] Symbols mapped (`BTC` → `XBTUSD`/`XXBT`, etc.)
-- [ ] Private calls use RateLimiter + Mutex; public do not
+- [ ] Private calls use RateLimiter + serialized request Mutex; public calls use
+      the separate PublicRateLimiter
 - [ ] Signing and secrets never logged
 - [ ] Lockout backoff 10s → 15m via `retryWithFlow`
 - [ ] Cross-check dryRun/simulation via DynamicKrakenService

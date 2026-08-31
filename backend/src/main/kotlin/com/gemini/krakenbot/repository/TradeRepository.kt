@@ -25,6 +25,9 @@ interface TradeRepository {
 
     suspend fun load(): List<PortfolioSnapshot>
 
+    /** Loads only the newest snapshot and its children. */
+    suspend fun getLatestSnapshot(): PortfolioSnapshot?
+
     suspend fun getTradeSummaryStats(): TradeSummaryStats
 
     suspend fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats
@@ -34,6 +37,9 @@ interface TradeRepository {
     suspend fun saveTrade(trade: TradeRecord): Int
 
     suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord)
+
+    suspend fun deleteTrade(id: Int): Boolean
+
     suspend fun hasPendingSubmissions(): Boolean
 
     suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>

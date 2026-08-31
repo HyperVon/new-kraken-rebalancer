@@ -82,14 +82,18 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
 - **`RebalancerEngine` (Domain calculator — `:engine`)**: Side-effect-light math (no network/DB) for portfolio values, drawdown, fiat deployment, targets, deviation analysis, and fiat correction. It emits a typed `RebalancePlan` with `RebalanceEvent` values; a presentation adapter keeps the existing snapshot action-log strings stable. Logging is retained for diagnostics.
 - **`PortfolioCalculations` (Shared Math — `:engine`)**: Consolidated percentage, target, and deviation calculations shared by the analyzer (including end-of-cycle snapshot assembly) — eliminates duplicate math across the codebase.
 - **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, action-log formatting, and persisting each order via `TradeHistoryService.saveTrade`. Before a real live placement, it persists a `PENDING` intent with a deterministic Kraken **`cl_ord_id`** (from `cycleId|symbol|side`). AddOrder is attempted only once; an ambiguous transport/response failure becomes `UNCERTAIN`, aborts the remaining batch, and blocks later live orders until operator reconciliation (`userref` is not a uniqueness key among open orders).
-- **`KrakenServiceImpl` + `RateLimiter` (The Gateway)**: Handles HMAC-SHA512
-  authenticated API calls with a Kraken call-counter rate limiter (linear
-  elapsed-time decay of `elapsedSeconds × 0.33`, plus per-endpoint costs) and
-  `retryWithFlow` for transient failures, rate limits, and temporary lockouts.
-  Defaults are `safeLimit = 12`, a `0.33` decay factor, and a `Mutex`; retry
-  attempts are capped at 5, rate-limit backoff starts at 10 seconds, and
-  temporary lockouts double from 10 seconds up to 15 minutes for at most 9
-  lockout attempts.
+- **`KrakenServiceImpl` + transport limiters (The Gateway)**: Handles
+  HMAC-SHA512 authenticated API calls with Kraken's separate public and private
+  controls. The private account counter defaults to the standard account
+  `safeLimit = 20` and `0.5` points/second decay; `Ledgers`, `TradesHistory`,
+  and `ClosedOrders` cost 4, other private calls cost 1, and `AddOrder` and
+  `CancelOrder` do not charge that counter because trading has separate limits.
+  Public ticker/OHLC calls use a separate conservative limiter of at most about
+  one call per second. Private nonce acquisition, signing, POST, and response
+  handling are serialized. `retryWithFlow` retries only network I/O, 429,
+  temporary lockout, and relevant 5xx responses with capped backoff; AddOrder
+  remains one-shot because an ambiguous response may follow an accepted order.
+  See [Kraken's current rate-limit guidance](https://support.kraken.com/articles/206548367-what-are-the-api-rate-limits-?mobile_site=false).
 - **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqliteOrderIntentRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations and exposes `watchConfigChanges()` as a reactive `Flow<Settings>`. Trade logs, live-order intents, and portfolio statistics are persisted to SQLite (using JetBrains Exposed ORM); schema versions are recorded and file-backed migrations receive a pre-migration backup.
 - **`TradeHistoryServiceImpl`**: Thin façade over Sync / SnapshotStore / Query /
   Reconstruction. The hot `MutableSharedFlow<PortfolioSnapshot>` lives on

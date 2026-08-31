@@ -343,13 +343,15 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
-- **Rate-Limiting & Retries** — `RateLimiter` implements Kraken's linearly
-  decaying call counter (elapsed seconds × 0.33; safe limit 12.0; per-endpoint
-  costs); `retryWithFlow` automatically retries transient
-  socket/HTTP/rate-limit/lockout errors with exponential backoff (lockouts
-  start at 10s and scale up to a 15-minute ceiling). AddOrder is the safety
-  exception: it is attempted once because an ambiguous response may follow an
-  accepted order
+- **Rate-Limiting & Retries** — Private calls use Kraken's standard linearly
+  decaying account counter (safe limit 20.0; decay 0.5/sec):
+  `Ledgers`, `TradesHistory`, and `ClosedOrders` cost 4, other private calls
+  cost 1, and `AddOrder`/`CancelOrder` use Kraken's separate trading limits.
+  Public calls use a separate conservative limiter of at most about one call
+  per second. `retryWithFlow` retries only network I/O, 429, temporary lockout,
+  and relevant 5xx responses with capped backoff; AddOrder is attempted once
+  because an ambiguous response may follow an accepted order. See Kraken's
+  [current rate-limit guidance](https://support.kraken.com/articles/206548367-what-are-the-api-rate-limits-?mobile_site=false)
 - **CORS Restrictions** — by default, limits browser origins to local machine addresses (`localhost`, `127.0.0.1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`, link-local `169.254.x.x`). `REBALANCER_ALLOWED_ORIGINS` can add exact origins; `REBALANCER_ALLOW_ALL_ORIGINS=true` is a lab-only break-glass override that disables origin checks and must never be used with live keys. CORS is not authentication.
 - **No dashboard user auth** — trust model is local/private network; see [SECURITY.md](SECURITY.md)
 - **Database Indexing & Versioned Migrations** — schemas index timestamp
@@ -604,7 +606,8 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   │       ├── OrderSettleHelper.kt      # Settle proceeds polling, backoff, and pagination
 │   │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
 │   │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
-│   │   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
+│   │   │       ├── PublicRateLimiter.kt      # Conservative public-call pacing
+│   │   │       ├── RateLimiter.kt            # Kraken private call-counter limiter
 │   │   │       ├── RebalanceSessionContext.kt# Immutable per-cycle session context
 │   │   │       ├── SimulatedKrakenService.kt # Offline exchange emulator
 │   │   │       ├── SimulationDefaults.kt     # Shared simulation default prices
