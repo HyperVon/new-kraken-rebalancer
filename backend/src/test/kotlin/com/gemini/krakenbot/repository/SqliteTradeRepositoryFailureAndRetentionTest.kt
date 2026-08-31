@@ -576,5 +576,62 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 remaining.any { it.submissionState == OrderSubmissionState.UNCERTAIN } shouldBe true
             }
         }
+
+        "deleteTrade successfully removes an unprotected trade" {
+            runTest {
+                val tradeId = repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.now(),
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("3000.00"),
+                    ),
+                )
+                repository.deleteTrade(tradeId) shouldBe true
+                repository.deleteTrade(tradeId) shouldBe false
+            }
+        }
+
+        "deleteTrade rejects deletion of a protected trade linked to an unresolved intent" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val tradeId = repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("3000.00"),
+                        success = false,
+                        submissionState = OrderSubmissionState.PENDING,
+                    ),
+                )
+
+                val intentRepo = com.gemini.krakenbot.repository.impl.SqliteOrderIntentRepositoryImpl(db)
+                intentRepo.savePending(
+                    com.gemini.krakenbot.model.OrderIntent(
+                        cycleId = "cycle-test",
+                        clientOrderId = "cl-protect-test",
+                        pair = TestFixtures.XBTUSD,
+                        symbol = Asset.BTC,
+                        side = TestFixtures.BUY,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("3000.00"),
+                        expectedPrice = BigDecimal("30000.00"),
+                        createdAt = now,
+                        state = com.gemini.krakenbot.model.OrderIntentState.PENDING,
+                        localTradeId = tradeId,
+                    ),
+                )
+
+                val ex = shouldThrow<IOException> {
+                    repository.deleteTrade(tradeId)
+                }
+                ex.message shouldBe "Database write failed"
+            }
+        }
     }
 }

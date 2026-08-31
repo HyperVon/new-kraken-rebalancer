@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.domain.OrderFillReconciler
 import com.gemini.krakenbot.domain.TradeCalculator
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
@@ -164,9 +165,6 @@ class TradeHistorySyncService(
     ): Pair<Int, Int> {
         var totalAdded = 0
         var totalReconciled = 0
-        // Fingerprints of API fills already handled in this sync. Kraken newest-first offset
-        // pagination can re-emit the last row of page N as the first of page N+1 when a fill
-        // lands mid-pagination; without this set that row is double-inserted (CQ-8-M1).
         val seenApiFillKeys = mutableSetOf<String>()
 
         getTradeHistoryPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
@@ -209,6 +207,7 @@ class TradeHistorySyncService(
 
         return if (matchingLocalTrade != null) {
             reconcileWithLocalTrade(apiTrade, matchingLocalTrade, originalLocalTrades)
+            TradeReconciliationResult.RECONCILED
         } else {
             repository.saveTrade(apiTrade)
             TradeReconciliationResult.INSERTED
@@ -220,8 +219,6 @@ class TradeHistorySyncService(
         originalLocalTrades: MutableList<TradeRecord>,
         allocations: List<String>,
     ): TradeRecord? {
-        // A Kraken order id is authoritative when both sides have one. Otherwise use
-        // economics tolerances so legacy/id-less rows can still reconcile.
         val localEstimates =
             originalLocalTrades.filter { local ->
                 local.submissionState == null && local.success && !local.dryRun && local.isLocalEstimate()
@@ -231,46 +228,53 @@ class TradeHistorySyncService(
             val keyedLocals = localEstimates
                 .filter { local -> local.orderTxid?.takeIf { it.isNotBlank() } == apiOrderTxid }
             if (keyedLocals.isNotEmpty()) {
-                val keyedMatches = keyedLocals.filter { local -> local.isMatchingApiTrade(apiTrade, allocations) }
-                // One order can have multiple fill legs. Match a keyed local estimate only when
-                // the immutable economics identify one leg; never let the first row win by list
-                // order, and never fall through a contradictory keyed row to a weaker heuristic.
-                return keyedMatches.singleOrNull()
+                val compatibleKeyed = keyedLocals.filter { local ->
+                    OrderFillReconciler.isInstrumentCompatible(
+                        orderSymbol = local.symbol,
+                        orderSide = local.side,
+                        orderPair = local.pair,
+                        apiFill = apiTrade,
+                        allocations = allocations,
+                    ) && apiTrade.volume <= local.volume.multiply(BigDecimal("1.01"))
+                }
+                return compatibleKeyed.firstOrNull()
             }
         }
 
-        // If Kraken omits the order id, a keyed local estimate can still be the same fill. Keep
-        // that local identity when the full economic/time predicate identifies exactly one row;
-        // ambiguity remains fail-closed rather than choosing the first order.
-        val economicsMatches = localEstimates
-            .filter { local -> local.isMatchingApiTrade(apiTrade, allocations) }
-        return economicsMatches.singleOrNull()
+        // Path B: Strict heuristic
+        val matches = localEstimates.filter { local ->
+            val localOrderTxid = local.orderTxid?.takeIf { it.isNotBlank() }
+            if (apiOrderTxid != null && localOrderTxid != null && apiOrderTxid != localOrderTxid) {
+                false
+            } else {
+                OrderFillReconciler.matchesHeuristic(
+                    orderSymbol = local.symbol,
+                    orderSide = local.side,
+                    orderPair = local.pair,
+                    orderVolume = local.volume,
+                    orderUsdAmount = local.usdAmount,
+                    orderExpectedPrice = local.expectedPrice,
+                    orderTimestamp = local.timestamp,
+                    apiFill = apiTrade,
+                    allocations = allocations,
+                )
+            }
+        }
+        return matches.singleOrNull()
     }
 
     private suspend fun reconcileWithLocalTrade(
         apiTrade: TradeRecord,
         matchingLocalTrade: TradeRecord,
         originalLocalTrades: MutableList<TradeRecord>,
-    ): TradeReconciliationResult {
-        val expectedPrice = matchingLocalTrade.expectedPrice
-        val reconciledSlippage =
-            expectedPrice?.let { expected ->
-                TradeCalculator.calculateSlippage(
-                    apiTrade.side,
-                    apiTrade.price,
-                    expected,
-                )
-            }
-        val reconciledTrade =
-            apiTrade.copy(
-                expectedPrice = expectedPrice,
-                slippagePercent = reconciledSlippage,
-                source = TradeSource.API_FILL,
-                // Keep local cycle linkage; prefer API ordertxid when present.
-                cycleId = matchingLocalTrade.cycleId,
-                orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
-                clientOrderId = apiTrade.clientOrderId ?: matchingLocalTrade.clientOrderId,
-            )
+    ) {
+        val reconciledTrade = OrderFillReconciler.enrichApiFill(
+            apiFill = apiTrade,
+            expectedPrice = matchingLocalTrade.expectedPrice,
+            cycleId = matchingLocalTrade.cycleId,
+            clientOrderId = matchingLocalTrade.clientOrderId,
+            orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
+        )
         log.info(
             "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
             matchingLocalTrade.timestamp,
@@ -283,7 +287,6 @@ class TradeHistorySyncService(
         // Drop from the pending set after persistence so a DB failure leaves the
         // in-memory view unchanged (pre-refactor update-then-remove order).
         originalLocalTrades.remove(matchingLocalTrade)
-        return TradeReconciliationResult.RECONCILED
     }
 
     private enum class TradeReconciliationResult { INSERTED, RECONCILED, ALREADY_PERSISTED }

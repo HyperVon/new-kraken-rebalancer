@@ -35,15 +35,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Order-intent reconciliation**: A terminal confirmation now removes an
-  obsolete local placeholder only when it uniquely matches an already-synced
-  authoritative Kraken fill, preserving one canonical executed trade while
-  retaining the durable intent audit record. Terminal links no longer pin
-  obsolete rows during normal retention cleanup, while unresolved intents
-  remain protected and fail closed.
+- **Multi-fill order reconciliation & history sync**: Introduced `OrderFillReconciler`
+  to evaluate authoritative Kraken order execution collectively. Complete executions
+  (>=99% of intended volume) resolve cleanly, enriching all distinct `API_FILL` records
+  while safely detaching and deleting the single aggregate local placeholder trade to prevent
+  duplicate accounting. Incomplete executions (<99%) fail closed, preventing premature resolution
+  or unlinking.
+- **Trade repository deletion safety**: Added `deleteTrade` with active intent foreign-key
+  guards, preventing accidental removal of trades tied to unresolved (`PENDING` or `UNCERTAIN`)
+  order intents.
+- **Order-intent reconciliation**: A terminal confirmation evaluates multi-fill executions,
+  preserving all distinct executed fill legs with their exchange trade IDs while retaining
+  the durable intent audit record. Unresolved intents remain protected and fail closed.
 - Added regression coverage for missing historical prices, deterministic sync
-  horizons, identity-conflicting fills, asset aliases, foreign-key migration,
-  rate semantics, nonce serialization, cancellation/exception preservation,
+  horizons, identity-conflicting fills, multi-fill order reconciliation, partial fill failure,
+  asset aliases, foreign-key migration, rate semantics, nonce serialization, cancellation/exception preservation,
   typed credential failures, mode pinning, and malformed UI persistence.
 
 ## [6.17.13] - 2026-08-30

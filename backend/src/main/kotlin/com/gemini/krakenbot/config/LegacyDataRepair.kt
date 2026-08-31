@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.config
 
+import com.gemini.krakenbot.domain.OrderFillReconciler
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
@@ -269,12 +270,14 @@ internal fun JdbcTransaction.reconcileTerminalOrderIntents() {
                 currentTrade != null &&
                 currentTrade.isTerminalPlaceholderFor(resolvedIntent)
             ) {
-                val settledApiFillId = findTerminalSettledApiFillId(resolvedIntent)
-                if (settledApiFillId != null) {
-                    check(settledApiFillId != resolvedIntent.localTradeId) {
-                        "Cannot reconcile terminal order intent ${resolvedIntent.id}: local trade is also the API fill."
+                val reconciliation = findTerminalSettledApiFillReconciliation(resolvedIntent)
+                if (reconciliation != null) {
+                    check(reconciliation.isComplete) {
+                        "Cannot reconcile terminal order intent ${resolvedIntent.id}: order " +
+                            "${resolvedIntent.orderTxid} has aggregate volume ${reconciliation.totalVolume} " +
+                            "which does not match intended volume ${resolvedIntent.volume}."
                     }
-                    // The API fill is the canonical economic record. Detach before deleting the
+                    // The API fills are the canonical economic records. Detach before deleting the
                     // superseded local row so the order-intent FK remains valid; the terminal
                     // intent itself remains as the durable audit record.
                     detachTerminalIntent(resolvedIntent.id, resolvedIntent.localTradeId)
@@ -386,45 +389,48 @@ private fun TradeRecord.isTerminalPlaceholderFor(intent: TerminalIntent): Boolea
         source in setOf(null, TradeSource.LOCAL_ESTIMATE, TradeSource.LEGACY_UNKNOWN)
 }
 
-private fun JdbcTransaction.findTerminalSettledApiFillId(intent: TerminalIntent): Int? {
-    val normalizedOrderTxid = intent.orderTxid?.takeIf(String::isNotBlank)
-    val settledFillIdentity =
-        (TradeTable.symbol eq intent.symbol) and
-            (TradeTable.side eq OrderSide.normalize(intent.side)) and
-            (TradeTable.success eq true) and
-            (TradeTable.dryRun eq false) and
-            (TradeTable.tradeSource eq TradeSource.API_FILL.name)
+private fun JdbcTransaction.findTerminalSettledApiFillReconciliation(
+    intent: TerminalIntent,
+): OrderFillReconciler.AggregatedFills? {
+    val normalizedOrderTxid = intent.orderTxid?.trim()?.takeIf(String::isNotBlank)
     if (normalizedOrderTxid != null) {
-        val exactOrderRows = TradeTable
+        val candidateRows = TradeTable
             .selectAll()
-            .where { settledFillIdentity and (TradeTable.orderTxid eq normalizedOrderTxid) }
-            .toList()
-        val pairCompatibleRows = exactOrderRows.filter { row ->
-            terminalPairMatches(intent, TradeTable.toModel(row))
-        }
-        if (pairCompatibleRows.size > 1) {
-            throw IllegalStateException(
-                "Cannot reconcile terminal order intent ${intent.id}: order $normalizedOrderTxid has " +
-                    "multiple settled API fills for the intended instrument.",
-            )
-        }
-        if (pairCompatibleRows.size == 1) {
-            val apiFill = TradeTable.toModel(pairCompatibleRows.single())
-            check(terminalApiFillMatches(intent, apiFill)) {
-                "Cannot reconcile terminal order intent ${intent.id}: order $normalizedOrderTxid has " +
-                    "a fill that does not match the intended economics."
+            .where {
+                (TradeTable.success eq true) and
+                    (TradeTable.dryRun eq false) and
+                    (TradeTable.tradeSource eq TradeSource.API_FILL.name) and
+                    (TradeTable.orderTxid eq normalizedOrderTxid)
             }
-            return apiFill.id
+            .map(TradeTable::toModel)
+
+        if (candidateRows.isNotEmpty()) {
+            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
+                orderSymbol = intent.symbol,
+                orderSide = intent.side,
+                orderPair = intent.pair,
+                orderVolume = intent.volume,
+                orderUsdAmount = intent.usdAmount,
+                orderTxid = normalizedOrderTxid,
+                candidateFills = candidateRows,
+            )
+            checkNotNull(eval) {
+                "Cannot reconcile terminal order intent ${intent.id}: order $normalizedOrderTxid has " +
+                    "settled API fills that are incompatible with the intended instrument or side."
+            }
+            return eval
         }
-        // Rows for another instrument are not evidence for this intent. Continue to the strictly
-        // economic fallback rather than treating malformed historical data as a matching fill.
     }
 
     val usdTolerance = intent.usdAmount.abs().multiply(TERMINAL_API_FILL_RELATIVE_TOLERANCE)
     val candidateRows = TradeTable
         .selectAll()
         .where {
-            settledFillIdentity and
+            (TradeTable.symbol eq intent.symbol) and
+                (TradeTable.side eq OrderSide.normalize(intent.side)) and
+                (TradeTable.success eq true) and
+                (TradeTable.dryRun eq false) and
+                (TradeTable.tradeSource eq TradeSource.API_FILL.name) and
                 (TradeTable.timestamp greaterEq intent.createdAt - TERMINAL_API_FILL_MATCH_WINDOW_MILLIS) and
                 (TradeTable.timestamp lessEq intent.createdAt + TERMINAL_API_FILL_MATCH_WINDOW_MILLIS) and
                 (TradeTable.usdAmount greaterEq intent.usdAmount.subtract(usdTolerance)) and
@@ -435,36 +441,32 @@ private fun JdbcTransaction.findTerminalSettledApiFillId(intent: TerminalIntent)
                     TradeTable.orderTxid.isNull() and TradeTable.tradeId.isNull()
                 }
         }
-        .toList()
-        .filter { row -> terminalApiFillMatches(intent, TradeTable.toModel(row)) }
+        .map(TradeTable::toModel)
+        .filter { fill ->
+            OrderFillReconciler.matchesHeuristic(
+                orderSymbol = intent.symbol,
+                orderSide = intent.side,
+                orderPair = intent.pair,
+                orderVolume = intent.volume,
+                orderUsdAmount = intent.usdAmount,
+                orderExpectedPrice = intent.expectedPrice,
+                orderTimestamp = java.time.Instant.ofEpochMilli(intent.createdAt),
+                apiFill = fill,
+            )
+        }
         .take(2)
+
     check(candidateRows.size <= 1) {
         "Cannot reconcile terminal order intent ${intent.id}: multiple settled API fills match."
     }
-    return candidateRows.singleOrNull()?.let { TradeTable.toModel(it).id }
-}
-
-private fun terminalPairMatches(intent: TerminalIntent, apiFill: TradeRecord): Boolean =
-    apiFill.pair.equals(intent.pair, ignoreCase = true) ||
-        (
-            Asset.matchesUsdQuotedPair(intent.pair, intent.symbol) &&
-                Asset.matchesUsdQuotedPair(apiFill.pair, intent.symbol)
-            )
-
-private fun terminalApiFillMatches(intent: TerminalIntent, apiFill: TradeRecord): Boolean {
-    if (!terminalPairMatches(intent, apiFill)) return false
-    if (!apiFill.side.equals(intent.side, ignoreCase = true)) return false
-    if (!apiFill.symbol.equals(intent.symbol, ignoreCase = true)) return false
-    if (kotlin.math.abs(apiFill.timestamp.toEpochMilli() - intent.createdAt) > TERMINAL_API_FILL_MATCH_WINDOW_MILLIS) {
-        return false
-    }
-    if (apiFill.volume.compareTo(intent.volume) != 0) return false
-    val usdTolerance = intent.usdAmount.abs().multiply(TERMINAL_API_FILL_RELATIVE_TOLERANCE)
-    if (apiFill.usdAmount.subtract(intent.usdAmount).abs() > usdTolerance) return false
-    val expectedPrice = intent.expectedPrice ?: return true
-    val priceTolerance = expectedPrice.abs().multiply(TERMINAL_API_FILL_RELATIVE_TOLERANCE)
-    return apiFill.price >= expectedPrice.subtract(priceTolerance) &&
-        apiFill.price <= expectedPrice.add(priceTolerance)
+    val single = candidateRows.singleOrNull() ?: return null
+    return OrderFillReconciler.AggregatedFills(
+        fills = listOf(single),
+        totalVolume = single.volume,
+        totalUsd = single.usdAmount,
+        totalFee = single.fee,
+        isComplete = true,
+    )
 }
 
 private fun JdbcTransaction.detachTerminalIntent(intentId: Int, tradeId: Int) {

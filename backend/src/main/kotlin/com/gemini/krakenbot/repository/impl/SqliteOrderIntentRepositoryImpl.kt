@@ -1,10 +1,12 @@
 package com.gemini.krakenbot.repository.impl
 
+import com.gemini.krakenbot.domain.OrderFillReconciler
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.table.OrderIntentTable
@@ -198,16 +200,25 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         verifyLinkedLocalTrade(intent, localTradeId)
         val linkedTradeIdentity = TradeTable.id eq localTradeId
         if (state == OrderIntentState.CONFIRMED) {
-            val settledApiFillId = findSettledApiFillId(intent, effectiveOrderTxid)
-            if (settledApiFillId != null) {
-                // The API fill is the canonical economic record. Detach before deleting the
-                // local placeholder so the FK remains valid, and keep the durable intent as
-                // the audit record for the operator's resolution.
-                detachLocalTrade(intent.id, intent.localTradeId, localTradeId)
-                check(TradeTable.deleteWhere { TradeTable.id eq localTradeId } == 1) {
-                    "Cannot remove reconciled local trade $localTradeId for order intent ${intent.id}."
+            val reconciliation = findSettledApiFillReconciliation(intent, effectiveOrderTxid)
+            if (reconciliation != null) {
+                if (reconciliation.isComplete) {
+                    enrichApiFills(reconciliation.fills, intent, effectiveOrderTxid)
+                    // The API fills are the canonical economic records. Detach before deleting the
+                    // local placeholder so the FK remains valid, and keep the durable intent as
+                    // the audit record for the operator's resolution.
+                    detachLocalTrade(intent.id, intent.localTradeId, localTradeId)
+                    check(TradeTable.deleteWhere { TradeTable.id eq localTradeId } == 1) {
+                        "Cannot remove reconciled local trade $localTradeId for order intent ${intent.id}."
+                    }
+                    return
+                } else {
+                    throw OrderIntentReconciliationException(
+                        "Cannot reconcile order intent ${intent.id}: order $effectiveOrderTxid has " +
+                            "aggregate executed volume ${reconciliation.totalVolume} which does not match " +
+                            "intended volume ${intent.volume}.",
+                    )
                 }
-                return
             }
         }
         val updatedRows = TradeTable.update({
@@ -233,6 +244,22 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         }
         if (state == OrderIntentState.CONFIRMED || state == OrderIntentState.REJECTED) {
             detachLocalTrade(intent.id, intent.localTradeId, localTradeId)
+        }
+    }
+
+    private fun enrichApiFills(fills: List<TradeRecord>, intent: OrderIntent, orderTxid: String?) {
+        fills.forEach { fill ->
+            val fillId = fill.id ?: return@forEach
+            val enriched = OrderFillReconciler.enrichApiFill(
+                apiFill = fill,
+                expectedPrice = intent.expectedPrice,
+                cycleId = intent.cycleId,
+                clientOrderId = intent.clientOrderId,
+                orderTxid = fill.orderTxid,
+            )
+            TradeTable.update({ TradeTable.id eq fillId }) {
+                TradeTable.applyTo(it, enriched)
+            }
         }
     }
 
@@ -297,47 +324,59 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         }
     }
 
-    private fun findSettledApiFillId(intent: OrderIntent, orderTxid: String?): Int? {
-        val normalizedOrderTxid = orderTxid?.takeIf(String::isNotBlank)
-        val settledFillIdentity =
+    private fun findSettledApiFillReconciliation(
+        intent: OrderIntent,
+        orderTxid: String?,
+    ): OrderFillReconciler.AggregatedFills? {
+        val normalizedOrderTxid = orderTxid?.trim()?.takeIf(String::isNotBlank)
+        if (normalizedOrderTxid != null) {
+            val candidateRows = TradeTable
+                .selectAll()
+                .where {
+                    (TradeTable.success eq true) and
+                        (TradeTable.dryRun eq false) and
+                        (TradeTable.tradeSource eq TradeSource.API_FILL.name) and
+                        (TradeTable.orderTxid eq normalizedOrderTxid)
+                }
+                .map(TradeTable::toModel)
+
+            val instrumentCompatibleRows = candidateRows.filter { fill ->
+                OrderFillReconciler.isInstrumentCompatible(
+                    orderSymbol = intent.symbol,
+                    orderSide = intent.side,
+                    orderPair = intent.pair,
+                    apiFill = fill,
+                )
+            }
+
+            if (instrumentCompatibleRows.isNotEmpty()) {
+                val eval = OrderFillReconciler.evaluateAuthoritativeFills(
+                    orderSymbol = intent.symbol,
+                    orderSide = intent.side,
+                    orderPair = intent.pair,
+                    orderVolume = intent.volume,
+                    orderUsdAmount = intent.usdAmount,
+                    orderTxid = normalizedOrderTxid,
+                    candidateFills = instrumentCompatibleRows,
+                )
+                if (eval == null) {
+                    throw OrderIntentReconciliationException(
+                        "Cannot reconcile order intent ${intent.id}: order $normalizedOrderTxid has " +
+                            "settled API fills that are incompatible with the intended instrument or side.",
+                    )
+                }
+                return eval
+            }
+        }
+
+        // Path B: ID-less / legacy fallback
+        val usdTolerance = intent.usdAmount.abs().multiply(LEGACY_API_FILL_RELATIVE_TOLERANCE)
+        val matchingBaseCondition =
             (TradeTable.symbol eq intent.symbol) and
                 (TradeTable.side eq OrderSide.normalize(intent.side)) and
                 (TradeTable.success eq true) and
                 (TradeTable.dryRun eq false) and
-                (TradeTable.tradeSource eq TradeSource.API_FILL.name)
-
-        // A shared order id is not enough: one Kraken order can have multiple fill legs. Only
-        // delete a local placeholder when exactly one same-order row also matches its immutable
-        // pair identity and economics. If same-order candidates exist but none match, fail closed
-        // rather than turning a partial-fill set into one aggregate trade.
-        if (normalizedOrderTxid != null) {
-            val exactOrderRows = TradeTable
-                .selectAll()
-                .where { settledFillIdentity and (TradeTable.orderTxid eq normalizedOrderTxid) }
-                .toList()
-            val pairCompatibleOrderRows = exactOrderRows.filter { row -> pairMatchesIntent(intent, row) }
-            if (pairCompatibleOrderRows.isNotEmpty()) {
-                if (pairCompatibleOrderRows.size > 1) {
-                    throw OrderIntentReconciliationException(
-                        "Cannot reconcile order intent ${intent.id}: order $normalizedOrderTxid has " +
-                            "multiple settled API fills for the intended instrument.",
-                    )
-                }
-                val matchingRow = pairCompatibleOrderRows.single()
-                if (settledFillMatchesIntent(intent, matchingRow)) return matchingRow[TradeTable.id]
-                throw OrderIntentReconciliationException(
-                    "Cannot reconcile order intent ${intent.id}: order $normalizedOrderTxid has " +
-                        "a fill that does not match the intended economics.",
-                )
-            }
-            // Rows for another instrument are not evidence for this intent. They may be malformed
-            // historical data, so continue to the strictly economic fallback below rather than
-            // treating an unrelated row as a settled fill for this local placeholder.
-        }
-
-        val usdTolerance = intent.usdAmount.abs().multiply(LEGACY_API_FILL_RELATIVE_TOLERANCE)
-        val matchingBaseCondition =
-            settledFillIdentity and
+                (TradeTable.tradeSource eq TradeSource.API_FILL.name) and
                 (
                     TradeTable.timestamp greaterEq
                         intent.createdAt.toEpochMilli() - LEGACY_API_FILL_MATCH_WINDOW_MILLIS
@@ -348,53 +387,44 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                     ) and
                 (TradeTable.usdAmount greaterEq intent.usdAmount.subtract(usdTolerance)) and
                 (TradeTable.usdAmount lessEq intent.usdAmount.add(usdTolerance))
+
         val candidateRows = TradeTable
             .selectAll()
             .where {
                 matchingBaseCondition and if (normalizedOrderTxid == null) {
-                    // The operator may omit the order id; a unique full economic match is still
-                    // safe to use, including when the synchronized API row has its own id.
                     TradeTable.id eq TradeTable.id
                 } else {
-                    // With a supplied order id, only an unkeyed legacy fill can be a safe
-                    // fallback; a keyed row with a different order id is contradictory evidence.
                     TradeTable.orderTxid.isNull() and TradeTable.tradeId.isNull()
                 }
             }
-            .toList()
-            .filter { row -> pairMatchesIntent(intent, row) && settledFillMatchesIntent(intent, row) }
+            .map(TradeTable::toModel)
+            .filter { fill ->
+                OrderFillReconciler.matchesHeuristic(
+                    orderSymbol = intent.symbol,
+                    orderSide = intent.side,
+                    orderPair = intent.pair,
+                    orderVolume = intent.volume,
+                    orderUsdAmount = intent.usdAmount,
+                    orderExpectedPrice = intent.expectedPrice,
+                    orderTimestamp = intent.createdAt,
+                    apiFill = fill,
+                )
+            }
             .take(2)
+
         if (candidateRows.size > 1) {
             throw OrderIntentReconciliationException(
                 "Cannot reconcile order intent ${intent.id}: multiple settled API fills match.",
             )
         }
-        return candidateRows.singleOrNull()?.get(TradeTable.id)
-    }
-
-    private fun pairMatchesIntent(intent: OrderIntent, row: ResultRow): Boolean {
-        val apiPair = row[TradeTable.pair]
-        return apiPair.equals(intent.pair, ignoreCase = true) ||
-            (
-                Asset.matchesUsdQuotedPair(intent.pair, intent.symbol) &&
-                    Asset.matchesUsdQuotedPair(apiPair, intent.symbol)
-                )
-    }
-
-    private fun settledFillMatchesIntent(intent: OrderIntent, row: ResultRow): Boolean {
-        val timestampDifference = kotlin.math.abs(
-            row[TradeTable.timestamp] - intent.createdAt.toEpochMilli(),
+        val single = candidateRows.singleOrNull() ?: return null
+        return OrderFillReconciler.AggregatedFills(
+            fills = listOf(single),
+            totalVolume = single.volume,
+            totalUsd = single.usdAmount,
+            totalFee = single.fee,
+            isComplete = true,
         )
-        if (timestampDifference > LEGACY_API_FILL_MATCH_WINDOW_MILLIS) return false
-        if (row[TradeTable.volume].compareTo(intent.volume) != 0) return false
-
-        val usdTolerance = intent.usdAmount.abs().multiply(LEGACY_API_FILL_RELATIVE_TOLERANCE)
-        if (row[TradeTable.usdAmount].subtract(intent.usdAmount).abs() > usdTolerance) return false
-
-        val expectedPrice = intent.expectedPrice ?: return true
-        val priceTolerance = expectedPrice.abs().multiply(LEGACY_API_FILL_RELATIVE_TOLERANCE)
-        return row[TradeTable.price] >= expectedPrice.subtract(priceTolerance) &&
-            row[TradeTable.price] <= expectedPrice.add(priceTolerance)
     }
 
     private fun unresolvedStates(): List<String> = listOf(

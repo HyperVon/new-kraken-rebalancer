@@ -138,6 +138,15 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
     }
 
+    override suspend fun deleteTrade(id: Int): Boolean =
+        database.safeTransactionIO(log, "Failed to delete trade from database") {
+            val protectedTradeIds = protectedTradeIds()
+            if (id in protectedTradeIds) {
+                throw IllegalStateException("Cannot delete protected trade $id linked to unresolved order intent.")
+            }
+            TradeTable.deleteWhere { TradeTable.id eq id } == 1
+        }
+
     override suspend fun hasPendingSubmissions(): Boolean = database.readTransactionIO {
         TradeTable
             .selectAll()

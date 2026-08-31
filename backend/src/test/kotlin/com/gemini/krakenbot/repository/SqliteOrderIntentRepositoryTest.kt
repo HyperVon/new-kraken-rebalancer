@@ -301,7 +301,77 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
-        "manual confirmation leaves a same-order partial-fill set unresolved" {
+        "manual confirmation resolves complete multi-fill order and deletes local placeholder" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.50000000"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.68307692"),
+                    cycleId = "cycle-multi",
+                    clientOrderId = "cl-multi",
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                repeat(2) { index ->
+                    tradeRepository.saveTrade(
+                        intent.toPendingTrade().copy(
+                            timestamp = intent.createdAt.plusSeconds(30L + index),
+                            volume = BigDecimal("3.25000000"),
+                            usdAmount = BigDecimal("28.22"),
+                            price = BigDecimal("8.68307692"),
+                            success = true,
+                            errorMessage = null,
+                            source = TradeSource.API_FILL,
+                            orderTxid = "O-MULTI-FILLS",
+                            tradeId = "T-MULTI-$index",
+                            submissionState = null,
+                        ),
+                    )
+                }
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified order O-MULTI-FILLS",
+                    orderTxid = "O-MULTI-FILLS",
+                )
+
+                service.getUnresolvedIntents() shouldBe emptyList()
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(100))
+                trades.count { it.source == TradeSource.API_FILL } shouldBe 2
+                trades.none { it.id == localTradeId } shouldBe true
+                trades.all { it.cycleId == "cycle-multi" && it.orderTxid == "O-MULTI-FILLS" } shouldBe true
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement(
+                        "SELECT state, local_trade_id FROM order_intents WHERE id = ?",
+                    ).use { statement ->
+                        statement.setInt(1, intentId)
+                        statement.executeQuery().use { resultSet ->
+                            resultSet.next() shouldBe true
+                            resultSet.getString("state") shouldBe OrderIntentState.CONFIRMED.name
+                            resultSet.getObject("local_trade_id") shouldBe null
+                        }
+                    }
+                }
+            }
+        }
+
+        "manual confirmation leaves a genuinely incomplete partial-fill set unresolved" {
             runTest {
                 val tradeRepository = SqliteTradeRepositoryImpl(database)
                 val intent = newIntent().copy(
@@ -325,21 +395,19 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                     ),
                 ) shouldBe true
 
-                repeat(2) { index ->
-                    tradeRepository.saveTrade(
-                        intent.toPendingTrade().copy(
-                            timestamp = intent.createdAt.plusMillis(500L + index),
-                            volume = BigDecimal("3.25000000"),
-                            usdAmount = BigDecimal("28.22"),
-                            success = true,
-                            errorMessage = null,
-                            source = TradeSource.API_FILL,
-                            orderTxid = "O-PARTIAL-FILLS",
-                            tradeId = "T-PARTIAL-$index",
-                            submissionState = null,
-                        ),
-                    )
-                }
+                tradeRepository.saveTrade(
+                    intent.toPendingTrade().copy(
+                        timestamp = intent.createdAt.plusMillis(500L),
+                        volume = BigDecimal("3.25000000"),
+                        usdAmount = BigDecimal("28.22"),
+                        success = true,
+                        errorMessage = null,
+                        source = TradeSource.API_FILL,
+                        orderTxid = "O-PARTIAL-FILLS",
+                        tradeId = "T-PARTIAL-0",
+                        submissionState = null,
+                    ),
+                )
 
                 shouldThrow<OrderIntentReconciliationException> {
                     service.resolve(
@@ -352,7 +420,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
 
                 service.getUnresolvedIntents().single().state shouldBe OrderIntentState.UNCERTAIN
                 val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                trades.count { it.source == TradeSource.API_FILL } shouldBe 2
+                trades.count { it.source == TradeSource.API_FILL } shouldBe 1
                 trades.single { it.id == localTradeId }.success shouldBe false
                 DriverManager.getConnection(databaseUrl).use { connection ->
                     connection.prepareStatement(
@@ -1348,6 +1416,74 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 )
 
                 service.countUnresolvedIntents() shouldBe 0L
+            }
+        }
+
+        "recordOutcome throws OrderIntentReconciliationException for missing intent" {
+            runTest {
+                shouldThrow<OrderIntentReconciliationException> {
+                    service.recordOutcome(
+                        9999,
+                        OrderResult.Success(
+                            pair = "XBTUSD",
+                            side = "BUY",
+                            volume = BigDecimal("0.01000000"),
+                            orderTxid = "O-MISSING",
+                        ),
+                    )
+                }
+            }
+        }
+
+        "manual resolution with REJECTED updates local trade error message and marks success false" {
+            runTest {
+                val tradeRepo = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent()
+                val localTradeId = tradeRepo.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "network timeout",
+                        submissionUncertain = true,
+                    ),
+                )
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.REJECTED,
+                    "Operator confirmed order was not placed",
+                )
+
+                service.countUnresolvedIntents() shouldBe 0L
+                val trades = tradeRepo.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                val localTrade = trades.single { it.id == localTradeId }
+                localTrade.success shouldBe false
+                localTrade.errorMessage shouldBe "Operator confirmed order was not placed"
+                localTrade.submissionState shouldBe null
+            }
+        }
+
+        "recordOutcome throws when local trade does not exist" {
+            runTest {
+                val intent = newIntent().copy(localTradeId = null)
+                val intentId = service.savePending(intent)
+                shouldThrow<OrderIntentReconciliationException> {
+                    service.recordOutcome(
+                        intentId,
+                        OrderResult.Failure(
+                            pair = intent.pair,
+                            side = intent.side,
+                            volume = intent.volume,
+                            errorMessage = "network timeout",
+                            submissionUncertain = true,
+                        ),
+                    )
+                }
             }
         }
     }
