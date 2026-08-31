@@ -14,7 +14,7 @@ When creating or modifying Exposed ORM repository implementations and table sche
 
 ## Exposed 1.x Packages
 
-This project uses Exposed **1.4.0**. Prefer these import roots:
+This project uses Exposed **1.5.0**. Prefer these import roots:
 
 - Table / column / operator APIs: `org.jetbrains.exposed.v1.core.*` (e.g. `Table`, `eq`, `and`, `inList`)
 - JDBC query / DML APIs: `org.jetbrains.exposed.v1.jdbc.*` (e.g. `Database`, `selectAll`, `insert`, `update`, `deleteWhere`)

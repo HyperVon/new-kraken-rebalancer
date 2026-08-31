@@ -101,13 +101,13 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
 | **Language**    | Kotlin 2.4.20-RC (Kotlin Multiplatform: JVM + JS; temporary security patch)                                  |
 | **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.2                                                   |
-| **Database**    | SQLite (via JetBrains Exposed ORM 1.4.0)                                                                     |
+| **Database**    | SQLite (via JetBrains Exposed ORM 1.5.0)                                                                     |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                              |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS                |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
 | **Testing**     | Kotest 6.2.4, MockK 1.14.11, JaCoCo 95/95/95/90, Karma/Istanbul 90/80/90/75                                  |
-| **Build**       | Gradle 9.7.1 (Kotlin DSL), Spotless 8.10.0 + ktlint 1.8.0                                                    |
+| **Build**       | Gradle 9.7.1 (Kotlin DSL), Spotless 8.10.1 + ktlint 1.8.0                                                    |
 | **Engine**      | Pure Kotlin JVM domain calculation library with independent JaCoCo 95/90 coverage gates                      |
 | **Codegen**     | JVM-only module with KSP processors for API mappers and YAML string catalogs                                 |
 | **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable      |
