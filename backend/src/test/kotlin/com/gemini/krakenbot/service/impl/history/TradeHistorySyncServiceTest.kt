@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
@@ -601,6 +602,482 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stats.totalTradesExecuted shouldBe 2L
             stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("195975.00"))
             stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("30.00"))
+        }
+
+        "fails closed with conflict when local estimate for exact orderTxid is incompatible" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            val local = TestFixtures.tradeRecord(
+                timestamp = baseTime,
+                pair = "LINKUSD",
+                side = "sell",
+                symbol = "LINK",
+                volume = BigDecimal("6.50000000"),
+                usdAmount = BigDecimal("56.44"),
+                price = BigDecimal("8.68"),
+                expectedPrice = BigDecimal("8.68"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                cycleId = "cycle-link",
+                clientOrderId = "cl-link",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            repository.saveTrade(local)
+
+            val incompatibleApiFill = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(100),
+                pair = "ETHUSD",
+                side = "buy",
+                symbol = "ETH",
+                volume = BigDecimal("0.50000000"),
+                usdAmount = BigDecimal("1500.00"),
+                price = BigDecimal("3000.00"),
+                fee = BigDecimal("1.50"),
+                source = TradeSource.API_FILL,
+                tradeId = "T1",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+            )
+
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(incompatibleApiFill)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            shouldThrow<TradeReconciliationConflictException> {
+                service().syncTradesFromKraken()
+            }
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 1
+            trades.single().source shouldBe TradeSource.LOCAL_ESTIMATE
+            trades.single().symbol shouldBe "LINK"
+            trades.none { it.symbol == "ETH" } shouldBe true
+        }
+
+        "fails closed with conflict when multiple local estimates share the same exact orderTxid" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            val local1 = TestFixtures.tradeRecord(
+                timestamp = baseTime,
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("3.25000000"),
+                usdAmount = BigDecimal("97500.00"),
+                price = BigDecimal("30000.00"),
+                expectedPrice = BigDecimal("30000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                cycleId = "cycle-1",
+                clientOrderId = "cl-1",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            val local2 = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(10),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("3.25000000"),
+                usdAmount = BigDecimal("97500.00"),
+                price = BigDecimal("30000.00"),
+                expectedPrice = BigDecimal("30000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                cycleId = "cycle-2",
+                clientOrderId = "cl-2",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            repository.saveTrade(local1)
+            repository.saveTrade(local2)
+
+            val apiFill = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(100),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("3.25000000"),
+                usdAmount = BigDecimal("97500.00"),
+                price = BigDecimal("30000.00"),
+                fee = BigDecimal("15.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "T1",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+            )
+
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            shouldThrow<TradeReconciliationConflictException> {
+                service().syncTradesFromKraken()
+            }
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 2
+            trades.all { it.source == TradeSource.LOCAL_ESTIMATE } shouldBe true
+            trades.none { it.source == TradeSource.API_FILL } shouldBe true
+        }
+
+        "fails closed with conflict when compatible and incompatible local rows share the same exact orderTxid" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            val localCompatible = TestFixtures.tradeRecord(
+                timestamp = baseTime,
+                pair = "LINKUSD",
+                side = "sell",
+                symbol = "LINK",
+                volume = BigDecimal("6.50000000"),
+                usdAmount = BigDecimal("56.44"),
+                price = BigDecimal("8.68"),
+                expectedPrice = BigDecimal("8.68"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                cycleId = "cycle-link",
+                clientOrderId = "cl-link",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            val localIncompatible = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(10),
+                pair = "ETHUSD",
+                side = "buy",
+                symbol = "ETH",
+                volume = BigDecimal("0.50000000"),
+                usdAmount = BigDecimal("1500.00"),
+                price = BigDecimal("3000.00"),
+                expectedPrice = BigDecimal("3000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                cycleId = "cycle-eth",
+                clientOrderId = "cl-eth",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            repository.saveTrade(localCompatible)
+            repository.saveTrade(localIncompatible)
+
+            val apiFill = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(100),
+                pair = "LINKUSD",
+                side = "sell",
+                symbol = "LINK",
+                volume = BigDecimal("6.50000000"),
+                usdAmount = BigDecimal("56.44"),
+                price = BigDecimal("8.68"),
+                fee = BigDecimal("0.10"),
+                source = TradeSource.API_FILL,
+                tradeId = "T1",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+            )
+
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            shouldThrow<TradeReconciliationConflictException> {
+                service().syncTradesFromKraken()
+            }
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 2
+            trades.all { it.source == TradeSource.LOCAL_ESTIMATE } shouldBe true
+        }
+
+        "fails closed with conflict when cached order metadata is incompatible with incoming API fill" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            // Persist a settled API fill for O1 (LINK SELL)
+            val settledFill = TestFixtures.tradeRecord(
+                timestamp = baseTime,
+                pair = "LINKUSD",
+                side = "sell",
+                symbol = "LINK",
+                volume = BigDecimal("3.25000000"),
+                usdAmount = BigDecimal("28.22"),
+                price = BigDecimal("8.68"),
+                fee = BigDecimal("0.05"),
+                source = TradeSource.API_FILL,
+                tradeId = "T-SETTLED",
+                orderTxid = "O1",
+                cycleId = "cycle-link",
+                clientOrderId = "cl-link",
+                expectedPrice = BigDecimal("8.68"),
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            repository.saveTrade(settledFill)
+
+            // Incoming API fill claims O1 but is ETH BUY
+            val badFill = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(100),
+                pair = "ETHUSD",
+                side = "buy",
+                symbol = "ETH",
+                volume = BigDecimal("0.50000000"),
+                usdAmount = BigDecimal("1500.00"),
+                price = BigDecimal("3000.00"),
+                fee = BigDecimal("1.50"),
+                source = TradeSource.API_FILL,
+                tradeId = "T-BAD",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+            )
+
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(settledFill, badFill)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 2
+
+            shouldThrow<TradeReconciliationConflictException> {
+                service().syncTradesFromKraken()
+            }
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 1
+            trades.none { it.tradeId == "T-BAD" } shouldBe true
+        }
+
+        "inserts authoritative API fill normally when no local estimate exists for orderTxid" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            val unassociatedApiFill = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(100),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("0.01000000"),
+                usdAmount = BigDecimal("1000.00"),
+                price = BigDecimal("100000.00"),
+                fee = BigDecimal("1.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "T-UNASSOCIATED",
+                orderTxid = "O-EXTERNAL",
+                success = true,
+                dryRun = false,
+            )
+
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(unassociatedApiFill)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            service().syncTradesFromKraken()
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 1
+            val saved = trades.single()
+            saved.tradeId shouldBe "T-UNASSOCIATED"
+            saved.orderTxid shouldBe "O-EXTERNAL"
+            saved.source shouldBe TradeSource.API_FILL
+            saved.cycleId shouldBe null
+            saved.expectedPrice shouldBe null
+        }
+
+        "fails closed when multiple unkeyed local estimates match heuristic criteria" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            val local1 = TestFixtures.tradeRecord(
+                timestamp = baseTime,
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("0.01000000"),
+                usdAmount = BigDecimal("1000.00"),
+                price = BigDecimal("100000.00"),
+                expectedPrice = BigDecimal("100000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                orderTxid = null,
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            val local2 = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(10),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("0.01000000"),
+                usdAmount = BigDecimal("1000.00"),
+                price = BigDecimal("100000.00"),
+                expectedPrice = BigDecimal("100000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                orderTxid = null,
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            repository.saveTrade(local1)
+            repository.saveTrade(local2)
+
+            val apiFill = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(5),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("0.01000000"),
+                usdAmount = BigDecimal("1000.00"),
+                price = BigDecimal("100000.00"),
+                fee = BigDecimal("1.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "T-HEURISTIC-MULTI",
+                orderTxid = null,
+                success = true,
+                dryRun = false,
+            )
+
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            shouldThrow<TradeReconciliationConflictException> {
+                service().syncTradesFromKraken()
+            }
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 2
+            trades.all { it.source == TradeSource.LOCAL_ESTIMATE } shouldBe true
+        }
+
+        "does not pre-populate metadata cache when settled API fills under same orderTxid conflict" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            // Persist conflicting settled API fills under O1
+            val fill1 = TestFixtures.tradeRecord(
+                timestamp = baseTime,
+                pair = "LINKUSD",
+                side = "sell",
+                symbol = "LINK",
+                volume = BigDecimal("3.25000000"),
+                usdAmount = BigDecimal("28.22"),
+                price = BigDecimal("8.68"),
+                fee = BigDecimal("0.05"),
+                source = TradeSource.API_FILL,
+                tradeId = "T-1",
+                orderTxid = "O1",
+                cycleId = "cycle-1",
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            val fill2 = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(10),
+                pair = "ETHUSD",
+                side = "buy",
+                symbol = "ETH",
+                volume = BigDecimal("0.50000000"),
+                usdAmount = BigDecimal("1500.00"),
+                price = BigDecimal("3000.00"),
+                fee = BigDecimal("1.50"),
+                source = TradeSource.API_FILL,
+                tradeId = "T-2",
+                orderTxid = "O1",
+                cycleId = "cycle-1",
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            repository.saveTrade(fill1)
+            repository.saveTrade(fill2)
+
+            val newFill = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(100),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("0.01000000"),
+                usdAmount = BigDecimal("1000.00"),
+                price = BigDecimal("100000.00"),
+                fee = BigDecimal("1.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "T-NEW",
+                orderTxid = "O-NEW",
+                success = true,
+                dryRun = false,
+            )
+
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(fill1, fill2, newFill)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 3
+
+            service().syncTradesFromKraken()
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 3
+            trades.single { it.tradeId == "T-NEW" }.source shouldBe TradeSource.API_FILL
+        }
+
+        "reconciles unkeyed local estimate with keyed API fill via heuristic matching" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            val local = TestFixtures.tradeRecord(
+                timestamp = baseTime,
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("0.01000000"),
+                usdAmount = BigDecimal("1000.00"),
+                price = BigDecimal("100000.00"),
+                expectedPrice = BigDecimal("100000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                cycleId = "cycle-heuristic",
+                clientOrderId = "cl-heuristic",
+                orderTxid = null,
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            repository.saveTrade(local)
+
+            val apiFill = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(100),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("0.01000000"),
+                usdAmount = BigDecimal("1000.00"),
+                price = BigDecimal("100000.00"),
+                fee = BigDecimal("1.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "T-MATCHED",
+                orderTxid = "O-KRAKEN",
+                success = true,
+                dryRun = false,
+            )
+
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            service().syncTradesFromKraken()
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 1
+            val reconciled = trades.single()
+            reconciled.source shouldBe TradeSource.API_FILL
+            reconciled.tradeId shouldBe "T-MATCHED"
+            reconciled.cycleId shouldBe "cycle-heuristic"
+            reconciled.clientOrderId shouldBe "cl-heuristic"
         }
     }
 }

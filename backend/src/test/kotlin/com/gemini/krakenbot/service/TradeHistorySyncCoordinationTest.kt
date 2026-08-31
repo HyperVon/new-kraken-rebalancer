@@ -7,9 +7,11 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.Runs
@@ -652,7 +654,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
             }
         }
 
-        "sync does not rewrite a keyed local estimate when fill economics differ" {
+        "sync fails closed when keyed local estimate and API fill economics conflict" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
                 val timestamp = Instant.ofEpochSecond(1700000000)
@@ -675,12 +677,13 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localEstimate)
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiFill)
-                coEvery { repository.saveTrade(apiFill) } returns 2
 
-                createService().syncTradesFromKraken()
+                shouldThrow<TradeReconciliationConflictException> {
+                    createService().syncTradesFromKraken()
+                }
 
                 coVerify(exactly = 0) { repository.updateTrade(any(), any()) }
-                coVerify(exactly = 1) { repository.saveTrade(apiFill) }
+                coVerify(exactly = 0) { repository.saveTrade(any()) }
             }
         }
 
