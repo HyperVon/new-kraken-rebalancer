@@ -6,9 +6,9 @@ import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 import java.math.BigDecimal
 
-/** Holds one row by convention (ATH tracking) — the stats repository updates whichever row exists. */
+/** Exactly one logical row (id=1) stores the portfolio ATH. */
 object PortfolioStatsTable : Table("portfolio_stats") {
-    val id = integer("id").autoIncrement()
+    val id = integer("id")
     val allTimeHigh = decimal("all_time_high", 18, 2).nullable()
 
     override val primaryKey = PrimaryKey(id)

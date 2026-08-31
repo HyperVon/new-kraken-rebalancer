@@ -3,6 +3,7 @@ package com.gemini.krakenbot.repository
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.OrderIntent
+import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.TradeRecord
@@ -16,7 +17,6 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
-import java.io.IOException
 import java.math.BigDecimal
 import java.sql.DriverManager
 import java.time.Instant
@@ -93,7 +93,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 persisted.resolvedAt shouldBe null
                 persisted.resolutionEvidence shouldBe null
 
-                shouldThrow<IOException> {
+                shouldThrow<IllegalStateException> {
                     repository.recordOutcome(
                         id = 999,
                         state = OrderIntentState.REJECTED,
@@ -113,7 +113,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 tradeRepository.saveTrade(legacyIntent.toPendingTrade())
                 val intentId = service.savePending(legacyIntent)
 
-                shouldThrow<IOException> {
+                shouldThrow<OrderIntentReconciliationException> {
                     service.recordOutcome(
                         intentId,
                         OrderResult.Failure(
@@ -275,7 +275,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 service.countUnresolvedIntents() shouldBe 0L
                 tradeRepository
                     .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                    .single()
+                    .first { it.source == TradeSource.API_FILL }
                     .also { trade ->
                         trade.source shouldBe TradeSource.API_FILL
                         trade.success shouldBe true
@@ -338,7 +338,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 service.countUnresolvedIntents() shouldBe 0L
                 tradeRepository
                     .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                    .single()
+                    .first { it.source == TradeSource.API_FILL }
                     .also { trade ->
                         trade.source shouldBe TradeSource.API_FILL
                         trade.orderTxid shouldBe "O-DECIMAL-DRIFT"
@@ -403,7 +403,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 service.countUnresolvedIntents() shouldBe 0L
                 tradeRepository
                     .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                    .single()
+                    .first { it.source == TradeSource.API_FILL }
                     .also { trade ->
                         trade.source shouldBe TradeSource.API_FILL
                         trade.orderTxid shouldBe "O-SETTLED-MIGRATED"
@@ -470,7 +470,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 service.countUnresolvedIntents() shouldBe 0L
                 tradeRepository
                     .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                    .single()
+                    .first { it.source == TradeSource.API_FILL }
                     .also { trade ->
                         trade.source shouldBe TradeSource.API_FILL
                         trade.orderTxid shouldBe null
@@ -978,7 +978,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 )
                 val intentId = service.savePending(intent.copy(localTradeId = tradeId))
 
-                shouldThrow<IOException> {
+                shouldThrow<OrderIntentReconciliationException> {
                     service.recordOutcome(
                         intentId,
                         OrderResult.Success(
@@ -1072,7 +1072,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             runTest {
                 val intentId = service.savePending(newIntent())
 
-                shouldThrow<IOException> {
+                shouldThrow<OrderIntentReconciliationException> {
                     service.recordOutcome(
                         intentId,
                         OrderResult.Failure(

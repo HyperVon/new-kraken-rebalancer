@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
+import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.repository.table.ActionLogTable
@@ -465,6 +466,25 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 updated.usdAmount.shouldBeEqualComparingTo(BigDecimal("14400.00"))
                 updated.price.shouldBeEqualComparingTo(BigDecimal("30000.00"))
                 updated.source shouldBe TradeSource.API_FILL
+            }
+        }
+
+        "updateTrade rejects a missing primary key without mutating any row" {
+            runTest {
+                val oldTrade = TestFixtures.tradeRecord(
+                    timestamp = Instant.now().truncatedTo(ChronoUnit.MILLIS),
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("15000.00"),
+                    id = 999_999,
+                )
+
+                shouldThrow<TradeReconciliationConflictException> {
+                    repository.updateTrade(oldTrade, oldTrade.copy(source = TradeSource.API_FILL))
+                }
+                repository.getTradesInRange(Instant.EPOCH, Instant.now()).isEmpty() shouldBe true
             }
         }
 

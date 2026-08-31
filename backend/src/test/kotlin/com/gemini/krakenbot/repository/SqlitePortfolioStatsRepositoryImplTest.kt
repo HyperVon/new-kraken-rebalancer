@@ -225,7 +225,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                 val isolatedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val isolatedRepo = SqlitePortfolioStatsRepositoryImpl(isolatedDb, objectMapper)
                 transaction(isolatedDb) {
-                    exec("INSERT INTO portfolio_stats (all_time_high) VALUES (NULL)")
+                    exec("INSERT INTO portfolio_stats (id, all_time_high) VALUES (1, NULL)")
                 }
 
                 val stats = isolatedRepo.load()
@@ -249,6 +249,33 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                     stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
 
                     // Null ATH short-circuits before migration insert/rename
+                    testFile.exists() shouldBe true
+                    testBakFile.exists() shouldBe false
+                    transaction(isolatedDb) {
+                        PortfolioStatsTable.selectAll().count() shouldBe 0
+                    }
+                } finally {
+                    testFile.delete()
+                    testBakFile.delete()
+                }
+            }
+        }
+
+        "load treats a stats file without allTimeHigh as zero without inserting" {
+            runTest {
+                val testFile = File("test-portfolio-stats-missing-ath.json")
+                val testBakFile = File("test-portfolio-stats-missing-ath.json.bak")
+                val isolatedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
+                val testRepo =
+                    SqlitePortfolioStatsRepositoryImpl(isolatedDb, objectMapper, testFile.path)
+                try {
+                    testFile.delete()
+                    testBakFile.delete()
+                    testFile.writeText("{}")
+
+                    val stats = testRepo.load()
+                    stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
+
                     testFile.exists() shouldBe true
                     testBakFile.exists() shouldBe false
                     transaction(isolatedDb) {

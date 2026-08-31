@@ -119,7 +119,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Brawn (execution) | `OrderExecutorImpl` (sell/buy sequencing + durable live submission journal) + `OrderSettleHelper` + `RebalanceSessionContext` |
 | Live-order recovery | `OrderIntentService` → `SqliteOrderIntentRepositoryImpl` / `order_intents` |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
-| Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |
+| Rate limit | `RateLimiter` (safeLimit **20**, decay **0.5**) + `PublicRateLimiter` |
 | History reconstruction | `SnapshotHistoryCalculator` (`service/impl/history/`) |
 | Live history / SSE source | `TradeHistoryServiceImpl` façade → Sync / Ledger Sync (`LedgersSyncService`) / SnapshotStore / Query / Reconstruction |
 | HTTP | `DashboardRoutes` / `DashboardController` |

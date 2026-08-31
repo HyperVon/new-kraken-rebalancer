@@ -213,7 +213,7 @@ object RebalancerComparisonCalculator {
                 if (!applyRealizedTrade(impliedBalances, trade)) return null
             }
             for (event in intervalRewards) {
-                val symbol = event.asset.uppercase()
+                val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
                 if (symbol == Asset.USD || symbol !in impliedBalances) continue
                 impliedBalances[symbol] = impliedBalances.getValue(symbol).add(event.amount)
             }
@@ -305,7 +305,7 @@ object RebalancerComparisonCalculator {
         val cumulative = mutableMapOf<String, BigDecimal>()
         for (event in rewards) {
             if (event.type != KrakenApiConstants.LEDGER_TYPE_STAKING || event.time > upTo) continue
-            val symbol = event.asset.uppercase()
+            val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
             cumulative[symbol] = (cumulative[symbol] ?: BigDecimal.ZERO).add(event.amount)
         }
         return cumulative

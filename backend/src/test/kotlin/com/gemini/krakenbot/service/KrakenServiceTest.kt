@@ -84,6 +84,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.BUY.apiValue,
                     volume = BigDecimal("0.1"),
+                    dryRun = false,
                 )
                 result.success.shouldBeTrue()
                 result.orderTxid shouldBe "THVR-...-TC"
@@ -126,6 +127,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.BUY.apiValue,
                     volume = BigDecimal("0.1"),
+                    dryRun = false,
                     clOrdId = clOrdId,
                 )
 
@@ -163,6 +165,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.BUY.apiValue,
                     volume = BigDecimal("0.1"),
+                    dryRun = true,
                 )
                 result.success.shouldBeTrue()
                 result.dryRun.shouldBeTrue()

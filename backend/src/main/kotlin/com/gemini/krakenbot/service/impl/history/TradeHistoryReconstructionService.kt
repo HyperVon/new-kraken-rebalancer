@@ -172,6 +172,25 @@ class TradeHistoryReconstructionService(
                 now = reconstructionNow,
             )
 
+        // An empty OHLC response is recoverable only when another trustworthy source can value
+        // every tracked asset at every required point. Never turn an unavailable price into a
+        // zero-valued snapshot or advance the reconstruction version marker.
+        val requiredPriceTimes = events.map { it.timestamp }.ifEmpty { listOf(reconstructionNow) }
+        for (allocation in allocations) {
+            val symbol = allocation.symbol.value.uppercase()
+            if (symbol != Asset.USD) {
+                requiredPriceTimes.forEach { timestamp ->
+                    SnapshotHistoryCalculator.requireTrustworthyPrice(
+                        symbol = symbol,
+                        timestamp = timestamp,
+                        ohlcData = ohlcData,
+                        tradePrices = tradePrices,
+                        currentPrices = currentPrices,
+                    )
+                }
+            }
+        }
+
         val settings = config.settings
         val currentAth =
             try {

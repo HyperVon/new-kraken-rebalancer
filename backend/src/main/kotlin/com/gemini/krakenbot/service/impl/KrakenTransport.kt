@@ -13,6 +13,8 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.net.URLEncoder
 import java.util.concurrent.atomic.AtomicLong
@@ -20,9 +22,11 @@ import java.util.concurrent.atomic.AtomicLong
 internal class AmbiguousOrderSubmissionException(message: String) : RuntimeException(message)
 
 internal fun krakenPrivateEndpointCost(path: String): Double = when {
+    path == KrakenApiConstants.PATH_ADD_ORDER || path.endsWith("/CancelOrder") -> 0.0
+
     path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) ||
         path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) ||
-        path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 2.0
+        path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 4.0
 
     else -> 1.0
 }
@@ -33,12 +37,19 @@ class KrakenTransport(
     private val httpClient: HttpClient,
     private val rateLimiter: RateLimiter,
     private val nonceGenerator: AtomicLong,
+    private val publicRateLimiter: PublicRateLimiter = PublicRateLimiter(),
 ) {
     private val log = LoggerFactory.getLogger(KrakenTransport::class.java)
     private val apiUrl = KrakenApiConstants.API_URL
+    private val privateRequestMutex = Mutex()
 
     suspend fun queryPublic(path: String): JsonNode {
-        val responseBody = httpClient.get(apiUrl + path).bodyAsText()
+        publicRateLimiter.acquire()
+        val response = httpClient.get(apiUrl + path)
+        val responseBody = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw ResponseException(response, responseBody)
+        }
         try {
             val root: JsonNode = objectMapper.readTree(responseBody)
             if (root.has(KrakenApiConstants.FIELD_ERROR) &&
@@ -60,7 +71,7 @@ class KrakenTransport(
         }
     }
 
-    suspend fun queryPrivate(path: String, data: Map<String, String>): JsonNode {
+    suspend fun queryPrivate(path: String, data: Map<String, String>): JsonNode = privateRequestMutex.withLock {
         val apiKey = configService.getConfig().kraken.apiKey.value
         check(apiKey.isNotBlank()) { KrakenApiConstants.ERROR_API_KEY_NULL }
 
@@ -68,7 +79,8 @@ class KrakenTransport(
         var retryCount = 0
         var result: JsonNode? = null
         while (result == null) {
-            rateLimiter.acquireWithCost(krakenPrivateEndpointCost(path))
+            val requestCost = krakenPrivateEndpointCost(path)
+            if (requestCost > 0.0) rateLimiter.acquireWithCost(requestCost)
 
             val nonce = nonceGenerator.incrementAndGet().toString()
             val payload = data.toMutableMap()
@@ -133,6 +145,6 @@ class KrakenTransport(
                 )
             }
         }
-        return result
+        result
     }
 }

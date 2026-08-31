@@ -53,7 +53,11 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 - Reconciliation candidates must be effective local estimates (explicit
   `LOCAL_ESTIMATE` or legacy inferred estimate shape). Persisted `API_FILL`
   rows are never overwritten; an exact persisted API-fill identity is treated
-  as already synchronized.
+  as already synchronized. Pair aliases require a shared authoritative
+  trade/order identity; local/API economics matching uses only the tight
+  10-second window plus compatible pair, side, correlation identity, volume,
+  and USD. Fees are diagnostic, not primary proof, and conflicting nonblank
+  IDs never merge.
 - Dry-run rows are excluded before both exact-ID and heuristic reconciliation.
   When the API fill and a non-dry-run local estimate both have nonblank `orderTxid`, an
   exact ID match wins before newest-first economics heuristics. ID-less and
@@ -102,8 +106,8 @@ Window: **300_000 ms** (5 minutes).
 
 | Rule | Behavior |
 | :--- | :--- |
-| Pair alias | Same symbol+side+volume, **different** pair strings (e.g. `XBTUSD` vs `XXBTZUSD`) |
-| Local estimate vs API | Same symbol+side+pair within **10_000 ms**; volume/USD within **1%**; treat as duplicate only if fee-rate differs by ≥ **0.001** (0.1 pp). Prefer deleting the row with `TradeSource.LOCAL_ESTIMATE` (or legacy inferred estimate) when paired with `API_FILL`. |
+| Pair alias | Same symbol+side+volume, **different** pair strings (e.g. `XBTUSD` vs `XXBTZUSD`), only with a shared authoritative trade/order identity |
+| Local estimate vs API | Same symbol+side+pair within **10_000 ms**; compatible correlation identity; volume/USD within **1%**. Fees are not primary identity proof. Prefer deleting the local estimate when paired with `API_FILL`. |
 | Cleanup | Later record IDs deleted via `cleanupDuplicateTrades()`; a row already selected for deletion cannot anchor another comparison |
 
 ## Reconcile dry-run vs live
@@ -139,6 +143,11 @@ uses **95** days so daily closes cover the full reconstruction window.
   when the DB is empty with `simulation = true`.
 - Reconcile updates preserve local `cycleId`, prefer API `orderTxid`, and retain
   `expectedPrice` for slippage recompute.
+- Sync writes `sync_watermark_epoch_sec` / `ledger_watermark_epoch_sec` from the
+  successful request horizon captured before pagination completes, not from a
+  later completion clock. Missing credentials are typed unavailable conditions,
+  not empty-history success. Reconstruction refuses to save or version-stamp
+  when a tracked asset lacks a trustworthy OHLC, trade, or current price.
 
 ## Live stream
 

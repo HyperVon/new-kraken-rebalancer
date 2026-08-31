@@ -35,6 +35,7 @@ class SqlitePortfolioStatsRepositoryImpl(
             ) {
                 PortfolioStatsTable
                     .selectAll()
+                    .where { PortfolioStatsTable.id eq 1 }
                     .firstOrNull()
                     ?.let(PortfolioStatsTable::toModel)
             }
@@ -60,6 +61,7 @@ class SqlitePortfolioStatsRepositoryImpl(
                 log.info("Migrating allTimeHigh from stats file: {}", ath)
                 database.safeTransactionIO(log, "Failed to migrate portfolio stats from file") {
                     PortfolioStatsTable.insert {
+                        it[id] = 1
                         it[allTimeHigh] = ath
                     }
                 }
@@ -87,15 +89,12 @@ class SqlitePortfolioStatsRepositoryImpl(
 
     override suspend fun save(stats: PortfolioStats) {
         database.safeTransactionIO(log, "Failed to save portfolio stats") {
-            val existing = PortfolioStatsTable.selectAll().firstOrNull()
-            if (existing != null) {
-                PortfolioStatsTable.update({
-                    PortfolioStatsTable.id eq existing[PortfolioStatsTable.id]
-                }) {
-                    PortfolioStatsTable.applyTo(it, stats)
-                }
-            } else {
+            val updatedRows = PortfolioStatsTable.update({ PortfolioStatsTable.id eq 1 }) {
+                PortfolioStatsTable.applyTo(it, stats)
+            }
+            if (updatedRows == 0) {
                 PortfolioStatsTable.insert {
+                    it[id] = 1
                     PortfolioStatsTable.applyTo(it, stats)
                 }
             }

@@ -8,7 +8,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Coroutine-safe Kraken call-counter limiter: counter decays linearly at [decayRate]/sec
- * (default 0.33) and blocks until `counter + cost ≤ [safeLimit]` (default 12, Intermediate tier).
+ * (default 0.5) and blocks until `counter + cost ≤ [safeLimit]` (default 20, Verified tier).
  *
  * The mutex is **not** held across [delay] so other callers are not head-of-line
  * blocked while one waiter sleeps (CQ-7-L1).
@@ -17,8 +17,8 @@ import kotlin.time.Duration.Companion.milliseconds
  * Open for test subclasses that record acquire costs without MockK.
  */
 open class RateLimiter(
-    private val safeLimit: Double = 12.0,
-    private val decayRate: Double = 0.33,
+    private val safeLimit: Double = 20.0,
+    private val decayRate: Double = 0.5,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     private val mutex = Mutex()

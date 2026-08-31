@@ -107,7 +107,7 @@ class FakeKrakenService : KrakenService {
         type: String,
         side: String,
         volume: BigDecimal,
-        dryRun: Boolean?,
+        dryRun: Boolean,
         clOrdId: String?,
     ): OrderResult {
         executedOrders.add(OrderCall(pair, type, side, volume, dryRun, clOrdId))
@@ -118,8 +118,8 @@ class FakeKrakenService : KrakenService {
                 pair = pair,
                 side = side,
                 volume = volume,
-                dryRun = dryRun == true,
-                orderTxid = if (dryRun == true) null else "FAKE-ORDER-${executedOrders.size}",
+                dryRun = dryRun,
+                orderTxid = if (dryRun) null else "FAKE-ORDER-${executedOrders.size}",
             )
     }
 
@@ -131,6 +131,6 @@ data class OrderCall(
     val type: String,
     val side: String,
     val volume: BigDecimal,
-    val dryRun: Boolean? = null,
+    val dryRun: Boolean = false,
     val clOrdId: String? = null,
 )

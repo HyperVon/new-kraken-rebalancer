@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
@@ -48,6 +49,22 @@ class DynamicKrakenServiceTest : StringSpec() {
     )
 
     init {
+        "uses spendable balances when available and falls back to ordinary balances" {
+            every { configService.getConfig() } returns appConfig(simulation = false)
+            coEvery { realService.getSpendableBalances() } returns mapOf(Asset.USD to BigDecimal("90.00"))
+            coEvery { realService.getBalances() } returns mapOf(Asset.USD to BigDecimal("100.00"))
+            val dynamicService = createService()
+
+            dynamicService.getSpendableBalances() shouldBe mapOf(Asset.USD to BigDecimal("90.00"))
+            coVerify(exactly = 1) { realService.getSpendableBalances() }
+            coVerify(exactly = 0) { realService.getBalances() }
+
+            every { configService.getConfig() } returns appConfig(simulation = true)
+            coEvery { simulatedService.getBalances() } returns mapOf(Asset.USD to BigDecimal("100.00"))
+            dynamicService.getSpendableBalances() shouldBe mapOf(Asset.USD to BigDecimal("100.00"))
+            coVerify(exactly = 1) { simulatedService.getBalances() }
+        }
+
         "delegates to simulated service when simulation is true" {
             every { configService.getConfig() } returns appConfig(simulation = true)
 
@@ -73,7 +90,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                     OrderType.MARKET.apiValue,
                     OrderSide.SELL.apiValue,
                     BigDecimal.ONE,
-                    null,
+                    false,
                 )
             }
             coVerify(exactly = 0) {
@@ -182,6 +199,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 type = OrderType.MARKET.apiValue,
                 side = OrderSide.BUY.apiValue,
                 volume = BigDecimal.ONE,
+                dryRun = false,
             )
             coVerify(exactly = 1) {
                 realService.executeOrder(
@@ -189,7 +207,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                     OrderType.MARKET.apiValue,
                     OrderSide.BUY.apiValue,
                     BigDecimal.ONE,
-                    null,
+                    false,
                 )
             }
             coVerify(exactly = 0) {
@@ -249,6 +267,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 type = OrderType.MARKET.apiValue,
                 side = OrderSide.BUY.apiValue,
                 volume = BigDecimal.ONE,
+                dryRun = true,
             )
             coVerify(exactly = 1) {
                 simulatedService.executeOrder(
@@ -256,7 +275,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                     OrderType.MARKET.apiValue,
                     OrderSide.BUY.apiValue,
                     BigDecimal.ONE,
-                    null,
+                    true,
                 )
             }
             coVerify(exactly = 0) {

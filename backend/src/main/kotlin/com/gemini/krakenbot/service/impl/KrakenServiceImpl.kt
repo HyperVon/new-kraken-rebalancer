@@ -10,6 +10,7 @@ import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.KrakenCredentialsUnavailableException
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -33,6 +34,7 @@ class KrakenServiceImpl(
     private val objectMapper: ObjectMapper,
     private val httpClient: HttpClient,
     private val rateLimiter: RateLimiter = RateLimiter(),
+    private val publicRateLimiter: PublicRateLimiter = PublicRateLimiter(),
 ) : KrakenService,
     SpendableBalanceService,
     BoundedTradeHistoryService {
@@ -51,6 +53,7 @@ class KrakenServiceImpl(
         httpClient = httpClient,
         rateLimiter = rateLimiter,
         nonceGenerator = nonceGenerator,
+        publicRateLimiter = publicRateLimiter,
     )
 
     private val lastFetchedCount = AtomicInteger(0)
@@ -68,6 +71,8 @@ class KrakenServiceImpl(
         maxLockoutAttempts: Int = 9,
         initialBackoffMs: Long = 2000,
         rateLimitBackoffMs: Long = 10000,
+        maxBackoffMs: Long = 60_000,
+        maxRateLimitBackoffMs: Long = 60_000,
         initialLockoutBackoffMs: Long = 10_000,
         maxLockoutBackoffMs: Long = 15.minutes.inWholeMilliseconds,
         block: suspend () -> T,
@@ -91,8 +96,9 @@ class KrakenServiceImpl(
                 val isRateLimit =
                     isRawRateLimit || e.message?.contains(KrakenApiConstants.ERROR_RATE_LIMIT_EXCEEDED) == true
                 val isLockout = isRawLockout || e.message?.contains(KrakenApiConstants.ERROR_TEMPORARY_LOCKOUT) == true
-                val isNetworkOrTransient = e is IOException || e is ResponseException
-                val retryable = isNetworkOrTransient || isRateLimit || isLockout
+                val isRetryableHttp = status == 429 || (status != null && status in 500..504)
+                val isNetworkOrTransient = e is IOException
+                val retryable = isNetworkOrTransient || isRetryableHttp || isRateLimit || isLockout
                 val attemptsUsed = if (isLockout) lockoutAttempt else attempt
                 val attemptLimit = if (isLockout) maxLockoutAttempts else maxAttempts
 
@@ -100,8 +106,8 @@ class KrakenServiceImpl(
                     val waitTime =
                         when {
                             isLockout -> currentLockoutBackoff.coerceAtMost(maxLockoutBackoffMs)
-                            isRateLimit -> currentRateLimitBackoff
-                            else -> currentBackoff
+                            isRateLimit -> currentRateLimitBackoff.coerceAtMost(maxRateLimitBackoffMs)
+                            else -> currentBackoff.coerceAtMost(maxBackoffMs)
                         }
                     log.warn(
                         "Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
@@ -121,12 +127,12 @@ class KrakenServiceImpl(
                         }
 
                         isRateLimit -> {
-                            currentRateLimitBackoff *= 2
+                            currentRateLimitBackoff = (currentRateLimitBackoff * 2).coerceAtMost(maxRateLimitBackoffMs)
                             attempt++
                         }
 
                         else -> {
-                            currentBackoff *= 2
+                            currentBackoff = (currentBackoff * 2).coerceAtMost(maxBackoffMs)
                             attempt++
                         }
                     }
@@ -159,7 +165,7 @@ class KrakenServiceImpl(
         type: String,
         side: String,
         volume: BigDecimal,
-        dryRun: Boolean?,
+        dryRun: Boolean,
         clOrdId: String?,
     ): OrderResult {
         val normalizedVolume =
@@ -169,10 +175,7 @@ class KrakenServiceImpl(
                     RoundingMode.DOWN,
                 ).stripTrailingZeros()
 
-        val isDryRun = dryRun ?: configService.getConfig().settings.dryRun.also {
-            log.warn("executeOrder called without a dryRun argument; resolved from live config: {}", it)
-        }
-        if (isDryRun) {
+        if (dryRun) {
             log.info(
                 "[DRY RUN] Would execute order: {} {} {} volume={} cl_ord_id={}",
                 type,
@@ -270,9 +273,9 @@ class KrakenServiceImpl(
         getTradeHistoryUntil(startSec, offset, null)
 
     override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
+        lastFetchedCount.set(0)
         if (!configService.getConfig().kraken.hasValidCredentials()) {
-            log.warn("Kraken API key is blank or placeholder. Skipping trade history fetch.")
-            return emptyList()
+            throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for trade history.")
         }
 
         val params = mutableMapOf<String, String>()
@@ -302,9 +305,9 @@ class KrakenServiceImpl(
         endSec: Long?,
         types: Set<String>?,
     ): List<LedgerEvent> {
+        lastLedgerCount.set(0)
         if (!configService.getConfig().kraken.hasValidCredentials()) {
-            log.warn("Kraken API key is blank or placeholder. Skipping ledger fetch.")
-            return emptyList()
+            throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for ledgers.")
         }
 
         val params = mutableMapOf<String, String>()
@@ -362,7 +365,7 @@ class KrakenServiceImpl(
                 throw e
             } catch (e: Exception) {
                 log.error("Failed to query public OHLC endpoint for pair $pair", e)
-                return emptyList()
+                throw e
             }
 
         return KrakenParsers.parseOHLC(root, pair)

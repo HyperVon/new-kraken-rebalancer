@@ -76,6 +76,8 @@ object DatabaseConfig {
             // building blocks sequentially within one transaction instead.
             transaction(database) {
                 currentDialectMetadata.resetCaches()
+                validateSchemaMigrations()
+                rejectUnsupportedSchemaVersion()
 
                 val (tablesToCreate, tablesToAlter) = baseTables.partition { !it.exists() }
                 val createStatements = SchemaUtils.createStatements(*tablesToCreate.toTypedArray())
@@ -90,6 +92,19 @@ object DatabaseConfig {
 
                 markLegacyUnknownTradeProvenance()
 
+                // Legacy databases may have an older order-intent shape. Add columns before the
+                // FK migration rebuild reads/copies them; fresh databases create the table in
+                // migration 2 and have nothing to alter here.
+                val preMigrationOrderIntentAlterStatements = if (OrderIntentTable.exists()) {
+                    SchemaUtils.addMissingColumnsStatements(
+                        tables = arrayOf(OrderIntentTable),
+                        withLogs = false,
+                    )
+                } else {
+                    emptyList()
+                }
+                preMigrationOrderIntentAlterStatements.forEach { exec(it) }
+                currentDialectMetadata.resetCaches()
                 applySchemaMigrations()
                 val orderIntentAlterStatements = SchemaUtils.addMissingColumnsStatements(
                     tables = arrayOf(OrderIntentTable),

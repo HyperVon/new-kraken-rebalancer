@@ -3,11 +3,14 @@ package com.gemini.krakenbot.util
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.effectiveSource
-import com.gemini.krakenbot.model.feePercentDiffersMateriallyFrom
+import com.gemini.krakenbot.model.hasAuthoritativeIdentity
 import com.gemini.krakenbot.model.hasDifferentTradeProvenanceFrom
+import com.gemini.krakenbot.model.hasSharedAuthoritativeIdentity
 import com.gemini.krakenbot.model.isLocalEstimateDuplicateOf
 import com.gemini.krakenbot.model.isPairAliasDuplicateOf
+import com.gemini.krakenbot.model.isSameSymbolAndSide
 import com.gemini.krakenbot.model.isSettledApiFill
+import java.math.BigDecimal
 
 /**
  * Finds DB row IDs to delete when the same fill was stored twice (pair-string aliases, or a
@@ -32,16 +35,18 @@ object TradeDeduplicator {
                 if (diff > 300_000) break
 
                 val sameIdentity = hasCompatibleIdentity(record1, record2)
+                val strongIdentityDuplicate = sameIdentity && record1.hasSharedAuthoritativeIdentity(record2) &&
+                    record1.isSameSymbolAndSide(record2) &&
+                    isEconomicallyCompatible(record1, record2)
                 val pairAliasDuplicate = sameIdentity && record1.isPairAliasDuplicateOf(record2)
-                // Estimate↔API only when fee rates diverge (≥0.1 pp) — identical fees look like
-                // two real fills, not an estimate replaced by a settle.
                 val localEstimateDuplicate =
                     sameIdentity &&
+                        !record1.hasAuthoritativeIdentity() &&
+                        !record2.hasAuthoritativeIdentity() &&
                         record1.isLocalEstimateDuplicateOf(record2) &&
-                        record1.feePercentDiffersMateriallyFrom(record2) &&
                         record1.hasDifferentTradeProvenanceFrom(record2)
 
-                if (pairAliasDuplicate || localEstimateDuplicate) {
+                if (strongIdentityDuplicate || pairAliasDuplicate || localEstimateDuplicate) {
                     // Prefer keeping API_FILL; if both (or neither) are settled, drop the later row.
                     val idToDelete =
                         when {
@@ -74,4 +79,12 @@ object TradeDeduplicator {
             (firstSource == TradeSource.LOCAL_ESTIMATE && secondSource == TradeSource.API_FILL) ||
             (firstSource == TradeSource.API_FILL && secondSource == TradeSource.LOCAL_ESTIMATE)
     }
+
+    private fun isEconomicallyCompatible(first: TradeRecord, second: TradeRecord): Boolean =
+        first.volume.signum() >= 0 &&
+            second.volume.signum() >= 0 &&
+            first.volume.subtract(second.volume).abs() <= first.volume.abs().max(second.volume.abs())
+                .multiply(BigDecimal("0.01")) &&
+            first.usdAmount.subtract(second.usdAmount).abs() <= first.usdAmount.abs().max(second.usdAmount.abs())
+                .multiply(BigDecimal("0.01"))
 }

@@ -2,6 +2,7 @@
 
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.model.KrakenApiConstants
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -10,6 +11,7 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
@@ -186,6 +188,29 @@ class RateLimiterTest : StringSpec() {
                     limiter.acquireWithCost(15.0)
                 }
             }
+        }
+
+        "public limiter spaces requests by one second" {
+            runTest {
+                var nowMs = 10_000L
+                val limiter = PublicRateLimiter(clock = { nowMs })
+                limiter.acquire()
+
+                val waiter = async { limiter.acquire() }
+                runCurrent()
+                waiter.isCompleted.shouldBeFalse()
+
+                nowMs += 1_000L
+                advanceTimeBy(1_000L)
+                waiter.await()
+            }
+        }
+
+        "private endpoint costs follow Kraken endpoint classes" {
+            krakenPrivateEndpointCost(KrakenApiConstants.PATH_ADD_ORDER) shouldBe 0.0
+            krakenPrivateEndpointCost("/0/private/CancelOrder") shouldBe 0.0
+            krakenPrivateEndpointCost("/0/private/TradesHistory") shouldBe 4.0
+            krakenPrivateEndpointCost("/0/private/Balance") shouldBe 1.0
         }
     }
 }

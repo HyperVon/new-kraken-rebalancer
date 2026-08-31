@@ -52,30 +52,18 @@ fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
     this.symbol.equals(other.symbol, ignoreCase = true) &&
         this.side.equals(other.side, ignoreCase = true)
 
-/** Same fill under different Kraken pair strings (e.g. XBTUSD vs XXBTZUSD), within [tolerance]. */
-fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord, tolerance: BigDecimal = BigDecimal("0.01")): Boolean {
-    val thisTradeId = tradeId?.takeIf { it.isNotBlank() }
-    val otherTradeId = other.tradeId?.takeIf { it.isNotBlank() }
-    if (thisTradeId != null && otherTradeId != null && thisTradeId != otherTradeId) return false
-    if ((thisTradeId != null || otherTradeId != null) && (isLegacyUnknown() || other.isLegacyUnknown())) {
-        return false
-    }
-
-    return this.isSameSymbolAndSide(other) &&
+/**
+ * Same fill under different Kraken pair strings (e.g. XBTUSD vs XXBTZUSD), within [tolerance].
+ * Pair aliases are safe to merge only when an authoritative Kraken trade or order id agrees.
+ */
+fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord, tolerance: BigDecimal = BigDecimal("0.01")): Boolean =
+    this.isSameSymbolAndSide(other) &&
         !this.pair.equals(other.pair, ignoreCase = true) &&
         this.success == other.success &&
         this.dryRun == other.dryRun &&
+        hasSharedAuthoritativeIdentity(other) &&
         isWithinRelativeTolerance(this.volume, other.volume, tolerance) &&
-        isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance) &&
-        (
-            this.hasDifferentTradeProvenanceFrom(other) ||
-                (
-                    this.usdAmount.compareTo(other.usdAmount) == 0 &&
-                        this.fee.compareTo(other.fee) == 0 &&
-                        this.price.compareTo(other.price) == 0
-                    )
-            )
-}
+        isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance)
 
 /** Same pair/side within [windowMillis]; volume and USD within [tolerance] (defaults: 10s, 1%). */
 fun TradeRecord.isLocalEstimateDuplicateOf(
@@ -84,13 +72,55 @@ fun TradeRecord.isLocalEstimateDuplicateOf(
     tolerance: BigDecimal = BigDecimal("0.01"),
 ): Boolean {
     val diff = abs(this.timestamp.toEpochMilli() - other.timestamp.toEpochMilli())
-    val pairMatches = this.pair.equals(other.pair, ignoreCase = true) || this.isPairAliasDuplicateOf(other)
+    val pairMatches = this.pair.equals(other.pair, ignoreCase = true)
     return this.isSameSymbolAndSide(other) &&
         pairMatches &&
         diff <= windowMillis &&
+        hasCompatibleCorrelationIdentity(other) &&
         isWithinRelativeTolerance(this.volume, other.volume, tolerance) &&
         isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance)
 }
+
+/** Strong duplicate identity for the same fill, including exact same-pair re-fetches. */
+fun TradeRecord.hasSharedAuthoritativeIdentity(other: TradeRecord): Boolean {
+    if (!hasCompatibleAuthoritativeIdentity(other)) return false
+    val thisTradeId = tradeId?.takeIf(String::isNotBlank)
+    val otherTradeId = other.tradeId?.takeIf(String::isNotBlank)
+    val thisOrderTxid = orderTxid?.takeIf(String::isNotBlank)
+    val otherOrderTxid = other.orderTxid?.takeIf(String::isNotBlank)
+    return (thisTradeId != null && thisTradeId == otherTradeId) ||
+        (thisOrderTxid != null && thisOrderTxid == otherOrderTxid)
+}
+
+private fun TradeRecord.hasCompatibleAuthoritativeIdentity(other: TradeRecord): Boolean {
+    val thisTradeId = tradeId?.takeIf(String::isNotBlank)
+    val otherTradeId = other.tradeId?.takeIf(String::isNotBlank)
+    if (thisTradeId != null && otherTradeId != null && thisTradeId != otherTradeId) return false
+    val thisOrderTxid = orderTxid?.takeIf(String::isNotBlank)
+    val otherOrderTxid = other.orderTxid?.takeIf(String::isNotBlank)
+    if (thisOrderTxid != null && otherOrderTxid != null && thisOrderTxid != otherOrderTxid) return false
+    return true
+}
+
+/** Correlation ids may narrow a heuristic match, but a missing id is not a conflict. */
+private fun TradeRecord.hasCompatibleCorrelationIdentity(other: TradeRecord): Boolean {
+    if (!hasCompatibleAuthoritativeIdentity(other)) return false
+    if (hasAuthoritativeIdentity() && other.hasAuthoritativeIdentity()) {
+        val sharedTradeId = tradeId?.takeIf(String::isNotBlank)?.let { it == other.tradeId?.takeIf(String::isNotBlank) }
+        val sharedOrderTxid = orderTxid?.takeIf(String::isNotBlank)
+            ?.let { it == other.orderTxid?.takeIf(String::isNotBlank) }
+        if (sharedTradeId != true && sharedOrderTxid != true) return false
+    }
+    val thisCycle = cycleId?.takeIf(String::isNotBlank)
+    val otherCycle = other.cycleId?.takeIf(String::isNotBlank)
+    if (thisCycle != null && otherCycle != null && thisCycle != otherCycle) return false
+    val thisClient = clientOrderId?.takeIf(String::isNotBlank)
+    val otherClient = other.clientOrderId?.takeIf(String::isNotBlank)
+    if (thisClient != null && otherClient != null && thisClient != otherClient) return false
+    return true
+}
+
+fun TradeRecord.hasAuthoritativeIdentity(): Boolean = tradeId?.isNotBlank() == true || orderTxid?.isNotBlank() == true
 
 /** True when |fee/usd| rates differ by ≥ 0.001 (0.1 percentage points). */
 fun TradeRecord.feePercentDiffersMateriallyFrom(other: TradeRecord): Boolean {
@@ -125,6 +155,7 @@ fun TradeRecord.isMatchingApiTrade(
     tolerance: BigDecimal = BigDecimal("0.01"),
 ): Boolean {
     if (this.dryRun) return false
+    if (!hasCompatibleCorrelationIdentity(apiTrade)) return false
     val timeDifference = abs(this.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli())
     if (timeDifference > windowMillis || !this.side.equals(apiTrade.side, ignoreCase = true)) {
         return false

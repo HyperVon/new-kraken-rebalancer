@@ -81,8 +81,7 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
                     httpClient = HttpClient(MockEngine { respond("") }),
                 )
 
-                val trades = service.getTradeHistory()
-                trades.isEmpty().shouldBeTrue()
+                shouldThrow<KrakenCredentialsUnavailableException> { service.getTradeHistory() }
             }
         }
 
@@ -105,8 +104,7 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
                     httpClient = HttpClient(MockEngine { respond("") }),
                 )
 
-                val trades = service.getTradeHistory()
-                trades.isEmpty().shouldBeTrue()
+                shouldThrow<KrakenCredentialsUnavailableException> { service.getTradeHistory() }
             }
         }
 
@@ -129,8 +127,7 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
                     httpClient = HttpClient(MockEngine { respond("") }),
                 )
 
-                val trades = service.getTradeHistory()
-                trades.isEmpty().shouldBeTrue()
+                shouldThrow<KrakenCredentialsUnavailableException> { service.getTradeHistory() }
             }
         }
 

@@ -116,13 +116,14 @@ class HistoryViewPrefsTest : StringSpec() {
             localStorage.removeItem("kraken.history.views")
             localStorage.setItem(
                 "kraken.history.views",
-                """{"defaultId":"user-valid-2","views":[{"id":"user-valid-1","name":"First","builtIn":false,"range":"7d","showDryRun":true,"visibility":{}},null,{}, {"id":"user-valid-2","name":"Second","builtIn":false,"range":"30d","showDryRun":false,"visibility":{}}]}""",
+                """{"defaultId":"user-valid-2","views":[{"id":"user-valid-1","name":"First","builtIn":false,"range":"7d","showDryRun":true,"visibility":{}},null,{}, {"id":"user-invalid-range","name":"Invalid","builtIn":false,"range":"bogus","showDryRun":true,"visibility":{}}, {"id":"user-valid-2","name":"Second","builtIn":false,"range":"30d","showDryRun":false,"visibility":{}}]}""",
             )
 
             try {
                 val store = HistoryViewPrefs.loadStore()
                 store.defaultId shouldBe "user-valid-2"
                 store.views.map { it.id }.contains("user-valid-1") shouldBe true
+                store.views.map { it.id }.contains("user-invalid-range") shouldBe false
                 store.views.map { it.id }.contains("user-valid-2") shouldBe true
             } finally {
                 localStorage.removeItem("kraken.history.views")

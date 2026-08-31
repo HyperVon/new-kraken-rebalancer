@@ -192,7 +192,8 @@ object HistoryViewPrefs {
         val id = raw[StoreKeys.ID] as? String ?: return null
         val name = raw[StoreKeys.NAME] as? String ?: return null
         val builtIn = (raw[StoreKeys.BUILT_IN] as? Boolean) ?: false
-        val range = (raw[StoreKeys.RANGE] as? String) ?: TimeRange.THIRTY_DAYS.key
+        val rawRange = raw[StoreKeys.RANGE] as? String ?: return null
+        val range = TimeRange.entries.firstOrNull { it.key.equals(rawRange, ignoreCase = true) }?.key ?: return null
         val showDryRun = (raw[StoreKeys.SHOW_DRY_RUN] as? Boolean) ?: true
         val visibility = parseVisibility(raw[StoreKeys.VISIBILITY])
         return HistoryViewDef(

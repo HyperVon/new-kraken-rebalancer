@@ -79,7 +79,7 @@ class DynamicKrakenService(
         type: String,
         side: String,
         volume: BigDecimal,
-        dryRun: Boolean?,
+        dryRun: Boolean,
         clOrdId: String?,
     ): OrderResult = currentBackend().executeOrder(pair, type, side, volume, dryRun, clOrdId)
 

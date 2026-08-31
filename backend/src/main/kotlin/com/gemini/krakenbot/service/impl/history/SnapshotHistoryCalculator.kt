@@ -153,8 +153,8 @@ object SnapshotHistoryCalculator {
     ): BigDecimal {
         if (symbol.equals(Asset.USD, ignoreCase = true)) return BigDecimal.ONE
 
-        val prices = ohlcData[symbol.uppercase()]
-        if (!prices.isNullOrEmpty()) {
+        val prices = ohlcData[symbol.uppercase()].orEmpty().filter { it.second.signum() > 0 }
+        if (prices.isNotEmpty()) {
             val targetSec = timestamp.epochSecond
             return prices.filter { it.first <= targetSec }
                 .maxByOrNull { it.first }
@@ -162,8 +162,8 @@ object SnapshotHistoryCalculator {
                 ?: prices.minBy { it.first }.second
         }
 
-        val tPrices = tradePrices[symbol.uppercase()]
-        if (!tPrices.isNullOrEmpty()) {
+        val tPrices = tradePrices[symbol.uppercase()].orEmpty().filter { it.second.signum() > 0 }
+        if (tPrices.isNotEmpty()) {
             return findClosest(
                 tPrices,
                 timestamp.toEpochMilli(),
@@ -172,8 +172,20 @@ object SnapshotHistoryCalculator {
             )
         }
 
-        return currentPrices[symbol.uppercase()] ?: BigDecimal.ZERO
+        return currentPrices[symbol.uppercase()]?.takeIf { it.signum() > 0 }
+            ?: throw HistoricalPriceUnavailableException(
+                "No trustworthy price for $symbol at $timestamp during historical reconstruction.",
+            )
     }
+
+    /** Validates the same source precedence used by snapshot calculation without a zero fallback. */
+    fun requireTrustworthyPrice(
+        symbol: String,
+        timestamp: Instant,
+        ohlcData: Map<String, List<Pair<Long, BigDecimal>>>,
+        tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
+        currentPrices: Map<String, BigDecimal>,
+    ): BigDecimal = getPriceForTimestamp(symbol, timestamp, ohlcData, tradePrices, currentPrices)
 
     private fun buildSnapshotsChronological(
         rawPoints: List<RawHistoricalPoint>,

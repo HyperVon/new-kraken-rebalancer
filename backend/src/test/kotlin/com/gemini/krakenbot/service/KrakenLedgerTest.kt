@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
@@ -223,7 +224,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
             }
         }
 
-        "getLedgers_BlankApiKey_ReturnsEmpty" {
+        "getLedgers_BlankApiKey_FailsTyped" {
             runTest {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val config = AppConfig(
@@ -239,8 +240,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                     httpClient = HttpClient(MockEngine { respond("") }),
                 )
 
-                val entries = service.getLedgers()
-                entries.isEmpty().shouldBeTrue()
+                shouldThrow<KrakenCredentialsUnavailableException> { service.getLedgers() }
             }
         }
 

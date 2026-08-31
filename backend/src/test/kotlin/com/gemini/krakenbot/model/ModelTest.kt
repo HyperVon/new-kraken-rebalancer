@@ -144,7 +144,10 @@ class ModelTest : StringSpec() {
             // Different fees with identical provenance → not an alias duplicate
             t1.isPairAliasDuplicateOf(t2) shouldBe false
             t1.isPairAliasDuplicateOf(t3) shouldBe false
-            t1.copy(fee = t2.fee).isPairAliasDuplicateOf(t2) shouldBe true
+            t1.copy(fee = t2.fee).isPairAliasDuplicateOf(t2) shouldBe false
+            t1.copy(fee = t2.fee, tradeId = "same-fill").isPairAliasDuplicateOf(
+                t2.copy(tradeId = "same-fill"),
+            ) shouldBe true
 
             t1.feePercentDiffersMateriallyFrom(t2) shouldBe true
 
@@ -209,8 +212,11 @@ class ModelTest : StringSpec() {
             base.isPairAliasDuplicateOf(alias(base.copy(fee = BigDecimal("101.00")))) shouldBe false
             base.isPairAliasDuplicateOf(
                 alias(base.copy(source = TradeSource.LOCAL_ESTIMATE, slippagePercent = BigDecimal.ZERO)),
+            ) shouldBe false
+            base.isPairAliasDuplicateOf(alias(base)) shouldBe false
+            base.copy(tradeId = "same-fill").isPairAliasDuplicateOf(
+                alias(base.copy(tradeId = "same-fill")),
             ) shouldBe true
-            base.isPairAliasDuplicateOf(alias(base)) shouldBe true
         }
     }
 }

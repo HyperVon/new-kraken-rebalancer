@@ -129,11 +129,13 @@ class DashboardFragmentComponent(
                             input(type = InputType.text, classes = CssClass.Form.InputGlass.value) {
                                 name = FormFields.ORDER_INTENT_ORDER_TXID
                                 placeholder = ViewText.RESOLVE_INTENT_TXID_PLACEHOLDER
+                                attributes["maxlength"] = "64"
                             }
                             input(type = InputType.text, classes = CssClass.Form.InputGlass.value) {
                                 name = FormFields.ORDER_INTENT_EVIDENCE
                                 placeholder = ViewText.RESOLVE_INTENT_EVIDENCE_PLACEHOLDER
                                 required = true
+                                attributes["maxlength"] = "500"
                             }
                             button(type = ButtonType.submit, classes = CssClass.Button.Primary.value) {
                                 +ViewText.RESOLVE_INTENT_BUTTON_PREFIX

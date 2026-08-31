@@ -139,14 +139,16 @@ class TradeHistorySyncService(
 
         triggerReconstructionIfNeeded(config, backend)
 
-        finalizeSync(isSeeded)
+        // Persist the successful request horizon, not the later completion timestamp. A slow
+        // pagination/reconstruction phase must not move the next query window past unseen fills.
+        finalizeSync(isSeeded, queryNow)
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 
     private suspend fun calculateEffectiveLatestTime(): Instant? {
         val latestTradeTime = repository.getLatestTradeTime()
         val watermarkInstant = readSyncWatermark()
-        return listOfNotNull(latestTradeTime, watermarkInstant).maxOrNull()
+        return latestTradeTime ?: watermarkInstant
     }
 
     private suspend fun processApiTrades(
@@ -294,7 +296,7 @@ class TradeHistorySyncService(
         }
     }
 
-    private suspend fun finalizeSync(isSeeded: Boolean) {
+    private suspend fun finalizeSync(isSeeded: Boolean, successfulQueryHorizon: Instant) {
         if (!isSeeded) {
             repository.setHistorySeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
@@ -312,9 +314,10 @@ class TradeHistorySyncService(
             }
         }
         // Persist watermark even when no real fills exist so the next sync is incremental.
-        val completedAt = nowProvider()
-        writeSyncWatermark(completedAt)
-        lastSyncTime = completedAt
+        writeSyncWatermark(successfulQueryHorizon)
+        // Local throttling is based on completion; the durable cursor is based on the request
+        // horizon above and must never be advanced in a finally block after a failed pull.
+        lastSyncTime = nowProvider()
     }
 
     private suspend fun readSyncWatermark(): Instant? =
@@ -346,11 +349,18 @@ class TradeHistorySyncService(
     private fun hasSamePersistedFillIdentity(persisted: TradeRecord, apiTrade: TradeRecord): Boolean {
         val persistedTradeId = persisted.tradeId?.takeIf { it.isNotBlank() }
         val apiTradeId = apiTrade.tradeId?.takeIf { it.isNotBlank() }
-        return if (persistedTradeId != null && apiTradeId != null) {
-            persistedTradeId == apiTradeId
-        } else {
-            legacyApiFillFingerprint(persisted) == legacyApiFillFingerprint(apiTrade)
+        if (persistedTradeId != null && apiTradeId != null && persistedTradeId != apiTradeId) return false
+
+        val persistedOrderTxid = persisted.orderTxid?.takeIf { it.isNotBlank() }
+        val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
+        if (persistedOrderTxid != null && apiOrderTxid != null && persistedOrderTxid != apiOrderTxid) return false
+
+        if (persistedTradeId != null || apiTradeId != null || persistedOrderTxid != null || apiOrderTxid != null) {
+            return (persistedTradeId != null && persistedTradeId == apiTradeId) ||
+                (persistedOrderTxid != null && persistedOrderTxid == apiOrderTxid)
         }
+
+        return legacyApiFillFingerprint(persisted) == legacyApiFillFingerprint(apiTrade)
     }
 
     private fun legacyApiFillFingerprint(trade: TradeRecord): String = listOf(

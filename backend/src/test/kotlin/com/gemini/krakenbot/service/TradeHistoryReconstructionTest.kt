@@ -689,6 +689,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 every { portfolioAnalyzer.resolveBalance(any(), any()) } returns BigDecimal.ONE
                 coEvery { krakenService.getTickerPrices(any()) } returns
                     mapOf(TestFixtures.BTCUSD to BigDecimal("30000.00"))
+                every { portfolioAnalyzer.resolvePriceFromTicker(any(), any()) } returns BigDecimal("30000.00")
                 coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
 

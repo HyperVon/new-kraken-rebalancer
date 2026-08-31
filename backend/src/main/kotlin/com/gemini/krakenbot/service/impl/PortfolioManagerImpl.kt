@@ -23,7 +23,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.slf4j.MDCContext
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.io.IOException
@@ -228,20 +230,26 @@ class PortfolioManagerImpl(
      * `withStableBackend` calls inside the syncs and executor reuse the pin).
      */
     private suspend fun performCycleWithStableSession() {
+        val cycleId = UUID.randomUUID().toString()
+        clearCycleSyncWarning()
         configService.withExecutionSession {
             val ks = krakenService
             if (ks != null) {
                 ks.withStableBackend {
+                    withCycleMdc(cycleId) {
+                        synchronizeLedgers("during cycle")
+                        synchronizeTrades("during cycle")
+                        synchronizeHistoricalSnapshots("during cycle")
+                        performRebalanceCycleForCycle(cycleId)
+                    }
+                }
+            } else {
+                withCycleMdc(cycleId) {
                     synchronizeLedgers("during cycle")
                     synchronizeTrades("during cycle")
                     synchronizeHistoricalSnapshots("during cycle")
-                    performRebalanceCycle()
+                    performRebalanceCycleForCycle(cycleId)
                 }
-            } else {
-                synchronizeLedgers("during cycle")
-                synchronizeTrades("during cycle")
-                synchronizeHistoricalSnapshots("during cycle")
-                performRebalanceCycle()
             }
         }
     }
@@ -257,6 +265,7 @@ class PortfolioManagerImpl(
             throw e
         } catch (e: Exception) {
             log.error("Failed to synchronize ledger entries {}", context, e)
+            markCycleSyncWarning("Ledger synchronization $context", e)
         }
     }
 
@@ -271,6 +280,7 @@ class PortfolioManagerImpl(
             throw e
         } catch (e: Exception) {
             log.error("Failed to synchronize historical trades {}", context, e)
+            markCycleSyncWarning("Trade synchronization $context", e)
         }
     }
 
@@ -282,18 +292,25 @@ class PortfolioManagerImpl(
             throw e
         } catch (e: Exception) {
             log.error("Failed to rebuild historical snapshots {}", context, e)
+            markCycleSyncWarning("Historical snapshot reconstruction $context", e)
         }
     }
 
     internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
         currentCoroutineContext().ensureActive()
+        clearCycleSyncWarning()
+        val cycleId = UUID.randomUUID().toString()
+        return withCycleMdc(cycleId) {
+            performRebalanceCycleForCycle(cycleId)
+        }
+    }
+
+    private suspend fun performRebalanceCycleForCycle(cycleId: String): PortfolioSnapshot? {
         val startedAt = Instant.now()
         operationalStatus = operationalStatus.copy(
             lastCycleStartedAt = startedAt,
             lastCycleError = null,
         )
-        val cycleId = UUID.randomUUID().toString()
-        MDC.put(CYCLE_ID_MDC_KEY, cycleId)
         try {
             val snapshot = performRebalanceCyclePinned(cycleId)
             if (snapshot == null) {
@@ -316,9 +333,24 @@ class PortfolioManagerImpl(
                 lastCycleError = e::class.simpleName ?: "CycleFailure",
             )
             throw e
-        } finally {
-            MDC.remove(CYCLE_ID_MDC_KEY)
         }
+    }
+
+    private suspend fun <T> withCycleMdc(cycleId: String, block: suspend () -> T): T {
+        val contextMap = (MDC.getCopyOfContextMap() ?: emptyMap()) + (CYCLE_ID_MDC_KEY to cycleId)
+        return withContext(MDCContext(contextMap)) { block() }
+    }
+
+    private fun clearCycleSyncWarning() {
+        operationalStatus = operationalStatus.copy(lastCycleSyncWarning = null)
+    }
+
+    private fun markCycleSyncWarning(operation: String, error: Exception) {
+        val detail = "$operation failed (${error::class.simpleName ?: "unknown"})"
+        val existing = operationalStatus.lastCycleSyncWarning
+        operationalStatus = operationalStatus.copy(
+            lastCycleSyncWarning = if (existing.isNullOrBlank()) detail else "$existing; $detail",
+        )
     }
 
     private suspend fun performRebalanceCyclePinned(cycleId: String): PortfolioSnapshot? {

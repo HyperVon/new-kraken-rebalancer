@@ -91,6 +91,8 @@ class DatabaseConfigTest : StringSpec() {
                         3 to "legacy-submission-guard-import",
                         4 to "legacy-trade-identity",
                         5 to "ambiguous-legacy-client-order-id",
+                        6 to "order-intent-trade-foreign-key",
+                        7 to "portfolio-stats-singleton",
                     )
 
                     val expectedTables = setOf(
@@ -598,7 +600,7 @@ class DatabaseConfigTest : StringSpec() {
 
                 DriverManager.getConnection("jdbc:sqlite:$databaseUrl").use { connection ->
                     connection.createStatement().use { statement ->
-                        statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 5")
+                        statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 7")
                     }
                 }
 
@@ -695,18 +697,20 @@ class DatabaseConfigTest : StringSpec() {
             }
         }
 
-        "handles terminal order intents when referenced local trade was pruned or deduplicated" {
+        "rejects terminal order intents that reference a missing local trade" {
             val databaseUrl =
                 "jdbc:sqlite:file:pruned-trade-${UUID.randomUUID()}?mode=memory&cache=shared&foreign_keys=true"
 
             // 1. Initialize schema
             DatabaseConfig.init(databaseUrl)
 
-            // 2. Insert a confirmed terminal order intent that references a non-existent local trade (e.g. 999)
+            // A terminal intent may not retain a dangling FK. Pruning/deduplication must preserve the
+            // linked trade instead of deleting it while it remains referenced.
             DriverManager.getConnection(databaseUrl).use { connection ->
                 connection.createStatement().use { statement ->
-                    statement.executeUpdate(
-                        """
+                    shouldThrow<java.sql.SQLException> {
+                        statement.executeUpdate(
+                            """
                         INSERT INTO order_intents (
                             cycle_id, client_order_id, client_order_id_ambiguous, pair, symbol,
                             side, volume, usd_amount, expected_price, created_at, state,
@@ -716,30 +720,8 @@ class DatabaseConfigTest : StringSpec() {
                             'SELL', '6.54229657', '56.44', '8.6274', 1786440127270, 'CONFIRMED',
                             'OYDOVZ-Q5PT4-HUCR6Z', NULL, 1786440130000, 'Matched Kraken fill', 999
                         )
-                        """.trimIndent(),
-                    )
-                }
-            }
-
-            // 3. Re-run init — must succeed without throwing IllegalStateException
-            DatabaseConfig.init(databaseUrl)
-
-            // 4. Recovery must not mangle the terminal intent or the referenced row.
-            DriverManager.getConnection(databaseUrl).use { connection ->
-                connection.createStatement().use { statement ->
-                    statement.executeQuery(
-                        "SELECT state, order_txid, resolution_evidence FROM order_intents WHERE local_trade_id = 999",
-                    ).use { resultSet ->
-                        resultSet.next() shouldBe true
-                        resultSet.getString("state") shouldBe "CONFIRMED"
-                        resultSet.getString("order_txid") shouldBe "OYDOVZ-Q5PT4-HUCR6Z"
-                        resultSet.getString("resolution_evidence") shouldBe "Matched Kraken fill"
-                    }
-                    statement.executeQuery(
-                        "SELECT COUNT(*) FROM order_intents WHERE local_trade_id = 999",
-                    ).use { resultSet ->
-                        resultSet.next() shouldBe true
-                        resultSet.getInt(1) shouldBe 1
+                            """.trimIndent(),
+                        )
                     }
                 }
             }

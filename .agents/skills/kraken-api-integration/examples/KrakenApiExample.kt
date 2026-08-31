@@ -13,16 +13,16 @@ class KrakenApiExample(
 ) {
     private val log = LoggerFactory.getLogger(KrakenApiExample::class.java)
 
-    // Mirrors service/impl/RateLimiter.kt: a linearly-decaying call counter,
-    // NOT a mutex held across the whole call. safeLimit (12.0) is the
-    // Intermediate-tier cost ceiling; decayRate (0.33) is tokens/sec. The mutex
+    // Mirrors service/impl/RateLimiter.kt: a linearly-decaying private call
+    // counter, NOT a mutex held across the whole call. safeLimit (20.0) is the
+    // verified-tier account-counter ceiling; decayRate (0.5) is points/sec. The mutex
     // guards counter updates only and is released before delay() so waiters do
     // not HOL-block one another (CQ-7-L1).
     private val rateLimiterMutex = Mutex()
     private var callCounter = 0.0
     private var lastUpdateTimeMs = System.currentTimeMillis()
-    private val safeLimit = 12.0
-    private val decayRate = 0.33
+    private val safeLimit = 20.0
+    private val decayRate = 0.5
 
     suspend fun getAccountBalances(): Map<String, BigDecimal> {
         acquireCost(cost = 1.0)

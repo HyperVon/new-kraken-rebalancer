@@ -225,6 +225,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     TestFixtures.MARKET,
                     TestFixtures.BUY,
                     BigDecimal("0.1"),
+                    dryRun = true,
                 )
 
             result.success shouldBe true

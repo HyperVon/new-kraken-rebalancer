@@ -67,6 +67,23 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
             }
         }
 
+        "getLatestSnapshot returns only the newest snapshot" {
+            runTest {
+                val baseTime = Instant.parse("2033-05-01T12:00:00Z")
+                repository.saveSnapshot(TestFixtures.emptySnapshot(baseTime, BigDecimal("1000.00")))
+                val newest = TestFixtures.emptySnapshot(baseTime.plusSeconds(10), BigDecimal("2000.00")).copy(
+                    actions = listOf("Newest action"),
+                )
+                repository.saveSnapshot(newest)
+
+                val latest = repository.getLatestSnapshot()
+
+                latest?.timestamp shouldBe newest.timestamp
+                latest?.totalValueUSD?.shouldBeEqualComparingTo(BigDecimal("2000.00"))
+                latest?.actions shouldBe listOf("Newest action")
+            }
+        }
+
         "save trade and queries" {
             runTest {
                 val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
@@ -587,11 +604,13 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                     t1.copy(
                         timestamp = now.plusMillis(300),
                         pair = TestFixtures.XBTUSD,
+                        tradeId = "same-fill",
                     )
                 val tPairAlias2 =
                     t1.copy(
                         timestamp = now.plusMillis(400),
                         pair = TestFixtures.XXBTZUSD,
+                        tradeId = "same-fill",
                     )
                 repository.saveTrade(tPairAlias1)
                 repository.saveTrade(tPairAlias2)
@@ -641,9 +660,9 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.cleanupDuplicateTrades()
 
                 val all = repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(3600))
-                all.size shouldBe 9
+                all.size shouldBe 10
                 all.any { it.timestamp == t2FarFuture.timestamp } shouldBe true
-                all.any { it.timestamp == tPairAlias1.timestamp } shouldBe false
+                all.any { it.timestamp == tPairAlias1.timestamp } shouldBe true
                 all.any { it.timestamp == tPairAlias2.timestamp } shouldBe false
             }
         }

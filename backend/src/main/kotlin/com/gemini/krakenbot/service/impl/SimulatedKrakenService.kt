@@ -239,7 +239,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
         balances.toMap()
     }
 
-    override suspend fun getTickerPrices(pairs: String): RawPrices {
+    override suspend fun getTickerPrices(pairs: String): RawPrices = orderMutex.withLock {
         initializeMissingBalancesAndPrices()
         fluctuatePrices()
 
@@ -251,7 +251,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
             val price = simulatedPrices[symbol] ?: BigDecimal.TEN
             results[pair] = price
         }
-        return results
+        results
     }
 
     override suspend fun executeOrder(
@@ -259,16 +259,18 @@ class SimulatedKrakenService(private val configService: ConfigService) :
         type: String,
         side: String,
         volume: BigDecimal,
-        dryRun: Boolean?,
+        dryRun: Boolean,
         clOrdId: String?,
-    ): OrderResult {
+    ): OrderResult = orderMutex.withLock {
+        // Initialization, pricing, balance validation, and mutation share one state lock. This
+        // keeps concurrent simulated orders from calculating against the same pre-order balance.
         initializeMissingBalancesAndPrices()
 
         val normalizedVolumeForError = volume.toCryptoScale()
         if (!type.equals(OrderType.MARKET.apiValue, ignoreCase = true)) {
             val error = "Unsupported order type in emulator: $type (only ${OrderType.MARKET.apiValue} is supported)"
             log.warn("[EMULATOR] $error")
-            return OrderResult(
+            return@withLock OrderResult(
                 success = false,
                 pair = pair,
                 side = side,
@@ -280,7 +282,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
         if (orderSide == null) {
             val error = "Unsupported order side in emulator: $side"
             log.warn("[EMULATOR] $error")
-            return OrderResult(
+            return@withLock OrderResult(
                 success = false,
                 pair = pair,
                 side = side,
@@ -296,9 +298,9 @@ class SimulatedKrakenService(private val configService: ConfigService) :
         val usdAmount = normalizedVolume.multiply(price).toUsdScale()
         val fee = usdAmount.multiply(SEED_FEE_RATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
 
-        if ((dryRun ?: configService.getConfig().settings.dryRun)) {
+        if (dryRun) {
             log.info("[EMULATOR DRY RUN] Order would execute successfully cl_ord_id=$clOrdId")
-            return OrderResult(
+            return@withLock OrderResult(
                 success = true,
                 pair = pair,
                 side = side,
@@ -312,98 +314,97 @@ class SimulatedKrakenService(private val configService: ConfigService) :
                 "calculated price: $price ($$usdAmount) cl_ord_id=$clOrdId",
         )
 
-        return orderMutex.withLock {
-            val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
-            val tokenBalance = balances[symbol] ?: BigDecimal.ZERO
+        val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
+        val tokenBalance = balances[symbol] ?: BigDecimal.ZERO
 
-            if (orderSide == OrderSide.BUY) {
-                if (usdBalance < usdAmount.add(fee)) {
-                    val error =
-                        "Insufficient USD funds in emulator balance: needed ${usdAmount.add(fee)}, had $usdBalance"
-                    log.warn("[EMULATOR] $error")
-                    return@withLock OrderResult(
-                        success = false,
-                        pair = pair,
-                        side = side,
-                        volume = normalizedVolume,
-                        errorMessage = error,
-                    )
-                }
-                balances[Asset.USD] = usdBalance.subtract(usdAmount).subtract(fee).toUsdScale()
-                balances[symbol] = tokenBalance.add(normalizedVolume).toCryptoScale()
-            } else {
-                if (tokenBalance < normalizedVolume) {
-                    val error =
-                        "Insufficient $symbol funds in emulator balance: needed $normalizedVolume, had $tokenBalance"
-                    log.warn("[EMULATOR] $error")
-                    return@withLock OrderResult(
-                        success = false,
-                        pair = pair,
-                        side = side,
-                        volume = normalizedVolume,
-                        errorMessage = error,
-                    )
-                }
-                balances[symbol] = tokenBalance.subtract(normalizedVolume).toCryptoScale()
-                balances[Asset.USD] = usdBalance.add(usdAmount).subtract(fee).toUsdScale()
-            }
-
-            val orderTxid = "$SIM_ORDER_TXID_PREFIX${System.nanoTime()}"
-            val trade =
-                TradeRecord(
-                    timestamp = Instant.now(),
+        if (orderSide == OrderSide.BUY) {
+            if (usdBalance < usdAmount.add(fee)) {
+                val error =
+                    "Insufficient USD funds in emulator balance: needed ${usdAmount.add(fee)}, had $usdBalance"
+                log.warn("[EMULATOR] $error")
+                return@withLock OrderResult(
+                    success = false,
                     pair = pair,
-                    side = side.uppercase(),
-                    symbol = symbol,
+                    side = side,
                     volume = normalizedVolume,
-                    usdAmount = usdAmount,
-                    success = true,
-                    dryRun = false,
-                    price = price.toCryptoScale(),
-                    fee = fee,
-                    source = TradeSource.API_FILL,
-                    orderTxid = orderTxid,
+                    errorMessage = error,
                 )
-            simulatedTrades.add(trade)
+            }
+            balances[Asset.USD] = usdBalance.subtract(usdAmount).subtract(fee).toUsdScale()
+            balances[symbol] = tokenBalance.add(normalizedVolume).toCryptoScale()
+        } else {
+            if (tokenBalance < normalizedVolume) {
+                val error =
+                    "Insufficient $symbol funds in emulator balance: needed $normalizedVolume, had $tokenBalance"
+                log.warn("[EMULATOR] $error")
+                return@withLock OrderResult(
+                    success = false,
+                    pair = pair,
+                    side = side,
+                    volume = normalizedVolume,
+                    errorMessage = error,
+                )
+            }
+            balances[symbol] = tokenBalance.subtract(normalizedVolume).toCryptoScale()
+            balances[Asset.USD] = usdBalance.add(usdAmount).subtract(fee).toUsdScale()
+        }
 
-            OrderResult(
-                success = true,
+        val orderTxid = "$SIM_ORDER_TXID_PREFIX${System.nanoTime()}"
+        val trade =
+            TradeRecord(
+                timestamp = Instant.now(),
                 pair = pair,
-                side = side,
+                side = side.uppercase(),
+                symbol = symbol,
                 volume = normalizedVolume,
+                usdAmount = usdAmount,
+                success = true,
+                dryRun = false,
+                price = price.toCryptoScale(),
+                fee = fee,
+                source = TradeSource.API_FILL,
                 orderTxid = orderTxid,
             )
-        }
+        simulatedTrades.add(trade)
+
+        OrderResult(
+            success = true,
+            pair = pair,
+            side = side,
+            volume = normalizedVolume,
+            orderTxid = orderTxid,
+        )
     }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
         getTradeHistoryUntil(startSec, offset, null)
 
-    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
-        initializeMissingBalancesAndPrices()
+    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> =
+        orderMutex.withLock {
+            initializeMissingBalancesAndPrices()
 
-        var filtered =
-            if (startSec != null) {
-                val startInstant = Instant.ofEpochSecond(startSec)
-                simulatedTrades.filter { !it.timestamp.isBefore(startInstant) }
-            } else {
-                simulatedTrades
+            var filtered =
+                if (startSec != null) {
+                    val startInstant = Instant.ofEpochSecond(startSec)
+                    simulatedTrades.filter { !it.timestamp.isBefore(startInstant) }
+                } else {
+                    simulatedTrades
+                }
+
+            if (endSec != null) {
+                val endInstant = Instant.ofEpochSecond(endSec)
+                filtered = filtered.filter { !it.timestamp.isAfter(endInstant) }
             }
 
-        if (endSec != null) {
-            val endInstant = Instant.ofEpochSecond(endSec)
-            filtered = filtered.filter { !it.timestamp.isAfter(endInstant) }
+            filtered = filtered.sortedByDescending { it.timestamp }
+            lastTradeHistoryTotalCount = filtered.size
+
+            // Kraken returns at most 50 records per page (newest first). An offset
+            // at/beyond the result size therefore yields an empty page, not the whole history.
+            filtered
+                .drop(offset?.coerceAtLeast(0) ?: 0)
+                .take(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
         }
-
-        filtered = filtered.sortedByDescending { it.timestamp }
-        lastTradeHistoryTotalCount = filtered.size
-
-        // Kraken returns at most 50 records per page (newest first). An offset
-        // at/beyond the result size therefore yields an empty page, not the whole history.
-        return filtered
-            .drop(offset?.coerceAtLeast(0) ?: 0)
-            .take(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
-    }
 
     override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount
 
@@ -412,7 +413,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
         offset: Int?,
         endSec: Long?,
         types: Set<String>?,
-    ): List<LedgerEvent> {
+    ): List<LedgerEvent> = orderMutex.withLock {
         initializeMissingBalancesAndPrices()
 
         var filtered =
@@ -437,7 +438,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
 
         // Mirrors the private Ledgers endpoint: at most 50 entries per page (newest
         // first); an offset at/beyond the result size yields an empty page.
-        return filtered
+        filtered
             .drop(offset?.coerceAtLeast(0) ?: 0)
             .take(KrakenApiConstants.LEDGER_PAGE_SIZE)
     }

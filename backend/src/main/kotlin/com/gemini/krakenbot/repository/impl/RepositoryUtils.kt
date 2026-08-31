@@ -23,6 +23,10 @@ inline fun <T> Database.safeTransaction(
         return transaction(this) { block() }
     } catch (e: CancellationException) {
         throw e
+    } catch (e: IllegalArgumentException) {
+        throw e
+    } catch (e: IllegalStateException) {
+        throw e
     } catch (e: Exception) {
         log.error(logMessage, e)
         if (e is IOException) throw e
@@ -48,6 +52,10 @@ inline fun <T> Database.safeReadTransaction(
     try {
         return transaction(this) { block() }
     } catch (e: CancellationException) {
+        throw e
+    } catch (e: IllegalArgumentException) {
+        throw e
+    } catch (e: IllegalStateException) {
         throw e
     } catch (e: Exception) {
         log.error(logMessage, e)

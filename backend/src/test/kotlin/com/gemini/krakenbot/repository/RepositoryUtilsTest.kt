@@ -3,6 +3,7 @@ package com.gemini.krakenbot.repository
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.repository.impl.readSyncMetadata
+import com.gemini.krakenbot.repository.impl.safeReadTransaction
 import com.gemini.krakenbot.repository.impl.safeTransaction
 import com.gemini.krakenbot.repository.impl.writeSyncMetadata
 import io.kotest.assertions.throwables.shouldThrow
@@ -39,6 +40,31 @@ class RepositoryUtilsTest : StringSpec() {
                         db.safeTransaction(log, "should not be reached") { throw IOException("direct io") }
                     }
                 thrown.message shouldBe "direct io"
+            }
+        }
+
+        "safeTransaction preserves intentional argument and state failures" {
+            runTest {
+                val argumentFailure = shouldThrow<IllegalArgumentException> {
+                    db.safeTransaction(log, "should not be reached") {
+                        throw IllegalArgumentException("invalid domain input")
+                    }
+                }
+                argumentFailure.message shouldBe "invalid domain input"
+
+                val stateFailure = shouldThrow<IllegalStateException> {
+                    db.safeTransaction(log, "should not be reached") {
+                        throw IllegalStateException("domain state conflict")
+                    }
+                }
+                stateFailure.message shouldBe "domain state conflict"
+
+                val readStateFailure = shouldThrow<IllegalStateException> {
+                    db.safeReadTransaction(log, "should not be reached") {
+                        throw IllegalStateException("read domain state conflict")
+                    }
+                }
+                readStateFailure.message shouldBe "read domain state conflict"
             }
         }
 

@@ -108,7 +108,7 @@ class LedgersSyncService(
         // skip the full history fetch. Live runs (even with an empty account) always finalize.
         val isSimulation = config.settings.simulation
         if (!isSimulation || isSeeded || totalAdded > 0) {
-            finalizeSync(isSeeded)
+            finalizeSync(isSeeded, queryNow)
         } else {
             log.info("Simulation ledger sync produced no entries; leaving ledger store unseeded.")
             // Keep the 5-minute throttle engaged even when a simulation sync finds nothing: only
@@ -121,7 +121,7 @@ class LedgersSyncService(
     private suspend fun calculateEffectiveLatestTime(): Instant? {
         val latestLedgerTime = repository.getLatestLedgerTime()
         val watermarkInstant = readSyncWatermark()
-        return listOfNotNull(latestLedgerTime, watermarkInstant).maxOrNull()
+        return latestLedgerTime ?: watermarkInstant
     }
 
     private suspend fun processLedgerPages(startSec: Long?, endSec: Long, isSeeded: Boolean): Int {
@@ -135,7 +135,7 @@ class LedgersSyncService(
         return totalAdded
     }
 
-    private suspend fun finalizeSync(isSeeded: Boolean) {
+    private suspend fun finalizeSync(isSeeded: Boolean, successfulQueryHorizon: Instant) {
         if (!isSeeded) {
             repository.setLedgersSeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, SyncMetadataKeys.COMPLETED)
@@ -151,10 +151,9 @@ class LedgersSyncService(
             }
         }
         // Persist watermark even when no real entries exist so the next sync is incremental.
-        val completedAt = nowProvider()
-        writeSyncWatermark(completedAt)
-        pruneOldEntries(completedAt)
-        lastSyncTime = completedAt
+        writeSyncWatermark(successfulQueryHorizon)
+        pruneOldEntries(successfulQueryHorizon)
+        lastSyncTime = nowProvider()
     }
 
     /** Mirrors the snapshot/trade retention window (HISTORICAL_DAYS_BACK) for ledger entries. */

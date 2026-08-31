@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository.table
 
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
+import org.jetbrains.exposed.v1.core.ReferenceOption
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
@@ -24,7 +25,9 @@ object OrderIntentTable : Table("order_intents") {
     val errorMessage = text("error_message").nullable()
     val resolvedAt = long("resolved_at").nullable()
     val resolutionEvidence = text("resolution_evidence").nullable()
-    val localTradeId = integer("local_trade_id").nullable()
+    val localTradeId = integer("local_trade_id")
+        .references(TradeTable.id, onDelete = ReferenceOption.RESTRICT)
+        .nullable()
 
     init {
         index("idx_order_intents_state", false, state)

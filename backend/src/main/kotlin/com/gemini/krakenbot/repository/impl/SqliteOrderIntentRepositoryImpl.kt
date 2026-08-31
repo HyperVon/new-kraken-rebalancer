@@ -17,7 +17,6 @@ import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
-import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
@@ -195,16 +194,9 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         val linkedTradeIdentity = TradeTable.id eq localTradeId
         if (state == OrderIntentState.CONFIRMED && hasSettledApiFill(intent, effectiveOrderTxid)) {
             // A verified Kraken order may sync before an operator resolves its recovered intent.
-            // Preserve its settled economics and remove only the superseded local placeholder.
-            val deletedRows = TradeTable.deleteWhere {
-                linkedTradeIdentity
-            }
-            if (deletedRows != 1) {
-                throw OrderIntentReconciliationException(
-                    "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.",
-                )
-            }
-            return
+            // Keep the placeholder because the order-intent journal is its audit owner. The
+            // normal update below marks it resolved; later conservative dedupe may remove it
+            // only when an authoritative fill identity proves it is a duplicate.
         }
         val updatedRows = TradeTable.update({
             linkedTradeIdentity

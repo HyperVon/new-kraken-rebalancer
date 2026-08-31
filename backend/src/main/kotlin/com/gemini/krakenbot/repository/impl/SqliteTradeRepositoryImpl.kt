@@ -3,11 +3,13 @@ package com.gemini.krakenbot.repository.impl
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
+import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import com.gemini.krakenbot.repository.table.TradeTable
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -40,6 +42,7 @@ import java.time.Instant
 class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepository {
     private companion object {
         const val MAX_SNAPSHOT_POINTS = 300
+        const val SQLITE_IN_CHUNK_SIZE = 500
     }
 
     private val log =
@@ -59,9 +62,11 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 .map { it[PortfolioSnapshotTable.id] }
             if (snapshotIds.isNotEmpty()) {
                 // Children first even with ON DELETE CASCADE — keeps SQLite FK order explicit.
-                AssetSnapshotTable.deleteWhere { snapshotId inList snapshotIds }
-                ActionLogTable.deleteWhere { snapshotId inList snapshotIds }
-                PortfolioSnapshotTable.deleteWhere { id inList snapshotIds }
+                snapshotIds.chunked(SQLITE_IN_CHUNK_SIZE).forEach { chunk ->
+                    AssetSnapshotTable.deleteWhere { snapshotId inList chunk }
+                    ActionLogTable.deleteWhere { snapshotId inList chunk }
+                    PortfolioSnapshotTable.deleteWhere { id inList chunk }
+                }
             }
             for (snapshot in history) {
                 insertSnapshotWithChildren(snapshot)
@@ -80,6 +85,15 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         buildSnapshotsFromRows(snapshotRows)
     }
 
+    override suspend fun getLatestSnapshot(): PortfolioSnapshot? = database.readTransactionIO {
+        val latestRow = PortfolioSnapshotTable
+            .selectAll()
+            .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
+            .limit(1)
+            .toList()
+        buildSnapshotsFromRows(latestRow).firstOrNull()
+    }
+
     override suspend fun saveSnapshot(snapshot: PortfolioSnapshot) {
         database.safeTransactionIO(log, "Failed to save snapshot to database") {
             insertSnapshotWithChildren(snapshot)
@@ -95,22 +109,30 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
     override suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
         database.safeTransactionIO(log, "Failed to update trade in database", "Database update failed") {
-            val oldTradeId = oldTrade.id
-            val updatedRows = TradeTable.update({
-                // Prefer primary key; multi-column fallback only when the in-memory row has no id.
-                if (oldTradeId != null) {
-                    TradeTable.id eq oldTradeId
-                } else {
-                    (TradeTable.timestamp eq oldTrade.timestamp.toEpochMilli()) and
-                        (TradeTable.pair eq oldTrade.pair) and
-                        (TradeTable.side eq OrderSide.normalize(oldTrade.side)) and
-                        (TradeTable.volume eq oldTrade.volume)
+            val oldTradeId = oldTrade.id ?: run {
+                val candidateIds = TradeTable.select(TradeTable.id)
+                    .where {
+                        (TradeTable.timestamp eq oldTrade.timestamp.toEpochMilli()) and
+                            (TradeTable.pair eq oldTrade.pair) and
+                            (TradeTable.side eq OrderSide.normalize(oldTrade.side)) and
+                            (TradeTable.volume eq oldTrade.volume)
+                    }
+                    .limit(2)
+                    .map { it[TradeTable.id] }
+                if (candidateIds.size != 1) {
+                    throw TradeReconciliationConflictException(
+                        "Expected one trade reconciliation candidate, found ${candidateIds.size}.",
+                    )
                 }
-            }) {
+                candidateIds.single()
+            }
+            val updatedRows = TradeTable.update({ TradeTable.id eq oldTradeId }) {
                 TradeTable.applyTo(it, newTrade)
             }
-            check(updatedRows == 1) {
-                "Expected to update one trade row, but updated $updatedRows for trade ${oldTrade.id}"
+            if (updatedRows != 1) {
+                throw TradeReconciliationConflictException(
+                    "Expected to update one trade row, but updated $updatedRows for trade ${oldTrade.id}.",
+                )
             }
         }
     }
@@ -362,9 +384,11 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
             if (idsToDelete.isNotEmpty()) {
                 // Children first even with ON DELETE CASCADE — keeps SQLite FK order explicit.
-                AssetSnapshotTable.deleteWhere { snapshotId inList idsToDelete }
-                ActionLogTable.deleteWhere { snapshotId inList idsToDelete }
-                PortfolioSnapshotTable.deleteWhere { id inList idsToDelete }
+                idsToDelete.chunked(SQLITE_IN_CHUNK_SIZE).forEach { chunk ->
+                    AssetSnapshotTable.deleteWhere { snapshotId inList chunk }
+                    ActionLogTable.deleteWhere { snapshotId inList chunk }
+                    PortfolioSnapshotTable.deleteWhere { id inList chunk }
+                }
             }
             idsToDelete.size
         }
@@ -372,8 +396,16 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun pruneTradesOlderThan(cutoff: Instant): Int =
         database.safeTransactionIO(log, "Failed to prune old trades") {
             val cutoffMillis = cutoff.toEpochMilli()
-            TradeTable.deleteWhere {
-                (timestamp less cutoffMillis) and submissionState.isNull()
+            val protectedTradeIds = protectedTradeIds()
+            val idsToDelete = TradeTable.select(TradeTable.id)
+                .where {
+                    (TradeTable.timestamp less cutoffMillis) and
+                        TradeTable.submissionState.isNull()
+                }
+                .map { it[TradeTable.id] }
+                .filterNot(protectedTradeIds::contains)
+            idsToDelete.chunked(SQLITE_IN_CHUNK_SIZE).sumOf { chunk ->
+                TradeTable.deleteWhere { TradeTable.id inList chunk }
             }
         }
 
@@ -386,8 +418,18 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
             if (toDelete.isNotEmpty()) {
                 log.info("Cleaning up {} duplicate trade rows (pair-alias or estimate/fill match)...", toDelete.size)
-                TradeTable.deleteWhere { id inList toDelete }
+                val protectedTradeIds = protectedTradeIds()
+                toDelete
+                    .filterNot(protectedTradeIds::contains)
+                    .chunked(SQLITE_IN_CHUNK_SIZE)
+                    .forEach { chunk -> TradeTable.deleteWhere { TradeTable.id inList chunk } }
             }
         }
     }
+
+    private fun protectedTradeIds(): Set<Int> = OrderIntentTable
+        .select(OrderIntentTable.localTradeId)
+        .where { OrderIntentTable.localTradeId.isNotNull() }
+        .mapNotNull { it[OrderIntentTable.localTradeId] }
+        .toSet()
 }

@@ -74,7 +74,8 @@ not treat this skill’s checklist as a substitute.
 
 ### 3. Kraken & modes
 
-- Symbol mapping; `RateLimiter` (12 / 0.33) + Mutex on private calls.
+- Symbol mapping; private `RateLimiter` (20 / 0.5) + serialized nonce/sign/post
+  Mutex, plus the separate conservative public limiter.
 - Lockout backoff 10s→15m via `retryWithFlow`.
 - **`dryRun` ≠ `simulation`** — `DynamicKrakenService` routing correct.
 - No secret logging.

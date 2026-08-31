@@ -53,6 +53,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
             every { portfolioManager.getOperationalStatus() } returns RebalanceOperationalStatus(
                 lastCycleStartedAt = snapshot.timestamp.minusSeconds(30),
                 lastCycleCompletedAt = snapshot.timestamp,
+                lastCycleSyncWarning = "Trade synchronization during cycle failed (RuntimeException)",
             )
             every { configService.getConfig() } returns TestFixtures.config(
                 settings = TestFixtures.settings(simulation = true),
@@ -65,6 +66,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "\"readiness\":\"READY\""
                 response.bodyAsText() shouldContain "\"activeMode\":\"SIMULATION\""
+                response.bodyAsText() shouldContain "lastCycleSyncWarning"
 
                 val syncResponse = client.get("/api/history/sync-progress")
                 syncResponse.status shouldBe HttpStatusCode.OK

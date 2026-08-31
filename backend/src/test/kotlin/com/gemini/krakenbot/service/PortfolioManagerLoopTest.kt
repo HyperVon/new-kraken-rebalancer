@@ -26,6 +26,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -210,6 +211,8 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 coVerify(atLeast = 1) { tradeHistoryService.syncTradesFromKraken() }
                 krakenService.getBalancesCallCount shouldBe 1
+                portfolioManager.getOperationalStatus().lastCycleSyncWarning shouldContain
+                    "Ledger synchronization"
             }
         }
 
