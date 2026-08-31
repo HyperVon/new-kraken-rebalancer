@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.repository.impl
 
+import com.gemini.krakenbot.model.OrderIntentReconciliationException
+import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -23,9 +25,9 @@ inline fun <T> Database.safeTransaction(
         return transaction(this) { block() }
     } catch (e: CancellationException) {
         throw e
-    } catch (e: IllegalArgumentException) {
+    } catch (e: OrderIntentReconciliationException) {
         throw e
-    } catch (e: IllegalStateException) {
+    } catch (e: TradeReconciliationConflictException) {
         throw e
     } catch (e: Exception) {
         log.error(logMessage, e)
@@ -53,9 +55,9 @@ inline fun <T> Database.safeReadTransaction(
         return transaction(this) { block() }
     } catch (e: CancellationException) {
         throw e
-    } catch (e: IllegalArgumentException) {
+    } catch (e: OrderIntentReconciliationException) {
         throw e
-    } catch (e: IllegalStateException) {
+    } catch (e: TradeReconciliationConflictException) {
         throw e
     } catch (e: Exception) {
         log.error(logMessage, e)

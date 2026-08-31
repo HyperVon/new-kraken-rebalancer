@@ -4,6 +4,7 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.effectiveSource
 import com.gemini.krakenbot.model.hasAuthoritativeIdentity
+import com.gemini.krakenbot.model.hasCompatiblePairIdentity
 import com.gemini.krakenbot.model.hasDifferentTradeProvenanceFrom
 import com.gemini.krakenbot.model.isLocalEstimateDuplicateOf
 import com.gemini.krakenbot.model.isPairAliasDuplicateOf
@@ -37,6 +38,7 @@ object TradeDeduplicator {
                 val strongIdentityDuplicate = sameIdentity &&
                     hasSafeFillIdentity(record1, record2) &&
                     record1.isSameSymbolAndSide(record2) &&
+                    record1.hasCompatiblePairIdentity(record2) &&
                     isEconomicallyCompatible(record1, record2)
                 val pairAliasDuplicate = sameIdentity &&
                     hasSafeFillIdentity(record1, record2) &&

@@ -2,6 +2,8 @@ package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.model.OrderIntentReconciliationException
+import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.repository.impl.readSyncMetadata
 import com.gemini.krakenbot.repository.impl.safeReadTransaction
 import com.gemini.krakenbot.repository.impl.safeTransaction
@@ -43,28 +45,43 @@ class RepositoryUtilsTest : StringSpec() {
             }
         }
 
-        "safeTransaction preserves intentional argument and state failures" {
+        "safeTransaction preserves only intentional reconciliation failures" {
             runTest {
-                val argumentFailure = shouldThrow<IllegalArgumentException> {
+                val orderIntentFailure = shouldThrow<OrderIntentReconciliationException> {
                     db.safeTransaction(log, "should not be reached") {
+                        throw OrderIntentReconciliationException("order intent conflict")
+                    }
+                }
+                orderIntentFailure.message shouldBe "order intent conflict"
+
+                val tradeFailure = shouldThrow<TradeReconciliationConflictException> {
+                    db.safeTransaction(log, "should not be reached") {
+                        throw TradeReconciliationConflictException("trade conflict")
+                    }
+                }
+                tradeFailure.message shouldBe "trade conflict"
+
+                val readOrderIntentFailure = shouldThrow<OrderIntentReconciliationException> {
+                    db.safeReadTransaction(log, "should not be reached") {
+                        throw OrderIntentReconciliationException("read order intent conflict")
+                    }
+                }
+                readOrderIntentFailure.message shouldBe "read order intent conflict"
+            }
+        }
+
+        "safeTransaction wraps unrelated argument and state failures" {
+            runTest {
+                shouldThrow<IOException> {
+                    db.safeTransaction(log, "Database write failed") {
                         throw IllegalArgumentException("invalid domain input")
                     }
                 }
-                argumentFailure.message shouldBe "invalid domain input"
-
-                val stateFailure = shouldThrow<IllegalStateException> {
-                    db.safeTransaction(log, "should not be reached") {
-                        throw IllegalStateException("domain state conflict")
+                shouldThrow<IOException> {
+                    db.safeReadTransaction(log, "Database read failed") {
+                        throw IllegalStateException("unrelated state failure")
                     }
                 }
-                stateFailure.message shouldBe "domain state conflict"
-
-                val readStateFailure = shouldThrow<IllegalStateException> {
-                    db.safeReadTransaction(log, "should not be reached") {
-                        throw IllegalStateException("read domain state conflict")
-                    }
-                }
-                readStateFailure.message shouldBe "read domain state conflict"
             }
         }
 

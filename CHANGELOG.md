@@ -35,6 +35,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Order-intent reconciliation**: A terminal confirmation now removes an
+  obsolete local placeholder only when it uniquely matches an already-synced
+  authoritative Kraken fill, preserving one canonical executed trade while
+  retaining the durable intent audit record. Terminal links no longer pin
+  obsolete rows during normal retention cleanup, while unresolved intents
+  remain protected and fail closed.
 - Added regression coverage for missing historical prices, deterministic sync
   horizons, identity-conflicting fills, asset aliases, foreign-key migration,
   rate semantics, nonce serialization, cancellation/exception preservation,

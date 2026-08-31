@@ -2,7 +2,6 @@ package com.gemini.krakenbot.config
 
 import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.SchemaMigrationTable
-import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.exists
@@ -39,8 +38,8 @@ internal val SCHEMA_MIGRATIONS = listOf(
     },
 )
 
-internal fun validateSchemaMigrations() {
-    val versions = SCHEMA_MIGRATIONS.map { it.version }
+internal fun validateSchemaMigrations(migrations: List<SchemaMigration> = SCHEMA_MIGRATIONS) {
+    val versions = migrations.map { it.version }
     check(versions == versions.distinct()) { "Schema migration versions must be unique." }
     check(versions == versions.sorted()) { "Schema migration versions must be ordered." }
     check(versions == (1..CURRENT_SCHEMA_VERSION).toList()) {
@@ -50,18 +49,15 @@ internal fun validateSchemaMigrations() {
 
 internal fun JdbcTransaction.applySchemaMigrations() {
     validateSchemaMigrations()
-    val appliedVersion =
+    val appliedVersions =
         SchemaMigrationTable
             .select(SchemaMigrationTable.version)
-            .orderBy(SchemaMigrationTable.version, SortOrder.DESC)
-            .limit(1)
-            .firstOrNull()
-            ?.get(SchemaMigrationTable.version)
-            ?: 0
+            .map { it[SchemaMigrationTable.version] }
+            .toSet()
 
     val now = Instant.now().toEpochMilli()
     SCHEMA_MIGRATIONS
-        .filter { it.version > appliedVersion }
+        .filter { it.version !in appliedVersions }
         .forEach { migration ->
             migration.action?.invoke(this)
             SchemaMigrationTable.insert {
@@ -89,12 +85,13 @@ internal fun JdbcTransaction.rejectUnsupportedSchemaVersion() {
     }
 }
 
-private fun JdbcTransaction.ensureOrderIntentTradeForeignKey() {
+internal fun JdbcTransaction.ensureOrderIntentTradeForeignKey() {
     val hasForeignKey = exec("PRAGMA foreign_key_list('order_intents')") { resultSet ->
         var found = false
         while (resultSet.next()) {
             if (resultSet.getString("table") == "trades" &&
                 resultSet.getString("from") == "local_trade_id" &&
+                resultSet.getString("to") == "id" &&
                 resultSet.getString("on_delete").equals("RESTRICT", ignoreCase = true)
             ) {
                 found = true

@@ -298,6 +298,9 @@ class EngineModelTest : StringSpec() {
             identified.isPairAliasDuplicateOf(
                 alias.copy(tradeId = "trade-a", orderTxid = "order-a", cycleId = "cycle-b"),
             ) shouldBe true
+            identified.isPairAliasDuplicateOf(
+                base.copy(pair = "BTCEUR", tradeId = "trade-a"),
+            ) shouldBe false
 
             base.copy(cycleId = null).isLocalEstimateDuplicateOf(base) shouldBe true
             base.copy(clientOrderId = "client-a").isLocalEstimateDuplicateOf(base) shouldBe true
@@ -363,11 +366,56 @@ class EngineModelTest : StringSpec() {
             // Symbol mismatch
             local.copy(symbol = "ETH", pair = "ETHUSD").isMatchingApiTrade(api, listOf("BTC", "ETH")) shouldBe false
 
+            // Do not trust the pair-derived symbol when the stored symbol fields contradict it.
+            local.isMatchingApiTrade(api.copy(pair = local.pair, symbol = "ETH"), listOf("BTC", "ETH")) shouldBe false
+
             // Volume outside tolerance
             local.copy(volume = BigDecimal("1.5")).isMatchingApiTrade(api, listOf("BTC")) shouldBe false
 
             // Matching with exact volume and differing USD within tolerance
             local.isMatchingApiTrade(api.copy(usdAmount = BigDecimal("50100.00")), listOf("BTC")) shouldBe true
+        }
+
+        "isMatchingApiTrade falls back to valid stored symbols for non-USD exact pairs" {
+            val now = Instant.parse("2026-08-31T12:00:00Z")
+            val local = EngineTestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "BTCEUR",
+                symbol = "BTC",
+                source = TradeSource.LOCAL_ESTIMATE,
+            )
+            val api = local.copy(source = TradeSource.API_FILL)
+
+            local.isMatchingApiTrade(api, listOf("BTC")) shouldBe true
+        }
+
+        "isMatchingApiTrade rejects an exact pair with a missing API symbol" {
+            val now = Instant.parse("2026-08-31T12:00:00Z")
+            val local = EngineTestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "BTCEUR",
+                symbol = "BTC",
+                source = TradeSource.LOCAL_ESTIMATE,
+            )
+            val api = local.copy(symbol = "", source = TradeSource.API_FILL)
+
+            local.isMatchingApiTrade(api, listOf("BTC")) shouldBe false
+        }
+
+        "isMatchingApiTrade rejects different authoritative identity types" {
+            val now = Instant.parse("2026-08-31T12:00:00Z")
+            val local = EngineTestFixtures.tradeRecord(
+                timestamp = now,
+                orderTxid = "order-a",
+                source = TradeSource.LOCAL_ESTIMATE,
+            )
+            val api = local.copy(
+                orderTxid = null,
+                tradeId = "trade-a",
+                source = TradeSource.API_FILL,
+            )
+
+            local.isMatchingApiTrade(api, listOf("BTC")) shouldBe false
         }
 
         "feePercentDiffersMateriallyFrom edge cases" {

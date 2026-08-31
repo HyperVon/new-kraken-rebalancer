@@ -58,8 +58,8 @@ own entry-time backend (no process-global pin). `OrderExecutor` also passes the
 cycle’s `settings.dryRun` into each `executeOrder` so a mid-cycle dry-run flip
 cannot change placement mode. Outside a stable block, each call still re-reads
 `settings.simulation`; `executeOrder` uses its explicit `dryRun` input and does
-not re-read mutable configuration (the interface's safe `false` default applies
-only when a caller omits the argument).
+not re-read mutable configuration. Callers must always provide the dry-run
+decision explicitly.
 
 ### When the backend is (not) pinned
 
@@ -74,8 +74,8 @@ only when a caller omits the argument).
   cycle (it does not); assuming a multi-step unpinned handler sees one stable
   backend (it does not).
 - Tests that assert **mid-sequence** backend stability should wrap the scenario
-  in `withStableBackend`. Mode-routing probes that intentionally call
-  `executeOrder` outside a pin may omit it.
+  in `withStableBackend`. Every `executeOrder` probe still supplies an explicit
+  `dryRun` value, whether or not the backend is pinned.
 
 ## dryRun order semantics
 

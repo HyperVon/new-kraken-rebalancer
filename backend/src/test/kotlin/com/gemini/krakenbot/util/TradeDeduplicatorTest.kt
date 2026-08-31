@@ -939,6 +939,14 @@ class TradeDeduplicatorTest : StringSpec() {
                 listOf(base.copy(id = 171), base.copy(id = 172, symbol = Asset.ETH)),
             ).isEmpty() shouldBe true
         }
+
+        "authoritative identity does not merge an unrelated quote market" {
+            val base = canonicalXbtApiFill(Instant.now()).copy(tradeId = "same-fill")
+
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(base.copy(id = 179), base.copy(id = 180, pair = "BTCEUR")),
+            ).isEmpty() shouldBe true
+        }
     }
 
     private fun canonicalXbtApiFill(timestamp: Instant): TradeRecord = TestFixtures.tradeRecord(

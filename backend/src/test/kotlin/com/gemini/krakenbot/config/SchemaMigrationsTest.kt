@@ -6,6 +6,8 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.sql.DriverManager
 import java.util.UUID
 
@@ -26,6 +28,22 @@ class SchemaMigrationsTest : StringSpec() {
                 "order-intent-trade-foreign-key",
                 "portfolio-stats-singleton",
             )
+        }
+
+        "rejects duplicate, unordered, and incomplete migration definitions" {
+            shouldThrow<IllegalStateException> {
+                validateSchemaMigrations(
+                    listOf(SchemaMigration(1, "first"), SchemaMigration(1, "duplicate")),
+                )
+            }
+            shouldThrow<IllegalStateException> {
+                validateSchemaMigrations(
+                    listOf(SchemaMigration(2, "second"), SchemaMigration(1, "first")),
+                )
+            }
+            shouldThrow<IllegalStateException> {
+                validateSchemaMigrations(listOf(SchemaMigration(1, "only")))
+            }
         }
 
         "applies all pending migrations from baseline via DatabaseConfig.init" {
@@ -160,6 +178,83 @@ class SchemaMigrationsTest : StringSpec() {
             shouldThrow<IllegalStateException> { DatabaseConfig.init(databaseUrl) }
         }
 
+        "accepts a database without a schema migration table before bootstrap" {
+            val databaseUrl = "jdbc:sqlite:file:test-migrations-no-table-" + UUID.randomUUID() +
+                "?mode=memory&cache=shared"
+            val database = Database.connect(databaseUrl)
+
+            transaction(database) {
+                rejectUnsupportedSchemaVersion()
+            }
+        }
+
+        "accepts an empty schema migration table before bootstrap" {
+            val databaseUrl = "jdbc:sqlite:file:test-migrations-empty-table-" + UUID.randomUUID() +
+                "?mode=memory&cache=shared"
+            val database = Database.connect(databaseUrl)
+
+            transaction(database) {
+                exec(
+                    """
+                    CREATE TABLE schema_migrations (
+                        version INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        applied_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                rejectUnsupportedSchemaVersion()
+            }
+        }
+
+        "replaying the order-intent migration is harmless when its table already exists" {
+            val databaseUrl = "jdbc:sqlite:file:test-migrations-existing-intent-" + UUID.randomUUID() +
+                "?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 2")
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT COUNT(*) FROM order_intents",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1) shouldBe 0
+                    }
+                }
+            }
+        }
+
+        "restores a missing migration record without losing schema data" {
+            val databaseUrl = "jdbc:sqlite:file:test-migrations-gap-" + UUID.randomUUID() +
+                "?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 6")
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("SELECT version FROM schema_migrations ORDER BY version").use { resultSet ->
+                        val versions = buildList {
+                            while (resultSet.next()) add(resultSet.getInt(1))
+                        }
+                        versions shouldBe (1..CURRENT_SCHEMA_VERSION).toList()
+                    }
+                }
+            }
+        }
+
         "foreign-key migration nulls orphaned legacy intent links" {
             val databaseUrl = "jdbc:sqlite:file:test-migrations-orphan-" + UUID.randomUUID() +
                 "?mode=memory&cache=shared"
@@ -215,6 +310,56 @@ class SchemaMigrationsTest : StringSpec() {
                     statement.executeQuery("PRAGMA foreign_key_list('order_intents')").use { resultSet ->
                         resultSet.next() shouldBe true
                         resultSet.getString("on_delete") shouldBe "RESTRICT"
+                    }
+                }
+            }
+        }
+
+        "repairs a missing order-intent foreign key on a current-version database" {
+            val databaseUrl = "jdbc:sqlite:file:test-migrations-current-fk-" + UUID.randomUUID() +
+                "?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP TABLE order_intents")
+                    statement.executeUpdate(
+                        """
+                        CREATE TABLE order_intents (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            cycle_id VARCHAR(36),
+                            client_order_id VARCHAR(36),
+                            client_order_id_ambiguous BOOLEAN NOT NULL DEFAULT 0,
+                            pair VARCHAR(16) NOT NULL,
+                            symbol VARCHAR(16) NOT NULL,
+                            side VARCHAR(4) NOT NULL,
+                            volume DECIMAL(24, 8) NOT NULL,
+                            usd_amount DECIMAL(18, 2) NOT NULL,
+                            expected_price DECIMAL(24, 8),
+                            created_at INTEGER NOT NULL,
+                            state VARCHAR(16) NOT NULL,
+                            order_txid VARCHAR(64),
+                            error_message TEXT,
+                            resolved_at INTEGER,
+                            resolution_evidence TEXT,
+                            local_trade_id INTEGER
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA foreign_key_list('order_intents')").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("table") shouldBe "trades"
+                        resultSet.getString("from") shouldBe "local_trade_id"
+                        resultSet.getString("to") shouldBe "id"
+                        resultSet.getString("on_delete") shouldBe "RESTRICT"
+                        resultSet.next() shouldBe false
                     }
                 }
             }

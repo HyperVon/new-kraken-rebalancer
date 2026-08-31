@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.repository.impl
 
+import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -429,7 +430,15 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
     private fun protectedTradeIds(): Set<Int> = OrderIntentTable
         .select(OrderIntentTable.localTradeId)
-        .where { OrderIntentTable.localTradeId.isNotNull() }
+        .where {
+            OrderIntentTable.localTradeId.isNotNull() and
+                (
+                    OrderIntentTable.state inList listOf(
+                        OrderIntentState.PENDING.name,
+                        OrderIntentState.UNCERTAIN.name,
+                    )
+                    )
+        }
         .mapNotNull { it[OrderIntentTable.localTradeId] }
         .toSet()
 }

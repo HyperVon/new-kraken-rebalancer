@@ -79,6 +79,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     TestFixtures.MARKET,
                     TestFixtures.BUY,
                     buyVolume,
+                    false,
                 )
 
             result.success shouldBe true
@@ -112,6 +113,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     TestFixtures.MARKET,
                     TestFixtures.SELL,
                     sellVolume,
+                    false,
                 )
 
             result.success shouldBe true
@@ -145,6 +147,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 TestFixtures.MARKET,
                 TestFixtures.SELL,
                 BigDecimal("0.0001"),
+                false,
             )
 
             result.success shouldBe true
@@ -169,6 +172,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     TestFixtures.MARKET,
                     TestFixtures.SELL,
                     sellVolume,
+                    false,
                 )
 
             result.success shouldBe false
@@ -198,6 +202,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                             TestFixtures.MARKET,
                             TestFixtures.BUY,
                             buyVolume,
+                            false,
                         )
                     }
                 }.also { start.complete(Unit) }.awaitAll()
@@ -282,6 +287,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     TestFixtures.MARKET,
                     TestFixtures.BUY,
                     BigDecimal("0.00001"),
+                    false,
                 ).success shouldBe true
             }
 
@@ -358,6 +364,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     TestFixtures.MARKET,
                     TestFixtures.BUY,
                     BigDecimal("0.1"),
+                    false,
                 )
             buyResult.success shouldBe true
 
@@ -367,6 +374,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     TestFixtures.MARKET,
                     TestFixtures.SELL,
                     BigDecimal("10.0"),
+                    false,
                 )
             sellResult.success shouldBe false
             sellResult.errorMessage?.contains("Insufficient ADAEUR funds") shouldBe true
@@ -377,6 +385,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     TestFixtures.MARKET,
                     TestFixtures.BUY,
                     BigDecimal("100000.0"),
+                    false,
                 )
             buyTooMuchResult.success shouldBe false
             buyTooMuchResult.errorMessage?.contains("Insufficient USD funds") shouldBe true
@@ -387,6 +396,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     TestFixtures.MARKET,
                     "hold",
                     BigDecimal.ONE,
+                    false,
                 )
             invalidResult.success shouldBe false
             invalidResult.errorMessage?.contains("Unsupported order side") shouldBe true
@@ -408,6 +418,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     "limit",
                     TestFixtures.BUY,
                     BigDecimal.ONE,
+                    false,
                 )
 
             result.success shouldBe false

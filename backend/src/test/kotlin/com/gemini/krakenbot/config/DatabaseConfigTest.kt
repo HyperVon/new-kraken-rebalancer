@@ -492,13 +492,97 @@ class DatabaseConfigTest : StringSpec() {
                     ).use { resultSet ->
                         resultSet.next() shouldBe true
                         resultSet.getString("client_order_id") shouldBe "mixed-client"
-                        resultSet.getInt("local_trade_id") shouldNotBe 0
+                        resultSet.getObject("local_trade_id") shouldBe null
                         resultSet.getString("state") shouldBe "CONFIRMED"
                         resultSet.next() shouldBe true
                         resultSet.getString("client_order_id") shouldBe null
-                        resultSet.getInt("local_trade_id") shouldNotBe 0
+                        resultSet.getObject("local_trade_id") shouldNotBe null
                         resultSet.getString("state") shouldBe "UNCERTAIN"
                         resultSet.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "startup reconciliation removes a resolved local placeholder when its API fill is already stored" {
+            val databaseUrl = "jdbc:sqlite:file:startup-api-fill-reconcile-${UUID.randomUUID()}" +
+                "?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            val localTradeId = DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES (
+                            1700000030000, 'XBTUSD', 'BUY', 'BTC', '0.01000000', '500.00', 0, 0,
+                            'response lost', '50000.00000000', '13.0000', NULL, '50000.00000000',
+                            'LOCAL_ESTIMATE', 'cycle-startup', NULL, NULL, 'resolved-client', 'UNCERTAIN'
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeQuery("SELECT id FROM trades ORDER BY id DESC LIMIT 1").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt(1)
+                    }
+                }
+            }
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO trades (
+                            timestamp, pair, side, symbol, volume, usd_amount, success, dry_run,
+                            error_message, price, fee, slippage_percent, expected_price, source,
+                            cycle_id, order_txid, trade_id, client_order_id, submission_state
+                        ) VALUES (
+                            1700000030500, 'XXBTZUSD', 'BUY', 'BTC', '0.01000000', '500.00', 1, 0,
+                            NULL, '50000.00000000', '13.0000', NULL, '50000.00000000',
+                            'API_FILL', NULL, 'O-STARTUP', 'T-STARTUP', NULL, NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO order_intents (
+                            cycle_id, client_order_id, pair, symbol, side, volume, usd_amount,
+                            expected_price, created_at, state, order_txid, error_message,
+                            resolved_at, resolution_evidence, local_trade_id
+                        ) VALUES (
+                            'cycle-startup', 'resolved-client', 'XBTUSD', 'BTC', 'BUY', '0.01000000', '500.00',
+                            '50000.00000000', 1700000030000, 'CONFIRMED', 'O-STARTUP', NULL,
+                            1700000031000, 'Verified in Kraken history', $localTradeId
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT COUNT(*) AS total, MIN(source) AS source, " +
+                            "MIN(trade_id) AS trade_id, MIN(order_txid) AS order_txid FROM trades",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt("total") shouldBe 1
+                        resultSet.getString("source") shouldBe "API_FILL"
+                        resultSet.getString("trade_id") shouldBe "T-STARTUP"
+                        resultSet.getString("order_txid") shouldBe "O-STARTUP"
+                    }
+                    statement.executeQuery(
+                        "SELECT state, local_trade_id FROM order_intents",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("state") shouldBe "CONFIRMED"
+                        resultSet.getObject("local_trade_id") shouldBe null
                     }
                 }
             }
@@ -507,7 +591,6 @@ class DatabaseConfigTest : StringSpec() {
         "migrates a v3 terminal null-client intent and clears its legacy guard" {
             val databaseUrl = "jdbc:sqlite:file:v3-terminal-intent-${UUID.randomUUID()}?mode=memory&cache=shared"
             DatabaseConfig.init(databaseUrl)
-            var tradeId = 0
 
             DriverManager.getConnection(databaseUrl).use { connection ->
                 connection.createStatement().use { statement ->
@@ -546,7 +629,7 @@ class DatabaseConfigTest : StringSpec() {
                         )
                         """.trimIndent(),
                     )
-                    tradeId = statement.executeQuery(
+                    statement.executeQuery(
                         "SELECT id FROM trades ORDER BY id DESC LIMIT 1",
                     ).use { resultSet ->
                         resultSet.next() shouldBe true
@@ -577,7 +660,7 @@ class DatabaseConfigTest : StringSpec() {
                         "SELECT local_trade_id FROM order_intents WHERE state = 'CONFIRMED'",
                     ).use { resultSet ->
                         resultSet.next() shouldBe true
-                        resultSet.getInt(1) shouldBe tradeId
+                        resultSet.getObject(1) shouldBe null
                     }
                     statement.executeQuery(
                         "SELECT success, submission_state, order_txid FROM trades",
@@ -608,6 +691,31 @@ class DatabaseConfigTest : StringSpec() {
 
                 Files.list(directory).use { files ->
                     files.anyMatch { it.fileName.toString().startsWith("rebalancer.db.pre-migration-") } shouldBe true
+                }
+            } finally {
+                Files.walk(directory).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+            }
+        }
+
+        "rejects a future file-backed schema before creating a migration backup" {
+            val directory = Files.createTempDirectory("kraken-db-future-")
+            try {
+                val databasePath = directory.resolve("future.db")
+                DatabaseConfig.init(databasePath.toString())
+
+                DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.executeUpdate("DELETE FROM schema_migrations")
+                        statement.executeUpdate(
+                            "INSERT INTO schema_migrations (version, name, applied_at) VALUES " +
+                                "(${CURRENT_SCHEMA_VERSION + 1}, 'future', 1000)",
+                        )
+                    }
+                }
+
+                shouldThrow<IllegalStateException> { DatabaseConfig.init(databasePath.toString()) }
+                Files.list(directory).use { files ->
+                    files.anyMatch { it.fileName.toString().contains(".pre-migration-") } shouldBe false
                 }
             } finally {
                 Files.walk(directory).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
@@ -778,7 +886,7 @@ class DatabaseConfigTest : StringSpec() {
                     ).use { resultSet ->
                         resultSet.next() shouldBe true
                         resultSet.getString("state") shouldBe "CONFIRMED"
-                        resultSet.getInt("local_trade_id") shouldBe 904
+                        resultSet.getObject("local_trade_id") shouldBe null
                         resultSet.getString("resolution_evidence") shouldBe "Matched Kraken fill"
                     }
                     statement.executeQuery(

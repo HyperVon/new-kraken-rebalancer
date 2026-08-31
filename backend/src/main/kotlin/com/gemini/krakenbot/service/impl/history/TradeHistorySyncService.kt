@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -148,7 +149,10 @@ class TradeHistorySyncService(
     private suspend fun calculateEffectiveLatestTime(): Instant? {
         val latestTradeTime = repository.getLatestTradeTime()
         val watermarkInstant = readSyncWatermark()
-        return latestTradeTime ?: watermarkInstant
+        // The successful-request horizon is the durable cursor. Stored trade time is only a
+        // bootstrap fallback for databases created before the watermark existed; using it after
+        // a watermark is present can repeatedly move the window backward to an old fill.
+        return watermarkInstant ?: latestTradeTime
     }
 
     private suspend fun processApiTrades(
@@ -223,15 +227,24 @@ class TradeHistorySyncService(
                 local.submissionState == null && local.success && !local.dryRun && local.isLocalEstimate()
             }
         val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
-        return apiOrderTxid?.let { txid ->
-            localEstimates.find { local -> local.orderTxid?.takeIf { it.isNotBlank() } == txid }
-        } ?: localEstimates
-            .asSequence()
-            .filter { local ->
-                apiOrderTxid == null || local.orderTxid.isNullOrBlank()
-            }.find { local ->
-                local.isMatchingApiTrade(apiTrade, allocations)
+        if (apiOrderTxid != null) {
+            val keyedLocals = localEstimates
+                .filter { local -> local.orderTxid?.takeIf { it.isNotBlank() } == apiOrderTxid }
+            if (keyedLocals.isNotEmpty()) {
+                val keyedMatches = keyedLocals.filter { local -> local.isMatchingApiTrade(apiTrade, allocations) }
+                // One order can have multiple fill legs. Match a keyed local estimate only when
+                // the immutable economics identify one leg; never let the first row win by list
+                // order, and never fall through a contradictory keyed row to a weaker heuristic.
+                return keyedMatches.singleOrNull()
             }
+        }
+
+        // If Kraken omits the order id, a keyed local estimate can still be the same fill. Keep
+        // that local identity when the full economic/time predicate identifies exactly one row;
+        // ambiguity remains fail-closed rather than choosing the first order.
+        val economicsMatches = localEstimates
+            .filter { local -> local.isMatchingApiTrade(apiTrade, allocations) }
+        return economicsMatches.singleOrNull()
     }
 
     private suspend fun reconcileWithLocalTrade(
@@ -256,6 +269,7 @@ class TradeHistorySyncService(
                 // Keep local cycle linkage; prefer API ordertxid when present.
                 cycleId = matchingLocalTrade.cycleId,
                 orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
+                clientOrderId = apiTrade.clientOrderId ?: matchingLocalTrade.clientOrderId,
             )
         log.info(
             "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
@@ -368,12 +382,14 @@ class TradeHistorySyncService(
         trade.timestamp.toEpochMilli().toString(),
         trade.pair,
         OrderSide.normalize(trade.side),
-        trade.volume.toPlainString(),
-        trade.usdAmount.toPlainString(),
-        trade.price.toPlainString(),
-        trade.fee.toPlainString(),
+        canonicalDecimal(trade.volume),
+        canonicalDecimal(trade.usdAmount),
+        canonicalDecimal(trade.price),
+        canonicalDecimal(trade.fee),
         trade.orderTxid.orEmpty(),
     ).joinToString("|")
+
+    private fun canonicalDecimal(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
 
     /** Cold paginated Kraken history; progress is durable until the first seed completes. */
     private fun getTradeHistoryPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<TradeRecord>> =

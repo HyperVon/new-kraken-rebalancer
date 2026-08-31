@@ -163,10 +163,9 @@ fields as follows (do **not** confuse Kotlin param names with Kraken keys):
 - `cl_ord_id` seed uses lowercase `side.apiValue` in
   `OrderExecutorImpl.clientOrderId(cycleId, symbol, side)`.
 - Volume: scale 8, `stripTrailingZeros()`, `toPlainString()` before POST.
-- `dryRun` is a non-null execution input. The interface default is only a safe
-  compatibility default; production `OrderExecutor` calls pass the captured
-  `settings.dryRun` explicitly, so no mutable config fallback can change an
-  active order.
+- `dryRun` is a required, non-null execution input. Every caller must pass the
+  cycle-captured value explicitly, so no omitted argument or mutable config
+  fallback can change an active order.
 
 ---
 

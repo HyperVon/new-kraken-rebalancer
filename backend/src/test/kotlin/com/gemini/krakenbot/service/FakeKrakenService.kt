@@ -131,6 +131,6 @@ data class OrderCall(
     val type: String,
     val side: String,
     val volume: BigDecimal,
-    val dryRun: Boolean = false,
+    val dryRun: Boolean,
     val clOrdId: String? = null,
 )

@@ -10,6 +10,7 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldBeNull
@@ -231,6 +232,117 @@ class LedgersSyncServiceTest : StringSpec() {
             coVerify {
                 krakenService.getLedgers(startSec = expectedStartSec, offset = 0, endSec = any(), types = any())
             }
+        }
+
+        "incremental ledger syncs prefer the successful watermark over the newest entry" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.saveLedgers(listOf(event(0, time = baseTime)))
+            val watermark = baseTime.minusSeconds(3600)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                watermark.epochSecond.toString(),
+            )
+
+            coEvery { krakenService.getLedgers(any(), 0, any(), any()) } returns emptyList()
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            val expectedStartSec = watermark.minusSeconds(300).epochSecond
+            coVerify {
+                krakenService.getLedgers(startSec = expectedStartSec, offset = 0, endSec = any(), types = any())
+            }
+        }
+
+        "uses the successful ledger watermark on the next sync and captures a late entry in the overlap" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.saveLedgers(listOf(event(0, time = baseTime)))
+
+            var now = fixedNow
+            coEvery { krakenService.getLastLedgerTotalCount() } answers {
+                if (now == fixedNow) 0 else 1
+            }
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                val types = arg<Set<String>?>(3)
+                if (now != fixedNow && types == setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)) {
+                    listOf(event(1, time = fixedNow.minusSeconds(120)))
+                } else {
+                    emptyList()
+                }
+            }
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { now })
+            service.syncLedgersFromKraken()
+
+            now = fixedNow.plusSeconds(600)
+            service.syncLedgersFromKraken()
+
+            val expectedInitialStart = baseTime.minusSeconds(300).epochSecond
+            coVerify(exactly = 2) {
+                krakenService.getLedgers(
+                    startSec = expectedInitialStart,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            val expectedIncrementalStart = fixedNow.minusSeconds(300).epochSecond
+            coVerify(exactly = 2) {
+                krakenService.getLedgers(
+                    startSec = expectedIncrementalStart,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            repository.getLedgersInRange(Instant.EPOCH, now).map { it.ledgerId } shouldBe
+                listOf("ledger-1", "ledger-0")
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
+                now.epochSecond.toString()
+        }
+
+        "does not advance the ledger watermark after a failed sync" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.saveLedgers(listOf(event(0, time = baseTime)))
+
+            var now = fixedNow
+            var failureEnabled = false
+            val failure = RuntimeException("ledger history unavailable")
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                if (failureEnabled) throw failure else emptyList()
+            }
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { now })
+            service.syncLedgersFromKraken()
+            val firstWatermark = service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+            firstWatermark shouldBe fixedNow.epochSecond.toString()
+
+            now = fixedNow.plusSeconds(600)
+            failureEnabled = true
+            shouldThrow<RuntimeException> { service.syncLedgersFromKraken() } shouldBe failure
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe firstWatermark
+
+            now = fixedNow.plusSeconds(1_200)
+            failureEnabled = false
+            service.syncLedgersFromKraken()
+            coVerify(exactly = 3) {
+                krakenService.getLedgers(
+                    startSec = fixedNow.minusSeconds(300).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
+                now.epochSecond.toString()
         }
 
         "simulation sync with no entries does not mark the store seeded or advance the watermark" {

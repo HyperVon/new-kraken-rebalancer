@@ -83,6 +83,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 type = OrderType.MARKET.apiValue,
                 side = OrderSide.SELL.apiValue,
                 volume = BigDecimal.ONE,
+                dryRun = false,
             )
             coVerify(exactly = 1) {
                 simulatedService.executeOrder(
@@ -233,6 +234,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.SELL.apiValue,
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
 
                 every { configService.getConfig() } returns appConfig(simulation = false)
@@ -242,6 +244,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.BUY.apiValue,
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
             }
 
@@ -324,6 +327,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.SELL.apiValue,
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
 
                 every { configService.getConfig() } returns appConfig(simulation = false)
@@ -335,6 +339,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                         type = OrderType.MARKET.apiValue,
                         side = OrderSide.BUY.apiValue,
                         volume = BigDecimal.ONE,
+                        dryRun = false,
                     )
                 }
 
@@ -379,6 +384,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                                 type = OrderType.MARKET.apiValue,
                                 side = OrderSide.SELL.apiValue,
                                 volume = BigDecimal.ONE,
+                                dryRun = false,
                             )
                         }
                     }
@@ -392,6 +398,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                                     type = OrderType.MARKET.apiValue,
                                     side = OrderSide.BUY.apiValue,
                                     volume = BigDecimal.ONE,
+                                    dryRun = false,
                                 )
                             }
                         } finally {

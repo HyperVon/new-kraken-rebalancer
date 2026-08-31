@@ -183,6 +183,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     fee = BigDecimal("0.0259"),
                     source = TradeSource.API_FILL,
                     orderTxid = "API-OID",
+                    clientOrderId = "api-client-id",
                 )
 
                 coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(apiTrade)
@@ -198,6 +199,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 reconciledSlot.captured.source shouldBe TradeSource.API_FILL
                 reconciledSlot.captured.cycleId shouldBe "cycle-keep-me"
                 reconciledSlot.captured.orderTxid shouldBe "API-OID"
+                reconciledSlot.captured.clientOrderId shouldBe "api-client-id"
                 reconciledSlot.captured.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("10.05"))
                 reconciledSlot.captured.slippagePercent!!.shouldBeEqualComparingTo(
                     TradeCalculator.calculateSlippage(
@@ -296,6 +298,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     source = TradeSource.LOCAL_ESTIMATE,
                     cycleId = "cycle-keep-me",
                     orderTxid = "LOCAL-OID",
+                    clientOrderId = "client-keep-me",
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
@@ -317,6 +320,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
 
                 coVerify(exactly = 1) { repository.updateTrade(localTrade, any()) }
                 reconciledSlot.captured.orderTxid shouldBe "LOCAL-OID"
+                reconciledSlot.captured.clientOrderId shouldBe "client-keep-me"
                 reconciledSlot.captured.cycleId shouldBe "cycle-keep-me"
             }
         }
@@ -480,6 +484,34 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     ),
                 )
                 coVerify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
+        "sync does not reconcile the same symbol across different quote pairs" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns latestTime
+                val localEstimate = TestFixtures.tradeRecord(
+                    timestamp = latestTime,
+                    pair = "BTCEUR",
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                )
+                val apiFill = localEstimate.copy(
+                    pair = TestFixtures.XBTUSD,
+                    source = TradeSource.API_FILL,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localEstimate)
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiFill)
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 0) { repository.updateTrade(localEstimate, any()) }
+                coVerify(exactly = 1) { repository.saveTrade(apiFill) }
             }
         }
 

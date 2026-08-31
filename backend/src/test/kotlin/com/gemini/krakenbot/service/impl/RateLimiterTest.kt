@@ -121,6 +121,22 @@ class RateLimiterTest : StringSpec() {
             }
         }
 
+        "large forward clock steps decay the counter to the empty state" {
+            runTest {
+                var nowMs = 1_000_000L
+                val limiter = RateLimiter(
+                    safeLimit = 12.0,
+                    decayRate = 1.0,
+                    clock = { nowMs },
+                )
+                limiter.acquireWithCost(5.0)
+
+                nowMs += 60_000L
+
+                limiter.getCurrentCounter() shouldBe 0.0
+            }
+        }
+
         "backward clock movement does not inflate the counter" {
             runTest {
                 var nowMs = 1_000_000L
@@ -135,6 +151,29 @@ class RateLimiterTest : StringSpec() {
 
                 limiter.getCurrentCounter() shouldBe 5.0
                 limiter.acquireWithCost(1.0) shouldBe 6.0
+            }
+        }
+
+        "backward clock movement rebases a saturated waiter's decay baseline" {
+            runTest {
+                var nowMs = 1_000_000L
+                val limiter = RateLimiter(
+                    safeLimit = 2.0,
+                    decayRate = 1.0,
+                    clock = { nowMs },
+                )
+                limiter.acquireWithCost(1.5)
+
+                nowMs = 900_000L
+                val waiter = async { limiter.acquireWithCost(1.0) }
+                runCurrent()
+                waiter.isCompleted.shouldBeFalse()
+
+                // The clock advances from the rebased origin. The waiter must be released after
+                // the new 500ms decay interval, rather than waiting for the old future baseline.
+                nowMs = 900_500L
+                advanceTimeBy(500L)
+                waiter.await() shouldBe 2.0
             }
         }
 

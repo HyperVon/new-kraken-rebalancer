@@ -1,18 +1,24 @@
 package com.gemini.krakenbot.config
 
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntentState
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.TradeTable
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
@@ -23,6 +29,8 @@ import java.math.BigDecimal
 private val log = LoggerFactory.getLogger("com.gemini.krakenbot.config.LegacyDataRepair")
 
 private const val AMBIGUOUS_LEGACY_CLIENT_ORDER_ID_PREFIX = "Ambiguous legacy client_order_id '"
+private const val TERMINAL_API_FILL_MATCH_WINDOW_MILLIS = 10_000L
+private val TERMINAL_API_FILL_RELATIVE_TOLERANCE = BigDecimal("0.01")
 
 internal fun JdbcTransaction.markLegacyUnknownTradeProvenance() {
     // Rows written before provenance existed cannot distinguish a settled API fill
@@ -193,6 +201,7 @@ private fun legacyIdentityKey(identity: LegacyIdentity, timestamp: Long?): Strin
 }
 
 private data class TerminalIntent(
+    val id: Int,
     val localTradeId: Int,
     val clientOrderId: String?,
     val clientOrderIdAmbiguous: Boolean,
@@ -202,6 +211,7 @@ private data class TerminalIntent(
     val side: String,
     val volume: BigDecimal,
     val usdAmount: BigDecimal,
+    val expectedPrice: BigDecimal?,
     val state: OrderIntentState,
     val orderTxid: String?,
     val errorMessage: String?,
@@ -225,6 +235,7 @@ internal fun JdbcTransaction.reconcileTerminalOrderIntents() {
                     "despite the non-null query."
             }
             TerminalIntent(
+                id = row[OrderIntentTable.id],
                 localTradeId = localTradeId,
                 clientOrderId = row[OrderIntentTable.clientOrderId],
                 clientOrderIdAmbiguous = row[OrderIntentTable.clientOrderIdAmbiguous],
@@ -234,6 +245,7 @@ internal fun JdbcTransaction.reconcileTerminalOrderIntents() {
                 side = row[OrderIntentTable.side],
                 volume = row[OrderIntentTable.volume],
                 usdAmount = row[OrderIntentTable.usdAmount],
+                expectedPrice = row[OrderIntentTable.expectedPrice],
                 state = OrderIntentState.valueOf(row[OrderIntentTable.state]),
                 orderTxid = row[OrderIntentTable.orderTxid],
                 errorMessage = row[OrderIntentTable.errorMessage],
@@ -247,6 +259,31 @@ internal fun JdbcTransaction.reconcileTerminalOrderIntents() {
                 "Multiple terminal order intents reference local trade $localTradeId."
             }
             val resolvedIntent = intents.single()
+            val currentTrade = TradeTable
+                .selectAll()
+                .where { TradeTable.id eq resolvedIntent.localTradeId }
+                .firstOrNull()
+                ?.let(TradeTable::toModel)
+            if (
+                resolvedIntent.state == OrderIntentState.CONFIRMED &&
+                currentTrade != null &&
+                currentTrade.isTerminalPlaceholderFor(resolvedIntent)
+            ) {
+                val settledApiFillId = findTerminalSettledApiFillId(resolvedIntent)
+                if (settledApiFillId != null) {
+                    check(settledApiFillId != resolvedIntent.localTradeId) {
+                        "Cannot reconcile terminal order intent ${resolvedIntent.id}: local trade is also the API fill."
+                    }
+                    // The API fill is the canonical economic record. Detach before deleting the
+                    // superseded local row so the order-intent FK remains valid; the terminal
+                    // intent itself remains as the durable audit record.
+                    detachTerminalIntent(resolvedIntent.id, resolvedIntent.localTradeId)
+                    check(TradeTable.deleteWhere { TradeTable.id eq resolvedIntent.localTradeId } == 1) {
+                        "Cannot remove reconciled local trade ${resolvedIntent.localTradeId}."
+                    }
+                    return@forEach
+                }
+            }
             val clientOrderIdentity = when {
                 resolvedIntent.clientOrderId != null -> TradeTable.clientOrderId eq resolvedIntent.clientOrderId
                 resolvedIntent.clientOrderIdAmbiguous -> TradeTable.id eq TradeTable.id
@@ -282,41 +319,39 @@ internal fun JdbcTransaction.reconcileTerminalOrderIntents() {
                 it[TradeTable.submissionState] = null
             }
             if (updatedRows == 0) {
-                val currentTrade = TradeTable
-                    .selectAll()
-                    .where { TradeTable.id eq resolvedIntent.localTradeId }
-                    .firstOrNull()
                 if (currentTrade == null) {
                     log.info(
                         "Terminal order intent references local trade {} which is no longer in trades table (pruned or deduplicated).",
                         resolvedIntent.localTradeId,
                     )
+                    detachTerminalIntent(resolvedIntent.id, resolvedIntent.localTradeId)
                     return@forEach
                 }
-                val currentSubmissionState = currentTrade[TradeTable.submissionState]
-                    ?: // The local trade row was already reconciled (submission_state cleared or updated by sync).
-                    return@forEach
+                val currentSubmissionState = currentTrade.submissionState?.name
+                    ?: run {
+                        // The local trade row was already reconciled (submission_state cleared or
+                        // updated by sync). The intent remains the audit record; it must not pin
+                        // this trade forever through its historical FK link.
+                        detachTerminalIntent(resolvedIntent.id, resolvedIntent.localTradeId)
+                        return@forEach
+                    }
                 val clientOrderMatches = when {
                     resolvedIntent.clientOrderIdAmbiguous -> true
 
                     resolvedIntent.clientOrderId != null ->
-                        currentTrade[TradeTable.clientOrderId] == resolvedIntent.clientOrderId
+                        currentTrade.clientOrderId == resolvedIntent.clientOrderId
 
-                    else -> currentTrade[TradeTable.clientOrderId] == null
+                    else -> currentTrade.clientOrderId == null
                 }
                 val immutableIdentityMatches = clientOrderMatches &&
-                    currentTrade[TradeTable.timestamp] == resolvedIntent.createdAt &&
-                    currentTrade[TradeTable.pair] == resolvedIntent.pair &&
-                    currentTrade[TradeTable.symbol] == resolvedIntent.symbol &&
-                    currentTrade[TradeTable.side] == resolvedIntent.side &&
-                    currentTrade[TradeTable.volume].compareTo(resolvedIntent.volume) == 0 &&
-                    currentTrade[TradeTable.usdAmount].compareTo(resolvedIntent.usdAmount) == 0 &&
-                    !currentTrade[TradeTable.dryRun] &&
-                    currentTrade[TradeTable.tradeSource] in listOf(
-                        null,
-                        TradeSource.LOCAL_ESTIMATE.name,
-                        TradeSource.LEGACY_UNKNOWN.name,
-                    )
+                    currentTrade.timestamp.toEpochMilli() == resolvedIntent.createdAt &&
+                    currentTrade.pair == resolvedIntent.pair &&
+                    currentTrade.symbol == resolvedIntent.symbol &&
+                    currentTrade.side == resolvedIntent.side &&
+                    currentTrade.volume.compareTo(resolvedIntent.volume) == 0 &&
+                    currentTrade.usdAmount.compareTo(resolvedIntent.usdAmount) == 0 &&
+                    !currentTrade.dryRun &&
+                    currentTrade.source in listOf(null, TradeSource.LOCAL_ESTIMATE, TradeSource.LEGACY_UNKNOWN)
                 check(immutableIdentityMatches) {
                     "Cannot reconcile terminal order intent for local trade " +
                         "${resolvedIntent.localTradeId}: immutable trade identity changed."
@@ -328,8 +363,129 @@ internal fun JdbcTransaction.reconcileTerminalOrderIntents() {
                     "Cannot reconcile terminal order intent for local trade " +
                         "${resolvedIntent.localTradeId}: submission is still unresolved."
                 }
+            } else {
+                detachTerminalIntent(resolvedIntent.id, resolvedIntent.localTradeId)
             }
         }
+}
+
+private fun TradeRecord.isTerminalPlaceholderFor(intent: TerminalIntent): Boolean {
+    val clientOrderMatches = when {
+        intent.clientOrderIdAmbiguous -> true
+        intent.clientOrderId != null -> clientOrderId == intent.clientOrderId
+        else -> clientOrderId == null
+    }
+    return clientOrderMatches &&
+        timestamp.toEpochMilli() == intent.createdAt &&
+        pair.equals(intent.pair, ignoreCase = true) &&
+        symbol.equals(intent.symbol, ignoreCase = true) &&
+        OrderSide.normalize(side) == OrderSide.normalize(intent.side) &&
+        volume.compareTo(intent.volume) == 0 &&
+        usdAmount.compareTo(intent.usdAmount) == 0 &&
+        !dryRun &&
+        source in setOf(null, TradeSource.LOCAL_ESTIMATE, TradeSource.LEGACY_UNKNOWN)
+}
+
+private fun JdbcTransaction.findTerminalSettledApiFillId(intent: TerminalIntent): Int? {
+    val normalizedOrderTxid = intent.orderTxid?.takeIf(String::isNotBlank)
+    val settledFillIdentity =
+        (TradeTable.symbol eq intent.symbol) and
+            (TradeTable.side eq OrderSide.normalize(intent.side)) and
+            (TradeTable.success eq true) and
+            (TradeTable.dryRun eq false) and
+            (TradeTable.tradeSource eq TradeSource.API_FILL.name)
+    if (normalizedOrderTxid != null) {
+        val exactOrderRows = TradeTable
+            .selectAll()
+            .where { settledFillIdentity and (TradeTable.orderTxid eq normalizedOrderTxid) }
+            .toList()
+        val pairCompatibleRows = exactOrderRows.filter { row ->
+            terminalPairMatches(intent, TradeTable.toModel(row))
+        }
+        if (pairCompatibleRows.size > 1) {
+            throw IllegalStateException(
+                "Cannot reconcile terminal order intent ${intent.id}: order $normalizedOrderTxid has " +
+                    "multiple settled API fills for the intended instrument.",
+            )
+        }
+        if (pairCompatibleRows.size == 1) {
+            val apiFill = TradeTable.toModel(pairCompatibleRows.single())
+            check(terminalApiFillMatches(intent, apiFill)) {
+                "Cannot reconcile terminal order intent ${intent.id}: order $normalizedOrderTxid has " +
+                    "a fill that does not match the intended economics."
+            }
+            return apiFill.id
+        }
+        // Rows for another instrument are not evidence for this intent. Continue to the strictly
+        // economic fallback rather than treating malformed historical data as a matching fill.
+    }
+
+    val usdTolerance = intent.usdAmount.abs().multiply(TERMINAL_API_FILL_RELATIVE_TOLERANCE)
+    val candidateRows = TradeTable
+        .selectAll()
+        .where {
+            settledFillIdentity and
+                (TradeTable.timestamp greaterEq intent.createdAt - TERMINAL_API_FILL_MATCH_WINDOW_MILLIS) and
+                (TradeTable.timestamp lessEq intent.createdAt + TERMINAL_API_FILL_MATCH_WINDOW_MILLIS) and
+                (TradeTable.usdAmount greaterEq intent.usdAmount.subtract(usdTolerance)) and
+                (TradeTable.usdAmount lessEq intent.usdAmount.add(usdTolerance)) and
+                if (normalizedOrderTxid == null) {
+                    TradeTable.id eq TradeTable.id
+                } else {
+                    TradeTable.orderTxid.isNull() and TradeTable.tradeId.isNull()
+                }
+        }
+        .toList()
+        .filter { row -> terminalApiFillMatches(intent, TradeTable.toModel(row)) }
+        .take(2)
+    check(candidateRows.size <= 1) {
+        "Cannot reconcile terminal order intent ${intent.id}: multiple settled API fills match."
+    }
+    return candidateRows.singleOrNull()?.let { TradeTable.toModel(it).id }
+}
+
+private fun terminalPairMatches(intent: TerminalIntent, apiFill: TradeRecord): Boolean =
+    apiFill.pair.equals(intent.pair, ignoreCase = true) ||
+        (
+            Asset.matchesUsdQuotedPair(intent.pair, intent.symbol) &&
+                Asset.matchesUsdQuotedPair(apiFill.pair, intent.symbol)
+            )
+
+private fun terminalApiFillMatches(intent: TerminalIntent, apiFill: TradeRecord): Boolean {
+    if (!terminalPairMatches(intent, apiFill)) return false
+    if (!apiFill.side.equals(intent.side, ignoreCase = true)) return false
+    if (!apiFill.symbol.equals(intent.symbol, ignoreCase = true)) return false
+    if (kotlin.math.abs(apiFill.timestamp.toEpochMilli() - intent.createdAt) > TERMINAL_API_FILL_MATCH_WINDOW_MILLIS) {
+        return false
+    }
+    if (apiFill.volume.compareTo(intent.volume) != 0) return false
+    val usdTolerance = intent.usdAmount.abs().multiply(TERMINAL_API_FILL_RELATIVE_TOLERANCE)
+    if (apiFill.usdAmount.subtract(intent.usdAmount).abs() > usdTolerance) return false
+    val expectedPrice = intent.expectedPrice ?: return true
+    val priceTolerance = expectedPrice.abs().multiply(TERMINAL_API_FILL_RELATIVE_TOLERANCE)
+    return apiFill.price >= expectedPrice.subtract(priceTolerance) &&
+        apiFill.price <= expectedPrice.add(priceTolerance)
+}
+
+private fun JdbcTransaction.detachTerminalIntent(intentId: Int, tradeId: Int) {
+    val updatedRows = OrderIntentTable.update({
+        (OrderIntentTable.id eq intentId) and
+            (OrderIntentTable.localTradeId eq tradeId)
+    }) {
+        it[OrderIntentTable.localTradeId] = null
+    }
+    check(updatedRows == 1) {
+        "Cannot detach local trade $tradeId from terminal order intent $intentId."
+    }
+    check(
+        !OrderIntentTable
+            .select(OrderIntentTable.id)
+            .where { OrderIntentTable.localTradeId eq tradeId }
+            .limit(1)
+            .any(),
+    ) {
+        "Cannot detach shared local trade $tradeId from terminal order intent $intentId."
+    }
 }
 
 internal fun JdbcTransaction.recoverPendingOrderIntents() {
@@ -352,6 +508,10 @@ internal fun JdbcTransaction.recoverPendingOrderIntents() {
 }
 
 internal fun JdbcTransaction.reconcileLegacySubmissionGuards() {
+    val unresolvedIntentStates = listOf(
+        OrderIntentState.PENDING.name,
+        OrderIntentState.UNCERTAIN.name,
+    )
     val guardRows = TradeTable
         .selectAll()
         .where {
@@ -409,6 +569,7 @@ internal fun JdbcTransaction.reconcileLegacySubmissionGuards() {
                                     (OrderIntentTable.clientOrderIdAmbiguous eq true)
                                 )
                         ) and
+                        (OrderIntentTable.state inList unresolvedIntentStates) and
                         OrderIntentTable.localTradeId.isNull() and
                         (OrderIntentTable.pair eq row[TradeTable.pair]) and
                         (OrderIntentTable.symbol eq row[TradeTable.symbol]) and
@@ -423,6 +584,7 @@ internal fun JdbcTransaction.reconcileLegacySubmissionGuards() {
             .select(OrderIntentTable.id)
             .where {
                 (OrderIntentTable.clientOrderId eq clientOrderId) and
+                    (OrderIntentTable.state inList unresolvedIntentStates) and
                     OrderIntentTable.localTradeId.isNull()
             }
             .any()

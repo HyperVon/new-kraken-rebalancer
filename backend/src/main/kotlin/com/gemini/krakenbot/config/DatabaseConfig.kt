@@ -59,6 +59,7 @@ object DatabaseConfig {
     private val allTables = baseTables + OrderIntentTable
 
     fun init(dbPath: String = System.getProperty("kraken.db.path", "kraken-rebalancer.db")): Database {
+        rejectUnsupportedSchemaVersionBeforeMigration(dbPath)
         backupBeforeMigrationIfNeeded(dbPath, allTables)
         val url = buildSqliteUrl(dbPath)
         maintainMemoryDatabase(url)
@@ -106,6 +107,10 @@ object DatabaseConfig {
                 preMigrationOrderIntentAlterStatements.forEach { exec(it) }
                 currentDialectMetadata.resetCaches()
                 applySchemaMigrations()
+                check(OrderIntentTable.exists()) {
+                    "Database schema is missing the order_intents table after migrations."
+                }
+                ensureOrderIntentTradeForeignKey()
                 val orderIntentAlterStatements = SchemaUtils.addMissingColumnsStatements(
                     tables = arrayOf(OrderIntentTable),
                     withLogs = false,

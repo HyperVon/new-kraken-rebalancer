@@ -213,6 +213,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = "limit",
                     side = "buy",
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
                 result.success.shouldBeFalse()
                 result.errorMessage.shouldNotBeNull()
@@ -249,6 +250,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.BUY.apiValue,
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
 
                 result.success.shouldBeFalse()
@@ -290,6 +292,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.BUY.apiValue,
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
 
                 result.success.shouldBeFalse()
@@ -307,6 +310,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.BUY.apiValue,
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
 
                 result.success.shouldBeFalse()
@@ -323,6 +327,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.BUY.apiValue,
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
 
                 result.success.shouldBeFalse()
@@ -363,6 +368,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = OrderType.MARKET.apiValue,
                     side = OrderSide.BUY.apiValue,
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
 
                 result.success.shouldBeFalse()
@@ -400,6 +406,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     type = "limit",
                     side = "buy",
                     volume = BigDecimal.ONE,
+                    dryRun = false,
                 )
                 result.success.shouldBeFalse()
                 result.errorMessage shouldBe "RuntimeException"

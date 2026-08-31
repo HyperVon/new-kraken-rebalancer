@@ -227,7 +227,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
-        "manual confirmation retains a settled API fill instead of duplicating its local estimate" {
+        "manual confirmation keeps exactly one authoritative API fill" {
             runTest {
                 val tradeRepository = SqliteTradeRepositoryImpl(database)
                 val intent = newIntent().copy(
@@ -273,9 +273,9 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 )
 
                 service.countUnresolvedIntents() shouldBe 0L
-                tradeRepository
-                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                    .first { it.source == TradeSource.API_FILL }
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.size shouldBe 1
+                trades.single()
                     .also { trade ->
                         trade.source shouldBe TradeSource.API_FILL
                         trade.success shouldBe true
@@ -286,6 +286,207 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                         trade.fee.shouldBeEqualComparingTo(BigDecimal("0.3387"))
                         trade.submissionState shouldBe null
                     }
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement(
+                        "SELECT state, local_trade_id FROM order_intents WHERE id = ?",
+                    ).use { statement ->
+                        statement.setInt(1, intentId)
+                        statement.executeQuery().use { resultSet ->
+                            resultSet.next() shouldBe true
+                            resultSet.getString("state") shouldBe OrderIntentState.CONFIRMED.name
+                            resultSet.getObject("local_trade_id") shouldBe null
+                        }
+                    }
+                }
+            }
+        }
+
+        "manual confirmation leaves a same-order partial-fill set unresolved" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.50000000"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.68307692"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                repeat(2) { index ->
+                    tradeRepository.saveTrade(
+                        intent.toPendingTrade().copy(
+                            timestamp = intent.createdAt.plusMillis(500L + index),
+                            volume = BigDecimal("3.25000000"),
+                            usdAmount = BigDecimal("28.22"),
+                            success = true,
+                            errorMessage = null,
+                            source = TradeSource.API_FILL,
+                            orderTxid = "O-PARTIAL-FILLS",
+                            tradeId = "T-PARTIAL-$index",
+                            submissionState = null,
+                        ),
+                    )
+                }
+
+                shouldThrow<OrderIntentReconciliationException> {
+                    service.resolve(
+                        intentId,
+                        OrderIntentState.CONFIRMED,
+                        "Verified order O-PARTIAL-FILLS",
+                        orderTxid = "O-PARTIAL-FILLS",
+                    )
+                }
+
+                service.getUnresolvedIntents().single().state shouldBe OrderIntentState.UNCERTAIN
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.count { it.source == TradeSource.API_FILL } shouldBe 2
+                trades.single { it.id == localTradeId }.success shouldBe false
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement(
+                        "SELECT local_trade_id FROM order_intents WHERE id = ?",
+                    ).use { statement ->
+                        statement.setInt(1, intentId)
+                        statement.executeQuery().use { resultSet ->
+                            resultSet.next() shouldBe true
+                            resultSet.getInt(1) shouldBe localTradeId
+                        }
+                    }
+                }
+            }
+        }
+
+        "manual confirmation without an order id removes a uniquely matching keyed API fill" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.54229657"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.62694000"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+                tradeRepository.saveTrade(
+                    intent.toPendingTrade().copy(
+                        timestamp = intent.createdAt.plusMillis(536),
+                        success = true,
+                        errorMessage = null,
+                        usdAmount = BigDecimal("56.45"),
+                        price = BigDecimal("8.62919000"),
+                        fee = BigDecimal("0.3387"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = "O-KEYED-WITHOUT-MANUAL-ID",
+                        tradeId = "T-KEYED-WITHOUT-MANUAL-ID",
+                        clientOrderId = null,
+                        submissionState = null,
+                    ),
+                )
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified the uniquely matching settled Kraken fill",
+                )
+
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.size shouldBe 1
+                trades.single().also { trade ->
+                    trade.source shouldBe TradeSource.API_FILL
+                    trade.orderTxid shouldBe "O-KEYED-WITHOUT-MANUAL-ID"
+                    trade.tradeId shouldBe "T-KEYED-WITHOUT-MANUAL-ID"
+                }
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement("SELECT state, local_trade_id FROM order_intents WHERE id = ?")
+                        .use { statement ->
+                            statement.setInt(1, intentId)
+                            statement.executeQuery().use { resultSet ->
+                                resultSet.next() shouldBe true
+                                resultSet.getString("state") shouldBe OrderIntentState.CONFIRMED.name
+                                resultSet.getObject("local_trade_id") shouldBe null
+                            }
+                        }
+                }
+            }
+        }
+
+        "unresolved linked trades survive pruning and remain protected by the foreign key" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val reference = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS)
+                val intent = newIntent().copy(createdAt = reference.minusSeconds(100L * 24 * 60 * 60))
+                val tradeId = tradeRepository.saveTrade(intent.toPendingTrade().copy(submissionState = null))
+                service.savePending(intent.copy(localTradeId = tradeId))
+
+                tradeRepository.pruneTradesOlderThan(reference.minusSeconds(90L * 24 * 60 * 60)) shouldBe 0
+                tradeRepository.getTradesInRange(Instant.EPOCH, reference).single().id shouldBe tradeId
+
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement("DELETE FROM trades WHERE id = ?").use { statement ->
+                        statement.setInt(1, tradeId)
+                        shouldThrow<java.sql.SQLException> { statement.executeUpdate() }
+                    }
+                }
+            }
+        }
+
+        "terminal resolution detaches its trade so retention can remove obsolete evidence" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val reference = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS)
+                val intent = newIntent().copy(createdAt = reference.minusSeconds(100L * 24 * 60 * 60))
+                val tradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = tradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                service.resolve(intentId, OrderIntentState.REJECTED, "No matching Kraken fill")
+
+                tradeRepository.pruneTradesOlderThan(reference.minusSeconds(90L * 24 * 60 * 60)) shouldBe 1
+                tradeRepository.getTradesInRange(Instant.EPOCH, reference).shouldBe(emptyList())
+                DriverManager.getConnection(databaseUrl).use { connection ->
+                    connection.prepareStatement(
+                        "SELECT local_trade_id FROM order_intents WHERE id = ?",
+                    ).use { statement ->
+                        statement.setInt(1, intentId)
+                        statement.executeQuery().use { resultSet ->
+                            resultSet.next() shouldBe true
+                            resultSet.getObject(1) shouldBe null
+                        }
+                    }
+                }
             }
         }
 
@@ -336,9 +537,9 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 )
 
                 service.countUnresolvedIntents() shouldBe 0L
-                tradeRepository
-                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                    .first { it.source == TradeSource.API_FILL }
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.size shouldBe 1
+                trades.single()
                     .also { trade ->
                         trade.source shouldBe TradeSource.API_FILL
                         trade.orderTxid shouldBe "O-DECIMAL-DRIFT"
@@ -401,9 +602,9 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 )
 
                 service.countUnresolvedIntents() shouldBe 0L
-                tradeRepository
-                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                    .first { it.source == TradeSource.API_FILL }
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.size shouldBe 1
+                trades.single()
                     .also { trade ->
                         trade.source shouldBe TradeSource.API_FILL
                         trade.orderTxid shouldBe "O-SETTLED-MIGRATED"
@@ -468,9 +669,9 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 )
 
                 service.countUnresolvedIntents() shouldBe 0L
-                tradeRepository
-                    .getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                    .first { it.source == TradeSource.API_FILL }
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
+                trades.size shouldBe 1
+                trades.single()
                     .also { trade ->
                         trade.source shouldBe TradeSource.API_FILL
                         trade.orderTxid shouldBe null

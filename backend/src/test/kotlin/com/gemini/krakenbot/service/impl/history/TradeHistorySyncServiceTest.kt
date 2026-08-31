@@ -10,6 +10,7 @@ import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -190,6 +191,56 @@ class TradeHistorySyncServiceTest : StringSpec() {
             rows.single().fee shouldBeEqualComparingTo BigDecimal("1.00")
         }
 
+        "keeps an already-persisted identifier-free fill intact when re-fetched" {
+            stubStableBackend()
+            stubConfig()
+            val persisted = apiFill(0).copy(
+                tradeId = null,
+                orderTxid = null,
+                expectedPrice = BigDecimal("99900.00"),
+            )
+            repository.saveTrade(persisted)
+            val fetched = persisted.copy(expectedPrice = null)
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(fetched)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            val sync = service()
+            sync.syncTradesFromKraken()
+
+            val rows = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            rows.size shouldBe 1
+            val expectedPrice = rows.single().expectedPrice
+            expectedPrice.shouldNotBeNull()
+            expectedPrice shouldBeEqualComparingTo BigDecimal("99900.00")
+        }
+
+        "does not deduplicate persisted fills with conflicting trade ids" {
+            stubStableBackend()
+            stubConfig()
+            repository.saveTrade(apiFill(0))
+            val fetched = apiFill(1)
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(fetched)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            service().syncTradesFromKraken()
+
+            repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 2
+        }
+
+        "does not deduplicate persisted fills with conflicting order ids" {
+            stubStableBackend()
+            stubConfig()
+            val persisted = apiFill(0).copy(tradeId = null, orderTxid = "order-one")
+            repository.saveTrade(persisted)
+            val fetched = persisted.copy(orderTxid = "order-two")
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(fetched)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            service().syncTradesFromKraken()
+
+            repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 2
+        }
+
         "never rewrites a dry-run estimate into an API fill" {
             stubStableBackend()
             stubConfig()
@@ -238,7 +289,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             sync.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
         }
 
-        "starts incremental syncs five minutes before the newest stored trade" {
+        "does not treat a malformed seeded offset as an interrupted seed" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+            repository.saveTrade(apiFill(0, time = baseTime))
+            repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, "-1")
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+
+            service().syncTradesFromKraken()
+
+            coVerify(exactly = 1) {
+                krakenService.getTradeHistory(baseTime.minusSeconds(300).epochSecond, 0)
+            }
+        }
+
+        "starts incremental syncs five minutes before the successful watermark" {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
@@ -252,8 +318,87 @@ class TradeHistorySyncServiceTest : StringSpec() {
             val sync = service()
             sync.syncTradesFromKraken()
 
-            val expectedStartSec = baseTime.minusSeconds(300).epochSecond
+            val expectedStartSec = baseTime.minusSeconds(3600 + 300).epochSecond
             coVerify(exactly = 1) { krakenService.getTradeHistory(expectedStartSec, 0) }
+        }
+
+        "uses the successful watermark on the next sync and captures a late fill in the overlap" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+            repository.saveTrade(apiFill(0, time = baseTime))
+
+            var now = fixedNow
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+            coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
+                if (now == fixedNow) emptyList() else listOf(apiFill(1, time = fixedNow.minusSeconds(120)))
+            }
+
+            val sync = TradeHistorySyncService(
+                repository = repository,
+                krakenService = krakenService,
+                configService = configService,
+                reconstructionService = reconstructionService,
+                nowProvider = { now },
+            )
+            sync.syncTradesFromKraken()
+
+            now = fixedNow.plusSeconds(600)
+            sync.syncTradesFromKraken()
+
+            coVerify(exactly = 1) {
+                krakenService.getTradeHistory(baseTime.minusSeconds(300).epochSecond, 0)
+            }
+            coVerify(exactly = 1) {
+                krakenService.getTradeHistory(fixedNow.minusSeconds(300).epochSecond, 0)
+            }
+            repository.getTradesInRange(Instant.EPOCH, now).map { it.tradeId } shouldBe
+                listOf("api-fill-1", "api-fill-0")
+            sync.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe
+                now.epochSecond.toString()
+        }
+
+        "does not advance the trade watermark after a failed sync" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+            repository.saveTrade(apiFill(0, time = baseTime))
+
+            var now = fixedNow
+            var callCount = 0
+            val failure = RuntimeException("history unavailable")
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 0
+            coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
+                callCount++
+                when (callCount) {
+                    1 -> emptyList()
+                    2 -> throw failure
+                    else -> emptyList()
+                }
+            }
+
+            val sync = TradeHistorySyncService(
+                repository = repository,
+                krakenService = krakenService,
+                configService = configService,
+                reconstructionService = reconstructionService,
+                nowProvider = { now },
+            )
+            sync.syncTradesFromKraken()
+            val firstWatermark = sync.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+            firstWatermark shouldBe fixedNow.epochSecond.toString()
+
+            now = fixedNow.plusSeconds(600)
+            shouldThrow<RuntimeException> { sync.syncTradesFromKraken() } shouldBe failure
+            sync.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe firstWatermark
+
+            now = fixedNow.plusSeconds(1_200)
+            sync.syncTradesFromKraken()
+            coVerify(exactly = 2) {
+                krakenService.getTradeHistory(fixedNow.minusSeconds(300).epochSecond, 0)
+            }
+            sync.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe
+                now.epochSecond.toString()
         }
 
         "triggers snapshot reconstruction after a live seed that added trades" {

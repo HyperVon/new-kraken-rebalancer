@@ -10,6 +10,42 @@ import java.time.Instant
 
 private val log = LoggerFactory.getLogger("com.gemini.krakenbot.config.MigrationBackup")
 
+/**
+ * Reject a file-backed database from a newer binary before the backup probe can checkpoint WAL or
+ * create a backup. The in-transaction check remains authoritative for in-memory URLs and for the
+ * race where another process changes the version after this read.
+ */
+internal fun rejectUnsupportedSchemaVersionBeforeMigration(dbPath: String) {
+    val databaseFile = resolveFileBackedDatabase(dbPath) ?: return
+    if (!databaseFile.isFile || databaseFile.length() == 0L) return
+
+    val maxVersion = try {
+        DriverManager.getConnection("jdbc:sqlite:${databaseFile.path}").use { connection ->
+            connection.createStatement().use { statement ->
+                val tableExists = statement.executeQuery(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations' LIMIT 1",
+                ).use { resultSet -> resultSet.next() }
+                if (!tableExists) {
+                    null
+                } else {
+                    statement.executeQuery("SELECT MAX(version) FROM schema_migrations").use { resultSet ->
+                        if (resultSet.next()) resultSet.getInt(1).takeUnless { resultSet.wasNull() } else null
+                    }
+                }
+            }
+        }
+    } catch (e: Exception) {
+        // Let the existing backup probe diagnose and fail safely for corruption, locks, and IO
+        // failures. A failed preflight must not mask that more useful error path.
+        log.debug("Could not preflight schema version for {}; deferring to migration probe", dbPath, e)
+        return
+    }
+
+    check(maxVersion == null || maxVersion <= CURRENT_SCHEMA_VERSION) {
+        "Database schema version $maxVersion is newer than this binary supports ($CURRENT_SCHEMA_VERSION)."
+    }
+}
+
 internal fun backupBeforeMigrationIfNeeded(dbPath: String, tables: Array<Table>) {
     val databaseFile = resolveFileBackedDatabase(dbPath) ?: return
     if (!databaseFile.isFile || databaseFile.length() == 0L || !requiresMigrationBackup(databaseFile, tables)) return
@@ -72,6 +108,24 @@ private fun requiresMigrationBackup(databaseFile: File, tables: Array<Table>): B
                     if (resultSet.next()) resultSet.getString("name") else null
                 }.any { it == "local_trade_id" }
             }
+            val orderIntentForeignKeyExists = orderIntentTableExists && statement.executeQuery(
+                "PRAGMA foreign_key_list('order_intents')",
+            ).use { resultSet ->
+                generateSequence {
+                    if (resultSet.next()) {
+                        Triple(
+                            resultSet.getString("table"),
+                            resultSet.getString("from"),
+                            resultSet.getString("to"),
+                        ) to resultSet.getString("on_delete")
+                    } else {
+                        null
+                    }
+                }.any { (columns, onDelete) ->
+                    columns == Triple("trades", "local_trade_id", "id") &&
+                        onDelete.equals("RESTRICT", ignoreCase = true)
+                }
+            }
             fun readIndexDefinition(index: ExpectedIndex): Pair<Boolean, List<String>>? {
                 val unique = statement.executeQuery(
                     "PRAGMA index_list('${index.tableName}')",
@@ -117,7 +171,7 @@ private fun requiresMigrationBackup(databaseFile: File, tables: Array<Table>): B
                 }
             }
             if (version < CURRENT_SCHEMA_VERSION || !orderIntentTableExists ||
-                !localTradeIdColumnExists || indexesNeedRepair || columnsNeedRepair
+                !localTradeIdColumnExists || !orderIntentForeignKeyExists || indexesNeedRepair || columnsNeedRepair
             ) {
                 true
             } else {

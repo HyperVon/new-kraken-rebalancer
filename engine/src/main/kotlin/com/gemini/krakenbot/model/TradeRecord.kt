@@ -52,6 +52,15 @@ fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
     this.symbol.equals(other.symbol, ignoreCase = true) &&
         this.side.equals(other.side, ignoreCase = true)
 
+/** Exact pair identity, or one of Kraken's known USD pair aliases for the same symbol. */
+fun TradeRecord.hasCompatiblePairIdentity(other: TradeRecord): Boolean =
+    this.pair.equals(other.pair, ignoreCase = true) ||
+        (
+            this.isSameSymbolAndSide(other) &&
+                Asset.matchesUsdQuotedPair(this.pair, this.symbol) &&
+                Asset.matchesUsdQuotedPair(other.pair, other.symbol)
+            )
+
 /**
  * Same fill under different Kraken pair strings (e.g. XBTUSD vs XXBTZUSD), within [tolerance].
  * Pair aliases are safe to merge only when an authoritative Kraken trade or order id agrees.
@@ -59,6 +68,7 @@ fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
 fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord, tolerance: BigDecimal = BigDecimal("0.01")): Boolean =
     this.isSameSymbolAndSide(other) &&
         !this.pair.equals(other.pair, ignoreCase = true) &&
+        hasCompatiblePairIdentity(other) &&
         this.success == other.success &&
         this.dryRun == other.dryRun &&
         hasSharedAuthoritativeIdentity(other) &&
@@ -156,6 +166,17 @@ fun TradeRecord.isMatchingApiTrade(
 ): Boolean {
     if (this.dryRun) return false
     if (!hasCompatibleCorrelationIdentity(apiTrade)) return false
+    if (
+        this.symbol.isNotBlank() &&
+        apiTrade.symbol.isNotBlank() &&
+        !Asset.canonicalSymbol(this.symbol).equals(Asset.canonicalSymbol(apiTrade.symbol), ignoreCase = true)
+    ) {
+        return false
+    }
+    // Same-symbol markets with different quote currencies are different executions. Only the
+    // exact pair or a known Kraken USD alias may be reconciled; the symbol fallback below is for
+    // Kraken's X/Z naming, not permission to cross from (for example) BTCEUR to BTCUSD.
+    if (!hasCompatiblePairIdentity(apiTrade)) return false
     val timeDifference = abs(this.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli())
     if (timeDifference > windowMillis || !this.side.equals(apiTrade.side, ignoreCase = true)) {
         return false

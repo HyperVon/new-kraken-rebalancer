@@ -468,9 +468,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
             }
         }
 
-        // The local trade timestamp is the authoritative cursor when it exists; a watermark is
-        // only the fallback for an otherwise empty local trade store.
-        "syncTradesFromKraken_PrefersLatestTradeTimeOverNewerWatermark" {
+        // Once a successful-request watermark exists, stored trade time is only legacy/bootstrap
+        // evidence and must not move the next bounded overlap backward.
+        "syncTradesFromKraken_PrefersNewerWatermarkOverLatestTradeTime" {
             runTest {
                 val latestTradeSec = 1_700_000_000L
                 val newerWatermarkSec = latestTradeSec + 3_600L
@@ -485,7 +485,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
 
                 service.syncTradesFromKraken()
 
-                val expectedStart = latestTradeSec - 300
+                val expectedStart = newerWatermarkSec - 300
                 coVerify(exactly = 1) {
                     krakenService.getTradeHistory(startSec = expectedStart, offset = 0)
                 }
@@ -649,6 +649,38 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
 
                 coVerify(exactly = 0) { repository.updateTrade(any(), any()) }
                 coVerify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
+        "sync does not rewrite a keyed local estimate when fill economics differ" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val timestamp = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns timestamp
+                val localEstimate = TestFixtures.tradeRecord(
+                    timestamp = timestamp,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    orderTxid = "ORDER-KEYED",
+                )
+                val apiFill = localEstimate.copy(
+                    id = null,
+                    volume = BigDecimal("2"),
+                    usdAmount = BigDecimal("20"),
+                    source = TradeSource.API_FILL,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localEstimate)
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiFill)
+                coEvery { repository.saveTrade(apiFill) } returns 2
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 0) { repository.updateTrade(any(), any()) }
+                coVerify(exactly = 1) { repository.saveTrade(apiFill) }
             }
         }
 

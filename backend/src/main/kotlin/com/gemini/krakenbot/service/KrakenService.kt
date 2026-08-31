@@ -13,8 +13,8 @@ interface KrakenService {
     suspend fun getTickerPrices(pairs: String): RawPrices
 
     /**
-     * @param dryRun is captured by the caller for this order so a mid-cycle settings flip cannot
-     * change dry-run vs live placement.
+     * @param dryRun is required and captured by the caller for this order so a mid-cycle settings
+     * flip cannot change dry-run vs live placement.
      * @param clOrdId optional Kraken `cl_ord_id` (client order id). When set, Kraken enforces
      * uniqueness among the client's *open* orders — mutually exclusive with `userref`.
      */
@@ -23,7 +23,7 @@ interface KrakenService {
         type: String,
         side: String,
         volume: BigDecimal,
-        dryRun: Boolean = false,
+        dryRun: Boolean,
         clOrdId: String? = null,
     ): OrderResult
 
