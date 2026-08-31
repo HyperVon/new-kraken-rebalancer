@@ -19,4 +19,12 @@ class RoutesTest {
             "/api?existing=1".withQuery("next", "a=b?c"),
         )
     }
+
+    @Test
+    fun placesQueryBeforeFragment() {
+        assertEquals(
+            "/api?range=24h#results",
+            "/api#results".withQuery("range", "24h"),
+        )
+    }
 }

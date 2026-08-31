@@ -343,8 +343,8 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
-- **Rate-Limiting & Retries** — Private calls use Kraken's verified-tier
-  linearly decaying account counter (safe limit 20.0; decay 0.5/sec):
+- **Rate-Limiting & Retries** — Private calls use Kraken's standard linearly
+  decaying account counter (safe limit 20.0; decay 0.5/sec):
   `Ledgers`, `TradesHistory`, and `ClosedOrders` cost 4, other private calls
   cost 1, and `AddOrder`/`CancelOrder` use Kraken's separate trading limits.
   Public calls use a separate conservative limiter of at most about one call

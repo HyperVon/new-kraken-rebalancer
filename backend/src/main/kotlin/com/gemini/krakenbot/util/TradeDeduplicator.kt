@@ -5,7 +5,6 @@ import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.effectiveSource
 import com.gemini.krakenbot.model.hasAuthoritativeIdentity
 import com.gemini.krakenbot.model.hasDifferentTradeProvenanceFrom
-import com.gemini.krakenbot.model.hasSharedAuthoritativeIdentity
 import com.gemini.krakenbot.model.isLocalEstimateDuplicateOf
 import com.gemini.krakenbot.model.isPairAliasDuplicateOf
 import com.gemini.krakenbot.model.isSameSymbolAndSide
@@ -35,10 +34,13 @@ object TradeDeduplicator {
                 if (diff > 300_000) break
 
                 val sameIdentity = hasCompatibleIdentity(record1, record2)
-                val strongIdentityDuplicate = sameIdentity && record1.hasSharedAuthoritativeIdentity(record2) &&
+                val strongIdentityDuplicate = sameIdentity &&
+                    hasSafeFillIdentity(record1, record2) &&
                     record1.isSameSymbolAndSide(record2) &&
                     isEconomicallyCompatible(record1, record2)
-                val pairAliasDuplicate = sameIdentity && record1.isPairAliasDuplicateOf(record2)
+                val pairAliasDuplicate = sameIdentity &&
+                    hasSafeFillIdentity(record1, record2) &&
+                    record1.isPairAliasDuplicateOf(record2)
                 val localEstimateDuplicate =
                     sameIdentity &&
                         !record1.hasAuthoritativeIdentity() &&
@@ -59,6 +61,27 @@ object TradeDeduplicator {
             }
         }
         return toDelete.toList()
+    }
+
+    private fun hasSafeFillIdentity(first: TradeRecord, second: TradeRecord): Boolean {
+        val firstTradeId = first.tradeId?.takeIf { it.isNotBlank() }
+        val secondTradeId = second.tradeId?.takeIf { it.isNotBlank() }
+        if (firstTradeId != null && firstTradeId == secondTradeId) return true
+
+        val firstOrderTxid = first.orderTxid?.takeIf { it.isNotBlank() }
+        val secondOrderTxid = second.orderTxid?.takeIf { it.isNotBlank() }
+        if (firstOrderTxid == null || firstOrderTxid != secondOrderTxid) return false
+        // A local estimate and its later API fill may differ in timestamp, fee, and price while
+        // sharing the order id. Same-provenance rows still need an exact fingerprint because one
+        // order can produce multiple fills without individual trade ids.
+        if (first.hasDifferentTradeProvenanceFrom(second)) return true
+        return first.timestamp == second.timestamp &&
+            first.symbol.equals(second.symbol, ignoreCase = true) &&
+            first.side.equals(second.side, ignoreCase = true) &&
+            first.volume.compareTo(second.volume) == 0 &&
+            first.usdAmount.compareTo(second.usdAmount) == 0 &&
+            first.price.compareTo(second.price) == 0 &&
+            first.fee.compareTo(second.fee) == 0
     }
 
     private fun hasCompatibleIdentity(first: TradeRecord, second: TradeRecord): Boolean {

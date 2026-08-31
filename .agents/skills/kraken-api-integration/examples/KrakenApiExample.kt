@@ -15,7 +15,7 @@ class KrakenApiExample(
 
     // Mirrors service/impl/RateLimiter.kt: a linearly-decaying private call
     // counter, NOT a mutex held across the whole call. safeLimit (20.0) is the
-    // verified-tier account-counter ceiling; decayRate (0.5) is points/sec. The mutex
+    // standard account-counter ceiling; decayRate (0.5) is points/sec. The mutex
     // guards counter updates only and is released before delay() so waiters do
     // not HOL-block one another (CQ-7-L1).
     private val rateLimiterMutex = Mutex()
@@ -46,9 +46,11 @@ class KrakenApiExample(
             var waitMs = 0L
             rateLimiterMutex.withLock {
                 val now = System.currentTimeMillis()
-                val elapsedSeconds = (now - lastUpdateTimeMs) / 1000.0
+                val rawElapsedMs = now - lastUpdateTimeMs
+                val elapsedMs = rawElapsedMs.coerceIn(0L, (safeLimit / decayRate * 1000).toLong())
+                val elapsedSeconds = elapsedMs / 1000.0
                 callCounter = maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
-                lastUpdateTimeMs = maxOf(lastUpdateTimeMs, now)
+                lastUpdateTimeMs = if (rawElapsedMs < 0) lastUpdateTimeMs else now
                 if (callCounter + cost > safeLimit) {
                     val neededDecay = (callCounter + cost) - safeLimit
                     waitMs = (neededDecay / decayRate * 1000).toLong().coerceAtLeast(1L)

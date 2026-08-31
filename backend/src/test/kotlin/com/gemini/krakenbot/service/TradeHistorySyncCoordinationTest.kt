@@ -718,6 +718,42 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "CQ-10-L8: preserves a distinct fill leg when a persisted API row lacks its trade id" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val timestamp = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns timestamp
+                val persistedFillWithoutTradeId = TestFixtures.tradeRecord(
+                    timestamp = timestamp,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    price = BigDecimal.TEN,
+                    fee = BigDecimal("0.02"),
+                    source = TradeSource.API_FILL,
+                    orderTxid = "ORDER-SHARED",
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns
+                    listOf(persistedFillWithoutTradeId)
+
+                val distinctRefetchedLeg = persistedFillWithoutTradeId.copy(
+                    id = null,
+                    timestamp = timestamp.plusSeconds(1),
+                    volume = BigDecimal("2"),
+                    usdAmount = BigDecimal("20"),
+                    tradeId = "TRADE-TWO",
+                )
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(distinctRefetchedLeg)
+                coEvery { repository.saveTrade(any()) } returns 2
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 1) { repository.saveTrade(distinctRefetchedLeg) }
+            }
+        }
+
         "CQ-10-L7: preserves an ambiguous legacy row when its refetched API fill matches exactly" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true

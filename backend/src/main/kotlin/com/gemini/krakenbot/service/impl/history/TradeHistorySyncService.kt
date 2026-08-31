@@ -355,11 +355,12 @@ class TradeHistorySyncService(
         val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
         if (persistedOrderTxid != null && apiOrderTxid != null && persistedOrderTxid != apiOrderTxid) return false
 
-        if (persistedTradeId != null || apiTradeId != null || persistedOrderTxid != null || apiOrderTxid != null) {
-            return (persistedTradeId != null && persistedTradeId == apiTradeId) ||
-                (persistedOrderTxid != null && persistedOrderTxid == apiOrderTxid)
+        if (persistedTradeId != null && apiTradeId != null) {
+            return persistedTradeId == apiTradeId
         }
 
+        // An order can produce multiple fills. If either trade id is absent, a shared order txid
+        // alone is not enough to prove that two rows represent the same fill leg.
         return legacyApiFillFingerprint(persisted) == legacyApiFillFingerprint(apiTrade)
     }
 

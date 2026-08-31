@@ -8,7 +8,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Coroutine-safe Kraken call-counter limiter: counter decays linearly at [decayRate]/sec
- * (default 0.5) and blocks until `counter + cost ≤ [safeLimit]` (default 20, Verified tier).
+ * (default 0.5) and blocks until `counter + cost ≤ [safeLimit]` (default 20, standard account).
  *
  * The mutex is **not** held across [delay] so other callers are not head-of-line
  * blocked while one waiter sleeps (CQ-7-L1).

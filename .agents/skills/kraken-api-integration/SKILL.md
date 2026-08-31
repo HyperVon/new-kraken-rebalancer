@@ -41,7 +41,7 @@ DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
 `service/impl/RateLimiter.kt`:
 
 - `safeLimit = 20.0`, `decayRate = 0.5`; the counter decays linearly by
-  `elapsedSeconds × 0.5` for the verified-tier account counter
+  `elapsedSeconds × 0.5` for the standard account counter
 - Negative wall-clock elapsed time is clamped to zero and the stored baseline
   stays monotonic, so clock rollback cannot inflate the counter.
 - All counter updates under coroutine **`Mutex`** (released **before** throttle
@@ -85,8 +85,10 @@ get `EAPI:Invalid key`:
 2. **Nonce**: seed `timeMs * 1_000_000L` and increment per request (matches
    `KrakenServiceImpl`). Missing/inconsistent nonce persistence is not the
    issue; the message order is what breaks.
-3. **`Ledgers` / `TradesHistory` `start`/`end` are in SECONDS** (not ms), and
-   `Ledgers` paginates by ledger id (`ofs`/`id`), not timestamp.
+3. **`Ledgers` / `TradesHistory` `start`/`end` use epoch SECONDS when they are
+   timestamps** (not ms); Kraken also accepts ledger/trade IDs for those
+   bounds. Both endpoints paginate with the `ofs` result offset, so do not
+   advance pagination by timestamp.
 4. Credentials for this project come from `rebalancer-config.json`
    (`kraken.apiKey` / `kraken.privateKey`). Placeholder values may use
    `${ENV_VAR}` or `${ENV_VAR:default}` and are resolved from the environment

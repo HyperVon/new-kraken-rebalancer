@@ -206,6 +206,23 @@ class RateLimiterTest : StringSpec() {
             }
         }
 
+        "public limiter rebases after a backward clock step" {
+            runTest {
+                var nowMs = 10_000L
+                val limiter = PublicRateLimiter(clock = { nowMs })
+                limiter.acquire()
+
+                nowMs = 0L
+                val waiter = async { limiter.acquire() }
+                runCurrent()
+                waiter.isCompleted.shouldBeFalse()
+
+                nowMs = 1_000L
+                advanceTimeBy(1_000L)
+                waiter.await()
+            }
+        }
+
         "private endpoint costs follow Kraken endpoint classes" {
             krakenPrivateEndpointCost(KrakenApiConstants.PATH_ADD_ORDER) shouldBe 0.0
             krakenPrivateEndpointCost("/0/private/CancelOrder") shouldBe 0.0

@@ -7,8 +7,11 @@ fun String.withRange(rangeKey: String): String = withQuery(QueryParamKeys.RANGE,
 
 /** Appends one RFC 3986 query parameter without allowing user values to change URL structure. */
 fun String.withQuery(key: String, value: Any): String {
-    val separator = if (contains("?")) "&" else "?"
-    return "$this$separator${key.encodeQueryComponent()}=${value.toString().encodeQueryComponent()}"
+    val fragmentIndex = indexOf('#')
+    val base = if (fragmentIndex >= 0) substring(0, fragmentIndex) else this
+    val fragment = if (fragmentIndex >= 0) substring(fragmentIndex) else ""
+    val separator = if (base.contains("?")) "&" else "?"
+    return "$base$separator${key.encodeQueryComponent()}=${value.toString().encodeQueryComponent()}$fragment"
 }
 
 private fun String.encodeQueryComponent(): String {

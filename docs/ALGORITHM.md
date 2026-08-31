@@ -84,7 +84,7 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
 - **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, action-log formatting, and persisting each order via `TradeHistoryService.saveTrade`. Before a real live placement, it persists a `PENDING` intent with a deterministic Kraken **`cl_ord_id`** (from `cycleId|symbol|side`). AddOrder is attempted only once; an ambiguous transport/response failure becomes `UNCERTAIN`, aborts the remaining batch, and blocks later live orders until operator reconciliation (`userref` is not a uniqueness key among open orders).
 - **`KrakenServiceImpl` + transport limiters (The Gateway)**: Handles
   HMAC-SHA512 authenticated API calls with Kraken's separate public and private
-  controls. The private account counter defaults to the verified-tier
+  controls. The private account counter defaults to the standard account
   `safeLimit = 20` and `0.5` points/second decay; `Ledgers`, `TradesHistory`,
   and `ClosedOrders` cost 4, other private calls cost 1, and `AddOrder` and
   `CancelOrder` do not charge that counter because trading has separate limits.

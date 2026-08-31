@@ -18,11 +18,17 @@ open class PublicRateLimiter(
             val waitMs = mutex.withLock {
                 val now = clock()
                 val last = lastRequestAtMs
-                val remaining = if (last == null) 0L else minIntervalMs - (now - last)
+                val previous = last ?: now
+                val remaining = when {
+                    last == null -> 0L
+                    now < last -> minIntervalMs
+                    else -> minIntervalMs - (now - previous)
+                }
                 if (remaining <= 0L) {
                     lastRequestAtMs = now
                     0L
                 } else {
+                    if (last != null && now < previous) lastRequestAtMs = now
                     remaining
                 }
             }

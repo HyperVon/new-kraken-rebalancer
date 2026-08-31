@@ -905,6 +905,33 @@ class TradeDeduplicatorTest : StringSpec() {
             ).isEmpty() shouldBe true
         }
 
+        "startup cleanup keeps distinct id-less fill legs sharing an order id" {
+            val timestamp = Instant.now()
+            val firstLeg = canonicalXbtApiFill(timestamp).copy(
+                id = 175,
+                orderTxid = "shared-order",
+            )
+            val secondLeg = firstLeg.copy(
+                id = 176,
+                timestamp = timestamp.plusMillis(100),
+                volume = BigDecimal("1.005"),
+                usdAmount = BigDecimal("50250.00"),
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(firstLeg, secondLeg)).isEmpty() shouldBe true
+        }
+
+        "same-provenance fills with an exact shared-order fingerprint are duplicates" {
+            val timestamp = Instant.now()
+            val firstFill = canonicalXbtApiFill(timestamp).copy(
+                id = 177,
+                orderTxid = "exact-shared-order",
+            )
+            val duplicate = firstFill.copy(id = 178)
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(firstFill, duplicate)) shouldContainExactly listOf(178)
+        }
+
         "authoritative identity does not merge a different asset" {
             val base = canonicalXbtApiFill(Instant.now()).copy(tradeId = "same-fill")
 
