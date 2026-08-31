@@ -436,6 +436,225 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
+        "manual confirmation with exact order ID and incompatible fills fails closed without heuristic fallback" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.50000000"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.68307692"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                // Persist incompatible exact-order fill (ETH BUY for O-INCOMPATIBLE)
+                tradeRepository.saveTrade(
+                    TradeRecord(
+                        timestamp = intent.createdAt.plusMillis(500L),
+                        pair = "ETHUSD",
+                        symbol = "ETH",
+                        side = "BUY",
+                        volume = BigDecimal("0.50000000"),
+                        usdAmount = BigDecimal("1500.00"),
+                        price = BigDecimal("3000.00"),
+                        fee = BigDecimal("1.50"),
+                        success = true,
+                        dryRun = false,
+                        errorMessage = null,
+                        source = TradeSource.API_FILL,
+                        orderTxid = "O-INCOMPATIBLE",
+                        tradeId = "T-ETH-1",
+                        submissionState = null,
+                    ),
+                )
+
+                // Also persist a nearby ID-less LINK SELL fill that would otherwise match heuristics
+                val heuristicTradeId = tradeRepository.saveTrade(
+                    TradeRecord(
+                        timestamp = intent.createdAt.plusMillis(200L),
+                        pair = "LINKUSD",
+                        symbol = "LINK",
+                        side = "SELL",
+                        volume = BigDecimal("6.50000000"),
+                        usdAmount = BigDecimal("56.44"),
+                        price = BigDecimal("8.68307692"),
+                        fee = BigDecimal("0.10"),
+                        success = true,
+                        dryRun = false,
+                        errorMessage = null,
+                        source = TradeSource.API_FILL,
+                        orderTxid = null,
+                        tradeId = null,
+                        submissionState = null,
+                    ),
+                )
+
+                shouldThrow<OrderIntentReconciliationException> {
+                    service.resolve(
+                        intentId,
+                        OrderIntentState.CONFIRMED,
+                        "Verified order O-INCOMPATIBLE",
+                        orderTxid = "O-INCOMPATIBLE",
+                    )
+                }
+
+                // Intent remains UNCERTAIN, local trade remains intact
+                service.getUnresolvedIntents().single().state shouldBe OrderIntentState.UNCERTAIN
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(10))
+                trades.single { it.id == localTradeId }.success shouldBe false
+                trades.single { it.id == heuristicTradeId }.cycleId shouldBe null
+            }
+        }
+
+        "manual confirmation with exact order ID and mixed compatible/incompatible fills fails closed" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.50000000"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.68307692"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                // Persist 1 compatible fill and 1 incompatible fill under the same orderTxid
+                tradeRepository.saveTrade(
+                    TradeRecord(
+                        timestamp = intent.createdAt.plusMillis(300L),
+                        pair = "LINKUSD",
+                        symbol = "LINK",
+                        side = "SELL",
+                        volume = BigDecimal("6.50000000"),
+                        usdAmount = BigDecimal("56.44"),
+                        price = BigDecimal("8.68307692"),
+                        fee = BigDecimal("0.10"),
+                        success = true,
+                        dryRun = false,
+                        errorMessage = null,
+                        source = TradeSource.API_FILL,
+                        orderTxid = "O-MIXED",
+                        tradeId = "T-LINK-1",
+                        submissionState = null,
+                    ),
+                )
+                tradeRepository.saveTrade(
+                    TradeRecord(
+                        timestamp = intent.createdAt.plusMillis(500L),
+                        pair = "ETHUSD",
+                        symbol = "ETH",
+                        side = "BUY",
+                        volume = BigDecimal("0.50000000"),
+                        usdAmount = BigDecimal("1500.00"),
+                        price = BigDecimal("3000.00"),
+                        fee = BigDecimal("1.50"),
+                        success = true,
+                        dryRun = false,
+                        errorMessage = null,
+                        source = TradeSource.API_FILL,
+                        orderTxid = "O-MIXED",
+                        tradeId = "T-ETH-MIXED",
+                        submissionState = null,
+                    ),
+                )
+
+                shouldThrow<OrderIntentReconciliationException> {
+                    service.resolve(
+                        intentId,
+                        OrderIntentState.CONFIRMED,
+                        "Verified order O-MIXED",
+                        orderTxid = "O-MIXED",
+                    )
+                }
+
+                service.getUnresolvedIntents().single().state shouldBe OrderIntentState.UNCERTAIN
+            }
+        }
+
+        "manual confirmation with unpersisted exact order ID falls back to legacy heuristic match" {
+            runTest {
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val intent = newIntent().copy(
+                    pair = "LINKUSD",
+                    symbol = "LINK",
+                    side = "SELL",
+                    volume = BigDecimal("6.50000000"),
+                    usdAmount = BigDecimal("56.44"),
+                    expectedPrice = BigDecimal("8.68307692"),
+                )
+                val localTradeId = tradeRepository.saveTrade(intent.toPendingTrade())
+                val intentId = service.savePending(intent.copy(localTradeId = localTradeId))
+                service.recordOutcome(
+                    intentId,
+                    OrderResult.Failure(
+                        pair = intent.pair,
+                        side = intent.side,
+                        volume = intent.volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    ),
+                ) shouldBe true
+
+                // Persist legacy unkeyed fill
+                tradeRepository.saveTrade(
+                    TradeRecord(
+                        timestamp = intent.createdAt.plusMillis(200L),
+                        pair = "LINKUSD",
+                        symbol = "LINK",
+                        side = "SELL",
+                        volume = BigDecimal("6.50000000"),
+                        usdAmount = BigDecimal("56.44"),
+                        price = BigDecimal("8.68307692"),
+                        fee = BigDecimal("0.10"),
+                        success = true,
+                        dryRun = false,
+                        errorMessage = null,
+                        source = TradeSource.API_FILL,
+                        orderTxid = null,
+                        tradeId = null,
+                        submissionState = null,
+                    ),
+                )
+
+                service.resolve(
+                    intentId,
+                    OrderIntentState.CONFIRMED,
+                    "Verified order O-UNPERSISTED",
+                    orderTxid = "O-UNPERSISTED",
+                )
+
+                service.countUnresolvedIntents() shouldBe 0L
+                val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(10))
+                trades.single { it.source == TradeSource.API_FILL }.symbol shouldBe "LINK"
+                trades.none { it.id == localTradeId } shouldBe true
+            }
+        }
+
         "manual confirmation without an order id removes a uniquely matching keyed API fill" {
             runTest {
                 val tradeRepository = SqliteTradeRepositoryImpl(database)
@@ -964,9 +1183,6 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                     submissionState = null,
                 )
                 listOf(
-                    apiFill.copy(pair = "ETHUSD", tradeId = "T-WRONG-PAIR"),
-                    apiFill.copy(symbol = "ETH", tradeId = "T-WRONG-SYMBOL"),
-                    apiFill.copy(side = "BUY", tradeId = "T-WRONG-SIDE"),
                     apiFill.copy(success = false, tradeId = "T-UNSUCCESSFUL"),
                     apiFill.copy(dryRun = true, tradeId = "T-DRY-RUN"),
                     apiFill.copy(source = TradeSource.LOCAL_ESTIMATE, tradeId = "T-LOCAL-ESTIMATE"),
@@ -980,7 +1196,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 )
 
                 val trades = tradeRepository.getTradesInRange(Instant.EPOCH, Instant.now().plusSeconds(1))
-                trades.size shouldBe 7
+                trades.size shouldBe 4
                 trades.single { it.id == localTradeId }.also { trade ->
                     trade.source shouldBe TradeSource.LOCAL_ESTIMATE
                     trade.success shouldBe true

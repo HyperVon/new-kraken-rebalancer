@@ -166,13 +166,34 @@ class TradeHistorySyncService(
         var totalAdded = 0
         var totalReconciled = 0
         val seenApiFillKeys = mutableSetOf<String>()
+        val orderMetadataByTxid = mutableMapOf<String, LocalOrderMetadata>()
+
+        originalLocalTrades
+            .filter { it.isLocalEstimate() && !it.orderTxid.isNullOrBlank() }
+            .forEach { local ->
+                val txid = local.orderTxid!!.trim()
+                orderMetadataByTxid.putIfAbsent(
+                    txid,
+                    LocalOrderMetadata(
+                        expectedPrice = local.expectedPrice,
+                        cycleId = local.cycleId,
+                        clientOrderId = local.clientOrderId,
+                        orderTxid = txid,
+                    ),
+                )
+            }
 
         getTradeHistoryPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
             .collect { apiTrades ->
                 for (apiTrade: TradeRecord in apiTrades) {
                     if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
 
-                    val result = reconcileOrInsertApiTrade(apiTrade, originalLocalTrades, allocations)
+                    val result = reconcileOrInsertApiTrade(
+                        apiTrade = apiTrade,
+                        originalLocalTrades = originalLocalTrades,
+                        allocations = allocations,
+                        orderMetadataByTxid = orderMetadataByTxid,
+                    )
                     when (result) {
                         TradeReconciliationResult.INSERTED -> totalAdded++
                         TradeReconciliationResult.RECONCILED -> totalReconciled++
@@ -188,6 +209,7 @@ class TradeHistorySyncService(
         apiTrade: TradeRecord,
         originalLocalTrades: MutableList<TradeRecord>,
         allocations: List<String>,
+        orderMetadataByTxid: MutableMap<String, LocalOrderMetadata>,
     ): TradeReconciliationResult {
         // Exact persisted fills must win before nearby local-estimate reconciliation;
         // otherwise an overlapping fetch can rewrite a local row even though this API
@@ -206,10 +228,23 @@ class TradeHistorySyncService(
         val matchingLocalTrade = findMatchingLocalTrade(apiTrade, originalLocalTrades, allocations)
 
         return if (matchingLocalTrade != null) {
-            reconcileWithLocalTrade(apiTrade, matchingLocalTrade, originalLocalTrades)
+            reconcileWithLocalTrade(apiTrade, matchingLocalTrade, originalLocalTrades, orderMetadataByTxid)
             TradeReconciliationResult.RECONCILED
         } else {
-            repository.saveTrade(apiTrade)
+            val effectiveTxid = apiTrade.orderTxid?.trim()?.takeIf(String::isNotBlank)
+            val metadata = effectiveTxid?.let { orderMetadataByTxid[it] }
+            val tradeToSave = if (metadata != null) {
+                OrderFillReconciler.enrichApiFill(
+                    apiFill = apiTrade,
+                    expectedPrice = metadata.expectedPrice,
+                    cycleId = metadata.cycleId,
+                    clientOrderId = metadata.clientOrderId,
+                    orderTxid = metadata.orderTxid ?: apiTrade.orderTxid,
+                )
+            } else {
+                apiTrade
+            }
+            repository.saveTrade(tradeToSave)
             TradeReconciliationResult.INSERTED
         }
     }
@@ -267,13 +302,27 @@ class TradeHistorySyncService(
         apiTrade: TradeRecord,
         matchingLocalTrade: TradeRecord,
         originalLocalTrades: MutableList<TradeRecord>,
+        orderMetadataByTxid: MutableMap<String, LocalOrderMetadata>,
     ) {
+        val effectiveTxid = (apiTrade.orderTxid ?: matchingLocalTrade.orderTxid)?.trim()?.takeIf(String::isNotBlank)
+        if (effectiveTxid != null) {
+            orderMetadataByTxid.putIfAbsent(
+                effectiveTxid,
+                LocalOrderMetadata(
+                    expectedPrice = matchingLocalTrade.expectedPrice,
+                    cycleId = matchingLocalTrade.cycleId,
+                    clientOrderId = matchingLocalTrade.clientOrderId,
+                    orderTxid = effectiveTxid,
+                ),
+            )
+        }
+
         val reconciledTrade = OrderFillReconciler.enrichApiFill(
             apiFill = apiTrade,
             expectedPrice = matchingLocalTrade.expectedPrice,
             cycleId = matchingLocalTrade.cycleId,
             clientOrderId = matchingLocalTrade.clientOrderId,
-            orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
+            orderTxid = effectiveTxid ?: apiTrade.orderTxid,
         )
         log.info(
             "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
@@ -288,6 +337,13 @@ class TradeHistorySyncService(
         // in-memory view unchanged (pre-refactor update-then-remove order).
         originalLocalTrades.remove(matchingLocalTrade)
     }
+
+    private data class LocalOrderMetadata(
+        val expectedPrice: BigDecimal?,
+        val cycleId: String?,
+        val clientOrderId: String?,
+        val orderTxid: String?,
+    )
 
     private enum class TradeReconciliationResult { INSERTED, RECONCILED, ALREADY_PERSISTED }
 

@@ -340,16 +340,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 }
                 .map(TradeTable::toModel)
 
-            val instrumentCompatibleRows = candidateRows.filter { fill ->
-                OrderFillReconciler.isInstrumentCompatible(
-                    orderSymbol = intent.symbol,
-                    orderSide = intent.side,
-                    orderPair = intent.pair,
-                    apiFill = fill,
-                )
-            }
-
-            if (instrumentCompatibleRows.isNotEmpty()) {
+            if (candidateRows.isNotEmpty()) {
                 val eval = OrderFillReconciler.evaluateAuthoritativeFills(
                     orderSymbol = intent.symbol,
                     orderSide = intent.side,
@@ -357,7 +348,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                     orderVolume = intent.volume,
                     orderUsdAmount = intent.usdAmount,
                     orderTxid = normalizedOrderTxid,
-                    candidateFills = instrumentCompatibleRows,
+                    candidateFills = candidateRows,
                 )
                 if (eval == null) {
                     throw OrderIntentReconciliationException(

@@ -37,10 +37,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Multi-fill order reconciliation & history sync**: Introduced `OrderFillReconciler`
   to evaluate authoritative Kraken order execution collectively. Complete executions
-  (>=99% of intended volume) resolve cleanly, enriching all distinct `API_FILL` records
-  while safely detaching and deleting the single aggregate local placeholder trade to prevent
-  duplicate accounting. Incomplete executions (<99%) fail closed, preventing premature resolution
-  or unlinking.
+  require strict volume equality at crypto precision (scale 8) or USD precision (scale 2),
+  strictly rejecting partial executions (e.g. 99% or 99.9%) and overfills. Complete executions
+  resolve cleanly, enriching all distinct `API_FILL` records with order metadata (`cycleId`,
+  `clientOrderId`, `expectedPrice`, and independent slippage) while safely detaching and deleting
+  the single aggregate local placeholder trade to prevent duplicate accounting.
+- **Exact orderTxid dominance**: Authoritative `orderTxid` evidence outranks heuristic matching;
+  incompatible exact-order fills fail closed immediately with `OrderIntentReconciliationException`
+  and never fall through to ID-less heuristic matching.
 - **Trade repository deletion safety**: Added `deleteTrade` with active intent foreign-key
   guards, preventing accidental removal of trades tied to unresolved (`PENDING` or `UNCERTAIN`)
   order intents.
@@ -48,7 +52,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   preserving all distinct executed fill legs with their exchange trade IDs while retaining
   the durable intent audit record. Unresolved intents remain protected and fail closed.
 - Added regression coverage for missing historical prices, deterministic sync
-  horizons, identity-conflicting fills, multi-fill order reconciliation, partial fill failure,
+  horizons, identity-conflicting fills, multi-fill order reconciliation, precision-based
+  completeness boundaries, exact orderTxid dominance, partial fill failure,
   asset aliases, foreign-key migration, rate semantics, nonce serialization, cancellation/exception preservation,
   typed credential failures, mode pinning, and malformed UI persistence.
 

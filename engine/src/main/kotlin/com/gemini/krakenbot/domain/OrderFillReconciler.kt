@@ -4,7 +4,9 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.util.PrecisionConstants
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 import kotlin.math.abs
 
@@ -59,6 +61,10 @@ object OrderFillReconciler {
      *
      * Returns null if no fills match [orderTxid], or if any fill matching [orderTxid] has an incompatible
      * symbol, side, or pair.
+     *
+     * Execution completeness is determined by strict volume equality at crypto precision ([PrecisionConstants.SCALE_CRYPTO] = 8)
+     * or fiat USD precision ([PrecisionConstants.SCALE_USD] = 2), preventing partial executions (such as 99% or 99.9%)
+     * or overfills from being mistakenly marked complete.
      */
     fun evaluateAuthoritativeFills(
         orderSymbol: String,
@@ -69,7 +75,6 @@ object OrderFillReconciler {
         orderTxid: String,
         candidateFills: List<TradeRecord>,
         allocations: List<String> = emptyList(),
-        tolerance: BigDecimal = BigDecimal("0.01"),
     ): AggregatedFills? {
         val normalizedOrderTxid = orderTxid.trim()
         if (normalizedOrderTxid.isEmpty()) return null
@@ -89,10 +94,15 @@ object OrderFillReconciler {
         val totalUsd = orderFills.fold(BigDecimal.ZERO) { acc, fill -> acc.add(fill.usdAmount) }
         val totalFee = orderFills.fold(BigDecimal.ZERO) { acc, fill -> acc.add(fill.fee) }
 
-        val volumeMatches = isWithinRelativeTolerance(totalVolume, orderVolume, tolerance)
-        val usdMatches = isWithinRelativeTolerance(totalUsd, orderUsdAmount, tolerance)
-
-        val isComplete = volumeMatches || (orderVolume.signum() == 0 && usdMatches)
+        val isComplete = if (orderVolume.signum() > 0) {
+            val normExecuted = totalVolume.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+            val normIntended = orderVolume.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+            normExecuted.compareTo(normIntended) == 0
+        } else {
+            val normExecutedUsd = totalUsd.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+            val normIntendedUsd = orderUsdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+            normExecutedUsd.compareTo(normIntendedUsd) == 0
+        }
 
         return AggregatedFills(
             fills = orderFills,

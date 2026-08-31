@@ -284,6 +284,100 @@ class OrderFillReconcilerTest : StringSpec() {
             )
             eval.shouldNotBeNull()
             eval.isComplete shouldBe true
+
+            val incompleteUsd = OrderFillReconciler.evaluateAuthoritativeFills(
+                orderSymbol = "LINK",
+                orderSide = "SELL",
+                orderPair = "LINKUSD",
+                orderVolume = BigDecimal.ZERO,
+                orderUsdAmount = BigDecimal("50.00"),
+                orderTxid = "O1",
+                candidateFills = listOf(fill.copy(usdAmount = BigDecimal("49.00"))),
+            )
+            incompleteUsd.shouldNotBeNull()
+            incompleteUsd.isComplete shouldBe false
+        }
+
+        "evaluateAuthoritativeFills strictly rejects 99 percent partial execution" {
+            val fill = sampleFill(
+                tradeId = "T1",
+                orderTxid = "O1",
+                side = "SELL",
+                volume = BigDecimal("99.00000000"),
+                usdAmount = BigDecimal("990.00"),
+            )
+            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
+                orderSymbol = "LINK",
+                orderSide = "SELL",
+                orderPair = "LINKUSD",
+                orderVolume = BigDecimal("100.00000000"),
+                orderUsdAmount = BigDecimal("1000.00"),
+                orderTxid = "O1",
+                candidateFills = listOf(fill),
+            )
+            eval.shouldNotBeNull()
+            eval.isComplete shouldBe false
+        }
+
+        "evaluateAuthoritativeFills strictly rejects 99.9 percent partial execution" {
+            val fill = sampleFill(
+                tradeId = "T1",
+                orderTxid = "O1",
+                side = "SELL",
+                volume = BigDecimal("99.90000000"),
+                usdAmount = BigDecimal("999.00"),
+            )
+            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
+                orderSymbol = "LINK",
+                orderSide = "SELL",
+                orderPair = "LINKUSD",
+                orderVolume = BigDecimal("100.00000000"),
+                orderUsdAmount = BigDecimal("1000.00"),
+                orderTxid = "O1",
+                candidateFills = listOf(fill),
+            )
+            eval.shouldNotBeNull()
+            eval.isComplete shouldBe false
+        }
+
+        "evaluateAuthoritativeFills marks sub-satoshi precision noise as complete" {
+            val fill = sampleFill(
+                tradeId = "T1",
+                orderTxid = "O1",
+                volume = BigDecimal("6.500000004"),
+                usdAmount = BigDecimal("56.44"),
+            )
+            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
+                orderSymbol = "LINK",
+                orderSide = "SELL",
+                orderPair = "LINKUSD",
+                orderVolume = BigDecimal("6.50000000"),
+                orderUsdAmount = BigDecimal("56.44"),
+                orderTxid = "O1",
+                candidateFills = listOf(fill),
+            )
+            eval.shouldNotBeNull()
+            eval.isComplete shouldBe true
+        }
+
+        "evaluateAuthoritativeFills rejects overfill execution" {
+            val fill = sampleFill(
+                tradeId = "T1",
+                orderTxid = "O1",
+                volume = BigDecimal("6.51000000"),
+                usdAmount = BigDecimal("56.50"),
+            )
+            val eval = OrderFillReconciler.evaluateAuthoritativeFills(
+                orderSymbol = "LINK",
+                orderSide = "SELL",
+                orderPair = "LINKUSD",
+                orderVolume = BigDecimal("6.50000000"),
+                orderUsdAmount = BigDecimal("56.44"),
+                orderTxid = "O1",
+                candidateFills = listOf(fill),
+            )
+            eval.shouldNotBeNull()
+            eval.isComplete shouldBe false
         }
 
         "evaluateAuthoritativeFills allows timestamps outside 10s window and prices >1% different" {

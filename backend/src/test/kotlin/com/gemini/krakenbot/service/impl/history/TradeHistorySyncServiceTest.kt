@@ -427,5 +427,180 @@ class TradeHistorySyncServiceTest : StringSpec() {
             sync.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe fixedNow.epochSecond.toString()
             repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 1
         }
+
+        "multi-fill sync replaces local aggregate and propagates order metadata to all fill legs (T1 then T2)" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            val local = TestFixtures.tradeRecord(
+                timestamp = baseTime,
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("6.50000000"),
+                usdAmount = BigDecimal("195000.00"),
+                price = BigDecimal("30000.00"),
+                expectedPrice = BigDecimal("30000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                cycleId = "cycle-1",
+                clientOrderId = "client-1",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            repository.saveTrade(local)
+
+            val t1 = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(100),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("3.25000000"),
+                usdAmount = BigDecimal("97825.00"),
+                price = BigDecimal("30100.00"),
+                fee = BigDecimal("15.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "T1",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+            )
+            val t2 = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(200),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("3.25000000"),
+                usdAmount = BigDecimal("98150.00"),
+                price = BigDecimal("30200.00"),
+                fee = BigDecimal("15.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "T2",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+            )
+
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(t1, t2)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 2
+
+            service().syncTradesFromKraken()
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 2
+            trades.all { it.source == TradeSource.API_FILL } shouldBe true
+            trades.map { it.tradeId }.toSet() shouldBe setOf("T1", "T2")
+            trades.none { it.source == TradeSource.LOCAL_ESTIMATE } shouldBe true
+
+            val totalVolume = trades.fold(BigDecimal.ZERO) { acc, t -> acc.add(t.volume) }
+            val totalUsd = trades.fold(BigDecimal.ZERO) { acc, t -> acc.add(t.usdAmount) }
+            val totalFee = trades.fold(BigDecimal.ZERO) { acc, t -> acc.add(t.fee) }
+            totalVolume.shouldBeEqualComparingTo(BigDecimal("6.50000000"))
+            totalUsd.shouldBeEqualComparingTo(BigDecimal("195975.00"))
+            totalFee.shouldBeEqualComparingTo(BigDecimal("30.00"))
+
+            trades.all { it.cycleId == "cycle-1" } shouldBe true
+            trades.all { it.clientOrderId == "client-1" } shouldBe true
+            trades.all { it.orderTxid == "O1" } shouldBe true
+            trades.all {
+                it.expectedPrice != null && it.expectedPrice!!.compareTo(BigDecimal("30000.00")) == 0
+            } shouldBe
+                true
+            trades.all { it.slippagePercent != null } shouldBe true
+
+            val fill1 = trades.single { it.tradeId == "T1" }
+            fill1.price.shouldBeEqualComparingTo(BigDecimal("30100.00"))
+            val fill2 = trades.single { it.tradeId == "T2" }
+            fill2.price.shouldBeEqualComparingTo(BigDecimal("30200.00"))
+
+            val stats = repository.getTradeSummaryStats()
+            stats.totalTradesExecuted shouldBe 2L
+            stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("195975.00"))
+            stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("30.00"))
+        }
+
+        "multi-fill sync is order-independent when fills arrive in reverse order (T2 then T1)" {
+            stubStableBackend()
+            stubConfig()
+            repository.setHistorySeeded(true)
+
+            val local = TestFixtures.tradeRecord(
+                timestamp = baseTime,
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("6.50000000"),
+                usdAmount = BigDecimal("195000.00"),
+                price = BigDecimal("30000.00"),
+                expectedPrice = BigDecimal("30000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
+                cycleId = "cycle-1",
+                clientOrderId = "client-1",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+                submissionState = null,
+            )
+            repository.saveTrade(local)
+
+            val t1 = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(100),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("3.25000000"),
+                usdAmount = BigDecimal("97825.00"),
+                price = BigDecimal("30100.00"),
+                fee = BigDecimal("15.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "T1",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+            )
+            val t2 = TestFixtures.tradeRecord(
+                timestamp = baseTime.plusMillis(200),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "XBT",
+                volume = BigDecimal("3.25000000"),
+                usdAmount = BigDecimal("98150.00"),
+                price = BigDecimal("30200.00"),
+                fee = BigDecimal("15.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "T2",
+                orderTxid = "O1",
+                success = true,
+                dryRun = false,
+            )
+
+            // Return T2 before T1
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(t2, t1)
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 2
+
+            service().syncTradesFromKraken()
+
+            val trades = repository.getTradesInRange(Instant.EPOCH, fixedNow)
+            trades.size shouldBe 2
+            trades.all { it.source == TradeSource.API_FILL } shouldBe true
+            trades.map { it.tradeId }.toSet() shouldBe setOf("T1", "T2")
+            trades.none { it.source == TradeSource.LOCAL_ESTIMATE } shouldBe true
+
+            trades.all { it.cycleId == "cycle-1" } shouldBe true
+            trades.all { it.clientOrderId == "client-1" } shouldBe true
+            trades.all { it.orderTxid == "O1" } shouldBe true
+            trades.all {
+                it.expectedPrice != null && it.expectedPrice!!.compareTo(BigDecimal("30000.00")) == 0
+            } shouldBe
+                true
+            trades.all { it.slippagePercent != null } shouldBe true
+
+            val stats = repository.getTradeSummaryStats()
+            stats.totalTradesExecuted shouldBe 2L
+            stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("195975.00"))
+            stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("30.00"))
+        }
     }
 }
