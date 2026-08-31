@@ -218,13 +218,21 @@ class TradeHistorySyncService(
                 (persisted.isSettledApiFill() || persisted.isLegacyUnknown()) &&
                     hasSamePersistedFillIdentity(persisted, apiTrade)
             }
-        if (persistedFill != null) {
-            originalLocalTrades.remove(persistedFill)
-            return TradeReconciliationResult.ALREADY_PERSISTED
-        }
 
         val localEstimates = originalLocalTrades.filter { local ->
             local.submissionState == null && local.success && !local.dryRun && local.isLocalEstimate()
+        }
+
+        if (persistedFill != null) {
+            validateExactOrderLocalIntegrityForPersistedFill(
+                persistedFill = persistedFill,
+                apiTrade = apiTrade,
+                localEstimates = localEstimates,
+                orderMetadataByTxid = orderMetadataByTxid,
+                allocations = allocations,
+            )
+            originalLocalTrades.remove(persistedFill)
+            return TradeReconciliationResult.ALREADY_PERSISTED
         }
 
         val resolution = resolveLocalOrderContextForApiFill(
@@ -295,6 +303,72 @@ class TradeHistorySyncService(
         }
     }
 
+    private fun validateExactOrderLocalIntegrityForPersistedFill(
+        persistedFill: TradeRecord,
+        apiTrade: TradeRecord,
+        localEstimates: List<TradeRecord>,
+        orderMetadataByTxid: Map<String, LocalOrderMetadata>,
+        allocations: List<String>,
+    ) {
+        val apiOrderTxid = apiTrade.orderTxid?.trim()?.takeIf(String::isNotBlank) ?: return
+
+        val keyedLocals = localEstimates.filter { local ->
+            local.orderTxid?.trim()?.takeIf(String::isNotBlank) == apiOrderTxid
+        }
+        if (keyedLocals.size > 1) {
+            val localIds = keyedLocals.map { it.id }
+            throw TradeReconciliationConflictException(
+                "Cannot reconcile Kraken order $apiOrderTxid: authoritative API fill " +
+                    "(tradeId=${persistedFill.tradeId}) is already persisted, but multiple local order " +
+                    "estimates (IDs: $localIds) claim this order identity.",
+            )
+        }
+        if (keyedLocals.size == 1) {
+            val local = keyedLocals.single()
+            val isCompatible = OrderFillReconciler.isInstrumentCompatible(
+                orderSymbol = local.symbol,
+                orderSide = local.side,
+                orderPair = local.pair,
+                apiFill = apiTrade,
+                allocations = allocations,
+            )
+            if (!isCompatible) {
+                throw TradeReconciliationConflictException(
+                    "Cannot reconcile Kraken order $apiOrderTxid: authoritative API fill " +
+                        "(tradeId=${persistedFill.tradeId}, pair=${apiTrade.pair}, symbol=${apiTrade.symbol}, " +
+                        "side=${apiTrade.side}) is already persisted, but incompatible local order " +
+                        "estimate (ID: ${local.id}, pair=${local.pair}, symbol=${local.symbol}, " +
+                        "side=${local.side}) claims this order identity.",
+                )
+            }
+            throw TradeReconciliationConflictException(
+                "Cannot reconcile Kraken order $apiOrderTxid: authoritative API fill " +
+                    "(tradeId=${persistedFill.tradeId}) is already persisted, but un-superseded " +
+                    "local order estimate (ID: ${local.id}) claims this order identity.",
+            )
+        }
+
+        val cached = orderMetadataByTxid[apiOrderTxid]
+        if (cached != null) {
+            val isCachedCompatible = OrderFillReconciler.isInstrumentCompatible(
+                orderSymbol = cached.symbol,
+                orderSide = cached.side,
+                orderPair = cached.pair,
+                apiFill = apiTrade,
+                allocations = allocations,
+            )
+            if (!isCachedCompatible) {
+                throw TradeReconciliationConflictException(
+                    "Cannot reconcile Kraken order $apiOrderTxid: cached local order metadata " +
+                        "(tradeId=${cached.localTradeId}, pair=${cached.pair}, symbol=${cached.symbol}, " +
+                        "side=${cached.side}) is incompatible with already-persisted API fill " +
+                        "(tradeId=${apiTrade.tradeId}, pair=${apiTrade.pair}, symbol=${apiTrade.symbol}, " +
+                        "side=${apiTrade.side}).",
+                )
+            }
+        }
+    }
+
     private fun resolveLocalOrderContextForApiFill(
         apiTrade: TradeRecord,
         localEstimates: List<TradeRecord>,
@@ -302,14 +376,16 @@ class TradeHistorySyncService(
         allocations: List<String>,
     ): LocalOrderResolution {
         val apiOrderTxid = apiTrade.orderTxid?.trim()?.takeIf(String::isNotBlank)
-            ?: return LocalOrderResolution.None
+        if (apiOrderTxid == null) {
+            return LocalOrderResolution.None
+        }
 
         val keyedLocals = localEstimates.filter { local ->
             local.orderTxid?.trim()?.takeIf(String::isNotBlank) == apiOrderTxid
         }
 
         if (keyedLocals.size > 1) {
-            val localIds = keyedLocals.mapNotNull { it.id }.ifEmpty { listOf("unpersisted") }
+            val localIds = keyedLocals.map { it.id }
             return LocalOrderResolution.Conflict(
                 "Cannot reconcile Kraken order $apiOrderTxid: multiple local order estimates (IDs: $localIds) " +
                     "claim this order identity.",
@@ -396,7 +472,7 @@ class TradeHistorySyncService(
             }
         }
         if (matches.size > 1) {
-            val localIds = matches.mapNotNull { it.id }.ifEmpty { listOf("unpersisted") }
+            val localIds = matches.map { it.id }
             throw TradeReconciliationConflictException(
                 "Cannot reconcile API fill ${apiTrade.tradeId}: multiple local order estimates " +
                     "(IDs: $localIds) match heuristic criteria.",
@@ -542,7 +618,7 @@ class TradeHistorySyncService(
         if (persistedOrderTxid != null && apiOrderTxid != null && persistedOrderTxid != apiOrderTxid) return false
 
         if (persistedTradeId != null && apiTradeId != null) {
-            return persistedTradeId == apiTradeId
+            return true
         }
 
         // An order can produce multiple fills. If either trade id is absent, a shared order txid

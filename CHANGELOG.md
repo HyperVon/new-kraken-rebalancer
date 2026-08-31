@@ -45,9 +45,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Exact orderTxid dominance & unambiguous local identity**: Authoritative `orderTxid`
   evidence outranks heuristic matching in manual recovery and normal history sync;
   incompatible exact-order fills, duplicate local estimates for the same orderTxid,
-  and incompatible metadata cache lookups fail closed immediately with dedicated domain
+  incompatible metadata cache lookups, and un-superseded local estimates alongside
+  already-persisted authoritative fills fail closed immediately with dedicated domain
   exceptions (`OrderIntentReconciliationException` / `TradeReconciliationConflictException`)
-  and never fall through to ID-less heuristic matching or apply incompatible metadata.
+  and never fall through to ID-less heuristic matching, apply incompatible metadata, or
+  permit stale local double accounting during overlap syncs.
 - **Trade repository deletion safety**: Added `deleteTrade` with active intent foreign-key
   guards, preventing accidental removal of trades tied to unresolved (`PENDING` or `UNCERTAIN`)
   order intents.
@@ -57,9 +59,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added regression coverage for missing historical prices, deterministic sync
   horizons, identity-conflicting fills, multi-fill order reconciliation, precision-based
   completeness boundaries, exact orderTxid dominance, unambiguous sync reconciliation,
-  metadata cache isolation, partial fill failure, asset aliases, foreign-key migration,
-  rate semantics, nonce serialization, cancellation/exception preservation,
-  typed credential failures, mode pinning, and malformed UI persistence.
+  persisted-fill exact-order validation, metadata cache isolation, partial fill failure,
+  asset aliases, foreign-key migration, rate semantics, nonce serialization,
+  cancellation/exception preservation, typed credential failures, mode pinning,
+  and malformed UI persistence.
 
 ## [6.17.13] - 2026-08-30
 
