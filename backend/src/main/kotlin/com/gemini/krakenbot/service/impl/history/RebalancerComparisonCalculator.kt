@@ -4,7 +4,6 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
-import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -18,10 +17,7 @@ import java.time.Instant
 
 object RebalancerComparisonCalculator {
     private val baselineMismatchTolerance = BigDecimal("0.01")
-    private val rewardLedgerTypes = setOf(
-        KrakenApiConstants.LEDGER_TYPE_STAKING,
-        KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
-    )
+    private val rewardLedgerTypes = LedgerEvent.REWARD_TYPES
 
     fun calculate(
         snapshots: List<PortfolioSnapshot>,
@@ -310,6 +306,7 @@ object RebalancerComparisonCalculator {
         for (event in rewards) {
             if (event.type !in rewardLedgerTypes || event.time > upTo) continue
             val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
+            if (symbol == Asset.USD) continue
             cumulative[symbol] = (cumulative[symbol] ?: BigDecimal.ZERO).add(event.amount)
         }
         return cumulative

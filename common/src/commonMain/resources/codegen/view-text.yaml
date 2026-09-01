@@ -202,7 +202,7 @@ ViewText:
   COMPARISON_CONFIDENCE_ESTIMATED: "Estimated (external balance changes may affect precision)"
   # Staking rewards
   HISTORY_STAKING_REWARDS: "Staking Rewards"
-  REWARDS_CAPTION: "Cumulative staking reward value accrued during the selected range. Assets without a snapshot price in the range are excluded."
+  REWARDS_CAPTION: "Cumulative staking and dividend reward value accrued during the selected range. Assets without a snapshot price in the range are excluded."
 
 HistoryViewIds:
   OVERVIEW: "overview"

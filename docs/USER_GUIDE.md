@@ -340,8 +340,8 @@ range, with one series per asset and a total shown beside the title. Values are
 aligned to portfolio snapshots and use each snapshot's asset price; the chart is
 empty until ledger data has been synchronized. Dividends for untracked assets
 remain excluded as external inflows. A caption below the chart reads:
-*Cumulative staking reward value accrued during the selected range. Assets
-without a snapshot price in the range are excluded.*
+*Cumulative staking and dividend reward value accrued during the selected range.
+Assets without a snapshot price in the range are excluded.*
 
 ### Portfolio Value & Asset Holdings
 

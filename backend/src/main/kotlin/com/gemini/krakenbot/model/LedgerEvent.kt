@@ -27,4 +27,12 @@ data class LedgerEvent(
     val amount: BigDecimal,
     val fee: BigDecimal = BigDecimal.ZERO,
     val balance: BigDecimal = BigDecimal.ZERO,
-)
+) {
+    companion object {
+        val REWARD_TYPES: Set<String> =
+            setOf(
+                KrakenApiConstants.LEDGER_TYPE_STAKING,
+                KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+            )
+    }
+}

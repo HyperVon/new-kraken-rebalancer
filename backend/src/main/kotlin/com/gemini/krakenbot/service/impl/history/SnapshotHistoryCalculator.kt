@@ -6,7 +6,6 @@ import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.isNegative
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -44,10 +43,7 @@ object SnapshotHistoryCalculator {
         override fun compareTo(other: TimelineEvent): Int = other.timestamp.compareTo(this.timestamp)
     }
 
-    private val rewardLedgerTypes = setOf(
-        KrakenApiConstants.LEDGER_TYPE_STAKING,
-        KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
-    )
+    private val rewardLedgerTypes = LedgerEvent.REWARD_TYPES
 
     fun buildTimelineEvents(
         historicalTrades: List<TradeRecord>,
@@ -146,7 +142,9 @@ object SnapshotHistoryCalculator {
     /** Undo one credited staking/dividend reward: rewards added after the snapshot are removed going backward. */
     private fun reverseApplyReward(event: LedgerEvent, runningBalances: MutableMap<String, BigDecimal>) {
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-        runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(event.amount)
+        if (symbol == Asset.USD) return
+        if (symbol !in runningBalances) return
+        runningBalances[symbol] = runningBalances.getValue(symbol).subtract(event.amount)
     }
 
     private fun getPriceForTimestamp(

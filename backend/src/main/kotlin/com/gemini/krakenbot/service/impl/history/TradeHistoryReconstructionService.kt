@@ -2,7 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -151,14 +151,10 @@ class TradeHistoryReconstructionService(
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
 
-        val rewardLedgerTypes = setOf(
-            KrakenApiConstants.LEDGER_TYPE_STAKING,
-            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
-        )
         val stakingRewards =
             ledgerRepository
                 .getLedgersInRange(since, reconstructionNow)
-                .filter { it.type in rewardLedgerTypes }
+                .filter { it.type in LedgerEvent.REWARD_TYPES }
         val historicalRewards = stakingRewards.filter { it.time.isBefore(cutoffTime) }
 
         val events =

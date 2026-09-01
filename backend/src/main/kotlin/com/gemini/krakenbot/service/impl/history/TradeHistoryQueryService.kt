@@ -2,7 +2,6 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.HistoryStats
-import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
@@ -44,27 +43,19 @@ class TradeHistoryQueryService(
         val firstTimestamp = snapshots.minOf { it.timestamp }
         val lastTimestamp = snapshots.maxOf { it.timestamp }
         val trades = getTradesInRange(firstTimestamp, lastTimestamp)
-        val rewardLedgerTypes = setOf(
-            KrakenApiConstants.LEDGER_TYPE_STAKING,
-            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
-        )
         val rewards =
             ledgerRepository
                 .getLedgersInRange(firstTimestamp, lastTimestamp)
-                .filter { it.type in rewardLedgerTypes }
+                .filter { it.type in LedgerEvent.REWARD_TYPES }
         return RebalancerComparisonCalculator.calculate(snapshots, trades, rewards)
     }
 
     suspend fun getRewardsOverTime(from: Instant, to: Instant): RewardsOverTime {
         val snapshots = getSnapshotsInRange(from, to).sortedBy { it.timestamp }
-        val rewardLedgerTypes = setOf(
-            KrakenApiConstants.LEDGER_TYPE_STAKING,
-            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
-        )
         val stakingEvents =
             ledgerRepository
                 .getLedgersInRange(from, to)
-                .filter { it.type in rewardLedgerTypes }
+                .filter { it.type in LedgerEvent.REWARD_TYPES }
                 .sortedBy { it.time }
         val cumulativeByAsset = mutableMapOf<String, BigDecimal>()
         var eventIndex = 0
@@ -72,7 +63,9 @@ class TradeHistoryQueryService(
             while (eventIndex < stakingEvents.size && stakingEvents[eventIndex].time <= snapshot.timestamp) {
                 val event = stakingEvents[eventIndex]
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-                cumulativeByAsset[symbol] = (cumulativeByAsset[symbol] ?: BigDecimal.ZERO).add(event.amount)
+                if (symbol != Asset.USD) {
+                    cumulativeByAsset[symbol] = (cumulativeByAsset[symbol] ?: BigDecimal.ZERO).add(event.amount)
+                }
                 eventIndex++
             }
             var cumulativeUSD = BigDecimal.ZERO
