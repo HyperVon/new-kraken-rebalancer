@@ -61,11 +61,16 @@ object RebalancerComparisonCalculator {
                 ledgers = periodLedgers,
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
                 knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
-            ) ?: return unavailable(
-                reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
-                unavailableAt = baseline.timestamp,
+            )
+
+        if (balanceResult is TrackedBalanceValidation.Failed) {
+            return unavailable(
+                reason = balanceResult.reason,
+                unavailableAt = balanceResult.unavailableAt ?: baseline.timestamp,
                 baselineTimestamp = baseline.timestamp,
             )
+        }
+        val isReconciled = (balanceResult as TrackedBalanceValidation.Passed).isReconciled
 
         val benchmarkEvents = buildBenchmarkEvents(
             trades = trades.filter { it.success && !it.dryRun && it.timestamp > baseline.timestamp },
@@ -144,7 +149,7 @@ object RebalancerComparisonCalculator {
 
         return RebalancerComparison(
             availability = ComparisonAvailability.AVAILABLE,
-            confidence = if (balanceResult) ComparisonConfidence.RECONCILED else ComparisonConfidence.ESTIMATED,
+            confidence = if (isReconciled) ComparisonConfidence.RECONCILED else ComparisonConfidence.ESTIMATED,
             baselineTimestamp = baseline.timestamp,
             points = correctedPoints,
             latestDifferenceUSD = latestDiffUSD,
@@ -152,6 +157,12 @@ object RebalancerComparisonCalculator {
             unavailableReason = null,
             unavailableAt = null,
         )
+    }
+
+    private sealed class TrackedBalanceValidation {
+        data class Passed(val isReconciled: Boolean) : TrackedBalanceValidation()
+        data class Failed(val reason: ComparisonUnavailableReason, val unavailableAt: Instant?) :
+            TrackedBalanceValidation()
     }
 
     private fun validateBaseline(baseline: PortfolioSnapshot): RebalancerComparison? {
@@ -207,19 +218,21 @@ object RebalancerComparisonCalculator {
         return null
     }
 
-    /**
-     * @return `true` if fully reconciled, `false` if balance mismatches found or unknown trade ownership (ESTIMATED),
-     *         `null` if a hard error (unsupported trade) makes the comparison impossible.
-     */
     private fun validateTrackedBalanceChanges(
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
         ledgers: List<LedgerEvent>,
         knownRebalancerOrderTxids: Set<String>,
         knownRebalancerClientOrderIds: Set<String>,
-    ): Boolean? {
-        val successfulTrades = trades.filter { it.success && !it.dryRun }
-        val externalEvents = ledgers.filter { it.type in externalBalanceLedgerTypes }
+    ): TrackedBalanceValidation {
+        val baseline = snapshots.first()
+        val lastSnapshot = snapshots.last()
+        val successfulTrades = trades.filter {
+            it.success && !it.dryRun && it.timestamp > baseline.timestamp && it.timestamp <= lastSnapshot.timestamp
+        }
+        val externalEvents = ledgers.filter {
+            it.type in externalBalanceLedgerTypes && it.time > baseline.timestamp && it.time <= lastSnapshot.timestamp
+        }
         var allReconciled = true
 
         for (trade in successfulTrades) {
@@ -228,8 +241,11 @@ object RebalancerComparisonCalculator {
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
                 knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
             )
-            if (ownership == TradeOwnership.UNKNOWN) {
-                allReconciled = false
+            if (ownership == TradeOwnership.UNKNOWN && trade.symbol in baseline.assets.keys) {
+                return TrackedBalanceValidation.Failed(
+                    reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
+                    unavailableAt = trade.timestamp,
+                )
             }
         }
 
@@ -246,7 +262,12 @@ object RebalancerComparisonCalculator {
 
             val impliedBalances = prev.assets.mapValues { (_, asset) -> asset.balance }.toMutableMap()
             for (trade in intervalTrades) {
-                if (!applyRealizedTrade(impliedBalances, trade)) return null
+                if (!applyRealizedTrade(impliedBalances, trade)) {
+                    return TrackedBalanceValidation.Failed(
+                        reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                        unavailableAt = trade.timestamp,
+                    )
+                }
             }
             for (event in intervalLedgers) {
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
@@ -256,7 +277,10 @@ object RebalancerComparisonCalculator {
             }
 
             for ((symbol, expectedBalance) in impliedBalances) {
-                val actualBalance = curr.assets[symbol]?.balance ?: return null
+                val actualBalance = curr.assets[symbol]?.balance ?: return TrackedBalanceValidation.Failed(
+                    reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                    unavailableAt = curr.timestamp,
+                )
                 val scale = if (symbol == Asset.USD) {
                     PrecisionConstants.SCALE_USD
                 } else {
@@ -269,7 +293,7 @@ object RebalancerComparisonCalculator {
                 }
             }
         }
-        return allReconciled
+        return TrackedBalanceValidation.Passed(isReconciled = allReconciled)
     }
 
     private fun buildBenchmarkEvents(

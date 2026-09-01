@@ -14,6 +14,11 @@ enum class TradeOwnership {
     UNKNOWN,
 }
 
+data class RebalancerOrderIdentities(
+    val orderTxids: Set<String> = emptySet(),
+    val clientOrderIds: Set<String> = emptySet(),
+)
+
 object TradeOwnershipClassifier {
     /**
      * Authoritatively classifies the ownership of a trade record.
@@ -27,22 +32,19 @@ object TradeOwnershipClassifier {
         knownRebalancerOrderTxids: Set<String> = emptySet(),
         knownRebalancerClientOrderIds: Set<String> = emptySet(),
     ): TradeOwnership {
-        if (!trade.cycleId.isNullOrBlank()) return TradeOwnership.REBALANCER
-        if (!trade.clientOrderId.isNullOrBlank()) return TradeOwnership.REBALANCER
-        if (trade.source == TradeSource.LOCAL_ESTIMATE) return TradeOwnership.REBALANCER
-        val txid = trade.orderTxid?.takeIf(String::isNotBlank)
-        if (txid != null && txid in knownRebalancerOrderTxids) return TradeOwnership.REBALANCER
-        val clOrdId = trade.clientOrderId?.takeIf(String::isNotBlank)
-        if (clOrdId != null && clOrdId in knownRebalancerClientOrderIds) return TradeOwnership.REBALANCER
-
-        if (trade.source == TradeSource.LEGACY_UNKNOWN || trade.source == null) {
-            return TradeOwnership.UNKNOWN
+        if (!trade.cycleId.isNullOrBlank() || !trade.clientOrderId.isNullOrBlank()) {
+            return TradeOwnership.REBALANCER
         }
-
+        if (trade.source == TradeSource.LOCAL_ESTIMATE) {
+            return TradeOwnership.REBALANCER
+        }
+        val txid = trade.orderTxid?.takeIf(String::isNotBlank)
+        if (txid != null && txid in knownRebalancerOrderTxids) {
+            return TradeOwnership.REBALANCER
+        }
         if (trade.source == TradeSource.API_FILL && trade.hasAuthoritativeIdentity()) {
             return TradeOwnership.MANUAL_OR_EXTERNAL
         }
-
         return TradeOwnership.UNKNOWN
     }
 }

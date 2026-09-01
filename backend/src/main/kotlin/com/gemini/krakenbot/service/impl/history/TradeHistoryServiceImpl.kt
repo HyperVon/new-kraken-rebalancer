@@ -8,6 +8,7 @@ import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RewardsOverTime
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
@@ -33,6 +34,7 @@ class TradeHistoryServiceImpl(
         portfolioAnalyzer: PortfolioAnalyzer,
         tradeHistoryFilePath: String = "trade-history.json",
         syncNowProvider: () -> Instant = Instant::now,
+        orderIntentRepository: OrderIntentRepository? = null,
     ) : this(
         snapshotStore =
         TradeHistorySnapshotStore(
@@ -48,6 +50,7 @@ class TradeHistoryServiceImpl(
             repository = repository,
             portfolioStatsRepository = portfolioStatsRepository,
             ledgerRepository = ledgerRepository,
+            orderIntentRepository = orderIntentRepository,
         ),
         syncService =
         TradeHistorySyncService(

@@ -13,21 +13,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Strategy-neutral economic replay in Rebalancer vs Buy & Hold Benchmark**:
   Overhauled benchmark calculation so that all strategy-neutral economic activity
   (staking rewards, crypto dividends, USD cash dividends, untracked stock cash dividends,
-  external deposits, withdrawals, transfers, and ledger fees) affects the actual Rebalancer
-  portfolio and synthetic Buy & Hold benchmark equally.
-- **Trade ownership classification & manual trade replay**: Introduced `TradeOwnership`
-  (`REBALANCER`, `MANUAL_OR_EXTERNAL`, `UNKNOWN`) and `TradeOwnershipClassifier`. Positive
-  manual user trades replay into Buy & Hold to prevent distorting rebalancer alpha, while
-  rebalancer bot executions generate legitimate divergence. Ambiguous trade provenance
-  (`UNKNOWN`) degrades comparison confidence to `ESTIMATED`.
+  external deposits, withdrawals, transfers, adjustments, and ledger fees) affects the actual
+  Rebalancer portfolio and synthetic Buy & Hold benchmark equally.
+- **Fail-closed trade ownership classification & durable order journal integration**:
+  Introduced `TradeOwnership` (`REBALANCER`, `MANUAL_OR_EXTERNAL`, `UNKNOWN`) and
+  `TradeOwnershipClassifier`. Durable `OrderIntent` evidence (`orderTxid` and `clientOrderId`)
+  is queried and wired from `OrderIntentRepository` to prove bot execution even if historical
+  API fills lack cycle metadata. Positive manual user trades replay into Buy & Hold to prevent
+  distorting rebalancer alpha, while rebalancer bot executions generate legitimate divergence.
+  Any economically relevant trade with `UNKNOWN` ownership inside the comparison range causes
+  comparison to fail closed as `UNAVAILABLE` with `AMBIGUOUS_TRADE_OWNERSHIP`.
 - **Net balance delta fee accounting & zero-baseline valuation**: Ledger events use
-  `event.netBalanceDelta()` (`amount - fee`), accurately handling credits, debits, and fees.
-  Zero-baseline asset holdings credited via rewards or deposits are dynamically valued at
-  subsequent snapshot market prices.
-- **Ledger sync and snapshot reconstruction**: `LedgersSyncService` syncs `staking`,
-  `dividend`, `deposit`, `withdrawal`, and `transfer` ledger types; `SnapshotHistoryCalculator`
-  and `TradeHistoryReconstructionService` (bumped `SNAPSHOT_RECONSTRUCTION_VERSION` `4` → `5`)
-  query `EXTERNAL_BALANCE_TYPES` and apply `netBalanceDelta()` backwards from current balances.
+  `event.netBalanceDelta()` (`amount - fee`), accurately handling credits, debits, and fees
+  across benchmark calculations and the rewards-over-time chart. Zero-baseline asset holdings
+  credited via rewards or deposits are dynamically valued at subsequent snapshot market prices.
+- **Ledger coverage versioning, backfill migration & snapshot reconstruction**:
+  Introduced `LEDGER_COVERAGE_VERSION` `2` across all 6 supported types (`staking`, `dividend`,
+  `deposit`, `withdrawal`, `transfer`, `adjustment`). Existing seeded stores automatically backfill
+  historical external movement across a bounded 96-day lookback deduplicated by unique constraint.
+  `TradeHistoryReconstructionService` (`SNAPSHOT_RECONSTRUCTION_VERSION` `5`) requires both seeded
+  ledgers and current coverage version before rebuilding historical snapshots.
 
 ## [6.17.15] - 2026-08-31
 

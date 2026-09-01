@@ -715,5 +715,57 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 captured.captured.any { it.timestamp == expectedDailyClose } shouldBe true
             }
         }
+
+        "canRebuildSnapshots returns false when ledger store is seeded but coverage version is stale" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(),
+                    allocations = emptyList(),
+                )
+                val reconstructionService = TradeHistoryReconstructionService(
+                    repository = repository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                )
+                coEvery { ledgerRepository.isLedgersSeeded() } returns true
+                coEvery {
+                    ledgerRepository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                    )
+                } returns "1"
+
+                reconstructionService.canRebuildSnapshots() shouldBe false
+
+                shouldThrow<IllegalStateException> {
+                    reconstructionService.rebuildHistoricalSnapshots(appConfig, krakenService)
+                }
+            }
+        }
+
+        "canRebuildSnapshots returns true when ledger store is seeded and coverage version is current" {
+            runTest {
+                val reconstructionService = TradeHistoryReconstructionService(
+                    repository = repository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                )
+                coEvery { ledgerRepository.isLedgersSeeded() } returns true
+                coEvery {
+                    ledgerRepository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                    )
+                } returns "2"
+
+                reconstructionService.canRebuildSnapshots() shouldBe true
+            }
+        }
     }
 }

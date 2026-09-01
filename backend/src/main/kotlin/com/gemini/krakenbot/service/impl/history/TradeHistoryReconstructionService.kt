@@ -34,7 +34,9 @@ class TradeHistoryReconstructionService(
         const val CURRENT_RECONSTRUCTION_VERSION = "5"
     }
 
-    suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded()
+    suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded() &&
+        ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) ==
+        LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
 
     suspend fun reconstructHistoricalSnapshots() = configService.withExecutionSession {
         val config = configService.getConfig()
@@ -47,8 +49,8 @@ class TradeHistoryReconstructionService(
         reconstructHistoricalSnapshots(config, backend, replaceExisting = false)
 
     suspend fun rebuildHistoricalSnapshots(config: AppConfig, backend: KrakenService) {
-        check(ledgerRepository.isLedgersSeeded()) {
-            "Cannot rebuild historical snapshots before ledger synchronization completes"
+        check(canRebuildSnapshots()) {
+            "Cannot rebuild historical snapshots before ledger synchronization and coverage migration complete"
         }
         reconstructHistoricalSnapshots(config, backend, replaceExisting = true)
     }

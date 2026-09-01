@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.RebalancerOrderIdentities
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.OrderIntentRepository
@@ -420,4 +421,31 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         OrderIntentState.PENDING.name,
         OrderIntentState.UNCERTAIN.name,
     )
+
+    override suspend fun getKnownRebalancerOrderIdentities(from: Instant?, to: Instant?): RebalancerOrderIdentities =
+        database.safeTransactionIO(log, "Failed to load rebalancer order identities") {
+            val query = when {
+                from != null && to != null -> OrderIntentTable.selectAll().where {
+                    (OrderIntentTable.createdAt greaterEq from.toEpochMilli()) and
+                        (OrderIntentTable.createdAt lessEq to.toEpochMilli())
+                }
+
+                from != null -> OrderIntentTable.selectAll().where {
+                    OrderIntentTable.createdAt greaterEq from.toEpochMilli()
+                }
+
+                to != null -> OrderIntentTable.selectAll().where {
+                    OrderIntentTable.createdAt lessEq to.toEpochMilli()
+                }
+
+                else -> OrderIntentTable.selectAll()
+            }
+            val orderTxids = mutableSetOf<String>()
+            val clientOrderIds = mutableSetOf<String>()
+            query.forEach { row ->
+                row[OrderIntentTable.orderTxid]?.takeIf(String::isNotBlank)?.let(orderTxids::add)
+                row[OrderIntentTable.clientOrderId]?.takeIf(String::isNotBlank)?.let(clientOrderIds::add)
+            }
+            RebalancerOrderIdentities(orderTxids = orderTxids, clientOrderIds = clientOrderIds)
+        }
 }

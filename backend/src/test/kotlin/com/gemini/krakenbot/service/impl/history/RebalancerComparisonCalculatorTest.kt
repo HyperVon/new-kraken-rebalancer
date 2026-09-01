@@ -1341,8 +1341,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.confidence shouldBe ComparisonConfidence.ESTIMATED
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
         }
 
         "Scenario M: External USD deposit increases both actual and Buy & Hold with zero divergence" {
@@ -1620,6 +1620,282 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "UNKNOWN SELL trade makes comparison unavailable with AMBIGUOUS_TRADE_OWNERSHIP" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.5", "50000.00", "25000.00"),
+                        "USD" to assetRow("75000.00", "1.0", "75000.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusSeconds(1800),
+                    side = "SELL",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    source = TradeSource.LEGACY_UNKNOWN,
+                    cycleId = null,
+                    clientOrderId = null,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+        }
+
+        "UNKNOWN multi-fill order makes comparison unavailable with AMBIGUOUS_TRADE_OWNERSHIP" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.4", "50000.00", "70000.00"),
+                        "USD" to assetRow("30000.00", "1.0", "30000.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusSeconds(1800),
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = "0.2",
+                    usdAmount = "10000.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = "cycle-1",
+                ),
+                trade(
+                    timestamp = now.plusSeconds(1900),
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = "0.2",
+                    usdAmount = "10000.00",
+                    source = TradeSource.LEGACY_UNKNOWN,
+                    cycleId = null,
+                    clientOrderId = null,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+        }
+
+        "UNKNOWN trade outside comparison range does not affect comparison" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                // Trade BEFORE baseline timestamp
+                trade(
+                    timestamp = now.minusSeconds(1800),
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    source = TradeSource.LEGACY_UNKNOWN,
+                    cycleId = null,
+                    clientOrderId = null,
+                ),
+                // Trade AFTER last snapshot
+                trade(
+                    timestamp = now.plusSeconds(7200),
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    source = TradeSource.LEGACY_UNKNOWN,
+                    cycleId = null,
+                    clientOrderId = null,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+        }
+
+        "Multi-fill bot order with durable orderTxid evidence is excluded from Buy & Hold" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.4", "50000.00", "70000.00"),
+                        "USD" to assetRow("30000.00", "1.0", "30000.00"),
+                    ),
+                ),
+            )
+            // 2 partial fills for orderTxid "BOT-TXID-100", no cycleId on trades
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusSeconds(1800),
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = "0.2",
+                    usdAmount = "10000.00",
+                    source = TradeSource.API_FILL,
+                    orderTxid = "BOT-TXID-100",
+                    tradeId = "FILL-1",
+                    cycleId = null,
+                    clientOrderId = null,
+                ),
+                trade(
+                    timestamp = now.plusSeconds(1900),
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = "0.2",
+                    usdAmount = "10000.00",
+                    source = TradeSource.API_FILL,
+                    orderTxid = "BOT-TXID-100",
+                    tradeId = "FILL-2",
+                    cycleId = null,
+                    clientOrderId = null,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = snapshots,
+                trades = trades,
+                knownRebalancerOrderTxids = setOf("BOT-TXID-100"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            // Bot trades are excluded from Buy & Hold, so Buy & Hold stays at 100,000 USD
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+        }
+
+        "Multi-fill bot order with durable clientOrderId evidence is excluded from Buy & Hold" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.4", "50000.00", "70000.00"),
+                        "USD" to assetRow("30000.00", "1.0", "30000.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusSeconds(1800),
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = "0.4",
+                    usdAmount = "20000.00",
+                    source = TradeSource.API_FILL,
+                    clientOrderId = "BOT-CL-ORD-1",
+                    tradeId = "FILL-1",
+                    cycleId = null,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = snapshots,
+                trades = trades,
+                knownRebalancerClientOrderIds = setOf("BOT-CL-ORD-1"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+        }
+
+        "Adjustment ledger event increases both Actual and Buy & Hold with zero divergence" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100050.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50050.00", "1.0", "50050.00"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "USD",
+                    amount = "50.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100050.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100050.00")
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
         }
     }

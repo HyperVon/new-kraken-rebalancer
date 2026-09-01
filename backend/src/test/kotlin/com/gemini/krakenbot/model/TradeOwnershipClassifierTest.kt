@@ -58,15 +58,35 @@ class TradeOwnershipClassifierTest : StringSpec() {
                 TradeOwnership.REBALANCER
         }
 
-        "classifies trade with clientOrderId matching known bot client order ids as REBALANCER" {
-            val trade = sampleTrade(source = TradeSource.API_FILL, clientOrderId = "CL-200")
-            TradeOwnershipClassifier.classify(trade, knownRebalancerClientOrderIds = setOf("CL-200")) shouldBe
+        "classifies trade with blank cycleId and blank clientOrderId as UNKNOWN or MANUAL" {
+            val tradeUnknown = sampleTrade(source = TradeSource.LEGACY_UNKNOWN, cycleId = "  ", clientOrderId = "")
+            TradeOwnershipClassifier.classify(tradeUnknown) shouldBe TradeOwnership.UNKNOWN
+
+            val tradeManual = sampleTrade(
+                source = TradeSource.API_FILL,
+                cycleId = "",
+                clientOrderId = " ",
+                orderTxid = "TX-MANUAL",
+                tradeId = "TR-MANUAL",
+            )
+            TradeOwnershipClassifier.classify(tradeManual) shouldBe TradeOwnership.MANUAL_OR_EXTERNAL
+        }
+
+        "classifies trade with clientOrderId as REBALANCER even when orderTxid does not match" {
+            val trade = sampleTrade(clientOrderId = "cl-ord-123", orderTxid = "TX-OTHER")
+            TradeOwnershipClassifier.classify(trade, knownRebalancerOrderTxids = setOf("TX-100")) shouldBe
                 TradeOwnership.REBALANCER
         }
 
         "classifies authoritative API_FILL without bot marks as MANUAL_OR_EXTERNAL" {
             val trade = sampleTrade(source = TradeSource.API_FILL, orderTxid = "TX-MANUAL", tradeId = "TR-MANUAL")
             TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.MANUAL_OR_EXTERNAL
+        }
+
+        "classifies API_FILL with orderTxid not in knownRebalancerOrderTxids as MANUAL_OR_EXTERNAL" {
+            val trade = sampleTrade(source = TradeSource.API_FILL, orderTxid = "TX-MANUAL", tradeId = "TR-MANUAL")
+            TradeOwnershipClassifier.classify(trade, knownRebalancerOrderTxids = setOf("TX-OTHER")) shouldBe
+                TradeOwnership.MANUAL_OR_EXTERNAL
         }
 
         "classifies trade with null source as UNKNOWN" {
@@ -82,6 +102,16 @@ class TradeOwnershipClassifierTest : StringSpec() {
         "classifies API_FILL without authoritative identity as UNKNOWN" {
             val trade = sampleTrade(source = TradeSource.API_FILL, orderTxid = null, tradeId = null)
             TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.UNKNOWN
+        }
+
+        "classifies API_FILL with blank orderTxid and blank tradeId as UNKNOWN" {
+            val trade = sampleTrade(source = TradeSource.API_FILL, orderTxid = " ", tradeId = "")
+            TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.UNKNOWN
+        }
+
+        "classifies API_FILL with only non-blank tradeId as MANUAL_OR_EXTERNAL" {
+            val trade = sampleTrade(source = TradeSource.API_FILL, orderTxid = null, tradeId = "TR-123")
+            TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.MANUAL_OR_EXTERNAL
         }
     }
 }

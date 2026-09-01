@@ -11,6 +11,7 @@ import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
+import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -103,6 +104,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     latestSnapshotTime = null,
                 )
                 coEvery { ledgerRepository.isLedgersSeeded() } returns true
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
+                } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
                 coEvery { krakenService.getBalances() } returns mapOf(
                     Asset.BTC to BigDecimal.ONE,
                     TestFixtures.USD to BigDecimal("30000.00"),

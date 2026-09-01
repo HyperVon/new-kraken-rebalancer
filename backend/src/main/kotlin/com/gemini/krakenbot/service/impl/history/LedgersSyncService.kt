@@ -35,6 +35,18 @@ class LedgersSyncService(
     private val syncMutex = Mutex()
     private var lastSyncTime: Instant = Instant.EPOCH
 
+    companion object {
+        const val CURRENT_LEDGER_COVERAGE_VERSION = "2"
+        val SUPPORTED_LEDGER_TYPES = listOf(
+            KrakenApiConstants.LEDGER_TYPE_STAKING,
+            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+            KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+        )
+    }
+
     suspend fun syncLedgersFromKraken() = syncMutex.withLock {
         syncLedgersFromKrakenLocked()
     }
@@ -71,12 +83,45 @@ class LedgersSyncService(
 
     private suspend fun syncLedgersFromKrakenPinned(config: AppConfig) {
         val isSeeded = repository.isLedgersSeeded()
+        val coverageVersion = repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
+        val isCoverageCurrent = coverageVersion == CURRENT_LEDGER_COVERAGE_VERSION
+        val needsCoverageBackfill = isSeeded && !isCoverageCurrent
+
+        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
+        val queryNow = nowProvider()
+
+        if (needsCoverageBackfill) {
+            log.info(
+                "Ledger store is seeded but coverage version is {} (expected {}). Running bounded backfill for newly supported types...",
+                coverageVersion,
+                CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            val totalAdded = processLedgerPages(
+                startSec = seedBound.epochSecond,
+                endSec = queryNow.epochSecond,
+                isSeeded = true,
+                typesToFetch = SUPPORTED_LEDGER_TYPES,
+            )
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, CURRENT_LEDGER_COVERAGE_VERSION)
+            val currentWatermark = readSyncWatermark()
+            if (currentWatermark == null || queryNow.isAfter(currentWatermark)) {
+                writeSyncWatermark(queryNow)
+            }
+            pruneOldEntries(queryNow)
+            lastSyncTime = nowProvider()
+            log.info(
+                "Ledger coverage backfill completed. Added: {} entries. Coverage version is now {}.",
+                totalAdded,
+                CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            return
+        }
+
         val effectiveLatest = calculateEffectiveLatestTime()
         // Incremental sync overlaps by 5 minutes so entries near the previous watermark are
         // re-fetched and deduplicated rather than missed. Unseeded initial sync and recovery both
         // bound to SEED_HISTORY_LOOKBACK_DAYS like TradeHistorySyncService to avoid fetching
         // historical entries that would be immediately pruned.
-        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
         val paginationStartSec = if (isRecoveringInitialSync) {
@@ -95,12 +140,11 @@ class LedgersSyncService(
             isRecoveringInitialSync,
         )
 
-        val queryNow = nowProvider()
-
         val totalAdded = processLedgerPages(
             startSec = paginationStartSec,
             endSec = queryNow.epochSecond,
             isSeeded = isSeeded,
+            typesToFetch = SUPPORTED_LEDGER_TYPES,
         )
 
         // A simulation run that found no ledger rows must not mark the store seeded: the emulator
@@ -126,11 +170,16 @@ class LedgersSyncService(
         return watermarkInstant ?: latestLedgerTime
     }
 
-    private suspend fun processLedgerPages(startSec: Long?, endSec: Long, isSeeded: Boolean): Int {
+    private suspend fun processLedgerPages(
+        startSec: Long?,
+        endSec: Long,
+        isSeeded: Boolean,
+        typesToFetch: List<String> = SUPPORTED_LEDGER_TYPES,
+    ): Int {
         var totalAdded = 0
         // Cross-page duplicates are dropped by the unique (ledger id, timestamp, asset, type)
         // index; saveLedgers returns the number of rows actually inserted.
-        getLedgersPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
+        getLedgersPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded, types = typesToFetch)
             .collect { apiLedgers ->
                 totalAdded += repository.saveLedgers(apiLedgers)
             }
@@ -140,6 +189,10 @@ class LedgersSyncService(
     private suspend fun finalizeSync(isSeeded: Boolean, successfulQueryHorizon: Instant) {
         if (!isSeeded) {
             repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                CURRENT_LEDGER_COVERAGE_VERSION,
+            )
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, SyncMetadataKeys.COMPLETED)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, SyncMetadataKeys.COMPLETED)
         } else if (readInitialPaginationOffset() != null) {
@@ -195,14 +248,13 @@ class LedgersSyncService(
         ?.takeIf { it >= 0 }
 
     /** Cold paginated Kraken ledger history — per-type cursors; progress is durable until the first seed completes. */
-    private fun getLedgersPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<LedgerEvent>> = flow {
-        val ledgerTypes = listOf(
-            KrakenApiConstants.LEDGER_TYPE_STAKING,
-            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
-            KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
-            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
-            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
-        )
+    private fun getLedgersPaginated(
+        startSec: Long?,
+        endSec: Long,
+        isSeeded: Boolean,
+        types: List<String> = SUPPORTED_LEDGER_TYPES,
+    ): Flow<List<LedgerEvent>> = flow {
+        val ledgerTypes = types
         val perTypeOffset = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
         val perTypeTotal = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
         val perTypeDone = mutableMapOf<String, Boolean>().apply { ledgerTypes.forEach { this[it] = false } }
@@ -266,6 +318,9 @@ class LedgersSyncService(
     suspend fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
 
     suspend fun isLedgersSeeded(): Boolean = repository.isLedgersSeeded()
+
+    suspend fun isLedgerCoverageCurrent(): Boolean =
+        repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) == CURRENT_LEDGER_COVERAGE_VERSION
 }
 
 private fun AppConfig.canPullLedgers(): Boolean = settings.simulation || kraken.hasValidCredentials()

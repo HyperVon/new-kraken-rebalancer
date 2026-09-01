@@ -197,6 +197,7 @@ ViewText:
   UNAVAILABLE_MISSING_PRICE: "A required historical asset price is missing."
   UNAVAILABLE_ASSET_UNIVERSE_CHANGED: "The configured asset set changed during this range."
   UNAVAILABLE_UNSUPPORTED_TRADE: "A recorded trade cannot be reconciled safely."
+  UNAVAILABLE_AMBIGUOUS_TRADE_OWNERSHIP: "A recorded trade has ambiguous ownership and cannot be attributed safely."
   UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE: "A deposit, withdrawal, transfer, or incomplete trade history may exist."
   UNAVAILABLE_INVALID_RESPONSE: "Comparison data could not be validated."
   COMPARISON_CONFIDENCE_ESTIMATED: "Estimated (external balance changes may affect precision)"

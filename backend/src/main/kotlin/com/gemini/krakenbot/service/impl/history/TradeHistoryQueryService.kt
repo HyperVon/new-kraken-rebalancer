@@ -5,10 +5,12 @@ import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
+import com.gemini.krakenbot.model.RebalancerOrderIdentities
 import com.gemini.krakenbot.model.RewardsOverTime
 import com.gemini.krakenbot.model.RewardsOverTimePoint
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -20,6 +22,7 @@ class TradeHistoryQueryService(
     private val repository: TradeRepository,
     private val portfolioStatsRepository: PortfolioStatsRepository,
     private val ledgerRepository: LedgerRepository,
+    private val orderIntentRepository: OrderIntentRepository? = null,
 ) {
     suspend fun getHistory(): List<PortfolioSnapshot> = repository.load()
 
@@ -47,7 +50,15 @@ class TradeHistoryQueryService(
             ledgerRepository
                 .getLedgersInRange(firstTimestamp, lastTimestamp)
                 .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
-        return RebalancerComparisonCalculator.calculate(snapshots, trades, ledgers)
+        val identities = orderIntentRepository?.getKnownRebalancerOrderIdentities(firstTimestamp, lastTimestamp)
+            ?: RebalancerOrderIdentities()
+        return RebalancerComparisonCalculator.calculate(
+            snapshots = snapshots,
+            trades = trades,
+            rewards = ledgers,
+            knownRebalancerOrderTxids = identities.orderTxids,
+            knownRebalancerClientOrderIds = identities.clientOrderIds,
+        )
     }
 
     suspend fun getRewardsOverTime(from: Instant, to: Instant): RewardsOverTime {
@@ -64,7 +75,8 @@ class TradeHistoryQueryService(
                 val event = stakingEvents[eventIndex]
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
                 if (symbol != Asset.USD) {
-                    cumulativeByAsset[symbol] = (cumulativeByAsset[symbol] ?: BigDecimal.ZERO).add(event.amount)
+                    cumulativeByAsset[symbol] =
+                        (cumulativeByAsset[symbol] ?: BigDecimal.ZERO).add(event.netBalanceDelta())
                 }
                 eventIndex++
             }

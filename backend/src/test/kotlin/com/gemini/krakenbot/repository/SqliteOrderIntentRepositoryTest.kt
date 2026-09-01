@@ -1702,6 +1702,48 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 }
             }
         }
+
+        "loads known rebalancer order identities filtered by time range" {
+            runTest {
+                val now = Instant.parse("2026-07-01T12:00:00Z")
+                val intent1 = newIntent().copy(
+                    createdAt = now,
+                    orderTxid = "TXID-1",
+                    clientOrderId = "CLORD-1",
+                )
+                val id1 = savePendingWithTrade(intent1)
+                repository.recordOutcome(id1, OrderIntentState.CONFIRMED, "TXID-1", null, now.plusSeconds(10))
+
+                val intent2 = newIntent().copy(
+                    createdAt = now.plusSeconds(3600),
+                    orderTxid = "TXID-2",
+                    clientOrderId = "CLORD-2",
+                )
+                val id2 = savePendingWithTrade(intent2)
+                repository.recordOutcome(id2, OrderIntentState.CONFIRMED, "TXID-2", null, now.plusSeconds(3610))
+
+                // Full range
+                val allIdentities = repository.getKnownRebalancerOrderIdentities()
+                allIdentities.orderTxids shouldBe setOf("TXID-1", "TXID-2")
+                allIdentities.clientOrderIds shouldBe setOf("CLORD-1", "CLORD-2")
+
+                // Bounded range
+                val boundedIdentities = repository.getKnownRebalancerOrderIdentities(
+                    from = now.plusSeconds(1800),
+                    to = now.plusSeconds(7200),
+                )
+                boundedIdentities.orderTxids shouldBe setOf("TXID-2")
+                boundedIdentities.clientOrderIds shouldBe setOf("CLORD-2")
+
+                // from-only bound
+                val fromOnlyIdentities = repository.getKnownRebalancerOrderIdentities(from = now.plusSeconds(1800))
+                fromOnlyIdentities.orderTxids shouldBe setOf("TXID-2")
+
+                // to-only bound
+                val toOnlyIdentities = repository.getKnownRebalancerOrderIdentities(to = now.plusSeconds(1800))
+                toOnlyIdentities.orderTxids shouldBe setOf("TXID-1")
+            }
+        }
     }
 
     private suspend fun savePendingWithTrade(intent: OrderIntent): Int {

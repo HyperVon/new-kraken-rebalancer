@@ -12,3 +12,4 @@ SyncMetadataKeys:
   LEDGER_OFFSET: "ledger_offset"
   LEDGER_TOTAL: "ledger_total"
   SNAPSHOT_RECONSTRUCTION_VERSION: "snapshot_reconstruction_version"
+  LEDGER_COVERAGE_VERSION: "ledger_coverage_version"

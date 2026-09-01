@@ -75,9 +75,11 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
             service.syncLedgersFromKraken()
 
-            // Per-type cursors: 5 ledger types each fetch once per sync (offset 0), second sync throttled.
-            coVerify(exactly = 5) { krakenService.getLedgers(any(), any(), any(), any()) }
+            // Per-type cursors: 6 ledger types each fetch once per sync (offset 0), second sync throttled.
+            coVerify(exactly = 6) { krakenService.getLedgers(any(), any(), any(), any()) }
             service.isLedgersSeeded() shouldBe true
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
         }
 
         "skips sync when credentials are missing and simulation is off" {
@@ -111,13 +113,15 @@ class LedgersSyncServiceTest : StringSpec() {
 
             repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 75
             service.isLedgersSeeded() shouldBe true
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET) shouldBe SyncMetadataKeys.COMPLETED
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
                 fixedNow.epochSecond.toString()
-            // Per-type cursors: each offset is fetched for all 5 types (duplicates are deduped by unique index).
-            coVerify(exactly = 5) { krakenService.getLedgers(any(), 0, any(), any()) }
-            coVerify(exactly = 5) { krakenService.getLedgers(any(), 50, any(), any()) }
+            // Per-type cursors: each offset is fetched for all 6 types (duplicates are deduped by unique index).
+            coVerify(exactly = 6) { krakenService.getLedgers(any(), 0, any(), any()) }
+            coVerify(exactly = 6) { krakenService.getLedgers(any(), 50, any(), any()) }
         }
 
         "deduplicates the newest-first offset overlap across pages" {
@@ -204,6 +208,10 @@ class LedgersSyncServiceTest : StringSpec() {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, "50")
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, "75")
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
@@ -219,6 +227,11 @@ class LedgersSyncServiceTest : StringSpec() {
         "incremental syncs start five minutes before the newest stored entry" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
             repository.saveLedgers(listOf(event(0, time = baseTime)))
 
             coEvery { krakenService.getLedgers(any(), 0, any(), any()) } returns emptyList()
@@ -238,6 +251,10 @@ class LedgersSyncServiceTest : StringSpec() {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
             repository.saveLedgers(listOf(event(0, time = baseTime)))
             val watermark = baseTime.minusSeconds(3600)
             repository.setSyncMetadata(
@@ -261,6 +278,10 @@ class LedgersSyncServiceTest : StringSpec() {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
             repository.saveLedgers(listOf(event(0, time = baseTime)))
 
             var now = fixedNow
@@ -283,7 +304,7 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             val expectedInitialStart = baseTime.minusSeconds(300).epochSecond
-            coVerify(exactly = 5) {
+            coVerify(exactly = 6) {
                 krakenService.getLedgers(
                     startSec = expectedInitialStart,
                     offset = 0,
@@ -292,7 +313,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 )
             }
             val expectedIncrementalStart = fixedNow.minusSeconds(300).epochSecond
-            coVerify(exactly = 5) {
+            coVerify(exactly = 6) {
                 krakenService.getLedgers(
                     startSec = expectedIncrementalStart,
                     offset = 0,
@@ -310,6 +331,10 @@ class LedgersSyncServiceTest : StringSpec() {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
             repository.saveLedgers(listOf(event(0, time = baseTime)))
 
             var now = fixedNow
@@ -333,7 +358,7 @@ class LedgersSyncServiceTest : StringSpec() {
             now = fixedNow.plusSeconds(1_200)
             failureEnabled = false
             service.syncLedgersFromKraken()
-            coVerify(exactly = 6) {
+            coVerify(exactly = 7) {
                 krakenService.getLedgers(
                     startSec = fixedNow.minusSeconds(300).epochSecond,
                     offset = 0,
@@ -401,6 +426,88 @@ class LedgersSyncServiceTest : StringSpec() {
 
             val remaining = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plus(1, ChronoUnit.DAYS))
             remaining.map { it.ledgerId } shouldBe listOf("ledger-1")
+        }
+
+        "existing seeded v1 database triggers bounded backfill across 96 days for newly supported types" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            // Stale/missing coverage version (v1)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "1")
+            repository.saveLedgers(listOf(event(0, time = baseTime)))
+
+            val depositEvent = event(1, time = fixedNow.minus(30, ChronoUnit.DAYS))
+                .copy(type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT, asset = "USD", amount = BigDecimal("10000.00"))
+            val withdrawalEvent = event(2, time = fixedNow.minus(20, ChronoUnit.DAYS))
+                .copy(type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL, asset = "USD", amount = BigDecimal("-1000.00"))
+            val transferEvent = event(3, time = fixedNow.minus(10, ChronoUnit.DAYS))
+                .copy(type = KrakenApiConstants.LEDGER_TYPE_TRANSFER, asset = "USD", amount = BigDecimal("500.00"))
+            val adjustmentEvent = event(4, time = fixedNow.minus(5, ChronoUnit.DAYS))
+                .copy(type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT, asset = "USD", amount = BigDecimal("50.00"))
+
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                val types = arg<Set<String>?>(3)
+                when (types) {
+                    setOf(KrakenApiConstants.LEDGER_TYPE_DEPOSIT) -> listOf(depositEvent)
+
+                    setOf(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL) -> listOf(withdrawalEvent)
+
+                    setOf(KrakenApiConstants.LEDGER_TYPE_TRANSFER) -> listOf(transferEvent)
+
+                    setOf(KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT) -> listOf(adjustmentEvent)
+
+                    setOf(KrakenApiConstants.LEDGER_TYPE_STAKING) -> listOf(event(0, time = baseTime))
+
+                    // duplicate
+                    else -> emptyList()
+                }
+            }
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.isLedgerCoverageCurrent() shouldBe false
+
+            service.syncLedgersFromKraken()
+
+            service.isLedgerCoverageCurrent() shouldBe true
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "2"
+            val allEvents = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(300))
+            allEvents.map { it.ledgerId }.toSet() shouldBe
+                setOf("ledger-0", "ledger-1", "ledger-2", "ledger-3", "ledger-4")
+
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            coVerify {
+                krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
+            }
+        }
+
+        "failed backfill does not advance coverage version so subsequent sync retries" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "1")
+
+            var failureEnabled = true
+            val failure = RuntimeException("Kraken API 503 Service Unavailable")
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                if (failureEnabled) throw failure else emptyList()
+            }
+
+            var now = fixedNow
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { now })
+            shouldThrow<RuntimeException> { service.syncLedgersFromKraken() } shouldBe failure
+
+            service.isLedgerCoverageCurrent() shouldBe false
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "1"
+
+            // Retry after failure
+            now = fixedNow.plusSeconds(600)
+            failureEnabled = false
+            service.syncLedgersFromKraken()
+
+            service.isLedgerCoverageCurrent() shouldBe true
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "2"
         }
     }
 }

@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
+import com.gemini.krakenbot.model.RebalancerOrderIdentities
 import java.time.Instant
 
 interface OrderIntentRepository {
@@ -28,4 +29,9 @@ interface OrderIntentRepository {
         resolvedAt: Instant,
         orderTxid: String? = null,
     ): Boolean
+
+    suspend fun getKnownRebalancerOrderIdentities(
+        from: Instant? = null,
+        to: Instant? = null,
+    ): RebalancerOrderIdentities
 }
