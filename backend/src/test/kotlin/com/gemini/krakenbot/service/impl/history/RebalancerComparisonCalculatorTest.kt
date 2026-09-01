@@ -3235,6 +3235,93 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             res.availability shouldBe ComparisonAvailability.UNAVAILABLE
             res.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
         }
+
+        "In-flight trade during balance request latency is not assumed in snapshot and reconciles in next interval" {
+            // T0: Request start
+            val t0 = now
+            // T0 + 200ms: Trade executes on exchange
+            val tradeTime = t0.plusMillis(200)
+            // T0 + 350ms: Get Balance response arrived
+            // T0 + 500ms: Snapshot constructed/displayed
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0, // Captured at request start BEFORE getBalances()
+            )
+            // S2: Subsequent snapshot reflects the trade (BTC = 1.1, USD = 45000)
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val trade = manualTrade(
+                timestamp = tradeTime,
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(trade),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+        }
+
+        "In-flight ledger during balance request latency is not assumed in snapshot and reconciles in next interval" {
+            val t0 = now
+            val ledgerTime = t0.plusMillis(200)
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "102500.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.05", "50000.00", "52500.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val ledger = ledgerEvent(
+                timestamp = ledgerTime,
+                asset = "BTC",
+                amount = "0.05",
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = listOf(ledger),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("102500.00")
+        }
     }
 
     private fun assetRow(balance: String, price: String, valueUSD: String): Triple<String, String, String> =

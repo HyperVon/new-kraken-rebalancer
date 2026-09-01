@@ -188,6 +188,28 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
+        "fetchObservedBalances captures boundary before getBalances completion" {
+            runTest {
+                val t0 = Instant.parse("2026-07-03T12:00:00.000Z")
+                val t1 = Instant.parse("2026-07-03T12:00:00.500Z")
+                var currentTime = t0
+                val customAnalyzer = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    nowProvider = { currentTime },
+                )
+                coEvery { krakenService.getBalances() } coAnswers {
+                    currentTime = t1
+                    mapOf("BTC" to BigDecimal("1.5"))
+                }
+
+                val observed = customAnalyzer.fetchObservedBalances()
+                observed.observedAt shouldBe t0
+                observed.balances["BTC"] shouldBe BigDecimal("1.5")
+            }
+        }
+
         "buildSnapshot preserves explicit balancesObservedAt" {
             runTest {
                 every { configService.getConfig() } returns

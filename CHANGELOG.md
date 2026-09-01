@@ -11,8 +11,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Balance-observation temporal model for History comparison**: Introduced `balancesObservedAt`
-  on `PortfolioSnapshot` and `PortfolioSnapshotTable`, capturing the exact time balances were
-  queried from the exchange separate from snapshot object construction and display time.
+  on `PortfolioSnapshot` and `PortfolioSnapshotTable`, capturing the local request-start boundary
+  before querying balances from the exchange separate from snapshot object construction and display time.
 - **Symmetrical temporal boundary & late event subset reconciliation**: History comparison reconciles
   both trades and external ledger events relative to balance observation boundaries. A bounded clock skew
   window (up to 1,000ms) matches unique candidate subsets across trades and ledgers when fills are already

@@ -30,12 +30,20 @@ class PortfolioAnalyzerImpl(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val portfolioStatsRepository: PortfolioStatsRepository,
+    private val nowProvider: () -> Instant = Instant::now,
 ) : PortfolioAnalyzer {
     private val log = LoggerFactory.getLogger(PortfolioAnalyzerImpl::class.java)
 
+    /**
+     * Fetches current account balances and records the local balance-request start boundary.
+     * Capturing [observedAt] BEFORE initiating [KrakenService.getBalances] ensures a conservative
+     * lower temporal boundary: any exchange events occurring after this timestamp cannot safely
+     * be assumed to already be reflected in the returned balance snapshot unless reconciliation
+     * proves they were.
+     */
     override suspend fun fetchObservedBalances(): ObservedBalances {
+        val observedAt = nowProvider()
         val balances = krakenService.getBalances()
-        val observedAt = Instant.now()
         log.info("Available Balance Keys: {}", balances.keys)
         return ObservedBalances(balances = balances, observedAt = observedAt)
     }

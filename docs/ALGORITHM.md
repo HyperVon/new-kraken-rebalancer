@@ -347,17 +347,18 @@ rounding USD to scale 2 and crypto to scale 8, the comparison is unavailable wit
 estimated numeric alpha for an unexplained tracked mutation; untracked assets remain
 outside this validation boundary.
 
-Snapshots track an explicit `balancesObservedAt` timestamp representing the exact
-time account balances were queried, distinct from the snapshot creation/display
-timestamp. The comparison engine reasons about exchange events (trades and external
-ledgers) relative to balance observation boundaries. A bounded clock skew window
-(up to 1,000ms) admits exchange fills or ledgers whose execution was already reflected
-in observed balances, matching unique candidate subsets across both trades and ledger
-events. For user-selected subranges, an optional pre-baseline anchor snapshot ($S_0$)
-attributes boundary events without modifying the displayed baseline or points.
-For `TradeSource.API_FILL`, replay uses the precise `price × volume` notional
-when a positive fill price is available, with the stored USD amount retained as a
-legacy fallback.
+Snapshots track an explicit `balancesObservedAt` timestamp representing the local
+balance-request start boundary, distinct from the snapshot creation/display
+timestamp. Events after this instant are not assumed to be reflected in the returned
+balances unless reconciliation proves they were. The comparison engine reasons about
+exchange events (trades and external ledgers) relative to these conservative balance
+observation boundaries. A bounded clock skew window (up to 1,000ms) admits exchange
+fills or ledgers whose execution was already reflected in observed balances, matching
+unique candidate subsets across both trades and ledger events. For user-selected subranges,
+an optional pre-baseline anchor snapshot ($S_0$) attributes boundary events without
+modifying the displayed baseline or points. For `TradeSource.API_FILL`, replay uses the
+precise `price × volume` notional when a positive fill price is available, with the
+stored USD amount retained as a legacy fallback.
 
 ### Trade economics & slippage lifecycle
 
