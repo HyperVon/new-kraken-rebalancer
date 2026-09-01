@@ -319,11 +319,12 @@ window and store durable progress metadata; later syncs use the latest stored
 ledger time (or watermark) with a **300-second overlap**. SQLite enforces the `(ledger id, timestamp,
 asset, type)` identity so overlapping pages and retries are safe.
 
-The History `/api/history/rewards` endpoint currently charts `staking` entries.
-It aligns cumulative per-asset amounts to stored portfolio snapshot timestamps,
-values each asset using that snapshot's price, and returns total and per-asset
-USD series for the selected range. Dividend entries are retained in the ledger
-store for future ledger-based views and accounting.
+The History `/api/history/rewards` endpoint charts `staking` and `dividend`
+entries for tracked allocation assets. It aligns cumulative per-asset amounts to
+stored portfolio snapshot timestamps, values each asset using that snapshot's
+price, and returns total and per-asset USD series for the selected range.
+Dividend entries for untracked assets remain persisted but excluded as external
+inflows.
 
 ### Trade economics & slippage lifecycle
 

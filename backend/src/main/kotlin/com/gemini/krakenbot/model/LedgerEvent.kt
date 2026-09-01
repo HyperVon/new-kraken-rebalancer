@@ -11,10 +11,10 @@ import java.time.Instant
  * [refid] is the reference id of the parent transaction that caused the entry and may
  * be shared by several entries or absent.
  *
- * `dividend` entries (Kraken staking-reward payouts for assets like DOT that are outside
- * the tracked universe) are persisted for balance-change attribution but are excluded from
- * the staking-rewards chart and comparison math: from the crypto rebalancer's perspective
- * they are external USD-equivalent deposits, and they surface naturally as balance deltas.
+ * Both `staking` and `dividend` entries are persisted and mirrored in comparison and
+ * history reconstruction when the ledger asset is a tracked allocation asset (non-USD).
+ * Dividend events for untracked assets or USD remain ignored as external balance deltas
+ * and naturally degrade comparison confidence to `ESTIMATED` when unreconciled.
  */
 data class LedgerEvent(
     val ledgerId: String,

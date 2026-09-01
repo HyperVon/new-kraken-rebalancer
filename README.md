@@ -271,12 +271,12 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - Header loop control on Dashboard, History, and Settings showing RUNNING/PAUSED with neutral labeled **Pause** and **Resume** actions
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
-- **Staking Rewards History** — displays cumulative staking rewards in USD, split
-  by asset, from synchronized Kraken ledger entries. `dividend` entries (Kraken
-  staking-reward payouts for assets like DOT outside the tracked universe) are
-  persisted for balance attribution but excluded from the chart; Earn-migration
-  asset suffixes (`.S`/`.M`/`.F`/`.B`) and legacy `X`/`Z` asset codes are
-  normalized to the base symbol.
+- **Staking Rewards History** — displays cumulative staking and dividend rewards in USD, split
+  by asset, from synchronized Kraken ledger entries. `dividend` entries for
+  untracked assets (e.g. DOT outside the tracked universe) remain external inflows
+  excluded from the chart, while dividends for tracked assets are treated like
+  staking; Earn-migration asset suffixes (`.S`/`.M`/`.F`/`.B`) and legacy `X`/`Z`
+  asset codes are normalized to the base symbol.
 - **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
   Kotlin/JS (`rebalancer.js`) for charts, History controls, and client behavior
 
@@ -319,9 +319,9 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   from the totals.
 - In simulation mode with an empty database, synthetic staking ledger entries
   are seeded alongside snapshots and trades so the rewards panel shows a
-  realistic cumulative history; `dividend` entries stay persisted but excluded
-  from the rewards chart and comparison math (external USD-equivalent inflows
-  from the rebalancer's perspective).
+  realistic cumulative history; `dividend` entries for tracked assets are now
+  mirrored in the rewards chart, comparison math, and historical reconstruction
+  (like staking), while dividends for untracked assets remain external inflows.
 
 ### Safety & Reliability
 

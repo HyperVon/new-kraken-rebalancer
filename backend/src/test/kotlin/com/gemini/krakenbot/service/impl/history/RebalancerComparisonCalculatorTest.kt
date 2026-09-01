@@ -760,7 +760,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("122000.00")
         }
 
-        "dividend ledger events are excluded from comparison" {
+        "dividend ledger events for tracked assets are mirrored in buy-and-hold" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -785,8 +785,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.confidence shouldBe ComparisonConfidence.ESTIMATED
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("105000.00")
         }
 
         "rewards before the baseline do not affect the comparison" {

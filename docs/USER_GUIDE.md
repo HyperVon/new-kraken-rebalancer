@@ -335,12 +335,13 @@ show no badge.
 ### Staking Rewards
 
 A dedicated chart below the comparison shows the cumulative USD value of
-`staking` ledger entries in the selected range, with one series per asset and a
-total shown beside the title. Values are aligned to portfolio snapshots and use
-each snapshot's asset price; the chart is empty until ledger data has been
-synchronized. A caption below the chart reads: *Cumulative staking reward value
-accrued during the selected range. Assets without a snapshot price in the range
-are excluded.*
+`staking` and `dividend` ledger entries for tracked assets in the selected
+range, with one series per asset and a total shown beside the title. Values are
+aligned to portfolio snapshots and use each snapshot's asset price; the chart is
+empty until ledger data has been synchronized. Dividends for untracked assets
+remain excluded as external inflows. A caption below the chart reads:
+*Cumulative staking reward value accrued during the selected range. Assets
+without a snapshot price in the range are excluded.*
 
 ### Portfolio Value & Asset Holdings
 

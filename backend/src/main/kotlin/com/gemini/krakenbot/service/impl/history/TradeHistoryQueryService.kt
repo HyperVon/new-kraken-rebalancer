@@ -44,19 +44,27 @@ class TradeHistoryQueryService(
         val firstTimestamp = snapshots.minOf { it.timestamp }
         val lastTimestamp = snapshots.maxOf { it.timestamp }
         val trades = getTradesInRange(firstTimestamp, lastTimestamp)
+        val rewardLedgerTypes = setOf(
+            KrakenApiConstants.LEDGER_TYPE_STAKING,
+            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+        )
         val rewards =
             ledgerRepository
                 .getLedgersInRange(firstTimestamp, lastTimestamp)
-                .filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
+                .filter { it.type in rewardLedgerTypes }
         return RebalancerComparisonCalculator.calculate(snapshots, trades, rewards)
     }
 
     suspend fun getRewardsOverTime(from: Instant, to: Instant): RewardsOverTime {
         val snapshots = getSnapshotsInRange(from, to).sortedBy { it.timestamp }
+        val rewardLedgerTypes = setOf(
+            KrakenApiConstants.LEDGER_TYPE_STAKING,
+            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+        )
         val stakingEvents =
             ledgerRepository
                 .getLedgersInRange(from, to)
-                .filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
+                .filter { it.type in rewardLedgerTypes }
                 .sortedBy { it.time }
         val cumulativeByAsset = mutableMapOf<String, BigDecimal>()
         var eventIndex = 0

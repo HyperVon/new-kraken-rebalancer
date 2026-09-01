@@ -452,9 +452,10 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   a real sync brackets all pages with the same `ConfigService` execution-session
   boundary used by trade synchronization. Simulation mode does not call Kraken.
 
-The History rewards query filters the persisted ledger range to `staking` rows,
-then aligns cumulative amounts to portfolio snapshots and values them with each
-snapshot's prices. It is a normal suspend query, not a background flow.
+The History rewards query filters the persisted ledger range to `staking` and
+`dividend` rows for tracked assets, then aligns cumulative amounts to portfolio
+snapshots and values them with each snapshot's prices. Dividends for untracked
+assets remain excluded. It is a normal suspend query, not a background flow.
 
 ---
 

@@ -95,10 +95,10 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 - `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.
   `saveLedgers()` returns only newly inserted rows, so overlap and repeated pages
   cannot inflate counts.
-- `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking` entries,
+- `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking` and `dividend` entries,
   accumulates amounts by asset at each portfolio snapshot, and values them with
-  that snapshot's prices. `dividend` rows remain persisted but are not included
-  in the current staking-rewards chart.
+  that snapshot's prices. `dividend` rows for untracked assets remain excluded from
+  the chart; tracked-asset dividends are included like staking.
 
 ## TradeDeduplicator
 

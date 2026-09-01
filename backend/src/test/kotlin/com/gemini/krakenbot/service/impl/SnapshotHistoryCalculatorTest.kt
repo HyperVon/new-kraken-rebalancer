@@ -445,7 +445,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
         }
 
-        "buildTimelineEvents emits staking rewards as RewardEvents but not dividends" {
+        "buildTimelineEvents emits staking and dividend rewards as RewardEvents" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
             val stakingReward =
@@ -461,7 +461,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     ledgerId = "ledger-div",
                     time = now.minus(1, ChronoUnit.DAYS),
                     type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
-                    asset = "STRC",
+                    asset = "BTC",
                     amount = BigDecimal("1.25"),
                 )
 
@@ -474,7 +474,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 )
 
             val rewardEvents = events.filterIsInstance<SnapshotHistoryCalculator.TimelineEvent.RewardEvent>()
-            rewardEvents.map { it.event.ledgerId } shouldBe listOf("ledger-stake")
+            rewardEvents.map { it.event.ledgerId }.toSet() shouldBe setOf("ledger-stake", "ledger-div")
         }
 
         "calculateHistoricalSnapshots reverse-applies staking rewards to running balances" {

@@ -44,6 +44,11 @@ object SnapshotHistoryCalculator {
         override fun compareTo(other: TimelineEvent): Int = other.timestamp.compareTo(this.timestamp)
     }
 
+    private val rewardLedgerTypes = setOf(
+        KrakenApiConstants.LEDGER_TYPE_STAKING,
+        KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+    )
+
     fun buildTimelineEvents(
         historicalTrades: List<TradeRecord>,
         historicalRewards: List<LedgerEvent> = emptyList(),
@@ -54,7 +59,7 @@ object SnapshotHistoryCalculator {
             .map { TimelineEvent.TradeEvent(it.timestamp, it) }
             .toMutableList<TimelineEvent>()
         events += historicalRewards
-            .filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
+            .filter { it.type in rewardLedgerTypes }
             .map { TimelineEvent.RewardEvent(it.time, it) }
         events += (0..PrecisionConstants.HISTORICAL_DAYS_BACK).mapNotNull { day ->
             val dailyTime =
@@ -138,7 +143,7 @@ object SnapshotHistoryCalculator {
         }
     }
 
-    /** Undo one credited staking reward: rewards added after the snapshot are removed going backward. */
+    /** Undo one credited staking/dividend reward: rewards added after the snapshot are removed going backward. */
     private fun reverseApplyReward(event: LedgerEvent, runningBalances: MutableMap<String, BigDecimal>) {
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(event.amount)

@@ -31,7 +31,7 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "3"
+        const val CURRENT_RECONSTRUCTION_VERSION = "4"
     }
 
     suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded()
@@ -151,10 +151,14 @@ class TradeHistoryReconstructionService(
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
 
+        val rewardLedgerTypes = setOf(
+            KrakenApiConstants.LEDGER_TYPE_STAKING,
+            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+        )
         val stakingRewards =
             ledgerRepository
                 .getLedgersInRange(since, reconstructionNow)
-                .filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
+                .filter { it.type in rewardLedgerTypes }
         val historicalRewards = stakingRewards.filter { it.time.isBefore(cutoffTime) }
 
         val events =

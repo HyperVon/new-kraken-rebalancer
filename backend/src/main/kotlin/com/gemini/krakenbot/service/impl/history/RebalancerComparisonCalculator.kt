@@ -18,6 +18,10 @@ import java.time.Instant
 
 object RebalancerComparisonCalculator {
     private val baselineMismatchTolerance = BigDecimal("0.01")
+    private val rewardLedgerTypes = setOf(
+        KrakenApiConstants.LEDGER_TYPE_STAKING,
+        KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+    )
 
     fun calculate(
         snapshots: List<PortfolioSnapshot>,
@@ -46,7 +50,7 @@ object RebalancerComparisonCalculator {
         if (priceError != null) return priceError
 
         val periodRewards = rewards.filter {
-            it.type == KrakenApiConstants.LEDGER_TYPE_STAKING &&
+            it.type in rewardLedgerTypes &&
                 it.time > baseline.timestamp
         }
 
@@ -194,7 +198,7 @@ object RebalancerComparisonCalculator {
         rewards: List<LedgerEvent>,
     ): Boolean? {
         val successfulTrades = trades.filter { it.success && !it.dryRun }
-        val stakingRewards = rewards.filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
+        val stakingRewards = rewards.filter { it.type in rewardLedgerTypes }
         var allReconciled = true
 
         for (i in 1 until snapshots.size) {
@@ -304,7 +308,7 @@ object RebalancerComparisonCalculator {
     private fun cumulativeRewardsByAsset(rewards: List<LedgerEvent>, upTo: Instant): Map<String, BigDecimal> {
         val cumulative = mutableMapOf<String, BigDecimal>()
         for (event in rewards) {
-            if (event.type != KrakenApiConstants.LEDGER_TYPE_STAKING || event.time > upTo) continue
+            if (event.type !in rewardLedgerTypes || event.time > upTo) continue
             val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
             cumulative[symbol] = (cumulative[symbol] ?: BigDecimal.ZERO).add(event.amount)
         }

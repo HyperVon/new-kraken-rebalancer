@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.16] - 2026-09-01
+
+### Fixed
+
+- **Rebalancer vs Buy & Hold symmetry**: `staking` and `dividend` ledger entries
+  for tracked allocation assets are now mirrored consistently in the
+  `RebalancerComparison` buy-and-hold baseline, historical snapshot reconstruction
+  (reverse-apply), and rewards chart. `LedgersSyncService` already fetched both
+  types per-type paginated; the comparison calculator, reconstruction service
+  (bumped `SNAPSHOT_RECONSTRUCTION_VERSION` `3` → `4`), and history query service
+  now include both. Dividends for untracked assets or `USD` remain external
+  inflows and keep `ComparisonConfidence` at `ESTIMATED` when unreconciled.
+
 ## [6.17.15] - 2026-08-31
 
 ### Changed
