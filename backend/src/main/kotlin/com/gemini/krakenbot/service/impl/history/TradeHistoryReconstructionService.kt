@@ -31,7 +31,7 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "4"
+        const val CURRENT_RECONSTRUCTION_VERSION = "5"
     }
 
     suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded()
@@ -151,11 +151,11 @@ class TradeHistoryReconstructionService(
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
 
-        val stakingRewards =
+        val externalLedgers =
             ledgerRepository
                 .getLedgersInRange(since, reconstructionNow)
-                .filter { it.type in LedgerEvent.REWARD_TYPES }
-        val historicalRewards = stakingRewards.filter { it.time.isBefore(cutoffTime) }
+                .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+        val historicalRewards = externalLedgers.filter { it.time.isBefore(cutoffTime) }
 
         val events =
             SnapshotHistoryCalculator.buildTimelineEvents(

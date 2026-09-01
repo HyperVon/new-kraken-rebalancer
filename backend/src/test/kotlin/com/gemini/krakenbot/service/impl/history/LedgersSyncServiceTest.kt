@@ -75,8 +75,8 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
             service.syncLedgersFromKraken()
 
-            // Per-type cursors: staking + dividend each fetch once per sync (offset 0), second sync throttled.
-            coVerify(exactly = 2) { krakenService.getLedgers(any(), any(), any(), any()) }
+            // Per-type cursors: 5 ledger types each fetch once per sync (offset 0), second sync throttled.
+            coVerify(exactly = 5) { krakenService.getLedgers(any(), any(), any(), any()) }
             service.isLedgersSeeded() shouldBe true
         }
 
@@ -115,9 +115,9 @@ class LedgersSyncServiceTest : StringSpec() {
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
                 fixedNow.epochSecond.toString()
-            // Per-type cursors: each offset is fetched for staking + dividend (dividend duplicates are deduped).
-            coVerify(exactly = 2) { krakenService.getLedgers(any(), 0, any(), any()) }
-            coVerify(exactly = 2) { krakenService.getLedgers(any(), 50, any(), any()) }
+            // Per-type cursors: each offset is fetched for all 5 types (duplicates are deduped by unique index).
+            coVerify(exactly = 5) { krakenService.getLedgers(any(), 0, any(), any()) }
+            coVerify(exactly = 5) { krakenService.getLedgers(any(), 50, any(), any()) }
         }
 
         "deduplicates the newest-first offset overlap across pages" {
@@ -283,7 +283,7 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             val expectedInitialStart = baseTime.minusSeconds(300).epochSecond
-            coVerify(exactly = 2) {
+            coVerify(exactly = 5) {
                 krakenService.getLedgers(
                     startSec = expectedInitialStart,
                     offset = 0,
@@ -292,7 +292,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 )
             }
             val expectedIncrementalStart = fixedNow.minusSeconds(300).epochSecond
-            coVerify(exactly = 2) {
+            coVerify(exactly = 5) {
                 krakenService.getLedgers(
                     startSec = expectedIncrementalStart,
                     offset = 0,
@@ -333,7 +333,7 @@ class LedgersSyncServiceTest : StringSpec() {
             now = fixedNow.plusSeconds(1_200)
             failureEnabled = false
             service.syncLedgersFromKraken()
-            coVerify(exactly = 3) {
+            coVerify(exactly = 6) {
                 krakenService.getLedgers(
                     startSec = fixedNow.minusSeconds(300).epochSecond,
                     offset = 0,

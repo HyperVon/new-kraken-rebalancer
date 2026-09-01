@@ -84,7 +84,8 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 ## Ledger synchronization
 
 - `LedgersSyncService` is a separate insert-only sync for Kraken
-  `/0/private/Ledgers`; it requests only `staking` and `dividend` types.
+  `/0/private/Ledgers`; it requests `staking`, `dividend`, `deposit`, `withdrawal`,
+  and `transfer` types.
 - It uses the same **300s** throttle, coroutine `Mutex`, credential preflight,
   stable-backend selection, and execution-session boundary as trade sync.
 - The first and recovered initial passes are bounded to the last **96 days**.
@@ -97,8 +98,14 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   cannot inflate counts.
 - `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking` and `dividend` entries,
   accumulates amounts by asset at each portfolio snapshot, and values them with
-  that snapshot's prices. `dividend` rows for untracked assets remain excluded from
-  the chart; tracked-asset dividends are included like staking.
+  that snapshot's prices.
+- `TradeHistoryQueryService.getRebalancerComparison()` passes all external balance ledgers
+  (`EXTERNAL_BALANCE_TYPES`) to `RebalancerComparisonCalculator` so strategy-neutral flows
+  (rewards, deposits, withdrawals, transfers, and USD cash dividends) are mirrored in the
+  synthetic Buy & Hold benchmark.
+- `SnapshotHistoryCalculator` and `TradeHistoryReconstructionService` (version `5`) query
+  `EXTERNAL_BALANCE_TYPES` and apply `event.netBalanceDelta()` (`amount - fee`) backwards
+  from current balances.
 
 ## TradeDeduplicator
 

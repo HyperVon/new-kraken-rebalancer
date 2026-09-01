@@ -43,7 +43,7 @@ object SnapshotHistoryCalculator {
         override fun compareTo(other: TimelineEvent): Int = other.timestamp.compareTo(this.timestamp)
     }
 
-    private val rewardLedgerTypes = LedgerEvent.REWARD_TYPES
+    private val externalLedgerTypes = LedgerEvent.EXTERNAL_BALANCE_TYPES
 
     fun buildTimelineEvents(
         historicalTrades: List<TradeRecord>,
@@ -55,7 +55,7 @@ object SnapshotHistoryCalculator {
             .map { TimelineEvent.TradeEvent(it.timestamp, it) }
             .toMutableList<TimelineEvent>()
         events += historicalRewards
-            .filter { it.type in rewardLedgerTypes }
+            .filter { it.type in externalLedgerTypes }
             .map { TimelineEvent.RewardEvent(it.time, it) }
         events += (0..PrecisionConstants.HISTORICAL_DAYS_BACK).mapNotNull { day ->
             val dailyTime =
@@ -139,12 +139,12 @@ object SnapshotHistoryCalculator {
         }
     }
 
-    /** Undo one credited staking/dividend reward: rewards added after the snapshot are removed going backward. */
+    /** Undo one external ledger balance delta (credit, reward, deposit, withdrawal, transfer). */
     private fun reverseApplyReward(event: LedgerEvent, runningBalances: MutableMap<String, BigDecimal>) {
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-        if (symbol == Asset.USD) return
         if (symbol !in runningBalances) return
-        runningBalances[symbol] = runningBalances.getValue(symbol).subtract(event.amount)
+        val netDelta = event.netBalanceDelta()
+        runningBalances[symbol] = runningBalances.getValue(symbol).subtract(netDelta)
     }
 
     private fun getPriceForTimestamp(

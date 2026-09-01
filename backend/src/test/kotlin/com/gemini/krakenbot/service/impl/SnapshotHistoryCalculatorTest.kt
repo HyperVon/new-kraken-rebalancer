@@ -698,5 +698,107 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             sDrawdown.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("80.00"))
             sDrawdown.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("10.00"))
         }
+
+        "calculateHistoricalSnapshots reverse-applies USD cash dividends to USD running balance" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val dividendTime = now.minus(2, ChronoUnit.DAYS)
+            val dividend = LedgerEvent(
+                ledgerId = "ledger-cash-div",
+                time = dividendTime,
+                type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+                asset = "USD",
+                amount = BigDecimal("25.00"),
+                fee = BigDecimal("0.10"),
+            )
+
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = emptyList(),
+                historicalRewards = listOf(dividend),
+                cutoffTime = cutoff,
+                now = now,
+            )
+
+            val allocations = listOf(
+                Allocation(Asset(Asset.BTC), 50.0),
+                Allocation(Asset.USD, 50.0),
+            )
+
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("1.0"),
+                "USD" to BigDecimal("50024.90"),
+            )
+
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = currentPrices,
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+
+            // After reverse-applying net USD cash dividend (+24.90): USD -= 24.90 => 50000.00
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("50000.00"))
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("1.0"))
+        }
+
+        "calculateHistoricalSnapshots reverse-applies deposits and withdrawals with fees" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val deposit = LedgerEvent(
+                ledgerId = "ledger-dep",
+                time = now.minus(3, ChronoUnit.DAYS),
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("10000.00"),
+                fee = BigDecimal.ZERO,
+            )
+            val withdrawal = LedgerEvent(
+                ledgerId = "ledger-wdr",
+                time = now.minus(2, ChronoUnit.DAYS),
+                type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                asset = "BTC",
+                amount = BigDecimal("-0.2"),
+                fee = BigDecimal("0.0005"),
+            )
+
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = emptyList(),
+                historicalRewards = listOf(deposit, withdrawal),
+                cutoffTime = cutoff,
+                now = now,
+            )
+
+            val allocations = listOf(
+                Allocation(Asset(Asset.BTC), 50.0),
+                Allocation(Asset.USD, 50.0),
+            )
+
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("0.8"),
+                "USD" to BigDecimal("20000.00"),
+            )
+
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = currentPrices,
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+
+            // Withdrawal net delta is -0.2 - 0.0005 = -0.2005. Going backward: 0.8 - (-0.2005) = 1.0005
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("1.0005"))
+            // Deposit net delta is +10000.00. Going backward: 20000 - 10000 = 10000.00
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+        }
     }
 }

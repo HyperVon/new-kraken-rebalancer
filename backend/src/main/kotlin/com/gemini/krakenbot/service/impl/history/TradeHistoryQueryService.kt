@@ -43,11 +43,11 @@ class TradeHistoryQueryService(
         val firstTimestamp = snapshots.minOf { it.timestamp }
         val lastTimestamp = snapshots.maxOf { it.timestamp }
         val trades = getTradesInRange(firstTimestamp, lastTimestamp)
-        val rewards =
+        val ledgers =
             ledgerRepository
                 .getLedgersInRange(firstTimestamp, lastTimestamp)
-                .filter { it.type in LedgerEvent.REWARD_TYPES }
-        return RebalancerComparisonCalculator.calculate(snapshots, trades, rewards)
+                .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+        return RebalancerComparisonCalculator.calculate(snapshots, trades, ledgers)
     }
 
     suspend fun getRewardsOverTime(from: Instant, to: Instant): RewardsOverTime {

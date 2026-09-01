@@ -9,6 +9,8 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RebalancerComparisonPoint
+import com.gemini.krakenbot.model.TradeOwnership
+import com.gemini.krakenbot.model.TradeOwnershipClassifier
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.util.PrecisionConstants
 import java.math.BigDecimal
@@ -17,12 +19,14 @@ import java.time.Instant
 
 object RebalancerComparisonCalculator {
     private val baselineMismatchTolerance = BigDecimal("0.01")
-    private val rewardLedgerTypes = LedgerEvent.REWARD_TYPES
+    private val externalBalanceLedgerTypes = LedgerEvent.EXTERNAL_BALANCE_TYPES
 
     fun calculate(
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
         rewards: List<LedgerEvent> = emptyList(),
+        knownRebalancerOrderTxids: Set<String> = emptySet(),
+        knownRebalancerClientOrderIds: Set<String> = emptySet(),
     ): RebalancerComparison {
         if (snapshots.size < 2) {
             val firstTime = snapshots.firstOrNull()?.timestamp
@@ -45,23 +49,43 @@ object RebalancerComparisonCalculator {
         val priceError = validatePrices(orderedSnapshots, baseline)
         if (priceError != null) return priceError
 
-        val periodRewards = rewards.filter {
-            it.type in rewardLedgerTypes &&
+        val periodLedgers = rewards.filter {
+            it.type in externalBalanceLedgerTypes &&
                 it.time > baseline.timestamp
         }
 
         val balanceResult =
-            validateTrackedBalanceChanges(orderedSnapshots, trades, periodRewards) ?: return unavailable(
+            validateTrackedBalanceChanges(
+                snapshots = orderedSnapshots,
+                trades = trades,
+                ledgers = periodLedgers,
+                knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+                knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
+            ) ?: return unavailable(
                 reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                 unavailableAt = baseline.timestamp,
                 baselineTimestamp = baseline.timestamp,
             )
 
+        val benchmarkEvents = buildBenchmarkEvents(
+            trades = trades.filter { it.success && !it.dryRun && it.timestamp > baseline.timestamp },
+            ledgers = periodLedgers,
+            knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+            knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
+        )
+
         val baselineBalances = extractBaselineBalances(baseline)
+        val runningSyntheticBalances = baselineBalances.toMutableMap()
+        var eventIndex = 0
 
         val points = mutableListOf<RebalancerComparisonPoint>()
         for (snapshot in orderedSnapshots) {
-            val buyAndHoldValue = calculateBuyAndHoldValue(baselineBalances, snapshot, periodRewards)
+            while (eventIndex < benchmarkEvents.size && benchmarkEvents[eventIndex].timestamp <= snapshot.timestamp) {
+                replayBenchmarkEvent(runningSyntheticBalances, benchmarkEvents[eventIndex])
+                eventIndex++
+            }
+
+            val buyAndHoldValue = calculateBuyAndHoldValue(runningSyntheticBalances, snapshot)
             if (buyAndHoldValue.signum() <= 0) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.NON_POSITIVE_BASELINE,
@@ -162,10 +186,9 @@ object RebalancerComparisonCalculator {
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
     ): RebalancerComparison? {
-        val baselineBalances = extractBaselineBalances(baseline)
+        val baselineKeys = baseline.assets.keys
         for (snapshot in snapshots) {
-            for ((symbol, startBalance) in baselineBalances) {
-                if (startBalance.signum() == 0) continue
+            for (symbol in baselineKeys) {
                 if (symbol == Asset.USD) continue
                 val assetRow = snapshot.assets[symbol] ?: return unavailable(
                     reason = ComparisonUnavailableReason.MISSING_PRICE,
@@ -185,17 +208,30 @@ object RebalancerComparisonCalculator {
     }
 
     /**
-     * @return `true` if fully reconciled, `false` if balance mismatches found (ESTIMATED), `null` if a hard error
-     *         (unsupported trade) makes the comparison impossible.
+     * @return `true` if fully reconciled, `false` if balance mismatches found or unknown trade ownership (ESTIMATED),
+     *         `null` if a hard error (unsupported trade) makes the comparison impossible.
      */
     private fun validateTrackedBalanceChanges(
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
-        rewards: List<LedgerEvent>,
+        ledgers: List<LedgerEvent>,
+        knownRebalancerOrderTxids: Set<String>,
+        knownRebalancerClientOrderIds: Set<String>,
     ): Boolean? {
         val successfulTrades = trades.filter { it.success && !it.dryRun }
-        val stakingRewards = rewards.filter { it.type in rewardLedgerTypes }
+        val externalEvents = ledgers.filter { it.type in externalBalanceLedgerTypes }
         var allReconciled = true
+
+        for (trade in successfulTrades) {
+            val ownership = TradeOwnershipClassifier.classify(
+                trade = trade,
+                knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+                knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
+            )
+            if (ownership == TradeOwnership.UNKNOWN) {
+                allReconciled = false
+            }
+        }
 
         for (i in 1 until snapshots.size) {
             val prev = snapshots[i - 1]
@@ -204,7 +240,7 @@ object RebalancerComparisonCalculator {
             val intervalTrades = successfulTrades.filter { trade ->
                 trade.timestamp > prev.timestamp && trade.timestamp <= curr.timestamp
             }
-            val intervalRewards = stakingRewards.filter { event ->
+            val intervalLedgers = externalEvents.filter { event ->
                 event.time > prev.timestamp && event.time <= curr.timestamp
             }
 
@@ -212,10 +248,11 @@ object RebalancerComparisonCalculator {
             for (trade in intervalTrades) {
                 if (!applyRealizedTrade(impliedBalances, trade)) return null
             }
-            for (event in intervalRewards) {
+            for (event in intervalLedgers) {
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-                if (symbol == Asset.USD || symbol !in impliedBalances) continue
-                impliedBalances[symbol] = impliedBalances.getValue(symbol).add(event.amount)
+                if (symbol in impliedBalances) {
+                    impliedBalances[symbol] = impliedBalances.getValue(symbol).add(event.netBalanceDelta())
+                }
             }
 
             for ((symbol, expectedBalance) in impliedBalances) {
@@ -233,6 +270,54 @@ object RebalancerComparisonCalculator {
             }
         }
         return allReconciled
+    }
+
+    private fun buildBenchmarkEvents(
+        trades: List<TradeRecord>,
+        ledgers: List<LedgerEvent>,
+        knownRebalancerOrderTxids: Set<String>,
+        knownRebalancerClientOrderIds: Set<String>,
+    ): List<BenchmarkEvent> {
+        val events = mutableListOf<BenchmarkEvent>()
+        for (ledger in ledgers) {
+            events += BenchmarkEvent.ExternalBalance(
+                timestamp = ledger.time,
+                asset = ledger.asset,
+                netAmount = ledger.netBalanceDelta(),
+                event = ledger,
+            )
+        }
+        for (trade in trades) {
+            val ownership = TradeOwnershipClassifier.classify(
+                trade = trade,
+                knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+                knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
+            )
+            events += BenchmarkEvent.Trade(
+                timestamp = trade.timestamp,
+                trade = trade,
+                ownership = ownership,
+            )
+        }
+        events.sort()
+        return events
+    }
+
+    private fun replayBenchmarkEvent(balances: MutableMap<String, BigDecimal>, event: BenchmarkEvent) {
+        when (event) {
+            is BenchmarkEvent.ExternalBalance -> {
+                val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
+                if (symbol in balances) {
+                    balances[symbol] = balances.getValue(symbol).add(event.netAmount)
+                }
+            }
+
+            is BenchmarkEvent.Trade -> {
+                if (event.ownership == TradeOwnership.MANUAL_OR_EXTERNAL) {
+                    applyRealizedTrade(balances, event.trade)
+                }
+            }
+        }
     }
 
     private fun applyRealizedTrade(balances: MutableMap<String, BigDecimal>, trade: TradeRecord): Boolean {
@@ -278,14 +363,11 @@ object RebalancerComparisonCalculator {
         baseline.assets.mapValues { (_, asset) -> asset.balance }
 
     private fun calculateBuyAndHoldValue(
-        baselineBalances: Map<String, BigDecimal>,
+        syntheticBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
-        rewards: List<LedgerEvent>,
     ): BigDecimal {
-        val cumulativeRewards = cumulativeRewardsByAsset(rewards, snapshot.timestamp)
         var total = BigDecimal.ZERO
-        for ((symbol, startBalance) in baselineBalances) {
-            if (startBalance.signum() == 0) continue
+        for ((symbol, balance) in syntheticBalances) {
             val price = if (symbol == Asset.USD) {
                 BigDecimal.ONE
             } else {
@@ -294,22 +376,10 @@ object RebalancerComparisonCalculator {
                         "Asset $symbol missing in snapshot ${snapshot.timestamp}; validatePrices should have caught this",
                     )
             }
-            val rewardBalance = cumulativeRewards[symbol] ?: BigDecimal.ZERO
-            val product = startBalance.add(rewardBalance).multiply(price)
+            val product = balance.multiply(price)
             total = total.add(product)
         }
         return total
-    }
-
-    private fun cumulativeRewardsByAsset(rewards: List<LedgerEvent>, upTo: Instant): Map<String, BigDecimal> {
-        val cumulative = mutableMapOf<String, BigDecimal>()
-        for (event in rewards) {
-            if (event.type !in rewardLedgerTypes || event.time > upTo) continue
-            val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-            if (symbol == Asset.USD) continue
-            cumulative[symbol] = (cumulative[symbol] ?: BigDecimal.ZERO).add(event.amount)
-        }
-        return cumulative
     }
 
     private fun calculateDifferencePercent(differenceUSD: BigDecimal, buyAndHoldValue: BigDecimal): BigDecimal =

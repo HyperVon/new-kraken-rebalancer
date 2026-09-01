@@ -10,14 +10,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Rebalancer vs Buy & Hold symmetry**: `staking` and `dividend` ledger entries
-  for tracked allocation assets are now mirrored consistently in the
-  `RebalancerComparison` buy-and-hold baseline, historical snapshot reconstruction
-  (reverse-apply), and rewards chart. `LedgersSyncService` already fetched both
-  types per-type paginated; the comparison calculator, reconstruction service
-  (bumped `SNAPSHOT_RECONSTRUCTION_VERSION` `3` → `4`), and history query service
-  now include both. Dividends for untracked assets or `USD` remain external
-  inflows and keep `ComparisonConfidence` at `ESTIMATED` when unreconciled.
+- **Strategy-neutral economic replay in Rebalancer vs Buy & Hold Benchmark**:
+  Overhauled benchmark calculation so that all strategy-neutral economic activity
+  (staking rewards, crypto dividends, USD cash dividends, untracked stock cash dividends,
+  external deposits, withdrawals, transfers, and ledger fees) affects the actual Rebalancer
+  portfolio and synthetic Buy & Hold benchmark equally.
+- **Trade ownership classification & manual trade replay**: Introduced `TradeOwnership`
+  (`REBALANCER`, `MANUAL_OR_EXTERNAL`, `UNKNOWN`) and `TradeOwnershipClassifier`. Positive
+  manual user trades replay into Buy & Hold to prevent distorting rebalancer alpha, while
+  rebalancer bot executions generate legitimate divergence. Ambiguous trade provenance
+  (`UNKNOWN`) degrades comparison confidence to `ESTIMATED`.
+- **Net balance delta fee accounting & zero-baseline valuation**: Ledger events use
+  `event.netBalanceDelta()` (`amount - fee`), accurately handling credits, debits, and fees.
+  Zero-baseline asset holdings credited via rewards or deposits are dynamically valued at
+  subsequent snapshot market prices.
+- **Ledger sync and snapshot reconstruction**: `LedgersSyncService` syncs `staking`,
+  `dividend`, `deposit`, `withdrawal`, and `transfer` ledger types; `SnapshotHistoryCalculator`
+  and `TradeHistoryReconstructionService` (bumped `SNAPSHOT_RECONSTRUCTION_VERSION` `4` → `5`)
+  query `EXTERNAL_BALANCE_TYPES` and apply `netBalanceDelta()` backwards from current balances.
 
 ## [6.17.15] - 2026-08-31
 
