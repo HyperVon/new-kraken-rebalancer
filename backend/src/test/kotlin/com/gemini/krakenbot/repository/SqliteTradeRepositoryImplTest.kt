@@ -771,5 +771,26 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 stats.dryRunTradeCount shouldBe 1L
             }
         }
+
+        "getSnapshotBefore returns newest snapshot strictly before timestamp" {
+            runTest {
+                val t0 = Instant.parse("2026-07-01T10:00:00Z")
+                val t1 = Instant.parse("2026-07-01T11:00:00Z")
+                val t2 = Instant.parse("2026-07-01T12:00:00Z")
+
+                val s0 = TestFixtures.emptySnapshot(t0, BigDecimal("1000.00"))
+                val s1 = TestFixtures.emptySnapshot(t1, BigDecimal("1100.00"))
+                val s2 = TestFixtures.emptySnapshot(t2, BigDecimal("1200.00"))
+
+                repository.saveSnapshot(s0)
+                repository.saveSnapshot(s1)
+                repository.saveSnapshot(s2)
+
+                repository.getSnapshotBefore(t0) shouldBe null
+                repository.getSnapshotBefore(t1)?.timestamp shouldBe t0
+                repository.getSnapshotBefore(t2)?.timestamp shouldBe t1
+                repository.getSnapshotBefore(t2.plusSeconds(3600))?.timestamp shouldBe t2
+            }
+        }
     }
 }

@@ -14,6 +14,7 @@ data class PortfolioSnapshot(
     val drawdownPercent: BigDecimal,
     val fiatDeploymentPercent: BigDecimal,
     val effectiveUsdTargetPercent: BigDecimal,
+    val balancesObservedAt: Instant = timestamp,
 ) {
     @GenerateApiMapper(ApiPortfolioSnapshot.AssetSnapshot::class)
     data class AssetSnapshot(

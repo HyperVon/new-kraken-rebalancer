@@ -18,6 +18,7 @@ import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -29,14 +30,25 @@ class PortfolioAnalyzerImpl(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val portfolioStatsRepository: PortfolioStatsRepository,
+    private val nowProvider: () -> Instant = Instant::now,
 ) : PortfolioAnalyzer {
     private val log = LoggerFactory.getLogger(PortfolioAnalyzerImpl::class.java)
 
-    override suspend fun fetchBalances(): RawBalances {
+    /**
+     * Fetches current account balances and records the local balance-request start boundary.
+     * Capturing [observedAt] BEFORE initiating [KrakenService.getBalances] ensures a conservative
+     * lower temporal boundary: any exchange events occurring after this timestamp cannot safely
+     * be assumed to already be reflected in the returned balance snapshot unless reconciliation
+     * proves they were.
+     */
+    override suspend fun fetchObservedBalances(): ObservedBalances {
+        val observedAt = nowProvider()
         val balances = krakenService.getBalances()
         log.info("Available Balance Keys: {}", balances.keys)
-        return balances
+        return ObservedBalances(balances = balances, observedAt = observedAt)
     }
+
+    override suspend fun fetchBalances(): RawBalances = fetchObservedBalances().balances
 
     override suspend fun fetchPrices(): AssetPrices {
         val allocations = configService.getConfig().allocations
@@ -149,6 +161,7 @@ class PortfolioAnalyzerImpl(
         drawdownPct: BigDecimal,
         fiatDeploymentPct: BigDecimal,
         actionLog: List<String>,
+        balancesObservedAt: Instant,
     ): PortfolioSnapshot {
         val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
         val config = configService.getConfig()
@@ -193,6 +206,7 @@ class PortfolioAnalyzerImpl(
             drawdownPercent = drawdownPct,
             fiatDeploymentPercent = fiatDeploymentPct,
             effectiveUsdTargetPercent = effectiveUsdTarget,
+            balancesObservedAt = balancesObservedAt,
         )
     }
 }

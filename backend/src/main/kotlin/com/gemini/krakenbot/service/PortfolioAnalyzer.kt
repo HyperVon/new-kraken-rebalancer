@@ -13,9 +13,14 @@ import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import java.math.BigDecimal
+import java.time.Instant
+
+data class ObservedBalances(val balances: RawBalances, val observedAt: Instant = Instant.now())
 
 interface PortfolioAnalyzer {
     suspend fun fetchBalances(): RawBalances
+
+    suspend fun fetchObservedBalances(): ObservedBalances
 
     suspend fun fetchPrices(): AssetPrices
 
@@ -58,5 +63,6 @@ interface PortfolioAnalyzer {
         drawdownPct: BigDecimal,
         fiatDeploymentPct: BigDecimal,
         actionLog: List<String>,
+        balancesObservedAt: Instant = Instant.now(),
     ): PortfolioSnapshot
 }

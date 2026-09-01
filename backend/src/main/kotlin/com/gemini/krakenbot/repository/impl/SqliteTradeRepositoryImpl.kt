@@ -195,6 +195,17 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             buildSnapshotsFromRows(snapshotRows)
         }
 
+    override suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot? = database.readTransactionIO {
+        val rows =
+            PortfolioSnapshotTable
+                .selectAll()
+                .where { PortfolioSnapshotTable.timestamp less timestamp.toEpochMilli() }
+                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
+                .limit(1)
+                .toList()
+        buildSnapshotsFromRows(rows).firstOrNull()
+    }
+
     override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = database.readTransactionIO {
         TradeTable
             .selectAll()

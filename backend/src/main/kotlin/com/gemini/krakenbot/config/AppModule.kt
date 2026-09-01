@@ -145,7 +145,13 @@ val coreModule =
                 configService = get(),
             )
         }
-        singleOf(::PortfolioAnalyzerImpl) { bind<PortfolioAnalyzer>() }
+        single<PortfolioAnalyzer> {
+            PortfolioAnalyzerImpl(
+                krakenService = get(),
+                configService = get(),
+                portfolioStatsRepository = get(),
+            )
+        }
         single<OrderExecutor> {
             OrderExecutorImpl(
                 krakenService = get(),

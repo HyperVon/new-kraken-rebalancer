@@ -378,6 +378,580 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.confidence shouldBe ComparisonConfidence.RECONCILED
         }
 
+        "fill timestamp may lag a snapshot when the complete balance change reconciles" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(2),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(1250),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-1",
+                    orderTxid = "MANUAL-ORDER-1",
+                    price = "50000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("99974.00")
+        }
+
+        "multiple fills may lag a terminal snapshot when their combined change reconciles" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.7", "50000.00", "85000.00"),
+                        "USD" to assetRow("15000.00", "1.0", "15000.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(1250),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.3",
+                    usdAmount = "15000.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-3",
+                    orderTxid = "MANUAL-ORDER-3",
+                    price = "50000.00",
+                ),
+                trade(
+                    timestamp = now.plusMillis(1500),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.4",
+                    usdAmount = "20000.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-4",
+                    orderTxid = "MANUAL-ORDER-4",
+                    price = "50000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+        }
+
+        "fill outside the bounded snapshot skew remains unavailable" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(2001),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-5",
+                    orderTxid = "MANUAL-ORDER-5",
+                    price = "50000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(1)
+        }
+
+        "ambiguous late-fill subsets remain unavailable" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(1250),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-6",
+                    orderTxid = "MANUAL-ORDER-6",
+                    price = "50000.00",
+                ),
+                trade(
+                    timestamp = now.plusMillis(1500),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-7",
+                    orderTxid = "MANUAL-ORDER-7",
+                    price = "50000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(1)
+        }
+
+        "unknown terminal fill ownership remains unavailable" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(1250),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.LEGACY_UNKNOWN,
+                    cycleId = null,
+                    price = "50000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+            result.unavailableAt shouldBe now.plusMillis(1250)
+        }
+
+        "valid terminal fill plus unknown terminal fill remains unavailable" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(1250),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-8",
+                    orderTxid = "MANUAL-ORDER-8",
+                    price = "50000.00",
+                ),
+                trade(
+                    timestamp = now.plusMillis(1500),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.LEGACY_UNKNOWN,
+                    cycleId = null,
+                    tradeId = null,
+                    orderTxid = null,
+                    price = "50000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+            result.unavailableAt shouldBe now.plusMillis(1500)
+        }
+
+        "valid terminal fill plus unsupported terminal fill remains unavailable" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(1250),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-9",
+                    orderTxid = "MANUAL-ORDER-9",
+                    price = "50000.00",
+                ),
+                trade(
+                    timestamp = now.plusMillis(1500),
+                    side = "hold",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-10",
+                    orderTxid = "MANUAL-ORDER-10",
+                    price = "50000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+            result.unavailableAt shouldBe now.plusMillis(1500)
+        }
+
+        "tracked terminal candidate is validated even when snapshot balances already match" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(1500),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    source = TradeSource.LEGACY_UNKNOWN,
+                    cycleId = null,
+                    price = "50000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+            result.unavailableAt shouldBe now.plusMillis(1500)
+        }
+
+        "unsupported tracked terminal candidate is validated even when snapshot balances already match" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(1500),
+                    side = "hold",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-13",
+                    orderTxid = "MANUAL-ORDER-13",
+                    price = "50000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+            result.unavailableAt shouldBe now.plusMillis(1500)
+        }
+
+        "untracked terminal fill does not create a false ambiguity" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusMillis(1250),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-11",
+                    orderTxid = "MANUAL-ORDER-11",
+                    price = "50000.00",
+                ),
+                trade(
+                    timestamp = now.plusMillis(1500),
+                    side = "buy",
+                    symbol = "DOGE",
+                    volume = "100.0",
+                    usdAmount = "10.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-12",
+                    orderTxid = "MANUAL-ORDER-12",
+                    price = "0.10",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("99974.00")
+        }
+
+        "too many late-fill candidates fail closed" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(1),
+                    "99974.00",
+                    mapOf(
+                        "BTC" to assetRow("1.5", "50000.00", "75000.00"),
+                        "USD" to assetRow("24974.00", "1.0", "24974.00"),
+                    ),
+                ),
+            )
+            val trades = List(9) { index ->
+                trade(
+                    timestamp = now.plusMillis(1250 + index * 50L),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    fee = "26.00",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-BURST-$index",
+                    orderTxid = "MANUAL-ORDER-BURST-$index",
+                    price = "50000.00",
+                )
+            }
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(1)
+        }
+
+        "API fill replay uses precise price-volume notional instead of rounded cost" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "1624.80166105",
+                    mapOf(
+                        "PAXG" to assetRow("0.20666117", "4361.24", "901.29896105"),
+                        "USD" to assetRow("723.5027", "1.0", "723.5027"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "1624.6756492776",
+                    mapOf(
+                        "PAXG" to assetRow("0.21147716", "4361.24", "922.3026492776"),
+                        "USD" to assetRow("702.373", "1.0", "702.373"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusSeconds(1800),
+                    side = "buy",
+                    symbol = "PAXG",
+                    volume = "0.00481599",
+                    usdAmount = "21.00",
+                    fee = "0.126",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "MANUAL-FILL-2",
+                    orderTxid = "MANUAL-ORDER-2",
+                    price = "4361.24",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+        }
+
         "tracked sell: asset volume and USD/fee deltas match and remain available" {
             val snapshots = listOf(
                 snapshot(
@@ -2236,6 +2810,1083 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("6500.00")
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
         }
+
+        "Case B: trade timestamp before display timestamp but after balance observation belongs to next interval" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.2", "50000.00", "60000.00"),
+                    "USD" to assetRow("40000.00", "1.0", "40000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val trades = listOf(
+                manualTrade(
+                    timestamp = t0.plusMillis(100),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.2",
+                    usdAmount = "10000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(listOf(s1, s2), trades)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+        }
+
+        "Case C: selected baseline already contains skewed trade and does not replay it into buy and hold" {
+            val t0 = now
+            val s0 = snapshot(
+                timestamp = t0.minusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val s1 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.2", "50000.00", "60000.00"),
+                    "USD" to assetRow("40000.00", "1.0", "40000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.2", "50000.00", "60000.00"),
+                    "USD" to assetRow("40000.00", "1.0", "40000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val trades = listOf(
+                manualTrade(
+                    timestamp = t0.plusMillis(250),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.2",
+                    usdAmount = "10000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = trades,
+                anchorSnapshot = s0,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.baselineTimestamp shouldBe s1.timestamp
+            result.points[0].timestamp shouldBe s1.timestamp
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Case D: selected baseline does not contain trade executed after balance observation" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.2", "50000.00", "60000.00"),
+                    "USD" to assetRow("40000.00", "1.0", "40000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val trades = listOf(
+                manualTrade(
+                    timestamp = t0.plusMillis(100),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.2",
+                    usdAmount = "10000.00",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(listOf(s1, s2), trades)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+        }
+
+        "Case H: ledger event after snapshot display timestamp but already in observed balances reconciles" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100025.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50025.00", "1.0", "50025.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(3600).plusMillis(250),
+                    asset = "USD",
+                    amount = "25.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = ledgers,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100025.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100025.00")
+        }
+
+        "Case I: ledger event before display timestamp but after balance observation belongs to next interval" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100025.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50025.00", "1.0", "50025.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = t0.plusMillis(100),
+                    asset = "USD",
+                    amount = "25.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = ledgers,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100025.00")
+        }
+
+        "Case J: trade and ledger close together reconcile jointly" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100500.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45500.00", "1.0", "45500.00"),
+                ),
+            )
+            val trades = listOf(
+                manualTrade(
+                    timestamp = t0.plusSeconds(1800),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.1",
+                    usdAmount = "5000.00",
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(1800),
+                    asset = "USD",
+                    amount = "500.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = trades,
+                rewards = ledgers,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100500.00")
+        }
+
+        "Case N: range rebasing with pre-range anchor does not emit anchor point or alter baseline value" {
+            val t0 = now
+            val s0 = snapshot(
+                timestamp = t0.minusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.5", "50000.00", "25000.00"),
+                    "USD" to assetRow("75000.00", "1.0", "75000.00"),
+                ),
+            )
+            val s1 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+
+            val trades = listOf(
+                trade(
+                    timestamp = t0.minusSeconds(1800),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.5",
+                    usdAmount = "25000.00",
+                    orderTxid = "BOT-ORDER-EARLY",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = trades,
+                anchorSnapshot = s0,
+                knownRebalancerOrderTxids = setOf("BOT-ORDER-EARLY"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.baselineTimestamp shouldBe s1.timestamp
+            result.points[0].timestamp shouldBe s1.timestamp
+            result.points[0].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+        }
+
+        "Anchor snapshot with timestamp >= baseline or mismatched universe is ignored" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val anchorFuture = snapshot(
+                timestamp = t0.plusSeconds(10),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val anchorDifferentAssets = snapshot(
+                timestamp = t0.minusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "ETH" to assetRow("10.0", "5000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+
+            val res1 = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                anchorSnapshot = anchorFuture,
+            )
+            res1.availability shouldBe ComparisonAvailability.AVAILABLE
+
+            val res2 = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                anchorSnapshot = anchorDifferentAssets,
+            )
+            res2.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "Unsupported trade attributes fail closed with UNSUPPORTED_TRADE" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val badPairTrade = trade(
+                timestamp = t0.plusSeconds(1800),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            ).copy(pair = "BTCEUR")
+
+            val res = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(badPairTrade),
+            )
+            res.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            res.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+        }
+
+        "Missing or zero asset prices fail closed with MISSING_PRICE" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "0", "0.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+            )
+
+            val res = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+            )
+            res.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            res.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+        }
+
+        "In-flight trade during balance request latency is not assumed in snapshot and reconciles in next interval" {
+            // T0: Request start
+            val t0 = now
+            // T0 + 200ms: Trade executes on exchange
+            val tradeTime = t0.plusMillis(200)
+            // T0 + 350ms: Get Balance response arrived
+            // T0 + 500ms: Snapshot constructed/displayed
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0, // Captured at request start BEFORE getBalances()
+            )
+            // S2: Subsequent snapshot reflects the trade (BTC = 1.1, USD = 45000)
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val trade = manualTrade(
+                timestamp = tradeTime,
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(trade),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+        }
+
+        "In-flight ledger during balance request latency is not assumed in snapshot and reconciles in next interval" {
+            val t0 = now
+            val ledgerTime = t0.plusMillis(200)
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "102500.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.05", "50000.00", "52500.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val ledger = ledgerEvent(
+                timestamp = ledgerTime,
+                asset = "BTC",
+                amount = "0.05",
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = listOf(ledger),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("102500.00")
+        }
+
+        "No anchor: initial candidate trade NOT embedded reconciles as post-baseline" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val trade = manualTrade(
+                timestamp = t0.plusMillis(200),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(trade),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "No anchor: initial candidate trade IS embedded reconciles without post-baseline replay" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val trade = manualTrade(
+                timestamp = t0.plusMillis(200),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(trade),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "No anchor: initial candidate ledger NOT embedded reconciles as post-baseline" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "102500.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.05", "50000.00", "52500.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val ledger = ledgerEvent(
+                timestamp = t0.plusMillis(200),
+                asset = "BTC",
+                amount = "0.05",
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = listOf(ledger),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("102500.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "No anchor: initial candidate ledger IS embedded reconciles without post-baseline replay" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "102500.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.05", "50000.00", "52500.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "102500.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.05", "50000.00", "52500.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val ledger = ledgerEvent(
+                timestamp = t0.plusMillis(200),
+                asset = "BTC",
+                amount = "0.05",
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = listOf(ledger),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("102500.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("102500.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "No anchor: ambiguous initial candidate assignments fail closed" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.2", "50000.00", "60000.00"),
+                    "USD" to assetRow("40000.00", "1.0", "40000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val trade1 = manualTrade(
+                timestamp = t0.plusMillis(100),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            )
+            val trade2 = manualTrade(
+                timestamp = t0.plusMillis(200),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(trade1, trade2),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "No anchor: neither initial assignment explains balances fails closed" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.3", "50000.00", "65000.00"),
+                    "USD" to assetRow("35000.00", "1.0", "35000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val trade = manualTrade(
+                timestamp = t0.plusMillis(200),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(trade),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "No anchor: bot trade embedded in initial baseline creates no artificial divergence" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val botTrade = trade(
+                timestamp = t0.plusMillis(200),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+                orderTxid = "BOT-ORDER-INIT",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(botTrade),
+                knownRebalancerOrderTxids = setOf("BOT-ORDER-INIT"),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "No anchor: manual spend and receive pair embedded in initial baseline reconciles" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val spendLedger = ledgerEvent(
+                timestamp = t0.plusMillis(200),
+                asset = "USD",
+                amount = "-5000.00",
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+            )
+            val receiveLedger = ledgerEvent(
+                timestamp = t0.plusMillis(200),
+                asset = "BTC",
+                amount = "0.1",
+                type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = listOf(spendLedger, receiveLedger),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "No anchor: UNKNOWN trade among initial candidates fails closed" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val unknownTrade = trade(
+                timestamp = t0.plusMillis(200),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+                source = TradeSource.LEGACY_UNKNOWN,
+                cycleId = null,
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(unknownTrade),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+        }
+
+        "No anchor: unsupported initial trade fails closed with UNSUPPORTED_TRADE" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val badTrade = manualTrade(
+                timestamp = t0.plusMillis(200),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            ).copy(pair = "BTCEUR")
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(badTrade),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+        }
+
+        "No anchor: exceeding maximum initial candidate cap fails closed" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val excessiveTrades = (1..9).map { i ->
+                manualTrade(
+                    timestamp = t0.plusMillis(10L * i),
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = "0.01",
+                    usdAmount = "500.00",
+                )
+            }
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = excessiveTrades,
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "No anchor: initial candidate embedded alongside regular interval trade and ledger reconciles" {
+            val t0 = now
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t0.plusSeconds(3600),
+                totalValueUSD = "102500.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.35", "50000.00", "67500.00"),
+                    "USD" to assetRow("35000.00", "1.0", "35000.00"),
+                ),
+                balancesObservedAt = t0.plusSeconds(3600),
+            )
+            val initTrade = manualTrade(
+                timestamp = t0.plusMillis(200),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            )
+            val regularTrade = manualTrade(
+                timestamp = t0.plusSeconds(1800),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.2",
+                usdAmount = "10000.00",
+            )
+            val regularLedger = ledgerEvent(
+                timestamp = t0.plusSeconds(1900),
+                asset = "BTC",
+                amount = "0.05",
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(initTrade, regularTrade),
+                rewards = listOf(regularLedger),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "No anchor: initial candidate embedded alongside late candidate at next snapshot reconciles" {
+            val t0 = now
+            val t1 = t0.plusSeconds(3600)
+            val s1 = snapshot(
+                timestamp = t0.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "ETH" to assetRow("0.0", "3000.00", "0.00"),
+                    "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val s2 = snapshot(
+                timestamp = t1.plusMillis(500),
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "ETH" to assetRow("2.0", "3000.00", "6000.00"),
+                    "USD" to assetRow("39000.00", "1.0", "39000.00"),
+                ),
+                balancesObservedAt = t1,
+            )
+            val initTrade = manualTrade(
+                timestamp = t0.plusMillis(200),
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "5000.00",
+            )
+            val lateTradeAtS2 = manualTrade(
+                timestamp = t1.plusMillis(200),
+                side = "buy",
+                symbol = "ETH",
+                volume = "2.0",
+                usdAmount = "6000.00",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(initTrade, lateTradeAtS2),
+                anchorSnapshot = null,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
     }
 
     private fun assetRow(balance: String, price: String, valueUSD: String): Triple<String, String, String> =
@@ -2245,6 +3896,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         timestamp: Instant,
         totalValueUSD: String,
         assets: Map<String, Triple<String, String, String>>,
+        balancesObservedAt: Instant = timestamp,
     ): PortfolioSnapshot {
         val assetSnapshots = assets.mapValues { (symbol, triple) ->
             assetSnapshot(
@@ -2263,6 +3915,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             drawdownPercent = BigDecimal.ZERO,
             fiatDeploymentPercent = BigDecimal.ZERO,
             effectiveUsdTargetPercent = BigDecimal.ZERO,
+            balancesObservedAt = balancesObservedAt,
         )
     }
 
@@ -2280,6 +3933,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         tradeId: String? = null,
         orderTxid: String? = null,
         clientOrderId: String? = null,
+        price: String = "0",
     ): TradeRecord = TradeRecord(
         timestamp = timestamp,
         pair = "${symbol}USD",
@@ -2289,7 +3943,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         usdAmount = BigDecimal(usdAmount),
         success = success,
         dryRun = dryRun,
-        price = BigDecimal.ZERO,
+        price = BigDecimal(price),
         fee = BigDecimal(fee),
         source = source,
         cycleId = cycleId,

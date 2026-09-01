@@ -189,7 +189,12 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
 
                 tradeHistoryService.getRebalancerComparison(from, to)
 
-                coVerify(exactly = 1) { repository.getTradesInRange(baseline, last) }
+                coVerify(exactly = 1) {
+                    repository.getTradesInRange(
+                        baseline,
+                        last.plusMillis(1_000),
+                    )
+                }
             }
         }
 

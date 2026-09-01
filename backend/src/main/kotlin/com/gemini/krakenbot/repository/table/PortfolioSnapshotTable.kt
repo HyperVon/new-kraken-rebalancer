@@ -13,6 +13,7 @@ object PortfolioSnapshotTable : Table("portfolio_snapshots") {
     val drawdownPercent = decimal("drawdown_percent", 10, 4)
     val fiatDeploymentPercent = decimal("fiat_deployment_percent", 10, 4)
     val effectiveUsdTargetPercent = decimal("effective_usd_target_percent", 10, 4)
+    val balancesObservedAt = long("balances_observed_at").nullable()
 
     init {
         index("idx_snapshots_timestamp", false, timestamp)
@@ -24,15 +25,24 @@ object PortfolioSnapshotTable : Table("portfolio_snapshots") {
         row: ResultRow,
         assets: Map<String, PortfolioSnapshot.AssetSnapshot>,
         actions: List<String>,
-    ): PortfolioSnapshot = PortfolioSnapshot(
-        timestamp = Instant.ofEpochMilli(row[timestamp]),
-        totalValueUSD = row[totalValueUSD],
-        assets = assets,
-        actions = actions,
-        drawdownPercent = row[drawdownPercent],
-        fiatDeploymentPercent = row[fiatDeploymentPercent],
-        effectiveUsdTargetPercent = row[effectiveUsdTargetPercent],
-    )
+    ): PortfolioSnapshot {
+        val observedAtMillis = row.getOrNull(balancesObservedAt)
+        val observedAt = if (observedAtMillis != null && observedAtMillis > 0L) {
+            Instant.ofEpochMilli(observedAtMillis)
+        } else {
+            Instant.ofEpochMilli(row[timestamp])
+        }
+        return PortfolioSnapshot(
+            timestamp = Instant.ofEpochMilli(row[timestamp]),
+            totalValueUSD = row[totalValueUSD],
+            assets = assets,
+            actions = actions,
+            drawdownPercent = row[drawdownPercent],
+            fiatDeploymentPercent = row[fiatDeploymentPercent],
+            effectiveUsdTargetPercent = row[effectiveUsdTargetPercent],
+            balancesObservedAt = observedAt,
+        )
+    }
 
     fun applyTo(builder: UpdateBuilder<*>, snapshot: PortfolioSnapshot) {
         builder[timestamp] = snapshot.timestamp.toEpochMilli()
@@ -40,5 +50,6 @@ object PortfolioSnapshotTable : Table("portfolio_snapshots") {
         builder[drawdownPercent] = snapshot.drawdownPercent
         builder[fiatDeploymentPercent] = snapshot.fiatDeploymentPercent
         builder[effectiveUsdTargetPercent] = snapshot.effectiveUsdTargetPercent
+        builder[balancesObservedAt] = snapshot.balancesObservedAt.toEpochMilli()
     }
 }

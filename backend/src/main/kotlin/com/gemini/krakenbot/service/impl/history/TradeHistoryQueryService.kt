@@ -42,12 +42,23 @@ class TradeHistoryQueryService(
         if (snapshots.size < 2) {
             return RebalancerComparisonCalculator.calculate(snapshots, emptyList())
         }
-        val firstTimestamp = snapshots.minOf { it.timestamp }
-        val lastTimestamp = snapshots.maxOf { it.timestamp }
-        val trades = getTradesInRange(firstTimestamp, lastTimestamp)
+        val orderedSnapshots = snapshots.sortedBy { it.timestamp }
+        val firstSnapshot = orderedSnapshots.first()
+        val lastSnapshot = orderedSnapshots.last()
+        val firstTimestamp = firstSnapshot.timestamp
+        val lastTimestamp = lastSnapshot.timestamp
+        val firstObservationTime = firstSnapshot.balancesObservedAt
+        val lastObservationTime = lastSnapshot.balancesObservedAt
+
+        val anchorSnapshot = repository.getSnapshotBefore(firstTimestamp)
+        val queryFrom = anchorSnapshot?.balancesObservedAt ?: firstObservationTime
+        val queryTo = maxOf(lastTimestamp, lastObservationTime)
+            .plusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+
+        val trades = getTradesInRange(queryFrom, queryTo)
         val ledgers =
             ledgerRepository
-                .getLedgersInRange(firstTimestamp, lastTimestamp)
+                .getLedgersInRange(queryFrom, queryTo)
                 .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
         val candidateTrades = trades.filter { it.success && !it.dryRun }
         val candidateOrderTxids = candidateTrades.mapNotNull {
@@ -61,10 +72,11 @@ class TradeHistoryQueryService(
             ?.orderTxids
             .orEmpty()
         return RebalancerComparisonCalculator.calculate(
-            snapshots = snapshots,
+            snapshots = orderedSnapshots,
             trades = trades,
             rewards = ledgers,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+            anchorSnapshot = anchorSnapshot,
         )
     }
 
