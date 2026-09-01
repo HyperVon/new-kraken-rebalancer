@@ -41,6 +41,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The live adapter uses Kraken's documented `sale` query filter for `spend`/`receive` rows and
   preserves the two ledger legs because consumer Buy Crypto/Kraken app activity is recorded in
   Ledger history rather than Trades history.
+- **Fail-closed unexplained balance validation**: A tracked balance mismatch that remains after
+  replaying authoritative trades, supported ledger events, and fees now returns
+  `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE` at the first bad snapshot instead of rendering
+  estimated numeric benchmark alpha. Rounding remains USD scale 2 and crypto scale 8; untracked
+  asset activity stays outside the validation boundary.
 
 ## [6.17.15] - 2026-08-31
 

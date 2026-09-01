@@ -108,6 +108,11 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   USD cash dividends) are mirrored in the synthetic Buy & Hold benchmark. Kraken documents
   Buy Crypto Widget and Kraken app activity as Ledger-only, so it is not deduplicated against
   `TradesHistory`.
+- The comparison validates each tracked interval after applying successful authoritative trades,
+  supported ledger events, and fees. A rounded mismatch at USD scale 2 or crypto scale 8 returns
+  `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE` at the first bad snapshot; it never degrades
+  an unexplained tracked mutation to estimated numeric alpha. Untracked assets remain outside
+  this validation boundary.
 - `SnapshotHistoryCalculator` and `TradeHistoryReconstructionService` (version `5`) query
   `EXTERNAL_BALANCE_TYPES` and apply `event.netBalanceDelta()` (`amount - fee`) backwards
   from current balances.

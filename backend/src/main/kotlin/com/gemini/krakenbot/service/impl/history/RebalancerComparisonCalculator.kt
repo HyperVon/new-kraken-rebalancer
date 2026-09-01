@@ -68,7 +68,6 @@ object RebalancerComparisonCalculator {
                 baselineTimestamp = baseline.timestamp,
             )
         }
-        val isReconciled = (balanceResult as TrackedBalanceValidation.Passed).isReconciled
 
         val benchmarkEvents = buildBenchmarkEvents(
             trades = trades.filter { it.success && !it.dryRun && it.timestamp > baseline.timestamp },
@@ -146,7 +145,7 @@ object RebalancerComparisonCalculator {
 
         return RebalancerComparison(
             availability = ComparisonAvailability.AVAILABLE,
-            confidence = if (isReconciled) ComparisonConfidence.RECONCILED else ComparisonConfidence.ESTIMATED,
+            confidence = ComparisonConfidence.RECONCILED,
             baselineTimestamp = baseline.timestamp,
             points = correctedPoints,
             latestDifferenceUSD = latestDiffUSD,
@@ -157,7 +156,7 @@ object RebalancerComparisonCalculator {
     }
 
     private sealed class TrackedBalanceValidation {
-        data class Passed(val isReconciled: Boolean) : TrackedBalanceValidation()
+        data object Passed : TrackedBalanceValidation()
         data class Failed(val reason: ComparisonUnavailableReason, val unavailableAt: Instant?) :
             TrackedBalanceValidation()
     }
@@ -229,8 +228,6 @@ object RebalancerComparisonCalculator {
         val externalEvents = ledgers.filter {
             it.type in externalBalanceLedgerTypes && it.time > baseline.timestamp && it.time <= lastSnapshot.timestamp
         }
-        var allReconciled = true
-
         for (trade in successfulTrades) {
             val ownership = TradeOwnershipClassifier.classify(
                 trade = trade,
@@ -284,11 +281,14 @@ object RebalancerComparisonCalculator {
                 val roundedExpected = expectedBalance.setScale(scale, RoundingMode.HALF_UP)
                 val roundedActual = actualBalance.setScale(scale, RoundingMode.HALF_UP)
                 if (roundedExpected.compareTo(roundedActual) != 0) {
-                    allReconciled = false
+                    return TrackedBalanceValidation.Failed(
+                        reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                        unavailableAt = curr.timestamp,
+                    )
                 }
             }
         }
-        return TrackedBalanceValidation.Passed(isReconciled = allReconciled)
+        return TrackedBalanceValidation.Passed
     }
 
     private fun buildBenchmarkEvents(

@@ -339,6 +339,14 @@ rows against `TradesHistory`. The reconstruction marker is paired with the ledge
 coverage version it replayed, so a coverage migration cannot suppress the required
 rebuild.
 
+Before rendering benchmark points, each interval replays every successful
+authoritative trade, supported external ledger event, and fee into the previous
+tracked balances. If any tracked asset still differs from the next snapshot after
+rounding USD to scale 2 and crypto to scale 8, the comparison is unavailable with
+`UNEXPLAINED_BALANCE_CHANGE` at that next snapshot's timestamp. It never emits
+estimated numeric alpha for an unexplained tracked mutation; untracked assets remain
+outside this validation boundary.
+
 ### Trade economics & slippage lifecycle
 
 Each executed order creates a **local estimate** row at rebalance time:

@@ -462,7 +462,10 @@ snapshot reconstruction consume all eight external types with `amount - fee`;
 consumer Buy Crypto `spend`/`receive` legs remain separate ledger events. Kraken
 documents those app transactions in Ledger history rather than Trades history.
 Dividends for untracked assets remain excluded from the rewards series. It is a
-normal suspend query, not a background flow.
+normal suspend query, not a background flow. Before the comparison renders, each
+tracked interval must reconcile against authoritative trades and supported ledger
+events at USD scale 2 or crypto scale 8; the first unexplained mismatch returns
+`UNEXPLAINED_BALANCE_CHANGE` at the next snapshot timestamp and hides numeric output.
 
 ---
 

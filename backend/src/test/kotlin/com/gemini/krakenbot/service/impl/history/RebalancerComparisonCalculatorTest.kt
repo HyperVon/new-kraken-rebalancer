@@ -201,7 +201,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
         }
 
-        "deposit: unexplained balance change returns ESTIMATED confidence" {
+        "unexplained USD credit fails closed" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -213,21 +213,45 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
                 snapshot(
                     now.plusSeconds(3600),
-                    "200000.00",
+                    "105000.00",
                     mapOf(
-                        "BTC" to assetRow("2.0", "50000.00", "100000.00"),
-                        "USD" to assetRow("100000.00", "1.0", "100000.00"),
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("55000.00", "1.0", "55000.00"),
                     ),
                 ),
             )
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.confidence shouldBe ComparisonConfidence.ESTIMATED
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.confidence shouldBe null
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
         }
 
-        "withdrawal: unexplained balance decrease returns ESTIMATED confidence" {
+        "unexplained USD debit fails closed" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "50000.00",
+                    mapOf("USD" to assetRow("50000.00", "1.0", "50000.00")),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "40000.00",
+                    mapOf("USD" to assetRow("40000.00", "1.0", "40000.00")),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.confidence shouldBe null
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
+        }
+
+        "unexplained crypto credit fails closed" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -239,18 +263,83 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
                 snapshot(
                     now.plusSeconds(3600),
-                    "50000.00",
+                    "105000.00",
                     mapOf(
-                        "BTC" to assetRow("0.5", "50000.00", "25000.00"),
-                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                        "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
                     ),
                 ),
             )
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.confidence shouldBe ComparisonConfidence.ESTIMATED
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.confidence shouldBe null
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
+        }
+
+        "unexplained crypto debit fails closed" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "95000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.9", "50000.00", "45000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.confidence shouldBe null
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
+        }
+
+        "first unexplained interval determines unavailableAt" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "105000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("55000.00", "1.0", "55000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(7200),
+                    "110000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("60000.00", "1.0", "60000.00"),
+                    ),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
         }
 
         "tracked buy: asset volume and USD/fee deltas match and remain available" {
@@ -325,7 +414,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.confidence shouldBe ComparisonConfidence.RECONCILED
         }
 
-        "dry-run ignored: estimates confidence" {
+        "dry-run tracked balance change fails closed" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -358,11 +447,13 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.confidence shouldBe ComparisonConfidence.ESTIMATED
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.confidence shouldBe null
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
         }
 
-        "failed trade ignored: estimates confidence" {
+        "failed trade tracked balance change fails closed" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -395,8 +486,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.confidence shouldBe ComparisonConfidence.ESTIMATED
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.confidence shouldBe null
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
         }
 
         "unsupported side: returns UNSUPPORTED_TRADE" {
@@ -734,7 +827,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.confidence shouldBe ComparisonConfidence.RECONCILED
         }
 
-        "staking rewards inflate the buy and hold line" {
+        "staking reward absent from the actual snapshot fails closed" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -757,9 +850,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards)
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.confidence shouldBe ComparisonConfidence.ESTIMATED
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("122000.00")
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.confidence shouldBe null
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
         }
 
         "dividend ledger events for tracked assets are mirrored in buy-and-hold" {
@@ -803,9 +897,9 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
                 snapshot(
                     now.plusSeconds(3600),
-                    "105000.00",
+                    "100000.00",
                     mapOf(
-                        "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
                         "USD" to assetRow("50000.00", "1.0", "50000.00"),
                     ),
                 ),
@@ -815,7 +909,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.confidence shouldBe ComparisonConfidence.ESTIMATED
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[0].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 

@@ -327,14 +327,13 @@ The comparison cannot be computed when:
 | Missing price | An asset lacks a price in a snapshot. |
 | Asset universe changed | An asset was added or removed during the window. |
 | Unsupported trade | A trade with a side other than BUY or SELL or non-USD quotes. |
-| Unexplained balance change | An external flow, consumer transaction, or incomplete trade history may exist. |
+| Unexplained balance change | A tracked balance changed without a matching authoritative trade or supported ledger event, or a known event does not reconcile to the next snapshot. |
 
 When an unavailability reason applies, the chart hides and a message explains why.
-Where the comparison *is* rendered but the tracked balance changes could not be
-fully reconciled (for example, missing provenance on historical trades or unexplained balance
-deviations), the chart renders with an **Estimated (external balance changes may affect
-precision)** badge — treat those ranges as approximate. Fully reconciled ranges
-show no badge.
+There is no estimated numeric fallback for an unexplained tracked balance change:
+the comparison is `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE`, timestamped at
+the first snapshot where the rounded expected and actual tracked balances differ.
+Rendered comparisons are fully reconciled.
 
 ### Staking Rewards
 
