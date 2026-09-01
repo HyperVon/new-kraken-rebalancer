@@ -84,7 +84,11 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 ## Ledger synchronization
 
 - `LedgersSyncService` is a separate insert-only sync for Kraken
-  `/0/private/Ledgers`; it requests only `staking` and `dividend` types.
+  `/0/private/Ledgers`; it requests `staking`, `dividend`, `deposit`, `withdrawal`,
+  `transfer`, `adjustment`, `spend`, and `receive` response types. The live adapter
+  sends `type=sale` for `spend`/`receive` because `sale` is the API query filter,
+  then filters the returned response rows locally. Preserve each row's ledger ID
+  and `refid`; do not collapse the two economic legs.
 - It uses the same **300s** throttle, coroutine `Mutex`, credential preflight,
   stable-backend selection, and execution-session boundary as trade sync.
 - The first and recovered initial passes are bounded to the last **96 days**.
@@ -95,10 +99,30 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 - `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.
   `saveLedgers()` returns only newly inserted rows, so overlap and repeated pages
   cannot inflate counts.
-- `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking` entries,
+- `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking` and `dividend` entries,
   accumulates amounts by asset at each portfolio snapshot, and values them with
-  that snapshot's prices. `dividend` rows remain persisted but are not included
-  in the current staking-rewards chart.
+  that snapshot's prices.
+- `TradeHistoryQueryService.getRebalancerComparison()` passes all external balance ledgers
+  (`EXTERNAL_BALANCE_TYPES`) to `RebalancerComparisonCalculator` so strategy-neutral flows
+  (rewards, deposits, withdrawals, transfers, adjustments, consumer spend/receive legs, and
+  USD cash dividends) are mirrored in the synthetic Buy & Hold benchmark. Kraken documents
+  Buy Crypto Widget and Kraken app activity as Ledger-only, so it is not deduplicated against
+  `TradesHistory`.
+- The comparison validates each tracked interval after applying successful authoritative trades,
+  supported ledger events, and fees. A rounded mismatch at USD scale 2 or crypto scale 8 returns
+  `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE` at the first bad snapshot; it never degrades
+  an unexplained tracked mutation to estimated numeric alpha. Untracked assets remain outside
+  this validation boundary.
+- `SnapshotHistoryCalculator` and `TradeHistoryReconstructionService` (version `5`) query
+  `EXTERNAL_BALANCE_TYPES` and apply `event.netBalanceDelta()` (`amount - fee`) backwards
+  from current balances.
+- Reconstruction writes the ledger-coverage version alongside its version marker only after
+  snapshot persistence succeeds; a coverage migration therefore cannot be hidden by an older
+  marker.
+- The comparison extracts exact candidate `orderTxid` and `clientOrderId` values from the
+  successful live fills in the selected range before querying `OrderIntentRepository`. The
+  repository returns only matched durable `orderTxid` values; there is no all-intents time
+  window or timestamp/value heuristic at this ownership boundary.
 
 ## TradeDeduplicator
 

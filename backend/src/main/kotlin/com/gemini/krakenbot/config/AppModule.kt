@@ -98,6 +98,7 @@ val coreModule =
                 repository = get(),
                 portfolioStatsRepository = get(),
                 ledgerRepository = get(),
+                orderIntentRepository = get(),
             )
         }
         single {

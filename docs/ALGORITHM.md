@@ -313,17 +313,39 @@ failure.
 ### Ledger history and staking rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
-once every **300 seconds**, requesting `staking` and `dividend` entries in pages
-of **50**. The first and recovered initial syncs use a bounded **96-day** seed
-window and store durable progress metadata; later syncs use the latest stored
-ledger time (or watermark) with a **300-second overlap**. SQLite enforces the `(ledger id, timestamp,
-asset, type)` identity so overlapping pages and retries are safe.
+once every **300 seconds**, requesting the eight strategy-neutral response types
+(`staking`, `dividend`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
+`spend`, and `receive`) in pages of **50**. Kraken's API query filter uses
+`sale` for the consumer `spend`/`receive` rows; the live adapter filters those
+response types locally. The first and recovered initial syncs use a bounded
+**96-day** seed window and store durable progress metadata; later syncs use the
+latest stored ledger time (or watermark) with a **300-second overlap**. SQLite
+enforces the `(ledger id, timestamp, asset, type)` identity so overlapping pages
+and retries are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
+and [ledger field guidance](https://support.kraken.com/articles/360001169383-how-to-interpret-ledger-history-fields).
 
-The History `/api/history/rewards` endpoint currently charts `staking` entries.
-It aligns cumulative per-asset amounts to stored portfolio snapshot timestamps,
-values each asset using that snapshot's price, and returns total and per-asset
-USD series for the selected range. Dividend entries are retained in the ledger
-store for future ledger-based views and accounting.
+The History `/api/history/rewards` endpoint charts `staking` and `dividend`
+entries for tracked allocation assets. It aligns cumulative per-asset amounts to
+stored portfolio snapshot timestamps, values each asset using that snapshot's
+price, and returns total and per-asset USD series for the selected range.
+Dividend entries for untracked assets remain persisted but excluded as external
+inflows.
+
+For benchmark and reconstruction accounting, all eight external ledger types are
+applied as `amount - fee`, preserving both legs of a consumer transaction. Kraken
+states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
+and not Trades history, so the comparison does not try to deduplicate these ledger
+rows against `TradesHistory`. The reconstruction marker is paired with the ledger
+coverage version it replayed, so a coverage migration cannot suppress the required
+rebuild.
+
+Before rendering benchmark points, each interval replays every successful
+authoritative trade, supported external ledger event, and fee into the previous
+tracked balances. If any tracked asset still differs from the next snapshot after
+rounding USD to scale 2 and crypto to scale 8, the comparison is unavailable with
+`UNEXPLAINED_BALANCE_CHANGE` at that next snapshot's timestamp. It never emits
+estimated numeric alpha for an unexplained tracked mutation; untracked assets remain
+outside this validation boundary.
 
 ### Trade economics & slippage lifecycle
 

@@ -271,12 +271,12 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - Header loop control on Dashboard, History, and Settings showing RUNNING/PAUSED with neutral labeled **Pause** and **Resume** actions
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
-- **Staking Rewards History** — displays cumulative staking rewards in USD, split
-  by asset, from synchronized Kraken ledger entries. `dividend` entries (Kraken
-  staking-reward payouts for assets like DOT outside the tracked universe) are
-  persisted for balance attribution but excluded from the chart; Earn-migration
-  asset suffixes (`.S`/`.M`/`.F`/`.B`) and legacy `X`/`Z` asset codes are
-  normalized to the base symbol.
+- **Staking Rewards History** — displays cumulative staking and dividend rewards in USD, split
+  by asset, from synchronized Kraken ledger entries. `dividend` entries for
+  untracked assets (e.g. DOT outside the tracked universe) remain external inflows
+  excluded from the chart, while dividends for tracked assets are treated like
+  staking; Earn-migration asset suffixes (`.S`/`.M`/`.F`/`.B`) and legacy `X`/`Z`
+  asset codes are normalized to the base symbol.
 - **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
   Kotlin/JS (`rebalancer.js`) for charts, History controls, and client behavior
 
@@ -304,9 +304,11 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 
 ### Ledger & Staking Rewards Synchronization
 
-- Synchronizes staking and dividend entries from Kraken's private
-  `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold
-  Flow fetching
+- Synchronizes eight strategy-neutral entry types (`staking`, `dividend`, `deposit`,
+  `withdrawal`, `transfer`, `adjustment`, `spend`, and `receive`) from Kraken's private
+  `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold Flow fetching.
+  The live adapter queries the documented `sale` filter for consumer `spend`/`receive`
+  rows, then filters the returned rows by their response type.
 - Persists ledger entries in SQLite using the `(ledger id, timestamp, asset, type)`
   identity so overlapping pages and retries remain idempotent
 - Stores durable seed progress and timestamps in `history_sync_metadata`, then
@@ -319,9 +321,14 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   from the totals.
 - In simulation mode with an empty database, synthetic staking ledger entries
   are seeded alongside snapshots and trades so the rewards panel shows a
-  realistic cumulative history; `dividend` entries stay persisted but excluded
-  from the rewards chart and comparison math (external USD-equivalent inflows
-  from the rebalancer's perspective).
+  realistic cumulative history; `dividend` entries for tracked assets are now
+  mirrored in the rewards chart, comparison math, and historical reconstruction
+  (like staking), while dividends for untracked assets remain external inflows.
+- Rebalancer vs Buy & Hold and historical reconstruction replay every supported
+  external ledger type using `amount - fee`. Consumer Buy Crypto activity is
+  represented by its ledger `spend`/`receive` legs; it is not inferred from
+  `TradesHistory`. The reconstruction marker records the ledger-coverage version
+  it replayed, so a coverage migration cannot be hidden by an older marker.
 
 ### Safety & Reliability
 
@@ -406,7 +413,7 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
 - **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
-- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the first stored snapshot in the selected range, shows the latest USD/percentage difference; ranges with incomplete reconciliation remain visible with an **Estimated** confidence badge, while fully reconciled ranges are unbadged
+- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the first stored snapshot in the selected range and shows the latest USD/percentage difference; any tracked balance change that cannot be explained by authoritative trades or supported ledger activity makes the range unavailable, while rendered ranges are fully reconciled
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)

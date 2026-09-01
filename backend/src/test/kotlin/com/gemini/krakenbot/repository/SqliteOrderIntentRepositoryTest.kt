@@ -1702,6 +1702,48 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 }
             }
         }
+
+        "loads known rebalancer order identities by exact candidate IDs" {
+            runTest {
+                val now = Instant.parse("2026-07-01T12:00:00Z")
+                val intent1 = newIntent().copy(
+                    createdAt = now,
+                    orderTxid = "TXID-1",
+                    clientOrderId = "CLORD-1",
+                )
+                val id1 = savePendingWithTrade(intent1)
+                repository.recordOutcome(id1, OrderIntentState.CONFIRMED, "TXID-1", null, now.plusSeconds(10))
+
+                val intent2 = newIntent().copy(
+                    createdAt = now.plusSeconds(3600),
+                    orderTxid = "TXID-2",
+                    clientOrderId = "CLORD-2",
+                )
+                val id2 = savePendingWithTrade(intent2)
+                repository.recordOutcome(id2, OrderIntentState.CONFIRMED, "TXID-2", null, now.plusSeconds(3610))
+
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = setOf("TXID-1"),
+                    clientOrderIds = emptySet(),
+                ).orderTxids shouldBe setOf("TXID-1")
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = emptySet(),
+                    clientOrderIds = setOf("CLORD-2"),
+                ).orderTxids shouldBe setOf("TXID-2")
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = setOf("TXID-1"),
+                    clientOrderIds = setOf("CLORD-2"),
+                ).orderTxids shouldBe setOf("TXID-1", "TXID-2")
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = setOf("NOT-A-BOT-ORDER"),
+                    clientOrderIds = setOf("NOT-A-BOT-CLIENT"),
+                ).orderTxids shouldBe emptySet()
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = emptySet(),
+                    clientOrderIds = emptySet(),
+                ).orderTxids shouldBe emptySet()
+            }
+        }
     }
 
     private suspend fun savePendingWithTrade(intent: OrderIntent): Int {

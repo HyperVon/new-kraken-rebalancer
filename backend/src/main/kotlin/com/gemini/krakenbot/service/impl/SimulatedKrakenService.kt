@@ -219,6 +219,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
             price = price,
             fee = usdAmount.multiply(SEED_FEE_RATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP),
             source = TradeSource.API_FILL,
+            cycleId = "sim-cycle-$seedId",
             orderTxid = "$SEED_ORDER_TXID_PREFIX$seedId",
             tradeId = "$SEED_TRADE_ID_PREFIX$seedId",
         )

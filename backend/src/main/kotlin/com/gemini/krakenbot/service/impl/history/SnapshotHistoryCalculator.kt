@@ -6,7 +6,6 @@ import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.isNegative
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -44,6 +43,8 @@ object SnapshotHistoryCalculator {
         override fun compareTo(other: TimelineEvent): Int = other.timestamp.compareTo(this.timestamp)
     }
 
+    private val externalLedgerTypes = LedgerEvent.EXTERNAL_BALANCE_TYPES
+
     fun buildTimelineEvents(
         historicalTrades: List<TradeRecord>,
         historicalRewards: List<LedgerEvent> = emptyList(),
@@ -54,7 +55,7 @@ object SnapshotHistoryCalculator {
             .map { TimelineEvent.TradeEvent(it.timestamp, it) }
             .toMutableList<TimelineEvent>()
         events += historicalRewards
-            .filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
+            .filter { it.type in externalLedgerTypes }
             .map { TimelineEvent.RewardEvent(it.time, it) }
         events += (0..PrecisionConstants.HISTORICAL_DAYS_BACK).mapNotNull { day ->
             val dailyTime =
@@ -138,10 +139,12 @@ object SnapshotHistoryCalculator {
         }
     }
 
-    /** Undo one credited staking reward: rewards added after the snapshot are removed going backward. */
+    /** Undo one external ledger balance delta, including both legs of a consumer transaction. */
     private fun reverseApplyReward(event: LedgerEvent, runningBalances: MutableMap<String, BigDecimal>) {
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-        runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(event.amount)
+        if (symbol !in runningBalances) return
+        val netDelta = event.netBalanceDelta()
+        runningBalances[symbol] = runningBalances.getValue(symbol).subtract(netDelta)
     }
 
     private fun getPriceForTimestamp(

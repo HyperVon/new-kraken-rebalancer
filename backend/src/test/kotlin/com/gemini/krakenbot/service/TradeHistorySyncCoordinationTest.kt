@@ -11,6 +11,8 @@ import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
+import com.gemini.krakenbot.service.impl.history.LedgersSyncService
+import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -103,6 +105,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     latestSnapshotTime = null,
                 )
                 coEvery { ledgerRepository.isLedgersSeeded() } returns true
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
+                } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
                 coEvery { krakenService.getBalances() } returns mapOf(
                     Asset.BTC to BigDecimal.ONE,
                     TestFixtures.USD to BigDecimal("30000.00"),
@@ -125,7 +130,13 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coVerify {
                     repository.setSyncMetadata(
                         SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
-                        "3",
+                        "5",
+                    )
+                }
+                coVerify {
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
+                        LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
                     )
                 }
             }
@@ -136,11 +147,51 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 val service = createService()
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
-                } returns "3"
+                } returns "5"
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
+                } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
 
                 service.rebuildHistoricalSnapshotsIfNeeded()
 
-                coVerify(exactly = 0) { ledgerRepository.isLedgersSeeded() }
+                coVerify(exactly = 1) { ledgerRepository.isLedgersSeeded() }
+                coVerify(exactly = 0) { krakenService.getBalances() }
+            }
+        }
+
+        "rebuildHistoricalSnapshotsIfNeeded_doesNotTrustMarkerWithoutCoverageProvenance" {
+            runTest {
+                val service = createService()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+                } returns TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
+                } returns null
+
+                service.rebuildHistoricalSnapshotsIfNeeded()
+
+                coVerify(atLeast = 1) { ledgerRepository.isLedgersSeeded() }
+                coVerify(exactly = 1) { krakenService.getBalances() }
+            }
+        }
+
+        "rebuildHistoricalSnapshotsIfNeeded_skipsCurrentMarkerWhenCoverageIsStale" {
+            runTest {
+                val service = createService()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+                } returns TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
+                } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
+                } returns "2"
+
+                service.rebuildHistoricalSnapshotsIfNeeded()
+
+                coVerify(atLeast = 1) { ledgerRepository.isLedgersSeeded() }
                 coVerify(exactly = 0) { krakenService.getBalances() }
             }
         }

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.RebalancerOrderIdentities
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.OrderIntentRepository
@@ -420,4 +421,38 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         OrderIntentState.PENDING.name,
         OrderIntentState.UNCERTAIN.name,
     )
+
+    override suspend fun getKnownRebalancerOrderIdentities(
+        orderTxids: Set<String>,
+        clientOrderIds: Set<String>,
+    ): RebalancerOrderIdentities {
+        val candidateOrderTxids = orderTxids.mapNotNull { it.trim().takeIf(String::isNotBlank) }.toSet()
+        val candidateClientOrderIds = clientOrderIds.mapNotNull { it.trim().takeIf(String::isNotBlank) }.toSet()
+        if (candidateOrderTxids.isEmpty() && candidateClientOrderIds.isEmpty()) {
+            return RebalancerOrderIdentities()
+        }
+
+        return database.safeTransactionIO(log, "Failed to load rebalancer order identities") {
+            val query = when {
+                candidateOrderTxids.isNotEmpty() && candidateClientOrderIds.isNotEmpty() ->
+                    OrderIntentTable.selectAll().where {
+                        (OrderIntentTable.orderTxid inList candidateOrderTxids) or
+                            (OrderIntentTable.clientOrderId inList candidateClientOrderIds)
+                    }
+
+                candidateOrderTxids.isNotEmpty() -> OrderIntentTable.selectAll().where {
+                    OrderIntentTable.orderTxid inList candidateOrderTxids
+                }
+
+                else -> OrderIntentTable.selectAll().where {
+                    OrderIntentTable.clientOrderId inList candidateClientOrderIds
+                }
+            }
+            val knownOrderTxids = mutableSetOf<String>()
+            query.forEach { row ->
+                row[OrderIntentTable.orderTxid]?.trim()?.takeIf(String::isNotBlank)?.let(knownOrderTxids::add)
+            }
+            RebalancerOrderIdentities(orderTxids = knownOrderTxids)
+        }
+    }
 }

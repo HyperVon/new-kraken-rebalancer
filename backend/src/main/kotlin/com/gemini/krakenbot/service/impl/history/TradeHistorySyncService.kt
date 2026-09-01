@@ -44,14 +44,17 @@ class TradeHistorySyncService(
 
     suspend fun rebuildHistoricalSnapshotsIfNeeded() {
         val config = configService.getConfig()
-        if (config.settings.simulation ||
-            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) ==
-            TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
-        ) {
-            return
-        }
+        if (config.settings.simulation) return
 
-        if (!reconstructionService.canRebuildSnapshots()) return
+        val ledgerCoverageReady = reconstructionService.canRebuildSnapshots()
+        val reconstructionIsCurrent =
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) ==
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION &&
+                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION) ==
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION &&
+                ledgerCoverageReady
+
+        if (reconstructionIsCurrent || !ledgerCoverageReady) return
 
         log.info("Snapshot reconstruction version is stale or missing; rebuilding historical snapshots.")
         configService.withExecutionSession {
@@ -536,6 +539,12 @@ class TradeHistorySyncService(
         val isSimulation = config.settings.simulation
 
         if (!isSimulation && totalTrades > 0 && snapshots.size <= 1) {
+            if (!reconstructionService.canRebuildSnapshots()) {
+                log.info(
+                    "Skipping historical snapshot reconstruction during trade sync: ledger coverage is not current.",
+                )
+                return
+            }
             log.info(
                 "Historical snapshots are missing or insufficient (found {} snapshots, {} trades). Starting reconstruction...",
                 snapshots.size,

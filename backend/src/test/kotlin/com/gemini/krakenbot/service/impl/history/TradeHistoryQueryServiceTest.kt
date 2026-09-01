@@ -16,6 +16,7 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
@@ -28,7 +29,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
     private val repository = mockk<TradeRepository>(relaxed = true)
     private val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     private val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
-    private val service = TradeHistoryQueryService(repository, statsRepository, ledgerRepository)
+    private val orderIntentRepository = mockk<com.gemini.krakenbot.repository.OrderIntentRepository>(relaxed = true)
+    private val service = TradeHistoryQueryService(repository, statsRepository, ledgerRepository, orderIntentRepository)
 
     private val now = Instant.parse("2026-07-01T12:00:00Z")
 
@@ -50,6 +52,22 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 rewards.points[0].perAssetUSD.getValue("BTC").shouldBeEqualComparingTo(BigDecimal("5000.00"))
                 rewards.points[1].cumulativeUSD.shouldBeEqualComparingTo(BigDecimal("15000.00"))
                 rewards.totalRewardsUSD.shouldBeEqualComparingTo(BigDecimal("15000.00"))
+            }
+        }
+
+        "getRewardsOverTime_AccumulatesNetBalanceDeltaAccountingForFees" {
+            runTest {
+                val snap = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                val e1 = ledgerEvent("L1", now.minusSeconds(3600), "BTC", "0.1", fee = "0.01")
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(e1)
+
+                val rewards = service.getRewardsOverTime(Instant.EPOCH, now)
+
+                rewards.points.size shouldBe 1
+                // 0.1 - 0.01 = 0.09 BTC * 50,000 = 4500.00 USD
+                rewards.points[0].perAssetUSD.getValue("BTC").shouldBeEqualComparingTo(BigDecimal("4500.00"))
+                rewards.totalRewardsUSD.shouldBeEqualComparingTo(BigDecimal("4500.00"))
             }
         }
 
@@ -123,34 +141,180 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
-        "getRebalancerComparison_DividendOnly_DoesNotReconcile" {
+        "getRebalancerComparison_DurableOrderTxidIntentProvesBotOwnership" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
-                val snap2 = snapshot(now.plusSeconds(1800), "105000.00", btc = "1.1" to "50000.00")
+                val snap2 =
+                    snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
-                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
-                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
-                    listOf(
-                        ledgerEvent(
-                            "L1",
-                            now.plusSeconds(600),
-                            "STRC",
-                            "1.25",
-                            KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
-                        ),
-                    )
+                val trade = com.gemini.krakenbot.model.TradeRecord(
+                    id = 1,
+                    pair = "BTCUSD",
+                    symbol = "BTC",
+                    side = "BUY",
+                    timestamp = now.plusSeconds(1800),
+                    volume = BigDecimal("0.2"),
+                    usdAmount = BigDecimal("10000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal.ZERO,
+                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    tradeId = "T1",
+                    orderTxid = "BOT-ORDER-1",
+                    cycleId = null,
+                    clientOrderId = null,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    com.gemini.krakenbot.model.RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-1"))
 
-                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(1800))
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
-                comparison.confidence shouldBe ComparisonConfidence.ESTIMATED
+                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                // Because trade is bot-owned (REBALANCER), it is NOT replayed into Buy & Hold.
+                // Buy & Hold stays 1.0 BTC @ 50k + 50k USD = 100,000. Actual = 1.2 BTC @ 50k + 40k USD = 100,000.
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+            }
+        }
+
+        "getRebalancerComparison_OrderIntentCreatedBeforeBaselineIdentifiesBotFillAfterBaseline" {
+            runTest {
+                // Baseline snapshot at T+0 (now)
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                // Subsequent snapshot at T+3600
+                val snap2 =
+                    snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+
+                // Fill occurs at T+2s (after baseline), but intent was created at T-1s (before baseline)
+                val trade = com.gemini.krakenbot.model.TradeRecord(
+                    id = 1,
+                    pair = "BTCUSD",
+                    symbol = "BTC",
+                    side = "BUY",
+                    timestamp = now.plusSeconds(2),
+                    volume = BigDecimal("0.2"),
+                    usdAmount = BigDecimal("10000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal.ZERO,
+                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    tradeId = "T1",
+                    orderTxid = "BOT-ORDER-EARLY-INTENT",
+                    cycleId = null,
+                    clientOrderId = null,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                val requestedOrderTxids = slot<Set<String>>()
+                val requestedClientOrderIds = slot<Set<String>>()
+                coEvery {
+                    orderIntentRepository.getKnownRebalancerOrderIdentities(
+                        capture(requestedOrderTxids),
+                        capture(requestedClientOrderIds),
+                    )
+                } returns
+                    com.gemini.krakenbot.model.RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-EARLY-INTENT"))
+
+                val comparison = service.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                requestedOrderTxids.captured shouldBe setOf("BOT-ORDER-EARLY-INTENT")
+                requestedClientOrderIds.captured shouldBe emptySet()
+                // Correctly classified as REBALANCER (not manual or unknown)
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+            }
+        }
+
+        "getRebalancerComparison_ManualTradeReplaysIntoBuyAndHold" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 =
+                    snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                val trade = com.gemini.krakenbot.model.TradeRecord(
+                    id = 1,
+                    pair = "BTCUSD",
+                    symbol = "BTC",
+                    side = "BUY",
+                    timestamp = now.plusSeconds(1800),
+                    volume = BigDecimal("0.2"),
+                    usdAmount = BigDecimal("10000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal.ZERO,
+                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    tradeId = "MANUAL-T1",
+                    orderTxid = "MANUAL-O1",
+                    cycleId = null,
+                    clientOrderId = null,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    com.gemini.krakenbot.model.RebalancerOrderIdentities(orderTxids = emptySet())
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                // Manual trade is replayed into Buy & Hold, so Buy & Hold matches Actual
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                comparison.points.last().differenceUSD.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
+        }
+
+        "getRebalancerComparison_UnknownTradeFailsClosedWithAmbiguousOwnership" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 =
+                    snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                val trade = com.gemini.krakenbot.model.TradeRecord(
+                    id = 1,
+                    pair = "BTCUSD",
+                    symbol = "BTC",
+                    side = "BUY",
+                    timestamp = now.plusSeconds(1800),
+                    volume = BigDecimal("0.2"),
+                    usdAmount = BigDecimal("10000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal.ZERO,
+                    source = com.gemini.krakenbot.model.TradeSource.LEGACY_UNKNOWN,
+                    tradeId = null,
+                    orderTxid = null,
+                    cycleId = null,
+                    clientOrderId = null,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe
+                    com.gemini.krakenbot.model.ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
             }
         }
     }
 
-    private fun snapshot(timestamp: Instant, totalValueUSD: String, btc: Pair<String, String>): PortfolioSnapshot {
+    private fun snapshot(
+        timestamp: Instant,
+        totalValueUSD: String,
+        btc: Pair<String, String>,
+        usdBalance: String = "50000.00",
+    ): PortfolioSnapshot {
         val (btcBalance, btcPrice) = btc
         val btcValue = BigDecimal(btcBalance).multiply(BigDecimal(btcPrice))
+        val usdVal = BigDecimal(usdBalance)
         return PortfolioSnapshot(
             timestamp = timestamp,
             totalValueUSD = BigDecimal(totalValueUSD),
@@ -164,9 +328,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 ),
                 TestFixtures.USD to TestFixtures.assetSnapshot(
                     symbol = TestFixtures.USD,
-                    balance = BigDecimal("50000.00"),
+                    balance = usdVal,
                     price = BigDecimal.ONE,
-                    valueUSD = BigDecimal("50000.00"),
+                    valueUSD = usdVal,
                     targetPercent = BigDecimal.ZERO,
                 ),
             ),
@@ -183,11 +347,13 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         asset: String,
         amount: String,
         type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
+        fee: String = "0",
     ): LedgerEvent = LedgerEvent(
         ledgerId = ledgerId,
         time = timestamp,
         type = type,
         asset = asset,
         amount = BigDecimal(amount),
+        fee = BigDecimal(fee),
     )
 }

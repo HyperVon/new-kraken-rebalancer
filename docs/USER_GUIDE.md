@@ -301,12 +301,16 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 <p><a href="images/history.png"><img src="images/history.png" alt="History - rebalancer vs buy and hold comparison" width="720"></a></p>
 
 The first chart below the summary cards compares what the rebalancer actually
-achieved against a **hypothetical buy-and-hold** strategy:
+achieved against a **synthetic buy-and-hold** strategy:
 
-- **Buy & Hold** starts from the first snapshot in the selected window and
-  holds those asset quantities constant. Each subsequent point values that
-  fixed basket at that day's prices.
-- **Rebalancer** is the actual portfolio value at each snapshot.
+- **Buy & Hold** starts from the first snapshot in the selected window. Strategy-neutral
+  economic flows (staking rewards, crypto dividends, USD cash dividends, external deposits,
+  withdrawals, transfers, adjustments, consumer Buy Crypto `spend`/`receive` legs, and manual
+  user trades) are replayed into Buy & Hold identically to the actual portfolio. Kraken app/Buy
+  Crypto activity is read from Ledger history, including both asset legs, rather than inferred
+  from the trade-history feed.
+- **Rebalancer** is the actual portfolio value at each snapshot, incorporating rebalancing bot
+  trade executions that create genuine divergence from Buy & Hold.
 - The **delta badge** next to the chart title shows the cumulative
   outperformance or underperformance (e.g. `+$5,000.00 (+4.76%)`).
 
@@ -322,25 +326,26 @@ The comparison cannot be computed when:
 | Baseline mismatch | First snapshot's total value doesn't match the sum of its priced assets (stale data). |
 | Missing price | An asset lacks a price in a snapshot. |
 | Asset universe changed | An asset was added or removed during the window. |
-| Unsupported trade | A trade with a side other than BUY or SELL. |
-| Unexplained balance change | A deposit, withdrawal, transfer, or incomplete trade history may exist. |
+| Unsupported trade | A trade with a side other than BUY or SELL or non-USD quotes. |
+| Unexplained balance change | A tracked balance changed without a matching authoritative trade or supported ledger event, or a known event does not reconcile to the next snapshot. |
 
 When an unavailability reason applies, the chart hides and a message explains why.
-Where the comparison *is* rendered but the tracked balance changes could not be
-fully reconciled (for example, external deposits or withdrawals), the chart
-still renders with an **Estimated (external balance changes may affect
-precision)** badge — treat those ranges as approximate. Fully reconciled ranges
-show no badge.
+There is no estimated numeric fallback for an unexplained tracked balance change:
+the comparison is `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE`, timestamped at
+the first snapshot where the rounded expected and actual tracked balances differ.
+Rendered comparisons are fully reconciled.
 
 ### Staking Rewards
 
 A dedicated chart below the comparison shows the cumulative USD value of
-`staking` ledger entries in the selected range, with one series per asset and a
-total shown beside the title. Values are aligned to portfolio snapshots and use
-each snapshot's asset price; the chart is empty until ledger data has been
-synchronized. A caption below the chart reads: *Cumulative staking reward value
-accrued during the selected range. Assets without a snapshot price in the range
-are excluded.*
+`staking` and `dividend` ledger entries for tracked assets in the selected
+range, with one series per asset and a total shown beside the title. Values are
+aligned to portfolio snapshots and use each snapshot's asset price; the chart is
+empty until ledger data has been synchronized. Untracked asset cash dividends credited
+in USD are accounted for in portfolio comparison but omitted from crypto staking asset series.
+A caption below the chart reads:
+*Cumulative staking and dividend reward value accrued during the selected range.
+Assets without a snapshot price in the range are excluded.*
 
 ### Portfolio Value & Asset Holdings
 

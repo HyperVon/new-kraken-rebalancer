@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.16] - 2026-09-01
+
+### Fixed
+
+- **Strategy-neutral economic replay in Rebalancer vs Buy & Hold Benchmark**:
+  Overhauled benchmark calculation so that all strategy-neutral economic activity
+  (staking rewards, crypto dividends, USD cash dividends, untracked stock cash dividends,
+  external deposits, withdrawals, transfers, adjustments, consumer Buy Crypto `spend`/`receive`
+  conversions, and ledger fees) affects the actual Rebalancer portfolio and synthetic Buy & Hold
+  benchmark equally.
+- **Fail-closed trade ownership classification & durable order journal integration**:
+  Introduced `TradeOwnership` (`REBALANCER`, `MANUAL_OR_EXTERNAL`, `UNKNOWN`) and
+  `TradeOwnershipClassifier`. Exact candidate `orderTxid`/`clientOrderId` values from the
+  comparison fills are queried against the durable `OrderIntent` journal; only matched durable
+  order transaction IDs prove bot execution when historical API fills lack cycle metadata.
+  Positive manual user trades replay into Buy & Hold to prevent
+  distorting rebalancer alpha, while rebalancer bot executions generate legitimate divergence.
+  Any economically relevant trade with `UNKNOWN` ownership inside the comparison range causes
+  comparison to fail closed as `UNAVAILABLE` with `AMBIGUOUS_TRADE_OWNERSHIP`.
+- **Net balance delta fee accounting & zero-baseline valuation**: Ledger events use
+  `event.netBalanceDelta()` (`amount - fee`), accurately handling credits, debits, and fees
+  across benchmark calculations, reverse snapshot reconstruction, and the rewards-over-time chart.
+  Zero-baseline asset holdings credited via rewards or deposits are dynamically valued at
+  subsequent snapshot market prices.
+- **Ledger coverage versioning, backfill migration & snapshot reconstruction**:
+  Introduced `LEDGER_COVERAGE_VERSION` `3` across all 8 supported types (`staking`, `dividend`,
+  `deposit`, `withdrawal`, `transfer`, `adjustment`, `spend`, `receive`). Existing seeded stores
+  automatically backfill historical external movement across a bounded 96-day lookback deduplicated
+  by unique constraint. `TradeHistoryReconstructionService` (`SNAPSHOT_RECONSTRUCTION_VERSION` `5`)
+  strictly requires both seeded ledgers and current coverage version before rebuilding historical snapshots.
+  The reconstruction marker also records the coverage version it replayed, so a coverage migration
+  cannot be hidden by an older marker.
+  The live adapter uses Kraken's documented `sale` query filter for `spend`/`receive` rows and
+  preserves the two ledger legs because consumer Buy Crypto/Kraken app activity is recorded in
+  Ledger history rather than Trades history.
+- **Fail-closed unexplained balance validation**: A tracked balance mismatch that remains after
+  replaying authoritative trades, supported ledger events, and fees now returns
+  `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE` at the first bad snapshot instead of rendering
+  estimated numeric benchmark alpha. Rounding remains USD scale 2 and crypto scale 8; untracked
+  asset activity stays outside the validation boundary.
+
 ## [6.17.15] - 2026-08-31
 
 ### Changed

@@ -59,6 +59,17 @@ Per-endpoint **cost** (in `KrakenTransport.queryPrivate`), aligned with
 Public calls use `PublicRateLimiter` independently; public and private limits
 must not be conflated.
 
+### Ledger query semantics
+
+- Kraken's `Ledgers` query filter supports `sale`; consumer Buy Crypto/Kraken app
+  activity is returned as `spend` and `receive` ledger rows. When callers request
+  either response type, `KrakenServiceImpl` sends `type=sale` and filters returned
+  rows locally. A request for both types uses one `sale` query, while unrelated
+  query types remain separate.
+- Preserve both consumer legs, their ledger IDs, and `refid`. Do not infer these
+  transactions from `TradesHistory`; Kraken documents the app/Buy Crypto activity
+  in Ledger history.
+
 ---
 
 ## HMAC-SHA512 signing

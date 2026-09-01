@@ -2,7 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -31,10 +31,12 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "3"
+        const val CURRENT_RECONSTRUCTION_VERSION = "5"
     }
 
-    suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded()
+    suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded() &&
+        ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) ==
+        LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
 
     suspend fun reconstructHistoricalSnapshots() = configService.withExecutionSession {
         val config = configService.getConfig()
@@ -47,8 +49,8 @@ class TradeHistoryReconstructionService(
         reconstructHistoricalSnapshots(config, backend, replaceExisting = false)
 
     suspend fun rebuildHistoricalSnapshots(config: AppConfig, backend: KrakenService) {
-        check(ledgerRepository.isLedgersSeeded()) {
-            "Cannot rebuild historical snapshots before ledger synchronization completes"
+        check(canRebuildSnapshots()) {
+            "Cannot rebuild historical snapshots before ledger synchronization and coverage migration complete"
         }
         reconstructHistoricalSnapshots(config, backend, replaceExisting = true)
     }
@@ -58,6 +60,13 @@ class TradeHistoryReconstructionService(
         backend: KrakenService,
         replaceExisting: Boolean,
     ) {
+        if (!canRebuildSnapshots()) {
+            log.info(
+                "Skipping historical snapshot reconstruction: ledger history is not seeded or ledger coverage is not current.",
+            )
+            return
+        }
+
         log.info("Starting historical snapshots reconstruction...")
         val allocations = config.allocations
         val reconstructionNow = nowProvider()
@@ -151,11 +160,11 @@ class TradeHistoryReconstructionService(
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
 
-        val stakingRewards =
+        val externalLedgers =
             ledgerRepository
                 .getLedgersInRange(since, reconstructionNow)
-                .filter { it.type == KrakenApiConstants.LEDGER_TYPE_STAKING }
-        val historicalRewards = stakingRewards.filter { it.time.isBefore(cutoffTime) }
+                .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+        val historicalRewards = externalLedgers.filter { it.time.isBefore(cutoffTime) }
 
         val events =
             SnapshotHistoryCalculator.buildTimelineEvents(
@@ -215,11 +224,16 @@ class TradeHistoryReconstructionService(
                 repository.save(snapshotsToSave)
             }
         }
-        if (replaceExisting || (oldestSnapshot == null && ledgerRepository.isLedgersSeeded())) {
-            repository.setSyncMetadata(
-                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
-                CURRENT_RECONSTRUCTION_VERSION,
-            )
-        }
+        // Keep reconstruction freshness tied to the ledger coverage that was replayed. A
+        // current reconstruction marker from an older coverage migration must not suppress the
+        // first rebuild that can include newly supported ledger types.
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
+            LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+        )
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+            CURRENT_RECONSTRUCTION_VERSION,
+        )
     }
 }

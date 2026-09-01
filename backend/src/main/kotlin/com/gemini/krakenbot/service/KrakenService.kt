@@ -38,9 +38,11 @@ interface KrakenService {
     fun getLastTradeHistoryTotalCount(): Int = 0
 
     /**
-     * Ledger entries (staking rewards, dividends) in [startSec, endSec] starting at [offset],
-     * optionally filtered to [types] (e.g. `staking`). Defaults to empty for backends
-     * without ledger support (simulation, test fakes).
+     * Ledger entries in [startSec, endSec] starting at [offset], optionally filtered to response
+     * [types] (for example `staking`, `spend`, or `receive`). The live Kraken adapter maps the
+     * consumer `spend`/`receive` response types to the API's `sale` query filter and filters the
+     * returned rows locally. Defaults to empty for backends without ledger support (simulation,
+     * test fakes).
      */
     suspend fun getLedgers(
         startSec: Long? = null,
