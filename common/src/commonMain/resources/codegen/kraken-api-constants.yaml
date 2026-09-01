@@ -59,6 +59,8 @@ KrakenApiConstants:
   LEDGER_TYPE_WITHDRAWAL: "withdrawal"
   LEDGER_TYPE_TRANSFER: "transfer"
   LEDGER_TYPE_ADJUSTMENT: "adjustment"
+  LEDGER_TYPE_SPEND: "spend"
+  LEDGER_TYPE_RECEIVE: "receive"
   LEDGER_TYPE_TRADE: "trade"
   LEDGER_TYPE_MARGIN: "margin"
   LEDGER_TYPE_ROLLOVER: "rollover"

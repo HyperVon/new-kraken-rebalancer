@@ -536,6 +536,12 @@ class TradeHistorySyncService(
         val isSimulation = config.settings.simulation
 
         if (!isSimulation && totalTrades > 0 && snapshots.size <= 1) {
+            if (!reconstructionService.canRebuildSnapshots()) {
+                log.info(
+                    "Skipping historical snapshot reconstruction during trade sync: ledger coverage is not current.",
+                )
+                return
+            }
             log.info(
                 "Historical snapshots are missing or insufficient (found {} snapshots, {} trades). Starting reconstruction...",
                 snapshots.size,

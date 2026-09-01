@@ -404,9 +404,10 @@ class TradeHistorySyncServiceTest : StringSpec() {
                 now.epochSecond.toString()
         }
 
-        "triggers snapshot reconstruction after a live seed that added trades" {
+        "triggers snapshot reconstruction after a live seed that added trades when canRebuildSnapshots is true" {
             stubStableBackend()
             stubConfig()
+            coEvery { reconstructionService.canRebuildSnapshots() } returns true
             coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
             coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
 
@@ -415,9 +416,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             coVerify(exactly = 1) { reconstructionService.reconstructHistoricalSnapshots(any(), any()) }
         }
 
+        "skips snapshot reconstruction during trade sync when ledger coverage is stale or unseeded" {
+            stubStableBackend()
+            stubConfig()
+            coEvery { reconstructionService.canRebuildSnapshots() } returns false
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+
+            service().syncTradesFromKraken()
+
+            coVerify(exactly = 0) { reconstructionService.reconstructHistoricalSnapshots(any(), any()) }
+        }
+
         "completes seeding even when snapshot reconstruction fails" {
             stubStableBackend()
             stubConfig()
+            coEvery { reconstructionService.canRebuildSnapshots() } returns true
             coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
             coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
             coEvery { reconstructionService.reconstructHistoricalSnapshots(any(), any()) } throws

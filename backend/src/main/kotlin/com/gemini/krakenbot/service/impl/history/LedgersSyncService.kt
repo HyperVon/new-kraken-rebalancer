@@ -36,7 +36,7 @@ class LedgersSyncService(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     companion object {
-        const val CURRENT_LEDGER_COVERAGE_VERSION = "2"
+        const val CURRENT_LEDGER_COVERAGE_VERSION = "3"
         val SUPPORTED_LEDGER_TYPES = listOf(
             KrakenApiConstants.LEDGER_TYPE_STAKING,
             KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
@@ -44,6 +44,8 @@ class LedgersSyncService(
             KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
             KrakenApiConstants.LEDGER_TYPE_TRANSFER,
             KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+            KrakenApiConstants.LEDGER_TYPE_SPEND,
+            KrakenApiConstants.LEDGER_TYPE_RECEIVE,
         )
     }
 

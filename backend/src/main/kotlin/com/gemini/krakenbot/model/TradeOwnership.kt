@@ -23,6 +23,12 @@ object TradeOwnershipClassifier {
     /**
      * Authoritatively classifies the ownership of a trade record.
      *
+     * In Kraken's REST API, the `TradesHistory` endpoint returns exchange fills without a `clientOrderId` field.
+     * Non-blank [TradeRecord.clientOrderId] or [TradeRecord.cycleId] values on a trade record originate exclusively
+     * from this application's local order execution and reconciliation workflow, establishing positive bot ownership.
+     * For raw API fills where local metadata was not attached, [knownRebalancerOrderTxids] matches against the
+     * durable [OrderIntent] journal.
+     *
      * @param trade the trade record to classify
      * @param knownRebalancerOrderTxids set of order transaction IDs known to belong to bot executions
      * @param knownRebalancerClientOrderIds set of client order IDs known to belong to bot executions

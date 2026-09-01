@@ -13,8 +13,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Strategy-neutral economic replay in Rebalancer vs Buy & Hold Benchmark**:
   Overhauled benchmark calculation so that all strategy-neutral economic activity
   (staking rewards, crypto dividends, USD cash dividends, untracked stock cash dividends,
-  external deposits, withdrawals, transfers, adjustments, and ledger fees) affects the actual
-  Rebalancer portfolio and synthetic Buy & Hold benchmark equally.
+  external deposits, withdrawals, transfers, adjustments, consumer Buy Crypto `spend`/`receive`
+  conversions, and ledger fees) affects the actual Rebalancer portfolio and synthetic Buy & Hold
+  benchmark equally.
 - **Fail-closed trade ownership classification & durable order journal integration**:
   Introduced `TradeOwnership` (`REBALANCER`, `MANUAL_OR_EXTERNAL`, `UNKNOWN`) and
   `TradeOwnershipClassifier`. Durable `OrderIntent` evidence (`orderTxid` and `clientOrderId`)
@@ -25,14 +26,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comparison to fail closed as `UNAVAILABLE` with `AMBIGUOUS_TRADE_OWNERSHIP`.
 - **Net balance delta fee accounting & zero-baseline valuation**: Ledger events use
   `event.netBalanceDelta()` (`amount - fee`), accurately handling credits, debits, and fees
-  across benchmark calculations and the rewards-over-time chart. Zero-baseline asset holdings
-  credited via rewards or deposits are dynamically valued at subsequent snapshot market prices.
+  across benchmark calculations, reverse snapshot reconstruction, and the rewards-over-time chart.
+  Zero-baseline asset holdings credited via rewards or deposits are dynamically valued at
+  subsequent snapshot market prices.
 - **Ledger coverage versioning, backfill migration & snapshot reconstruction**:
-  Introduced `LEDGER_COVERAGE_VERSION` `2` across all 6 supported types (`staking`, `dividend`,
-  `deposit`, `withdrawal`, `transfer`, `adjustment`). Existing seeded stores automatically backfill
-  historical external movement across a bounded 96-day lookback deduplicated by unique constraint.
-  `TradeHistoryReconstructionService` (`SNAPSHOT_RECONSTRUCTION_VERSION` `5`) requires both seeded
-  ledgers and current coverage version before rebuilding historical snapshots.
+  Introduced `LEDGER_COVERAGE_VERSION` `3` across all 8 supported types (`staking`, `dividend`,
+  `deposit`, `withdrawal`, `transfer`, `adjustment`, `spend`, `receive`). Existing seeded stores
+  automatically backfill historical external movement across a bounded 96-day lookback deduplicated
+  by unique constraint. `TradeHistoryReconstructionService` (`SNAPSHOT_RECONSTRUCTION_VERSION` `5`)
+  strictly requires both seeded ledgers and current coverage version before rebuilding historical snapshots.
 
 ## [6.17.15] - 2026-08-31
 

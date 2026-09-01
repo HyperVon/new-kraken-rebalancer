@@ -800,5 +800,66 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             // Deposit net delta is +10000.00. Going backward: 20000 - 10000 = 10000.00
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
         }
+
+        "Reconstruction symmetry: reverses through consumer spend and receive transactions" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val spendEvent = LedgerEvent(
+                ledgerId = "ledger-spend",
+                time = now.minus(3, ChronoUnit.DAYS),
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                asset = "USD",
+                amount = BigDecimal("-5000.00"),
+                fee = BigDecimal("10.00"),
+            )
+            val receiveEvent = LedgerEvent(
+                ledgerId = "ledger-receive",
+                time = now.minus(3, ChronoUnit.DAYS),
+                type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                asset = "BTC",
+                amount = BigDecimal("0.10"),
+                fee = BigDecimal("0.001"),
+            )
+
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = emptyList(),
+                historicalRewards = listOf(spendEvent, receiveEvent),
+                cutoffTime = cutoff,
+                now = now,
+            )
+
+            val allocations = listOf(
+                Allocation(Asset(Asset.BTC), 50.0),
+                Allocation(Asset.USD, 50.0),
+            )
+
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("0.10"),
+                "USD" to BigDecimal("5000.00"),
+            )
+
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = currentPrices,
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+
+            // BTC netDelta is +0.099. Reverse: 0.10 - 0.099 = 0.001
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.001"))
+            // USD netDelta is -5010.00. Reverse: 5000.00 - (-5010.00) = 10010.00
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10010.00"))
+
+            // Forward symmetry check
+            val forwardBtc = runningBalances["BTC"]!!.add(receiveEvent.netBalanceDelta())
+            val forwardUsd = runningBalances["USD"]!!.add(spendEvent.netBalanceDelta())
+            forwardBtc.shouldBeEqualComparingTo(BigDecimal("0.10"))
+            forwardUsd.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+        }
     }
 }

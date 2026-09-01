@@ -60,6 +60,13 @@ class TradeHistoryReconstructionService(
         backend: KrakenService,
         replaceExisting: Boolean,
     ) {
+        if (!canRebuildSnapshots()) {
+            log.info(
+                "Skipping historical snapshot reconstruction: ledger history is not seeded or ledger coverage is not current.",
+            )
+            return
+        }
+
         log.info("Starting historical snapshots reconstruction...")
         val allocations = config.allocations
         val reconstructionNow = nowProvider()
@@ -217,11 +224,9 @@ class TradeHistoryReconstructionService(
                 repository.save(snapshotsToSave)
             }
         }
-        if (replaceExisting || (oldestSnapshot == null && ledgerRepository.isLedgersSeeded())) {
-            repository.setSyncMetadata(
-                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
-                CURRENT_RECONSTRUCTION_VERSION,
-            )
-        }
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+            CURRENT_RECONSTRUCTION_VERSION,
+        )
     }
 }

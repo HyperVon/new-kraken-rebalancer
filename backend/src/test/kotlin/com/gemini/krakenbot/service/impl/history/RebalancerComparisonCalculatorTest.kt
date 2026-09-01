@@ -1898,6 +1898,251 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100050.00")
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
         }
+
+        "Scenario AA: Manual Buy Crypto with existing cash (USD spend + BTC receive) has zero divergence" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "10000.00",
+                    mapOf(
+                        "BTC" to assetRow("0", "50000.00", "0"),
+                        "USD" to assetRow("10000.00", "1.0", "10000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "10000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.10", "50000.00", "5000.00"),
+                        "USD" to assetRow("5000.00", "1.0", "5000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(7200),
+                    "11000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.10", "60000.00", "6000.00"),
+                        "USD" to assetRow("5000.00", "1.0", "5000.00"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "USD",
+                    amount = "-5000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    refid = "BUY-CRYPTO-1",
+                ),
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "BTC",
+                    amount = "0.10",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    refid = "BUY-CRYPTO-1",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 3
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[2].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("11000.00")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("11000.00")
+            result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Scenario BB: Card-funded Buy Crypto (USD deposit + USD spend + BTC receive) maintains exact parity" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "25000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("0", "1.0", "0"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "36000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.60", "60000.00", "36000.00"),
+                        "USD" to assetRow("0", "1.0", "0"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "USD",
+                    amount = "5000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = "CARD-DEP-1",
+                ),
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "USD",
+                    amount = "-5000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    refid = "CARD-BUY-1",
+                ),
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "BTC",
+                    amount = "0.10",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    refid = "CARD-BUY-1",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("36000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("36000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Scenario CC: Consumer Buy Crypto with nonzero fees calculates exact net balance delta" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "10000.00",
+                    mapOf(
+                        "BTC" to assetRow("0", "50000.00", "0"),
+                        "USD" to assetRow("10000.00", "1.0", "10000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "9940.00",
+                    mapOf(
+                        "BTC" to assetRow("0.099", "50000.00", "4950.00"),
+                        "USD" to assetRow("4990.00", "1.0", "4990.00"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "USD",
+                    amount = "-5000.00",
+                    fee = "10.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                ),
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "BTC",
+                    amount = "0.10",
+                    fee = "0.001",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("9940.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("9940.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Scenario DD: Crypto-to-crypto conversion (ETH spend + BTC receive) maintains exact parity" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "90000.00",
+                    mapOf(
+                        "ETH" to assetRow("10.0", "3000.00", "30000.00"),
+                        "BTC" to assetRow("1.0", "60000.00", "60000.00"),
+                        "USD" to assetRow("0", "1.0", "0"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "104958.00",
+                    mapOf(
+                        "ETH" to assetRow("7.99", "3500.00", "27965.00"),
+                        "BTC" to assetRow("1.0999", "70000.00", "76993.00"),
+                        "USD" to assetRow("0", "1.0", "0"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "ETH",
+                    amount = "-2.00",
+                    fee = "0.01",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                ),
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "BTC",
+                    amount = "0.10",
+                    fee = "0.0001",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("104958.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("104958.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Scenario EE: Untracked asset conversion updates tracked asset without injecting untracked asset" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "6000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.10", "50000.00", "5000.00"),
+                        "USD" to assetRow("1000.00", "1.0", "1000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "6500.00",
+                    mapOf(
+                        "BTC" to assetRow("0.11", "50000.00", "5500.00"),
+                        "USD" to assetRow("1000.00", "1.0", "1000.00"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "DOGE",
+                    amount = "-1000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                ),
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "BTC",
+                    amount = "0.01",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("6500.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("6500.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
     }
 
     private fun assetRow(balance: String, price: String, valueUSD: String): Triple<String, String, String> =
@@ -1994,8 +2239,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
         fee: String = "0",
         ledgerId: String? = null,
+        refid: String? = null,
     ): LedgerEvent = LedgerEvent(
         ledgerId = ledgerId ?: "ledger-$timestamp-$asset-$type",
+        refid = refid,
         time = timestamp,
         type = type,
         asset = asset,

@@ -762,9 +762,44 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     ledgerRepository.getSyncMetadata(
                         com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
                     )
-                } returns "2"
+                } returns com.gemini.krakenbot.service.impl.history.LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
 
                 reconstructionService.canRebuildSnapshots() shouldBe true
+            }
+        }
+
+        "reconstructHistoricalSnapshots skips execution and does not set version marker when ledger coverage is stale" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(),
+                    allocations = emptyList(),
+                )
+                val reconstructionService = TradeHistoryReconstructionService(
+                    repository = repository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                )
+                coEvery { ledgerRepository.isLedgersSeeded() } returns true
+                coEvery {
+                    ledgerRepository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                    )
+                } returns "1" // stale
+
+                reconstructionService.reconstructHistoricalSnapshots(appConfig, krakenService)
+
+                coVerify(exactly = 0) {
+                    repository.setSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                        any(),
+                    )
+                }
             }
         }
     }

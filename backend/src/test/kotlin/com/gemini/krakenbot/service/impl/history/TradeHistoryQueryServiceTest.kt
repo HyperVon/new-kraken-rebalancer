@@ -179,6 +179,49 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getRebalancerComparison_OrderIntentCreatedBeforeBaselineIdentifiesBotFillAfterBaseline" {
+            runTest {
+                // Baseline snapshot at T+0 (now)
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                // Subsequent snapshot at T+3600
+                val snap2 =
+                    snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+
+                // Fill occurs at T+2s (after baseline), but intent was created at T-1s (before baseline)
+                val trade = com.gemini.krakenbot.model.TradeRecord(
+                    id = 1,
+                    pair = "BTCUSD",
+                    symbol = "BTC",
+                    side = "BUY",
+                    timestamp = now.plusSeconds(2),
+                    volume = BigDecimal("0.2"),
+                    usdAmount = BigDecimal("10000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal.ZERO,
+                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    tradeId = "T1",
+                    orderTxid = "BOT-ORDER-EARLY-INTENT",
+                    cycleId = null,
+                    clientOrderId = null,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                // Unbounded query returns all retained known bot identities
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    com.gemini.krakenbot.model.RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-EARLY-INTENT"))
+
+                val comparison = service.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                // Correctly classified as REBALANCER (not manual or unknown)
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+            }
+        }
+
         "getRebalancerComparison_ManualTradeReplaysIntoBuyAndHold" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")

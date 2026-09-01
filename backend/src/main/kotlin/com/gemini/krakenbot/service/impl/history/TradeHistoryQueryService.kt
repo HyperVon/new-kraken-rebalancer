@@ -50,7 +50,7 @@ class TradeHistoryQueryService(
             ledgerRepository
                 .getLedgersInRange(firstTimestamp, lastTimestamp)
                 .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
-        val identities = orderIntentRepository?.getKnownRebalancerOrderIdentities(firstTimestamp, lastTimestamp)
+        val identities = orderIntentRepository?.getKnownRebalancerOrderIdentities()
             ?: RebalancerOrderIdentities()
         return RebalancerComparisonCalculator.calculate(
             snapshots = snapshots,

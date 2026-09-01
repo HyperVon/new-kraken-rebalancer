@@ -52,6 +52,8 @@ data class LedgerEvent(
                 KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
                 KrakenApiConstants.LEDGER_TYPE_TRANSFER,
                 KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                KrakenApiConstants.LEDGER_TYPE_SPEND,
+                KrakenApiConstants.LEDGER_TYPE_RECEIVE,
             )
     }
 }
