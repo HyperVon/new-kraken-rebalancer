@@ -358,7 +358,7 @@ class PortfolioManagerImpl(
         val config = configService.getConfig()
         val actionLog = mutableListOf<String>()
 
-        val balances = portfolioAnalyzer.fetchBalances()
+        val (balances, preObservedAt) = portfolioAnalyzer.fetchObservedBalances()
         val prices = portfolioAnalyzer.fetchPrices()
         val calculationResult = portfolioAnalyzer.calculatePortfolioValues(balances, prices)
 
@@ -437,15 +437,15 @@ class PortfolioManagerImpl(
         val finalState =
             if (buyOrders.isNotEmpty() || sellOrders.isNotEmpty()) {
                 try {
-                    val postBalances = portfolioAnalyzer.fetchBalances()
+                    val (postBalances, postObservedAt) = portfolioAnalyzer.fetchObservedBalances()
                     val postPrices = portfolioAnalyzer.fetchPrices()
                     portfolioAnalyzer.calculatePortfolioValues(postBalances, postPrices).fold(
                         onSuccess = { (total, values) ->
-                            RebalanceState(postBalances, postPrices, values, total)
+                            RebalanceState(postBalances, postPrices, values, total, postObservedAt)
                         },
                         onFailure = {
                             markCycleError("Post-trade valuation failed")
-                            RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
+                            RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
                         },
                     )
                 } catch (e: CancellationException) {
@@ -456,10 +456,10 @@ class PortfolioManagerImpl(
                         e,
                     )
                     markCycleError("Post-trade state refresh failed")
-                    RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
+                    RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
                 }
             } else {
-                RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
+                RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD, preObservedAt)
             }
 
         val snapshot =
@@ -473,6 +473,7 @@ class PortfolioManagerImpl(
                 drawdownPct = drawdownPct,
                 fiatDeploymentPct = fiatDeploymentPct,
                 actionLog = actionLog,
+                balancesObservedAt = finalState.balancesObservedAt,
             )
 
         try {
@@ -497,4 +498,5 @@ private data class RebalanceState(
     val prices: Map<String, BigDecimal>,
     val currentValuesUSD: Map<String, BigDecimal>,
     val totalPortfolioValueUSD: BigDecimal,
+    val balancesObservedAt: Instant,
 )

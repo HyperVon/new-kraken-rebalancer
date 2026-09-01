@@ -18,6 +18,7 @@ import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -32,11 +33,14 @@ class PortfolioAnalyzerImpl(
 ) : PortfolioAnalyzer {
     private val log = LoggerFactory.getLogger(PortfolioAnalyzerImpl::class.java)
 
-    override suspend fun fetchBalances(): RawBalances {
+    override suspend fun fetchObservedBalances(): ObservedBalances {
         val balances = krakenService.getBalances()
+        val observedAt = Instant.now()
         log.info("Available Balance Keys: {}", balances.keys)
-        return balances
+        return ObservedBalances(balances = balances, observedAt = observedAt)
     }
+
+    override suspend fun fetchBalances(): RawBalances = fetchObservedBalances().balances
 
     override suspend fun fetchPrices(): AssetPrices {
         val allocations = configService.getConfig().allocations
@@ -149,6 +153,7 @@ class PortfolioAnalyzerImpl(
         drawdownPct: BigDecimal,
         fiatDeploymentPct: BigDecimal,
         actionLog: List<String>,
+        balancesObservedAt: Instant,
     ): PortfolioSnapshot {
         val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
         val config = configService.getConfig()
@@ -193,6 +198,7 @@ class PortfolioAnalyzerImpl(
             drawdownPercent = drawdownPct,
             fiatDeploymentPercent = fiatDeploymentPct,
             effectiveUsdTargetPercent = effectiveUsdTarget,
+            balancesObservedAt = balancesObservedAt,
         )
     }
 }

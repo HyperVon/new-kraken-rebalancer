@@ -7,10 +7,12 @@ import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.ObservedBalances
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -18,6 +20,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import java.time.Instant
 
 class PortfolioAnalyzerImplTest : StringSpec() {
 
@@ -170,6 +173,63 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     )
                 }
             }
+        }
+
+        "fetchObservedBalances captures balances and observation timestamp" {
+            runTest {
+                coEvery { krakenService.getBalances() } returns mapOf("BTC" to BigDecimal("1.5"))
+                val before = Instant.now()
+                val (balances, observedAt) = analyzer.fetchObservedBalances()
+                val after = Instant.now()
+
+                balances["BTC"] shouldBe BigDecimal("1.5")
+                (observedAt >= before) shouldBe true
+                (observedAt <= after) shouldBe true
+            }
+        }
+
+        "buildSnapshot preserves explicit balancesObservedAt" {
+            runTest {
+                every { configService.getConfig() } returns
+                    TestFixtures.config(
+                        settings = TestFixtures.settings(),
+                        allocations = listOf(Allocation(Asset.USD, 100.0)),
+                    )
+                val observationTime = Instant.parse("2026-07-03T10:00:00Z")
+                val snapshot = analyzer.buildSnapshot(
+                    balances = mapOf("USD" to BigDecimal("500")),
+                    prices = emptyMap(),
+                    currentValuesUSD = mapOf("USD" to BigDecimal("500")),
+                    totalPortfolioValueUSD = BigDecimal("500"),
+                    effectiveUsdTarget = BigDecimal("100"),
+                    cryptoScaleFactor = BigDecimal("1"),
+                    drawdownPct = BigDecimal.ZERO,
+                    fiatDeploymentPct = BigDecimal.ZERO,
+                    actionLog = emptyList(),
+                    balancesObservedAt = observationTime,
+                )
+
+                snapshot.balancesObservedAt shouldBe observationTime
+            }
+        }
+
+        "fetchBalances returns raw balances from observed balances" {
+            runTest {
+                coEvery { krakenService.getBalances() } returns mapOf("BTC" to BigDecimal("2.5"))
+                val balances = analyzer.fetchBalances()
+                balances["BTC"] shouldBe BigDecimal("2.5")
+            }
+        }
+
+        "ObservedBalances data class properties and methods" {
+            val now = Instant.now()
+            val raw = mapOf("BTC" to BigDecimal("1.0"))
+            val observed = ObservedBalances(balances = raw, observedAt = now)
+            observed.balances shouldBe raw
+            observed.observedAt shouldBe now
+            observed.component1() shouldBe raw
+            observed.component2() shouldBe now
+            observed shouldBe ObservedBalances(raw, now)
         }
     }
 }

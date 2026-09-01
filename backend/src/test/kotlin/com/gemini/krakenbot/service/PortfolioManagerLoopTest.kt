@@ -46,6 +46,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.nio.file.Files
+import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 
 class PortfolioManagerLoopTest : StringSpec() {
@@ -638,6 +639,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val balances = emptyMap<String, BigDecimal>()
                 val prices = emptyMap<String, BigDecimal>()
                 coEvery { analyzer.fetchBalances() } returns balances
+                coEvery { analyzer.fetchObservedBalances() } returns ObservedBalances(balances, Instant.now())
                 coEvery { analyzer.fetchPrices() } returns prices
                 every { analyzer.calculatePortfolioValues(any(), any()) } returns Result.Success(
                     PortfolioValues(

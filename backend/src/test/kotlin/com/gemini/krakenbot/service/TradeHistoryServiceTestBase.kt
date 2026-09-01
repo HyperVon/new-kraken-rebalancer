@@ -22,7 +22,9 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     protected val objectMapper: ObjectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
-    protected val repository = mockk<TradeRepository>(relaxed = true)
+    protected val repository = mockk<TradeRepository>(relaxed = true).also {
+        coEvery { it.getSnapshotBefore(any()) } returns null
+    }
     protected val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     protected val ledgerRepository = mockk<LedgerRepository>(relaxed = true).also {
         coEvery { it.isLedgersSeeded() } returns true

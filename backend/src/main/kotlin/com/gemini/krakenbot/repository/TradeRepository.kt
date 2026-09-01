@@ -44,6 +44,9 @@ interface TradeRepository {
 
     suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
 
+    /** Loads the newest snapshot strictly before [timestamp], or null if none exists. */
+    suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot?
+
     suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
 
     suspend fun getLatestTradeTime(): Instant?

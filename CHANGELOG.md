@@ -10,9 +10,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **History comparison after real Kraken fills**: Reconciled bounded local/exchange timestamp skew
-  and replayed API fills using precise `price × volume` notional when available, preventing valid
-  sub-second or sub-cent balance changes from falsely making Rebalancer vs Buy & Hold unavailable.
+- **Balance-observation temporal model for History comparison**: Introduced `balancesObservedAt`
+  on `PortfolioSnapshot` and `PortfolioSnapshotTable`, capturing the exact time balances were
+  queried from the exchange separate from snapshot object construction and display time.
+- **Symmetrical temporal boundary & late event subset reconciliation**: History comparison reconciles
+  both trades and external ledger events relative to balance observation boundaries. A bounded clock skew
+  window (up to 1,000ms) matches unique candidate subsets across trades and ledgers when fills are already
+  reflected in observed balances, while preventing events executed after observation from being misattributed.
+- **Range rebasing with pre-baseline anchor snapshot**: Selected subranges query an optional pre-baseline
+  anchor snapshot ($S_0$) to attribute boundary events without modifying user-selected range points or baseline value.
+- **Precise API fill economics**: Replayed API fills using precise `price × volume` notional when available,
+  preventing valid sub-second or sub-cent balance changes from falsely making Rebalancer vs Buy & Hold unavailable.
 
 ## [6.17.16] - 2026-09-01
 

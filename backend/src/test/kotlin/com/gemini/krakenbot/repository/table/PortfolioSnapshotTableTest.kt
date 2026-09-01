@@ -71,6 +71,7 @@ class PortfolioSnapshotTableTest : StringSpec() {
                 loaded.drawdownPercent.shouldBeEqualComparingTo(original.drawdownPercent)
                 loaded.fiatDeploymentPercent.shouldBeEqualComparingTo(original.fiatDeploymentPercent)
                 loaded.effectiveUsdTargetPercent.shouldBeEqualComparingTo(original.effectiveUsdTargetPercent)
+                loaded.balancesObservedAt shouldBe original.balancesObservedAt
                 loaded.actions shouldBe original.actions
 
                 val loadedAsset = requireNotNull(loaded.assets["BTC"])
@@ -82,6 +83,27 @@ class PortfolioSnapshotTableTest : StringSpec() {
                 loadedAsset.currentPercent.shouldBeEqualComparingTo(assetSnapshot.currentPercent)
                 loadedAsset.deviationPercent.shouldBeEqualComparingTo(assetSnapshot.deviationPercent)
                 loadedAsset.deviationUSD.shouldBeEqualComparingTo(assetSnapshot.deviationUSD)
+            }
+        }
+
+        "toModel falls back to timestamp when balances_observed_at is null or zero" {
+            val db = DatabaseConfig.init(TestFixtures.MEMORY_)
+            val snapshotTime = Instant.parse("2026-07-03T12:00:00Z")
+
+            transaction(db) {
+                PortfolioSnapshotTable.insert {
+                    it[timestamp] = snapshotTime.toEpochMilli()
+                    it[totalValueUSD] = BigDecimal("1000.00")
+                    it[drawdownPercent] = BigDecimal.ZERO
+                    it[fiatDeploymentPercent] = BigDecimal.ZERO
+                    it[effectiveUsdTargetPercent] = BigDecimal.ZERO
+                    it[balancesObservedAt] = null
+                }
+
+                val row = PortfolioSnapshotTable.selectAll().single()
+                val model = PortfolioSnapshotTable.toModel(row, emptyMap(), emptyList())
+                model.timestamp shouldBe snapshotTime
+                model.balancesObservedAt shouldBe snapshotTime
             }
         }
     }

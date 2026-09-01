@@ -310,8 +310,8 @@ achieved against a **synthetic buy-and-hold** strategy:
   Crypto activity is read from Ledger history, including both asset legs, rather than inferred
   from the trade-history feed.
 - Exchange/local timestamp skew up to one second is accepted only when the complete tracked
-  balance change reconciles; API fills use precise `price × volume` notional when available so
-  rounded stored costs do not create a false unavailable result.
+  balance change reconciles against explicit balance-observation boundaries; API fills use precise
+  `price × volume` notional when available so rounded stored costs do not create a false unavailable result.
 - **Rebalancer** is the actual portfolio value at each snapshot, incorporating rebalancing bot
   trade executions that create genuine divergence from Buy & Hold.
 - The **delta badge** next to the chart title shows the cumulative
