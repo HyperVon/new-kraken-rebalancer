@@ -347,6 +347,14 @@ rounding USD to scale 2 and crypto to scale 8, the comparison is unavailable wit
 estimated numeric alpha for an unexplained tracked mutation; untracked assets remain
 outside this validation boundary.
 
+Snapshot timestamps use the local wall clock while Kraken fill timestamps use the
+exchange clock. A fill no more than one second after a snapshot may therefore be
+attributed to that snapshot, but only when its ownership is authoritative and
+replaying it makes every tracked balance match; unexplained changes still fail
+closed. For `TradeSource.API_FILL`, replay uses the precise `price × volume` notional
+when a positive fill price is available, with the stored USD amount retained as a
+legacy fallback.
+
 ### Trade economics & slippage lifecycle
 
 Each executed order creates a **local estimate** row at rebalance time:

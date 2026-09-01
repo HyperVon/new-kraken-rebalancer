@@ -180,6 +180,45 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getRebalancerComparison_FetchesTerminalLateFillWithinClockSkew" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val last = now.plusSeconds(3600)
+                val snap2 = snapshot(last, "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
+                val trade = com.gemini.krakenbot.model.TradeRecord(
+                    id = 1,
+                    pair = "BTCUSD",
+                    symbol = "BTC",
+                    side = "BUY",
+                    timestamp = last.plusMillis(500),
+                    volume = BigDecimal("0.2"),
+                    usdAmount = BigDecimal("10000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal.ZERO,
+                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    tradeId = "TERMINAL-LATE-FILL",
+                    orderTxid = "TERMINAL-LATE-ORDER",
+                    cycleId = null,
+                    clientOrderId = null,
+                )
+                val queriedTo = slot<Instant>()
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), capture(queriedTo)) } returns listOf(trade)
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    com.gemini.krakenbot.model.RebalancerOrderIdentities()
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, last.plusSeconds(1))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                queriedTo.captured shouldBe last.plusMillis(1_000)
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+            }
+        }
+
         "getRebalancerComparison_OrderIntentCreatedBeforeBaselineIdentifiesBotFillAfterBaseline" {
             runTest {
                 // Baseline snapshot at T+0 (now)

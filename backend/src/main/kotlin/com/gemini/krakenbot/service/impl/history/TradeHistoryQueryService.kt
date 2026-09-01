@@ -44,7 +44,10 @@ class TradeHistoryQueryService(
         }
         val firstTimestamp = snapshots.minOf { it.timestamp }
         val lastTimestamp = snapshots.maxOf { it.timestamp }
-        val trades = getTradesInRange(firstTimestamp, lastTimestamp)
+        val trades = getTradesInRange(
+            firstTimestamp,
+            lastTimestamp.plusMillis(RebalancerComparisonCalculator.MAX_TRADE_SNAPSHOT_CLOCK_SKEW_MILLIS),
+        )
         val ledgers =
             ledgerRepository
                 .getLedgersInRange(firstTimestamp, lastTimestamp)

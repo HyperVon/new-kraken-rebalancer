@@ -12,6 +12,7 @@ import com.gemini.krakenbot.model.RebalancerComparisonPoint
 import com.gemini.krakenbot.model.TradeOwnership
 import com.gemini.krakenbot.model.TradeOwnershipClassifier
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.util.PrecisionConstants
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -20,6 +21,10 @@ import java.time.Instant
 object RebalancerComparisonCalculator {
     private val baselineMismatchTolerance = BigDecimal("0.01")
     private val externalBalanceLedgerTypes = LedgerEvent.EXTERNAL_BALANCE_TYPES
+
+    // Snapshots use local time while Kraken fills use exchange time; admit only bounded skew.
+    internal const val MAX_TRADE_SNAPSHOT_CLOCK_SKEW_MILLIS = 1_000L
+    private const val MAX_LATE_TRADE_CANDIDATES = 8
 
     fun calculate(
         snapshots: List<PortfolioSnapshot>,
@@ -61,16 +66,20 @@ object RebalancerComparisonCalculator {
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             )
 
-        if (balanceResult is TrackedBalanceValidation.Failed) {
-            return unavailable(
-                reason = balanceResult.reason,
-                unavailableAt = balanceResult.unavailableAt ?: baseline.timestamp,
-                baselineTimestamp = baseline.timestamp,
-            )
+        val reconciledTrades = when (balanceResult) {
+            is TrackedBalanceValidation.Failed -> {
+                return unavailable(
+                    reason = balanceResult.reason,
+                    unavailableAt = balanceResult.unavailableAt ?: baseline.timestamp,
+                    baselineTimestamp = baseline.timestamp,
+                )
+            }
+
+            is TrackedBalanceValidation.Passed -> balanceResult.trades
         }
 
         val benchmarkEvents = buildBenchmarkEvents(
-            trades = trades.filter { it.success && !it.dryRun && it.timestamp > baseline.timestamp },
+            trades = reconciledTrades,
             ledgers = periodLedgers,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
         )
@@ -156,10 +165,12 @@ object RebalancerComparisonCalculator {
     }
 
     private sealed class TrackedBalanceValidation {
-        data object Passed : TrackedBalanceValidation()
+        data class Passed(val trades: List<ReconciledTrade>) : TrackedBalanceValidation()
         data class Failed(val reason: ComparisonUnavailableReason, val unavailableAt: Instant?) :
             TrackedBalanceValidation()
     }
+
+    private data class ReconciledTrade(val trade: TradeRecord, val timestamp: Instant)
 
     private fun validateBaseline(baseline: PortfolioSnapshot): RebalancerComparison? {
         if (baseline.totalValueUSD <= BigDecimal.ZERO) {
@@ -222,13 +233,22 @@ object RebalancerComparisonCalculator {
     ): TrackedBalanceValidation {
         val baseline = snapshots.first()
         val lastSnapshot = snapshots.last()
-        val successfulTrades = trades.filter {
-            it.success && !it.dryRun && it.timestamp > baseline.timestamp && it.timestamp <= lastSnapshot.timestamp
-        }
+        val successfulTrades = trades
+            .filter {
+                it.success &&
+                    !it.dryRun &&
+                    it.timestamp > baseline.timestamp &&
+                    it.timestamp <= lastSnapshot.timestamp.plusMillis(MAX_TRADE_SNAPSHOT_CLOCK_SKEW_MILLIS)
+            }
+            .sortedBy(TradeRecord::timestamp)
         val externalEvents = ledgers.filter {
             it.type in externalBalanceLedgerTypes && it.time > baseline.timestamp && it.time <= lastSnapshot.timestamp
         }
-        for (trade in successfulTrades) {
+        val indexedTrades = successfulTrades.withIndex().toList()
+        val assignedTradeIndexes = mutableSetOf<Int>()
+        val effectiveTradeTimestamps = successfulTrades.map(TradeRecord::timestamp).toMutableList()
+
+        for ((_, trade) in indexedTrades.filter { (_, trade) -> trade.timestamp <= lastSnapshot.timestamp }) {
             val ownership = TradeOwnershipClassifier.classify(
                 trade = trade,
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
@@ -245,21 +265,24 @@ object RebalancerComparisonCalculator {
             val prev = snapshots[i - 1]
             val curr = snapshots[i]
 
-            val intervalTrades = successfulTrades.filter { trade ->
-                trade.timestamp > prev.timestamp && trade.timestamp <= curr.timestamp
+            val intervalTrades = indexedTrades.filter { (index, trade) ->
+                index !in assignedTradeIndexes &&
+                    trade.timestamp > prev.timestamp &&
+                    trade.timestamp <= curr.timestamp
             }
             val intervalLedgers = externalEvents.filter { event ->
                 event.time > prev.timestamp && event.time <= curr.timestamp
             }
 
             val impliedBalances = prev.assets.mapValues { (_, asset) -> asset.balance }.toMutableMap()
-            for (trade in intervalTrades) {
+            for ((index, trade) in intervalTrades) {
                 if (!applyRealizedTrade(impliedBalances, trade)) {
                     return TrackedBalanceValidation.Failed(
                         reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                         unavailableAt = trade.timestamp,
                     )
                 }
+                assignedTradeIndexes += index
             }
             for (event in intervalLedgers) {
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
@@ -268,31 +291,134 @@ object RebalancerComparisonCalculator {
                 }
             }
 
-            for ((symbol, expectedBalance) in impliedBalances) {
-                val actualBalance = curr.assets[symbol]?.balance ?: return TrackedBalanceValidation.Failed(
-                    reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
-                    unavailableAt = curr.timestamp,
-                )
-                val scale = if (symbol == Asset.USD) {
-                    PrecisionConstants.SCALE_USD
-                } else {
-                    PrecisionConstants.SCALE_CRYPTO
+            val lateCandidates = indexedTrades
+                .filter { (index, trade) ->
+                    index !in assignedTradeIndexes &&
+                        trade.timestamp > curr.timestamp &&
+                        trade.timestamp <= curr.timestamp.plusMillis(MAX_TRADE_SNAPSHOT_CLOCK_SKEW_MILLIS)
                 }
-                val roundedExpected = expectedBalance.setScale(scale, RoundingMode.HALF_UP)
-                val roundedActual = actualBalance.setScale(scale, RoundingMode.HALF_UP)
-                if (roundedExpected.compareTo(roundedActual) != 0) {
+            val trackedLateCandidates = lateCandidates.filter { (_, trade) ->
+                trade.symbol.uppercase() in baseline.assets.keys
+            }
+            for ((_, lateTrade) in trackedLateCandidates) {
+                val ownership = TradeOwnershipClassifier.classify(
+                    trade = lateTrade,
+                    knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+                )
+                if (ownership == TradeOwnership.UNKNOWN) {
                     return TrackedBalanceValidation.Failed(
-                        reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
-                        unavailableAt = curr.timestamp,
+                        reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
+                        unavailableAt = lateTrade.timestamp,
+                    )
+                }
+                val candidateBalances = impliedBalances.toMutableMap()
+                if (!applyRealizedTrade(candidateBalances, lateTrade)) {
+                    return TrackedBalanceValidation.Failed(
+                        reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                        unavailableAt = lateTrade.timestamp,
                     )
                 }
             }
+            val lateAssignment = if (!balancesMatchSnapshot(impliedBalances, curr)) {
+                findLateTradeAssignment(trackedLateCandidates, impliedBalances, curr)
+            } else {
+                null
+            }
+            if (lateAssignment != null) {
+                for (index in lateAssignment.tradeIndexes) {
+                    assignedTradeIndexes += index
+                    effectiveTradeTimestamps[index] = curr.timestamp
+                }
+                impliedBalances.clear()
+                impliedBalances.putAll(lateAssignment.balances)
+            }
+
+            if (impliedBalances.keys.any { it !in curr.assets }) {
+                return TrackedBalanceValidation.Failed(
+                    reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                    unavailableAt = curr.timestamp,
+                )
+            }
+            if (!balancesMatchSnapshot(impliedBalances, curr)) {
+                return TrackedBalanceValidation.Failed(
+                    reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                    unavailableAt = curr.timestamp,
+                )
+            }
         }
-        return TrackedBalanceValidation.Passed
+        return TrackedBalanceValidation.Passed(
+            trades = assignedTradeIndexes.sorted().map { index ->
+                ReconciledTrade(
+                    trade = successfulTrades[index],
+                    timestamp = effectiveTradeTimestamps[index],
+                )
+            },
+        )
+    }
+
+    private fun balancesMatchSnapshot(
+        expectedBalances: Map<String, BigDecimal>,
+        snapshot: PortfolioSnapshot,
+    ): Boolean {
+        for ((symbol, expectedBalance) in expectedBalances) {
+            val actualBalance = snapshot.assets[symbol]?.balance ?: return false
+            val scale = if (symbol == Asset.USD) {
+                PrecisionConstants.SCALE_USD
+            } else {
+                PrecisionConstants.SCALE_CRYPTO
+            }
+            val roundedExpected = expectedBalance.setScale(scale, RoundingMode.HALF_UP)
+            val roundedActual = actualBalance.setScale(scale, RoundingMode.HALF_UP)
+            if (roundedExpected.compareTo(roundedActual) != 0) return false
+        }
+        return true
+    }
+
+    private data class LateTradeAssignment(val tradeIndexes: List<Int>, val balances: Map<String, BigDecimal>)
+
+    private fun findLateTradeAssignment(
+        candidates: List<IndexedValue<TradeRecord>>,
+        startingBalances: Map<String, BigDecimal>,
+        snapshot: PortfolioSnapshot,
+    ): LateTradeAssignment? {
+        if (candidates.isEmpty() || candidates.size > MAX_LATE_TRADE_CANDIDATES) return null
+
+        var match: LateTradeAssignment? = null
+        var multipleMatches = false
+        val selectedIndexes = mutableListOf<Int>()
+
+        fun search(position: Int, balances: Map<String, BigDecimal>) {
+            if (multipleMatches) return
+            if (position == candidates.size) {
+                if (selectedIndexes.isNotEmpty() && balancesMatchSnapshot(balances, snapshot)) {
+                    val candidateMatch = LateTradeAssignment(selectedIndexes.toList(), balances.toMap())
+                    if (match == null) {
+                        match = candidateMatch
+                    } else {
+                        multipleMatches = true
+                    }
+                }
+                return
+            }
+
+            search(position + 1, balances)
+            if (multipleMatches) return
+
+            val (index, trade) = candidates[position]
+            val nextBalances = balances.toMutableMap()
+            if (applyRealizedTrade(nextBalances, trade)) {
+                selectedIndexes += index
+                search(position + 1, nextBalances)
+                selectedIndexes.removeAt(selectedIndexes.lastIndex)
+            }
+        }
+
+        search(position = 0, balances = startingBalances)
+        return if (multipleMatches) null else match
     }
 
     private fun buildBenchmarkEvents(
-        trades: List<TradeRecord>,
+        trades: List<ReconciledTrade>,
         ledgers: List<LedgerEvent>,
         knownRebalancerOrderTxids: Set<String>,
     ): List<BenchmarkEvent> {
@@ -305,13 +431,14 @@ object RebalancerComparisonCalculator {
                 event = ledger,
             )
         }
-        for (trade in trades) {
+        for (reconciledTrade in trades) {
+            val trade = reconciledTrade.trade
             val ownership = TradeOwnershipClassifier.classify(
                 trade = trade,
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             )
             events += BenchmarkEvent.Trade(
-                timestamp = trade.timestamp,
+                timestamp = reconciledTrade.timestamp,
                 trade = trade,
                 ownership = ownership,
             )
@@ -345,6 +472,7 @@ object RebalancerComparisonCalculator {
             !Asset.matchesUsdQuotedPair(trade.pair, symbol) ||
             trade.volume.signum() < 0 ||
             trade.usdAmount.signum() < 0 ||
+            trade.price.signum() < 0 ||
             trade.fee.signum() < 0
         ) {
             return false
@@ -361,13 +489,13 @@ object RebalancerComparisonCalculator {
         when {
             OrderSide.isBuy(side) -> {
                 balances[symbol] = assetBalance.add(trade.volume)
-                val usdCost = trade.usdAmount.add(trade.fee)
+                val usdCost = realizedUsdNotional(trade).add(trade.fee)
                 balances[Asset.USD] = usdBalance.subtract(usdCost)
             }
 
             OrderSide.isSell(side) -> {
                 balances[symbol] = assetBalance.subtract(trade.volume)
-                val usdProceeds = trade.usdAmount.subtract(trade.fee)
+                val usdProceeds = realizedUsdNotional(trade).subtract(trade.fee)
                 balances[Asset.USD] = usdBalance.add(usdProceeds)
             }
 
@@ -375,6 +503,13 @@ object RebalancerComparisonCalculator {
         }
         return true
     }
+
+    private fun realizedUsdNotional(trade: TradeRecord): BigDecimal =
+        if (trade.source == TradeSource.API_FILL && trade.price.signum() > 0) {
+            trade.price.multiply(trade.volume)
+        } else {
+            trade.usdAmount
+        }
 
     private fun extractBaselineBalances(baseline: PortfolioSnapshot): Map<String, BigDecimal> =
         baseline.assets.mapValues { (_, asset) -> asset.balance }
