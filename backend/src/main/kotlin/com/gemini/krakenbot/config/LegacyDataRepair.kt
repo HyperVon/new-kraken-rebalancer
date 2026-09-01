@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.config
 
 import com.gemini.krakenbot.domain.OrderFillReconciler
-import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState

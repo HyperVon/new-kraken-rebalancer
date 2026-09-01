@@ -28,7 +28,7 @@ open class PublicRateLimiter(
                     lastRequestAtMs = now
                     0L
                 } else {
-                    if (last != null && now < previous) lastRequestAtMs = now
+                    if (now < previous) lastRequestAtMs = now
                     remaining
                 }
             }

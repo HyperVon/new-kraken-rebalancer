@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.domain.OrderFillReconciler
-import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
@@ -11,7 +10,6 @@ import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.TradeTable
-import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.count
@@ -203,7 +201,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
             val reconciliation = findSettledApiFillReconciliation(intent, effectiveOrderTxid)
             if (reconciliation != null) {
                 if (reconciliation.isComplete) {
-                    enrichApiFills(reconciliation.fills, intent, effectiveOrderTxid)
+                    enrichApiFills(reconciliation.fills, intent)
                     // The API fills are the canonical economic records. Detach before deleting the
                     // local placeholder so the FK remains valid, and keep the durable intent as
                     // the audit record for the operator's resolution.
@@ -247,7 +245,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         }
     }
 
-    private fun enrichApiFills(fills: List<TradeRecord>, intent: OrderIntent, orderTxid: String?) {
+    private fun enrichApiFills(fills: List<TradeRecord>, intent: OrderIntent) {
         fills.forEach { fill ->
             val fillId = fill.id ?: return@forEach
             val enriched = OrderFillReconciler.enrichApiFill(

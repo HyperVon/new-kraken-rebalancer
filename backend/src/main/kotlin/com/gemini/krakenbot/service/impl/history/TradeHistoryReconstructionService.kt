@@ -46,13 +46,6 @@ class TradeHistoryReconstructionService(
     suspend fun reconstructHistoricalSnapshots(config: AppConfig, backend: KrakenService) =
         reconstructHistoricalSnapshots(config, backend, replaceExisting = false)
 
-    suspend fun rebuildHistoricalSnapshots() = configService.withExecutionSession {
-        val config = configService.getConfig()
-        krakenService.withStableBackend { backend ->
-            rebuildHistoricalSnapshots(config, backend)
-        }
-    }
-
     suspend fun rebuildHistoricalSnapshots(config: AppConfig, backend: KrakenService) {
         check(ledgerRepository.isLedgersSeeded()) {
             "Cannot rebuild historical snapshots before ledger synchronization completes"

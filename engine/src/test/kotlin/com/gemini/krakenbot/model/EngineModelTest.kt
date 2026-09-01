@@ -509,7 +509,7 @@ class EngineModelTest : StringSpec() {
                         deviationUSD = BigDecimal("500.00"),
                     ),
                 ),
-                actions = listOf("BUY BTC Volume: 0.1 Cost: \$5000.00"),
+                actions = listOf($$"BUY BTC Volume: 0.1 Cost: $5000.00"),
                 drawdownPercent = BigDecimal("12.50"),
                 fiatDeploymentPercent = BigDecimal("25.00"),
                 effectiveUsdTargetPercent = BigDecimal("40.00"),
@@ -519,7 +519,7 @@ class EngineModelTest : StringSpec() {
             dto.timestamp shouldBe "2026-08-21T00:00:00Z"
             dto.totalValueUSD shouldBe "1000.00"
             dto.assets.keys shouldBe setOf("BTC")
-            dto.actions shouldBe listOf("BUY BTC Volume: 0.1 Cost: \$5000.00")
+            dto.actions shouldBe listOf($$"BUY BTC Volume: 0.1 Cost: $5000.00")
             dto.drawdownPercent shouldBe "12.50"
             dto.fiatDeploymentPercent shouldBe "25.00"
             dto.effectiveUsdTargetPercent shouldBe "40.00"

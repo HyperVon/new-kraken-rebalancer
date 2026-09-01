@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.math.absoluteValue
+import kotlin.time.Duration.Companion.milliseconds
 
 class RateLimiterTest : StringSpec() {
 
@@ -172,7 +173,7 @@ class RateLimiterTest : StringSpec() {
                 // The clock advances from the rebased origin. The waiter must be released after
                 // the new 500ms decay interval, rather than waiting for the old future baseline.
                 nowMs = 900_500L
-                advanceTimeBy(500L)
+                advanceTimeBy(500L.milliseconds)
                 waiter.await() shouldBe 2.0
             }
         }
@@ -240,7 +241,7 @@ class RateLimiterTest : StringSpec() {
                 waiter.isCompleted.shouldBeFalse()
 
                 nowMs += 1_000L
-                advanceTimeBy(1_000L)
+                advanceTimeBy(1_000L.milliseconds)
                 waiter.await()
             }
         }
@@ -257,7 +258,7 @@ class RateLimiterTest : StringSpec() {
                 waiter.isCompleted.shouldBeFalse()
 
                 nowMs = 1_000L
-                advanceTimeBy(1_000L)
+                advanceTimeBy(1_000L.milliseconds)
                 waiter.await()
             }
         }

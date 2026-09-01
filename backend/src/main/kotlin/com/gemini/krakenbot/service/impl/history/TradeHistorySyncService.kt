@@ -2,16 +2,13 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.domain.OrderFillReconciler
-import com.gemini.krakenbot.domain.TradeCalculator
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
-import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.isLegacyUnknown
 import com.gemini.krakenbot.model.isLocalEstimate
-import com.gemini.krakenbot.model.isMatchingApiTrade
 import com.gemini.krakenbot.model.isSettledApiFill
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
@@ -375,10 +372,7 @@ class TradeHistorySyncService(
         orderMetadataByTxid: Map<String, LocalOrderMetadata>,
         allocations: List<String>,
     ): LocalOrderResolution {
-        val apiOrderTxid = apiTrade.orderTxid?.trim()?.takeIf(String::isNotBlank)
-        if (apiOrderTxid == null) {
-            return LocalOrderResolution.None
-        }
+        val apiOrderTxid = apiTrade.orderTxid?.trim()?.takeIf(String::isNotBlank) ?: return LocalOrderResolution.None
 
         val keyedLocals = localEstimates.filter { local ->
             local.orderTxid?.trim()?.takeIf(String::isNotBlank) == apiOrderTxid

@@ -194,10 +194,9 @@ object HistoryViewPrefs {
         val builtIn = (raw[StoreKeys.BUILT_IN] as? Boolean) ?: false
         // Views written before range became explicit remain valid; malformed non-null ranges
         // are still rejected so they cannot select an undefined API window.
-        val rawRange = raw[StoreKeys.RANGE]
-        val range = when {
-            rawRange == null || rawRange == undefined -> TimeRange.THIRTY_DAYS.key
-            rawRange !is String -> return null
+        val range = when (val rawRange = raw[StoreKeys.RANGE]) {
+            null, undefined -> TimeRange.THIRTY_DAYS.key
+            !is String -> return null
             else -> TimeRange.entries.firstOrNull { it.key.equals(rawRange, ignoreCase = true) }?.key ?: return null
         }
         val showDryRun = (raw[StoreKeys.SHOW_DRY_RUN] as? Boolean) ?: true
