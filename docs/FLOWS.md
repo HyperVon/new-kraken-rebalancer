@@ -90,7 +90,7 @@ flowchart TB
     PM -->|"syncLedgersFromKraken()\neach cycle"| THS
     THS -->|"delegate"| LedgerSync
     LedgerSync -->|"COLD getLedgersPaginated()\n.collect { page -> }"| Kraken
-    Kraken -->|"staking/dividend ledger pages"| LedgerSync
+    Kraken -->|"external ledger pages"| LedgerSync
     LedgerSync -->|"insert with identity dedupe"| Repo
 
     %% Dashboard initial load
@@ -446,16 +446,23 @@ trade synchronization, but it has separate metadata and insert-only semantics:
 - Incremental passes begin from the latest stored ledger time or watermark minus
   **300 seconds**, with a captured end time for stable newest-first pagination.
 - Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
-  so overlap and repeated pages are harmless. Only `staking` and `dividend`
-  entries are requested.
+  so overlap and repeated pages are harmless. The sync requests `staking`,
+  `dividend`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `spend`, and
+  `receive` response types. The live Kraken adapter sends `type=sale` for the
+  latter two because `sale` is the documented query filter, then filters returned
+  rows by their actual response type.
 - Invalid live credentials skip the sync without opening an execution session;
   a real sync brackets all pages with the same `ConfigService` execution-session
   boundary used by trade synchronization. Simulation mode does not call Kraken.
 
 The History rewards query filters the persisted ledger range to `staking` and
 `dividend` rows for tracked assets, then aligns cumulative amounts to portfolio
-snapshots and values them with each snapshot's prices. Dividends for untracked
-assets remain excluded. It is a normal suspend query, not a background flow.
+snapshots and values them with each snapshot's prices. The comparison and reverse
+snapshot reconstruction consume all eight external types with `amount - fee`;
+consumer Buy Crypto `spend`/`receive` legs remain separate ledger events. Kraken
+documents those app transactions in Ledger history rather than Trades history.
+Dividends for untracked assets remain excluded from the rewards series. It is a
+normal suspend query, not a background flow.
 
 ---
 

@@ -1703,7 +1703,7 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
             }
         }
 
-        "loads known rebalancer order identities filtered by time range" {
+        "loads known rebalancer order identities by exact candidate IDs" {
             runTest {
                 val now = Instant.parse("2026-07-01T12:00:00Z")
                 val intent1 = newIntent().copy(
@@ -1722,26 +1722,26 @@ class SqliteOrderIntentRepositoryTest : StringSpec() {
                 val id2 = savePendingWithTrade(intent2)
                 repository.recordOutcome(id2, OrderIntentState.CONFIRMED, "TXID-2", null, now.plusSeconds(3610))
 
-                // Full range
-                val allIdentities = repository.getKnownRebalancerOrderIdentities()
-                allIdentities.orderTxids shouldBe setOf("TXID-1", "TXID-2")
-                allIdentities.clientOrderIds shouldBe setOf("CLORD-1", "CLORD-2")
-
-                // Bounded range
-                val boundedIdentities = repository.getKnownRebalancerOrderIdentities(
-                    from = now.plusSeconds(1800),
-                    to = now.plusSeconds(7200),
-                )
-                boundedIdentities.orderTxids shouldBe setOf("TXID-2")
-                boundedIdentities.clientOrderIds shouldBe setOf("CLORD-2")
-
-                // from-only bound
-                val fromOnlyIdentities = repository.getKnownRebalancerOrderIdentities(from = now.plusSeconds(1800))
-                fromOnlyIdentities.orderTxids shouldBe setOf("TXID-2")
-
-                // to-only bound
-                val toOnlyIdentities = repository.getKnownRebalancerOrderIdentities(to = now.plusSeconds(1800))
-                toOnlyIdentities.orderTxids shouldBe setOf("TXID-1")
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = setOf("TXID-1"),
+                    clientOrderIds = emptySet(),
+                ).orderTxids shouldBe setOf("TXID-1")
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = emptySet(),
+                    clientOrderIds = setOf("CLORD-2"),
+                ).orderTxids shouldBe setOf("TXID-2")
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = setOf("TXID-1"),
+                    clientOrderIds = setOf("CLORD-2"),
+                ).orderTxids shouldBe setOf("TXID-1", "TXID-2")
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = setOf("NOT-A-BOT-ORDER"),
+                    clientOrderIds = setOf("NOT-A-BOT-CLIENT"),
+                ).orderTxids shouldBe emptySet()
+                repository.getKnownRebalancerOrderIdentities(
+                    orderTxids = emptySet(),
+                    clientOrderIds = emptySet(),
+                ).orderTxids shouldBe emptySet()
             }
         }
     }

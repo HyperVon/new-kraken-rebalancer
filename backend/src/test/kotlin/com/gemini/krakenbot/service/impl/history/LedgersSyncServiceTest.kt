@@ -69,7 +69,11 @@ class LedgersSyncServiceTest : StringSpec() {
             var now = fixedNow
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { now })
 
-            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+            val requestedTypes = mutableListOf<Set<String>>()
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                requestedTypes += arg<Set<String>>(3)
+                emptyList()
+            }
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
 
             service.syncLedgersFromKraken()
@@ -77,6 +81,7 @@ class LedgersSyncServiceTest : StringSpec() {
 
             // Per-type cursors: 8 ledger types each fetch once per sync (offset 0), second sync throttled.
             coVerify(exactly = 8) { krakenService.getLedgers(any(), any(), any(), any()) }
+            requestedTypes.toSet() shouldBe LedgersSyncService.SUPPORTED_LEDGER_TYPES.map { setOf(it) }.toSet()
             service.isLedgersSeeded() shouldBe true
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
@@ -138,6 +143,38 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 74
+        }
+
+        "failed initial seed stays unseeded and retries the bounded history" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+
+            var failureEnabled = true
+            val failure = RuntimeException("initial ledger history unavailable")
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                if (failureEnabled) throw failure else emptyList()
+            }
+
+            var now = fixedNow
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { now })
+            shouldThrow<RuntimeException> { service.syncLedgersFromKraken() } shouldBe failure
+
+            service.isLedgersSeeded() shouldBe false
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe null
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe null
+
+            now = fixedNow.plusSeconds(600)
+            failureEnabled = false
+            service.syncLedgersFromKraken()
+
+            service.isLedgersSeeded() shouldBe true
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            coVerify {
+                krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
+            }
         }
 
         "per-type cursors continue staking after dividend is exhausted" {
@@ -550,6 +587,51 @@ class LedgersSyncServiceTest : StringSpec() {
 
             service.isLedgerCoverageCurrent() shouldBe false
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "2"
+        }
+
+        "partial backfill retries safely without duplicating persisted pages" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "2")
+
+            val firstPage = (0 until 50).map { event(it) }
+            val secondPage = listOf(event(50))
+            val failure = RuntimeException("Kraken API failed during the second staking page")
+            var failureEnabled = true
+            var lastTotalCount = 0
+            coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { lastTotalCount }
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                val types = arg<Set<String>>(3)
+                val offset = secondArg<Int?>() ?: 0
+                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)) {
+                    lastTotalCount = 100
+                    when (offset) {
+                        0 -> firstPage
+                        50 -> if (failureEnabled) throw failure else secondPage
+                        else -> emptyList()
+                    }
+                } else {
+                    lastTotalCount = 0
+                    emptyList()
+                }
+            }
+
+            var now = fixedNow
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { now })
+            shouldThrow<RuntimeException> { service.syncLedgersFromKraken() } shouldBe failure
+
+            service.isLedgerCoverageCurrent() shouldBe false
+            repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 50
+
+            now = fixedNow.plusSeconds(600)
+            failureEnabled = false
+            service.syncLedgersFromKraken()
+
+            service.isLedgerCoverageCurrent() shouldBe true
+            val ledgerIds = repository.getLedgersInRange(Instant.EPOCH, now).map { it.ledgerId }
+            ledgerIds.toSet() shouldBe (0..50).map { "ledger-$it" }.toSet()
+            ledgerIds.size shouldBe 51
         }
     }
 }

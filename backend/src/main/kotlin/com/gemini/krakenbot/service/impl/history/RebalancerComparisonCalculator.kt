@@ -26,7 +26,6 @@ object RebalancerComparisonCalculator {
         trades: List<TradeRecord>,
         rewards: List<LedgerEvent> = emptyList(),
         knownRebalancerOrderTxids: Set<String> = emptySet(),
-        knownRebalancerClientOrderIds: Set<String> = emptySet(),
     ): RebalancerComparison {
         if (snapshots.size < 2) {
             val firstTime = snapshots.firstOrNull()?.timestamp
@@ -60,7 +59,6 @@ object RebalancerComparisonCalculator {
                 trades = trades,
                 ledgers = periodLedgers,
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-                knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
             )
 
         if (balanceResult is TrackedBalanceValidation.Failed) {
@@ -76,7 +74,6 @@ object RebalancerComparisonCalculator {
             trades = trades.filter { it.success && !it.dryRun && it.timestamp > baseline.timestamp },
             ledgers = periodLedgers,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-            knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
         )
 
         val baselineBalances = extractBaselineBalances(baseline)
@@ -223,7 +220,6 @@ object RebalancerComparisonCalculator {
         trades: List<TradeRecord>,
         ledgers: List<LedgerEvent>,
         knownRebalancerOrderTxids: Set<String>,
-        knownRebalancerClientOrderIds: Set<String>,
     ): TrackedBalanceValidation {
         val baseline = snapshots.first()
         val lastSnapshot = snapshots.last()
@@ -239,7 +235,6 @@ object RebalancerComparisonCalculator {
             val ownership = TradeOwnershipClassifier.classify(
                 trade = trade,
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-                knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
             )
             if (ownership == TradeOwnership.UNKNOWN && trade.symbol in baseline.assets.keys) {
                 return TrackedBalanceValidation.Failed(
@@ -300,7 +295,6 @@ object RebalancerComparisonCalculator {
         trades: List<TradeRecord>,
         ledgers: List<LedgerEvent>,
         knownRebalancerOrderTxids: Set<String>,
-        knownRebalancerClientOrderIds: Set<String>,
     ): List<BenchmarkEvent> {
         val events = mutableListOf<BenchmarkEvent>()
         for (ledger in ledgers) {
@@ -315,7 +309,6 @@ object RebalancerComparisonCalculator {
             val ownership = TradeOwnershipClassifier.classify(
                 trade = trade,
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-                knownRebalancerClientOrderIds = knownRebalancerClientOrderIds,
             )
             events += BenchmarkEvent.Trade(
                 timestamp = trade.timestamp,

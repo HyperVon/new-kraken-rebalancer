@@ -304,9 +304,11 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 
 ### Ledger & Staking Rewards Synchronization
 
-- Synchronizes staking and dividend entries from Kraken's private
-  `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold
-  Flow fetching
+- Synchronizes eight strategy-neutral entry types (`staking`, `dividend`, `deposit`,
+  `withdrawal`, `transfer`, `adjustment`, `spend`, and `receive`) from Kraken's private
+  `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold Flow fetching.
+  The live adapter queries the documented `sale` filter for consumer `spend`/`receive`
+  rows, then filters the returned rows by their response type.
 - Persists ledger entries in SQLite using the `(ledger id, timestamp, asset, type)`
   identity so overlapping pages and retries remain idempotent
 - Stores durable seed progress and timestamps in `history_sync_metadata`, then
@@ -322,6 +324,11 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   realistic cumulative history; `dividend` entries for tracked assets are now
   mirrored in the rewards chart, comparison math, and historical reconstruction
   (like staking), while dividends for untracked assets remain external inflows.
+- Rebalancer vs Buy & Hold and historical reconstruction replay every supported
+  external ledger type using `amount - fee`. Consumer Buy Crypto activity is
+  represented by its ledger `spend`/`receive` legs; it is not inferred from
+  `TradesHistory`. The reconstruction marker records the ledger-coverage version
+  it replayed, so a coverage migration cannot be hidden by an older marker.
 
 ### Safety & Reliability
 

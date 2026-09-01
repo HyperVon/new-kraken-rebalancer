@@ -8,7 +8,9 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.TradeSummaryStats
+import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -354,6 +356,18 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 reconstructed.captured.any {
                     it.assets[Asset.BTC]?.price?.compareTo(BigDecimal.ZERO) != 0
                 }.shouldBeTrue()
+                coVerify(exactly = 1) {
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                        TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+                    )
+                }
+                coVerify(exactly = 1) {
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
+                        LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+                    )
+                }
             }
         }
 
@@ -420,6 +434,12 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                         reconstructionService.reconstructHistoricalSnapshots()
                     }
                     coVerify(exactly = 0) { repository.save(any()) }
+                    coVerify(exactly = 0) {
+                        repository.setSyncMetadata(
+                            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                            TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+                        )
+                    }
                 }
             }
         }
@@ -492,6 +512,12 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                         }
                     }
                     coVerify(exactly = 1) { repository.save(any()) }
+                    coVerify(exactly = 0) {
+                        repository.setSyncMetadata(
+                            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                            TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+                        )
+                    }
                 }
             }
         }

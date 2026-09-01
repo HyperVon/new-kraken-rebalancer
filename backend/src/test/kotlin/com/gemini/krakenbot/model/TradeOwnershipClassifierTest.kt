@@ -114,7 +114,7 @@ class TradeOwnershipClassifierTest : StringSpec() {
             TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.MANUAL_OR_EXTERNAL
         }
 
-        "classifies trade matching knownRebalancerClientOrderIds as REBALANCER" {
+        "classifies persisted clientOrderId enrichment as REBALANCER" {
             val trade =
                 sampleTrade(
                     source = TradeSource.API_FILL,
@@ -122,8 +122,7 @@ class TradeOwnershipClassifierTest : StringSpec() {
                     orderTxid = "TX-EXT",
                     tradeId = "TR-EXT",
                 )
-            TradeOwnershipClassifier.classify(trade, knownRebalancerClientOrderIds = setOf("cl-ord-456")) shouldBe
-                TradeOwnership.REBALANCER
+            TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.REBALANCER
         }
     }
 }

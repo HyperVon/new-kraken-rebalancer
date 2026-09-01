@@ -14,10 +14,7 @@ enum class TradeOwnership {
     UNKNOWN,
 }
 
-data class RebalancerOrderIdentities(
-    val orderTxids: Set<String> = emptySet(),
-    val clientOrderIds: Set<String> = emptySet(),
-)
+data class RebalancerOrderIdentities(val orderTxids: Set<String> = emptySet())
 
 object TradeOwnershipClassifier {
     /**
@@ -31,13 +28,8 @@ object TradeOwnershipClassifier {
      *
      * @param trade the trade record to classify
      * @param knownRebalancerOrderTxids set of order transaction IDs known to belong to bot executions
-     * @param knownRebalancerClientOrderIds set of client order IDs known to belong to bot executions
      */
-    fun classify(
-        trade: TradeRecord,
-        knownRebalancerOrderTxids: Set<String> = emptySet(),
-        knownRebalancerClientOrderIds: Set<String> = emptySet(),
-    ): TradeOwnership {
+    fun classify(trade: TradeRecord, knownRebalancerOrderTxids: Set<String> = emptySet()): TradeOwnership {
         if (!trade.cycleId.isNullOrBlank() || !trade.clientOrderId.isNullOrBlank()) {
             return TradeOwnership.REBALANCER
         }

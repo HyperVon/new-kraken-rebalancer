@@ -12,6 +12,7 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
+import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -132,6 +133,12 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                         "5",
                     )
                 }
+                coVerify {
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
+                        LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+                    )
+                }
             }
         }
 
@@ -141,10 +148,50 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
                 } returns "5"
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
+                } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
 
                 service.rebuildHistoricalSnapshotsIfNeeded()
 
-                coVerify(exactly = 0) { ledgerRepository.isLedgersSeeded() }
+                coVerify(exactly = 1) { ledgerRepository.isLedgersSeeded() }
+                coVerify(exactly = 0) { krakenService.getBalances() }
+            }
+        }
+
+        "rebuildHistoricalSnapshotsIfNeeded_doesNotTrustMarkerWithoutCoverageProvenance" {
+            runTest {
+                val service = createService()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+                } returns TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
+                } returns null
+
+                service.rebuildHistoricalSnapshotsIfNeeded()
+
+                coVerify(atLeast = 1) { ledgerRepository.isLedgersSeeded() }
+                coVerify(exactly = 1) { krakenService.getBalances() }
+            }
+        }
+
+        "rebuildHistoricalSnapshotsIfNeeded_skipsCurrentMarkerWhenCoverageIsStale" {
+            runTest {
+                val service = createService()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+                } returns TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
+                } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
+                } returns "2"
+
+                service.rebuildHistoricalSnapshotsIfNeeded()
+
+                coVerify(atLeast = 1) { ledgerRepository.isLedgersSeeded() }
                 coVerify(exactly = 0) { krakenService.getBalances() }
             }
         }

@@ -16,6 +16,7 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
@@ -209,14 +210,22 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
-                // Unbounded query returns all retained known bot identities
-                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                val requestedOrderTxids = slot<Set<String>>()
+                val requestedClientOrderIds = slot<Set<String>>()
+                coEvery {
+                    orderIntentRepository.getKnownRebalancerOrderIdentities(
+                        capture(requestedOrderTxids),
+                        capture(requestedClientOrderIds),
+                    )
+                } returns
                     com.gemini.krakenbot.model.RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-EARLY-INTENT"))
 
                 val comparison = service.getRebalancerComparison(now, now.plusSeconds(3600))
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                requestedOrderTxids.captured shouldBe setOf("BOT-ORDER-EARLY-INTENT")
+                requestedClientOrderIds.captured shouldBe emptySet()
                 // Correctly classified as REBALANCER (not manual or unknown)
                 comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
             }

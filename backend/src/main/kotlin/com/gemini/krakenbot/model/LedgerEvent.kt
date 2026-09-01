@@ -5,8 +5,9 @@ import java.time.Instant
 
 /**
  * One entry from the Kraken private Ledgers endpoint (e.g. `staking` rewards, `dividend` payouts,
- * `deposit`, `withdrawal`, and `transfer` entries). Amounts are signed (+ for credit, - for debit)
- * and denominated in the ledger asset. Fees are non-negative.
+ * `deposit`, `withdrawal`, `transfer`, `adjustment`, and consumer-transaction `spend`/`receive`
+ * entries). Amounts are signed (+ for credit, - for debit) and denominated in the ledger asset.
+ * Fees are non-negative.
  *
  * [ledgerId] is the Kraken ledger entry id (the response map key), unique per entry;
  * [refid] is the reference id of the parent transaction that caused the entry and may
@@ -14,7 +15,8 @@ import java.time.Instant
  *
  * Strategy-neutral external balance events ([EXTERNAL_BALANCE_TYPES]) affect both actual portfolio
  * balance reconciliation and the synthetic Buy & Hold benchmark equally. Trade ledger rows
- * (`trade`) are ignored because `TradesHistory` is authoritative for trade executions.
+ * (`trade`) are ignored because `TradesHistory` is authoritative for trade executions; Kraken
+ * app/Buy Crypto activity is represented by the `spend`/`receive` ledger rows instead.
  */
 data class LedgerEvent(
     val ledgerId: String,

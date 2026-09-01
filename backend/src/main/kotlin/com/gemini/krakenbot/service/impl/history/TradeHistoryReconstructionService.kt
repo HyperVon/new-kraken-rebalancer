@@ -224,6 +224,13 @@ class TradeHistoryReconstructionService(
                 repository.save(snapshotsToSave)
             }
         }
+        // Keep reconstruction freshness tied to the ledger coverage that was replayed. A
+        // current reconstruction marker from an older coverage migration must not suppress the
+        // first rebuild that can include newly supported ledger types.
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
+            LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+        )
         repository.setSyncMetadata(
             SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
             CURRENT_RECONSTRUCTION_VERSION,

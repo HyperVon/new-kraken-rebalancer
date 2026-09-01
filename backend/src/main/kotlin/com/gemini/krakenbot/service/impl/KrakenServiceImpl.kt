@@ -315,23 +315,37 @@ class KrakenServiceImpl(
         if (endSec != null) params[KrakenApiConstants.PARAM_END] = endSec.toString()
         if (offset != null) params[KrakenApiConstants.PARAM_OFS] = offset.toString()
 
-        val sortedTypes = types?.sorted()
-        if (sortedTypes != null && sortedTypes.size > 1) {
+        if (types != null && types.isEmpty()) return emptyList()
+
+        val queryTypes = types?.sorted()?.groupBy(::ledgerQueryType)
+        if (queryTypes != null && queryTypes.size > 1) {
             val fanOutParams = params - KrakenApiConstants.PARAM_OFS
-            val pages = sortedTypes.map { type ->
-                queryLedgerPage(fanOutParams + (KrakenApiConstants.PARAM_TYPE to type), types)
+            val pages = queryTypes.map { (queryType, responseTypes) ->
+                queryLedgerPage(
+                    fanOutParams + (KrakenApiConstants.PARAM_TYPE to queryType),
+                    responseTypes.toSet(),
+                )
             }
             lastLedgerCount.set(pages.sumOf { it.second })
             return pages.flatMap { it.first }
         }
-        val pageParams = if (sortedTypes != null) {
-            params + (KrakenApiConstants.PARAM_TYPE to sortedTypes.single())
+
+        val pageParams = if (queryTypes != null) {
+            params + (KrakenApiConstants.PARAM_TYPE to queryTypes.keys.single())
         } else {
             params
         }
         val (entries, count) = queryLedgerPage(pageParams, types)
         lastLedgerCount.set(count)
         return entries
+    }
+
+    private fun ledgerQueryType(type: String): String = when (type) {
+        KrakenApiConstants.LEDGER_TYPE_SPEND,
+        KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+        -> KrakenApiConstants.LEDGER_TYPE_SALE
+
+        else -> type
     }
 
     private suspend fun queryLedgerPage(

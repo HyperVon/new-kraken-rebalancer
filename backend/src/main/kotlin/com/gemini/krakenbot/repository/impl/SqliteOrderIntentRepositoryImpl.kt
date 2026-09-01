@@ -422,30 +422,37 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         OrderIntentState.UNCERTAIN.name,
     )
 
-    override suspend fun getKnownRebalancerOrderIdentities(from: Instant?, to: Instant?): RebalancerOrderIdentities =
-        database.safeTransactionIO(log, "Failed to load rebalancer order identities") {
-            val query = when {
-                from != null && to != null -> OrderIntentTable.selectAll().where {
-                    (OrderIntentTable.createdAt greaterEq from.toEpochMilli()) and
-                        (OrderIntentTable.createdAt lessEq to.toEpochMilli())
-                }
-
-                from != null -> OrderIntentTable.selectAll().where {
-                    OrderIntentTable.createdAt greaterEq from.toEpochMilli()
-                }
-
-                to != null -> OrderIntentTable.selectAll().where {
-                    OrderIntentTable.createdAt lessEq to.toEpochMilli()
-                }
-
-                else -> OrderIntentTable.selectAll()
-            }
-            val orderTxids = mutableSetOf<String>()
-            val clientOrderIds = mutableSetOf<String>()
-            query.forEach { row ->
-                row[OrderIntentTable.orderTxid]?.takeIf(String::isNotBlank)?.let(orderTxids::add)
-                row[OrderIntentTable.clientOrderId]?.takeIf(String::isNotBlank)?.let(clientOrderIds::add)
-            }
-            RebalancerOrderIdentities(orderTxids = orderTxids, clientOrderIds = clientOrderIds)
+    override suspend fun getKnownRebalancerOrderIdentities(
+        orderTxids: Set<String>,
+        clientOrderIds: Set<String>,
+    ): RebalancerOrderIdentities {
+        val candidateOrderTxids = orderTxids.mapNotNull { it.trim().takeIf(String::isNotBlank) }.toSet()
+        val candidateClientOrderIds = clientOrderIds.mapNotNull { it.trim().takeIf(String::isNotBlank) }.toSet()
+        if (candidateOrderTxids.isEmpty() && candidateClientOrderIds.isEmpty()) {
+            return RebalancerOrderIdentities()
         }
+
+        return database.safeTransactionIO(log, "Failed to load rebalancer order identities") {
+            val query = when {
+                candidateOrderTxids.isNotEmpty() && candidateClientOrderIds.isNotEmpty() ->
+                    OrderIntentTable.selectAll().where {
+                        (OrderIntentTable.orderTxid inList candidateOrderTxids) or
+                            (OrderIntentTable.clientOrderId inList candidateClientOrderIds)
+                    }
+
+                candidateOrderTxids.isNotEmpty() -> OrderIntentTable.selectAll().where {
+                    OrderIntentTable.orderTxid inList candidateOrderTxids
+                }
+
+                else -> OrderIntentTable.selectAll().where {
+                    OrderIntentTable.clientOrderId inList candidateClientOrderIds
+                }
+            }
+            val knownOrderTxids = mutableSetOf<String>()
+            query.forEach { row ->
+                row[OrderIntentTable.orderTxid]?.trim()?.takeIf(String::isNotBlank)?.let(knownOrderTxids::add)
+            }
+            RebalancerOrderIdentities(orderTxids = knownOrderTxids)
+        }
+    }
 }

@@ -19,7 +19,9 @@ import java.time.temporal.ChronoUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Pulls Kraken ledger entries (staking rewards and dividend payouts) into the local database.
+ * Pulls Kraken's strategy-neutral ledger entries into the local database: staking, dividend,
+ * deposit, withdrawal, transfer, adjustment, and consumer-transaction spend/receive rows.
+ * The live adapter maps the latter two response types to Kraken's documented `sale` query filter.
  *
  * Ledger entries are insert-only: identity is the unique (ledger id, timestamp, asset, type) tuple,
  * so re-fetched pages (including the Kraken newest-first offset overlap) are deduplicated by the

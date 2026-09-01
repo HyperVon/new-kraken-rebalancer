@@ -15,7 +15,8 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
     override fun compareTo(other: BenchmarkEvent): Int = this.timestamp.compareTo(other.timestamp)
 
     /**
-     * Strategy-neutral external balance movement (staking reward, dividend, deposit, withdrawal, transfer).
+     * Strategy-neutral external balance movement (rewards, deposits, withdrawals, transfers,
+     * adjustments, or consumer-transaction spend/receive legs).
      */
     data class ExternalBalance(
         override val timestamp: Instant,

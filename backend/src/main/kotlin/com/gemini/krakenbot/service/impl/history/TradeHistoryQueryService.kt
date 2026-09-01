@@ -5,7 +5,6 @@ import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
-import com.gemini.krakenbot.model.RebalancerOrderIdentities
 import com.gemini.krakenbot.model.RewardsOverTime
 import com.gemini.krakenbot.model.RewardsOverTimePoint
 import com.gemini.krakenbot.model.TradeRecord
@@ -50,20 +49,28 @@ class TradeHistoryQueryService(
             ledgerRepository
                 .getLedgersInRange(firstTimestamp, lastTimestamp)
                 .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
-        val identities = orderIntentRepository?.getKnownRebalancerOrderIdentities()
-            ?: RebalancerOrderIdentities()
+        val candidateTrades = trades.filter { it.success && !it.dryRun }
+        val candidateOrderTxids = candidateTrades.mapNotNull {
+            it.orderTxid?.trim()?.takeIf(String::isNotBlank)
+        }.toSet()
+        val candidateClientOrderIds = candidateTrades.mapNotNull {
+            it.clientOrderId?.trim()?.takeIf(String::isNotBlank)
+        }.toSet()
+        val knownRebalancerOrderTxids = orderIntentRepository
+            ?.getKnownRebalancerOrderIdentities(candidateOrderTxids, candidateClientOrderIds)
+            ?.orderTxids
+            .orEmpty()
         return RebalancerComparisonCalculator.calculate(
             snapshots = snapshots,
             trades = trades,
             rewards = ledgers,
-            knownRebalancerOrderTxids = identities.orderTxids,
-            knownRebalancerClientOrderIds = identities.clientOrderIds,
+            knownRebalancerOrderTxids = knownRebalancerOrderTxids,
         )
     }
 
     suspend fun getRewardsOverTime(from: Instant, to: Instant): RewardsOverTime {
         val snapshots = getSnapshotsInRange(from, to).sortedBy { it.timestamp }
-        val stakingEvents =
+        val rewardEvents =
             ledgerRepository
                 .getLedgersInRange(from, to)
                 .filter { it.type in LedgerEvent.REWARD_TYPES }
@@ -71,8 +78,8 @@ class TradeHistoryQueryService(
         val cumulativeByAsset = mutableMapOf<String, BigDecimal>()
         var eventIndex = 0
         val points = snapshots.map { snapshot ->
-            while (eventIndex < stakingEvents.size && stakingEvents[eventIndex].time <= snapshot.timestamp) {
-                val event = stakingEvents[eventIndex]
+            while (eventIndex < rewardEvents.size && rewardEvents[eventIndex].time <= snapshot.timestamp) {
+                val event = rewardEvents[eventIndex]
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
                 if (symbol != Asset.USD) {
                     cumulativeByAsset[symbol] =

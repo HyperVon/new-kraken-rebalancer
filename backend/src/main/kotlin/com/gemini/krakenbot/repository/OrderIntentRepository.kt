@@ -31,7 +31,7 @@ interface OrderIntentRepository {
     ): Boolean
 
     suspend fun getKnownRebalancerOrderIdentities(
-        from: Instant? = null,
-        to: Instant? = null,
+        orderTxids: Set<String>,
+        clientOrderIds: Set<String>,
     ): RebalancerOrderIdentities
 }

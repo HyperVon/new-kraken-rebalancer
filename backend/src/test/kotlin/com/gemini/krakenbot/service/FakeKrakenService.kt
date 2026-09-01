@@ -16,9 +16,9 @@ import java.math.BigDecimal
  * emulator used when `settings.simulation=true` (seeded portfolio, drifted prices).
  *
  * Suppliers and [executeOrderAction] / [orderResultFactory] may be reassigned between tests.
- * [seedLedgerEntries] pre-seeds staking/dividend entries served like the Kraken Ledgers
- * endpoint (type/time filtered, offset-paged at [KrakenApiConstants.LEDGER_PAGE_SIZE],
- * matching total via [getLastLedgerTotalCount]).
+ * [seedLedgerEntries] pre-seeds ledger entries served like the Kraken Ledgers endpoint
+ * (type/time filtered, offset-paged at [KrakenApiConstants.LEDGER_PAGE_SIZE], matching total
+ * via [getLastLedgerTotalCount]).
  */
 class FakeKrakenService : KrakenService {
     var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
@@ -84,7 +84,7 @@ class FakeKrakenService : KrakenService {
     override fun getLastLedgerTotalCount(): Int = ledgerTotalCountOverride
 
     /**
-     * Pre-seeds ledger entries (e.g. staking rewards) and serves them like the Kraken
+     * Pre-seeds ledger entries (e.g. staking rewards or consumer spend/receive legs) and serves them like the Kraken
      * Ledgers endpoint: filtered by requested types and the start/end time window,
      * newest-first, paged at [KrakenApiConstants.LEDGER_PAGE_SIZE] from [offset], with
      * [getLastLedgerTotalCount] reporting the matching (unpaged) total.

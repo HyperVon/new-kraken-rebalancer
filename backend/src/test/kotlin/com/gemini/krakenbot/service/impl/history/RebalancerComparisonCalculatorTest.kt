@@ -1302,7 +1302,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("5000.00")
         }
 
-        "Scenario L: Ambiguous or UNKNOWN trade ownership degrades confidence to ESTIMATED" {
+        "Scenario L: Ambiguous or UNKNOWN tracked trade makes comparison unavailable" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -1854,7 +1854,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = RebalancerComparisonCalculator.calculate(
                 snapshots = snapshots,
                 trades = trades,
-                knownRebalancerClientOrderIds = setOf("BOT-CL-ORD-1"),
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE

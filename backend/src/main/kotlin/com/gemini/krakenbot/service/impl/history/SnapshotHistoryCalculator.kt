@@ -139,7 +139,7 @@ object SnapshotHistoryCalculator {
         }
     }
 
-    /** Undo one external ledger balance delta (credit, reward, deposit, withdrawal, transfer). */
+    /** Undo one external ledger balance delta, including both legs of a consumer transaction. */
     private fun reverseApplyReward(event: LedgerEvent, runningBalances: MutableMap<String, BigDecimal>) {
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         if (symbol !in runningBalances) return

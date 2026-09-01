@@ -18,9 +18,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   benchmark equally.
 - **Fail-closed trade ownership classification & durable order journal integration**:
   Introduced `TradeOwnership` (`REBALANCER`, `MANUAL_OR_EXTERNAL`, `UNKNOWN`) and
-  `TradeOwnershipClassifier`. Durable `OrderIntent` evidence (`orderTxid` and `clientOrderId`)
-  is queried and wired from `OrderIntentRepository` to prove bot execution even if historical
-  API fills lack cycle metadata. Positive manual user trades replay into Buy & Hold to prevent
+  `TradeOwnershipClassifier`. Exact candidate `orderTxid`/`clientOrderId` values from the
+  comparison fills are queried against the durable `OrderIntent` journal; only matched durable
+  order transaction IDs prove bot execution when historical API fills lack cycle metadata.
+  Positive manual user trades replay into Buy & Hold to prevent
   distorting rebalancer alpha, while rebalancer bot executions generate legitimate divergence.
   Any economically relevant trade with `UNKNOWN` ownership inside the comparison range causes
   comparison to fail closed as `UNAVAILABLE` with `AMBIGUOUS_TRADE_OWNERSHIP`.
@@ -35,6 +36,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   automatically backfill historical external movement across a bounded 96-day lookback deduplicated
   by unique constraint. `TradeHistoryReconstructionService` (`SNAPSHOT_RECONSTRUCTION_VERSION` `5`)
   strictly requires both seeded ledgers and current coverage version before rebuilding historical snapshots.
+  The reconstruction marker also records the coverage version it replayed, so a coverage migration
+  cannot be hidden by an older marker.
+  The live adapter uses Kraken's documented `sale` query filter for `spend`/`receive` rows and
+  preserves the two ledger legs because consumer Buy Crypto/Kraken app activity is recorded in
+  Ledger history rather than Trades history.
 
 ## [6.17.15] - 2026-08-31
 

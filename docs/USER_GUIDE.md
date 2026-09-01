@@ -305,8 +305,10 @@ achieved against a **synthetic buy-and-hold** strategy:
 
 - **Buy & Hold** starts from the first snapshot in the selected window. Strategy-neutral
   economic flows (staking rewards, crypto dividends, USD cash dividends, external deposits,
-  withdrawals, transfers, and manual user trades) are replayed into Buy & Hold identically to
-  the actual portfolio.
+  withdrawals, transfers, adjustments, consumer Buy Crypto `spend`/`receive` legs, and manual
+  user trades) are replayed into Buy & Hold identically to the actual portfolio. Kraken app/Buy
+  Crypto activity is read from Ledger history, including both asset legs, rather than inferred
+  from the trade-history feed.
 - **Rebalancer** is the actual portfolio value at each snapshot, incorporating rebalancing bot
   trade executions that create genuine divergence from Buy & Hold.
 - The **delta badge** next to the chart title shows the cumulative
@@ -325,7 +327,7 @@ The comparison cannot be computed when:
 | Missing price | An asset lacks a price in a snapshot. |
 | Asset universe changed | An asset was added or removed during the window. |
 | Unsupported trade | A trade with a side other than BUY or SELL or non-USD quotes. |
-| Unexplained balance change | A deposit, withdrawal, transfer, or incomplete trade history may exist. |
+| Unexplained balance change | An external flow, consumer transaction, or incomplete trade history may exist. |
 
 When an unavailability reason applies, the chart hides and a message explains why.
 Where the comparison *is* rendered but the tracked balance changes could not be
