@@ -179,9 +179,17 @@ object RebalancerComparisonCalculator {
             TrackedBalanceValidation()
     }
 
-    private data class ReconciledTrade(val trade: TradeRecord, val timestamp: Instant)
+    private data class ReconciledTrade(
+        val trade: TradeRecord,
+        val timestamp: Instant,
+        val embeddedInBaseline: Boolean = false,
+    )
 
-    private data class ReconciledLedger(val ledger: LedgerEvent, val timestamp: Instant)
+    private data class ReconciledLedger(
+        val ledger: LedgerEvent,
+        val timestamp: Instant,
+        val embeddedInBaseline: Boolean = false,
+    )
 
     private sealed class LateCandidate {
         abstract val index: Int
@@ -283,6 +291,8 @@ object RebalancerComparisonCalculator {
         val indexedLedgers = externalEvents.withIndex().toList()
         val assignedTradeIndexes = mutableSetOf<Int>()
         val assignedLedgerIndexes = mutableSetOf<Int>()
+        val embeddedTradeIndexes = mutableSetOf<Int>()
+        val embeddedLedgerIndexes = mutableSetOf<Int>()
         val effectiveTradeTimestamps = successfulTrades.map(TradeRecord::timestamp).toMutableList()
         val effectiveLedgerTimestamps = externalEvents.map(LedgerEvent::time).toMutableList()
 
@@ -304,38 +314,41 @@ object RebalancerComparisonCalculator {
             val curr = snapshots[i]
             val prevObs = prev.balancesObservedAt
             val currObs = curr.balancesObservedAt
+            val isInitialNoAnchor = (i == 1 && prev.timestamp == baseline.timestamp)
 
-            val intervalTrades = indexedTrades.filter { (index, trade) ->
-                index !in assignedTradeIndexes &&
-                    trade.timestamp > prevObs &&
-                    trade.timestamp <= currObs
+            val initialTradeCandidates = if (isInitialNoAnchor) {
+                indexedTrades.filter { (index, trade) ->
+                    index !in assignedTradeIndexes &&
+                        trade.timestamp > prevObs &&
+                        trade.timestamp <= minOf(
+                            currObs,
+                            prevObs.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS),
+                        ) &&
+                        trade.symbol.uppercase() in baseline.assets.keys
+                }
+            } else {
+                emptyList()
             }
-            val intervalLedgers = indexedLedgers.filter { (index, ledger) ->
-                index !in assignedLedgerIndexes &&
-                    ledger.time > prevObs &&
-                    ledger.time <= currObs
+            val initialLedgerCandidates = if (isInitialNoAnchor) {
+                indexedLedgers.filter { (index, ledger) ->
+                    index !in assignedLedgerIndexes &&
+                        ledger.time > prevObs &&
+                        ledger.time <= minOf(currObs, prevObs.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)) &&
+                        Asset.normalizeLedgerAsset(ledger.asset).uppercase() in baseline.assets.keys
+                }
+            } else {
+                emptyList()
             }
+
+            val initialTradeIndices = initialTradeCandidates.map { it.index }.toSet()
+            val initialLedgerIndices = initialLedgerCandidates.map { it.index }.toSet()
 
             val impliedBalances = prev.assets.mapValues { (_, asset) -> asset.balance }.toMutableMap()
-            for ((index, trade) in intervalTrades) {
-                if (!applyRealizedTrade(impliedBalances, trade)) {
-                    return TrackedBalanceValidation.Failed(
-                        reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
-                        unavailableAt = trade.timestamp,
-                    )
-                }
-                assignedTradeIndexes += index
-                effectiveTradeTimestamps[index] = calculateIntervalEventTimestamp(trade.timestamp, prev, curr)
-            }
-            for ((index, ledger) in intervalLedgers) {
-                applyLedgerEvent(impliedBalances, ledger)
-                assignedLedgerIndexes += index
-                effectiveLedgerTimestamps[index] = calculateIntervalEventTimestamp(ledger.time, prev, curr)
-            }
 
             val lateTradeCandidates = indexedTrades
                 .filter { (index, trade) ->
                     index !in assignedTradeIndexes &&
+                        index !in initialTradeIndices &&
                         trade.timestamp > currObs &&
                         trade.timestamp <= currObs.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&
                         trade.symbol.uppercase() in baseline.assets.keys
@@ -343,6 +356,7 @@ object RebalancerComparisonCalculator {
             val lateLedgerCandidates = indexedLedgers
                 .filter { (index, ledger) ->
                     index !in assignedLedgerIndexes &&
+                        index !in initialLedgerIndices &&
                         ledger.time > currObs &&
                         ledger.time <= currObs.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&
                         Asset.normalizeLedgerAsset(ledger.asset).uppercase() in baseline.assets.keys
@@ -373,22 +387,146 @@ object RebalancerComparisonCalculator {
                 lateLedgerCandidates.forEach { add(LateCandidate.Ledger(it.index, it.value)) }
             }
 
-            val lateAssignment = if (!balancesMatchSnapshot(impliedBalances, curr)) {
-                findLateAssignment(lateCandidates, impliedBalances, curr)
-            } else {
-                null
-            }
-            if (lateAssignment != null) {
-                for (index in lateAssignment.tradeIndexes) {
-                    assignedTradeIndexes += index
-                    effectiveTradeTimestamps[index] = curr.timestamp
+            if (initialTradeCandidates.isNotEmpty() || initialLedgerCandidates.isNotEmpty()) {
+                for ((_, initialTrade) in initialTradeCandidates) {
+                    val ownership = TradeOwnershipClassifier.classify(
+                        trade = initialTrade,
+                        knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+                    )
+                    if (ownership == TradeOwnership.UNKNOWN) {
+                        return TrackedBalanceValidation.Failed(
+                            reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
+                            unavailableAt = initialTrade.timestamp,
+                        )
+                    }
+                    val candidateBalances = impliedBalances.toMutableMap()
+                    if (!applyRealizedTrade(candidateBalances, initialTrade)) {
+                        return TrackedBalanceValidation.Failed(
+                            reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                            unavailableAt = initialTrade.timestamp,
+                        )
+                    }
                 }
-                for (index in lateAssignment.ledgerIndexes) {
+
+                val initialCandidates = buildList {
+                    initialTradeCandidates.forEach { add(LateCandidate.Trade(it.index, it.value)) }
+                    initialLedgerCandidates.forEach { add(LateCandidate.Ledger(it.index, it.value)) }
+                }
+
+                val regularIntervalTrades = indexedTrades.filter { (index, trade) ->
+                    index !in assignedTradeIndexes &&
+                        index !in initialTradeIndices &&
+                        trade.timestamp > prevObs &&
+                        trade.timestamp <= currObs
+                }
+                val regularIntervalLedgers = indexedLedgers.filter { (index, ledger) ->
+                    index !in assignedLedgerIndexes &&
+                        index !in initialLedgerIndices &&
+                        ledger.time > prevObs &&
+                        ledger.time <= currObs
+                }
+
+                val initialAssignment = findInitialAssignment(
+                    initialCandidates = initialCandidates,
+                    regularTrades = regularIntervalTrades,
+                    regularLedgers = regularIntervalLedgers,
+                    lateCandidates = lateCandidates,
+                    startingBalances = impliedBalances,
+                    snapshot = curr,
+                ) ?: return TrackedBalanceValidation.Failed(
+                    reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                    unavailableAt = curr.timestamp,
+                )
+
+                for (index in initialAssignment.embeddedTradeIndexes) {
+                    assignedTradeIndexes += index
+                    embeddedTradeIndexes += index
+                }
+                for (index in initialAssignment.embeddedLedgerIndexes) {
                     assignedLedgerIndexes += index
-                    effectiveLedgerTimestamps[index] = curr.timestamp
+                    embeddedLedgerIndexes += index
+                }
+                for (index in initialAssignment.postBaselineTradeIndexes) {
+                    assignedTradeIndexes += index
+                    effectiveTradeTimestamps[index] = calculateIntervalEventTimestamp(
+                        successfulTrades[index].timestamp,
+                        prev,
+                        curr,
+                    )
+                }
+                for (index in initialAssignment.postBaselineLedgerIndexes) {
+                    assignedLedgerIndexes += index
+                    effectiveLedgerTimestamps[index] = calculateIntervalEventTimestamp(
+                        externalEvents[index].time,
+                        prev,
+                        curr,
+                    )
+                }
+                for ((index, trade) in regularIntervalTrades) {
+                    assignedTradeIndexes += index
+                    effectiveTradeTimestamps[index] = calculateIntervalEventTimestamp(trade.timestamp, prev, curr)
+                }
+                for ((index, ledger) in regularIntervalLedgers) {
+                    assignedLedgerIndexes += index
+                    effectiveLedgerTimestamps[index] = calculateIntervalEventTimestamp(ledger.time, prev, curr)
+                }
+                if (initialAssignment.lateAssignment != null) {
+                    for (index in initialAssignment.lateAssignment.tradeIndexes) {
+                        assignedTradeIndexes += index
+                        effectiveTradeTimestamps[index] = curr.timestamp
+                    }
+                    for (index in initialAssignment.lateAssignment.ledgerIndexes) {
+                        assignedLedgerIndexes += index
+                        effectiveLedgerTimestamps[index] = curr.timestamp
+                    }
                 }
                 impliedBalances.clear()
-                impliedBalances.putAll(lateAssignment.balances)
+                impliedBalances.putAll(initialAssignment.resultingBalances)
+            } else {
+                val intervalTrades = indexedTrades.filter { (index, trade) ->
+                    index !in assignedTradeIndexes &&
+                        trade.timestamp > prevObs &&
+                        trade.timestamp <= currObs
+                }
+                val intervalLedgers = indexedLedgers.filter { (index, ledger) ->
+                    index !in assignedLedgerIndexes &&
+                        ledger.time > prevObs &&
+                        ledger.time <= currObs
+                }
+
+                for ((index, trade) in intervalTrades) {
+                    if (!applyRealizedTrade(impliedBalances, trade)) {
+                        return TrackedBalanceValidation.Failed(
+                            reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                            unavailableAt = trade.timestamp,
+                        )
+                    }
+                    assignedTradeIndexes += index
+                    effectiveTradeTimestamps[index] = calculateIntervalEventTimestamp(trade.timestamp, prev, curr)
+                }
+                for ((index, ledger) in intervalLedgers) {
+                    applyLedgerEvent(impliedBalances, ledger)
+                    assignedLedgerIndexes += index
+                    effectiveLedgerTimestamps[index] = calculateIntervalEventTimestamp(ledger.time, prev, curr)
+                }
+
+                val lateAssignment = if (!balancesMatchSnapshot(impliedBalances, curr)) {
+                    findLateAssignment(lateCandidates, impliedBalances, curr)
+                } else {
+                    null
+                }
+                if (lateAssignment != null) {
+                    for (index in lateAssignment.tradeIndexes) {
+                        assignedTradeIndexes += index
+                        effectiveTradeTimestamps[index] = curr.timestamp
+                    }
+                    for (index in lateAssignment.ledgerIndexes) {
+                        assignedLedgerIndexes += index
+                        effectiveLedgerTimestamps[index] = curr.timestamp
+                    }
+                    impliedBalances.clear()
+                    impliedBalances.putAll(lateAssignment.balances)
+                }
             }
 
             if (impliedBalances.keys.any { it !in curr.assets }) {
@@ -409,12 +547,14 @@ object RebalancerComparisonCalculator {
             ReconciledTrade(
                 trade = successfulTrades[index],
                 timestamp = effectiveTradeTimestamps[index],
+                embeddedInBaseline = index in embeddedTradeIndexes,
             )
         }
         val passedLedgers = assignedLedgerIndexes.sorted().map { index ->
             ReconciledLedger(
                 ledger = externalEvents[index],
                 timestamp = effectiveLedgerTimestamps[index],
+                embeddedInBaseline = index in embeddedLedgerIndexes,
             )
         }
         return TrackedBalanceValidation.Passed(
@@ -449,6 +589,128 @@ object RebalancerComparisonCalculator {
             if (roundedExpected.compareTo(roundedActual) != 0) return false
         }
         return true
+    }
+
+    private data class InitialAssignmentMatch(
+        val embeddedTradeIndexes: List<Int>,
+        val embeddedLedgerIndexes: List<Int>,
+        val postBaselineTradeIndexes: List<Int>,
+        val postBaselineLedgerIndexes: List<Int>,
+        val lateAssignment: LateAssignment?,
+        val resultingBalances: Map<String, BigDecimal>,
+    )
+
+    private fun findInitialAssignment(
+        initialCandidates: List<LateCandidate>,
+        regularTrades: List<IndexedValue<TradeRecord>>,
+        regularLedgers: List<IndexedValue<LedgerEvent>>,
+        lateCandidates: List<LateCandidate>,
+        startingBalances: Map<String, BigDecimal>,
+        snapshot: PortfolioSnapshot,
+    ): InitialAssignmentMatch? {
+        if (initialCandidates.size > MAX_LATE_EVENT_CANDIDATES) return null
+
+        var match: InitialAssignmentMatch? = null
+        var multipleMatches = false
+        val embeddedTrades = mutableListOf<Int>()
+        val embeddedLedgers = mutableListOf<Int>()
+        val postTrades = mutableListOf<Int>()
+        val postLedgers = mutableListOf<Int>()
+
+        fun search(position: Int) {
+            if (multipleMatches) return
+            if (position == initialCandidates.size) {
+                val testBalances = startingBalances.toMutableMap()
+                var validEconomics = true
+
+                val allPostTrades = (
+                    initialCandidates.filter {
+                        it is LateCandidate.Trade && it.index in postTrades
+                    }.map {
+                        (it as LateCandidate.Trade).trade
+                    } + regularTrades.map { it.value }
+                    ).sortedBy(TradeRecord::timestamp)
+
+                for (trade in allPostTrades) {
+                    if (!applyRealizedTrade(testBalances, trade)) {
+                        validEconomics = false
+                        break
+                    }
+                }
+                if (!validEconomics) return
+
+                val allPostLedgers = (
+                    initialCandidates.filter {
+                        it is LateCandidate.Ledger && it.index in postLedgers
+                    }.map {
+                        (it as LateCandidate.Ledger).ledger
+                    } + regularLedgers.map { it.value }
+                    ).sortedBy(LedgerEvent::time)
+
+                for (ledger in allPostLedgers) {
+                    applyLedgerEvent(testBalances, ledger)
+                }
+
+                val candidateMatch = if (balancesMatchSnapshot(testBalances, snapshot)) {
+                    InitialAssignmentMatch(
+                        embeddedTradeIndexes = embeddedTrades.toList(),
+                        embeddedLedgerIndexes = embeddedLedgers.toList(),
+                        postBaselineTradeIndexes = postTrades.toList(),
+                        postBaselineLedgerIndexes = postLedgers.toList(),
+                        lateAssignment = null,
+                        resultingBalances = testBalances.toMap(),
+                    )
+                } else {
+                    val late = findLateAssignment(lateCandidates, testBalances, snapshot)
+                    if (late != null) {
+                        InitialAssignmentMatch(
+                            embeddedTradeIndexes = embeddedTrades.toList(),
+                            embeddedLedgerIndexes = embeddedLedgers.toList(),
+                            postBaselineTradeIndexes = postTrades.toList(),
+                            postBaselineLedgerIndexes = postLedgers.toList(),
+                            lateAssignment = late,
+                            resultingBalances = late.balances,
+                        )
+                    } else {
+                        null
+                    }
+                }
+
+                if (candidateMatch != null) {
+                    if (match == null) {
+                        match = candidateMatch
+                    } else {
+                        multipleMatches = true
+                    }
+                }
+                return
+            }
+
+            val candidate = initialCandidates[position]
+            when (candidate) {
+                is LateCandidate.Trade -> embeddedTrades.add(candidate.index)
+                is LateCandidate.Ledger -> embeddedLedgers.add(candidate.index)
+            }
+            search(position + 1)
+            when (candidate) {
+                is LateCandidate.Trade -> embeddedTrades.removeAt(embeddedTrades.lastIndex)
+                is LateCandidate.Ledger -> embeddedLedgers.removeAt(embeddedLedgers.lastIndex)
+            }
+            if (multipleMatches) return
+
+            when (candidate) {
+                is LateCandidate.Trade -> postTrades.add(candidate.index)
+                is LateCandidate.Ledger -> postLedgers.add(candidate.index)
+            }
+            search(position + 1)
+            when (candidate) {
+                is LateCandidate.Trade -> postTrades.removeAt(postTrades.lastIndex)
+                is LateCandidate.Ledger -> postLedgers.removeAt(postLedgers.lastIndex)
+            }
+        }
+
+        search(position = 0)
+        return if (multipleMatches) null else match
     }
 
     private fun findLateAssignment(
@@ -519,7 +781,10 @@ object RebalancerComparisonCalculator {
         val events = mutableListOf<BenchmarkEvent>()
         for (reconciledLedger in ledgers) {
             val ledger = reconciledLedger.ledger
-            if (reconciledLedger.timestamp > baseline.timestamp && ledger.time > baseline.balancesObservedAt) {
+            if (!reconciledLedger.embeddedInBaseline &&
+                reconciledLedger.timestamp > baseline.timestamp &&
+                ledger.time > baseline.balancesObservedAt
+            ) {
                 events += BenchmarkEvent.ExternalBalance(
                     timestamp = reconciledLedger.timestamp,
                     asset = ledger.asset,
@@ -530,7 +795,10 @@ object RebalancerComparisonCalculator {
         }
         for (reconciledTrade in trades) {
             val trade = reconciledTrade.trade
-            if (reconciledTrade.timestamp > baseline.timestamp && trade.timestamp > baseline.balancesObservedAt) {
+            if (!reconciledTrade.embeddedInBaseline &&
+                reconciledTrade.timestamp > baseline.timestamp &&
+                trade.timestamp > baseline.balancesObservedAt
+            ) {
                 val ownership = TradeOwnershipClassifier.classify(
                     trade = trade,
                     knownRebalancerOrderTxids = knownRebalancerOrderTxids,
