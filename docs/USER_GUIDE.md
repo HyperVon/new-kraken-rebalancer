@@ -309,9 +309,10 @@ achieved against a **synthetic buy-and-hold** strategy:
   user trades) are replayed into Buy & Hold identically to the actual portfolio. Kraken app/Buy
   Crypto activity is read from Ledger history, including both asset legs, rather than inferred
   from the trade-history feed.
-- Exchange/local timestamp skew up to one second is accepted only when the complete tracked
-  balance change reconciles against explicit balance-observation boundaries; API fills use precise
-  `price × volume` notional when available so rounded stored costs do not create a false unavailable result.
+- The comparison accounts for the balance request's duration and up to one second of
+  exchange/local clock skew, accepting events only when the complete tracked balance change
+  reconciles. API fills use precise `price × volume` first; historical rounded costs are
+  accepted per interval only when they represent the same fill and all tracked balances match.
 - **Rebalancer** is the actual portfolio value at each snapshot, incorporating rebalancing bot
   trade executions that create genuine divergence from Buy & Hold.
 - The **delta badge** next to the chart title shows the cumulative
@@ -336,7 +337,8 @@ The comparison cannot be computed when:
 When an unavailability reason applies, the chart hides and a message explains why.
 There is no estimated numeric fallback for an unexplained tracked balance change:
 the comparison is `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE`, timestamped at
-the first snapshot where the rounded expected and actual tracked balances differ.
+the first snapshot whose tracked balances still differ after checking compatible
+historical cost rounding.
 Late fills are accepted only when their ownership is authoritative and their
 complete tracked balance change reconciles. Rendered comparisons are fully
 reconciled.

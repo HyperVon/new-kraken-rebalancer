@@ -23,6 +23,150 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
     private val now = Instant.parse("2026-07-01T12:00:00Z")
 
     init {
+        "trade and ledger inside the request window reconcile beyond one second after request start" {
+            for (legacyBaseline in listOf(false, true)) {
+                val first = snapshot(
+                    now,
+                    "101.00",
+                    mapOf("BTC" to assetRow("1", "1", "1"), "USD" to assetRow("100", "1", "100")),
+                    balancesObservedAt = if (legacyBaseline) null else now,
+                )
+                val next = snapshot(
+                    now.plusSeconds(10),
+                    "103.00",
+                    mapOf("BTC" to assetRow("2", "1", "2"), "USD" to assetRow("101", "1", "101")),
+                    balancesObservedAt = now.plusSeconds(8),
+                )
+                val snapshots = listOf(
+                    first,
+                    next,
+                    next.copy(timestamp = now.plusSeconds(20), balancesObservedAt = now.plusSeconds(19)),
+                )
+                for (size in listOf(2, 3)) {
+                    val result = RebalancerComparisonCalculator.calculate(
+                        snapshots.take(size),
+                        listOf(manualTrade(now.plusMillis(10400), "buy", "BTC", "1", "1")),
+                        listOf(ledgerEvent(now.plusMillis(10500), "USD", "2")),
+                    )
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.size shouldBe size
+                    result.points.forEach { it.differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO }
+                }
+            }
+        }
+
+        "events beyond the request window and clock skew still fail closed" {
+            val first = snapshot(
+                now,
+                "101.00",
+                mapOf("BTC" to assetRow("1", "1", "1"), "USD" to assetRow("100", "1", "100")),
+            )
+            val next = snapshot(
+                now.plusSeconds(10),
+                "101.00",
+                mapOf("BTC" to assetRow("2", "1", "2"), "USD" to assetRow("99", "1", "99")),
+                balancesObservedAt = now.plusSeconds(8),
+            )
+            val result = RebalancerComparisonCalculator.calculate(
+                listOf(first, next),
+                listOf(manualTrade(now.plusMillis(11001), "buy", "BTC", "1", "1")),
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe next.timestamp
+            result.points shouldBe emptyList()
+        }
+
+        "initial and late candidates share one search budget" {
+            for (initialCount in listOf(6, 7)) {
+                val first = snapshot(
+                    now.plusMillis(500),
+                    "101.00",
+                    mapOf("BTC" to assetRow("1", "1", "1"), "USD" to assetRow("100", "1", "100")),
+                    balancesObservedAt = now,
+                )
+                val next = snapshot(
+                    now.plusSeconds(10),
+                    "164.00",
+                    mapOf("BTC" to assetRow("1", "1", "1"), "USD" to assetRow("163", "1", "163")),
+                )
+                val initial = (0 until initialCount).map {
+                    ledgerEvent(now.plusMillis(100 + it * 10L), "BTC", (1 shl it).toString())
+                }
+                val late = (0 until 6).map {
+                    ledgerEvent(now.plusMillis(10100 + it * 10L), "USD", (1 shl it).toString())
+                }
+                val result = RebalancerComparisonCalculator.calculate(
+                    listOf(first, next),
+                    emptyList(),
+                    initial + late,
+                )
+                if (initialCount == 6) {
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.size shouldBe 2
+                    result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+                } else {
+                    result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                    result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                    result.unavailableAt shouldBe next.timestamp
+                    result.points shouldBe emptyList()
+                }
+            }
+        }
+
+        "initial events across the request window are classified as embedded without double replay" {
+            val first = snapshot(
+                now.plusSeconds(2),
+                "101.00",
+                mapOf("BTC" to assetRow("1", "1", "1"), "USD" to assetRow("100", "1", "100")),
+                balancesObservedAt = now,
+            )
+            val next = first.copy(timestamp = now.plusSeconds(10), balancesObservedAt = now.plusSeconds(9))
+            val result = RebalancerComparisonCalculator.calculate(
+                listOf(first, next),
+                listOf(manualTrade(now.plusMillis(1500), "buy", "BTC", "1", "1")),
+                listOf(ledgerEvent(now.plusMillis(1600), "USD", "2")),
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "twelve distinct boundary events reconcile uniquely but thirteen exceed the search budget" {
+            for (count in listOf(9, 12, 13)) {
+                val totalReward = (1 shl count) - 1
+                val first = snapshot(
+                    now,
+                    "1.00",
+                    mapOf("BTC" to assetRow("1", "1", "1")),
+                    balancesObservedAt = null,
+                )
+                val next = snapshot(
+                    now.plusSeconds(10),
+                    (1 + totalReward).toString(),
+                    mapOf("BTC" to assetRow((1 + totalReward).toString(), "1", (1 + totalReward).toString())),
+                    balancesObservedAt = null,
+                )
+                val result = RebalancerComparisonCalculator.calculate(
+                    listOf(first, next),
+                    emptyList(),
+                    (0 until count).map { index ->
+                        ledgerEvent(now.plusMillis(10100 + index * 10L), "BTC", (1 shl index).toString())
+                    },
+                )
+                if (count <= 12) {
+                    result.availability shouldBe ComparisonAvailability.AVAILABLE
+                    result.points.size shouldBe 2
+                    result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+                } else {
+                    result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                    result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                    result.unavailableAt shouldBe next.timestamp
+                    result.points shouldBe emptyList()
+                }
+            }
+        }
+
         "shared baseline: first point has equal values and zero difference" {
             val snapshots = listOf(
                 snapshot(now, "50000.00", mapOf("BTC" to assetRow("1.0", "50000.00", "50000.00"))),
@@ -896,7 +1040,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     ),
                 ),
             )
-            val trades = List(9) { index ->
+            val trades = List(13) { index ->
                 trade(
                     timestamp = now.plusMillis(1250 + index * 50L),
                     side = "buy",
@@ -1019,6 +1163,37 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             incompatiblePersistedCostResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
             incompatiblePersistedCostResult.unavailableReason shouldBe
                 ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "mixed rounded and precise fill costs reconcile each interval independently" {
+            for (knownObservation in listOf(false, true)) {
+                val result = RebalancerComparisonCalculator.calculate(
+                    snapshots = mixedCostSnapshots(knownObservation),
+                    trades = mixedCostTrades(),
+                )
+
+                result.availability shouldBe ComparisonAvailability.AVAILABLE
+                result.confidence shouldBe ComparisonConfidence.RECONCILED
+                result.points.size shouldBe 4
+                result.points.forEach { point ->
+                    point.differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+                }
+            }
+        }
+
+        "legacy cost fallback reports the later interval with an unexplained balance change" {
+            val snapshots = mixedCostSnapshots(knownObservation = false).toMutableList()
+            val last = snapshots.last()
+            snapshots[snapshots.lastIndex] = last.copy(
+                assets = last.assets + ("USD" to last.assets.getValue("USD").copy(balance = BigDecimal("93.024"))),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, mixedCostTrades())
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe last.timestamp
+            result.points shouldBe emptyList()
         }
 
         "legacy snapshot boundary trade is reconciled when it is reflected in the next row" {
@@ -4079,7 +4254,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
                 balancesObservedAt = t0.plusSeconds(3600),
             )
-            val excessiveTrades = (1..9).map { i ->
+            val excessiveTrades = (1..13).map { i ->
                 manualTrade(
                     timestamp = t0.plusMillis(10L * i),
                     side = "buy",
@@ -4203,6 +4378,36 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
     }
+
+    private fun mixedCostSnapshots(knownObservation: Boolean): List<PortfolioSnapshot> =
+        listOf("100.006", "97.006", "95.004", "93.004").mapIndexed { index, usd ->
+            val timestamp = now.plusSeconds(index * 20L)
+            val btc = (10 + index).toString()
+            snapshot(
+                timestamp = timestamp,
+                totalValueUSD = BigDecimal(usd).add(BigDecimal(btc)).toPlainString(),
+                assets = mapOf(
+                    "BTC" to assetRow(btc, "1", btc),
+                    "USD" to assetRow(usd, "1", usd),
+                ),
+                balancesObservedAt = if (knownObservation) timestamp else null,
+            )
+        }
+
+    private fun mixedCostTrades(): List<TradeRecord> =
+        listOf("3.004" to "3.00", "2.002" to "2.00", "1.996" to "2.00").mapIndexed { index, (price, cost) ->
+            trade(
+                timestamp = now.plusSeconds(10 + index * 20L),
+                side = "BUY",
+                symbol = "BTC",
+                volume = "1",
+                usdAmount = cost,
+                source = TradeSource.API_FILL,
+                cycleId = null,
+                tradeId = "MIXED-COST-FILL-$index",
+                price = price,
+            )
+        }
 
     private fun assetRow(balance: String, price: String, valueUSD: String): Triple<String, String, String> =
         Triple(balance, price, valueUSD)

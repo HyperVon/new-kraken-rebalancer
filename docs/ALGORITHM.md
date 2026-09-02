@@ -354,18 +354,25 @@ balances unless reconciliation proves they were. Rows written before this field 
 retain a null observation boundary; their display timestamp is used only as a bounded
 search boundary, never treated as an exact request-start time. The comparison engine reasons about
 exchange events (trades and external ledgers) relative to these conservative balance
-observation boundaries. A bounded clock skew window (up to 1,000ms) admits exchange
-fills or ledgers whose execution was already reflected in observed balances, matching
-unique candidate subsets across both trades and ledger events. For legacy sub-second
-snapshot bursts, candidate events near an unknown boundary are assigned only when the
+observation boundaries. The request start is a lower bound, while snapshot creation
+is the conservative upper bound of the balance-request window. Candidate events
+extend through that window plus up to 1,000ms of clock skew; they are never assumed
+to be included merely because they fall inside it. Reconciliation matches unique
+candidate subsets across both trades and ledger events. A shared limit of 12
+initial plus late candidates bounds each accounting attempt's search to at most
+4,096 assignments. For legacy sub-second snapshot bursts, candidate events near an unknown boundary are assigned only when the
 complete sequence has one unique reconciliation; ambiguous or unexplained changes remain
 unavailable. For user-selected subranges,
 an optional pre-baseline anchor snapshot ($S_0$) attributes boundary events without
 modifying the displayed baseline or points. For `TradeSource.API_FILL`, replay uses the
 precise `price × volume` notional when a positive fill price is available. If precise
-accounting fails with an unexplained balance change, the complete sequence may retry with
+accounting fails with an unexplained balance change, that interval retries with
 the persisted USD-scale cost only when that cost is the rounded representation of the same
-fill; the selected representation is reused during Buy & Hold replay.
+fill. Observation-marker presence does not select cost precision: reconstructed and live
+rows can use different accounting despite both lacking the marker. Each attempt starts
+from the preceding reconciled event assignments; failed attempts are discarded. Every
+interval must reconcile, and the selected representation is reused during Buy & Hold
+replay. An error identifies the first interval that remains unexplained after the retry.
 
 ### Trade economics & slippage lifecycle
 
