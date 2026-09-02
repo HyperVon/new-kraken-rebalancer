@@ -111,11 +111,12 @@ double-submit CSRF token. The
 Settings page issues an `HttpOnly`, `SameSite=Strict` cookie and embeds the
 matching token in forms; POST requests without both values are rejected. This
 covers `/settings`, `/api/pause`, `/api/resume`, and
-`/api/order-intents/{id}/resolve`. The cookie is not marked
-`Secure` because the intended private-network deployment supports HTTP LAN
-access. This reduces cross-site form submission risk without requiring
-authentication or restricting trusted LAN clients from opening the Settings
-page.
+`/api/order-intents/{id}/resolve`. The cookie is not marked `Secure` for
+plaintext HTTP requests because the intended private-network deployment
+supports HTTP LAN access (though `; Secure` is automatically appended when
+requests arrive over HTTPS). The cookie includes `Max-Age=86400`. This reduces
+cross-site form submission risk without requiring authentication or
+restricting trusted LAN clients from opening the Settings page.
 
 For safe operation:
 

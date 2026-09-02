@@ -62,11 +62,11 @@ Constant catalogs (UI strings, HTML attributes/IDs, CSS classes, routes, metadat
 
 | Layer | Path | Fields |
 | :--- | :--- | :--- |
-| `:common` wire DTO | `api/TradeRecord.kt` | `timestamp`, `volume`, `usdAmount` … as **strings** for History JSON |
-| JVM domain | `model/TradeRecord.kt` | `Instant`, `BigDecimal`, `TradeSource`, `cycleId`, `orderTxid` |
+| `:common` wire DTO | `common/src/commonMain/kotlin/com/gemini/krakenbot/api/TradeRecord.kt` | `timestamp`, `volume`, `usdAmount` … as **strings** for History JSON |
+| JVM domain (`:engine`) | `engine/src/main/kotlin/com/gemini/krakenbot/model/TradeRecord.kt` | `Instant`, `BigDecimal`, `TradeSource`, `cycleId`, `orderTxid` |
 
 - Reconcile/dedupe extensions (`isMatchingApiTrade`, `isPairAliasDuplicateOf`)
-  live on the **JVM model**, not in `:common`.
+  live on the **JVM domain model** (`:engine`), not in `:common`.
 - Map explicitly at HTTP boundaries; never put `java.time.Instant` or JVM
   `BigDecimal` in `commonMain`.
 

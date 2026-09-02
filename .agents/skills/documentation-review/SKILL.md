@@ -326,7 +326,7 @@ Do not declare complete until markdown lint is clean on touched files.
 | Flows / SSE | `ConfigServiceImpl`, `TradeHistoryServiceImpl`, `DashboardController` | `docs/FLOWS.md` |
 | Evaluation | `EvaluationScenariosTest` + `FakeKrakenService`; `SimulationEvaluationScenariosTest` + `SimulatedKrakenService` | `docs/EVALUATION.md` |
 | Config flags | `Settings`, `DynamicKrakenService` | README, template, dry-run skill |
-| Coverage | `backend/build.gradle.kts` JaCoCo, `karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |
+| Coverage | `backend/build.gradle.kts` JaCoCo, `frontend-js/karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |
 | Security | `KtorConfig.configureCORS`, `SECURITY.md` | SECURITY, AGENTS security section |
 
 ---

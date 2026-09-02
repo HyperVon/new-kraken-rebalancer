@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.21] - 2026-09-02
+
+### Fixed
+
+- **Evaluation scenarios documentation synchronization**: Synchronized `docs/EVALUATION.md`
+  scenario summary table evidence with verified Kotest test assertions across Scenarios
+  1, 2, 3, 4, 6, 15, 16, and 19.
+- **CSRF cookie security documentation**: Refined `SECURITY.md` CSRF cookie documentation
+  to reflect conditional HTTPS `; Secure` attribution and `Max-Age=86400` lifetime behavior
+  in `CsrfProtection`.
+
 ## [6.17.20] - 2026-09-02
 
 ### Fixed
