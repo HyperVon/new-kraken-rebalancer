@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.20] - 2026-09-02
+
+### Fixed
+
+- **FQN import hygiene**: Replaced inline `java.math.BigDecimal` fully qualified
+  name with standard import in `SchemaMigrationsTest` to uphold codebase purity
+  and style invariants.
+- **Markdownlint build report exclusion**: Updated the root `package.json`
+  `lint:md` script ignore flag from `build` to `'**/build/**'`, preventing
+  generated subproject test reports (e.g. `scenarios_evaluation_report.md`) from
+  triggering false-positive lint errors during post-test markdown linting.
+
 ## [6.17.19] - 2026-09-02
 
 ### Fixed

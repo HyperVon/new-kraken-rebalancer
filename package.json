@@ -4,7 +4,7 @@
   "description": "Kraken Rebalancer developer tools and harness utilities",
   "private": true,
   "scripts": {
-    "lint:md": "markdownlint '**/*.md' --ignore node_modules --ignore build --ignore '.agents/skills/**/examples/**'",
+    "lint:md": "markdownlint '**/*.md' --ignore node_modules --ignore '**/build/**' --ignore '.agents/skills/**/examples/**'",
     "lint:kt": "./gradlew spotlessCheck",
     "test:all": "./gradlew check",
     "test:frontend": "./gradlew :frontend-js:jsBrowserTest",

@@ -8,6 +8,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import java.math.BigDecimal
 import java.sql.DriverManager
 import java.util.UUID
 
@@ -390,7 +391,7 @@ class SchemaMigrationsTest : StringSpec() {
                         resultSet.next() shouldBe true
                         resultSet.getInt("id") shouldBe 1
                         resultSet.getBigDecimal("all_time_high")
-                            .shouldBeEqualComparingTo(java.math.BigDecimal("250.00"))
+                            .shouldBeEqualComparingTo(BigDecimal("250.00"))
                         resultSet.next() shouldBe false
                     }
                 }
