@@ -64,13 +64,53 @@ object RebalancerComparisonCalculator {
             orderedSnapshots
         }
 
-        val balanceResult = validateTrackedBalanceChanges(
+        val preciseBalanceResult = validateTrackedBalanceChanges(
             snapshots = validationSnapshots,
             trades = trades,
             ledgers = rewards,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             baseline = baseline,
+            accountingMode = TradeAccountingMode.PRECISE_FILL_NOTIONAL,
         )
+        val balanceResult = if (
+            preciseBalanceResult is TrackedBalanceValidation.Failed &&
+            preciseBalanceResult.reason == ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        ) {
+            // Older database rows persist Kraken's cost at USD scale 2. Retry only after the
+            // precise path fails, and only accept the persisted-cost result if every tracked
+            // balance change reconciles under that legacy representation.
+            val legacyAwareResult = validateTrackedBalanceChanges(
+                snapshots = validationSnapshots,
+                trades = trades,
+                ledgers = rewards,
+                knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+                baseline = baseline,
+                accountingMode = TradeAccountingMode.LEGACY_AWARE,
+            )
+            if (legacyAwareResult is TrackedBalanceValidation.Passed) {
+                legacyAwareResult
+            } else {
+                // Some old snapshots were constructed before the observation marker existed,
+                // but a migrated range can also contain only timestamp-based snapshots. A final
+                // all-legacy retry covers that shape while still requiring the full sequence to
+                // reconcile and each cost to be a rounded representation of the fill.
+                val persistedCostResult = validateTrackedBalanceChanges(
+                    snapshots = validationSnapshots,
+                    trades = trades,
+                    ledgers = rewards,
+                    knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+                    baseline = baseline,
+                    accountingMode = TradeAccountingMode.PERSISTED_ROUNDED_COST,
+                )
+                if (persistedCostResult is TrackedBalanceValidation.Passed) {
+                    persistedCostResult
+                } else {
+                    preciseBalanceResult
+                }
+            }
+        } else {
+            preciseBalanceResult
+        }
 
         val (reconciledTrades, reconciledLedgers) = when (balanceResult) {
             is TrackedBalanceValidation.Failed -> {
@@ -179,9 +219,16 @@ object RebalancerComparisonCalculator {
             TrackedBalanceValidation()
     }
 
+    private enum class TradeAccountingMode {
+        PRECISE_FILL_NOTIONAL,
+        PERSISTED_ROUNDED_COST,
+        LEGACY_AWARE,
+    }
+
     private data class ReconciledTrade(
         val trade: TradeRecord,
         val timestamp: Instant,
+        val usdNotional: BigDecimal,
         val embeddedInBaseline: Boolean = false,
     )
 
@@ -264,10 +311,12 @@ object RebalancerComparisonCalculator {
         ledgers: List<LedgerEvent>,
         knownRebalancerOrderTxids: Set<String>,
         baseline: PortfolioSnapshot,
+        accountingMode: TradeAccountingMode,
     ): TrackedBalanceValidation {
         val startObservationTime = snapshots.first().balancesObservedAt
+            ?: snapshots.first().timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
         val lastSnapshot = snapshots.last()
-        val lastObservationTime = lastSnapshot.balancesObservedAt
+        val lastObservationTime = lastSnapshot.balancesObservedAt ?: lastSnapshot.timestamp
         val maxEventTime = lastObservationTime.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
         val successfulTrades = trades
@@ -294,6 +343,9 @@ object RebalancerComparisonCalculator {
         val embeddedTradeIndexes = mutableSetOf<Int>()
         val embeddedLedgerIndexes = mutableSetOf<Int>()
         val effectiveTradeTimestamps = successfulTrades.map(TradeRecord::timestamp).toMutableList()
+        val effectiveTradeAccountingModes = MutableList(successfulTrades.size) {
+            TradeAccountingMode.PRECISE_FILL_NOTIONAL
+        }
         val effectiveLedgerTimestamps = externalEvents.map(LedgerEvent::time).toMutableList()
 
         for ((_, trade) in indexedTrades.filter { (_, trade) -> trade.timestamp <= lastObservationTime }) {
@@ -301,7 +353,7 @@ object RebalancerComparisonCalculator {
                 trade = trade,
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             )
-            if (ownership == TradeOwnership.UNKNOWN && trade.symbol in baseline.assets.keys) {
+            if (ownership == TradeOwnership.UNKNOWN && trade.symbol.uppercase() in baseline.assets.keys) {
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
                     unavailableAt = trade.timestamp,
@@ -312,11 +364,24 @@ object RebalancerComparisonCalculator {
         for (i in 1 until snapshots.size) {
             val prev = snapshots[i - 1]
             val curr = snapshots[i]
-            val prevObs = prev.balancesObservedAt
-            val currObs = curr.balancesObservedAt
+            val prevObs = prev.balancesObservedAt ?: prev.timestamp
+            val currObs = curr.balancesObservedAt ?: curr.timestamp
             val isInitialNoAnchor = (i == 1 && prev.timestamp == baseline.timestamp)
+            val hasUnknownObservation = prev.balancesObservedAt == null || curr.balancesObservedAt == null
+            val intervalAccountingMode = when (accountingMode) {
+                TradeAccountingMode.LEGACY_AWARE -> if (hasUnknownObservation) {
+                    TradeAccountingMode.PERSISTED_ROUNDED_COST
+                } else {
+                    TradeAccountingMode.PRECISE_FILL_NOTIONAL
+                }
 
-            val initialTradeCandidates = if (isInitialNoAnchor) {
+                else -> accountingMode
+            }
+
+            // A legacy baseline has no trustworthy request-start boundary. Treat its nearby
+            // events as ordinary interval candidates instead of classifying the whole first
+            // burst as embedded/post-baseline in one assignment.
+            val initialTradeCandidates = if (isInitialNoAnchor && prev.balancesObservedAt != null) {
                 indexedTrades.filter { (index, trade) ->
                     index !in assignedTradeIndexes &&
                         trade.timestamp > prevObs &&
@@ -329,7 +394,7 @@ object RebalancerComparisonCalculator {
             } else {
                 emptyList()
             }
-            val initialLedgerCandidates = if (isInitialNoAnchor) {
+            val initialLedgerCandidates = if (isInitialNoAnchor && prev.balancesObservedAt != null) {
                 indexedLedgers.filter { (index, ledger) ->
                     index !in assignedLedgerIndexes &&
                         ledger.time > prevObs &&
@@ -362,6 +427,107 @@ object RebalancerComparisonCalculator {
                         Asset.normalizeLedgerAsset(ledger.asset).uppercase() in baseline.assets.keys
                 }
 
+            val legacyRegularTradeCandidates = if (hasUnknownObservation) {
+                val lowerBound = if (prev.balancesObservedAt == null) {
+                    prev.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                } else {
+                    prevObs
+                }
+                val upperBound = if (curr.balancesObservedAt == null) {
+                    curr.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                } else {
+                    currObs
+                }
+                indexedTrades.filter { (index, trade) ->
+                    index !in assignedTradeIndexes &&
+                        index !in initialTradeIndices &&
+                        trade.timestamp > lowerBound &&
+                        trade.timestamp <= upperBound &&
+                        trade.symbol.uppercase() in baseline.assets.keys
+                }
+            } else {
+                emptyList()
+            }
+            val legacyRegularTradeIndexes = legacyRegularTradeCandidates
+                .map(IndexedValue<TradeRecord>::index)
+                .toSet()
+            val legacyRegularLedgerCandidates = if (hasUnknownObservation) {
+                val lowerBound = if (prev.balancesObservedAt == null) {
+                    prev.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                } else {
+                    prevObs
+                }
+                val upperBound = if (curr.balancesObservedAt == null) {
+                    curr.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                } else {
+                    currObs
+                }
+                indexedLedgers.filter { (index, ledger) ->
+                    index !in assignedLedgerIndexes &&
+                        index !in initialLedgerIndices &&
+                        ledger.time > lowerBound &&
+                        ledger.time <= upperBound &&
+                        Asset.normalizeLedgerAsset(ledger.asset).uppercase() in baseline.assets.keys
+                }
+            } else {
+                emptyList()
+            }
+            val legacyRegularLedgerIndexes = legacyRegularLedgerCandidates
+                .map(IndexedValue<LedgerEvent>::index)
+                .toSet()
+            val legacyBoundaryTradeCandidates = if (hasUnknownObservation) {
+                indexedTrades.filter { (index, trade) ->
+                    if (
+                        index in assignedTradeIndexes ||
+                        index in initialTradeIndices ||
+                        index in legacyRegularTradeIndexes ||
+                        trade.symbol.uppercase() !in baseline.assets.keys
+                    ) {
+                        false
+                    } else {
+                        val nearUnknownPreviousBoundary = prev.balancesObservedAt == null &&
+                            trade.timestamp > prev.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&
+                            trade.timestamp <= prev.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                        val nearCurrentBoundary = if (curr.balancesObservedAt == null) {
+                            trade.timestamp > curr.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&
+                                trade.timestamp <= curr.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                        } else {
+                            trade.timestamp > currObs &&
+                                trade.timestamp <= currObs.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                        }
+                        nearUnknownPreviousBoundary || nearCurrentBoundary
+                    }
+                }
+            } else {
+                emptyList()
+            }
+            val legacyBoundaryLedgerCandidates = if (hasUnknownObservation) {
+                indexedLedgers.filter { (index, ledger) ->
+                    if (
+                        index in assignedLedgerIndexes ||
+                        index in initialLedgerIndices ||
+                        index in legacyRegularLedgerIndexes ||
+                        Asset.normalizeLedgerAsset(ledger.asset).uppercase() !in baseline.assets.keys
+                    ) {
+                        false
+                    } else {
+                        val nearUnknownPreviousBoundary = prev.balancesObservedAt == null &&
+                            ledger.time > prev.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&
+                            ledger.time <= prev.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                        val nearCurrentBoundary = if (curr.balancesObservedAt == null) {
+                            ledger.time > curr.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&
+                                ledger.time <= curr.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                        } else {
+                            ledger.time > currObs &&
+                                ledger.time <= currObs.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                        }
+                        nearUnknownPreviousBoundary || nearCurrentBoundary
+                    }
+                }
+            } else {
+                emptyList()
+            }
+
             for ((_, lateTrade) in lateTradeCandidates) {
                 val ownership = TradeOwnershipClassifier.classify(
                     trade = lateTrade,
@@ -374,7 +540,7 @@ object RebalancerComparisonCalculator {
                     )
                 }
                 val candidateBalances = impliedBalances.toMutableMap()
-                if (!applyRealizedTrade(candidateBalances, lateTrade)) {
+                if (!applyRealizedTrade(candidateBalances, lateTrade, intervalAccountingMode)) {
                     return TrackedBalanceValidation.Failed(
                         reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                         unavailableAt = lateTrade.timestamp,
@@ -382,9 +548,59 @@ object RebalancerComparisonCalculator {
                 }
             }
 
-            val lateCandidates = buildList {
-                lateTradeCandidates.forEach { add(LateCandidate.Trade(it.index, it.value)) }
-                lateLedgerCandidates.forEach { add(LateCandidate.Ledger(it.index, it.value)) }
+            val lateCandidates = if (hasUnknownObservation) {
+                buildList {
+                    legacyBoundaryTradeCandidates.forEach { add(LateCandidate.Trade(it.index, it.value)) }
+                    legacyBoundaryLedgerCandidates.forEach { add(LateCandidate.Ledger(it.index, it.value)) }
+                }
+            } else {
+                buildList {
+                    lateTradeCandidates.forEach { add(LateCandidate.Trade(it.index, it.value)) }
+                    lateLedgerCandidates.forEach { add(LateCandidate.Ledger(it.index, it.value)) }
+                }
+            }
+
+            if (hasUnknownObservation) {
+                for ((_, boundaryTrade) in legacyBoundaryTradeCandidates) {
+                    val ownership = TradeOwnershipClassifier.classify(
+                        trade = boundaryTrade,
+                        knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+                    )
+                    if (ownership == TradeOwnership.UNKNOWN) {
+                        return TrackedBalanceValidation.Failed(
+                            reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
+                            unavailableAt = boundaryTrade.timestamp,
+                        )
+                    }
+                    val candidateBalances = impliedBalances.toMutableMap()
+                    if (!applyRealizedTrade(candidateBalances, boundaryTrade, intervalAccountingMode)) {
+                        return TrackedBalanceValidation.Failed(
+                            reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                            unavailableAt = boundaryTrade.timestamp,
+                        )
+                    }
+                }
+            }
+
+            val regularIntervalTrades = if (hasUnknownObservation) {
+                legacyRegularTradeCandidates
+            } else {
+                indexedTrades.filter { (index, trade) ->
+                    index !in assignedTradeIndexes &&
+                        index !in initialTradeIndices &&
+                        trade.timestamp > prevObs &&
+                        trade.timestamp <= currObs
+                }
+            }
+            val regularIntervalLedgers = if (hasUnknownObservation) {
+                legacyRegularLedgerCandidates
+            } else {
+                indexedLedgers.filter { (index, ledger) ->
+                    index !in assignedLedgerIndexes &&
+                        index !in initialLedgerIndices &&
+                        ledger.time > prevObs &&
+                        ledger.time <= currObs
+                }
             }
 
             if (initialTradeCandidates.isNotEmpty() || initialLedgerCandidates.isNotEmpty()) {
@@ -400,7 +616,7 @@ object RebalancerComparisonCalculator {
                         )
                     }
                     val candidateBalances = impliedBalances.toMutableMap()
-                    if (!applyRealizedTrade(candidateBalances, initialTrade)) {
+                    if (!applyRealizedTrade(candidateBalances, initialTrade, intervalAccountingMode)) {
                         return TrackedBalanceValidation.Failed(
                             reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                             unavailableAt = initialTrade.timestamp,
@@ -413,19 +629,6 @@ object RebalancerComparisonCalculator {
                     initialLedgerCandidates.forEach { add(LateCandidate.Ledger(it.index, it.value)) }
                 }
 
-                val regularIntervalTrades = indexedTrades.filter { (index, trade) ->
-                    index !in assignedTradeIndexes &&
-                        index !in initialTradeIndices &&
-                        trade.timestamp > prevObs &&
-                        trade.timestamp <= currObs
-                }
-                val regularIntervalLedgers = indexedLedgers.filter { (index, ledger) ->
-                    index !in assignedLedgerIndexes &&
-                        index !in initialLedgerIndices &&
-                        ledger.time > prevObs &&
-                        ledger.time <= currObs
-                }
-
                 val initialAssignment = findInitialAssignment(
                     initialCandidates = initialCandidates,
                     regularTrades = regularIntervalTrades,
@@ -433,6 +636,7 @@ object RebalancerComparisonCalculator {
                     lateCandidates = lateCandidates,
                     startingBalances = impliedBalances,
                     snapshot = curr,
+                    accountingMode = intervalAccountingMode,
                 ) ?: return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                     unavailableAt = curr.timestamp,
@@ -440,6 +644,7 @@ object RebalancerComparisonCalculator {
 
                 for (index in initialAssignment.embeddedTradeIndexes) {
                     assignedTradeIndexes += index
+                    effectiveTradeAccountingModes[index] = intervalAccountingMode
                     embeddedTradeIndexes += index
                 }
                 for (index in initialAssignment.embeddedLedgerIndexes) {
@@ -448,6 +653,7 @@ object RebalancerComparisonCalculator {
                 }
                 for (index in initialAssignment.postBaselineTradeIndexes) {
                     assignedTradeIndexes += index
+                    effectiveTradeAccountingModes[index] = intervalAccountingMode
                     effectiveTradeTimestamps[index] = calculateIntervalEventTimestamp(
                         successfulTrades[index].timestamp,
                         prev,
@@ -464,6 +670,7 @@ object RebalancerComparisonCalculator {
                 }
                 for ((index, trade) in regularIntervalTrades) {
                     assignedTradeIndexes += index
+                    effectiveTradeAccountingModes[index] = intervalAccountingMode
                     effectiveTradeTimestamps[index] = calculateIntervalEventTimestamp(trade.timestamp, prev, curr)
                 }
                 for ((index, ledger) in regularIntervalLedgers) {
@@ -473,6 +680,7 @@ object RebalancerComparisonCalculator {
                 if (initialAssignment.lateAssignment != null) {
                     for (index in initialAssignment.lateAssignment.tradeIndexes) {
                         assignedTradeIndexes += index
+                        effectiveTradeAccountingModes[index] = intervalAccountingMode
                         effectiveTradeTimestamps[index] = curr.timestamp
                     }
                     for (index in initialAssignment.lateAssignment.ledgerIndexes) {
@@ -483,41 +691,31 @@ object RebalancerComparisonCalculator {
                 impliedBalances.clear()
                 impliedBalances.putAll(initialAssignment.resultingBalances)
             } else {
-                val intervalTrades = indexedTrades.filter { (index, trade) ->
-                    index !in assignedTradeIndexes &&
-                        trade.timestamp > prevObs &&
-                        trade.timestamp <= currObs
-                }
-                val intervalLedgers = indexedLedgers.filter { (index, ledger) ->
-                    index !in assignedLedgerIndexes &&
-                        ledger.time > prevObs &&
-                        ledger.time <= currObs
-                }
-
-                for ((index, trade) in intervalTrades) {
-                    if (!applyRealizedTrade(impliedBalances, trade)) {
+                for ((index, trade) in regularIntervalTrades) {
+                    if (!applyRealizedTrade(impliedBalances, trade, intervalAccountingMode)) {
                         return TrackedBalanceValidation.Failed(
                             reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                             unavailableAt = trade.timestamp,
                         )
                     }
                     assignedTradeIndexes += index
+                    effectiveTradeAccountingModes[index] = intervalAccountingMode
                     effectiveTradeTimestamps[index] = calculateIntervalEventTimestamp(trade.timestamp, prev, curr)
                 }
-                for ((index, ledger) in intervalLedgers) {
+                for ((index, ledger) in regularIntervalLedgers) {
                     applyLedgerEvent(impliedBalances, ledger)
                     assignedLedgerIndexes += index
                     effectiveLedgerTimestamps[index] = calculateIntervalEventTimestamp(ledger.time, prev, curr)
                 }
-
                 val lateAssignment = if (!balancesMatchSnapshot(impliedBalances, curr)) {
-                    findLateAssignment(lateCandidates, impliedBalances, curr)
+                    findLateAssignment(lateCandidates, impliedBalances, curr, intervalAccountingMode)
                 } else {
                     null
                 }
                 if (lateAssignment != null) {
                     for (index in lateAssignment.tradeIndexes) {
                         assignedTradeIndexes += index
+                        effectiveTradeAccountingModes[index] = intervalAccountingMode
                         effectiveTradeTimestamps[index] = curr.timestamp
                     }
                     for (index in lateAssignment.ledgerIndexes) {
@@ -547,6 +745,7 @@ object RebalancerComparisonCalculator {
             ReconciledTrade(
                 trade = successfulTrades[index],
                 timestamp = effectiveTradeTimestamps[index],
+                usdNotional = realizedUsdNotional(successfulTrades[index], effectiveTradeAccountingModes[index]),
                 embeddedInBaseline = index in embeddedTradeIndexes,
             )
         }
@@ -607,6 +806,7 @@ object RebalancerComparisonCalculator {
         lateCandidates: List<LateCandidate>,
         startingBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
+        accountingMode: TradeAccountingMode,
     ): InitialAssignmentMatch? {
         if (initialCandidates.size > MAX_LATE_EVENT_CANDIDATES) return null
 
@@ -632,7 +832,7 @@ object RebalancerComparisonCalculator {
                     ).sortedBy(TradeRecord::timestamp)
 
                 for (trade in allPostTrades) {
-                    if (!applyRealizedTrade(testBalances, trade)) {
+                    if (!applyRealizedTrade(testBalances, trade, accountingMode)) {
                         validEconomics = false
                         break
                     }
@@ -661,7 +861,7 @@ object RebalancerComparisonCalculator {
                         resultingBalances = testBalances.toMap(),
                     )
                 } else {
-                    val late = findLateAssignment(lateCandidates, testBalances, snapshot)
+                    val late = findLateAssignment(lateCandidates, testBalances, snapshot, accountingMode)
                     if (late != null) {
                         InitialAssignmentMatch(
                             embeddedTradeIndexes = embeddedTrades.toList(),
@@ -717,6 +917,7 @@ object RebalancerComparisonCalculator {
         candidates: List<LateCandidate>,
         startingBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
+        accountingMode: TradeAccountingMode,
     ): LateAssignment? {
         if (candidates.isEmpty() || candidates.size > MAX_LATE_EVENT_CANDIDATES) return null
 
@@ -751,7 +952,7 @@ object RebalancerComparisonCalculator {
             when (val candidate = candidates[position]) {
                 is LateCandidate.Trade -> {
                     val nextBalances = balances.toMutableMap()
-                    if (applyRealizedTrade(nextBalances, candidate.trade)) {
+                    if (applyRealizedTrade(nextBalances, candidate.trade, accountingMode)) {
                         selectedTrades += candidate.index
                         search(position + 1, nextBalances)
                         selectedTrades.removeAt(selectedTrades.lastIndex)
@@ -783,7 +984,7 @@ object RebalancerComparisonCalculator {
             val ledger = reconciledLedger.ledger
             if (!reconciledLedger.embeddedInBaseline &&
                 reconciledLedger.timestamp > baseline.timestamp &&
-                ledger.time > baseline.balancesObservedAt
+                (baseline.balancesObservedAt == null || ledger.time > baseline.balancesObservedAt)
             ) {
                 events += BenchmarkEvent.ExternalBalance(
                     timestamp = reconciledLedger.timestamp,
@@ -797,7 +998,7 @@ object RebalancerComparisonCalculator {
             val trade = reconciledTrade.trade
             if (!reconciledTrade.embeddedInBaseline &&
                 reconciledTrade.timestamp > baseline.timestamp &&
-                trade.timestamp > baseline.balancesObservedAt
+                (baseline.balancesObservedAt == null || trade.timestamp > baseline.balancesObservedAt)
             ) {
                 val ownership = TradeOwnershipClassifier.classify(
                     trade = trade,
@@ -807,6 +1008,7 @@ object RebalancerComparisonCalculator {
                     timestamp = reconciledTrade.timestamp,
                     trade = trade,
                     ownership = ownership,
+                    usdNotional = reconciledTrade.usdNotional,
                 )
             }
         }
@@ -825,7 +1027,7 @@ object RebalancerComparisonCalculator {
 
             is BenchmarkEvent.Trade -> {
                 if (event.ownership == TradeOwnership.MANUAL_OR_EXTERNAL) {
-                    applyRealizedTrade(balances, event.trade)
+                    applyRealizedTrade(balances, event.trade, event.usdNotional)
                 }
             }
         }
@@ -838,7 +1040,17 @@ object RebalancerComparisonCalculator {
         }
     }
 
-    private fun applyRealizedTrade(balances: MutableMap<String, BigDecimal>, trade: TradeRecord): Boolean {
+    private fun applyRealizedTrade(
+        balances: MutableMap<String, BigDecimal>,
+        trade: TradeRecord,
+        accountingMode: TradeAccountingMode,
+    ): Boolean = applyRealizedTrade(balances, trade, realizedUsdNotional(trade, accountingMode))
+
+    private fun applyRealizedTrade(
+        balances: MutableMap<String, BigDecimal>,
+        trade: TradeRecord,
+        usdNotional: BigDecimal,
+    ): Boolean {
         val side = trade.side.uppercase()
         val symbol = trade.symbol.uppercase()
         if (
@@ -847,7 +1059,8 @@ object RebalancerComparisonCalculator {
             trade.volume.signum() < 0 ||
             trade.usdAmount.signum() < 0 ||
             trade.price.signum() < 0 ||
-            trade.fee.signum() < 0
+            trade.fee.signum() < 0 ||
+            usdNotional.signum() < 0
         ) {
             return false
         }
@@ -863,13 +1076,13 @@ object RebalancerComparisonCalculator {
         when {
             OrderSide.isBuy(side) -> {
                 balances[symbol] = assetBalance.add(trade.volume)
-                val usdCost = realizedUsdNotional(trade).add(trade.fee)
+                val usdCost = usdNotional.add(trade.fee)
                 balances[Asset.USD] = usdBalance.subtract(usdCost)
             }
 
             OrderSide.isSell(side) -> {
                 balances[symbol] = assetBalance.subtract(trade.volume)
-                val usdProceeds = realizedUsdNotional(trade).subtract(trade.fee)
+                val usdProceeds = usdNotional.subtract(trade.fee)
                 balances[Asset.USD] = usdBalance.add(usdProceeds)
             }
 
@@ -878,12 +1091,24 @@ object RebalancerComparisonCalculator {
         return true
     }
 
-    private fun realizedUsdNotional(trade: TradeRecord): BigDecimal =
-        if (trade.source == TradeSource.API_FILL && trade.price.signum() > 0) {
+    private fun realizedUsdNotional(trade: TradeRecord, accountingMode: TradeAccountingMode): BigDecimal {
+        val preciseNotional = if (trade.source == TradeSource.API_FILL && trade.price.signum() > 0) {
             trade.price.multiply(trade.volume)
         } else {
             trade.usdAmount
         }
+        return if (
+            accountingMode == TradeAccountingMode.PERSISTED_ROUNDED_COST &&
+            trade.source == TradeSource.API_FILL &&
+            trade.price.signum() > 0 &&
+            preciseNotional.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+                .compareTo(trade.usdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)) == 0
+        ) {
+            trade.usdAmount
+        } else {
+            preciseNotional
+        }
+    }
 
     private fun extractBaselineBalances(baseline: PortfolioSnapshot): Map<String, BigDecimal> =
         baseline.assets.mapValues { (_, asset) -> asset.balance }

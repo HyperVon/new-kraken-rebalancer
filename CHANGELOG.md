@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.18] - 2026-09-02
+
+### Fixed
+
+- **Legacy History comparison reconciliation**: Preserved unknown
+  `balancesObservedAt` values for pre-migration snapshots and widened legacy
+  event queries by the bounded observation-skew window. A bounded, unique
+  assignment now reconciles trade and external-ledger effects across old
+  sub-second snapshot bursts; ambiguous or unexplained assignments remain
+  unavailable instead of being estimated.
+- **Kraken fill accounting compatibility**: Precise `price × volume` remains
+  the primary API-fill accounting path. When that path exposes an unexplained
+  balance mismatch, a full-sequence retry may use Kraken's persisted USD-scale
+  cost only when it is the rounded representation of the same fill. The
+  accounting representation selected during reconciliation is reused during
+  Buy & Hold replay.
+
 ## [6.17.17] - 2026-09-01
 
 ### Fixed

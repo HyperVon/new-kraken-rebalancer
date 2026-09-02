@@ -624,6 +624,14 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
             result.unavailableAt shouldBe now.plusMillis(1250)
+
+            val lowercaseSymbolResult = RebalancerComparisonCalculator.calculate(
+                snapshots = snapshots,
+                trades = trades.map { it.copy(symbol = "btc", pair = "btcUSD") },
+            )
+
+            lowercaseSymbolResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            lowercaseSymbolResult.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
         }
 
         "valid terminal fill plus unknown terminal fill remains unavailable" {
@@ -950,6 +958,313 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
+        }
+
+        "legacy rounded API cost fallback reconciles a production-shaped fill" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "1624.80166105",
+                    mapOf(
+                        "PAXG" to assetRow("0.20666117", "4361.24", "901.29896105"),
+                        "USD" to assetRow("723.5027", "1.0", "723.5027"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "1624.6793492776",
+                    mapOf(
+                        "PAXG" to assetRow("0.21147716", "4361.24", "922.3026492776"),
+                        // The stored Kraken cost is rounded to 21.00, while price * volume is 21.0036882276.
+                        "USD" to assetRow("702.3767", "1.0", "702.3767"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(
+                    timestamp = now.plusSeconds(1800),
+                    side = "buy",
+                    symbol = "PAXG",
+                    volume = "0.00481599",
+                    usdAmount = "21.00",
+                    fee = "0.126",
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    tradeId = "LEGACY-ROUNDED-FILL",
+                    orderTxid = "LEGACY-ROUNDED-ORDER",
+                    price = "4361.24",
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+
+            val legacyObservationResult = RebalancerComparisonCalculator.calculate(
+                snapshots = snapshots.map { it.copy(balancesObservedAt = null) },
+                trades = trades,
+            )
+
+            legacyObservationResult.availability shouldBe ComparisonAvailability.AVAILABLE
+            legacyObservationResult.confidence shouldBe ComparisonConfidence.RECONCILED
+            legacyObservationResult.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+
+            val incompatiblePersistedCostResult = RebalancerComparisonCalculator.calculate(
+                snapshots = snapshots.map { it.copy(balancesObservedAt = null) },
+                trades = trades.map { it.copy(usdAmount = BigDecimal("21.01")) },
+            )
+
+            incompatiblePersistedCostResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            incompatiblePersistedCostResult.unavailableReason shouldBe
+                ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "legacy snapshot boundary trade is reconciled when it is reflected in the next row" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    now.plusMillis(200),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                        "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = snapshots,
+                trades = listOf(
+                    manualTrade(
+                        timestamp = now.plusMillis(100),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "legacy observations with wide intervals reconcile regular trade and ledger events" {
+            val first = now
+            val second = first.plusSeconds(4)
+            val third = first.plusSeconds(8)
+            val snapshots = listOf(
+                snapshot(
+                    first,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    second,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                        "USD" to assetRow("45000.00", "1.0", "45000.00"),
+                    ),
+                ),
+                snapshot(
+                    third,
+                    "100100.00",
+                    mapOf(
+                        "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                        "USD" to assetRow("45100.00", "1.0", "45100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = snapshots,
+                trades = listOf(
+                    manualTrade(
+                        timestamp = first.plusSeconds(2),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = second.plusSeconds(2),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "legacy previous row with known current boundary reconciles trade and ledger events" {
+            val current = now.plusSeconds(2)
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        current,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                            "USD" to assetRow("45100.00", "1.0", "45100.00"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = current.plusMillis(500),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = current.plusMillis(600),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "legacy snapshots with a sub-second observation burst reconcile each ledger once" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "ETH" to assetRow("1.0", "3000.00", "3000.00"),
+                        "SOL" to assetRow("0.0", "100.00", "0.00"),
+                        "USD" to assetRow("47000.00", "1.0", "47000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    now.plusMillis(200),
+                    "100500.00",
+                    mapOf(
+                        "BTC" to assetRow("1.01", "50000.00", "50500.00"),
+                        "ETH" to assetRow("1.0", "3000.00", "3000.00"),
+                        "SOL" to assetRow("0.0", "100.00", "0.00"),
+                        "USD" to assetRow("47000.00", "1.0", "47000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    now.plusMillis(400),
+                    "100800.00",
+                    mapOf(
+                        "BTC" to assetRow("1.01", "50000.00", "50500.00"),
+                        "ETH" to assetRow("1.1", "3000.00", "3300.00"),
+                        "SOL" to assetRow("0.0", "100.00", "0.00"),
+                        "USD" to assetRow("47000.00", "1.0", "47000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    now.plusMillis(600),
+                    "100850.00",
+                    mapOf(
+                        "BTC" to assetRow("1.01", "50000.00", "50500.00"),
+                        "ETH" to assetRow("1.1", "3000.00", "3300.00"),
+                        "SOL" to assetRow("0.5", "100.00", "50.00"),
+                        "USD" to assetRow("47000.00", "1.0", "47000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(now.plusMillis(100), "BTC", "0.01"),
+                ledgerEvent(now.plusMillis(300), "ETH", "0.1"),
+                ledgerEvent(now.plusMillis(500), "SOL", "0.5"),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards = ledgers)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "legacy observation burst with multiple valid ledger assignments fails closed" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    now.plusMillis(200),
+                    "105000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    now.plusMillis(400),
+                    "105000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(now.plusMillis(100), "BTC", "0.1", ledgerId = "AMBIGUOUS-1"),
+                ledgerEvent(now.plusMillis(150), "BTC", "0.1", ledgerId = "AMBIGUOUS-2"),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards = ledgers)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
         "tracked sell: asset volume and USD/fee deltas match and remain available" {
@@ -3896,7 +4211,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         timestamp: Instant,
         totalValueUSD: String,
         assets: Map<String, Triple<String, String, String>>,
-        balancesObservedAt: Instant = timestamp,
+        balancesObservedAt: Instant? = timestamp,
     ): PortfolioSnapshot {
         val assetSnapshots = assets.mapValues { (symbol, triple) ->
             assetSnapshot(

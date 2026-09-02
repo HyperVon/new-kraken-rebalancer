@@ -28,6 +28,10 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
     /**
      * Trade execution (rebalancer bot, manual user trade, or unknown provenance).
      */
-    data class Trade(override val timestamp: Instant, val trade: TradeRecord, val ownership: TradeOwnership) :
-        BenchmarkEvent()
+    data class Trade(
+        override val timestamp: Instant,
+        val trade: TradeRecord,
+        val ownership: TradeOwnership,
+        val usdNotional: BigDecimal,
+    ) : BenchmarkEvent()
 }

@@ -30,7 +30,7 @@ object PortfolioSnapshotTable : Table("portfolio_snapshots") {
         val observedAt = if (observedAtMillis != null && observedAtMillis > 0L) {
             Instant.ofEpochMilli(observedAtMillis)
         } else {
-            Instant.ofEpochMilli(row[timestamp])
+            null
         }
         return PortfolioSnapshot(
             timestamp = Instant.ofEpochMilli(row[timestamp]),
@@ -50,6 +50,6 @@ object PortfolioSnapshotTable : Table("portfolio_snapshots") {
         builder[drawdownPercent] = snapshot.drawdownPercent
         builder[fiatDeploymentPercent] = snapshot.fiatDeploymentPercent
         builder[effectiveUsdTargetPercent] = snapshot.effectiveUsdTargetPercent
-        builder[balancesObservedAt] = snapshot.balancesObservedAt.toEpochMilli()
+        builder[balancesObservedAt] = snapshot.balancesObservedAt?.toEpochMilli()
     }
 }
