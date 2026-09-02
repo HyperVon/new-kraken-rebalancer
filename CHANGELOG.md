@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.22] - 2026-09-02
+
+### Fixed
+
+- **Dependabot security alerts #118–123**: Raised the Kotlin/JS Yarn security
+  floors for `fast-uri` to `4.1.3+` (resolved at `4.1.4`) and `qs` to `6.16.0+`;
+  synchronized the root developer-tool lockfile to `qs` `6.16.0` as well.
+
 ## [6.17.21] - 2026-09-02
 
 ### Fixed

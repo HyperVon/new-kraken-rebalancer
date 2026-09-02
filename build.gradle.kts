@@ -73,7 +73,8 @@ rootProject.plugins.withType<YarnPlugin> {
         resolution("uuid", ">=14.0.1 <15.0.0")
         resolution("webpack", ">=5.109.2 <6.0.0")
         resolution("diff", ">=9.0.0 <10.0.0")
-        resolution("fast-uri", ">=4.1.1 <5.0.0")
+        resolution("fast-uri", ">=4.1.3 <5.0.0")
+        resolution("qs", ">=6.16.0 <7.0.0")
         // Dependabot #102 / CVE-2026-14257 — DoS via unbounded expansion length
         resolution("brace-expansion", ">=5.0.9 <6.0.0")
         // Dependabot #105 / GHSA-5p4m-2wfm-xmqj — quadratic CPU in !!omap resolution
