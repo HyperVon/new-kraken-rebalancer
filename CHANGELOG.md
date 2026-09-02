@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.19] - 2026-09-02
+
+### Fixed
+
+- **Mixed historical fill accounting**: History comparison now chooses precise
+  or compatible rounded fill costs independently for each reconciled interval,
+  rather than forcing one representation across the selected range. Failed
+  attempts cannot leak event assignments, and errors identify the first
+  interval still unexplained after compatibility reconciliation.
+- **Balance-request timing**: Trade and ledger candidates cover the recorded
+  request-start to snapshot-creation window, plus the existing one-second
+  clock-skew allowance. Events are included only when their tracked effects
+  reconcile; initial embedded events are not replayed twice.
+- **Historical event bursts**: Allow up to 12 combined initial/late candidates
+  within a shared 4,096-assignment search budget per accounting attempt, accommodating larger
+  trade/reward bursts while still rejecting ambiguous or unexplained balances.
+  Updated the algorithm documentation and user guide.
+
 ## [6.17.18] - 2026-09-02
 
 ### Fixed
