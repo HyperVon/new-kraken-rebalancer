@@ -39,6 +39,7 @@ class PortfolioSnapshotTableTest : StringSpec() {
                 drawdownPercent = BigDecimal("5.2500"),
                 fiatDeploymentPercent = BigDecimal("12.5000"),
                 effectiveUsdTargetPercent = BigDecimal("15.0000"),
+                balancesObservedAt = Instant.parse("2026-07-03T11:59:59Z"),
             )
 
             transaction(db) {
@@ -86,7 +87,7 @@ class PortfolioSnapshotTableTest : StringSpec() {
             }
         }
 
-        "toModel falls back to timestamp when balances_observed_at is null or zero" {
+        "toModel preserves unknown balance observation time for legacy rows" {
             val db = DatabaseConfig.init(TestFixtures.MEMORY_)
             val snapshotTime = Instant.parse("2026-07-03T12:00:00Z")
 
@@ -103,7 +104,7 @@ class PortfolioSnapshotTableTest : StringSpec() {
                 val row = PortfolioSnapshotTable.selectAll().single()
                 val model = PortfolioSnapshotTable.toModel(row, emptyMap(), emptyList())
                 model.timestamp shouldBe snapshotTime
-                model.balancesObservedAt shouldBe snapshotTime
+                model.balancesObservedAt shouldBe null
             }
         }
     }

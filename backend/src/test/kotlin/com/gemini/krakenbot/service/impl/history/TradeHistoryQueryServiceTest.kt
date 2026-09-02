@@ -15,6 +15,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
@@ -272,6 +273,45 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getRebalancerComparison_ExpandsEventQueryForLegacyObservationRows" {
+            runTest {
+                val snap1 = snapshot(
+                    now,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    balancesObservedAt = null,
+                )
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "105000.00",
+                    btc = "1.1" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = null,
+                )
+                val boundaryLedger = ledgerEvent("LEGACY-BOUNDARY", now.minusMillis(500), "BTC", "0.1")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(now) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery {
+                    ledgerRepository.getLedgersInRange(
+                        now.minusMillis(1_000),
+                        now.plusSeconds(3600).plusMillis(1_000),
+                    )
+                } returns listOf(boundaryLedger)
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("105000.00"))
+                coVerify(exactly = 1) {
+                    repository.getTradesInRange(now.minusMillis(1_000), now.plusSeconds(3600).plusMillis(1_000))
+                }
+                coVerify(exactly = 1) {
+                    ledgerRepository.getLedgersInRange(now.minusMillis(1_000), now.plusSeconds(3600).plusMillis(1_000))
+                }
+            }
+        }
+
         "getRebalancerComparison_OrderIntentCreatedBeforeBaselineIdentifiesBotFillAfterBaseline" {
             runTest {
                 // Baseline snapshot at T+0 (now)
@@ -490,6 +530,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         totalValueUSD: String,
         btc: Pair<String, String>,
         usdBalance: String = "50000.00",
+        balancesObservedAt: Instant? = timestamp,
     ): PortfolioSnapshot {
         val (btcBalance, btcPrice) = btc
         val btcValue = BigDecimal(btcBalance).multiply(BigDecimal(btcPrice))
@@ -517,6 +558,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             drawdownPercent = BigDecimal.ZERO,
             fiatDeploymentPercent = BigDecimal.ZERO,
             effectiveUsdTargetPercent = BigDecimal.ZERO,
+            balancesObservedAt = balancesObservedAt,
         )
     }
 

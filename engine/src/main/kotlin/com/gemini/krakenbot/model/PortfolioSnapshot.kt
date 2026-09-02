@@ -14,7 +14,8 @@ data class PortfolioSnapshot(
     val drawdownPercent: BigDecimal,
     val fiatDeploymentPercent: BigDecimal,
     val effectiveUsdTargetPercent: BigDecimal,
-    val balancesObservedAt: Instant = timestamp,
+    /** Null means this legacy row predates the balance-request observation boundary. */
+    val balancesObservedAt: Instant? = timestamp,
 ) {
     @GenerateApiMapper(ApiPortfolioSnapshot.AssetSnapshot::class)
     data class AssetSnapshot(

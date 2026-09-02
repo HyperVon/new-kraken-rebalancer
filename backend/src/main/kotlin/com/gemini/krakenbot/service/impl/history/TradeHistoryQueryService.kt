@@ -47,11 +47,14 @@ class TradeHistoryQueryService(
         val lastSnapshot = orderedSnapshots.last()
         val firstTimestamp = firstSnapshot.timestamp
         val lastTimestamp = lastSnapshot.timestamp
-        val firstObservationTime = firstSnapshot.balancesObservedAt
-        val lastObservationTime = lastSnapshot.balancesObservedAt
+        val firstObservationTime = firstSnapshot.balancesObservedAt ?: firstTimestamp
+        val lastObservationTime = lastSnapshot.balancesObservedAt ?: lastTimestamp
 
         val anchorSnapshot = repository.getSnapshotBefore(firstTimestamp)
-        val queryFrom = anchorSnapshot?.balancesObservedAt ?: firstObservationTime
+        val queryFrom = minOf(
+            anchorSnapshot?.balancesObservedAt ?: anchorSnapshot?.timestamp ?: firstObservationTime,
+            firstObservationTime,
+        ).minusMillisIfLegacyObservation(anchorSnapshot, firstSnapshot)
         val queryTo = maxOf(lastTimestamp, lastObservationTime)
             .plusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
@@ -78,6 +81,17 @@ class TradeHistoryQueryService(
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             anchorSnapshot = anchorSnapshot,
         )
+    }
+
+    private fun Instant.minusMillisIfLegacyObservation(
+        anchorSnapshot: PortfolioSnapshot?,
+        firstSnapshot: PortfolioSnapshot,
+    ): Instant = if ((anchorSnapshot != null && anchorSnapshot.balancesObservedAt == null) ||
+        firstSnapshot.balancesObservedAt == null
+    ) {
+        minusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+    } else {
+        this
     }
 
     suspend fun getRewardsOverTime(from: Instant, to: Instant): RewardsOverTime {
