@@ -57,12 +57,12 @@ absolute paths or temporary identifiers.
 
 | Scenario | Name | Status | Key Evidence / Invariants |
 | :--- | :--- | :---: | :--- |
-| Scenario 1 | Standard Rebalancing Sequence (Phase 3 Sequencing & Projected Cash) | 🟢 **PASS** | Sell XBTUSD volume 0.34400000, then buy ETHUSD volume 3.96000000; generated client-order UUIDs omitted. |
-| Scenario 2 | Dynamic Drawdown-Based Fiat Deployment | 🟢 **PASS** | Base USD target was 20.00%, effective USD target became 10.00%, effective BTC target became 45.00%, and effective ETH target became 45.00%.<br>Orders generated: 2<br>Generated client-order UUIDs omitted. |
-| Scenario 3 | Intelligent Fiat Correction (Deposit/Withdrawal) | 🟢 **PASS** | Cash injection distributed across BTC ($4500.00) and ETH ($4500.00); 2 buy orders; generated client-order UUIDs omitted. |
-| Scenario 4 | Live Dashboard & Settings Flow Publication | 🟢 **PASS** | Initial broadcast received snapshot total USD $10000.00.<br>Settings updated to loopDelaySeconds=15, deviationTriggerPercent=2.0%.<br>Next loop cycle completed using updated settings. |
+| Scenario 1 | Standard Rebalancing Sequence (Phase 3 Sequencing & Projected Cash) | 🟢 **PASS** | Sell XBTUSD volume 0.15000000, then buy ETHUSD volume 1.25000000; failed sell caps buy at 0.49500000 ETH; client-order UUIDs omitted. |
+| Scenario 2 | Dynamic Drawdown-Based Fiat Deployment | 🟢 **PASS** | ATH saved $10,000.00; 20% drawdown yields 100% deployment (effective USD 0.00%, BTC/ETH 50.00%); 10% drawdown yields 25% deployment (effective USD 15.00%, BTC/ETH 42.50%). |
+| Scenario 3 | Intelligent Fiat Correction (Deposit/Withdrawal) | 🟢 **PASS** | Deposit surplus ($900.00) distributed across BTC ($450.00) and ETH ($450.00); withdrawal deficit ($450.00) sold across BTC ($225.00) and ETH ($225.00). |
+| Scenario 4 | Live Dashboard & Settings Flow Publication | 🟢 **PASS** | GET shell returns 200 OK; POST settings updates config to 120s delay and publishes on hot flow; invalid settings rejected with 422; SSE stream receives live broadcast. |
 | Scenario 5 | Safety and Resilience (Dry Run & Cycle Failure Propagation) | 🟢 **PASS** | Dry-run orders count: 2 (no exchange orders submitted).<br>Zero price test aborted safely: 0 orders submitted. |
-| Scenario 6 | Zero Target Allocation (Total Liquidation) | 🟢 **PASS** | ETH target percent was 0.00%.<br>Liquidated ETH volume 5.00000000; 1 sell order; generated client-order UUID omitted. |
+| Scenario 6 | Zero Target Allocation (Total Liquidation) | 🟢 **PASS** | BTC target percent was 0.00%; liquidated BTC volume 0.50000000 (1 sell order); generated client-order UUID omitted. |
 | Scenario 7 | Kraken Symbol Mapping Quirks (DOGE/BTC) | 🟢 **PASS** | Correctly mapped DOGE (XDG) and BTC (XXBT) pairs.<br>Executed 2 orders; generated client-order UUIDs omitted. |
 | Scenario 8 | Concurrent Multi-Asset Rebalance with Slippage | 🟢 **PASS** | Sell XBTUSD volume 0.34400000, then buy ETHUSD volume 3.96000000; generated client-order UUIDs omitted. |
 | Scenario 9 | Run Loop Lifecycle & Timing | 🟢 **PASS** | Virtual time advanced through at least two 1-second cycles; `stopRebalancingLoop()` stopped the loop cleanly. |
@@ -71,11 +71,11 @@ absolute paths or temporary identifiers.
 | Scenario 12 | Precision and Rounding Tolerances | 🟢 **PASS** | 8-decimal BTC input and USD-scaled totals remained precise; the dry-run buy volume was `0.00001030` at the configured price. |
 | Scenario 13 | High Volatility Slippage Capping | 🟢 **PASS** | A BTC sell credited $250; the ETH buy used $350 settled cash × the 99% cap, producing the expected `0.17325000` volume. |
 | Scenario 14 | Config File Hot-Reload via `loadConfig()` | 🟢 **PASS** | After the file changed from a 60s to 120s loop delay, `loadConfig()` observed the updated settings without a filesystem watcher. |
-| Scenario 15 | Single Asset Dominance (Extreme Rebalance) | 🟢 **PASS** | One asset represented 99% of total portfolio value.<br>Order sequencing and projected cash correctly executed 1 sell and 2 buys; generated client-order UUIDs omitted. |
-| Scenario 16 | Trade History Storage and JSON Serialization | 🟢 **PASS** | Successfully logged 3 executed trades, verified deterministic UUIDs, and persisted valid JSON to storage. |
+| Scenario 15 | Single Asset Dominance (Extreme Rebalance) | 🟢 **PASS** | All-cash portfolio ($1000 USD) targeting 99% BTC executed 1 buy order for 0.01980000 BTC ($990 USD); generated client-order UUID omitted. |
+| Scenario 16 | Trade History Storage and JSON Serialization | 🟢 **PASS** | Persisted snapshot to JSON and verified serialization parity (snapshot value $12,345.67, timestamp 2026-06-20T12:00:00Z). |
 | Scenario 17 | Partial Kraken API Failure (Individual Endpoint Failures) | 🟢 **PASS** | Ticker endpoint failed while Balance endpoint succeeded.<br>Rebalancer safely aborted cycle before placing any orders. |
 | Scenario 18 | Ktor SSE Keep-Alive and Broadcast Resilience | 🟢 **PASS** | Verified that SSE stream maintained active keep-alive comments and broadcast new snapshots without dropping clients. |
-| Scenario 19 | Extremely Large Portfolio Allocation Scaling | 🟢 **PASS** | Handled 100 configured asset allocations without precision breakdown or UI serialization bottlenecks. |
+| Scenario 19 | Extremely Large Portfolio Allocation Scaling | 🟢 **PASS** | Configured 15 asset allocations (14 ALTs at 7.0% + USD at 2.0% = 100.0%); configuration loaded and validated successfully. |
 | Scenario 20 | Missing or Corrupt Stats File Recovery | 🟢 **PASS** | Corrupted stats JSON file on disk was detected, quarantined, and safely re-initialized from scratch. |
 | Scenario 21 | Perfect Allocation Alignment (No Trades) | 🟢 **PASS** | Zero deviation across all configured assets.<br>Cycle completed in <5ms with 0 executed orders. |
 | Scenario 22 | Order Failure Logging & Snapshot Mapping | 🟢 **PASS** | Simulated order rejection by exchange; failure reason logged and mapped into `TradeRecord` and snapshot actions. |
