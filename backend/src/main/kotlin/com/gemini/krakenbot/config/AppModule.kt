@@ -114,7 +114,6 @@ val coreModule =
                 ledgerRepository = get(),
                 krakenService = get(),
                 configService = get(),
-                portfolioAnalyzer = get(),
                 portfolioStatsRepository = get(),
             )
         }

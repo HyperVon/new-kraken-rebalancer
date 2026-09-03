@@ -328,7 +328,9 @@ class RebalancerEngineTest : StringSpec() {
                 allocations = allocations,
                 settings = settings.copy(deviationTriggerPercent = 18.0),
             )
-            withdrawalPlan.sellOrders.isNotEmpty() shouldBe true
+            withdrawalPlan.sellOrders.getValue("BTC").shouldBeEqualComparingTo(BigDecimal("50.00"))
+            withdrawalPlan.sellOrders.getValue("ETH").shouldBeEqualComparingTo(BigDecimal("50.00"))
+            withdrawalPlan.buyOrders.shouldBeEmpty()
 
             // Case 3: USD triggers AND crypto triggers -> fiat correction skipped
             val bothTriggerPlan = RebalancerEngine.analyzeDeviationsPlan(

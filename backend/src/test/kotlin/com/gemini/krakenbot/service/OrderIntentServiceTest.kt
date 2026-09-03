@@ -33,16 +33,13 @@ class OrderIntentServiceTest : StringSpec() {
             }
         }
 
-        "rethrows reconciliation conflicts from a repository transaction wrapper" {
+        "propagates reconciliation conflicts from repository" {
             runTest {
                 coEvery {
                     repository.resolve(17, OrderIntentState.CONFIRMED, "evidence", any(), null)
-                } throws IOException(
-                    "transaction failed",
-                    OrderIntentReconciliationException("trade identity changed"),
-                )
+                } throws OrderIntentReconciliationException("trade identity changed")
 
-                val failure = shouldThrow<IllegalStateException> {
+                val failure = shouldThrow<OrderIntentReconciliationException> {
                     service.resolve(17, OrderIntentState.CONFIRMED, "evidence")
                 }
 
@@ -50,7 +47,7 @@ class OrderIntentServiceTest : StringSpec() {
             }
         }
 
-        "preserves unrelated repository IO failures" {
+        "preserves repository IO failures" {
             runTest {
                 coEvery {
                     repository.resolve(18, OrderIntentState.REJECTED, "evidence", any(), null)
@@ -61,20 +58,6 @@ class OrderIntentServiceTest : StringSpec() {
                 }
 
                 failure.message shouldBe "database unavailable"
-            }
-        }
-
-        "preserves unrelated nested state failures" {
-            runTest {
-                coEvery {
-                    repository.resolve(19, OrderIntentState.CONFIRMED, "evidence", any(), null)
-                } throws IOException("transaction failed", IllegalStateException("database state changed"))
-
-                val failure = shouldThrow<IOException> {
-                    service.resolve(19, OrderIntentState.CONFIRMED, "evidence")
-                }
-
-                failure.message shouldBe "transaction failed"
             }
         }
     }

@@ -101,7 +101,6 @@ Form:
 Button:
   Primary: "btn btn-primary"
   Secondary: "btn btn-secondary"
-  Danger: "btn btn-danger"
   DangerGhost: "btn btn-danger-ghost"
 Badge:
   Buy: "badge badge-buy"

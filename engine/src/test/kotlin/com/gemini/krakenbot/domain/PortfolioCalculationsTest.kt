@@ -122,16 +122,6 @@ class PortfolioCalculationsTest : StringSpec() {
             btcTarget.shouldBeEqualComparingTo(BigDecimal("45.000"))
         }
 
-        "should sum all USD target percentages in calculateUsdTargetPercent" {
-            val allocations = listOf(
-                Allocation("USD", 15.0),
-                Allocation("ZUSD", 5.0),
-                Allocation("BTC", 80.0),
-            )
-            PortfolioCalculations.calculateUsdTargetPercent(allocations)
-                .shouldBeEqualComparingTo(BigDecimal("20.00"))
-        }
-
         "should mark dust-sized deviations as insignificant" {
             val metrics = PortfolioCalculations.calculateAssetMetrics(
                 symbol = Asset(Asset.BTC),
@@ -265,16 +255,6 @@ class PortfolioCalculationsTest : StringSpec() {
             snapshot.currentPercent.shouldBeEqualComparingTo(BigDecimal("60.00"))
             snapshot.deviationUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
             snapshot.deviationPercent.shouldBeEqualComparingTo(BigDecimal("20.00"))
-        }
-
-        "should fall back to default USD target when no allocations present" {
-            PortfolioCalculations.calculateUsdTargetPercent(emptyList())
-                .shouldBeEqualComparingTo(BigDecimal("5.00"))
-        }
-
-        "should fall back to default USD target when allocations contain no USD" {
-            PortfolioCalculations.calculateUsdTargetPercent(listOf(Allocation("BTC", 80.0)))
-                .shouldBeEqualComparingTo(BigDecimal("5.00"))
         }
 
         "calculateTargetValue computes total * target / 100" {

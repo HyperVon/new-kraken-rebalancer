@@ -2,11 +2,9 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.model.OrderIntent
-import com.gemini.krakenbot.model.OrderIntentReconciliationException
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.service.OrderIntentService
-import java.io.IOException
 import java.time.Instant
 
 class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : OrderIntentService {
@@ -52,18 +50,8 @@ class OrderIntentServiceImpl(private val repository: OrderIntentRepository) : Or
         require(normalizedOrderTxid == null || normalizedOrderTxid.length <= MAX_ORDER_TXID_LENGTH) {
             "Order transaction id must be at most $MAX_ORDER_TXID_LENGTH characters."
         }
-        try {
-            check(repository.resolve(id, state, evidence.trim(), Instant.now(), normalizedOrderTxid)) {
-                "Order intent $id is missing or already resolved."
-            }
-        } catch (e: IOException) {
-            val reconciliationFailure = generateSequence(e.cause) { it.cause }
-                .filterIsInstance<OrderIntentReconciliationException>()
-                .firstOrNull()
-            if (reconciliationFailure != null) {
-                throw reconciliationFailure
-            }
-            throw e
+        check(repository.resolve(id, state, evidence.trim(), Instant.now(), normalizedOrderTxid)) {
+            "Order intent $id is missing or already resolved."
         }
     }
 }

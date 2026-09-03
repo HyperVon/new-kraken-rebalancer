@@ -107,7 +107,6 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
 
     private fun DIV.renderStatsGrid() {
         div(CssClass.History.StatsGrid) {
-            id = HtmlIds.HISTORY_STATS
             HistoryStatCardDefinition.entries.forEach { card ->
                 statusCard(
                     title = card.title,
@@ -218,12 +217,9 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                     +ViewText.EM_DASH
                 }
             }
-            div {
-                id = HtmlIds.REWARDS_CHART_CONTENT
-                div(CssClass.History.ChartContainer) {
-                    canvas {
-                        id = HtmlIds.REWARDS_CHART
-                    }
+            div(CssClass.History.ChartContainer) {
+                canvas {
+                    id = HtmlIds.REWARDS_CHART
                 }
             }
             p(CssClass.History.ChartCaption) { +ViewText.REWARDS_CAPTION }

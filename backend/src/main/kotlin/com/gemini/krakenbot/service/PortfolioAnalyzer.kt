@@ -45,14 +45,6 @@ interface PortfolioAnalyzer {
         cryptoScaleFactor: BigDecimal,
     ): RebalancePlan
 
-    fun distributeFiatCorrection(
-        usdDev: BigDecimal,
-        allDevs: AssetDeviations,
-        buyOrders: MutableRebalanceOrders,
-        sellOrders: MutableRebalanceOrders,
-        events: MutableList<RebalanceEvent>,
-    )
-
     fun buildSnapshot(
         balances: RawBalances,
         prices: AssetPrices,

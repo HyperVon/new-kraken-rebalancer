@@ -76,7 +76,7 @@ absolute paths or temporary identifiers.
 | Scenario 17 | Partial Kraken API Failure (Individual Endpoint Failures) | 🟢 **PASS** | Ticker endpoint failed while Balance endpoint succeeded.<br>Rebalancer safely aborted cycle before placing any orders. |
 | Scenario 18 | Ktor SSE Keep-Alive and Broadcast Resilience | 🟢 **PASS** | Verified that SSE stream maintained active keep-alive comments and broadcast new snapshots without dropping clients. |
 | Scenario 19 | Extremely Large Portfolio Allocation Scaling | 🟢 **PASS** | Configured 15 asset allocations (14 ALTs at 7.0% + USD at 2.0% = 100.0%); configuration loaded and validated successfully. |
-| Scenario 20 | Missing or Corrupt Stats File Recovery | 🟢 **PASS** | Corrupted stats JSON file on disk was detected, quarantined, and safely re-initialized from scratch. |
+| Scenario 20 | Missing or Corrupt Stats File Recovery | 🟢 **PASS** | Corrupted stats JSON file on disk failed closed with `IOException`; missing stats file safely initialized with ATH 0. |
 | Scenario 21 | Perfect Allocation Alignment (No Trades) | 🟢 **PASS** | Zero deviation across all configured assets.<br>Cycle completed in <5ms with 0 executed orders. |
 | Scenario 22 | Order Failure Logging & Snapshot Mapping | 🟢 **PASS** | Simulated order rejection by exchange; failure reason logged and mapped into `TradeRecord` and snapshot actions. |
 | Scenario 23 | Complete Authentication API Failure | 🟢 **PASS** | Invalid API keys (`EAPI:Invalid key`); safely caught, logged, and cycle aborted with zero state corruption. |

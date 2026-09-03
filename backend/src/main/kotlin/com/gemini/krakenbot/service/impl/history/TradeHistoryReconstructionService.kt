@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.domain.RebalancerEngine
+import com.gemini.krakenbot.domain.resolveBalance
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -9,7 +11,6 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.withExecutionSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -24,7 +25,6 @@ class TradeHistoryReconstructionService(
     private val ledgerRepository: LedgerRepository,
     private val krakenService: KrakenService,
     private val configService: ConfigService,
-    private val portfolioAnalyzer: PortfolioAnalyzer,
     private val portfolioStatsRepository: PortfolioStatsRepository? = null,
     private val nowProvider: () -> Instant = Instant::now,
 ) {
@@ -103,7 +103,7 @@ class TradeHistoryReconstructionService(
         } else {
             for ((symbol) in allocations) {
                 val symbolU = symbol.value.uppercase()
-                val bal = portfolioAnalyzer.resolveBalance(symbolU, fetchedLiveBalances)
+                val bal = resolveBalance(symbolU, fetchedLiveBalances)
                 runningBalances[symbolU] = bal
             }
             val pairsStr =
@@ -121,7 +121,7 @@ class TradeHistoryReconstructionService(
                 }
             for ((symbol) in allocations) {
                 val symbolU = symbol.value.uppercase()
-                currentPrices[symbolU] = portfolioAnalyzer.resolvePriceFromTicker(symbolU, prices)
+                currentPrices[symbolU] = RebalancerEngine.resolvePriceFromTicker(symbolU, prices)
             }
             currentPrices[Asset.USD] = BigDecimal.ONE
         }

@@ -242,16 +242,5 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 balances["BTC"] shouldBe BigDecimal("2.5")
             }
         }
-
-        "ObservedBalances data class properties and methods" {
-            val now = Instant.now()
-            val raw = mapOf("BTC" to BigDecimal("1.0"))
-            val observed = ObservedBalances(balances = raw, observedAt = now)
-            observed.balances shouldBe raw
-            observed.observedAt shouldBe now
-            observed.component1() shouldBe raw
-            observed.component2() shouldBe now
-            observed shouldBe ObservedBalances(raw, now)
-        }
     }
 }

@@ -109,7 +109,7 @@ class DashboardFragmentComponent(
                         val resolveUrl = Routes.API_ORDER_INTENTS_RESOLVE_TEMPLATE.replace("{id}", "$intentId")
                         form(action = resolveUrl, method = FormMethod.post) {
                             attributes[HtmxAttrs.HX_POST] = resolveUrl
-                            attributes[HtmxAttrs.HX_TARGET] = "body"
+                            attributes[HtmxAttrs.HX_TARGET] = HtmxValues.BODY
                             if (csrfToken != null) {
                                 input(type = InputType.hidden, name = FormFields.CSRF_TOKEN) {
                                     value = csrfToken

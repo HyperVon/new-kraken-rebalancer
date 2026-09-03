@@ -27,15 +27,6 @@ object PortfolioCalculations {
         baseTargetPercent.multiply(cryptoScaleFactor)
     }
 
-    /** Sums USD allocations to obtain the USD target percent, falling back to [PrecisionConstants.DEFAULT_USD_TARGET_PERCENT]. */
-    fun calculateUsdTargetPercent(allocations: List<Allocation>): BigDecimal = allocations
-        .filter { it.symbol.isUsd }
-        .takeIf { it.isNotEmpty() }
-        ?.sumOf { it.targetPercent.toBigDecimal() }
-        ?.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
-        ?: BigDecimal.valueOf(PrecisionConstants.DEFAULT_USD_TARGET_PERCENT)
-            .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
-
     /** Current allocation percent: `valueUSD / totalPortfolioValueUSD × 100`, or zero when total is zero. */
     fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
         if (totalPortfolioValueUSD > BigDecimal.ZERO) {

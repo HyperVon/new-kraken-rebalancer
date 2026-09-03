@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.RebalanceEvent
+import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -88,7 +89,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 val buyOrders = mutableMapOf<String, BigDecimal>()
                 val sellOrders = mutableMapOf<String, BigDecimal>()
 
-                portfolioAnalyzer.distributeFiatCorrection(
+                RebalancerEngine.distributeFiatCorrectionPlan(
                     usdDev = BigDecimal("100.0"),
                     allDevs = allDevs,
                     buyOrders = buyOrders,
