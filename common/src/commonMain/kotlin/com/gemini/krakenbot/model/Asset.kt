@@ -42,13 +42,13 @@ value class Asset(val value: String) {
         /** BTC→XBT, DOGE→XDG; other symbols pass through uppercased. */
         fun toKrakenTicker(symbol: String): String {
             val normalizedSymbol = normalizedSymbol(symbol)
-            return KrakenAssetAliases.KRAKEN_TICKER_BY_SYMBOL[normalizedSymbol] ?: normalizedSymbol
+            return KRAKEN_TICKER_BY_SYMBOL[normalizedSymbol] ?: normalizedSymbol
         }
 
         /** Uppercase a symbol and map Kraken ticker aliases to the application symbol. */
         fun canonicalSymbol(symbol: String): String {
             val normalizedSymbol = normalizedSymbol(symbol)
-            return KrakenAssetAliases.CANONICAL_BY_KRAKEN_ALIAS[normalizedSymbol] ?: normalizedSymbol
+            return CANONICAL_BY_KRAKEN_ALIAS[normalizedSymbol] ?: normalizedSymbol
         }
 
         fun tradingPair(symbol: String): String = "${toKrakenTicker(symbol)}$USD"
@@ -145,7 +145,7 @@ value class Asset(val value: String) {
             var upper = asset.trim().uppercase()
             if (upper.isEmpty()) return upper
 
-            for (suffix in KrakenAssetAliases.EARN_ASSET_SUFFIXES) {
+            for (suffix in EARN_ASSET_SUFFIXES) {
                 if (upper.endsWith(suffix) && upper.length > suffix.length) {
                     upper = upper.removeSuffix(suffix)
                     break

@@ -134,7 +134,6 @@ class KrakenE2ETest : StringSpec() {
                         krakenService = krakenService,
                         configService = mockConfigService,
                         objectMapper = objectMapper,
-                        portfolioAnalyzer = portfolioAnalyzer,
                     )
 
                 val orderExecutor =
@@ -259,7 +258,6 @@ class KrakenE2ETest : StringSpec() {
                         krakenService = krakenService,
                         configService = mockConfigService,
                         objectMapper = objectMapper,
-                        portfolioAnalyzer = portfolioAnalyzer,
                     )
 
                 val orderExecutor =

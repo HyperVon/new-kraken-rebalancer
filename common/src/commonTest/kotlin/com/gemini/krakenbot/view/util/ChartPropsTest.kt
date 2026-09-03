@@ -7,23 +7,23 @@ import kotlin.test.assertEquals
 class ChartPropsTest {
     @Test
     fun mapsKnownAssetsToTheirSolidColors() {
-        assertEquals("#fbbf24", ChartProps.solidColorForSymbol(Asset.BTC))
-        assertEquals("#a78bfa", ChartProps.solidColorForSymbol(Asset.ETH.lowercase()))
-        assertEquals("#94a3b8", ChartProps.solidColorForSymbol(Asset.USD))
+        assertEquals("#fbbf24", solidColorForSymbol(Asset.BTC))
+        assertEquals("#a78bfa", solidColorForSymbol(Asset.ETH.lowercase()))
+        assertEquals("#94a3b8", solidColorForSymbol(Asset.USD))
     }
 
     @Test
     fun mapsKnownAssetsToBorderColors() {
-        assertEquals("rgba(251, 191, 36, 1)", ChartProps.borderColorForSymbol(Asset.BTC))
-        assertEquals("rgba(167, 139, 250, 1)", ChartProps.borderColorForSymbol(Asset.ETH))
-        assertEquals("rgba(148, 163, 184, 1)", ChartProps.borderColorForSymbol(Asset.USD))
+        assertEquals("rgba(251, 191, 36, 1)", borderColorForSymbol(Asset.BTC))
+        assertEquals("rgba(167, 139, 250, 1)", borderColorForSymbol(Asset.ETH))
+        assertEquals("rgba(148, 163, 184, 1)", borderColorForSymbol(Asset.USD))
     }
 
     @Test
     fun mapsKnownAssetsToBackgroundColors() {
-        assertEquals("rgba(251, 191, 36, 0.1)", ChartProps.backgroundColorForSymbol(Asset.BTC))
-        assertEquals("rgba(167, 139, 250, 0.1)", ChartProps.backgroundColorForSymbol(Asset.ETH))
-        assertEquals("rgba(148, 163, 184, 0.12)", ChartProps.backgroundColorForSymbol(Asset.USD))
+        assertEquals("rgba(251, 191, 36, 0.1)", backgroundColorForSymbol(Asset.BTC))
+        assertEquals("rgba(167, 139, 250, 0.1)", backgroundColorForSymbol(Asset.ETH))
+        assertEquals("rgba(148, 163, 184, 0.12)", backgroundColorForSymbol(Asset.USD))
     }
 
     @Test
@@ -41,7 +41,7 @@ class ChartPropsTest {
                 "#60a5fa",
             )
 
-        assertEquals(expected, expected.indices.map { ChartProps.solidColorForSymbol("OTHER", it) })
+        assertEquals(expected, expected.indices.map { solidColorForSymbol("OTHER", it) })
     }
 
     @Test
@@ -59,7 +59,7 @@ class ChartPropsTest {
                 "rgba(96, 165, 250, 1)",
             )
 
-        assertEquals(expected, expected.indices.map { ChartProps.borderColorForSymbol("OTHER", it) })
+        assertEquals(expected, expected.indices.map { borderColorForSymbol("OTHER", it) })
     }
 
     @Test
@@ -77,13 +77,13 @@ class ChartPropsTest {
                 "rgba(96, 165, 250, 0.1)",
             )
 
-        assertEquals(expected, expected.indices.map { ChartProps.backgroundColorForSymbol("OTHER", it) })
+        assertEquals(expected, expected.indices.map { backgroundColorForSymbol("OTHER", it) })
     }
 
     @Test
     fun handlesNegativeFallbackIndicesSafely() {
-        assertEquals("#e879f9", ChartProps.solidColorForSymbol("OTHER", -1))
-        assertEquals("rgba(232, 121, 249, 1)", ChartProps.borderColorForSymbol("OTHER", -1))
-        assertEquals("rgba(232, 121, 249, 0.1)", ChartProps.backgroundColorForSymbol("OTHER", -1))
+        assertEquals("#e879f9", solidColorForSymbol("OTHER", -1))
+        assertEquals("rgba(232, 121, 249, 1)", borderColorForSymbol("OTHER", -1))
+        assertEquals("rgba(232, 121, 249, 0.1)", backgroundColorForSymbol("OTHER", -1))
     }
 }

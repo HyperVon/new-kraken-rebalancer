@@ -73,7 +73,6 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     krakenService,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 )
 
@@ -866,7 +865,6 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     krakenService,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 )
 
@@ -906,7 +904,6 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     krakenService,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 )
                 tradeHistoryService.syncTradesFromKraken()
@@ -936,7 +933,6 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     krakenService,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 )
                 tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded()

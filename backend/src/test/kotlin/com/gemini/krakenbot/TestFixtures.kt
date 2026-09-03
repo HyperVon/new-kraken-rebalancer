@@ -38,7 +38,6 @@ object TestFixtures {
     const val BUY = "buy"
     const val SELL = "sell"
     const val BUY_UPPER = "BUY"
-    const val SELL_UPPER = "SELL"
 
     /** Order type constants. */
     const val MARKET = "market"

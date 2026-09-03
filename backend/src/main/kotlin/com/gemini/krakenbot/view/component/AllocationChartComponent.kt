@@ -2,7 +2,6 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
@@ -42,7 +41,7 @@ class AllocationChartComponent {
                             0
                         }
                     val barColor = colorMap[asset.symbol.value.uppercase()]
-                        ?: ChartProps.solidColorForSymbol(asset.symbol.value, index)
+                        ?: solidColorForSymbol(asset.symbol.value, index)
                     div(CssClass.AllocationChart.BarRow) {
                         div(CssClass.AllocationChart.BarLabel) { +asset.symbol.value }
                         div(CssClass.AllocationChart.BarTrack) {

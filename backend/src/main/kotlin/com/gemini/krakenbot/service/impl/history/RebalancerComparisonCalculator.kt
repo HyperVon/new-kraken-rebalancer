@@ -25,7 +25,6 @@ object RebalancerComparisonCalculator {
     // Bounded window (1,000ms) admitting clock skew and exchange timestamp truncation/precision differences
     // when an exchange event was already executed and reflected in observed balances.
     internal const val MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS = 1_000L
-    internal const val MAX_TRADE_SNAPSHOT_CLOCK_SKEW_MILLIS = MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS
 
     // A shared cap bounds the combined initial/late search to at most 2^12 assignments.
     private const val MAX_BOUNDARY_EVENT_CANDIDATES = 12

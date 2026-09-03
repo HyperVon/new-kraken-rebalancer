@@ -9,14 +9,18 @@ private val CACHED_HUNDRED: BigDecimal = BigDecimal.valueOf(PrecisionConstants.H
 private val CACHED_ALLOCATION_TOLERANCE: BigDecimal =
     BigDecimal.valueOf(PrecisionConstants.ALLOCATION_TOLERANCE_DELTA)
 
+@Suppress("UnusedReceiverParameter")
 val PrecisionConstants.CASH_RESERVE_FACTOR: BigDecimal
     get() = CACHED_CASH_RESERVE_FACTOR
 
+@Suppress("UnusedReceiverParameter")
 val PrecisionConstants.FEE_RATE_ESTIMATE: BigDecimal
     get() = CACHED_FEE_RATE_ESTIMATE
 
+@Suppress("UnusedReceiverParameter")
 val PrecisionConstants.HUNDRED: BigDecimal
     get() = CACHED_HUNDRED
 
+@Suppress("UnusedReceiverParameter")
 val PrecisionConstants.ALLOCATION_TOLERANCE: BigDecimal
     get() = CACHED_ALLOCATION_TOLERANCE

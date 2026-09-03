@@ -258,15 +258,14 @@ class LedgersSyncService(
         isSeeded: Boolean,
         types: List<String> = SUPPORTED_LEDGER_TYPES,
     ): Flow<List<LedgerEvent>> = flow {
-        val ledgerTypes = types
-        val perTypeOffset = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
-        val perTypeTotal = mutableMapOf<String, Int>().apply { ledgerTypes.forEach { this[it] = 0 } }
-        val perTypeDone = mutableMapOf<String, Boolean>().apply { ledgerTypes.forEach { this[it] = false } }
+        val perTypeOffset = mutableMapOf<String, Int>().apply { types.forEach { this[it] = 0 } }
+        val perTypeTotal = mutableMapOf<String, Int>().apply { types.forEach { this[it] = 0 } }
+        val perTypeDone = mutableMapOf<String, Boolean>().apply { types.forEach { this[it] = false } }
 
         while (perTypeDone.values.any { !it }) {
             val batches = mutableListOf<List<LedgerEvent>>()
             var combinedBatchSize = 0
-            for (type in ledgerTypes) {
+            for (type in types) {
                 if (perTypeDone[type] == true) continue
                 val offset = perTypeOffset[type] ?: 0
                 log.info("Fetching ledger batch type={} offset={}", type, offset)
@@ -291,7 +290,7 @@ class LedgersSyncService(
                 if (!hasMoreForType) perTypeDone[type] = true else perTypeOffset[type] = nextOffset
             }
             if (!isSeeded) {
-                val effectiveOffset = ledgerTypes.sumOf { type ->
+                val effectiveOffset = types.sumOf { type ->
                     if (perTypeDone[type] ==
                         true
                     ) {

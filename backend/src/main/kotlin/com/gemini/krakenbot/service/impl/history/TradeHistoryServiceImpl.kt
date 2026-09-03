@@ -13,7 +13,6 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
@@ -31,7 +30,6 @@ class TradeHistoryServiceImpl(
         krakenService: KrakenService,
         configService: ConfigService,
         objectMapper: ObjectMapper,
-        portfolioAnalyzer: PortfolioAnalyzer,
         tradeHistoryFilePath: String = "trade-history.json",
         syncNowProvider: () -> Instant = Instant::now,
         orderIntentRepository: OrderIntentRepository? = null,

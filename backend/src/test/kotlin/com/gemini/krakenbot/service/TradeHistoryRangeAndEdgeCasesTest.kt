@@ -182,7 +182,6 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     krakenService,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     uniquePath.absolutePath,
                 ).init()
 
@@ -226,7 +225,6 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     krakenService,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     uniquePath.absolutePath,
                 ).init()
 
@@ -271,7 +269,6 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     krakenService,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     uniquePath.absolutePath,
                 ).init()
 
@@ -558,7 +555,6 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     realKraken,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 ).syncTradesFromKraken()
 
@@ -619,7 +615,6 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     dynamic,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 ).syncTradesFromKraken()
 

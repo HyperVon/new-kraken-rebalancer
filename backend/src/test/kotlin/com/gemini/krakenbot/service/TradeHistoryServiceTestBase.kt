@@ -78,7 +78,6 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
             krakenService,
             configService,
             objectMapper,
-            portfolioAnalyzer,
             tradeHistoryFilePath,
             syncNowProvider,
         )

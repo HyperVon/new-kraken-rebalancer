@@ -32,7 +32,7 @@ private const val AMBIGUOUS_LEGACY_CLIENT_ORDER_ID_PREFIX = "Ambiguous legacy cl
 private const val TERMINAL_API_FILL_MATCH_WINDOW_MILLIS = 10_000L
 private val TERMINAL_API_FILL_RELATIVE_TOLERANCE = BigDecimal("0.01")
 
-internal fun JdbcTransaction.markLegacyUnknownTradeProvenance() {
+internal fun markLegacyUnknownTradeProvenance() {
     // Rows written before provenance existed cannot distinguish a settled API fill
     // from a local order estimate when both have no slippage. Preserve that ambiguity
     // rather than treating it as an API fill and risking an unsafe reconciliation.
@@ -47,7 +47,7 @@ internal fun JdbcTransaction.markLegacyUnknownTradeProvenance() {
     }
 }
 
-internal fun JdbcTransaction.markLegacyAmbiguousClientOrderIds() {
+internal fun markLegacyAmbiguousClientOrderIds() {
     OrderIntentTable
         .select(OrderIntentTable.id, OrderIntentTable.errorMessage)
         .where {
@@ -65,7 +65,7 @@ internal fun JdbcTransaction.markLegacyAmbiguousClientOrderIds() {
         }
 }
 
-internal fun JdbcTransaction.backfillLegacyTradeIds() {
+internal fun backfillLegacyTradeIds() {
     val assignedTradeIds = OrderIntentTable
         .select(OrderIntentTable.id, OrderIntentTable.localTradeId)
         .where { OrderIntentTable.localTradeId.isNotNull() }
@@ -388,9 +388,7 @@ private fun TradeRecord.isTerminalPlaceholderFor(intent: TerminalIntent): Boolea
         source in setOf(null, TradeSource.LOCAL_ESTIMATE, TradeSource.LEGACY_UNKNOWN)
 }
 
-private fun JdbcTransaction.findTerminalSettledApiFillReconciliation(
-    intent: TerminalIntent,
-): OrderFillReconciler.AggregatedFills? {
+private fun findTerminalSettledApiFillReconciliation(intent: TerminalIntent): OrderFillReconciler.AggregatedFills? {
     val normalizedOrderTxid = intent.orderTxid?.trim()?.takeIf(String::isNotBlank)
     if (normalizedOrderTxid != null) {
         val candidateRows = TradeTable
@@ -468,7 +466,7 @@ private fun JdbcTransaction.findTerminalSettledApiFillReconciliation(
     )
 }
 
-private fun JdbcTransaction.detachTerminalIntent(intentId: Int, tradeId: Int) {
+private fun detachTerminalIntent(intentId: Int, tradeId: Int) {
     val updatedRows = OrderIntentTable.update({
         (OrderIntentTable.id eq intentId) and
             (OrderIntentTable.localTradeId eq tradeId)
@@ -489,7 +487,7 @@ private fun JdbcTransaction.detachTerminalIntent(intentId: Int, tradeId: Int) {
     }
 }
 
-internal fun JdbcTransaction.recoverPendingOrderIntents() {
+internal fun recoverPendingOrderIntents() {
     val recoveryMessage = "Recovered pending intent after restart; verify Kraken before resolution."
     OrderIntentTable
         .select(OrderIntentTable.id, OrderIntentTable.errorMessage)
@@ -508,7 +506,7 @@ internal fun JdbcTransaction.recoverPendingOrderIntents() {
         }
 }
 
-internal fun JdbcTransaction.reconcileLegacySubmissionGuards() {
+internal fun reconcileLegacySubmissionGuards() {
     val unresolvedIntentStates = listOf(
         OrderIntentState.PENDING.name,
         OrderIntentState.UNCERTAIN.name,

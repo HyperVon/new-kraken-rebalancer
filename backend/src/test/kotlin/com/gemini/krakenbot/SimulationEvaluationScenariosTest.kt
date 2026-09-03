@@ -93,7 +93,6 @@ class SimulationEvaluationScenariosTest : StringSpec() {
                 krakenService = dynamic,
                 configService = configService,
                 objectMapper = objectMapper,
-                portfolioAnalyzer = analyzer,
             )
         val orderExecutor = OrderExecutorImpl(dynamic, tradeHistory)
         val portfolioManager =

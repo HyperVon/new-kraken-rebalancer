@@ -50,7 +50,6 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                     krakenService,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 )
                 tradeHistoryService.init()
@@ -92,7 +91,6 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                     krakenService,
                     configService,
                     objectMapper,
-                    portfolioAnalyzer,
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 )
 

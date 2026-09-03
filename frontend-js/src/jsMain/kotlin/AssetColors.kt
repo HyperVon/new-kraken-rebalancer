@@ -20,14 +20,14 @@ private val assetColorMap: Map<String, String> by lazy {
 }
 
 internal fun colorForSymbol(symbol: String, fallbackIndex: Int): String =
-    assetColorMap[symbol.uppercase()] ?: ChartProps.borderColorForSymbol(symbol, fallbackIndex)
+    assetColorMap[symbol.uppercase()] ?: borderColorForSymbol(symbol, fallbackIndex)
 
 internal fun bgColorForSymbol(symbol: String, fallbackIndex: Int): String {
     val solid = assetColorMap[symbol.uppercase()]
     if (solid != null) {
-        return hexToRgba(solid, 0.1) ?: ChartProps.backgroundColorForSymbol(symbol, fallbackIndex)
+        return hexToRgba(solid, 0.1) ?: backgroundColorForSymbol(symbol, fallbackIndex)
     }
-    return ChartProps.backgroundColorForSymbol(symbol, fallbackIndex)
+    return backgroundColorForSymbol(symbol, fallbackIndex)
 }
 
 internal fun hexToRgba(hex: String, alpha: Double): String? {

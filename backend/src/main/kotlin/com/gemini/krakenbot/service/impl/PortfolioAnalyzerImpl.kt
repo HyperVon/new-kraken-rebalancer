@@ -1,15 +1,12 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.domain.AssetDeviations
 import com.gemini.krakenbot.domain.AssetPrices
 import com.gemini.krakenbot.domain.AssetValues
-import com.gemini.krakenbot.domain.MutableRebalanceOrders
 import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.domain.PortfolioValues
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
-import com.gemini.krakenbot.domain.RebalanceEvent
 import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale

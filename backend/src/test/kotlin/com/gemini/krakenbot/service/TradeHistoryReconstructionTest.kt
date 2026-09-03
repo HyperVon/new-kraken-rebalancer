@@ -22,7 +22,6 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.slot
-import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -737,7 +736,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 coEvery { ledgerRepository.isLedgersSeeded() } returns true
                 coEvery {
                     ledgerRepository.getSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                        SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
                     )
                 } returns "1"
 
@@ -760,9 +759,9 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 coEvery { ledgerRepository.isLedgersSeeded() } returns true
                 coEvery {
                     ledgerRepository.getSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                        SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
                     )
-                } returns com.gemini.krakenbot.service.impl.history.LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
 
                 reconstructionService.canRebuildSnapshots() shouldBe true
             }
@@ -787,7 +786,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 coEvery { ledgerRepository.isLedgersSeeded() } returns true
                 coEvery {
                     ledgerRepository.getSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                        SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
                     )
                 } returns "1" // stale
 
@@ -795,7 +794,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
 
                 coVerify(exactly = 0) {
                     repository.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
                         any(),
                     )
                 }
