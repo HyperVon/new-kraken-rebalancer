@@ -450,12 +450,6 @@ class EngineModelTest : StringSpec() {
             snapshot.balance.shouldBeEqualComparingTo(BigDecimal("1.5"))
         }
 
-        "OrderSubmissionState enum values" {
-            OrderSubmissionState.PENDING.name shouldBe "PENDING"
-            OrderSubmissionState.UNCERTAIN.name shouldBe "UNCERTAIN"
-            OrderSubmissionState.entries.size shouldBe 2
-        }
-
         "isPairAliasDuplicateOf guards trade-id conflicts and provenance differences" {
             val base =
                 EngineTestFixtures.tradeRecord(

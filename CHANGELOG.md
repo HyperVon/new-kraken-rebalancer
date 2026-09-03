@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.23] - 2026-09-02
+
+### Changed
+
+- **Build verification graph**: Root `build` and `check` tasks now explicitly
+  depend on `:engine:build` and `:engine:check`, ensuring `:engine`'s test suite
+  and independent 95%/90% JaCoCo gates run on root tasks.
+- **Backend service boundaries & decoupling**: Removed duplicate
+  `PortfolioAnalyzer.distributeFiatCorrection` wrapper in favor of direct
+  `RebalancerEngine.distributeFiatCorrectionPlan` calls. Decoupled
+  `TradeHistoryReconstructionService` from `PortfolioAnalyzer` by calling pure
+  domain functions `resolveBalance` and `resolvePriceFromTicker` directly.
+- **Repository transaction cleanup**: Consolidated SQLite transactions on
+  `safeTransactionIO` and removed redundant `safeReadTransaction` /
+  `safeReadTransactionIO` helpers. Removed unreachable `try-catch (e: IOException)`
+  cause-unwrapping block in `OrderIntentServiceImpl`.
+- **UI & Codegen constant hygiene**: Replaced raw string literals with canonical
+  `:common` constants (`HtmxValues.BODY`, `HtmlQueries.HOVERABLE_TR`, and
+  `CssClass.Hero` constants). Removed dead `Button.Danger` CSS class and styles,
+  dead element IDs `HISTORY_STATS` and `REWARDS_CHART_CONTENT`, and the redundant
+  wrapper around the history rewards chart.
+
+### Fixed
+
+- **Domain guidance & evaluation docs accuracy**: Corrected
+  `portfolio-rebalancing-math` skill documentation to reflect that ATH
+  persistence failures fail closed (rethrow) and abort the cycle rather than
+  warning. Corrected `docs/EVALUATION.md` Scenario 20 to state that malformed
+  stats files fail closed with `IOException`.
+- **Test independence & deduplication**: Removed dead tests and redundant
+  backend model tests duplicating `:engine`'s `EngineModelTest`. Decoupled
+  `SimulatedKrakenServiceTest` balance assertions from internal math to assert
+  against the executed trade result. Hardened `TradeHistorySyncServiceTest`
+  reconciled trade slippage assertion to verify the exact contract value `0.1001`.
+  Removed synthetic data class coverage padding in `PortfolioAnalyzerImplTest`
+  and `EngineModelTest`.
+
 ## [6.17.22] - 2026-09-02
 
 ### Fixed

@@ -141,16 +141,6 @@ class PortfolioAnalyzerImpl(
         )
     }
 
-    override fun distributeFiatCorrection(
-        usdDev: BigDecimal,
-        allDevs: AssetDeviations,
-        buyOrders: MutableRebalanceOrders,
-        sellOrders: MutableRebalanceOrders,
-        events: MutableList<RebalanceEvent>,
-    ) {
-        RebalancerEngine.distributeFiatCorrectionPlan(usdDev, allDevs, buyOrders, sellOrders, events)
-    }
-
     override fun buildSnapshot(
         balances: RawBalances,
         prices: AssetPrices,

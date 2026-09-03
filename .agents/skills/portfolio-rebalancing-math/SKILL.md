@@ -56,9 +56,9 @@ Shared scales also live in `:common` `PrecisionConstants` (`SCALE_CRYPTO=8`,
 1. Track portfolio **ATH** in SQLite (`PortfolioStatsRepository`). Update on new highs.
    Missing/null stats are an initial zero state, but database read or legacy
    migration failures propagate and abort analysis before any order planning or
-   lower ATH write. A non-cancellation ATH persistence failure is logged as a
-   warning and analysis continues with the ATH selected in memory for the
-   current cycle. Cancellation still propagates.
+   lower ATH write. Any non-cancellation ATH persistence failure is logged as an
+   error and aborts the cycle (fail-closed) so the bot never plans orders
+   against an unpersisted All-Time High. Cancellation still propagates.
 2. `Drawdown% = (ATH - Current) / ATH × 100`.
 3. `Deploy% = (Drawdown% / fiatMaxDrawdown)^fiatDeploymentExponent`, capped at 100%.
    - Exponent `< 1` = aggressive early deployment; `> 1` = conservative; `1` = linear.

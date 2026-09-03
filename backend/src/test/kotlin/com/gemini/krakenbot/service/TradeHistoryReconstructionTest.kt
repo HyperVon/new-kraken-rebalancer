@@ -325,17 +325,10 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     TestFixtures.USD to BigDecimal("30000.00"),
                 )
                 coEvery { krakenService.getBalances() } returns balances
-                every { portfolioAnalyzer.resolveBalance(Asset.BTC, balances) } returns BigDecimal.ONE
-                every {
-                    portfolioAnalyzer.resolveBalance(TestFixtures.USD, balances)
-                } returns BigDecimal("30000.00")
 
                 // Live Kraken keys tickers by canonical pair (XXBTZUSD), not the request alias (XBTUSD).
                 val canonicalPrices = mapOf(TestFixtures.XXBTZUSD to BigDecimal("30000.00"))
                 coEvery { krakenService.getTickerPrices(any()) } returns canonicalPrices
-                every {
-                    portfolioAnalyzer.resolvePriceFromTicker(Asset.BTC, canonicalPrices)
-                } returns BigDecimal("30000.00")
                 coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
 
@@ -347,11 +340,8 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     ledgerRepository = ledgerRepository,
                     krakenService = krakenService,
                     configService = configService,
-                    portfolioAnalyzer = portfolioAnalyzer,
                 )
                 reconstructionService.reconstructHistoricalSnapshots()
-
-                verify(exactly = 1) { portfolioAnalyzer.resolvePriceFromTicker(Asset.BTC, canonicalPrices) }
                 reconstructed.isCaptured.shouldBeTrue()
                 reconstructed.captured.any {
                     it.assets[Asset.BTC]?.price?.compareTo(BigDecimal.ZERO) != 0
@@ -403,10 +393,6 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     } else {
                         coEvery { krakenService.getBalances() } returns balances
                     }
-                    every { portfolioAnalyzer.resolveBalance(Asset.BTC, balances) } returns BigDecimal.ONE
-                    every {
-                        portfolioAnalyzer.resolveBalance(TestFixtures.USD, balances)
-                    } returns BigDecimal("1000.00")
 
                     if (cancellationPoint == "ticker") {
                         coEvery { krakenService.getTickerPrices(any()) } throws CancellationException("cancel ticker")
@@ -427,7 +413,6 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                         ledgerRepository = ledgerRepository,
                         krakenService = krakenService,
                         configService = configService,
-                        portfolioAnalyzer = portfolioAnalyzer,
                     )
 
                     shouldThrow<CancellationException> {
@@ -473,10 +458,6 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                         TestFixtures.USD to BigDecimal("1000.00"),
                     )
                     coEvery { krakenService.getBalances() } returns balances
-                    every { portfolioAnalyzer.resolveBalance(Asset.BTC, balances) } returns BigDecimal.ONE
-                    every {
-                        portfolioAnalyzer.resolveBalance(TestFixtures.USD, balances)
-                    } returns BigDecimal("1000.00")
                     coEvery { krakenService.getTickerPrices(any()) } returns
                         mapOf(TestFixtures.BTCUSD to BigDecimal("30000.00"))
                     coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
@@ -499,7 +480,6 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                         ledgerRepository = ledgerRepository,
                         krakenService = krakenService,
                         configService = configService,
-                        portfolioAnalyzer = portfolioAnalyzer,
                     )
 
                     if (saveFailure is CancellationException) {
@@ -669,8 +649,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     totalFeesPaid = BigDecimal.ZERO,
                     latestSnapshotTime = null,
                 )
-                coEvery { krakenService.getBalances() } returns mapOf(Asset.BTC to BigDecimal.ONE)
-                every { portfolioAnalyzer.resolveBalance(any(), any()) } throws
+                coEvery { krakenService.getOHLC(any(), any(), any()) } throws
                     RuntimeException("reconstruction blew up")
 
                 val service = createService()
@@ -712,10 +691,8 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 )
                 coEvery { repository.load() } returns emptyList()
                 coEvery { krakenService.getBalances() } returns mapOf(Asset.BTC to BigDecimal.ONE)
-                every { portfolioAnalyzer.resolveBalance(any(), any()) } returns BigDecimal.ONE
                 coEvery { krakenService.getTickerPrices(any()) } returns
                     mapOf(TestFixtures.BTCUSD to BigDecimal("30000.00"))
-                every { portfolioAnalyzer.resolvePriceFromTicker(any(), any()) } returns BigDecimal("30000.00")
                 coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
 
@@ -727,7 +704,6 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     ledgerRepository = ledgerRepository,
                     krakenService = krakenService,
                     configService = configService,
-                    portfolioAnalyzer = portfolioAnalyzer,
                     nowProvider = { fixedNow },
                 )
                 reconstructionService.reconstructHistoricalSnapshots()
@@ -757,7 +733,6 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     ledgerRepository = ledgerRepository,
                     krakenService = krakenService,
                     configService = configService,
-                    portfolioAnalyzer = portfolioAnalyzer,
                 )
                 coEvery { ledgerRepository.isLedgersSeeded() } returns true
                 coEvery {
@@ -781,7 +756,6 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     ledgerRepository = ledgerRepository,
                     krakenService = krakenService,
                     configService = configService,
-                    portfolioAnalyzer = portfolioAnalyzer,
                 )
                 coEvery { ledgerRepository.isLedgersSeeded() } returns true
                 coEvery {
@@ -809,7 +783,6 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     ledgerRepository = ledgerRepository,
                     krakenService = krakenService,
                     configService = configService,
-                    portfolioAnalyzer = portfolioAnalyzer,
                 )
                 coEvery { ledgerRepository.isLedgersSeeded() } returns true
                 coEvery {

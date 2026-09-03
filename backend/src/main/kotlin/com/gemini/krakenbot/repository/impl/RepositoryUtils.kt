@@ -45,36 +45,6 @@ suspend fun <T> Database.safeTransactionIO(
     safeTransaction(log, logMessage, exceptionMessage, block)
 }
 
-inline fun <T> Database.safeReadTransaction(
-    log: Logger,
-    logMessage: String,
-    exceptionMessage: String = "Database read failed",
-    crossinline block: JdbcTransaction.() -> T,
-): T {
-    try {
-        return transaction(this) { block() }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: OrderIntentReconciliationException) {
-        throw e
-    } catch (e: TradeReconciliationConflictException) {
-        throw e
-    } catch (e: Exception) {
-        log.error(logMessage, e)
-        if (e is IOException) throw e
-        throw IOException(exceptionMessage, e)
-    }
-}
-
-suspend fun <T> Database.safeReadTransactionIO(
-    log: Logger,
-    logMessage: String,
-    exceptionMessage: String = "Database read failed",
-    block: JdbcTransaction.() -> T,
-): T = withContext(Dispatchers.IO) {
-    safeReadTransaction(log, logMessage, exceptionMessage, block)
-}
-
 suspend fun <T> Database.readTransactionIO(block: JdbcTransaction.() -> T): T = withContext(Dispatchers.IO) {
     transaction(this@readTransactionIO) { block() }
 }

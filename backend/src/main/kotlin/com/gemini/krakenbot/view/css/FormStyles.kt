@@ -111,25 +111,14 @@ object FormStyles {
             color = Color.white
         }
 
-        CssClass.Button.Danger.querySelector {
-            background = CssTheme.colorDangerBgSubtle.value
-            solidBorder(CssTheme.colorDangerBorder)
-            color = CssTheme.colorDanger
-        }
-
-        "${CssClass.Button.Danger.querySelector}:hover" {
-            background = CssTheme.colorDangerBgHover.value
-            borderColor = CssTheme.colorDanger
-        }
-
         // HIST-1: quiet ghost destructive action — reads as muted until hover.
-        ".btn-danger-ghost" {
+        CssClass.Button.DangerGhost.querySelector {
             background = "transparent"
             solidBorder(Color.transparent)
             color = CssTheme.colorTextMuted
         }
 
-        ".btn-danger-ghost:hover" {
+        "${CssClass.Button.DangerGhost.querySelector}:hover" {
             background = CssTheme.colorDangerBgSubtle.value
             borderColor = CssTheme.colorDangerBorderSubtle
             color = CssTheme.colorDanger

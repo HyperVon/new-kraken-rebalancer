@@ -29,9 +29,10 @@ class SqlitePortfolioStatsRepositoryImpl(
 
     override suspend fun load(): PortfolioStats {
         val dbStats =
-            database.safeReadTransactionIO(
+            database.safeTransactionIO(
                 log = log,
                 logMessage = "Failed to load portfolio stats from database",
+                exceptionMessage = "Database read failed",
             ) {
                 PortfolioStatsTable
                     .selectAll()

@@ -95,7 +95,7 @@ object TableStyles {
             borderBottomStyle = BorderStyle.none
         }
 
-        "tr.hoverable:hover" {
+        "${HtmlQueries.HOVERABLE_TR}:hover" {
             backgroundColor = CssTheme.colorWhiteSubtle
         }
 

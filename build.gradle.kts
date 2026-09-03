@@ -47,13 +47,15 @@ tasks.named("spotlessKotlin") {
 group = "com.gemini"
 version = "0.0.1-SNAPSHOT"
 
-// Aggregate verification: backend JVM coverage + frontend JS browser tests
+// Aggregate verification: backend JVM coverage + engine coverage + frontend JS browser tests
 tasks.named("build") {
     dependsOn(":backend:build")
+    dependsOn(":engine:build")
 }
 
 tasks.named("check") {
     dependsOn(":backend:check")
+    dependsOn(":engine:check")
     dependsOn(":frontend-js:jsBrowserTest")
 }
 

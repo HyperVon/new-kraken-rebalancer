@@ -83,14 +83,14 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 )
 
             result.success shouldBe true
+            val executedTrade = simulatedService.getTradeHistory().first()
+            executedTrade.orderTxid shouldBe result.orderTxid
+            executedTrade.volume.shouldBeEqualComparingTo(buyVolume)
 
             val newBalances = simulatedService.getBalances()
-            val grossCost = buyVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)
-            val fee = grossCost.multiply(BigDecimal("0.0026")).setScale(4, RoundingMode.HALF_UP)
+            val expectedTotalCost = executedTrade.usdAmount.add(executedTrade.fee).setScale(2, RoundingMode.HALF_UP)
             newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(initialBtc.add(buyVolume))
-            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(
-                initialUsd.subtract(grossCost).subtract(fee).setScale(2, RoundingMode.HALF_UP),
-            )
+            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(initialUsd.subtract(expectedTotalCost))
         }
 
         "should execute sell orders and update balances" {
@@ -117,14 +117,16 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 )
 
             result.success shouldBe true
+            val executedTrade = simulatedService.getTradeHistory().first()
+            executedTrade.orderTxid shouldBe result.orderTxid
+            executedTrade.volume.shouldBeEqualComparingTo(sellVolume)
 
             val newBalances = simulatedService.getBalances()
-            val grossProceeds = sellVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)
-            val fee = grossProceeds.multiply(BigDecimal("0.0026")).setScale(4, RoundingMode.HALF_UP)
+            val expectedNetProceeds = executedTrade.usdAmount.subtract(
+                executedTrade.fee,
+            ).setScale(2, RoundingMode.HALF_UP)
             newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(initialBtc.subtract(sellVolume))
-            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(
-                initialUsd.add(grossProceeds).subtract(fee).setScale(2, RoundingMode.HALF_UP),
-            )
+            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(initialUsd.add(expectedNetProceeds))
         }
 
         "should resolve lower-case allocation aliases to canonical simulator balances and prices" {

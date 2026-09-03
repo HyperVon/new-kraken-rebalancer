@@ -91,7 +91,6 @@ HtmlIds:
   MODE_PLATE: "mode-plate"
   MODE_PLATE_LABEL: "mode-plate-label"
   HEADER_STATUS: "header-status"
-  HISTORY_STATS: "history-stats"
   STAT_ATH_TITLE: "stat-ath-title"
   STAT_ATH: "stat-ath"
   STAT_TOTAL_TRADES: "stat-total-trades"
@@ -119,7 +118,6 @@ HtmlIds:
   COMPARISON_CONFIDENCE_BADGE: "comparison-confidence-badge"
   REWARDS_CHART: "rewards-chart"
   REWARDS_TOTAL: "rewards-total"
-  REWARDS_CHART_CONTENT: "rewards-chart-content"
 HealthStatusKeys:
   STATUS: "status"
   STATUS_UP: "UP"

@@ -47,7 +47,7 @@ import kotlinx.css.width
 object HeroStyles {
     fun CssBuilder.applyHeroStyles() {
         // DASH-1: Total Portfolio hero card
-        ".hero-card" {
+        CssClass.Hero.Card.querySelector {
             display = Display.flex
             alignItems = Align.stretch
             gap = 1.5.rem
@@ -56,7 +56,7 @@ object HeroStyles {
             boxShadowRaw(CssTheme.shadowHeroCard)
         }
 
-        ".hero-card > .hero-card-text" {
+        "${CssClass.Hero.Card.querySelector} > ${CssClass.Hero.CardText.querySelector}" {
             display = Display.flex
             flexDirection = FlexDirection.column
             justifyContentRaw("center")
@@ -111,21 +111,21 @@ object HeroStyles {
             borderStyle = BorderStyle.solid
         }
 
-        ".hero-delta.up" {
+        CssClass.Hero.DeltaUp.querySelector {
             color = CssTheme.colorSuccess
             backgroundColor = CssTheme.colorSuccessBgSubtle
             borderColor = CssTheme.colorSuccessBorderSubtle
             boxShadowRaw(CssTheme.glowGreenSoft)
         }
 
-        ".hero-delta.down" {
+        CssClass.Hero.DeltaDown.querySelector {
             color = CssTheme.colorDanger
             backgroundColor = CssTheme.colorDangerBgSubtle
             borderColor = CssTheme.colorDangerBorderSubtle
             boxShadowRaw(CssTheme.shadowDeltaDown)
         }
 
-        ".hero-delta.flat" {
+        CssClass.Hero.DeltaFlat.querySelector {
             color = CssTheme.colorTextMuted
             backgroundColor = CssTheme.colorSlateMuted
             borderColor = CssTheme.colorSlateBorder

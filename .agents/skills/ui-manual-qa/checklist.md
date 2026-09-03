@@ -16,7 +16,7 @@ Stable ids (see `HtmlAttrs.HtmlIds`):
 | `history-save-view-btn` / `history-set-default-btn` / `history-delete-view-btn` | View actions |
 | `portfolio-value-chart` / `asset-holdings-chart` / `allocation-drift-chart` / `cumulative-net-cash-flow-chart` | Chart canvases |
 | `trade-table-body` | Trade log rows |
-| `history-stats` / `stat-*` | Six summary cards (ATH, trades, volume, fees, avg fee, avg slippage) |
+| `stat-*` | Six summary cards (ATH, trades, volume, fees, avg fee, avg slippage) |
 | `history-zoom-btn` / `history-views-select` | Zoom + view toolbar (glass styling) |
 | `history-chart-scrubber-input` | Pan scrubber under each History chart |
 

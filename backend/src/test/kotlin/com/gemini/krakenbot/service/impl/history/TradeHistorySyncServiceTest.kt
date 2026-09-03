@@ -176,7 +176,7 @@ class TradeHistorySyncServiceTest : StringSpec() {
             reconciled.cycleId shouldBe "cycle-1"
             val slippage = reconciled.slippagePercent
             slippage.shouldNotBeNull()
-            (slippage > BigDecimal.ZERO) shouldBe true
+            slippage.shouldBeEqualComparingTo(BigDecimal("0.1001"))
         }
 
         "keeps an already-persisted settled fill intact when re-fetched" {
