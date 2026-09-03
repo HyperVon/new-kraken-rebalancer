@@ -2,9 +2,12 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.domain.toCryptoScale
+import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.util.PrecisionConstants
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -23,6 +26,8 @@ import java.time.Instant
 
 class SimulatedKrakenServiceTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
+
+    private val simulatedFeeRate = BigDecimal("0.0026")
 
     private val btcUsdConfig =
         TestFixtures.DEFAULT_TEST_CONFIG.copy(
@@ -70,6 +75,15 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val initialUsd = initialBalances[Asset.USD] ?: BigDecimal.ZERO
 
             val buyVolume = BigDecimal("0.5")
+            val btcPrice = simulatedService.getTickerPrices(TestFixtures.BTCUSD).getValue(TestFixtures.BTCUSD)
+            val expectedVolume = buyVolume.toCryptoScale()
+            val expectedUsdAmount = expectedVolume.multiply(btcPrice).toUsdScale()
+            val expectedFee = expectedUsdAmount.multiply(simulatedFeeRate).setScale(
+                PrecisionConstants.SCALE_FEE,
+                RoundingMode.HALF_UP,
+            )
+            val expectedBtcBalance = initialBtc.add(expectedVolume).toCryptoScale()
+            val expectedUsdBalance = initialUsd.subtract(expectedUsdAmount).subtract(expectedFee).toUsdScale()
             val result =
                 simulatedService.executeOrder(
                     TestFixtures.BTCUSD,
@@ -83,11 +97,13 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val executedTrade = simulatedService.getTradeHistory().first()
             executedTrade.orderTxid shouldBe result.orderTxid
             executedTrade.volume.shouldBeEqualComparingTo(buyVolume)
+            executedTrade.price.shouldBeEqualComparingTo(btcPrice)
+            executedTrade.usdAmount.shouldBeEqualComparingTo(expectedUsdAmount)
+            executedTrade.fee.shouldBeEqualComparingTo(expectedFee)
 
             val newBalances = simulatedService.getBalances()
-            val expectedTotalCost = executedTrade.usdAmount.add(executedTrade.fee).setScale(2, RoundingMode.HALF_UP)
-            newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(initialBtc.add(buyVolume))
-            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(initialUsd.subtract(expectedTotalCost))
+            newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(expectedBtcBalance)
+            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(expectedUsdBalance)
         }
 
         "should execute sell orders and update balances" {
@@ -101,6 +117,15 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val initialUsd = initialBalances[Asset.USD] ?: BigDecimal.ZERO
 
             val sellVolume = BigDecimal("0.2")
+            val btcPrice = simulatedService.getTickerPrices(TestFixtures.BTCUSD).getValue(TestFixtures.BTCUSD)
+            val expectedVolume = sellVolume.toCryptoScale()
+            val expectedUsdAmount = expectedVolume.multiply(btcPrice).toUsdScale()
+            val expectedFee = expectedUsdAmount.multiply(simulatedFeeRate).setScale(
+                PrecisionConstants.SCALE_FEE,
+                RoundingMode.HALF_UP,
+            )
+            val expectedBtcBalance = initialBtc.subtract(expectedVolume).toCryptoScale()
+            val expectedUsdBalance = initialUsd.add(expectedUsdAmount).subtract(expectedFee).toUsdScale()
             val result =
                 simulatedService.executeOrder(
                     TestFixtures.BTCUSD,
@@ -114,13 +139,13 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val executedTrade = simulatedService.getTradeHistory().first()
             executedTrade.orderTxid shouldBe result.orderTxid
             executedTrade.volume.shouldBeEqualComparingTo(sellVolume)
+            executedTrade.price.shouldBeEqualComparingTo(btcPrice)
+            executedTrade.usdAmount.shouldBeEqualComparingTo(expectedUsdAmount)
+            executedTrade.fee.shouldBeEqualComparingTo(expectedFee)
 
             val newBalances = simulatedService.getBalances()
-            val expectedNetProceeds = executedTrade.usdAmount.subtract(
-                executedTrade.fee,
-            ).setScale(2, RoundingMode.HALF_UP)
-            newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(initialBtc.subtract(sellVolume))
-            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(initialUsd.add(expectedNetProceeds))
+            newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(expectedBtcBalance)
+            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(expectedUsdBalance)
         }
 
         "should resolve lower-case allocation aliases to canonical simulator balances and prices" {
