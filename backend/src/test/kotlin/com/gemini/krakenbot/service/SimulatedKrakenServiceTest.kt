@@ -69,9 +69,6 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val initialBtc = initialBalances[Asset.BTC] ?: BigDecimal.ZERO
             val initialUsd = initialBalances[Asset.USD] ?: BigDecimal.ZERO
 
-            val prices = simulatedService.getTickerPrices(TestFixtures.BTCUSD)
-            val btcPrice = prices[TestFixtures.BTCUSD]!!
-
             val buyVolume = BigDecimal("0.5")
             val result =
                 simulatedService.executeOrder(
@@ -102,9 +99,6 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val initialBalances = simulatedService.getBalances()
             val initialBtc = initialBalances[Asset.BTC] ?: BigDecimal.ZERO
             val initialUsd = initialBalances[Asset.USD] ?: BigDecimal.ZERO
-
-            val prices = simulatedService.getTickerPrices(TestFixtures.BTCUSD)
-            val btcPrice = prices[TestFixtures.BTCUSD]!!
 
             val sellVolume = BigDecimal("0.2")
             val result =
