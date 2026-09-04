@@ -397,15 +397,40 @@ class PortfolioManagerImpl(
             }",
         )
 
+        var athDeferred = false
         val drawdownPct =
-            portfolioAnalyzer
-                .updateAthAndCalculateDrawdown(totalPortfolioValueUSD, BigDecimal.ZERO, preObservedAt)
+            when (
+                val athUpdate =
+                    portfolioAnalyzer
+                        .updateAthAndCalculateDrawdown(totalPortfolioValueUSD, BigDecimal.ZERO, preObservedAt)
+            ) {
+                is com.gemini.krakenbot.service.AthUpdateResult.Trusted -> athUpdate.drawdownPct
+
+                // Fail closed: the balance may contain owner capital the
+                // ledger window has not seen yet, so no drawdown derived from
+                // it may drive fiat deployment. Keep showing the last trusted
+                // drawdown and force deployment to zero below.
+                is com.gemini.krakenbot.service.AthUpdateResult.Deferred -> {
+                    athDeferred = true
+                    log.warn(
+                        "ATH state deferred (stale ledger coverage); preserving last trusted drawdown {}",
+                        athUpdate.lastTrustedDrawdownPct,
+                    )
+                    actionLog.add(
+                        "ATH update deferred: balances are newer than confirmed ledger coverage; " +
+                            "fiat deployment disabled this cycle.",
+                    )
+                    athUpdate.lastTrustedDrawdownPct ?: BigDecimal.ZERO
+                }
+            }
         val hasDeployableCryptoTarget =
             config.allocations.any { allocation ->
                 !allocation.symbol.isUsd && allocation.targetPercent > 0.0
             }
         val fiatDeploymentPct =
-            if (hasDeployableCryptoTarget) {
+            if (athDeferred) {
+                BigDecimal.ZERO
+            } else if (hasDeployableCryptoTarget) {
                 portfolioAnalyzer.calculateFiatDeployment(drawdownPct, config.settings)
             } else {
                 BigDecimal.ZERO

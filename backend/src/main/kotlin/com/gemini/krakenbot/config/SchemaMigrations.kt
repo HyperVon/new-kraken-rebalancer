@@ -150,20 +150,41 @@ internal fun JdbcTransaction.ensureOrderIntentTradeForeignKey() {
 }
 
 private fun JdbcTransaction.migratePortfolioStatsToSingleton() {
+    // Legacy databases predate last_trusted_drawdown_pct: carry it only when
+    // the existing table already has it, otherwise rebuild without it (a later
+    // addMissingColumnsStatements pass adds it as NULL).
+    val legacyColumns = exec("PRAGMA table_info(portfolio_stats)") { resultSet ->
+        buildSet {
+            while (resultSet.next()) add(resultSet.getString("name"))
+        }
+    } ?: emptySet()
     exec(
         """
         CREATE TABLE portfolio_stats_with_singleton (
             id INTEGER PRIMARY KEY NOT NULL,
-            all_time_high DECIMAL(18, 2)
+            all_time_high DECIMAL(18, 2),
+            last_trusted_drawdown_pct DECIMAL(10, 4)
         )
         """.trimIndent(),
     )
-    exec(
-        """
-        INSERT INTO portfolio_stats_with_singleton (id, all_time_high)
-        SELECT 1, MAX(all_time_high) FROM portfolio_stats HAVING COUNT(*) > 0
-        """.trimIndent(),
-    )
+    if ("last_trusted_drawdown_pct" in legacyColumns) {
+        exec(
+            """
+            INSERT INTO portfolio_stats_with_singleton (id, all_time_high, last_trusted_drawdown_pct)
+            SELECT 1, MAX(all_time_high),
+                (SELECT last_trusted_drawdown_pct FROM portfolio_stats
+                 ORDER BY all_time_high DESC, id DESC LIMIT 1)
+            FROM portfolio_stats HAVING COUNT(*) > 0
+            """.trimIndent(),
+        )
+    } else {
+        exec(
+            """
+            INSERT INTO portfolio_stats_with_singleton (id, all_time_high)
+            SELECT 1, MAX(all_time_high) FROM portfolio_stats HAVING COUNT(*) > 0
+            """.trimIndent(),
+        )
+    }
     exec("DROP TABLE portfolio_stats")
     exec("ALTER TABLE portfolio_stats_with_singleton RENAME TO portfolio_stats")
     currentDialectMetadata.resetCaches()

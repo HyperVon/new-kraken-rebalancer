@@ -4,6 +4,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
 import io.kotest.assertions.throwables.shouldThrow
@@ -54,6 +55,40 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                 val stats = repository.load()
                 stats.allTimeHigh.shouldNotBeNull()
                 stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
+        }
+
+        "checkpoint persists stats, flow identities, and watermark atomically" {
+            runTest {
+                val tradeRepository = com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl(db)
+                repository.saveAthStateWithFlowCheckpoint(
+                    stats = PortfolioStats(BigDecimal("137500.00"), BigDecimal("20.0000")),
+                    appliedFlows = listOf(
+                        com.gemini.krakenbot.repository.AppliedAthFlow("dep-1", 1000L),
+                        com.gemini.krakenbot.repository.AppliedAthFlow("dep-2", 2000L),
+                    ),
+                    flowWatermarkSec = 500L,
+                )
+
+                val loaded = repository.load()
+                loaded.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("137500.00"))
+                loaded.lastTrustedDrawdownPct!!.shouldBeEqualComparingTo(BigDecimal("20.0000"))
+                repository.getAppliedAthFlowIds(listOf("dep-1", "dep-2", "dep-3")) shouldBe
+                    setOf("dep-1", "dep-2")
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC) shouldBe "500"
+                repository.getAppliedAthFlowIds(emptyList()) shouldBe emptySet()
+
+                // Re-checkpointing known identities is a no-op; advancing the
+                // watermark past them prunes the redundant journal rows.
+                repository.saveAthStateWithFlowCheckpoint(
+                    stats = loaded,
+                    appliedFlows = listOf(
+                        com.gemini.krakenbot.repository.AppliedAthFlow("dep-1", 1000L),
+                    ),
+                    flowWatermarkSec = 2000L,
+                )
+                repository.getAppliedAthFlowIds(listOf("dep-1", "dep-2")) shouldBe emptySet()
+                repository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("137500.00"))
             }
         }
 

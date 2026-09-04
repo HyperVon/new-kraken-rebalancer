@@ -151,18 +151,28 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      and dividends are investment performance that improve portfolio value and reduce drawdown
      without scaling ATH.
    - **Ledger Flow Classification**: Kraken reuses coarse ledger types for economically distinct activity, so
-     `LedgerFlowClassifier` decides what counts as owner capital: only `deposit`/`withdrawal` scale ATH and seed
-     the Buy & Hold benchmark. `refid`-paired zero-net legs and internal-subtype rows are internal moves,
+     `LedgerFlowClassifier` decides what counts as owner capital: only bare `deposit`/`withdrawal` rows scale ATH
+     and seed the Buy & Hold benchmark. Same-asset `refid`-paired zero-net legs and internal-subtype rows
+     (spot/futures/staking wallet moves, earn allocation, migration) are internal moves; cross-asset `refid`
+     funding legs and subtyped funding rows that Kraken cannot distinguish are `AMBIGUOUS` and never scale ATH.
      `trade` rows defer to `TradesHistory`, margin-family rows (`margin`, `rollover`, `settled`, `credit`,
      `sale`) replay in-kind without scaling ATH, and unrecognized types fail closed. Flows for assets outside
      the configured allocation universe are ignored.
    - **Ledger Watermark Ceiling & Safe Pricing**: ATH flow processing is upper-bounded by confirmed ledger
      synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events cannot be skipped
      if a rebalance cycle runs before ledger polling catches up. When balances were observed after ledger
-     coverage, cash-flow adjustment defers a cycle rather than double-counting deposits. Flows apply
-     sequentially oldest-first against residual pre-flow values (current total minus later flows). Non-USD flows are priced using
-     historical portfolio snapshots within ±180s before falling back to live exchange tickers bounded to
-     events at most 24h old; unresolvable prices fail closed without advancing the ATH watermark.
+     coverage, the whole ATH update defers: the balance must neither establish a new ATH nor produce a
+     drawdown that drives fiat deployment, so the cycle preserves the last trusted drawdown and forces
+     deployment to zero. Flows apply sequentially oldest-first (simultaneous flows net into one step), each
+     against its event-time pre-flow basis: the nearest snapshot within ±180s, else the latest prior snapshot
+     plus intervening priced flows, else — only when no prior snapshot exists at all — the residual
+     approximation with an explicit warning (fail-closed when no positive basis exists). Non-USD flows are priced
+     using historical portfolio snapshots within ±180s before falling back to live exchange tickers bounded to
+     events at most 24h old; unresolvable prices fail closed without recording the flow.
+   - **Crash-Idempotent Checkpoint**: the ATH value, the applied per-ledger flow identities, and the flow
+     watermark persist in a single SQLite transaction. A crash before commit retries safely; after commit
+     nothing is double-applied — restarts skip recorded ledger IDs even inside a held watermark window, so
+     same-second events stay exact.
    - **Safety & Persistence**: Missing or explicitly null stats represent an empty initial
      state. A database read or legacy-file migration failure aborts the analysis
      before ATH persistence or order planning, rather than treating the ATH as
@@ -413,6 +423,32 @@ legacy rows used zero as the missing-balance sentinel. The accepted
 delta is reused for Buy & Hold replay, and the comparison remains fail-closed when
 the event sequence cannot be reconciled.
 
+### Strategy inception & Buy & Hold benchmark semantics
+
+The Buy & Hold benchmark answers whether the user would have more money today by
+running the rebalancer versus holding the original inception investment thesis with
+the same external capital over time:
+
+- **Inception resolution** (configured date → cached detection → trade-burst
+  detection → earliest snapshot) carries a confidence flag. On migrated installs
+  whose earliest retained snapshot predates the trustworthy retention horizon
+  (older history was removed by a previous retention era), the earliest row is
+  NOT adopted as inception: the comparison reports `INCEPTION_HISTORY_TRUNCATED`
+  and the user must set `inceptionDate` manually. A known inception whose anchor
+  snapshot is no longer retained likewise fails closed (`INCEPTION_SNAPSHOT_PRUNED`).
+  Fresh installs may still anchor on their first snapshot.
+- **Owner contributions after inception are invested by original inception value
+  weights** (existing synthetic holdings untouched); only the new money moves.
+  Same-timestamp USD funding plumbing that nets to zero (e.g. an instant
+  deposit-then-spend card buy) is passthrough, not a contribution. Contribution
+  prices come only from recorded snapshots near the event — never a live ticker
+  for an old contribution — and missing prices fail closed.
+- **Owner withdrawals scale the whole synthetic portfolio proportionally by
+  market value**, so the cash event itself creates no artificial alpha either way.
+- Investment returns (staking, dividends, adjustments) replay in-kind;
+  internal moves are ignored; unrecognized or ambiguous ledger rows fail closed
+  (`UNSUPPORTED_LEDGER_TYPE`, `AMBIGUOUS_LEDGER_TYPE`).
+
 ### Trade economics & slippage lifecycle
 
 Each executed order creates a **local estimate** row at rebalance time:
@@ -448,7 +484,7 @@ The behavior is controlled by `rebalancer-config.json`:
 | `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
 | `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
 | `fiatDeploymentThresholdPercent` | Deadband threshold below which no fiat is deployed (0.0 to 100.0). Prevents micro-deployments during small drawdowns. |
-| `inceptionDate` | Strategy start date (ISO-8601 string or `YYYY-MM-DD`). When omitted or blank, auto-detected from bot order prefixes or initial trade bursts. Future-dated values are ignored. |
+| `inceptionDate` | Strategy start date (ISO-8601 string or `YYYY-MM-DD`). When omitted or blank, auto-detected from bot order prefixes or initial trade bursts. Future-dated values are ignored. Required on upgraded installs whose early history was pruned (`INCEPTION_HISTORY_TRUNCATED`). |
 
 ## Precision
 

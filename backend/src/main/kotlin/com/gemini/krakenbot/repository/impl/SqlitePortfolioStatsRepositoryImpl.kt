@@ -2,16 +2,25 @@ package com.gemini.krakenbot.repository.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.repository.AppliedAthFlow
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.table.AthAppliedFlowTable
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
+import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
@@ -90,14 +99,59 @@ class SqlitePortfolioStatsRepositoryImpl(
 
     override suspend fun save(stats: PortfolioStats) {
         database.safeTransactionIO(log, "Failed to save portfolio stats") {
-            val updatedRows = PortfolioStatsTable.update({ PortfolioStatsTable.id eq 1 }) {
-                PortfolioStatsTable.applyTo(it, stats)
-            }
-            if (updatedRows == 0) {
-                PortfolioStatsTable.insert {
-                    it[id] = 1
-                    PortfolioStatsTable.applyTo(it, stats)
+            upsertStats(stats)
+        }
+    }
+
+    override suspend fun saveAthStateWithFlowCheckpoint(
+        stats: PortfolioStats,
+        appliedFlows: List<AppliedAthFlow>,
+        flowWatermarkSec: Long?,
+    ) {
+        database.safeTransactionIO(log, "Failed to save ATH state with flow checkpoint") {
+            upsertStats(stats)
+            val knownIds = AthAppliedFlowTable
+                .selectAll()
+                .where { AthAppliedFlowTable.ledgerId inList appliedFlows.map(AppliedAthFlow::ledgerId) }
+                .map { it[AthAppliedFlowTable.ledgerId] }
+                .toSet()
+            for (flow in appliedFlows) {
+                if (flow.ledgerId !in knownIds) {
+                    AthAppliedFlowTable.insert {
+                        it[ledgerId] = flow.ledgerId
+                        it[eventTimeSec] = flow.eventTimeSec
+                    }
                 }
+            }
+            if (flowWatermarkSec != null) {
+                HistorySyncMetadataTable.upsert {
+                    it[key] = SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC
+                    it[value] = flowWatermarkSec.toString()
+                }
+                AthAppliedFlowTable.deleteWhere { eventTimeSec lessEq flowWatermarkSec }
+            }
+        }
+    }
+
+    override suspend fun getAppliedAthFlowIds(ledgerIds: List<String>): Set<String> {
+        if (ledgerIds.isEmpty()) return emptySet()
+        return database.readTransactionIO {
+            AthAppliedFlowTable
+                .selectAll()
+                .where { AthAppliedFlowTable.ledgerId inList ledgerIds }
+                .map { it[AthAppliedFlowTable.ledgerId] }
+                .toSet()
+        }
+    }
+
+    private fun JdbcTransaction.upsertStats(stats: PortfolioStats) {
+        val updatedRows = PortfolioStatsTable.update({ PortfolioStatsTable.id eq 1 }) {
+            PortfolioStatsTable.applyTo(it, stats)
+        }
+        if (updatedRows == 0) {
+            PortfolioStatsTable.insert {
+                it[id] = 1
+                PortfolioStatsTable.applyTo(it, stats)
             }
         }
     }

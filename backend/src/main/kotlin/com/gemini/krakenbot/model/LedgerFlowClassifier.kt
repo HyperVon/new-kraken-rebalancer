@@ -13,17 +13,33 @@ import java.math.BigDecimal
  * benchmark. This classifier applies deterministic, offline-safe rules:
  *
  * - `refid` pairing: rows sharing a non-blank `refid` describe legs of one
- *   economic event. Legs whose signed [LedgerEvent.netBalanceDelta] values sum
- *   to ~zero (within [ZERO_NET_TOLERANCE]) are an internal move, not capital.
+ *   economic event. Legs denominated in the SAME normalized asset whose signed
+ *   [LedgerEvent.netBalanceDelta] values sum to ~zero (within
+ *   [ZERO_NET_TOLERANCE]) are an internal move, not capital. Raw quantities
+ *   across different assets never share units, so mixed-asset groups are not
+ *   netted: their legs fall back to single-row rules, except funding legs
+ *   (`deposit`/`withdrawal`) in a multi-leg group, which become
+ *   [FlowCategory.AMBIGUOUS] (part of a larger event, e.g. a conversion).
  * - `subtype` keywords: Kraken marks internal wallet moves with subtypes such
- *   as `spotfromspot`, `spot to spot`, or `internal`.
+ *   as `spotfromspot`, `spot to futures`, `allocation`, or `migration`.
+ * - Conservative funding rule: a bare `deposit`/`withdrawal` (no subtype) is
+ *   [FlowCategory.OWNER_CAPITAL], but a funding row carrying any other subtype
+ *   is [FlowCategory.AMBIGUOUS] — Kraken cannot reliably distinguish an
+ *   external bank transfer from an internal wallet move there, so ATH scaling
+ *   must not assume owner capital.
  * - Conservative default: an unpaired `transfer` with no internal subtype is
- *   [FlowCategory.INTERNAL_MOVE] (never owner capital). Only `deposit` and
- *   `withdrawal` default to [FlowCategory.OWNER_CAPITAL].
+ *   [FlowCategory.INTERNAL_MOVE] (never owner capital).
  */
 enum class FlowCategory {
     /** Genuine funding entering/leaving the strategy; scales ATH and seeds B&H. */
     OWNER_CAPITAL,
+
+    /**
+     * Economically unclear funding (e.g. a `deposit` with an internal-movement
+     * subtype Kraken also uses for wallet moves). Never scales ATH; fails
+     * closed in the Buy & Hold comparison.
+     */
+    AMBIGUOUS,
 
     /** Strategy-neutral yield or balance change; replays in-kind, never scales ATH. */
     EXTERNAL_BALANCE,
@@ -51,6 +67,26 @@ object LedgerFlowClassifier {
             "spot-from-spot",
             "internal",
             "wallet",
+            // Spot <-> futures wallet movements.
+            "spottofutures",
+            "spotfromfutures",
+            "spot to futures",
+            "spot from futures",
+            "futurespot",
+            "futures to spot",
+            // Spot <-> staking wallet movements.
+            "spottostaking",
+            "spotfromstaking",
+            "spot to staking",
+            "spot from staking",
+            "stakingtospot",
+            "stakingfromspot",
+            "staking to spot",
+            "staking from spot",
+            // Earn allocation mechanics and account migrations.
+            "allocation",
+            "deallocation",
+            "migration",
         )
 
     private val ZERO_NET_TOLERANCE = BigDecimal("0.00000001")
@@ -72,13 +108,26 @@ object LedgerFlowClassifier {
         val pairedIds = mutableSetOf<String>()
         for ((_, legs) in byRefid) {
             if (legs.size < 2) continue
-            val net =
-                legs.fold(BigDecimal.ZERO) { acc, e ->
-                    acc.add(e.netBalanceDelta())
+            val sameAsset = legs.map { normalizeAsset(it.asset) }.toSet().size == 1
+            if (sameAsset) {
+                val net =
+                    legs.fold(BigDecimal.ZERO) { acc, e ->
+                        acc.add(e.netBalanceDelta())
+                    }
+                if (net.abs().compareTo(ZERO_NET_TOLERANCE) <= 0) {
+                    for (leg in legs) {
+                        result[leg.ledgerId] = FlowCategory.INTERNAL_MOVE
+                        pairedIds.add(leg.ledgerId)
+                    }
+                    continue
                 }
-            if (net.abs().compareTo(ZERO_NET_TOLERANCE) <= 0) {
-                for (leg in legs) {
-                    result[leg.ledgerId] = FlowCategory.INTERNAL_MOVE
+            }
+            // Mixed-asset groups (or same-asset groups with real net flow)
+            // are not raw-netted. Funding legs inside a larger event cannot
+            // be proven to be external capital on their own.
+            for (leg in legs) {
+                if (!sameAsset && isFundingType(leg.type)) {
+                    result[leg.ledgerId] = FlowCategory.AMBIGUOUS
                     pairedIds.add(leg.ledgerId)
                 }
             }
@@ -92,6 +141,9 @@ object LedgerFlowClassifier {
 
     private fun classifySingle(event: LedgerEvent): FlowCategory {
         if (isInternalSubtype(event.subtype)) return FlowCategory.INTERNAL_MOVE
+        if (isFundingType(event.type) && !event.subtype.isNullOrBlank()) {
+            return FlowCategory.AMBIGUOUS
+        }
         return when (event.type) {
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
             KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
@@ -121,6 +173,11 @@ object LedgerFlowClassifier {
             else -> FlowCategory.UNSUPPORTED
         }
     }
+
+    private fun isFundingType(type: String): Boolean = type == KrakenApiConstants.LEDGER_TYPE_DEPOSIT ||
+        type == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL
+
+    private fun normalizeAsset(asset: String): String = Asset.normalizeLedgerAsset(asset).uppercase()
 
     private fun isInternalSubtype(subtype: String?): Boolean {
         if (subtype.isNullOrBlank()) return false

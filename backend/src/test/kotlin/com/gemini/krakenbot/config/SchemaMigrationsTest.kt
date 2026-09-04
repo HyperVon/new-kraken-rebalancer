@@ -397,5 +397,44 @@ class SchemaMigrationsTest : StringSpec() {
                 }
             }
         }
+
+        "portfolio stats migration carries the trusted drawdown of the surviving row" {
+            val databaseUrl = "jdbc:sqlite:file:test-migrations-stats-dd-" + UUID.randomUUID() +
+                "?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP TABLE portfolio_stats")
+                    statement.executeUpdate(
+                        "CREATE TABLE portfolio_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                            "all_time_high DECIMAL(18, 2), last_trusted_drawdown_pct DECIMAL(10, 4))",
+                    )
+                    statement.executeUpdate(
+                        "INSERT INTO portfolio_stats (all_time_high, last_trusted_drawdown_pct) " +
+                            "VALUES (100.00, 5.0000), (250.00, 12.5000)",
+                    )
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 7")
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT id, all_time_high, last_trusted_drawdown_pct FROM portfolio_stats",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt("id") shouldBe 1
+                        resultSet.getBigDecimal("all_time_high")
+                            .shouldBeEqualComparingTo(BigDecimal("250.00"))
+                        resultSet.getBigDecimal("last_trusted_drawdown_pct")
+                            .shouldBeEqualComparingTo(BigDecimal("12.5000"))
+                        resultSet.next() shouldBe false
+                    }
+                }
+            }
+        }
     }
 }

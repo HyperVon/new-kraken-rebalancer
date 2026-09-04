@@ -36,6 +36,16 @@ class TradeHistoryQueryService(
     suspend fun getLedgersInRange(from: Instant, to: Instant): List<LedgerEvent> =
         ledgerRepository.getLedgersInRange(from, to)
 
+    companion object {
+        /**
+         * Contribution-time prices must come from recorded snapshots near the
+         * event. Six hours matches the historical reconstruction grid, so an
+         * old contribution still finds its era's prices while a pruned era
+         * fails closed instead of borrowing a modern price.
+         */
+        const val CONTRIBUTION_PRICE_LOOKUP_SECONDS = 21600L
+    }
+
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, Instant.now())
 
     suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison {
@@ -52,6 +62,22 @@ class TradeHistoryQueryService(
         val lastObservationTime = lastSnapshot.balancesObservedAt ?: lastTimestamp
 
         val inceptionResolution = inceptionDiscoveryService?.resolveInception()
+        if (inceptionResolution?.confidence == InceptionConfidence.TRUNCATED) {
+            // Migrated install whose early history was removed by a previous
+            // retention era: no window-anchored number may stand in for a
+            // lifetime baseline. The UI text tells the user to configure
+            // the inception date manually.
+            return RebalancerComparisonCalculator.calculate(
+                snapshots = orderedSnapshots,
+                trades = emptyList(),
+                rewards = emptyList(),
+                knownRebalancerOrderTxids = emptySet(),
+                anchorSnapshot = null,
+                inceptionSnapshot = null,
+                knownInceptionTime = inceptionResolution.inceptionTime,
+                historyTruncated = true,
+            )
+        }
         val inceptionSnapshot = inceptionResolution?.inceptionSnapshot
             ?: inceptionResolution?.inceptionTime?.let { time ->
                 // Bounded fallback: only accept a snapshot within the same
@@ -102,6 +128,28 @@ class TradeHistoryQueryService(
             ?.getKnownRebalancerOrderIdentities(candidateOrderTxids, candidateClientOrderIds)
             ?.orderTxids
             .orEmpty()
+        // Contribution-time prices come only from recorded snapshots near the
+        // event (never a live ticker for an old contribution). Absent prices
+        // fail the comparison closed inside the calculator.
+        val priceProvider = HistoricalPriceProvider { symbol, time ->
+            if (symbol == Asset.USD) {
+                BigDecimal.ONE
+            } else {
+                repository.getSnapshotsInRange(
+                    time.minusSeconds(CONTRIBUTION_PRICE_LOOKUP_SECONDS),
+                    time.plusSeconds(CONTRIBUTION_PRICE_LOOKUP_SECONDS),
+                ).mapNotNull { snapshot ->
+                    val price = snapshot.assets[symbol]?.price
+                    if (price != null && price.signum() > 0) {
+                        snapshot.timestamp to price
+                    } else {
+                        null
+                    }
+                }.minByOrNull { (timestamp, _) ->
+                    kotlin.math.abs(timestamp.toEpochMilli() - time.toEpochMilli())
+                }?.second
+            }
+        }
         return RebalancerComparisonCalculator.calculate(
             snapshots = orderedSnapshots,
             trades = trades,
@@ -110,6 +158,7 @@ class TradeHistoryQueryService(
             anchorSnapshot = anchorSnapshot,
             inceptionSnapshot = inceptionSnapshot,
             knownInceptionTime = inceptionResolution?.inceptionTime,
+            priceProvider = priceProvider,
         )
     }
 

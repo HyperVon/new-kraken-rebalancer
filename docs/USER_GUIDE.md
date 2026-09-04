@@ -206,7 +206,7 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
 | **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Must be positive (any value > 0). |
 | **Drawdown Activation Threshold (%)** | Minimum drawdown before cash deployment begins (deadband). Drawdowns below this deploy 0% cash. Bounded **0–100**. |
-| **Inception Date (Optional)** | Anchor date for strategy performance comparison (`YYYY-MM-DD` or ISO-8601). If empty, auto-detects from the earliest multi-asset rebalance burst in your trade history. |
+| **Inception Date (Optional)** | Anchor date for strategy performance comparison (`YYYY-MM-DD` or ISO-8601). If empty, auto-detects from the earliest multi-asset rebalance burst in your trade history. Required if the comparison reports truncated history on an upgraded install. |
 
 ### Safety modes
 
@@ -306,11 +306,13 @@ The first chart below the summary cards compares what the rebalancer actually
 achieved against a **synthetic buy-and-hold** strategy:
 
 - **Buy & Hold** starts from the strategy inception baseline snapshot across all view windows.
-  Strategy-neutral economic flows (staking rewards, crypto dividends, USD cash dividends, external
-  deposits, withdrawals, transfers, adjustments, consumer Buy Crypto `spend`/`receive` legs, and manual
-  user trades) are replayed into Buy & Hold identically to the actual portfolio. Kraken app/Buy
-  Crypto activity is read from Ledger history, including both asset legs, rather than inferred
-  from the trade-history feed.
+  Strategy-neutral flows (staking rewards, crypto dividends, USD cash dividends, adjustments,
+  consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
+  identically to the actual portfolio. Genuine owner contributions after inception are instead
+  invested by the original inception weights, and owner withdrawals shrink the whole synthetic
+  portfolio proportionally — so the cash event itself never invents alpha for either side.
+  Kraken app/Buy Crypto activity is read from Ledger history, including both asset legs, rather
+  than inferred from the trade-history feed.
 - The comparison accounts for the balance request's duration and up to one second of
   exchange/local clock skew, accepting events only when the complete tracked balance change
   reconciles. API fills use precise `price × volume` first; historical rounded costs are
@@ -337,6 +339,10 @@ The comparison cannot be computed when:
 | Unsupported trade | A trade with a side other than BUY or SELL or non-USD quotes. |
 | Ambiguous trade ownership | A tracked trade, including a late fill, cannot be proven to belong to the bot or an external/manual source. |
 | Unexplained balance change | A tracked balance changed without a matching authoritative trade or supported ledger event, or a known event does not reconcile to the next snapshot. |
+| Inception snapshot pruned | The strategy start is known but its baseline snapshot is no longer retained. |
+| Unsupported ledger type | A ledger entry of a type outside Kraken's documented set blocks safe comparison. |
+| Ambiguous ledger type | A ledger entry cannot be classified as owner capital or an internal movement. |
+| Inception history truncated | Early history was removed by a previous version; set the strategy inception date in Settings. |
 
 When an unavailability reason applies, the chart hides and a message explains why.
 There is no estimated numeric fallback for an unexplained tracked balance change:

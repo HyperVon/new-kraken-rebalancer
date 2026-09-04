@@ -45,7 +45,16 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val drawdown = analyzer.updateAthAndCalculateDrawdown(BigDecimal("1000"))
 
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh.compareTo(BigDecimal("1000")) == 0 }) }
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1000")) ==
+                                0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
             }
         }
 
@@ -56,7 +65,16 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val drawdown = analyzer.updateAthAndCalculateDrawdown(BigDecimal("1000"))
 
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh.compareTo(BigDecimal("1000")) == 0 }) }
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1000")) ==
+                                0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
             }
         }
 
@@ -67,26 +85,46 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val drawdown = analyzer.updateAthAndCalculateDrawdown(BigDecimal("900"))
 
                 drawdown.shouldBeEqualComparingTo(BigDecimal("10.0000"))
-                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh.compareTo(BigDecimal("1000")) == 0 }) }
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1000")) ==
+                                0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
             }
         }
 
         "updateAth rethrows a save failure so the cycle aborts instead of planning on an unpersisted ATH" {
             runTest {
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000"))
-                coEvery { portfolioStatsRepository.save(any()) } throws RuntimeException("boom")
+                coEvery { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
+                    RuntimeException("boom")
 
                 shouldThrow<RuntimeException> {
                     analyzer.updateAthAndCalculateDrawdown(BigDecimal("900"))
                 }
-                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh.compareTo(BigDecimal("1000")) == 0 }) }
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1000")) ==
+                                0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
             }
         }
 
         "updateAth rethrows CancellationException from save" {
             runTest {
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal.ZERO)
-                coEvery { portfolioStatsRepository.save(any()) } throws CancellationException(null)
+                coEvery { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
+                    CancellationException(null)
 
                 shouldThrow<CancellationException> {
                     analyzer.updateAthAndCalculateDrawdown(BigDecimal("1000"))
@@ -256,10 +294,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("15000.00")) == 0
                         },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -280,10 +320,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 drawdown.shouldBeEqualComparingTo(BigDecimal("20.0000"))
                 coVerify {
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("7500.00")) == 0
                         },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -316,12 +358,16 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
 
                 dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                // The watermark is checkpointed atomically with the ATH value
+                // inside the stats repository, not via trade metadata.
                 coVerify {
-                    mockTrades.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
-                        fixedTime.epochSecond.toString(),
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        any(),
+                        emptyList(),
+                        fixedTime.epochSecond,
                     )
                 }
+                coVerify(exactly = 0) { mockTrades.setSyncMetadata(any(), any()) }
             }
         }
 
@@ -386,16 +432,17 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
-                    mockTrades.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
-                        fixedTime.epochSecond.toString(),
-                    )
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("18000.00")) == 0
                         },
+                        match { applied ->
+                            applied.map { it.ledgerId }.toSet() == setOf("L0", "L1", "L2")
+                        },
+                        fixedTime.epochSecond,
                     )
                 }
+                coVerify(exactly = 0) { mockTrades.setSyncMetadata(any(), any()) }
             }
         }
 
@@ -429,27 +476,22 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     )
 
                 // Balances observed after ledger coverage may already include
-                // the deposit; netting it would double-count. ATH ratchets on
-                // price movement only (12,000 > 10,000), watermark untouched.
-                val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                // the deposit, so the whole update defers: ATH must NOT
+                // ratchet to 12,000, nothing is persisted, and the last
+                // trusted drawdown is preserved for display.
+                coEvery { portfolioStatsRepository.load() } returns
+                    PortfolioStats(BigDecimal("10000.00"), BigDecimal("20.0000"))
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
                     totalPortfolioValueUSD = BigDecimal("12000.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = coverageTime.plusSeconds(120),
                 )
 
-                dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify {
-                    portfolioStatsRepository.save(
-                        match {
-                            it.allTimeHigh.compareTo(BigDecimal("12000.00")) == 0
-                        },
-                    )
-                }
+                result shouldBe
+                    com.gemini.krakenbot.service.AthUpdateResult.Deferred(BigDecimal("20.0000"))
+                coVerify(exactly = 0) { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) }
                 coVerify(exactly = 0) {
-                    mockTrades.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
-                        any(),
-                    )
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
                 }
             }
         }
@@ -524,18 +566,277 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 // ETH is outside the configured universe so only the 0.1 BTC
                 // deposit (5,000 at the snapshot price) scales ATH: 10,000 to
                 // 15,000. Observed-at equals ledger coverage, so flows apply.
-                val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
                     totalPortfolioValueUSD = BigDecimal("15000.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = fixedTime,
                 )
 
-                dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                result shouldBe
+                    com.gemini.krakenbot.service.AthUpdateResult.Trusted(BigDecimal.ZERO)
                 coVerify {
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("15000.00")) == 0
                         },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "updateAth skips already-checkpointed flows and applies only the remainder" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "L1",
+                            time = fixedTime.minusSeconds(1800),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "L2",
+                            time = fixedTime.minusSeconds(900),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("2000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    )
+                // L1 was checkpointed by an earlier cycle (watermark held) that
+                // had already scaled ATH to 11000: only L2 scales now.
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("11000.00"))
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns setOf("L1")
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("13000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+
+                // Basis 11000 (13000 - 2000): 11000 * 13000/11000 = 13000.
+                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
+                    .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("13000.00")) == 0 },
+                        match { applied -> applied.map { it.ledgerId } == listOf("L2") },
+                        fixedTime.epochSecond,
+                    )
+                }
+            }
+        }
+
+        "updateAth is a no-op when every candidate flow is already checkpointed" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "L1",
+                            time = fixedTime.minusSeconds(1800),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    )
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns setOf("L1")
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+
+                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
+                    .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("10000.00")) == 0 },
+                        emptyList(),
+                        fixedTime.epochSecond,
+                    )
+                }
+            }
+        }
+
+        "updateAth leaves ATH unchanged for a dust flow that rounds to zero" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "LDUST",
+                            time = fixedTime.minusSeconds(900),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("0.001"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    )
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+
+                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
+                    .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("10000.00")) == 0 },
+                        match { applied -> applied.map { it.ledgerId } == listOf("LDUST") },
+                        fixedTime.epochSecond,
+                    )
+                }
+            }
+        }
+
+        "updateAth treats a malformed flow watermark as fully caught up" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns "bogus"
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+
+                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
+                    .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify(exactly = 0) { mockLedgers.getLedgersInRange(any(), any()) }
+            }
+        }
+
+        "updateAth ignores ledger rows outside the watermark window" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "L-OLD",
+                            time = fixedTime.minusSeconds(7200),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("99999.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "L-NEW",
+                            time = fixedTime.minusSeconds(900),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    )
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("11000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+
+                // Only L-NEW scales: 10000 * 11000/10000 = 11000.
+                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
+                    .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("11000.00")) == 0 },
+                        match { applied -> applied.map { it.ledgerId } == listOf("L-NEW") },
+                        fixedTime.epochSecond,
                     )
                 }
             }
@@ -621,10 +922,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("5000.00")) == 0
                         },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -720,7 +1023,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
                         any(),
                     )
-                    portfolioStatsRepository.save(any())
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
                 }
 
                 // Step 2: Retry when ticker succeeds -> ATH scaled once, watermark advances
@@ -731,14 +1034,13 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify(exactly = 1) {
-                    mockTrades.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
-                        fixedTime.epochSecond.toString(),
-                    )
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match { it.allTimeHigh.compareTo(BigDecimal("11000.00")) == 0 },
+                        match { applied -> applied.map { it.ledgerId } == listOf("L2") },
+                        fixedTime.epochSecond,
                     )
                 }
+                coVerify(exactly = 0) { mockTrades.setSyncMetadata(any(), any()) }
             }
         }
 
@@ -800,8 +1102,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 coVerify(exactly = 0) { krakenService.getTickerPrices(any()) }
                 coVerify(exactly = 1) {
-                    portfolioStatsRepository.save(
-                        match { it.allTimeHigh.compareTo(BigDecimal("11500.00")) == 0 },
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("11500.00")) == 0
+                        },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -982,9 +1288,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 analyzerWithRepos.updateAthAndCalculateDrawdown(BigDecimal("10000.00"), BigDecimal.ZERO)
                 coVerify(exactly = 1) {
-                    mockTrades.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
-                        t0.plusSeconds(60).epochSecond.toString(),
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        any(),
+                        emptyList(),
+                        t0.plusSeconds(60).epochSecond,
                     )
                 }
 
@@ -1020,16 +1327,16 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 analyzerWithRepos.updateAthAndCalculateDrawdown(BigDecimal("15000.00"), BigDecimal.ZERO)
 
-                // Verified: ATH was scaled for the deposit at 70s, and watermark advanced to 150s!
+                // Verified: ATH was scaled for the deposit at 70s, the flow
+                // identity checkpointed, and watermark advanced to 150s!
                 coVerify {
-                    mockTrades.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
-                        t0.plusSeconds(150).epochSecond.toString(),
-                    )
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match { it.allTimeHigh.compareTo(BigDecimal("15000.00")) == 0 },
+                        match { applied -> applied.map { it.ledgerId } == listOf("L70") },
+                        t0.plusSeconds(150).epochSecond,
                     )
                 }
+                coVerify(exactly = 0) { mockTrades.setSyncMetadata(any(), any()) }
             }
         }
 
@@ -1076,8 +1383,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 dd.shouldBeEqualComparingTo(BigDecimal("10.0000"))
                 coVerify {
-                    portfolioStatsRepository.save(
-                        match { it.allTimeHigh.compareTo(BigDecimal("100000.00")) == 0 },
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("100000.00")) == 0
+                        },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -1096,8 +1407,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 ddDeposit.shouldBeEqualComparingTo(BigDecimal("20.0000"))
                 coVerify {
-                    portfolioStatsRepository.save(
-                        match { it.allTimeHigh.compareTo(BigDecimal("125000.00")) == 0 },
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("125000.00")) == 0
+                        },
+                        any(),
+                        any(),
                     )
                 }
 
@@ -1112,8 +1427,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 ddWithdrawal.shouldBeEqualComparingTo(BigDecimal("20.0000"))
                 coVerify {
-                    portfolioStatsRepository.save(
-                        match { it.allTimeHigh.compareTo(BigDecimal("75000.00")) == 0 },
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("75000.00")) == 0
+                        },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -1139,7 +1458,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val mockStatsRepo = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>()
                 coEvery { mockStatsRepo.load() } returns PortfolioStats(BigDecimal("10000.00"))
-                coEvery { mockStatsRepo.save(any()) } throws RuntimeException("disk full")
+                coEvery { mockStatsRepo.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
+                    RuntimeException("disk full")
                 coEvery {
                     mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
@@ -1179,7 +1499,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val mockStatsRepo = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>()
                 coEvery { mockStatsRepo.load() } returns PortfolioStats(BigDecimal("10000.00"))
-                coEvery { mockStatsRepo.save(any()) } throws RuntimeException("disk full")
+                coEvery { mockStatsRepo.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
+                    RuntimeException("disk full")
                 coEvery {
                     mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()

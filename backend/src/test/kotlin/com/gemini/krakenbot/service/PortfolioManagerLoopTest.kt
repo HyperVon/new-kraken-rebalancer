@@ -26,6 +26,7 @@ import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.mockk.coEvery
@@ -650,7 +651,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                         currentValuesUSD = mapOf(TestFixtures.A to BigDecimal("100.00")),
                     ),
                 )
-                coEvery { analyzer.updateAthAndCalculateDrawdown(any(), any(), any()) } returns BigDecimal.ZERO
+                coEvery { analyzer.updateAthAndCalculateDrawdown(any(), any(), any()) } returns
+                    com.gemini.krakenbot.service.AthUpdateResult.Trusted(BigDecimal.ZERO)
                 every { analyzer.calculateFiatDeployment(any(), any()) } returns BigDecimal.ZERO
                 every { analyzer.calculateEffectiveUsdTarget(any()) } returns BigDecimal.ZERO
                 every { analyzer.calculateCryptoScaleFactor(any()) } returns BigDecimal.ONE
@@ -674,6 +676,68 @@ class PortfolioManagerLoopTest : StringSpec() {
                 // The session is owned by the loop body, not by performRebalanceCycle.
                 coVerify(exactly = 0) { configService.beginExecutionSession() }
                 coVerify(exactly = 0) { configService.endExecutionSession() }
+            }
+        }
+
+        "deferred ATH update disables fiat deployment and preserves trusted drawdown" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+
+                val analyzer = mockk<PortfolioAnalyzer>()
+                val executor = mockk<OrderExecutor>(relaxed = true)
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    tradeHistoryService = tradeHistoryService,
+                    portfolioAnalyzer = analyzer,
+                    orderExecutor = executor,
+                    krakenService = null,
+                )
+                val balances = emptyMap<String, BigDecimal>()
+                val prices = emptyMap<String, BigDecimal>()
+                coEvery { analyzer.fetchBalances() } returns balances
+                coEvery { analyzer.fetchObservedBalances() } returns ObservedBalances(balances, Instant.now())
+                coEvery { analyzer.fetchPrices() } returns prices
+                every { analyzer.calculatePortfolioValues(any(), any()) } returns Result.Success(
+                    PortfolioValues(
+                        totalValueUSD = BigDecimal("110000.00"),
+                        currentValuesUSD = mapOf(TestFixtures.A to BigDecimal("110000.00")),
+                    ),
+                )
+                coEvery { analyzer.updateAthAndCalculateDrawdown(any(), any(), any()) } returns
+                    AthUpdateResult.Deferred(BigDecimal("20.0000"))
+                // Trap: must never be consulted while deferred.
+                every { analyzer.calculateFiatDeployment(any(), any()) } returns BigDecimal("99")
+                every { analyzer.calculateEffectiveUsdTarget(any()) } returns BigDecimal.ZERO
+                every { analyzer.calculateCryptoScaleFactor(any()) } returns BigDecimal.ONE
+                every { analyzer.analyzeDeviations(any(), any(), any(), any()) } returns
+                    RebalancePlan(
+                        buyOrders = emptyMap(),
+                        sellOrders = emptyMap(),
+                        events = emptyList(),
+                    )
+                val drawdownSlot = io.mockk.slot<BigDecimal>()
+                val fiatSlot = io.mockk.slot<BigDecimal>()
+                every {
+                    analyzer.buildSnapshot(
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        capture(drawdownSlot),
+                        capture(fiatSlot),
+                        any(),
+                        any(),
+                    )
+                } returns TestFixtures.emptySnapshot(Instant.now(), BigDecimal("110000.00"))
+
+                manager.performRebalanceCycle()
+
+                drawdownSlot.captured.shouldBeEqualComparingTo(BigDecimal("20.0000"))
+                fiatSlot.captured shouldBe BigDecimal.ZERO
             }
         }
 

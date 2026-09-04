@@ -4,6 +4,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -14,11 +15,13 @@ import com.gemini.krakenbot.model.TradeOwnershipClassifier
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.util.PrecisionConstants
+import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 
 object RebalancerComparisonCalculator {
+    private val log = LoggerFactory.getLogger(RebalancerComparisonCalculator::class.java)
     private val baselineMismatchTolerance = BigDecimal("0.01")
 
     // A HALF_UP four-decimal fee parse can lose at most half of one 4-decimal unit.
@@ -32,7 +35,16 @@ object RebalancerComparisonCalculator {
     // A shared cap bounds the combined initial/late search to at most 2^12 assignments.
     private const val MAX_BOUNDARY_EVENT_CANDIDATES = 12
 
-    fun calculate(
+    // Inception weight fractions: 10 decimals, far below any allocation dust.
+    private const val WEIGHT_DIVISION_SCALE = 10
+
+    // Synthetic contribution units: crypto scale 8 like the rest of the engine.
+    private const val ALLOCATION_UNIT_SCALE = 8
+
+    // Withdrawal shrink factor: 10 decimals so proportional cuts stay exact.
+    private const val WITHDRAWAL_FACTOR_SCALE = 10
+
+    suspend fun calculate(
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
         rewards: List<LedgerEvent> = emptyList(),
@@ -40,7 +52,19 @@ object RebalancerComparisonCalculator {
         anchorSnapshot: PortfolioSnapshot? = null,
         inceptionSnapshot: PortfolioSnapshot? = null,
         knownInceptionTime: Instant? = null,
+        historyTruncated: Boolean = false,
+        priceProvider: HistoricalPriceProvider? = null,
     ): RebalancerComparison {
+        if (historyTruncated) {
+            // The local history cannot support a lifetime baseline (retention
+            // removed pre-inception evidence on a migrated install). Any
+            // window-anchored number would be a plausible-looking falsehood.
+            return unavailable(
+                reason = ComparisonUnavailableReason.INCEPTION_HISTORY_TRUNCATED,
+                unavailableAt = snapshots.lastOrNull()?.timestamp,
+                baselineTimestamp = knownInceptionTime,
+            )
+        }
         if (inceptionSnapshot == null && knownInceptionTime != null) {
             // Fail closed: inception is known but its baseline snapshot is no
             // longer retained (pruned). Anchoring B&H to the window start
@@ -132,10 +156,20 @@ object RebalancerComparisonCalculator {
         val windowObservationStart = validationSnapshots.first().balancesObservedAt
             ?: validationSnapshots.first().timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
-        // Ledger types outside Kraken's documented set cannot be replayed
-        // safely; surface UNAVAILABLE instead of silently dropping a
-        // balance-affecting flow.
+        // Ledger rows that are unrecognized or economically ambiguous cannot
+        // be replayed safely; surface UNAVAILABLE instead of silently dropping
+        // a balance-affecting flow.
         val ledgerClassifications = com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(rewards)
+        val ambiguousLedger = rewards.firstOrNull {
+            ledgerClassifications[it.ledgerId] == com.gemini.krakenbot.model.FlowCategory.AMBIGUOUS
+        }
+        if (ambiguousLedger != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE,
+                unavailableAt = ambiguousLedger.time,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
         val unsupportedLedger = rewards.firstOrNull {
             ledgerClassifications[it.ledgerId] == com.gemini.krakenbot.model.FlowCategory.UNSUPPORTED
         }
@@ -174,21 +208,43 @@ object RebalancerComparisonCalculator {
             emptyList()
         }
 
-        val intermediateBenchmarkEvents = buildBenchmarkEvents(
+        // Original inception value weights: every later owner contribution is
+        // invested by these weights so the benchmark preserves the inception
+        // thesis instead of leaving new money in cash.
+        val inceptionWeights = baselineValueWeights(baseline)
+
+        val intermediateBuilt = buildBenchmarkEvents(
             trades = intermediateTrades,
             ledgers = intermediateLedgers,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             baseline = baseline,
+            inceptionWeights = inceptionWeights,
+            priceProvider = priceProvider,
         )
-
-        val windowBenchmarkEvents = buildBenchmarkEvents(
+        if (intermediateBuilt.unpriceableAt != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.MISSING_PRICE,
+                unavailableAt = intermediateBuilt.unpriceableAt,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
+        val windowBuilt = buildBenchmarkEvents(
             trades = reconciledTrades,
             ledgers = reconciledLedgers,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             baseline = baseline,
+            inceptionWeights = inceptionWeights,
+            priceProvider = priceProvider,
         )
+        if (windowBuilt.unpriceableAt != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.MISSING_PRICE,
+                unavailableAt = windowBuilt.unpriceableAt,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
 
-        val benchmarkEvents = (intermediateBenchmarkEvents + windowBenchmarkEvents).sortedBy { it.timestamp }
+        val benchmarkEvents = (intermediateBuilt.events + windowBuilt.events).sortedBy { it.timestamp }
 
         val baselineBalances = extractBaselineBalances(baseline)
         val runningSyntheticBalances = baselineBalances.toMutableMap()
@@ -197,7 +253,18 @@ object RebalancerComparisonCalculator {
         val points = mutableListOf<RebalancerComparisonPoint>()
         for (snapshot in effectiveSnapshots) {
             while (eventIndex < benchmarkEvents.size && benchmarkEvents[eventIndex].timestamp <= snapshot.timestamp) {
-                replayBenchmarkEvent(runningSyntheticBalances, benchmarkEvents[eventIndex])
+                val unpriceableAt = replayBenchmarkEvent(
+                    runningSyntheticBalances,
+                    benchmarkEvents[eventIndex],
+                    priceProvider,
+                )
+                if (unpriceableAt != null) {
+                    return unavailable(
+                        reason = ComparisonUnavailableReason.MISSING_PRICE,
+                        unavailableAt = unpriceableAt,
+                        baselineTimestamp = baseline.timestamp,
+                    )
+                }
                 eventIndex++
             }
 
@@ -1164,16 +1231,54 @@ object RebalancerComparisonCalculator {
         return if (multipleMatches) null else match
     }
 
-    private fun buildBenchmarkEvents(
+    private data class BuiltEvents(
+        val events: List<BenchmarkEvent>,
+        /** Set when an owner flow could not be priced from recorded history. */
+        val unpriceableAt: Instant?,
+    )
+
+    private sealed interface OwnerFlowBuild {
+        data class Event(val event: BenchmarkEvent) : OwnerFlowBuild
+
+        /** Benign skip (e.g. non-positive cash value); not an error. */
+        data object Skip : OwnerFlowBuild
+
+        /** Contribution-time prices unavailable; caller fails closed. */
+        data object Unpriceable : OwnerFlowBuild
+    }
+
+    /** Original inception value weights (normalized symbol to fraction). */
+    private fun baselineValueWeights(baseline: PortfolioSnapshot): Map<String, BigDecimal> {
+        val total = baseline.totalValueUSD
+        if (total.signum() <= 0) return emptyMap()
+        return baseline.assets.mapValues { (_, asset) ->
+            asset.valueUSD.divide(total, WEIGHT_DIVISION_SCALE, RoundingMode.HALF_UP)
+        }.filterValues { it.signum() > 0 }
+    }
+
+    private suspend fun buildBenchmarkEvents(
         trades: List<ReconciledTrade>,
         ledgers: List<ReconciledLedger>,
         knownRebalancerOrderTxids: Set<String>,
         baseline: PortfolioSnapshot,
-    ): List<BenchmarkEvent> {
+        inceptionWeights: Map<String, BigDecimal>,
+        priceProvider: HistoricalPriceProvider?,
+    ): BuiltEvents {
+        val postBaseline = ledgers.filter { reconciledLedger ->
+            !reconciledLedger.embeddedInBaseline &&
+                reconciledLedger.timestamp > baseline.timestamp &&
+                (
+                    baseline.balancesObservedAt == null ||
+                        reconciledLedger.ledger.time > baseline.balancesObservedAt
+                    )
+        }
+        // Passthrough netting runs before classification so a synthesized net
+        // funding leg classifies on its own (bare, unsubtyped) merits.
+        val netted = netPassthroughFunding(postBaseline)
         val events = mutableListOf<BenchmarkEvent>()
         val classifications =
-            com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(ledgers.map { it.ledger })
-        for (reconciledLedger in ledgers) {
+            com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(netted.map { it.ledger })
+        for (reconciledLedger in netted) {
             val ledger = reconciledLedger.ledger
             val category = classifications[ledger.ledgerId]
             if (category == com.gemini.krakenbot.model.FlowCategory.INTERNAL_MOVE ||
@@ -1181,10 +1286,20 @@ object RebalancerComparisonCalculator {
             ) {
                 continue
             }
-            if (!reconciledLedger.embeddedInBaseline &&
-                reconciledLedger.timestamp > baseline.timestamp &&
-                (baseline.balancesObservedAt == null || ledger.time > baseline.balancesObservedAt)
-            ) {
+            if (category == com.gemini.krakenbot.model.FlowCategory.OWNER_CAPITAL) {
+                when (
+                    val built = buildOwnerCapitalEvent(
+                        ledger = ledger,
+                        timestamp = reconciledLedger.timestamp,
+                        inceptionWeights = inceptionWeights,
+                        priceProvider = priceProvider,
+                    )
+                ) {
+                    is OwnerFlowBuild.Event -> events += built.event
+                    OwnerFlowBuild.Skip -> Unit
+                    OwnerFlowBuild.Unpriceable -> return BuiltEvents(events, reconciledLedger.timestamp)
+                }
+            } else {
                 events += BenchmarkEvent.ExternalBalance(
                     timestamp = reconciledLedger.timestamp,
                     asset = ledger.asset,
@@ -1212,18 +1327,194 @@ object RebalancerComparisonCalculator {
             }
         }
         events.sort()
-        return events
+        return BuiltEvents(events, null)
     }
 
-    private fun replayBenchmarkEvent(balances: MutableMap<String, BigDecimal>, event: BenchmarkEvent) {
+    /**
+     * Nets same-timestamp USD funding plumbing into a single contribution or
+     * withdrawal. A deposit that is immediately spent (card buy, instant
+     * conversion) is passthrough funding, not a contribution: counting the
+     * deposit by inception weights AND replaying the conversion legs would
+     * invent benchmark alpha from one economic event. Only USD legs net
+     * (exact units, no prices needed); a zero net drops the legs, a nonzero
+     * net becomes one synthetic bare funding leg. Netting only triggers when
+     * the timestamp group contains a genuine funding leg (`deposit` or
+     * `withdrawal`); pure spend/receive groups replay individually as before.
+     */
+    private fun netPassthroughFunding(ledgers: List<ReconciledLedger>): List<ReconciledLedger> {
+        if (ledgers.size < 2) return ledgers
+        val out = mutableListOf<ReconciledLedger>()
+        for ((timestamp, group) in ledgers.groupBy { it.timestamp }) {
+            val usdLegs = group.filter { reconciled ->
+                Asset.normalizeLedgerAsset(reconciled.ledger.asset).uppercase() == Asset.USD &&
+                    (
+                        reconciled.ledger.type == KrakenApiConstants.LEDGER_TYPE_DEPOSIT ||
+                            reconciled.ledger.type == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL ||
+                            reconciled.ledger.type == KrakenApiConstants.LEDGER_TYPE_SPEND ||
+                            reconciled.ledger.type == KrakenApiConstants.LEDGER_TYPE_RECEIVE
+                        )
+            }
+            val hasFunding = usdLegs.any {
+                it.ledger.type == KrakenApiConstants.LEDGER_TYPE_DEPOSIT ||
+                    it.ledger.type == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL
+            }
+            if (!hasFunding || usdLegs.size < 2) {
+                out += group
+                continue
+            }
+            val net = usdLegs.fold(BigDecimal.ZERO) { acc, reconciled ->
+                acc.add(reconciled.ledger.netBalanceDelta())
+            }
+            val rest = group.filter { it !in usdLegs.toSet() }
+            if (net.signum() == 0) {
+                log.info(
+                    "Netted {} same-timestamp USD funding legs to zero at {}; passthrough, not a contribution",
+                    usdLegs.size,
+                    timestamp,
+                )
+                out += rest
+                continue
+            }
+            out += rest
+            val syntheticType = if (net.signum() > 0) {
+                KrakenApiConstants.LEDGER_TYPE_DEPOSIT
+            } else {
+                KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL
+            }
+            out += ReconciledLedger(
+                ledger = LedgerEvent(
+                    ledgerId = "passthrough-${timestamp.toEpochMilli()}",
+                    time = timestamp,
+                    type = syntheticType,
+                    asset = Asset.USD,
+                    amount = net,
+                ),
+                timestamp = timestamp,
+                netBalanceDelta = net,
+            )
+        }
+        return out
+    }
+
+    /**
+     * Maps a genuine owner-capital ledger row to a typed benchmark event.
+     * Contributions are invested by original inception weights at
+     * contribution-time prices; withdrawals become proportional reductions.
+     * Returns [OwnerFlowBuild.Unpriceable] when recorded history cannot price
+     * the event — callers fail closed rather than using a live ticker for an
+     * old contribution.
+     */
+    private suspend fun buildOwnerCapitalEvent(
+        ledger: LedgerEvent,
+        timestamp: Instant,
+        inceptionWeights: Map<String, BigDecimal>,
+        priceProvider: HistoricalPriceProvider?,
+    ): OwnerFlowBuild {
+        val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
+        val unitPrice = if (symbol == Asset.USD) {
+            BigDecimal.ONE
+        } else {
+            priceProvider?.priceAt(symbol, ledger.time)
+        }
+        if (unitPrice == null || unitPrice.signum() <= 0) return OwnerFlowBuild.Unpriceable
+        val cashUsd = ledger.netBalanceDelta().multiply(unitPrice)
+        return when (ledger.type) {
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> {
+                if (cashUsd.signum() <= 0 || inceptionWeights.isEmpty()) {
+                    if (cashUsd.signum() > 0) return OwnerFlowBuild.Unpriceable
+                    return OwnerFlowBuild.Skip
+                }
+                val allocations = mutableMapOf<String, BigDecimal>()
+                for ((weightSymbol, weight) in inceptionWeights) {
+                    val price = if (weightSymbol == Asset.USD) {
+                        BigDecimal.ONE
+                    } else {
+                        priceProvider?.priceAt(weightSymbol, ledger.time)
+                    }
+                    if (price == null || price.signum() <= 0) return OwnerFlowBuild.Unpriceable
+                    allocations[weightSymbol] =
+                        cashUsd.multiply(weight).divide(price, ALLOCATION_UNIT_SCALE, RoundingMode.HALF_UP)
+                }
+                OwnerFlowBuild.Event(
+                    BenchmarkEvent.OwnerContribution(
+                        timestamp = timestamp,
+                        contributionUsd = cashUsd,
+                        allocations = allocations,
+                        event = ledger,
+                    ),
+                )
+            }
+
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> {
+                val withdrawalUsd = cashUsd.negate()
+                if (withdrawalUsd.signum() <= 0) return OwnerFlowBuild.Skip
+                OwnerFlowBuild.Event(
+                    BenchmarkEvent.OwnerWithdrawal(
+                        timestamp = timestamp,
+                        withdrawalUsd = withdrawalUsd,
+                        event = ledger,
+                    ),
+                )
+            }
+
+            else -> {
+                // Unreachable: only deposit/withdrawal classify as
+                // OWNER_CAPITAL. Replay in-kind rather than inventing
+                // contribution semantics.
+                OwnerFlowBuild.Event(
+                    BenchmarkEvent.ExternalBalance(
+                        timestamp = timestamp,
+                        asset = ledger.asset,
+                        netAmount = ledger.netBalanceDelta(),
+                        event = ledger,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Replays one benchmark event into synthetic holdings. Returns the event
+     * timestamp when a withdrawal cannot be valued from recorded history
+     * (caller fails closed), null on success.
+     */
+    private suspend fun replayBenchmarkEvent(
+        balances: MutableMap<String, BigDecimal>,
+        event: BenchmarkEvent,
+        priceProvider: HistoricalPriceProvider?,
+    ): Instant? {
         when (event) {
             is BenchmarkEvent.ExternalBalance -> {
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-                // Owner-capital deposits of a new asset (and yield in a new
-                // asset) are real benchmark holdings. Dropping them because
-                // the baseline lacked the symbol understates Buy & Hold and
-                // creates phantom cash drag.
+                // Yield in a new asset is a real benchmark holding. Dropping
+                // it because the baseline lacked the symbol understates Buy &
+                // Hold and creates phantom cash drag.
                 balances[symbol] = (balances[symbol] ?: BigDecimal.ZERO).add(event.netAmount)
+            }
+
+            is BenchmarkEvent.OwnerContribution -> {
+                for ((symbol, units) in event.allocations) {
+                    balances[symbol] = (balances[symbol] ?: BigDecimal.ZERO).add(units)
+                }
+            }
+
+            is BenchmarkEvent.OwnerWithdrawal -> {
+                var syntheticTotal = BigDecimal.ZERO
+                for ((symbol, balance) in balances) {
+                    val price = if (symbol == Asset.USD) {
+                        BigDecimal.ONE
+                    } else {
+                        priceProvider?.priceAt(symbol, event.timestamp) ?: return event.timestamp
+                    }
+                    syntheticTotal = syntheticTotal.add(balance.multiply(price))
+                }
+                if (syntheticTotal.signum() <= 0) return event.timestamp
+                val factor = syntheticTotal.subtract(event.withdrawalUsd)
+                    .divide(syntheticTotal, WITHDRAWAL_FACTOR_SCALE, RoundingMode.HALF_UP)
+                    .coerceAtLeast(BigDecimal.ZERO)
+                for (symbol in balances.keys.toList()) {
+                    balances[symbol] = balances.getValue(symbol).multiply(factor)
+                }
             }
 
             is BenchmarkEvent.Trade -> {
@@ -1232,6 +1523,7 @@ object RebalancerComparisonCalculator {
                 }
             }
         }
+        return null
     }
 
     private fun applyLedgerEvent(

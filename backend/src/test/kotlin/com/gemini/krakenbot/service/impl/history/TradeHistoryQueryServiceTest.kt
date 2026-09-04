@@ -4,6 +4,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -604,6 +605,91 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.baselineTimestamp shouldBe inceptionTime
                 comparison.points.size shouldBe 2
+            }
+        }
+
+        "getRebalancerComparison_OwnerDeposit PricedFromRecordedSnapshots" {
+            runTest {
+                val t0 = now.minusSeconds(86400 * 30)
+                val tMid = now.plusSeconds(1800)
+                val snap0 = snapshot(
+                    t0,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = t0,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "110000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "60000.00",
+                )
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        ledgerEvent(
+                            ledgerId = "qs-deposit-1",
+                            timestamp = tMid,
+                            asset = "USD",
+                            amount = "10000.00",
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ),
+                    )
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                // $10k allocated by 50/50 inception weights at recorded 50k
+                // BTC: no artificial alpha at flat prices.
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
+            }
+        }
+
+        "getRebalancerComparison_TruncatedHistoryReturnsInformativeUnavailable" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = now.minusSeconds(86400 * 100),
+                    inceptionSnapshot = null,
+                    isAutoDetected = true,
+                    confidence = InceptionConfidence.TRUNCATED,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_HISTORY_TRUNCATED
             }
         }
     }

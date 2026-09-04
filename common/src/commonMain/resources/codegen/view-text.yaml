@@ -206,6 +206,8 @@ ViewText:
   UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE: "A deposit, withdrawal, transfer, or incomplete trade history may exist."
   UNAVAILABLE_INCEPTION_SNAPSHOT_PRUNED: "The inception baseline snapshot is no longer retained; the comparison cannot anchor safely."
   UNAVAILABLE_UNSUPPORTED_LEDGER_TYPE: "A ledger entry of an unsupported type blocks safe comparison."
+  UNAVAILABLE_AMBIGUOUS_LEDGER_TYPE: "A ledger entry cannot be classified as owner capital or internal movement; the comparison cannot proceed safely."
+  UNAVAILABLE_INCEPTION_HISTORY_TRUNCATED: "Early history was removed by a previous version; set the strategy inception date in Settings to enable the lifetime comparison."
   UNAVAILABLE_INVALID_RESPONSE: "Comparison data could not be validated."
   COMPARISON_CONFIDENCE_ESTIMATED: "Estimated (external balance changes may affect precision)"
   # Staking rewards

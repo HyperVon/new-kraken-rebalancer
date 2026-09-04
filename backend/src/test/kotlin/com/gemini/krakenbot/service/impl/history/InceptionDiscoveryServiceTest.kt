@@ -238,6 +238,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 result.isAutoDetected shouldBe true
                 result.inceptionTime shouldBe earliestSnap.timestamp
                 result.inceptionSnapshot shouldBe earliestSnap
+                result.confidence shouldBe InceptionConfidence.CONFIDENT
                 coVerify {
                     tradeRepository.setSyncMetadata(
                         SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
@@ -248,6 +249,117 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                         "104",
                     )
                 }
+            }
+        }
+
+        "resolveInception reports truncated history instead of inventing inception on migrated installs" {
+            runTest {
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                // Old installation: trades exist (strategy is older than
+                // retention) but the earliest retained snapshot is 100 days
+                // old, so pre-inception evidence was pruned away.
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns
+                    listOf(dummyTrade("BTC", fixedNow.minusSeconds(86400)))
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
+                val earliestSnap = dummySnapshot(fixedNow.minusSeconds(86400L * 100))
+                coEvery { tradeRepository.getSnapshotsInRange(Instant.EPOCH, any()) } returns listOf(earliestSnap)
+
+                val result = service.resolveInception()
+
+                result.isAutoDetected shouldBe true
+                result.inceptionTime shouldBe earliestSnap.timestamp
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.TRUNCATED
+                // Never cached: a later configured date must be able to
+                // resolve without fighting a fabricated auto-detection.
+                coVerify(exactly = 0) {
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "resolveInception reports truncated history for old seeded installs without trades" {
+            runTest {
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { tradeRepository.isHistorySeeded() } returns true
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
+                val earliestSnap = dummySnapshot(fixedNow.minusSeconds(86400L * 100))
+                coEvery { tradeRepository.getSnapshotsInRange(Instant.EPOCH, any()) } returns listOf(earliestSnap)
+
+                val result = service.resolveInception()
+
+                result.confidence shouldBe InceptionConfidence.TRUNCATED
+                result.inceptionSnapshot shouldBe null
+            }
+        }
+
+        "resolveInception honors a legacy cache while its anchor snapshot is retained" {
+            runTest {
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns emptyList()
+                val cachedEpoch = 1775000000000L
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns cachedEpoch.toString()
+                // No source key: rows written before source tracking existed.
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE) } returns null
+                val snap = dummySnapshot(Instant.ofEpochMilli(cachedEpoch))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                coEvery { tradeRepository.getSnapshotId(snap.timestamp) } returns null
+
+                val result = service.resolveInception()
+
+                result.isAutoDetected shouldBe true
+                result.inceptionTime shouldBe Instant.ofEpochMilli(cachedEpoch)
+                result.inceptionSnapshot shouldBe snap
+                result.confidence shouldBe InceptionConfidence.CONFIDENT
+            }
+        }
+
+        "resolveInception records a configured anchor without requiring a snapshot id" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val snap = dummySnapshot(configuredInstant.plusSeconds(5))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                coEvery { tradeRepository.getSnapshotId(snap.timestamp) } returns null
+
+                val result = service.resolveInception()
+
+                result.isAutoDetected shouldBe false
+                result.inceptionTime shouldBe configuredInstant
+                result.inceptionSnapshot shouldBe snap
+                result.confidence shouldBe InceptionConfidence.CONFIDENT
+                coVerify {
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                        configuredInstant.toEpochMilli().toString(),
+                    )
+                }
+            }
+        }
+
+        "resolveInception ignores a cleared manual override instead of returning it as auto-detected" {
+            runTest {
+                val manualTime = Instant.parse("2026-03-03T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns
+                    manualTime.toEpochMilli().toString()
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE) } returns
+                    InceptionDiscoveryService.INCEPTION_SOURCE_CONFIGURED
+                val earliestSnap = dummySnapshot(fixedNow.minusSeconds(86400L * 5))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(earliestSnap)
+                coEvery { tradeRepository.getSnapshotId(earliestSnap.timestamp) } returns 105
+
+                val result = service.resolveInception()
+
+                result.inceptionTime shouldBe earliestSnap.timestamp
+                result.inceptionSnapshot shouldBe earliestSnap
             }
         }
 
@@ -278,6 +390,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 result.isAutoDetected shouldBe false
                 result.inceptionTime shouldBe configuredInstant
                 result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.TRUNCATED
                 coVerify {
                     tradeRepository.setSyncMetadata(
                         SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,

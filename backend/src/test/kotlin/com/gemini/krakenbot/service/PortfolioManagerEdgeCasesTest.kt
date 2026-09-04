@@ -252,10 +252,12 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0
                         },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -474,10 +476,12 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                         )
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0
                         },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -491,7 +495,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     BigDecimal("1000.0"),
                 )
                 coEvery {
-                    portfolioStatsRepository.save(any())
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
                 } throws IOException(
                     "Save failed",
                 )
@@ -500,8 +504,12 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("800.0"))
                 }
                 coVerify {
-                    portfolioStatsRepository.save(
-                        match { it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0 },
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0
+                        },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -512,14 +520,19 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
                     BigDecimal("1000.0"),
                 )
-                coEvery { portfolioStatsRepository.save(any()) } throws IOException("Save failed")
+                coEvery { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
+                    IOException("Save failed")
 
                 shouldThrow<IOException> {
                     portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
                 }
                 coVerify {
-                    portfolioStatsRepository.save(
-                        match { it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0 },
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0
+                        },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -528,7 +541,8 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
         "testUpdateAthAndCalculateDrawdown_SaveCancellationPropagates" {
             runTest {
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000.0"))
-                coEvery { portfolioStatsRepository.save(any()) } throws CancellationException("cancelled")
+                coEvery { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
+                    CancellationException("cancelled")
 
                 shouldThrow<CancellationException> {
                     portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))

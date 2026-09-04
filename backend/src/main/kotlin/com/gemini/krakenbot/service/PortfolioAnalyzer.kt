@@ -14,6 +14,21 @@ import java.time.Instant
 
 data class ObservedBalances(val balances: RawBalances, val observedAt: Instant = Instant.now())
 
+/**
+ * Outcome of an ATH/drawdown update.
+ *
+ * A balance observation that postdates confirmed owner-capital ledger coverage
+ * may already contain capital the ledger window has not seen yet. Such a
+ * balance must neither establish a new ATH nor drive drawdown-based fiat
+ * deployment, so the update comes back [Deferred] with the last trustworthy
+ * drawdown preserved and no state written.
+ */
+sealed interface AthUpdateResult {
+    data class Trusted(val drawdownPct: BigDecimal) : AthUpdateResult
+
+    data class Deferred(val lastTrustedDrawdownPct: BigDecimal?) : AthUpdateResult
+}
+
 interface PortfolioAnalyzer {
     suspend fun fetchBalances(): RawBalances
 
@@ -33,13 +48,16 @@ interface PortfolioAnalyzer {
     suspend fun updateAthAndCalculateDrawdown(
         totalPortfolioValueUSD: BigDecimal,
         netExternalFlowUSD: BigDecimal,
-    ): BigDecimal = updateAthAndCalculateDrawdown(totalPortfolioValueUSD, netExternalFlowUSD, null)
+    ): BigDecimal = // A null observation never trips the coverage gate, so deferral is
+        // impossible here; the cast fails loudly if that invariant breaks.
+        (updateAthAndCalculateDrawdown(totalPortfolioValueUSD, netExternalFlowUSD, null) as AthUpdateResult.Trusted)
+            .drawdownPct
 
     suspend fun updateAthAndCalculateDrawdown(
         totalPortfolioValueUSD: BigDecimal,
         netExternalFlowUSD: BigDecimal,
         balancesObservedAt: Instant?,
-    ): BigDecimal
+    ): AthUpdateResult
 
     fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal
 

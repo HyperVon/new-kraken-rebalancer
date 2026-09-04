@@ -43,14 +43,73 @@ class LedgerFlowClassifierTest : StringSpec() {
             LedgerFlowClassifier.classify(event("1", "transfer", "25.00")) shouldBe FlowCategory.INTERNAL_MOVE
         }
 
-        "single-leg refid group skips pairing and uses single rules" {
-            LedgerFlowClassifier.classify(event("1", "deposit", "100.00", refid = "SOLO")) shouldBe
-                FlowCategory.OWNER_CAPITAL
-        }
-
-        "non-matching subtype falls through to type rules" {
+        "unrecognized subtype on funding is ambiguous, never owner capital" {
             LedgerFlowClassifier.classify(
                 event("1", "deposit", "100.00", subtype = "staking-reward"),
+            ) shouldBe FlowCategory.AMBIGUOUS
+            LedgerFlowClassifier.classify(
+                event("2", "withdrawal", "-50.00", subtype = "external"),
+            ) shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "spot/futures wallet subtypes are internal moves" {
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "0.50", subtype = "spotfromfutures", asset = "BTC"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("2", "withdrawal", "-0.50", subtype = "spottofutures", asset = "BTC"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "staking wallet and earn subtypes are internal moves" {
+            LedgerFlowClassifier.classify(
+                event("1", "transfer", "10.00", subtype = "spottostaking"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("2", "deposit", "10.00", subtype = "stakingfromspot"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("3", "deposit", "10.00", subtype = "allocation"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("4", "withdrawal", "-10.00", subtype = "deallocation"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("5", "deposit", "10.00", subtype = "migration"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "cross-asset refid group funding legs are ambiguous" {
+            val legs =
+                listOf(
+                    event("1", "withdrawal", "-1.00", refid = "CX", asset = "BTC"),
+                    event("2", "deposit", "50000.00", refid = "CX", asset = "USD"),
+                )
+            val result = LedgerFlowClassifier.classifyAll(legs)
+            result["1"] shouldBe FlowCategory.AMBIGUOUS
+            result["2"] shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "mixed refid and plain rows classify together without pairing" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("1", "transfer", "25.00", refid = "R1", asset = "BTC"),
+                    event("2", "deposit", "100.00"),
+                ),
+            )
+            result["1"] shouldBe FlowCategory.INTERNAL_MOVE
+            result["2"] shouldBe FlowCategory.OWNER_CAPITAL
+        }
+
+        "blank subtype behaves like no subtype" {
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "100.00", subtype = ""),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+        }
+
+        "single-leg refid group still uses single rules" {
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "100.00", refid = "SOLO"),
             ) shouldBe FlowCategory.OWNER_CAPITAL
         }
 

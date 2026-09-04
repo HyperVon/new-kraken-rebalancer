@@ -151,7 +151,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 val captor = slot<PortfolioStats>()
-                coVerify { portfolioStatsRepository.save(capture(captor)) }
+                coVerify { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(capture(captor), any(), any()) }
                 captor.captured.allTimeHigh.shouldNotBeNull()
                 captor.captured.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("1500.0"))
             }

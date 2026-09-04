@@ -11,10 +11,23 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
 import kotlin.math.abs
 
+/**
+ * Whether the local history can support [InceptionResolution] as a true
+ * strategy start. [CONFIDENT] means full history from strategy start is
+ * present (or the start is explicitly configured with an anchor);
+ * [TRUNCATED] means older history was likely removed by a previous retention
+ * era, so any lifetime baseline would be a plausible falsehood.
+ */
+enum class InceptionConfidence {
+    CONFIDENT,
+    TRUNCATED,
+}
+
 data class InceptionResolution(
     val inceptionTime: Instant,
     val inceptionSnapshot: PortfolioSnapshot?,
     val isAutoDetected: Boolean,
+    val confidence: InceptionConfidence = InceptionConfidence.CONFIDENT,
 )
 
 class InceptionDiscoveryService(
@@ -34,16 +47,21 @@ class InceptionDiscoveryService(
         } else {
             parsedConfigured
         }
+        // A configured date is authoritative: re-resolve from it on every call
+        // so a stale cache can never override the user's explicit setting.
         if (configured != null) {
             val snapshot = findClosestSnapshot(configured)
-            tradeRepository.setSyncMetadata(
-                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
-                configured.toEpochMilli().toString(),
-            )
-            if (snapshot != null) {
-                tradeRepository.getSnapshotId(snapshot.timestamp)?.let { id ->
-                    tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
-                }
+            persistDetection(configured, snapshot, source = INCEPTION_SOURCE_CONFIGURED)
+            if (snapshot == null) {
+                // Configured but unanchorable: no retained snapshot near the
+                // date, so no baseline can be built from it.
+                log.warn("Configured inception date {} has no retained anchor snapshot", configured)
+                return InceptionResolution(
+                    inceptionTime = configured,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.TRUNCATED,
+                )
             }
             log.info("Using configured inception date: {}", configured)
             return InceptionResolution(
@@ -53,58 +71,83 @@ class InceptionDiscoveryService(
             )
         }
 
-        // 2. Check cached/previously-committed metadata if already detected previously
+        // 2. Check cached/previously-committed metadata if already detected previously.
+        // The recorded source prevents a cleared manual override from silently
+        // returning as "auto-detected": a CONFIGURED cache is only honored
+        // while the same date is still configured (handled above, so any
+        // CONFIGURED cache reaching here is stale). Legacy rows without a
+        // source are trusted only while their anchor snapshot is retained.
         val cachedEpoch = tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)?.toLongOrNull()
+        val cachedSource = tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
         if (cachedEpoch != null && cachedEpoch > 0) {
             val cachedTime = Instant.ofEpochMilli(cachedEpoch)
             if (cachedTime.isAfter(nowProvider())) {
                 log.warn("Ignoring cached inception timestamp in the future: {}", cachedTime)
+            } else if (cachedSource == INCEPTION_SOURCE_CONFIGURED) {
+                log.info("Ignoring stale configured inception cache after configuration change: {}", cachedTime)
             } else {
                 val snapshot = findClosestSnapshot(cachedTime)
                 if (snapshot != null) {
                     tradeRepository.getSnapshotId(snapshot.timestamp)?.let { id ->
                         tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
                     }
+                    return InceptionResolution(
+                        inceptionTime = cachedTime,
+                        inceptionSnapshot = snapshot,
+                        isAutoDetected = true,
+                    )
                 }
-                return InceptionResolution(
-                    inceptionTime = cachedTime,
-                    inceptionSnapshot = snapshot,
-                    isAutoDetected = true,
-                )
+                log.info("Ignoring cached inception without a retained anchor: {}", cachedTime)
             }
         }
 
         // 3. One-time auto-detect from trade clusters
         val detected = detectBurstInception()
         if (detected != null) {
-            tradeRepository.setSyncMetadata(
-                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
-                detected.inceptionTime.toEpochMilli().toString(),
-            )
-            if (detected.inceptionSnapshot != null) {
-                tradeRepository.getSnapshotId(detected.inceptionSnapshot.timestamp)?.let { id ->
-                    tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
-                }
-            }
+            persistDetection(detected.inceptionTime, detected.inceptionSnapshot, source = INCEPTION_SOURCE_AUTO)
             log.info("Auto-detected inception from rebalance burst at {}", detected.inceptionTime)
             return detected
         }
 
-        // 4. Defensible fallback: earliest snapshot in database
+        // 4. Earliest retained snapshot: only a valid inception when the
+        // retained history provably starts at strategy start. Retention only
+        // ever removed data older than HISTORICAL_DAYS_BACK, so an earliest
+        // snapshot newer than that horizon means nothing could have been
+        // pruned. Otherwise the database is a migrated/truncated install and
+        // the earliest row must NOT be cached or presented as inception.
         val earliestSnapshot = tradeRepository.getSnapshotsInRange(Instant.EPOCH, nowProvider()).firstOrNull()
         if (earliestSnapshot != null) {
-            tradeRepository.getSnapshotId(earliestSnapshot.timestamp)?.let { id ->
-                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
-            }
-            tradeRepository.setSyncMetadata(
-                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
-                earliestSnapshot.timestamp.toEpochMilli().toString(),
+            // Retention only ever removed snapshots older than this horizon, so
+            // an earliest snapshot newer than it proves nothing was pruned.
+            val retentionHorizon = nowProvider().minusSeconds(
+                com.gemini.krakenbot.util.PrecisionConstants.HISTORICAL_DAYS_BACK.toLong() * 86400L,
             )
-            log.info("Falling back to earliest snapshot as inception: {}", earliestSnapshot.timestamp)
+            val tradesExist = tradeRepository.getTradesInRange(Instant.EPOCH, nowProvider()).isNotEmpty()
+            if (!earliestSnapshot.timestamp.isBefore(retentionHorizon) ||
+                (!tradesExist && !tradeRepository.isHistorySeeded())
+            ) {
+                persistDetection(
+                    earliestSnapshot.timestamp,
+                    earliestSnapshot,
+                    source = INCEPTION_SOURCE_AUTO,
+                )
+                log.info("Falling back to earliest snapshot as inception: {}", earliestSnapshot.timestamp)
+                return InceptionResolution(
+                    inceptionTime = earliestSnapshot.timestamp,
+                    inceptionSnapshot = earliestSnapshot,
+                    isAutoDetected = true,
+                )
+            }
+            log.warn(
+                "Earliest retained snapshot at {} predates trustworthy retention; " +
+                    "inception must be configured manually",
+                earliestSnapshot.timestamp,
+            )
             return InceptionResolution(
                 inceptionTime = earliestSnapshot.timestamp,
-                inceptionSnapshot = earliestSnapshot,
+                inceptionSnapshot = null,
                 isAutoDetected = true,
+                confidence = InceptionConfidence.TRUNCATED,
             )
         }
 
@@ -158,6 +201,19 @@ class InceptionDiscoveryService(
         return null
     }
 
+    private suspend fun persistDetection(time: Instant, snapshot: PortfolioSnapshot?, source: String) {
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+            time.toEpochMilli().toString(),
+        )
+        tradeRepository.setSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE, source)
+        if (snapshot != null) {
+            tradeRepository.getSnapshotId(snapshot.timestamp)?.let { id ->
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
+            }
+        }
+    }
+
     suspend fun findClosestSnapshot(targetTime: Instant): PortfolioSnapshot? {
         val candidatesRange = tradeRepository.getSnapshotsInRange(
             targetTime.minusSeconds(MAX_ANCHOR_PROXIMITY_SECONDS),
@@ -181,6 +237,8 @@ class InceptionDiscoveryService(
         const val BURST_WINDOW_MS = 5000L
         const val MIN_DISTINCT_SYMBOLS_FOR_BURST = 2
         const val MAX_ANCHOR_PROXIMITY_SECONDS = 300L
+        const val INCEPTION_SOURCE_CONFIGURED = "configured"
+        const val INCEPTION_SOURCE_AUTO = "auto"
 
         fun parseInceptionDate(text: String?): Instant? {
             if (text.isNullOrBlank()) return null

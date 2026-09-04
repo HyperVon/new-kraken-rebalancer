@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.27] - 2026-09-04
+
+### Fixed
+
+- **ATH trust state for stale ledger coverage**: when balances are observed
+  after confirmed owner-capital ledger coverage, the whole ATH update now
+  defers instead of merely skipping flow processing. The untrusted balance
+  neither establishes a new ATH nor produces a deployment-driving drawdown:
+  the cycle preserves the last trusted drawdown and forces fiat deployment
+  to zero.
+- **Crash-idempotent ATH checkpoint**: the ATH value, applied per-ledger flow
+  identities, and the flow watermark persist in a single SQLite transaction
+  (new `ath_applied_flows` journal). Restarts retry unrecorded flows exactly
+  once and skip recorded ones, including same-second events; a full
+  withdrawal that zeroes ATH holds the watermark and recovers into initial
+  ATH on restart instead of double-applying.
+- **Event-time pre-flow basis**: each owner flow scales against the nearest
+  snapshot within ±180s, else the latest prior snapshot plus intervening
+  priced flows, else — only with no prior snapshot at all — the residual
+  approximation (fail-closed when no positive basis exists). Simultaneous
+  flows net into one order-independent scaling step.
+- **Buy & Hold inception-weight contributions**: post-inception owner
+  contributions are invested by original inception value weights (existing
+  holdings untouched) at contribution-time prices from recorded snapshots;
+  withdrawals shrink the synthetic portfolio proportionally by market value.
+  Same-timestamp USD funding plumbing that nets to zero is passthrough, not
+  a contribution. Missing prices fail closed with `MISSING_PRICE`.
+- **Inception migration safety**: the earliest retained snapshot is only
+  adopted as inception when the retained history provably starts at strategy
+  start (newer than the retention horizon, or a fresh install). Migrated
+  installs with pruned early history report `INCEPTION_HISTORY_TRUNCATED`
+  and must set `inceptionDate` manually; nothing fabricated is cached. A
+  cleared manual override no longer returns as auto-detected (detection
+  source is now recorded).
+- **Ledger classification**: internal wallet subtypes expanded (spot/futures,
+  spot/staking, allocation/deallocation, migration); subtyped funding rows
+  that Kraken cannot distinguish are `AMBIGUOUS` (never scale ATH, fail
+  closed in comparisons as `AMBIGUOUS_LEDGER_TYPE`); `refid` zero-net pairing
+  is asset-aware and never nets across assets.
+
 ## [6.17.26] - 2026-09-04
 
 ### Fixed
