@@ -160,7 +160,7 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events cannot be skipped
      if a rebalance cycle runs before ledger polling catches up. When balances were observed after ledger
      coverage, cash-flow adjustment defers a cycle rather than double-counting deposits. Flows apply
-     sequentially oldest-first against snapshot-anchored pre-flow values. Non-USD flows are priced using
+     sequentially oldest-first against residual pre-flow values (current total minus later flows). Non-USD flows are priced using
      historical portfolio snapshots within ±180s before falling back to live exchange tickers bounded to
      events at most 24h old; unresolvable prices fail closed without advancing the ATH watermark.
    - **Safety & Persistence**: Missing or explicitly null stats represent an empty initial

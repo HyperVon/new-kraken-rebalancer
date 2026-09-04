@@ -232,8 +232,9 @@ class PortfolioAnalyzerImpl(
         if (events.isEmpty()) return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
 
         // Sequential oldest-first adjustment: each flow scales the ATH that
-        // was current just before it, using the snapshot-anchored portfolio
-        // value at that time as the pre-flow basis. Netted sums mis-scale
+        // was current just before it. The pre-flow basis is residual (current
+        // total minus not-yet-applied later flows); flows themselves are
+        // priced via snapshots or the bounded ticker. Netted sums mis-scale
         // when ATH ratchets or prices move between flows.
         val pricedFlows = events.map { event ->
             event to priceOwnerCapitalFlow(event, tradesRepo)

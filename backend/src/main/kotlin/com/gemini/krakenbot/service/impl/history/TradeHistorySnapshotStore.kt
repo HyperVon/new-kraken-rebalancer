@@ -367,7 +367,12 @@ class TradeHistorySnapshotStore(
             // resolution (burst detect / earliest snapshot) depends on.
             val inceptionEpochMs = repository.getSyncMetadata(
                 SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
-            )?.toLongOrNull()
+            )?.toLongOrNull()?.takeUnless {
+                // A stale future epoch (e.g. a future configured date stored
+                // by an older version) is not a resolved inception. Pruning
+                // against it would destroy burst/earliest discovery evidence.
+                Instant.ofEpochMilli(it).isAfter(Instant.now())
+            }
             if (inceptionEpochMs == null) {
                 log.debug("Skipping snapshot/trade prune: inception not yet resolved")
                 snapshotFlow.tryEmit(snapshot)

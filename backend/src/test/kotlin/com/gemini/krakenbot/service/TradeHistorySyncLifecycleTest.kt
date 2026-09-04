@@ -203,6 +203,22 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "addSnapshot_SkipsPruneWhenInceptionEpochIsInTheFuture" {
+            runTest {
+                val tradeHistoryService = createService()
+                coEvery {
+                    repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns Instant.now().plusSeconds(86400L * 5).toEpochMilli().toString()
+
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
+
+                tradeHistoryService.addSnapshot(snapshot)
+                coVerify(exactly = 1) { repository.saveSnapshot(snapshot) }
+                coVerify(exactly = 0) { repository.pruneSnapshotsOlderThan(any()) }
+                coVerify(exactly = 0) { repository.pruneTradesOlderThan(any()) }
+            }
+        }
+
         "addSnapshot_SkipsPruneWhenInceptionUnresolved" {
             runTest {
                 val tradeHistoryService = createService()

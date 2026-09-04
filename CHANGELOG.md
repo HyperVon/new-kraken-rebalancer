@@ -15,12 +15,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   what counts as owner capital. Only `deposit`/`withdrawal` scale ATH and seed the
   benchmark; `refid`-paired zero-net legs and internal-subtype rows classify as internal
   moves, `trade` rows defer to `TradesHistory`, and margin-family rows (`margin`,
-  `rollover`, `settled`, `credit`, `sale`) replay in-kind. Unknown ledger types fail
-  closed with an explicit `UNSUPPORTED_LEDGER_TYPE` comparison state instead of being
-  silently dropped.
+  `rollover`, `settled`, `credit`, `sale`) replay in-kind. Ledger types outside
+  Kraken's documented set fail closed with an explicit `UNSUPPORTED_LEDGER_TYPE`
+  comparison state when they reach the calculator, instead of being silently dropped
+  (sync only fetches documented types).
 - **ATH temporal coverage gate and sequential scaling**: ATH cash-flow adjustment defers
   when balances were observed after ledger coverage (avoiding double-counted deposits),
-  applies flows sequentially oldest-first against snapshot-anchored pre-flow values,
+  applies flows sequentially oldest-first against residual pre-flow values (flows
+  themselves priced via snapshots or the bounded ticker),
   prices non-USD flows with a 24h-bounded ticker fallback (fail-closed beyond that),
   and ignores flows for assets outside the configured allocation universe.
 - **Known-inception fail-closed comparison**: when inception is known but its baseline
