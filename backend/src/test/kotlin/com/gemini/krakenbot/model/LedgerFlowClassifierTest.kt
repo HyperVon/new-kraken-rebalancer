@@ -20,6 +20,7 @@ class LedgerFlowClassifierTest : StringSpec() {
         refid: String? = null,
         subtype: String? = null,
         asset: String = "USD",
+        fee: String = "0",
     ): LedgerEvent = LedgerEvent(
         ledgerId = id,
         refid = refid,
@@ -28,6 +29,7 @@ class LedgerFlowClassifierTest : StringSpec() {
         subtype = subtype,
         asset = asset,
         amount = BigDecimal(amount),
+        fee = BigDecimal(fee),
     )
 
     init {
@@ -41,6 +43,31 @@ class LedgerFlowClassifierTest : StringSpec() {
 
         "unpaired transfer defaults to internal move, never owner capital" {
             LedgerFlowClassifier.classify(event("1", "transfer", "25.00")) shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "zero-fee crypto deposit is owner capital" {
+            LedgerFlowClassifier.classify(event("1", "deposit", "0.5", asset = "BTC")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+        }
+
+        "crypto deposit carrying a fee is exchange-side balance, not owner capital" {
+            // A bare deposit with a positive fee is not a simple user funding
+            // event (e.g. conversion artifacts); its USD-equivalent is not
+            // cleanly attributable, so ATH must not scale on it.
+            LedgerFlowClassifier.classify(event("1", "deposit", "0.5", asset = "BTC", fee = "0.001")) shouldBe
+                FlowCategory.EXTERNAL_BALANCE
+        }
+
+        "fiat deposit keeps owner-capital status even with a fee" {
+            LedgerFlowClassifier.classify(event("1", "deposit", "100.00", fee = "0.50")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("1", "deposit", "100.00", asset = "ZUSD", fee = "0.50")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+        }
+
+        "withdrawal keeps owner-capital status even with a fee" {
+            LedgerFlowClassifier.classify(event("1", "withdrawal", "-50.00", fee = "0.25")) shouldBe
+                FlowCategory.OWNER_CAPITAL
         }
 
         "unrecognized subtype on funding is ambiguous, never owner capital" {

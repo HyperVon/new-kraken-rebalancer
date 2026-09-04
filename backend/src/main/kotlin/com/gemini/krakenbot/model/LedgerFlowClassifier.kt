@@ -23,10 +23,12 @@ import java.math.BigDecimal
  * - `subtype` keywords: Kraken marks internal wallet moves with subtypes such
  *   as `spotfromspot`, `spot to futures`, `allocation`, or `migration`.
  * - Conservative funding rule: a bare `deposit`/`withdrawal` (no subtype) is
- *   [FlowCategory.OWNER_CAPITAL], but a funding row carrying any other subtype
- *   is [FlowCategory.AMBIGUOUS] — Kraken cannot reliably distinguish an
- *   external bank transfer from an internal wallet move there, so ATH scaling
- *   must not assume owner capital.
+ *   [FlowCategory.OWNER_CAPITAL], except a crypto `deposit` carrying a fee —
+ *   the fee never reaches the balance, so it is [FlowCategory.EXTERNAL_BALANCE]
+ *   and the benchmark replays the drag in-kind. A funding row carrying any
+ *   other subtype is [FlowCategory.AMBIGUOUS] — Kraken cannot reliably
+ *   distinguish an external bank transfer from an internal wallet move there,
+ *   so ATH scaling must not assume owner capital.
  * - Conservative default: an unpaired `transfer` with no internal subtype is
  *   [FlowCategory.INTERNAL_MOVE] (never owner capital).
  */
@@ -148,9 +150,20 @@ object LedgerFlowClassifier {
             return FlowCategory.AMBIGUOUS
         }
         return when (event.type) {
-            KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
-            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
-            -> FlowCategory.OWNER_CAPITAL
+            // A bare crypto deposit whose `amount` arrived intact is owner
+            // capital. A deposit carrying a fee is not: the ledger amount is
+            // the gross request, the fee never reaches the balance, and the
+            // net credit is what the benchmark would have to replay in-kind,
+            // so it classifies as EXTERNAL_BALANCE (conservative B&H drag).
+            // Fiat funding has no such fee ambiguity and stays owner capital.
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT ->
+                if (isFiatAsset(event.asset) || event.fee <= BigDecimal.ZERO) {
+                    FlowCategory.OWNER_CAPITAL
+                } else {
+                    FlowCategory.EXTERNAL_BALANCE
+                }
+
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> FlowCategory.OWNER_CAPITAL
 
             KrakenApiConstants.LEDGER_TYPE_TRANSFER -> FlowCategory.INTERNAL_MOVE
 
@@ -179,6 +192,9 @@ object LedgerFlowClassifier {
 
     private fun isFundingType(type: String): Boolean = type == KrakenApiConstants.LEDGER_TYPE_DEPOSIT ||
         type == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL
+
+    // normalizeLedgerAsset already folds the ZUSD alias into USD.
+    private fun isFiatAsset(asset: String): Boolean = normalizeAsset(asset) == "USD"
 
     private fun normalizeAsset(asset: String): String = Asset.normalizeLedgerAsset(asset).uppercase()
 

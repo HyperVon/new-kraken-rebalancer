@@ -13,11 +13,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
-import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
-import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.upsert
@@ -110,25 +109,44 @@ class SqlitePortfolioStatsRepositoryImpl(
     ) {
         database.safeTransactionIO(log, "Failed to save ATH state with flow checkpoint") {
             upsertStats(stats)
-            val knownIds = AthAppliedFlowTable
-                .selectAll()
-                .where { AthAppliedFlowTable.ledgerId inList appliedFlows.map(AppliedAthFlow::ledgerId) }
-                .map { it[AthAppliedFlowTable.ledgerId] }
-                .toSet()
-            for (flow in appliedFlows) {
-                if (flow.ledgerId !in knownIds) {
-                    AthAppliedFlowTable.insert {
-                        it[ledgerId] = flow.ledgerId
-                        it[eventTimeSec] = flow.eventTimeSec
-                    }
-                }
-            }
+            insertJournalIdentities(appliedFlows)
             if (flowWatermarkSec != null) {
+                // Observability watermark only: reconciliation is identity-driven
+                // (the journal), so journal rows are never pruned by watermark.
                 HistorySyncMetadataTable.upsert {
                     it[key] = SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC
                     it[value] = flowWatermarkSec.toString()
                 }
-                AthAppliedFlowTable.deleteWhere { eventTimeSec lessEq flowWatermarkSec }
+            }
+        }
+    }
+
+    override suspend fun journalPresumedDecidedFlows(flows: List<AppliedAthFlow>) {
+        if (flows.isEmpty()) return
+        database.safeTransactionIO(log, "Failed to journal presumed-decided ATH flows") {
+            insertJournalIdentities(flows)
+        }
+    }
+
+    /**
+     * Insert-if-absent journaling, chunked to stay under SQLite host-variable
+     * limits: the identity scan now considers every retained ledger row, so
+     * decision batches can exceed the parameter cap of a single `inList`.
+     */
+    private fun JdbcTransaction.insertJournalIdentities(flows: List<AppliedAthFlow>) {
+        for (chunk in flows.distinctBy(AppliedAthFlow::ledgerId).chunked(JOURNAL_QUERY_CHUNK)) {
+            val knownIds = AthAppliedFlowTable
+                .selectAll()
+                .where { AthAppliedFlowTable.ledgerId inList chunk.map(AppliedAthFlow::ledgerId) }
+                .map { it[AthAppliedFlowTable.ledgerId] }
+                .toSet()
+            for (flow in chunk) {
+                if (flow.ledgerId !in knownIds) {
+                    AthAppliedFlowTable.insertIgnore {
+                        it[ledgerId] = flow.ledgerId
+                        it[eventTimeSec] = flow.eventTimeSec
+                    }
+                }
             }
         }
     }
@@ -136,10 +154,13 @@ class SqlitePortfolioStatsRepositoryImpl(
     override suspend fun getAppliedAthFlowIds(ledgerIds: List<String>): Set<String> {
         if (ledgerIds.isEmpty()) return emptySet()
         return database.readTransactionIO {
-            AthAppliedFlowTable
-                .selectAll()
-                .where { AthAppliedFlowTable.ledgerId inList ledgerIds }
-                .map { it[AthAppliedFlowTable.ledgerId] }
+            ledgerIds.chunked(JOURNAL_QUERY_CHUNK)
+                .flatMap { chunk ->
+                    AthAppliedFlowTable
+                        .selectAll()
+                        .where { AthAppliedFlowTable.ledgerId inList chunk }
+                        .map { it[AthAppliedFlowTable.ledgerId] }
+                }
                 .toSet()
         }
     }
@@ -154,5 +175,10 @@ class SqlitePortfolioStatsRepositoryImpl(
                 PortfolioStatsTable.applyTo(it, stats)
             }
         }
+    }
+
+    private companion object {
+        /** Keeps journal `inList` batches under the SQLite host-variable cap. */
+        const val JOURNAL_QUERY_CHUNK = 1000
     }
 }

@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.28] - 2026-09-04
+
+### Fixed
+
+- **Coverage gate cannot stall ATH updates**: each rebalance cycle now takes
+  its balance observation before the ledger sync that stamps the coverage
+  watermark, so coverage normally confirms the whole observation and the
+  stale-coverage deferral no longer fires on the production path; the
+  reconciliation horizon is additionally capped at the earlier of coverage and
+  the observation, so flows that landed between the observation and a wider
+  coverage wait for a later cycle instead of being scaled against a total that
+  does not contain them yet.
+- **Identity-driven ATH flow reconciliation**: the ATH flow scan now decides
+  which ledger rows still need a decision from the applied-flow journal
+  (identity) instead of the flow-watermark timestamp window, so owner-capital
+  flows that arrive in later sync backfill below an already-advanced
+  watermark are reconciled exactly once rather than silently skipped — scaled
+  when a retained snapshot predates them, consciously skipped and journaled
+  otherwise. The
+  journal is a lifetime decision log and is no longer pruned at the
+  watermark; id-resolution queries chunk large identity sets. A one-time
+  migration (`ath_flow_journal_migrated`) presumes pre-watermark legacy rows
+  decided so upgraded databases never re-apply flows whose pruned journal
+  entries made them invisible.
+- **No silent residual basis**: a flow with no retained snapshot at or before
+  its event time is consciously skipped with a warning and journaled as
+  decided (its effect is already inside the initial ATH baseline) instead of
+  being scaled against a residual approximation; a snapshot that yields no
+  positive basis still defers fail-closed.
+- **Trade replay in the reconstructed basis**: the pre-flow basis now also
+  replays retained successful non-dry-run trades between the predecessor
+  snapshot and the flow at predecessor snapshot prices, so fee drag and
+  inventory changes no longer inflate the basis and understate ATH scaling.
+  Assets outside the snapshot universe contribute only their fiat leg.
+- **Initial-ATH absorption**: when the ATH is first established from the
+  current total, undecided decision-bearing rows below the earlier of the
+  coverage horizon and the balance observation are journaled as absorbed,
+  preventing a fresh install with seeded history from re-scaling lifetime
+  history on the next cycle.
+- **Fee-bearing crypto deposits classify as externally balanced**: a bare
+  crypto `deposit` ledger row carrying a fee is economically unclear (fee-free
+  internal transfers have no fee leg) and is now `EXTERNAL_BALANCE`, never
+  ATH-scaling owner capital. Zero-fee crypto deposits and all fiat deposits
+  keep their owner-capital classification.
+
+### Docs
+
+- `docs/ALGORITHM.md`: ATH flow classification, identity reconciliation,
+  basis reconstruction, absorption, and journal-migration semantics updated.
+
 ## [6.17.27] - 2026-09-04
 
 ### Fixed

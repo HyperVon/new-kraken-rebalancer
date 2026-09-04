@@ -11,10 +11,15 @@ import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.LedgerFlowClassifier
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.repository.AppliedAthFlow
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
@@ -99,7 +104,7 @@ class PortfolioAnalyzerImpl(
         val hadAthAtEntry = ath > BigDecimal.ZERO
         // Checkpointed in the same transaction as the ATH value itself, so a
         // crash can neither lose an applied flow nor apply one twice.
-        val appliedFlows = mutableListOf<com.gemini.krakenbot.repository.AppliedAthFlow>()
+        val appliedFlows = mutableListOf<AppliedAthFlow>()
         var pendingFlowWatermarkSec: Long? = null
 
         if (netExternalFlowUSD.signum() != 0) {
@@ -128,7 +133,7 @@ class PortfolioAnalyzerImpl(
             // needs) with deployment forced to zero.
             val flowCalc = try {
                 if (ath > BigDecimal.ZERO) {
-                    calculateUnappliedExternalFlow(totalPortfolioValueUSD, balancesObservedAt)
+                    calculateUnappliedExternalFlow(balancesObservedAt)
                 } else {
                     val coverage = ledgerRepository
                         ?.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
@@ -146,7 +151,30 @@ class PortfolioAnalyzerImpl(
                             "ledger coverage unknown for balances observed at $balancesObservedAt",
                         )
                     }
-                    ExternalFlowCalculation(emptyList(), coverage)
+                    // Mirror of the ath>0 temporal gate: a balance observed
+                    // past coverage may contain owner capital the ledger has
+                    // not confirmed, so no baseline may be established from it.
+                    if (coverage != null &&
+                        balancesObservedAt != null &&
+                        balancesObservedAt.epochSecond > coverage
+                    ) {
+                        throw IllegalStateException(
+                            "ledger coverage $coverage predates balances observed at $balancesObservedAt",
+                        )
+                    }
+                    // The initial ATH is the current total, which already
+                    // contains every flow up to the observation and nothing
+                    // the ledger has not confirmed: absorb to the earlier of
+                    // coverage and the observation. Rows above the observation
+                    // are not in the baseline and scale on later cycles.
+                    val absorbHorizonSec = coverage?.let { minOf(it, balancesObservedAt?.epochSecond ?: it) }
+                    if (absorbHorizonSec != null) {
+                        appliedFlows.addAll(absorbUnappliedFlowsIntoInitialAth(Instant.ofEpochSecond(absorbHorizonSec)))
+                    }
+                    // Hold the watermark at the absorb horizon: rows above it
+                    // were not in the baseline, and a later one-time migration
+                    // must never presume them decided.
+                    ExternalFlowCalculation(emptyList(), absorbHorizonSec)
                 }
             } catch (e: CancellationException) {
                 // Coroutine cancellation is an IllegalStateException subtype:
@@ -172,6 +200,10 @@ class PortfolioAnalyzerImpl(
                 return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct)
             }
             var brokeEarly = false
+            // Consciously-skipped decisions (ambiguous, unsupported, off-universe)
+            // are terminal regardless of what the scaling loop below does, so they
+            // join the journal now and are never re-warned.
+            appliedFlows.addAll(flowCalc.skippedDecided)
             // Bases resolve lazily per group: groups after an early break are
             // never priced, so an unbasis-able later flow cannot fail a cycle
             // whose applicable prefix is fine (it is retried next cycle).
@@ -188,7 +220,7 @@ class PortfolioAnalyzerImpl(
                     // identities are still consumed so they are not retried.
                     for (ledgerId in step.ledgerIds) {
                         appliedFlows.add(
-                            com.gemini.krakenbot.repository.AppliedAthFlow(
+                            AppliedAthFlow(
                                 ledgerId = ledgerId,
                                 eventTimeSec = step.eventTime.epochSecond,
                             ),
@@ -208,6 +240,26 @@ class PortfolioAnalyzerImpl(
                     )
                     return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct)
                 }
+                if (basis == null) {
+                    // The flow predates every retained snapshot: its effect is
+                    // already inside the initial ATH baseline. Journal it as a
+                    // conscious skip (never silently scale with a residual guess).
+                    log.warn(
+                        "ATH flow(s) at {} predate all retained snapshots; treating as baked into the " +
+                            "initial ATH baseline (ledgerIds: {})",
+                        step.eventTime,
+                        step.ledgerIds,
+                    )
+                    for (ledgerId in step.ledgerIds) {
+                        appliedFlows.add(
+                            AppliedAthFlow(
+                                ledgerId = ledgerId,
+                                eventTimeSec = step.eventTime.epochSecond,
+                            ),
+                        )
+                    }
+                    continue
+                }
                 val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, basis, step.flowUSD)
                 if (adjustedAth.compareTo(ath) != 0) {
                     log.info(
@@ -221,7 +273,7 @@ class PortfolioAnalyzerImpl(
                 }
                 for (ledgerId in step.ledgerIds) {
                     appliedFlows.add(
-                        com.gemini.krakenbot.repository.AppliedAthFlow(
+                        AppliedAthFlow(
                             ledgerId = ledgerId,
                             eventTimeSec = step.eventTime.epochSecond,
                         ),
@@ -281,13 +333,60 @@ class PortfolioAnalyzerImpl(
         val pendingWatermarkSec: Long?,
         val coverageStale: Boolean = false,
         val coverageHorizon: Instant? = null,
+        val skippedDecided: List<AppliedAthFlow> = emptyList(),
         val groupBasisResolver: GroupBasisResolver = noFlowsResolver(),
     )
 
-    private suspend fun calculateUnappliedExternalFlow(
-        currentTotalUSD: BigDecimal,
-        balancesObservedAt: Instant?,
-    ): ExternalFlowCalculation {
+    /**
+     * Identity-driven reconciliation: every retained ledger row up to
+     * [horizon] minus the decision journal, classified with refid pairing.
+     * The journal (not the watermark timestamp) records what has already been
+     * decided, so sync backfill and window-straddling rows are reconciled
+     * exactly once and crash replays stay idempotent.
+     */
+    private suspend fun scanUndecidedLedgerEvents(
+        horizon: Instant,
+    ): Pair<List<LedgerEvent>, Map<String, FlowCategory>> {
+        val ledgersRepo = ledgerRepository ?: return emptyList<LedgerEvent>() to emptyMap()
+        val rows = ledgersRepo.getLedgersInRange(Instant.EPOCH, horizon)
+            .sortedBy { it.time }
+        if (rows.isEmpty()) return emptyList<LedgerEvent>() to emptyMap()
+        val decided = portfolioStatsRepository.getAppliedAthFlowIds(rows.map { it.ledgerId })
+        val unapplied = if (decided.isEmpty()) rows else rows.filterNot { it.ledgerId in decided }
+        // Classify the full retained set: refid pairing must see decided
+        // partners, or a late backfill completing an internal move would
+        // classify its lone leg as owner capital and scale ATH again.
+        return unapplied to LedgerFlowClassifier.classifyAll(rows)
+    }
+
+    /**
+     * Initial-ATH absorption: when ATH is established from the current total,
+     * that total already contains every confirmed flow below the coverage
+     * horizon, so all undecided decision-bearing rows are journaled as
+     * absorbed. Without this the identity scan would re-apply lifetime history
+     * against the post-fold baseline on the next cycle (the old watermark
+     * advance used to absorb them implicitly).
+     */
+    private suspend fun absorbUnappliedFlowsIntoInitialAth(horizon: Instant): List<AppliedAthFlow> {
+        val (unapplied, classifications) = scanUndecidedLedgerEvents(horizon)
+        val absorbed = mutableListOf<AppliedAthFlow>()
+        for (event in unapplied) {
+            val category = classifications[event.ledgerId]
+            if (category != FlowCategory.INTERNAL_MOVE && category != FlowCategory.TRADE_IGNORED) {
+                absorbed.add(AppliedAthFlow(ledgerId = event.ledgerId, eventTimeSec = event.time.epochSecond))
+            }
+        }
+        if (absorbed.isNotEmpty()) {
+            log.info(
+                "Initial ATH established from the current total: journaling {} flow(s) as absorbed " +
+                    "(their effect is already inside the baseline)",
+                absorbed.size,
+            )
+        }
+        return absorbed
+    }
+
+    private suspend fun calculateUnappliedExternalFlow(balancesObservedAt: Instant?): ExternalFlowCalculation {
         val ledgersRepo = ledgerRepository ?: return ExternalFlowCalculation(emptyList(), null)
         val tradesRepo = tradeRepository ?: return ExternalFlowCalculation(emptyList(), null)
 
@@ -306,18 +405,32 @@ class PortfolioAnalyzerImpl(
             return ExternalFlowCalculation(emptyList(), null)
         }
 
-        val confirmedHorizon = Instant.ofEpochSecond(ledgerCoverageSec)
         // Temporal coverage gate: balances observed after ledger coverage may
         // include capital the ledger window has not seen yet. The caller
         // treats a stale gate as an untrusted balance: no flow processing, no
         // ATH ratchet, no deployment-driving drawdown.
         if (balancesObservedAt != null && balancesObservedAt.epochSecond > ledgerCoverageSec) {
-            return ExternalFlowCalculation(emptyList(), null, coverageStale = true, coverageHorizon = confirmedHorizon)
+            return ExternalFlowCalculation(
+                emptyList(),
+                null,
+                coverageStale = true,
+                coverageHorizon = Instant.ofEpochSecond(ledgerCoverageSec),
+            )
         }
+        // Coverage may run past the observation (production observes balances
+        // before the sync that confirms coverage): flows between the
+        // observation and coverage are not reflected in the total yet, so cap
+        // the scan horizon at the observation; they reconcile on later cycles.
+        val confirmedHorizon = Instant.ofEpochSecond(
+            minOf(ledgerCoverageSec, balancesObservedAt?.epochSecond ?: ledgerCoverageSec),
+        )
 
         val watermarkStr = tradesRepo.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
         if (watermarkStr == null) {
-            return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
+            // Bootstrap: first dated coverage establishes the observability
+            // watermark; everything below it predates flow tracking entirely
+            // and is folded into the initial ATH baseline like a fresh install.
+            return ExternalFlowCalculation(emptyList(), confirmedHorizon.epochSecond)
         }
 
         val watermarkSec = watermarkStr.toLongOrNull()
@@ -327,41 +440,59 @@ class PortfolioAnalyzerImpl(
             // the operator repairs the key and the missing-watermark path above
             // re-establishes the window.
             ?: throw IllegalStateException("malformed ATH flow watermark: $watermarkStr")
-        if (watermarkSec >= ledgerCoverageSec) {
-            return ExternalFlowCalculation(emptyList(), watermarkSec)
+
+        if (ledgersRepo.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED) == null) {
+            // One-time upgrade from the timestamp-window semantics: rows below
+            // the legacy watermark were already decided (applied or skipped)
+            // and their journal entries were pruned by the old watermark
+            // delete. Presume them decided so the identity scan never
+            // re-applies legacy flows and double-scales ATH. Late-arriving
+            // history below the legacy watermark is a documented casualty of
+            // the upgrade; rows arriving after migration reconcile by
+            // identity.
+            val legacyRows = ledgersRepo.getLedgersInRange(Instant.EPOCH, Instant.ofEpochSecond(watermarkSec))
+            portfolioStatsRepository.journalPresumedDecidedFlows(
+                legacyRows.map { AppliedAthFlow(ledgerId = it.ledgerId, eventTimeSec = it.time.epochSecond) },
+            )
+            ledgersRepo.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+            if (legacyRows.isNotEmpty()) {
+                log.warn(
+                    "ATH flow journal migration: presumed {} pre-watermark ledger row(s) already decided; " +
+                        "clearing {} and {} re-presumes them — a genuine re-scan requires restoring " +
+                        "a database backup taken before the scaling",
+                    legacyRows.size,
+                    SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED,
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                )
+            }
         }
 
-        val watermark = Instant.ofEpochSecond(watermarkSec)
-        val candidates = ledgersRepo.getLedgersInRange(watermark, confirmedHorizon)
-            .filter { it.time > watermark && it.time <= confirmedHorizon }
-            .sortedBy { it.time }
-        if (candidates.isEmpty()) return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
-
-        // Crash idempotency: the journal records exactly which flows were
-        // applied. Anything recorded is skipped even if it still falls inside
-        // the watermark window (e.g. the watermark was held after an early
-        // break, or overlapping sync windows re-report it).
-        val alreadyApplied = portfolioStatsRepository.getAppliedAthFlowIds(candidates.map { it.ledgerId })
-        val unapplied = if (alreadyApplied.isEmpty()) {
-            candidates
-        } else {
-            candidates.filterNot { it.ledgerId in alreadyApplied }
-        }
-        if (unapplied.isEmpty()) return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
+        // Identity-driven reconciliation: scan every retained ledger row up to
+        // confirmed coverage, not just the window above the watermark. Sync
+        // backfill and refid pairs straddling the old window boundary are
+        // decided exactly once because the decision journal (not the
+        // watermark timestamp) filters what has already been through
+        // classification.
+        val (unapplied, classifications) = scanUndecidedLedgerEvents(confirmedHorizon)
+        if (unapplied.isEmpty()) return ExternalFlowCalculation(emptyList(), confirmedHorizon.epochSecond)
 
         // Classify with refid pairing: internal wallet moves and trade rows
         // must never scale ATH. Only OWNER_CAPITAL proceeds. Ambiguous,
-        // unsupported, and off-universe rows are skipped loudly: they keep
-        // their ATH-neutrality, and the watermark still advances because
-        // reprocessing them later would decide identically.
-        val classifications = com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(unapplied)
+        // unsupported, and off-universe rows are skipped loudly and journaled
+        // as decided: reprocessing them later would decide identically, and
+        // without journaling them the identity scan would re-warn them every
+        // cycle. INTERNAL_MOVE and TRADE_IGNORED rows are terminal-neutral
+        // and never warn, so they are re-derived cheaply instead of journaled.
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
+        val skippedDecided = mutableListOf<AppliedAthFlow>()
+        val events = mutableListOf<LedgerEvent>()
         for (event in unapplied) {
             val category = classifications[event.ledgerId]
-            if (category != com.gemini.krakenbot.model.FlowCategory.OWNER_CAPITAL &&
-                category != com.gemini.krakenbot.model.FlowCategory.INTERNAL_MOVE &&
-                category != com.gemini.krakenbot.model.FlowCategory.TRADE_IGNORED
+            if (category == FlowCategory.OWNER_CAPITAL &&
+                isInAthUniverse(Asset.normalizeLedgerAsset(event.asset).uppercase(), universe)
             ) {
+                events.add(event)
+            } else if (category != FlowCategory.INTERNAL_MOVE && category != FlowCategory.TRADE_IGNORED) {
                 log.warn(
                     "Skipping ATH scaling for {} flow {} at {} (category {})",
                     event.type,
@@ -369,15 +500,17 @@ class PortfolioAnalyzerImpl(
                     event.time,
                     category,
                 )
+                skippedDecided.add(AppliedAthFlow(ledgerId = event.ledgerId, eventTimeSec = event.time.epochSecond))
             }
         }
-        val events = unapplied
-            .filter { event ->
-                classifications[event.ledgerId] == com.gemini.krakenbot.model.FlowCategory.OWNER_CAPITAL &&
-                    isInAthUniverse(Asset.normalizeLedgerAsset(event.asset).uppercase(), universe)
-            }
-            .sortedWith(compareBy({ it.time }, { it.ledgerId }))
-        if (events.isEmpty()) return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
+        events.sortWith(compareBy({ it.time }, { it.ledgerId }))
+        if (events.isEmpty()) {
+            return ExternalFlowCalculation(
+                emptyList(),
+                confirmedHorizon.epochSecond,
+                skippedDecided = skippedDecided,
+            )
+        }
 
         // Sequential oldest-first adjustment: each flow scales the ATH that
         // was current just before it. Flows themselves are priced via
@@ -386,12 +519,14 @@ class PortfolioAnalyzerImpl(
         val pricedFlows = events.map { event ->
             event to priceOwnerCapitalFlow(event, tradesRepo)
         }
-        val history = tradesRepo.getSnapshotsInRange(
-            Instant.EPOCH,
-            pricedFlows.maxOf { (event, _) -> event.time },
-        )
-        val totalNet = pricedFlows.fold(BigDecimal.ZERO) { acc, (_, usd) -> acc.add(usd) }
-        val residualBase = currentTotalUSD.subtract(totalNet)
+        val maxEventTime = pricedFlows.maxOf { (event, _) -> event.time }
+        val history = tradesRepo.getSnapshotsInRange(Instant.EPOCH, maxEventTime)
+        // Successful non-dry trades between the predecessor snapshot and each
+        // flow move portfolio value without being owner capital; replaying
+        // them (at predecessor prices) keeps the reconstructed basis honest
+        // about fee drag and inventory changes.
+        val tradeHistory = tradesRepo.getTradesInRange(Instant.EPOCH, maxEventTime)
+            .filter { it.success && !it.dryRun }
         val groupStarts = mutableListOf<Int>()
         var cursor = 0
         while (cursor < pricedFlows.size) {
@@ -418,13 +553,14 @@ class PortfolioAnalyzerImpl(
         }
         return ExternalFlowCalculation(
             sequentialFlows = steps,
-            pendingWatermarkSec = ledgerCoverageSec,
+            pendingWatermarkSec = confirmedHorizon.epochSecond,
+            skippedDecided = skippedDecided,
             groupBasisResolver = GroupBasisResolver(
                 ::resolveEventTimeBasis,
                 pricedFlows,
                 groupStarts,
                 history,
-                residualBase,
+                tradeHistory,
             ),
         )
     }
@@ -439,77 +575,93 @@ class PortfolioAnalyzerImpl(
             eventTime: Instant,
             priorFlows: List<Pair<LedgerEvent, BigDecimal>>,
             history: List<PortfolioSnapshot>,
-            residualFallback: BigDecimal,
-        ) -> BigDecimal,
+            trades: List<TradeRecord>,
+        ) -> BigDecimal?,
         private val pricedFlows: List<Pair<LedgerEvent, BigDecimal>>,
         private val groupStarts: List<Int>,
         private val history: List<PortfolioSnapshot>,
-        private val residualBase: BigDecimal,
+        private val trades: List<TradeRecord>,
     ) {
-        fun basisFor(groupIndex: Int): BigDecimal {
+        fun basisFor(groupIndex: Int): BigDecimal? {
             val start = groupStarts[groupIndex]
-            val time = pricedFlows[start].first.time
-            var priorNet = BigDecimal.ZERO
-            for (index in 0 until start) {
-                priorNet = priorNet.add(pricedFlows[index].second)
-            }
             return resolve(
-                time,
+                pricedFlows[start].first.time,
                 pricedFlows.subList(0, start),
                 history,
-                residualBase.add(priorNet),
+                trades,
             )
         }
     }
 
     /**
      * Best defensible portfolio value immediately BEFORE an owner flow: the
-     * latest recorded snapshot at or before the event plus priced owner flows
-     * strictly after it (a snapshot at the event is exact; older ones carry
-     * market drift over the logged gap, which the residual approximation
-     * would extend all the way to now). Snapshots after the event already
-     * contain the flow and must never serve as its pre-flow basis.
+     * latest recorded snapshot at or before the event, plus priced owner flows
+     * strictly after it, plus retained successful trades replayed at the
+     * predecessor snapshot's prices between that snapshot and the event (fee
+     * drag and inventory changes move portfolio value without being owner
+     * capital). A snapshot at the event is exact; older ones carry market
+     * drift over the logged gap. Snapshots after the event already contain
+     * the flow and must never serve as its pre-flow basis.
      *
-     * With no snapshot at/before the event anywhere in the database (fresh or
-     * migrated install), the residual approximation (current total minus
-     * not-yet-applied flows) applies with an explicit warning; its error
-     * equals market movement between the event and now, so it is only
-     * acceptable when no event-time state exists at all.
+     * Returns null when no snapshot at or before the event exists anywhere in
+     * the database: such a flow predates recorded history, its effect is
+     * already baked into the initial ATH baseline, and the caller journals it
+     * as consciously skipped. The former residual approximation silently
+     * scaled ATH by an error equal to market movement between the event and
+     * now, so it is gone.
      *
-     * Fail-closed (via the caller's Deferred state) when no positive basis
-     * can be established.
+     * Fail-closed (via the caller's Deferred state) when no positive basis can
+     * be established from the reconstructed state.
      */
     private fun resolveEventTimeBasis(
         eventTime: Instant,
         priorFlows: List<Pair<LedgerEvent, BigDecimal>>,
         history: List<PortfolioSnapshot>,
-        residualFallback: BigDecimal,
-    ): BigDecimal {
+        trades: List<TradeRecord>,
+    ): BigDecimal? {
         val predecessor = history.filter { !it.timestamp.isAfter(eventTime) }.maxByOrNull { it.timestamp }
-        if (predecessor != null) {
-            val subsequentFlows = priorFlows
-                .filter { (event, _) -> event.time.isAfter(predecessor.timestamp) }
-                .fold(BigDecimal.ZERO) { acc, (_, usd) -> acc.add(usd) }
-            val reconstructed = predecessor.totalValueUSD.add(subsequentFlows)
-            if (reconstructed > BigDecimal.ZERO) {
-                log.info(
-                    "ATH flow basis reconstructed from snapshot at {} (gap {}s) for event at {}",
-                    predecessor.timestamp,
-                    eventTime.epochSecond - predecessor.timestamp.epochSecond,
-                    eventTime,
-                )
-                return reconstructed
+            ?: return null
+        var basis = predecessor.totalValueUSD
+        for ((event, usd) in priorFlows) {
+            if (event.time.isAfter(predecessor.timestamp)) {
+                basis = basis.add(usd)
             }
         }
-        if (residualFallback > BigDecimal.ZERO) {
-            log.warn(
-                "ATH flow basis for event at {} uses residual approximation (no prior snapshot); " +
-                    "error equals market movement between event and now",
+        for (trade in trades) {
+            if (trade.timestamp.isAfter(predecessor.timestamp) && !trade.timestamp.isAfter(eventTime)) {
+                basis = basis.add(tradeValueDeltaAtPredecessorPrices(trade, predecessor))
+            }
+        }
+        if (basis > BigDecimal.ZERO) {
+            log.info(
+                "ATH flow basis reconstructed from snapshot at {} (gap {}s) for event at {}",
+                predecessor.timestamp,
+                eventTime.epochSecond - predecessor.timestamp.epochSecond,
                 eventTime,
             )
-            return residualFallback
+            return basis
         }
         throw IllegalStateException("Cannot establish a positive pre-flow portfolio basis for event at $eventTime")
+    }
+
+    /**
+     * Fill value change at predecessor snapshot prices: a BUY converts
+     * (usdAmount + fee) fiat into `volume` crypto, a SELL converts `volume`
+     * crypto into (usdAmount - fee) fiat. Valuing the crypto leg with the
+     * snapshot's own price keeps the basis consistent with how the snapshot
+     * total was priced. An asset outside the snapshot universe has no tracked
+     * crypto leg: only its fiat movement leaves the recorded total.
+     */
+    private fun tradeValueDeltaAtPredecessorPrices(trade: TradeRecord, predecessor: PortfolioSnapshot): BigDecimal {
+        val asset = Asset.normalizeLedgerAsset(trade.symbol).uppercase()
+        if (asset == "USD" || asset == "ZUSD") return BigDecimal.ZERO
+        val price = predecessor.assets[asset]?.price?.takeIf { it > BigDecimal.ZERO }
+        val cryptoValueUSD = price?.let { trade.volume.multiply(it) }
+        return if (OrderSide.isBuy(trade.side)) {
+            (cryptoValueUSD ?: BigDecimal.ZERO).subtract(trade.usdAmount).subtract(trade.fee)
+        } else {
+            trade.usdAmount.subtract(trade.fee).subtract(cryptoValueUSD ?: BigDecimal.ZERO)
+        }
     }
 
     private fun isInAthUniverse(normalizedAsset: String, universe: Set<String>): Boolean {
@@ -670,7 +822,7 @@ class PortfolioAnalyzerImpl(
             pricedFlows = emptyList(),
             groupStarts = emptyList(),
             history = emptyList(),
-            residualBase = BigDecimal.ZERO,
+            trades = emptyList(),
         )
     }
 }

@@ -786,7 +786,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
-        "updateAth ignores ledger rows outside the watermark window" {
+        "updateAth decides late-arriving rows by identity, not by the legacy watermark window" {
             runTest {
                 val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
                 val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
@@ -804,8 +804,18 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                coEvery {
                     mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+                // A backfilled historical row (L-OLD) below the legacy ATH
+                // watermark and a fresh row (L-NEW) above it, neither decided
+                // yet. Identity scanning reaches both: L-NEW scales 10000 *
+                // 11000/10000 = 11000, while L-OLD predates every retained
+                // snapshot and is consciously skipped into the journal. The
+                // old timestamp window would have silently dropped L-OLD
+                // without any decision record.
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
@@ -825,6 +835,9 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                             fee = BigDecimal.ZERO,
                         ),
                     )
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns emptySet()
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
+                    listOf(TestFixtures.emptySnapshot(fixedTime.minusSeconds(900), BigDecimal("10000.00")))
 
                 val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
                     totalPortfolioValueUSD = BigDecimal("11000.00"),
@@ -832,13 +845,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     balancesObservedAt = fixedTime,
                 )
 
-                // Only L-NEW scales: 10000 * 11000/10000 = 11000.
                 (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
                     .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match { it.allTimeHigh.compareTo(BigDecimal("11000.00")) == 0 },
-                        match { applied -> applied.map { it.ledgerId } == listOf("L-NEW") },
+                        match { applied -> applied.map { it.ledgerId } == listOf("L-OLD", "L-NEW") },
                         fixedTime.epochSecond,
                     )
                 }
@@ -1366,8 +1378,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 analyzerWithRepos.updateAthAndCalculateDrawdown(BigDecimal("10000.00"), BigDecimal.ZERO)
 
                 // Now ledger sync runs and imports deposit at T=70s ($5000), advancing coverage to T=150s.
-                // Cycle 3 at T=160s: ATH watermark is at 60s, coverage is 150s.
-                // Query range is (60..150], which includes the deposit at T=70s!
+                // Cycle 3 at T=160s: the identity scan reads every retained row up to coverage
+                // (EPOCH..150], not just (watermark..coverage], so the late deposit is decided once.
                 currentTime = t0.plusSeconds(160)
                 coEvery {
                     mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
@@ -1381,8 +1393,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     fee = BigDecimal.ZERO,
                 )
                 coEvery {
-                    mockLedgers.getLedgersInRange(t0.plusSeconds(60), t0.plusSeconds(150))
+                    mockLedgers.getLedgersInRange(Instant.EPOCH, t0.plusSeconds(150))
                 } returns listOf(depositAt70)
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
+                    listOf(TestFixtures.emptySnapshot(t0.plusSeconds(60), BigDecimal("10000.00")))
 
                 analyzerWithRepos.updateAthAndCalculateDrawdown(BigDecimal("15000.00"), BigDecimal.ZERO)
 
@@ -1592,7 +1606,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
-        "updateAth does not advance watermark or query ledgers when watermark is already at or ahead of current epoch" {
+        "updateAth rescans by identity when the watermark is ahead of coverage without re-applying decided rows" {
             runTest {
                 val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
                 val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
@@ -1610,8 +1624,26 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                coEvery {
                     mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.plusSeconds(10).epochSecond.toString()
+                // The watermark is only observability: the scan still reads
+                // every retained row, and the decision journal — not the
+                // timestamp — is what prevents a second scaling of L-PAST.
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "L-PAST",
+                            time = fixedTime.minusSeconds(60),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    )
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns setOf("L-PAST")
 
                 val dd = analyzerWithAheadWatermark.updateAthAndCalculateDrawdown(
                     totalPortfolioValueUSD = BigDecimal("10000.00"),
@@ -1619,8 +1651,13 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
 
                 dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify(exactly = 0) {
-                    mockLedgers.getLedgersInRange(any(), any())
+                coVerify { mockLedgers.getLedgersInRange(any(), any()) }
+                coVerify(exactly = 1) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("10000.00")) == 0 },
+                        emptyList(),
+                        fixedTime.epochSecond,
+                    )
                 }
             }
         }

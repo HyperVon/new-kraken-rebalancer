@@ -146,7 +146,10 @@ object KrakenParsers {
                     aclass = aclass,
                     asset = Asset.normalizeLedgerAsset(entryNode.path(KrakenApiConstants.FIELD_ASSET).asText()),
                     amount = safeParseBigDecimal(amountStr, PrecisionConstants.SCALE_CRYPTO),
-                    fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_LEDGER_FEE),
+                    // Kraken fees are documented non-negative; clamping at the
+                    // trust boundary keeps `amount - fee` from over-crediting
+                    // balance deltas on malformed or signed responses.
+                    fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_LEDGER_FEE).max(BigDecimal.ZERO),
                     balance = scaledBalance,
                     hasAuthoritativeBalance = parsedBalance != null && scaledBalance.signum() != 0,
                 ),

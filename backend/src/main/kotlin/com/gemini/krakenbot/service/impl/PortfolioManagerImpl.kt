@@ -6,6 +6,7 @@ import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
@@ -244,10 +245,19 @@ class PortfolioManagerImpl(
             if (ks != null) {
                 ks.withStableBackend {
                     withCycleMdc(cycleId) {
+                        // The balance observation must precede the ledger
+                        // sync: the sync watermark is stamped at sync start,
+                        // and the ATH coverage gate requires coverage at or
+                        // after the observation. Observing first keeps the
+                        // gate passable every cycle instead of deferring
+                        // forever. The same observation drives the trade
+                        // valuation below, so total and observedAt stay a
+                        // consistent pair.
+                        val athObservation = observeBalancesForAth()
                         synchronizeLedgers("during cycle")
                         synchronizeTrades("during cycle")
                         synchronizeHistoricalSnapshots("during cycle")
-                        performRebalanceCycleForCycle(cycleId)
+                        performRebalanceCycleForCycle(cycleId, athObservation)
                     }
                 }
             } else {
@@ -259,6 +269,19 @@ class PortfolioManagerImpl(
                 }
             }
         }
+    }
+
+    private suspend fun observeBalancesForAth(): ObservedBalances? = try {
+        portfolioAnalyzer.fetchObservedBalances()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn(
+            "Pre-sync balance observation failed; the rebalance phase will re-fetch " +
+                "(the ATH update may defer until the next cycle)",
+            e,
+        )
+        null
     }
 
     private suspend fun synchronizeLedgers(context: String) {
@@ -325,14 +348,17 @@ class PortfolioManagerImpl(
         }
     }
 
-    private suspend fun performRebalanceCycleForCycle(cycleId: String): PortfolioSnapshot? {
+    private suspend fun performRebalanceCycleForCycle(
+        cycleId: String,
+        athObservation: ObservedBalances? = null,
+    ): PortfolioSnapshot? {
         val startedAt = Instant.now()
         operationalStatus = operationalStatus.copy(
             lastCycleStartedAt = startedAt,
             lastCycleError = null,
         )
         try {
-            val snapshot = performRebalanceCyclePinned(cycleId)
+            val snapshot = performRebalanceCyclePinned(cycleId, athObservation)
             if (snapshot == null) {
                 operationalStatus = operationalStatus.copy(
                     lastCycleError = operationalStatus.lastCycleError ?: "Cycle produced no snapshot",
@@ -373,12 +399,15 @@ class PortfolioManagerImpl(
         )
     }
 
-    private suspend fun performRebalanceCyclePinned(cycleId: String): PortfolioSnapshot? {
+    private suspend fun performRebalanceCyclePinned(
+        cycleId: String,
+        athObservation: ObservedBalances?,
+    ): PortfolioSnapshot? {
         log.info("--- Starting Snapshot Phase ---")
         val config = configService.getConfig()
         val actionLog = mutableListOf<String>()
 
-        val (balances, preObservedAt) = portfolioAnalyzer.fetchObservedBalances()
+        val (balances, preObservedAt) = athObservation ?: portfolioAnalyzer.fetchObservedBalances()
         val prices = portfolioAnalyzer.fetchPrices()
         val calculationResult = portfolioAnalyzer.calculatePortfolioValues(balances, prices)
 

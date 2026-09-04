@@ -78,8 +78,11 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                 tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC) shouldBe "500"
                 repository.getAppliedAthFlowIds(emptyList()) shouldBe emptySet()
 
-                // Re-checkpointing known identities is a no-op; advancing the
-                // watermark past them prunes the redundant journal rows.
+                // Re-checkpointing known identities is a no-op. The journal is
+                // a lifetime decision log: advancing the watermark past
+                // applied rows must NOT prune them, because the identity scan
+                // relies on retained entries to avoid re-applying late-
+                // arriving or historical rows.
                 repository.saveAthStateWithFlowCheckpoint(
                     stats = loaded,
                     appliedFlows = listOf(
@@ -87,8 +90,42 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                     ),
                     flowWatermarkSec = 2000L,
                 )
-                repository.getAppliedAthFlowIds(listOf("dep-1", "dep-2")) shouldBe emptySet()
+                repository.getAppliedAthFlowIds(listOf("dep-1", "dep-2")) shouldBe setOf("dep-1", "dep-2")
                 repository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("137500.00"))
+            }
+        }
+
+        "journalPresumedDecidedFlows inserts identities without touching stats or watermark" {
+            runTest {
+                val tradeRepository = com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl(db)
+                repository.saveAthStateWithFlowCheckpoint(
+                    stats = PortfolioStats(BigDecimal("100.00")),
+                    appliedFlows = emptyList(),
+                    flowWatermarkSec = 9000L,
+                )
+                repository.journalPresumedDecidedFlows(
+                    listOf(
+                        com.gemini.krakenbot.repository.AppliedAthFlow("legacy-1", 100L),
+                        com.gemini.krakenbot.repository.AppliedAthFlow("legacy-2", 200L),
+                        com.gemini.krakenbot.repository.AppliedAthFlow("legacy-1", 100L),
+                    ),
+                )
+                repository.getAppliedAthFlowIds(listOf("legacy-1", "legacy-2")) shouldBe setOf("legacy-1", "legacy-2")
+                repository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100.00"))
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC) shouldBe "9000"
+            }
+        }
+
+        "getAppliedAthFlowIds resolves identity sets larger than one query chunk" {
+            runTest {
+                val many = (1L..1500L).map { com.gemini.krakenbot.repository.AppliedAthFlow("dep-$it", it) }
+                repository.saveAthStateWithFlowCheckpoint(
+                    stats = PortfolioStats(BigDecimal("1.00")),
+                    appliedFlows = many,
+                    flowWatermarkSec = null,
+                )
+                repository.getAppliedAthFlowIds(many.map { it.ledgerId }) shouldBe
+                    many.map { it.ledgerId }.toSet()
             }
         }
 

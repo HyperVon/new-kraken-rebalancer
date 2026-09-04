@@ -151,30 +151,62 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      and dividends are investment performance that improve portfolio value and reduce drawdown
      without scaling ATH.
    - **Ledger Flow Classification**: Kraken reuses coarse ledger types for economically distinct activity, so
-     `LedgerFlowClassifier` decides what counts as owner capital: only bare `deposit`/`withdrawal` rows scale ATH
-     and seed the Buy & Hold benchmark. Same-asset `refid`-paired zero-net legs and internal-subtype rows
-     (spot/futures/staking wallet moves, earn allocation, migration) are internal moves; cross-asset `refid`
-     funding legs and subtyped funding rows that Kraken cannot distinguish are `AMBIGUOUS` and never scale ATH.
-     `trade` rows defer to `TradesHistory`, margin-family rows (`margin`, `rollover`, `settled`, `credit`,
-     `sale`) replay in-kind without scaling ATH, and unrecognized types fail closed. Flows for assets outside
-     the configured allocation universe are ignored.
-   - **Ledger Watermark Ceiling & Safe Pricing**: ATH flow processing is upper-bounded by confirmed ledger
-     synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events cannot be skipped
-     if a rebalance cycle runs before ledger polling catches up. When balances were observed after ledger
-     coverage, the whole ATH update defers: the balance must neither establish a new ATH nor produce a
-     drawdown that drives fiat deployment, so the cycle preserves the last trusted drawdown and forces
-           deployment to zero. Unknown or missing ledger coverage with a dated observation defers the same way
+      `LedgerFlowClassifier` decides what counts as owner capital: only bare `deposit`/`withdrawal` rows scale ATH
+      and seed the Buy & Hold benchmark. A bare crypto `deposit` that carries a fee is economically unclear
+      (fee-free internal transfers have no fee leg), so it is treated as `EXTERNAL_BALANCE` and never scales ATH;
+      zero-fee crypto deposits and all fiat deposits (fee or not) stay owner capital. Same-asset `refid`-paired
+      zero-net legs and internal-subtype rows (spot/futures/staking wallet moves, earn allocation, migration) are
+      internal moves; cross-asset `refid` funding legs and subtyped funding rows that Kraken cannot distinguish
+      are `AMBIGUOUS` and never scale ATH.
+      `trade` rows defer to `TradesHistory`, margin-family rows (`margin`, `rollover`, `settled`, `credit`,
+      `sale`) replay in-kind without scaling ATH, and unrecognized types fail closed. Flows for assets outside
+      the configured allocation universe are ignored.
+   - **Ledger Coverage Ceiling & Identity-Driven Reconciliation**: ATH flow processing is upper-bounded by
+      confirmed ledger synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events
+      cannot be skipped if a rebalance cycle runs before ledger polling catches up. The cycle takes its balance
+      observation before the ledger sync that stamps the coverage watermark, so coverage normally confirms the
+      whole observation; the reconciliation horizon is the earlier of the two, and rows between the observation
+      and a wider coverage wait for the next cycle because they are not in the observed total yet.
+      When balances were observed
+      after ledger coverage, the whole ATH update defers: the balance must neither establish a new ATH nor produce
+      a drawdown that drives fiat deployment, so the cycle preserves the last trusted drawdown and forces
+      deployment to zero. Unknown or missing ledger coverage with a dated observation defers the same way
       (a total that may contain unseen owner capital must never ratchet ATH); a malformed flow watermark
-      also defers with no state advanced, leaving the key for the operator to repair. Flows apply sequentially oldest-first (simultaneous flows net into one step), each
-     against its event-time pre-flow basis: the nearest snapshot within ±180s, else the latest prior snapshot
-     plus intervening priced flows, else — only when no prior snapshot exists at all — the residual
-     approximation with an explicit warning (fail-closed when no positive basis exists). Non-USD flows are priced
+      also defers with no state advanced, leaving the key for the operator to repair. Which rows still need a
+      decision is determined by identity, not timestamp: every retained ledger row up to the reconciliation
+      horizon is
+      rescanned and the applied-flow journal (below) filters what was already decided, so late-arriving
+     backfill below an old watermark is reconciled exactly once — scaled when a retained snapshot predates
+     it, consciously skipped and journaled otherwise — instead of being silently dropped.
+     Rows classified `AMBIGUOUS`, `UNSUPPORTED`, `EXTERNAL_BALANCE`, or outside the allocation universe are
+     consciously skipped with a warning and journaled as decided, so a committed cycle does not re-warn them
+     (a cycle that later defers re-derives the warning until it commits).
+     Flows apply sequentially oldest-first (simultaneous flows net into one step), each
+     against its event-time pre-flow basis: the latest snapshot at or before the event plus intervening priced
+     owner-capital flows plus retained successful trades replayed at the predecessor snapshot's prices (a buy
+     or sell moves value by its fee drag and the difference between fill value and snapshot-priced inventory;
+      assets outside the snapshot universe contribute only their fiat leg). With no retained snapshot at or
+      before the event there is no honest basis — the flow is assumed to predate ATH establishment (its
+      effect baked into the initial baseline), so it is consciously skipped with a warning and journaled as
+      decided rather than approximated; a backfill that actually postdates the baseline conservatively
+      leaves ATH unadjusted.
+     Non-USD flows are priced
      using historical portfolio snapshots within ±180s before falling back to live exchange tickers bounded to
      events at most 24h old; unresolvable prices fail closed without recording the flow.
    - **Crash-Idempotent Checkpoint**: the ATH value, the applied per-ledger flow identities, and the flow
-     watermark persist in a single SQLite transaction. A crash before commit retries safely; after commit
-     nothing is double-applied — restarts skip recorded ledger IDs even inside a held watermark window, so
-     same-second events stay exact.
+      watermark persist in a single SQLite transaction. A crash before commit retries safely; after commit
+      nothing is double-applied — restarts skip recorded ledger IDs even inside a held watermark window, so
+      same-second events stay exact. The journal is a lifetime decision log: it is never pruned by the
+       watermark, because the identity rescan trusts it as the record of everything already decided. When the
+        initial ATH is established from the current total, every undecided decision-bearing row below the
+        earlier of the coverage horizon and the balance observation is journaled as absorbed (its effect
+        is already inside that baseline), which prevents
+        a fresh install with seeded history from re-scaling lifetime history on the next cycle. Databases
+        upgraded from the old timestamp-window semantics perform a one-time migration
+        (`SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED`): rows below the legacy watermark whose journal entries
+        the old pruning deleted are presumed decided, so legacy applied flows are never re-applied. Forcing a
+        genuine re-scan additionally requires restoring a database backup taken before the scaling — emptying
+        the journal on a live database would re-apply flows already baked into the ATH.
    - **Safety & Persistence**: Missing or explicitly null stats represent an empty initial
      state. A database read or legacy-file migration failure aborts the analysis
      before ATH persistence or order planning, rather than treating the ATH as
