@@ -34,6 +34,9 @@ ViewText:
   MINIMUM_ORDER_SIZE: "Minimum Order Size ($)"
   FIAT_MAX_DRAWDOWN: "Fiat Max Drawdown (%)"
   FIAT_DEPLOYMENT_EXPONENT: "Fiat Deployment Exponent"
+  FIAT_DEPLOYMENT_THRESHOLD: "Drawdown Activation Threshold (%)"
+  INCEPTION_DATE: "Inception Date"
+  INCEPTION_DATE_HINT: "Auto-detected from earliest rebalance cycle, or specify YYYY-MM-DD"
   # Safety and settings
   DRY_RUN_MODE_TITLE: "Dry Run Mode"
   SIMULATION_MODE_TITLE: "Simulation Mode"
@@ -160,6 +163,8 @@ ViewText:
   INVALID_LOOP_DELAY: "Invalid settings field: loop delay is required and must be an integer."
   INVALID_FIAT_MAX_DRAWDOWN: "Invalid settings field: fiat max drawdown is required and must be a finite number."
   INVALID_FIAT_DEPLOYMENT_EXPONENT: "Invalid settings field: fiat deployment exponent is required and must be a finite number."
+  INVALID_FIAT_DEPLOYMENT_THRESHOLD: "Invalid settings field: drawdown activation threshold must be a finite number."
+  INVALID_INCEPTION_DATE: "Invalid settings field: inception date must be a valid ISO-8601 date or timestamp."
   INVALID_ALLOCATION_FIELDS: "Invalid allocation fields: symbols, targets, and supplied colors must have matching entries."
   INVALID_ALLOCATION_TARGET: "Invalid settings field: every allocation target is required and must be a finite number."
   INVALID_ALLOCATION_COLOR: "Invalid allocation fields: supplied colors must use six-digit hex format."

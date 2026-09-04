@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.25] - 2026-09-03
+
+### Added
+
+- **Inception date auto-detection & configuration**: Auto-detects strategy inception
+  from the earliest multi-asset rebalance burst ($\ge 2$ distinct configured symbols within
+  $\le 5$s) in Kraken trade history, with fallback to earliest snapshot or an explicit
+  user-configured `inceptionDate` in Settings.
+- **Cash-flow-adjusted All-Time High (ATH)**: External deposits and withdrawals now
+  proportionally scale stored ATH (`Adjusted ATH = ATH * (PreFlow + NetFlow) / PreFlow`),
+  preventing external deposits from creating artificial ATH resets and preventing
+  external withdrawals from triggering false drawdowns and forced 100% fiat deployment.
+- **Inception-anchored Buy & Hold comparison**: Anchors the synthetic Buy & Hold benchmark
+  to the inception baseline portfolio across all historical query windows (24h, 7d, 30d, 90d, All),
+  properly answering *"Since I started running this bot with \$X capital, am I ahead of where I would have been?"*
+- **Fiat deployment threshold deadband**: Added `fiatDeploymentThresholdPercent` to Settings
+  and `RebalancerEngine`, allowing users to define a minimum drawdown percentage (e.g. 2.0%)
+  before cash deployment begins, suppressing micro-drawdown deployment.
+- **Historical pruning exemption**: Permanently protects the inception snapshot, trades, and
+  ledger entries from the 90-day retention cutoff, preserving long-term performance tracking.
+
 ## [6.17.24] - 2026-09-03
 
 ### Fixed

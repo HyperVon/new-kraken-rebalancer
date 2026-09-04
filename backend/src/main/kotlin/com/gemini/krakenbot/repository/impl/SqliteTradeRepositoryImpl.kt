@@ -397,10 +397,21 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int =
         database.safeTransactionIO(log, "Failed to prune old snapshots") {
             val cutoffMillis = cutoff.toEpochMilli()
+            val inceptionSnapshotId = readSyncMetadataInTransaction(
+                SyncMetadataKeys.INCEPTION_SNAPSHOT_ID,
+            )?.toIntOrNull()
+            val inceptionEpochMs = readSyncMetadataInTransaction(
+                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+            )?.toLongOrNull()
             val idsToDelete =
                 PortfolioSnapshotTable
-                    .select(PortfolioSnapshotTable.id)
+                    .select(PortfolioSnapshotTable.id, PortfolioSnapshotTable.timestamp)
                     .where { PortfolioSnapshotTable.timestamp less cutoffMillis }
+                    .filterNot { row ->
+                        val id = row[PortfolioSnapshotTable.id]
+                        val ts = row[PortfolioSnapshotTable.timestamp]
+                        id == inceptionSnapshotId || (inceptionEpochMs != null && ts >= (inceptionEpochMs - 5000L))
+                    }
                     .map { it[PortfolioSnapshotTable.id] }
 
             if (idsToDelete.isNotEmpty()) {
@@ -418,13 +429,20 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         database.safeTransactionIO(log, "Failed to prune old trades") {
             val cutoffMillis = cutoff.toEpochMilli()
             val protectedTradeIds = protectedTradeIds()
-            val idsToDelete = TradeTable.select(TradeTable.id)
+            val inceptionEpochMs = readSyncMetadataInTransaction(
+                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+            )?.toLongOrNull()
+            val idsToDelete = TradeTable.select(TradeTable.id, TradeTable.timestamp)
                 .where {
                     (TradeTable.timestamp less cutoffMillis) and
                         TradeTable.submissionState.isNull()
                 }
+                .filterNot { row ->
+                    val id = row[TradeTable.id]
+                    val ts = row[TradeTable.timestamp]
+                    protectedTradeIds.contains(id) || (inceptionEpochMs != null && ts >= (inceptionEpochMs - 5000L))
+                }
                 .map { it[TradeTable.id] }
-                .filterNot(protectedTradeIds::contains)
             idsToDelete.chunked(SQLITE_IN_CHUNK_SIZE).sumOf { chunk ->
                 TradeTable.deleteWhere { TradeTable.id inList chunk }
             }

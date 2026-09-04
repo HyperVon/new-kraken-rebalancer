@@ -64,8 +64,17 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
 
     override suspend fun pruneLedgersOlderThan(cutoff: Instant): Int =
         database.safeTransactionIO(log, "Failed to prune old ledger entries") {
+            val inceptionEpochMs = readSyncMetadataInTransaction(
+                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+            )?.toLongOrNull()
+            val cutoffMillis = cutoff.toEpochMilli()
+            val effectiveCutoff = if (inceptionEpochMs != null && cutoffMillis > inceptionEpochMs) {
+                minOf(cutoffMillis, inceptionEpochMs - 5000L)
+            } else {
+                cutoffMillis
+            }
             LedgerTable.deleteWhere {
-                timestamp less cutoff.toEpochMilli()
+                timestamp less effectiveCutoff
             }
         }
 }

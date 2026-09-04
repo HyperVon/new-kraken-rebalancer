@@ -148,10 +148,15 @@ private fun RebalancerComparison.hasSortedTimestamps(): Boolean =
     }
 
 private fun RebalancerComparison.hasValidBaselinePoint(): Boolean = points.firstOrNull()?.let { first ->
-    first.timestamp == baselineTimestamp &&
+    if (first.timestamp == baselineTimestamp) {
         dynamicNumber(first.rebalancerValueUSD) == dynamicNumber(first.buyAndHoldValueUSD) &&
-        dynamicNumber(first.differenceUSD) == 0.0 &&
-        dynamicNumber(first.differencePercent) == 0.0
+            dynamicNumber(first.differenceUSD) == 0.0 &&
+            dynamicNumber(first.differencePercent) == 0.0
+    } else {
+        val firstTs = dynamicNumber(first.timestamp)
+        val baseTs = dynamicNumber(baselineTimestamp)
+        firstTs != null && baseTs != null && firstTs >= baseTs
+    }
 } == true
 
 private fun RebalancerComparison.hasCompletePointData(): Boolean = points.all { point ->

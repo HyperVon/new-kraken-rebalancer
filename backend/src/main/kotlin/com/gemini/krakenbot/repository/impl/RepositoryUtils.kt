@@ -50,12 +50,14 @@ suspend fun <T> Database.readTransactionIO(block: JdbcTransaction.() -> T): T = 
 }
 
 suspend fun Database.readSyncMetadata(key: String): String? = readTransactionIO {
-    HistorySyncMetadataTable
-        .selectAll()
-        .where { HistorySyncMetadataTable.key eq key }
-        .firstOrNull()
-        ?.get(HistorySyncMetadataTable.value)
+    readSyncMetadataInTransaction(key)
 }
+
+fun readSyncMetadataInTransaction(key: String): String? = HistorySyncMetadataTable
+    .selectAll()
+    .where { HistorySyncMetadataTable.key eq key }
+    .firstOrNull()
+    ?.get(HistorySyncMetadataTable.value)
 
 suspend fun Database.writeSyncMetadata(key: String, value: String, log: Logger, logMessage: String) {
     safeTransactionIO(log, logMessage) {

@@ -272,6 +272,105 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
             }
         }
 
+        "pruneSnapshotsOlderThan retains inception snapshot and snapshots at or after inception epoch" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val preInceptionOld = TestFixtures.emptySnapshot(
+                    baseTime.minus(120, ChronoUnit.DAYS),
+                    BigDecimal("1000.00"),
+                )
+                val inceptionOld = TestFixtures.emptySnapshot(
+                    baseTime.minus(100, ChronoUnit.DAYS),
+                    BigDecimal("1500.00"),
+                )
+                val postInceptionOld = TestFixtures.emptySnapshot(
+                    baseTime.minus(95, ChronoUnit.DAYS),
+                    BigDecimal("1600.00"),
+                )
+                val recent = TestFixtures.emptySnapshot(baseTime, BigDecimal("2000.00"))
+
+                val id1 = repository.saveSnapshot(preInceptionOld)
+                val id2 = repository.saveSnapshot(inceptionOld)
+                val id3 = repository.saveSnapshot(postInceptionOld)
+                val id4 = repository.saveSnapshot(recent)
+
+                repository.setSyncMetadata(
+                    com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_SNAPSHOT_ID,
+                    id2.toString(),
+                )
+                repository.setSyncMetadata(
+                    com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    inceptionOld.timestamp.toEpochMilli().toString(),
+                )
+
+                // Cutoff is 90 days ago.
+                // preInceptionOld is 120 days ago (< inception - 5s, not inceptionId) -> pruned!
+                // inceptionOld is 100 days ago (has INCEPTION_SNAPSHOT_ID and timestamp) -> retained!
+                // postInceptionOld is 95 days ago (timestamp >= inception - 5s) -> retained!
+                // recent is 0 days ago (>= cutoff) -> retained!
+                val pruned = repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
+                pruned shouldBe 1
+
+                val loaded = repository.load()
+                loaded.size shouldBe 3
+                loaded.any { it.timestamp == preInceptionOld.timestamp } shouldBe false
+                loaded.any { it.timestamp == inceptionOld.timestamp } shouldBe true
+                loaded.any { it.timestamp == postInceptionOld.timestamp } shouldBe true
+                loaded.any { it.timestamp == recent.timestamp } shouldBe true
+            }
+        }
+
+        "pruneTradesOlderThan retains trades at or after inception epoch" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val preInceptionTrade = TestFixtures.tradeRecord(
+                    timestamp = baseTime.minus(120, ChronoUnit.DAYS),
+                    pair = Asset.BTC_USD_PAIR,
+                    side = OrderSide.BUY.name,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("500.00"),
+                )
+                val inceptionTrade = preInceptionTrade.copy(
+                    timestamp = baseTime.minus(100, ChronoUnit.DAYS),
+                )
+                val postInceptionTrade = preInceptionTrade.copy(
+                    timestamp = baseTime.minus(95, ChronoUnit.DAYS),
+                )
+                val recentTrade = preInceptionTrade.copy(
+                    timestamp = baseTime,
+                )
+
+                repository.saveTrade(preInceptionTrade)
+                repository.saveTrade(inceptionTrade)
+                repository.saveTrade(postInceptionTrade)
+                repository.saveTrade(recentTrade)
+
+                repository.setSyncMetadata(
+                    com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    inceptionTrade.timestamp.toEpochMilli().toString(),
+                )
+
+                // Cutoff is 90 days ago.
+                // preInceptionTrade (< inception - 5s) -> pruned (1)!
+                // inceptionTrade (>= inception - 5s) -> retained!
+                // postInceptionTrade (>= inception - 5s) -> retained!
+                // recentTrade (>= cutoff) -> retained!
+                val pruned = repository.pruneTradesOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
+                pruned shouldBe 1
+
+                val allTrades = repository.getTradesInRange(
+                    baseTime.minus(150, ChronoUnit.DAYS),
+                    baseTime.plus(1, ChronoUnit.DAYS),
+                )
+                allTrades.size shouldBe 3
+                allTrades.any { it.timestamp == preInceptionTrade.timestamp } shouldBe false
+                allTrades.any { it.timestamp == inceptionTrade.timestamp } shouldBe true
+                allTrades.any { it.timestamp == postInceptionTrade.timestamp } shouldBe true
+                allTrades.any { it.timestamp == recentTrade.timestamp } shouldBe true
+            }
+        }
+
         "unresolved live submissions survive retention pruning" {
             runTest {
                 val pending =

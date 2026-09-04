@@ -14,3 +14,6 @@ SyncMetadataKeys:
   SNAPSHOT_RECONSTRUCTION_VERSION: "snapshot_reconstruction_version"
   LEDGER_COVERAGE_VERSION: "ledger_coverage_version"
   SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION: "snapshot_reconstruction_ledger_coverage_version"
+  INCEPTION_SNAPSHOT_ID: "inception_snapshot_id"
+  DETECTED_INCEPTION_EPOCH_MS: "detected_inception_epoch_ms"
+  ATH_FLOW_WATERMARK_EPOCH_SEC: "ath_flow_watermark_epoch_sec"

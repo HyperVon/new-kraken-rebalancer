@@ -85,6 +85,14 @@ class SettingsFormComponent {
             step = "0.1",
             min = "0.1",
         ),
+        NumericFieldSpec(
+            ViewText.FIAT_DEPLOYMENT_THRESHOLD,
+            FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT,
+            config.settings.fiatDeploymentThresholdPercent.toString(),
+            step = "0.5",
+            min = "0",
+            max = "100",
+        ),
     )
 
     context(body: BODY)
@@ -154,6 +162,13 @@ class SettingsFormComponent {
                             field.max?.let { max = it }
                             value = field.value
                         }
+                    }
+                }
+                formGroup(ViewText.INCEPTION_DATE, FormFields.INCEPTION_DATE) {
+                    input(CssClass.Form.InputGlass, type = text, name = FormFields.INCEPTION_DATE) {
+                        id = FormFields.INCEPTION_DATE
+                        value = config.settings.inceptionDate.orEmpty()
+                        placeholder = ViewText.INCEPTION_DATE_HINT
                     }
                 }
             }

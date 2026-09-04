@@ -22,6 +22,7 @@ class TradeHistoryQueryService(
     private val portfolioStatsRepository: PortfolioStatsRepository,
     private val ledgerRepository: LedgerRepository,
     private val orderIntentRepository: OrderIntentRepository? = null,
+    private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
 ) {
     suspend fun getHistory(): List<PortfolioSnapshot> = repository.load()
 
@@ -50,11 +51,20 @@ class TradeHistoryQueryService(
         val firstObservationTime = firstSnapshot.balancesObservedAt ?: firstTimestamp
         val lastObservationTime = lastSnapshot.balancesObservedAt ?: lastTimestamp
 
+        val inceptionResolution = inceptionDiscoveryService?.resolveInception()
+        val inceptionSnapshot = inceptionResolution?.inceptionSnapshot
+            ?: inceptionResolution?.inceptionTime?.let { time ->
+                repository.getSnapshotBefore(time.plusSeconds(30))
+            }
+
         val anchorSnapshot = repository.getSnapshotBefore(firstTimestamp)
-        val queryFrom = minOf(
-            anchorSnapshot?.balancesObservedAt ?: anchorSnapshot?.timestamp ?: firstObservationTime,
+        val eventQueryStart = listOfNotNull(
+            inceptionSnapshot?.balancesObservedAt ?: inceptionSnapshot?.timestamp,
+            anchorSnapshot?.balancesObservedAt ?: anchorSnapshot?.timestamp,
             firstObservationTime,
-        ).minusMillisIfLegacyObservation(anchorSnapshot, firstSnapshot)
+        ).minOrNull() ?: firstObservationTime
+
+        val queryFrom = eventQueryStart.minusMillisIfLegacyObservation(anchorSnapshot, firstSnapshot)
         val queryTo = maxOf(lastTimestamp, lastObservationTime)
             .plusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
@@ -80,6 +90,7 @@ class TradeHistoryQueryService(
             rewards = ledgers,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             anchorSnapshot = anchorSnapshot,
+            inceptionSnapshot = inceptionSnapshot,
         )
     }
 

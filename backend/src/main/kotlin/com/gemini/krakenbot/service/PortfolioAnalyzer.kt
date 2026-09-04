@@ -27,7 +27,13 @@ interface PortfolioAnalyzer {
 
     fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal
 
-    suspend fun updateAthAndCalculateDrawdown(totalPortfolioValueUSD: BigDecimal): BigDecimal
+    suspend fun updateAthAndCalculateDrawdown(totalPortfolioValueUSD: BigDecimal): BigDecimal =
+        updateAthAndCalculateDrawdown(totalPortfolioValueUSD, BigDecimal.ZERO)
+
+    suspend fun updateAthAndCalculateDrawdown(
+        totalPortfolioValueUSD: BigDecimal,
+        netExternalFlowUSD: BigDecimal,
+    ): BigDecimal
 
     fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal
 

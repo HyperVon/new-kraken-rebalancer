@@ -523,6 +523,81 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
             }
         }
+
+        "getRebalancerComparison_UsesInceptionDiscoveryServiceWhenProvided" {
+            runTest {
+                val inceptionTime = now.minusSeconds(86400 * 30)
+                val snapInception =
+                    snapshot(inceptionTime, "80000.00", btc = "1.0" to "40000.00", usdBalance = "40000.00")
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "110000.00", btc = "1.0" to "60000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = inceptionTime,
+                    inceptionSnapshot = snapInception,
+                    isAutoDetected = true,
+                )
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe inceptionTime
+                comparison.points.size shouldBe 2
+            }
+        }
+
+        "getRebalancerComparison_ResolvesSnapshotBeforeWhenInceptionSnapshotIsNull" {
+            runTest {
+                val inceptionTime = now.minusSeconds(86400 * 10)
+                val snapInception = snapshot(
+                    inceptionTime,
+                    "85000.00",
+                    btc = "1.0" to "45000.00",
+                    usdBalance = "40000.00",
+                    balancesObservedAt = null,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "110000.00", btc = "1.0" to "60000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = inceptionTime,
+                    inceptionSnapshot = null,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotBefore(any()) } returns snapInception
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe inceptionTime
+                comparison.points.size shouldBe 2
+            }
+        }
     }
 
     private fun snapshot(

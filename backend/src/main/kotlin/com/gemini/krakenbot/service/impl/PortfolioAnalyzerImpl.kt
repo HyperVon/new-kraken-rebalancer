@@ -10,16 +10,23 @@ import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
+import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 import com.gemini.krakenbot.domain.resolveBalance as resolveBalanceFromKeys
 
@@ -28,6 +35,8 @@ class PortfolioAnalyzerImpl(
     private val configService: ConfigService,
     private val portfolioStatsRepository: PortfolioStatsRepository,
     private val nowProvider: () -> Instant = Instant::now,
+    private val ledgerRepository: LedgerRepository? = null,
+    private val tradeRepository: TradeRepository? = null,
 ) : PortfolioAnalyzer {
     private val log = LoggerFactory.getLogger(PortfolioAnalyzerImpl::class.java)
 
@@ -76,9 +85,32 @@ class PortfolioAnalyzerImpl(
     override fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal =
         resolveBalanceFromKeys(symbol, balances)
 
-    override suspend fun updateAthAndCalculateDrawdown(totalPortfolioValueUSD: BigDecimal): BigDecimal {
+    override suspend fun updateAthAndCalculateDrawdown(
+        totalPortfolioValueUSD: BigDecimal,
+        netExternalFlowUSD: BigDecimal,
+    ): BigDecimal {
         val stats = portfolioStatsRepository.load()
         var ath = stats.allTimeHigh
+
+        val effectiveNetFlow = if (netExternalFlowUSD.signum() != 0) {
+            netExternalFlowUSD
+        } else {
+            calculateUnappliedExternalFlow()
+        }
+
+        if (effectiveNetFlow.signum() != 0 && ath > BigDecimal.ZERO) {
+            val preFlowValueUSD = totalPortfolioValueUSD.subtract(effectiveNetFlow)
+            val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, preFlowValueUSD, effectiveNetFlow)
+            if (adjustedAth.compareTo(ath) != 0) {
+                log.info(
+                    "ATH adjusted for external cash flow (netFlow={}): {} -> {}",
+                    effectiveNetFlow.toUsdScale(),
+                    ath.toUsdScale(),
+                    adjustedAth.toUsdScale(),
+                )
+                ath = adjustedAth
+            }
+        }
 
         when {
             ath <= BigDecimal.ZERO -> {
@@ -110,6 +142,48 @@ class PortfolioAnalyzerImpl(
         }
 
         return RebalancerEngine.calculateDrawdown(totalPortfolioValueUSD, ath)
+    }
+
+    private suspend fun calculateUnappliedExternalFlow(): BigDecimal {
+        val ledgersRepo = ledgerRepository ?: return BigDecimal.ZERO
+        val tradesRepo = tradeRepository ?: return BigDecimal.ZERO
+
+        val now = nowProvider()
+        val watermarkStr = tradesRepo.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+        if (watermarkStr == null) {
+            tradesRepo.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC, now.epochSecond.toString())
+            return BigDecimal.ZERO
+        }
+
+        val watermark = Instant.ofEpochSecond(watermarkStr.toLong())
+        val events = ledgersRepo.getLedgersInRange(watermark, now)
+            .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+
+        tradesRepo.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC, now.epochSecond.toString())
+
+        if (events.isEmpty()) return BigDecimal.ZERO
+
+        var netFlow = BigDecimal.ZERO
+        for (event in events) {
+            val delta = event.netBalanceDelta()
+            val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
+            val usdDelta = if (asset == "USD" || asset == "ZUSD") {
+                delta
+            } else {
+                try {
+                    val pair = Asset(asset).tradingPair
+                    val raw = krakenService.getTickerPrices(pair)
+                    val price = resolvePriceFromTicker(asset, raw)
+                    delta.multiply(price)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    BigDecimal.ZERO
+                }
+            }
+            netFlow = netFlow.add(usdDelta)
+        }
+        return netFlow.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
     }
 
     override fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal =

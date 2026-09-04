@@ -139,28 +139,41 @@ target state.
 
 Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
 
-1. **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in
+1. **ATH Tracking & Cash-Flow Adjustment**: The bot tracks the portfolio's All-Time High (ATH) value in
    the SQLite database. ATH is set on first run or updated whenever a new high
-   is reached. Missing or explicitly null stats represent an empty initial
-   state. A database read or legacy-file migration failure aborts the analysis
-   before ATH persistence or order planning, rather than treating the ATH as
-   zero. Any non-cancellation ATH persistence failure logs an error and aborts
-   the cycle (fail-closed) so the bot never plans orders against an unpersisted
-   All-Time High. Cancellation still propagates so a cancelled cycle cannot
-   continue.
+   is reached.
+   - **Cash-Flow Neutrality**: Monotonic ATH tracking without flow adjustment would cause external deposits
+     to artificially raise ATH and external withdrawals to plunge the bot into false drawdowns. To preserve true
+     strategy performance, external cash flows (deposits, withdrawals, transfers from the Kraken ledger) adjust ATH
+     proportionally:
+     `Adjusted ATH = Current ATH * (Pre-Flow Value + Net External Flow) / Pre-Flow Value`
+     This ensures an external deposit scales ATH without wiping out an existing drawdown percentage, and an external
+     withdrawal scales ATH down without triggering artificial drawdown or forced fiat deployment.
+   - **Safety & Persistence**: Missing or explicitly null stats represent an empty initial
+     state. A database read or legacy-file migration failure aborts the analysis
+     before ATH persistence or order planning, rather than treating the ATH as
+     zero. Any non-cancellation ATH persistence failure logs an error and aborts
+     the cycle (fail-closed) so the bot never plans orders against an unpersisted
+     All-Time High. Cancellation still propagates so a cancelled cycle cannot
+     continue.
 2. **Drawdown Calculation**:
    `Drawdown % = (ATH - Current Value) / ATH * 100`
    The numerator is multiplied by 100 before division so the result retains all
    four internal percentage decimal places.
 3. **Fiat Deployment Percentage**:
-   Based on the configured `fiatMaxDrawdown` (e.g., 30%) and `fiatDeploymentExponent` (e.g., 1.0):
-   `Deployment % = (Drawdown % / Max Drawdown %) ^ Exponent` (Capped at 100%)
+   Based on the configured `fiatMaxDrawdown` (e.g., 30%), `fiatDeploymentExponent` (e.g., 1.0), and optional
+   `fiatDeploymentThresholdPercent` (e.g., 2.0% deadband):
+   - If `Drawdown % < fiatDeploymentThresholdPercent`, `Deployment % = 0` (suppresses micro-drawdown deployment).
+   - If `Drawdown % >= fiatDeploymentThresholdPercent`:
+     `Effective Drawdown % = Drawdown % - fiatDeploymentThresholdPercent`
+     `Effective Max Drawdown % = max(fiatMaxDrawdown - fiatDeploymentThresholdPercent, 0.0001)`
+     `Deployment % = (Effective Drawdown % / Effective Max Drawdown %) ^ Exponent` (Capped at 100%)
 
    Fractional exponents use `Double.pow`, then the result is re-entered as
    `BigDecimal` at percent scale (`SCALE_PERCENT = 4`). When `fiatMaxDrawdown ≤ 0`
    or `fiatDeploymentExponent ≤ 0`, deployment is **disabled** (`Deploy% = 0`).
 
-   **Examples (Max Drawdown = 30%)**:
+   **Examples (Max Drawdown = 30%, Threshold = 0%)**:
 
    | Drawdown | Linear (1.0) | Aggressive (0.5) | Conservative (2.0) |
    | :--- | :--- | :--- | :--- |
@@ -174,7 +187,7 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    The target percentage for USD is reduced by the Deployment %:
    `Effective USD Target = Base USD Target * (1 - Deployment %)`
    The removed allocation is redistributed proportionally to crypto assets,
-   ensuring the total remains 100%. If there is no positive non-USD target to
+   ensuring the total remains 100%. If there is no positive non-usd target to
    receive that allocation, fiat deployment is a no-op and the configured USD
    target remains unchanged.
 

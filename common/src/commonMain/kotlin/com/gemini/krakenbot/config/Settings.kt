@@ -12,4 +12,6 @@ data class Settings(
     val fiatDeploymentExponent: Double = 1.0,
     // Routes DynamicKrakenService to SimulatedKrakenService. Orthogonal to dryRun.
     val simulation: Boolean = false,
+    val inceptionDate: String? = null,
+    val fiatDeploymentThresholdPercent: Double = 0.0,
 )

@@ -4454,6 +4454,64 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.size shouldBe 2
             result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
+
+        "calculate preserves cumulative difference from inception on sub-window queries" {
+            val t0 = now.minusSeconds(86400 * 30)
+            val t1 = now
+            val t2 = now.plusSeconds(3600)
+
+            // Inception: 1.0 BTC @ 50,000 + 50,000 USD = 100,000 USD
+            val inceptionSnap = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+
+            // At t1: Bot sold 0.5 BTC at 60k earlier, so bot has 0.5 BTC + 80,000 USD.
+            // BTC price now 40,000. Bot total = 0.5 * 40k + 80k = 100,000 USD.
+            // Buy & Hold (if held 1.0 BTC + 50k USD) = 1.0 * 40k + 50k = 90,000 USD.
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.5", "40000.00", "20000.00"),
+                    "USD" to assetRow("80000.00", "1.00", "80000.00"),
+                ),
+            )
+            // At t2: BTC price drops to 30,000.
+            // Bot total = 0.5 * 30k + 80k = 95,000 USD.
+            // Buy & Hold = 1.0 * 30k + 50k = 80,000 USD.
+            val s2 = snapshot(
+                timestamp = t2,
+                totalValueUSD = "95000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.5", "30000.00", "15000.00"),
+                    "USD" to assetRow("80000.00", "1.00", "80000.00"),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                anchorSnapshot = null,
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.baselineTimestamp shouldBe t0
+            result.points.size shouldBe 2
+            // Point 0 (at t1): Bot = 100k, B&H = 90k, diff = +10k
+            result.points[0].rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+            result.points[0].buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("90000.00"))
+            result.points[0].differenceUSD.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+            // Point 1 (at t2): Bot = 95k, B&H = 80k, diff = +15k
+            result.points[1].rebalancerValueUSD.shouldBeEqualComparingTo(BigDecimal("95000.00"))
+            result.points[1].buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("80000.00"))
+            result.points[1].differenceUSD.shouldBeEqualComparingTo(BigDecimal("15000.00"))
+        }
     }
 
     private fun mixedCostSnapshots(knownObservation: Boolean): List<PortfolioSnapshot> =

@@ -9,6 +9,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -326,6 +327,14 @@ class ConfigServiceImpl internal constructor(
             (settings.fiatDeploymentExponent > 0) to "Fiat deployment exponent must be positive.",
             (settings.fiatDeploymentExponent <= MAX_DEPLOYMENT_EXPONENT) to
                 "Fiat deployment exponent must not exceed $MAX_DEPLOYMENT_EXPONENT.",
+            settings.fiatDeploymentThresholdPercent.isFinite() to "Fiat deployment threshold percent must be finite.",
+            (settings.fiatDeploymentThresholdPercent in MIN_PERCENT..MAX_PERCENT) to
+                "Fiat deployment threshold percent must be between 0% and 100%.",
+            (
+                settings.inceptionDate.isNullOrBlank() ||
+                    InceptionDiscoveryService.parseInceptionDate(settings.inceptionDate) != null
+                ) to
+                "Inception date must be valid ISO-8601 or YYYY-MM-DD format.",
         )
     }
 

@@ -77,6 +77,20 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
             repository.getLedgersInRange(Instant.EPOCH, t2).map { it.ledgerId } shouldBe listOf("ref-2")
         }
 
+        "pruneLedgersOlderThan retains entries at or after inception epoch" {
+            repository.setSyncMetadata(
+                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                t1.toEpochMilli().toString(),
+            )
+            repository.saveLedgers(listOf(event(t0, "ref-0"), event(t1, "ref-1"), event(t2, "ref-2")))
+            // Cutoff is t2. ref-0 is before inception -> pruned.
+            // ref-1 is at inception (>= inception - 5s) -> retained!
+            // ref-2 is at t2 -> retained!
+            val pruned = repository.pruneLedgersOlderThan(t2)
+            pruned shouldBe 1
+            repository.getLedgersInRange(Instant.EPOCH, t2).map { it.ledgerId } shouldBe listOf("ref-2", "ref-1")
+        }
+
         "sync metadata roundtrips through the shared history_sync_metadata table" {
             repository.setSyncMetadata(TestFixtures.SYNC_KEY, TestFixtures.SYNC_VAL)
             repository.getSyncMetadata(TestFixtures.SYNC_KEY) shouldBe TestFixtures.SYNC_VAL

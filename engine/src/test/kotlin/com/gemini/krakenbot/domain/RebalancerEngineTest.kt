@@ -55,6 +55,91 @@ class RebalancerEngineTest : StringSpec() {
             dd.shouldBeEqualComparingTo(BigDecimal("33.3333"))
         }
 
+        "adjustAthForCashFlow returns current ATH when ATH or pre-flow value is non-positive or net flow is zero" {
+            val ath = BigDecimal("10000.00")
+            val preFlow = BigDecimal("8000.00")
+
+            RebalancerEngine.adjustAthForCashFlow(BigDecimal.ZERO, preFlow, BigDecimal("1000.00"))
+                .shouldBeEqualComparingTo(BigDecimal.ZERO)
+            RebalancerEngine.adjustAthForCashFlow(BigDecimal("-100.00"), preFlow, BigDecimal("1000.00"))
+                .shouldBeEqualComparingTo(BigDecimal("-100.00"))
+            RebalancerEngine.adjustAthForCashFlow(ath, BigDecimal.ZERO, BigDecimal("1000.00"))
+                .shouldBeEqualComparingTo(ath)
+            RebalancerEngine.adjustAthForCashFlow(ath, BigDecimal("-500.00"), BigDecimal("1000.00"))
+                .shouldBeEqualComparingTo(ath)
+            RebalancerEngine.adjustAthForCashFlow(ath, preFlow, BigDecimal.ZERO)
+                .shouldBeEqualComparingTo(ath)
+        }
+
+        "adjustAthForCashFlow returns ZERO when net withdrawal equals or exceeds pre-flow value" {
+            val ath = BigDecimal("10000.00")
+            val preFlow = BigDecimal("5000.00")
+
+            RebalancerEngine.adjustAthForCashFlow(ath, preFlow, BigDecimal("-5000.00"))
+                .shouldBeEqualComparingTo(BigDecimal.ZERO)
+            RebalancerEngine.adjustAthForCashFlow(ath, preFlow, BigDecimal("-6000.00"))
+                .shouldBeEqualComparingTo(BigDecimal.ZERO)
+        }
+
+        "adjustAthForCashFlow proportionally scales ATH for deposits and preserves drawdown ratio" {
+            // Portfolio value: 8,000, ATH: 10,000 (20% drawdown).
+            // Deposit: 2,000 -> postFlow = 10,000.
+            // Factor = 10,000 / 8,000 = 1.25. New ATH = 10,000 * 1.25 = 12,500.
+            // New drawdown = (12,500 - 10,000) / 12,500 = 20%. Drawdown is preserved!
+            val ath = BigDecimal("10000.00")
+            val preFlow = BigDecimal("8000.00")
+            val deposit = BigDecimal("2000.00")
+
+            val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, preFlow, deposit)
+            adjustedAth.shouldBeEqualComparingTo(BigDecimal("12500.00"))
+
+            val newDd = RebalancerEngine.calculateDrawdown(preFlow.add(deposit), adjustedAth)
+            newDd.shouldBeEqualComparingTo(BigDecimal("20.00"))
+        }
+
+        "adjustAthForCashFlow proportionally scales ATH for withdrawals and preserves drawdown ratio" {
+            // Portfolio value: 8,000, ATH: 10,000 (20% drawdown).
+            // Withdrawal: -2,000 -> postFlow = 6,000.
+            // Factor = 6,000 / 8,000 = 0.75. New ATH = 10,000 * 0.75 = 7,500.
+            // New drawdown = (7,500 - 6,000) / 7,500 = 20%. Drawdown is preserved!
+            val ath = BigDecimal("10000.00")
+            val preFlow = BigDecimal("8000.00")
+            val withdrawal = BigDecimal("-2000.00")
+
+            val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, preFlow, withdrawal)
+            adjustedAth.shouldBeEqualComparingTo(BigDecimal("7500.00"))
+
+            val newDd = RebalancerEngine.calculateDrawdown(preFlow.add(withdrawal), adjustedAth)
+            newDd.shouldBeEqualComparingTo(BigDecimal("20.00"))
+        }
+
+        "calculateFiatDeployment respects deployment threshold deadband" {
+            val withThreshold = settings.copy(
+                fiatMaxDrawdown = 20.0,
+                fiatDeploymentExponent = 1.0,
+                fiatDeploymentThresholdPercent = 5.0,
+            )
+
+            // Drawdown at or below threshold produces 0 deployment
+            RebalancerEngine.calculateFiatDeployment(BigDecimal("3.00"), withThreshold)
+                .shouldBeEqualComparingTo(BigDecimal.ZERO)
+            RebalancerEngine.calculateFiatDeployment(BigDecimal("5.00"), withThreshold)
+                .shouldBeEqualComparingTo(BigDecimal.ZERO)
+
+            // Drawdown between threshold and maxDrawdown scales linearly from threshold to maxDD:
+            // effectiveDD = 12.5 - 5 = 7.5; effectiveMaxDD = 20 - 5 = 15; ratio = 7.5 / 15 = 0.5 -> 50%
+            RebalancerEngine.calculateFiatDeployment(BigDecimal("12.50"), withThreshold)
+                .shouldBeEqualComparingTo(BigDecimal("50.00"))
+
+            // When maxDrawdown is less than or equal to threshold, any drawdown exceeding threshold deploys 100%
+            val clampedThreshold = settings.copy(
+                fiatMaxDrawdown = 5.0,
+                fiatDeploymentThresholdPercent = 5.0,
+            )
+            RebalancerEngine.calculateFiatDeployment(BigDecimal("6.00"), clampedThreshold)
+                .shouldBeEqualComparingTo(BigDecimal("100.00"))
+        }
+
         "calculateFiatDeployment scales correctly with drawdown exponent" {
             val dd = BigDecimal("10.00")
             val deployment = RebalancerEngine.calculateFiatDeployment(dd, settings)

@@ -38,6 +38,7 @@ object RebalancerComparisonCalculator {
         rewards: List<LedgerEvent> = emptyList(),
         knownRebalancerOrderTxids: Set<String> = emptySet(),
         anchorSnapshot: PortfolioSnapshot? = null,
+        inceptionSnapshot: PortfolioSnapshot? = null,
     ): RebalancerComparison {
         if (snapshots.size < 2) {
             val firstTime = snapshots.firstOrNull()?.timestamp
@@ -48,7 +49,14 @@ object RebalancerComparisonCalculator {
             )
         }
         val orderedSnapshots = snapshots.sortedBy(PortfolioSnapshot::timestamp)
-        val baseline = orderedSnapshots.first()
+        val baseline = if (inceptionSnapshot != null &&
+            inceptionSnapshot.timestamp <= orderedSnapshots.first().timestamp &&
+            inceptionSnapshot.assets.keys == orderedSnapshots.first().assets.keys
+        ) {
+            inceptionSnapshot
+        } else {
+            orderedSnapshots.first()
+        }
 
         val universeError = validateAssetUniverse(orderedSnapshots, baseline)
         if (universeError != null) return universeError
@@ -126,20 +134,23 @@ object RebalancerComparisonCalculator {
             )
         }
 
-        val baselineFirstPoint = points.first()
-        val firstDiffFromCalc = baselineFirstPoint.rebalancerValueUSD
-            .subtract(baselineFirstPoint.buyAndHoldValueUSD)
-            .abs()
-        if (firstDiffFromCalc > baselineMismatchTolerance) {
-            return unavailable(
-                reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
-                unavailableAt = baseline.timestamp,
-                baselineTimestamp = baseline.timestamp,
-            )
+        val isStartingAtBaseline = orderedSnapshots.first().timestamp == baseline.timestamp
+        if (isStartingAtBaseline) {
+            val baselineFirstPoint = points.first()
+            val firstDiffFromCalc = baselineFirstPoint.rebalancerValueUSD
+                .subtract(baselineFirstPoint.buyAndHoldValueUSD)
+                .abs()
+            if (firstDiffFromCalc > baselineMismatchTolerance) {
+                return unavailable(
+                    reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
+                    unavailableAt = baseline.timestamp,
+                    baselineTimestamp = baseline.timestamp,
+                )
+            }
         }
 
         val correctedPoints = points.mapIndexed { index, point ->
-            if (index == 0) {
+            if (index == 0 && isStartingAtBaseline) {
                 point.copy(
                     rebalancerValueUSD = baseline.totalValueUSD.setScale(
                         PrecisionConstants.SCALE_USD,

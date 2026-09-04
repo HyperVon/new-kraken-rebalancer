@@ -53,6 +53,8 @@ private object FormFields {
     const val SYMBOLS = "symbols"
     const val TARGETS = "targets"
     const val COLORS = "colors"
+    const val INCEPTION_DATE = "inceptionDate"
+    const val FIAT_DEPLOYMENT_THRESHOLD_PERCENT = "fiatDeploymentThresholdPercent"
 }
 
 private object HtmxHeaders {
@@ -204,6 +206,22 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
                 response.bodyAsText() shouldContain "Global Parameters"
                 response.bodyAsText() shouldContain FormFields.LOOP_DELAY_SECONDS
+                response.bodyAsText() shouldContain FormFields.INCEPTION_DATE
+                response.bodyAsText() shouldContain FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT
+            }
+        }
+
+        "getSettings_RendersConfiguredInceptionDate" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings().copy(inceptionDate = "2026-06-06"),
+            )
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(Routes.SETTINGS)
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "value=\"2026-06-06\""
             }
         }
 
@@ -339,6 +357,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94A3B8"),
+                                FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                                FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("4.5"),
                             ).formUrlEncode(),
                         )
                         header(
@@ -352,6 +372,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
 
             captured.captured.settings.simulation shouldBe true
+            captured.captured.settings.inceptionDate shouldBe "2026-06-06"
+            captured.captured.settings.fiatDeploymentThresholdPercent shouldBe 4.5
             captured.captured.allocations.single().color shouldBe "#94a3b8"
             coVerify { configService.updateConfig(any()) }
         }

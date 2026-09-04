@@ -28,6 +28,7 @@ import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
@@ -94,11 +95,18 @@ val coreModule =
             )
         }
         single {
+            InceptionDiscoveryService(
+                tradeRepository = get(),
+                configService = get(),
+            )
+        }
+        single {
             TradeHistoryQueryService(
                 repository = get(),
                 portfolioStatsRepository = get(),
                 ledgerRepository = get(),
                 orderIntentRepository = get(),
+                inceptionDiscoveryService = get(),
             )
         }
         single {
@@ -149,6 +157,8 @@ val coreModule =
                 krakenService = get(),
                 configService = get(),
                 portfolioStatsRepository = get(),
+                ledgerRepository = get(),
+                tradeRepository = get(),
             )
         }
         single<OrderExecutor> {
