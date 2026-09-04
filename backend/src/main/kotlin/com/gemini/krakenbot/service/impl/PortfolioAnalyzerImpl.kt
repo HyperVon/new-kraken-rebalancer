@@ -158,26 +158,27 @@ class PortfolioAnalyzerImpl(
         val ledgersRepo = ledgerRepository ?: return ExternalFlowCalculation(BigDecimal.ZERO, null)
         val tradesRepo = tradeRepository ?: return ExternalFlowCalculation(BigDecimal.ZERO, null)
 
-        val now = nowProvider()
-        val currentEpochSec = now.epochSecond
-        val watermarkUpper = Instant.ofEpochSecond(currentEpochSec)
+        val ledgerCoverageSec = ledgersRepo.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)?.toLongOrNull()
+            ?: return ExternalFlowCalculation(BigDecimal.ZERO, null)
+
+        val confirmedHorizon = Instant.ofEpochSecond(ledgerCoverageSec)
         val watermarkStr = tradesRepo.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
         if (watermarkStr == null) {
-            return ExternalFlowCalculation(BigDecimal.ZERO, currentEpochSec)
+            return ExternalFlowCalculation(BigDecimal.ZERO, ledgerCoverageSec)
         }
 
-        val watermarkSec = watermarkStr.toLongOrNull() ?: currentEpochSec
-        if (watermarkSec >= currentEpochSec) {
+        val watermarkSec = watermarkStr.toLongOrNull() ?: ledgerCoverageSec
+        if (watermarkSec >= ledgerCoverageSec) {
             return ExternalFlowCalculation(BigDecimal.ZERO, watermarkSec)
         }
 
         val watermark = Instant.ofEpochSecond(watermarkSec)
-        val events = ledgersRepo.getLedgersInRange(watermark, watermarkUpper)
+        val events = ledgersRepo.getLedgersInRange(watermark, confirmedHorizon)
             .filter {
-                it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES && it.time > watermark && it.time <= watermarkUpper
-            }
+                it.type in LedgerEvent.OWNER_CAPITAL_TYPES && it.time > watermark && it.time <= confirmedHorizon
+            }.sortedBy { it.time }
 
-        if (events.isEmpty()) return ExternalFlowCalculation(BigDecimal.ZERO, currentEpochSec)
+        if (events.isEmpty()) return ExternalFlowCalculation(BigDecimal.ZERO, ledgerCoverageSec)
 
         var netFlow = BigDecimal.ZERO
         for (event in events) {
@@ -186,23 +187,51 @@ class PortfolioAnalyzerImpl(
             val usdDelta = if (asset == "USD" || asset == "ZUSD") {
                 delta
             } else {
-                try {
-                    val pair = Asset(asset).tradingPair
-                    val raw = krakenService.getTickerPrices(pair)
-                    val price = resolvePriceFromTicker(asset, raw)
-                    delta.multiply(price)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    BigDecimal.ZERO
-                }
+                val historicalPrice = resolveHistoricalOrTickerPrice(asset, event.time, tradesRepo)
+                delta.multiply(historicalPrice)
             }
             netFlow = netFlow.add(usdDelta)
         }
         return ExternalFlowCalculation(
             netFlow = netFlow.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
-            pendingWatermarkSec = currentEpochSec,
+            pendingWatermarkSec = ledgerCoverageSec,
         )
+    }
+
+    private suspend fun resolveHistoricalOrTickerPrice(
+        asset: String,
+        eventTime: Instant,
+        tradesRepo: TradeRepository,
+    ): BigDecimal {
+        // 1. Look for closest recorded portfolio snapshot within +/- 180 seconds.
+        // No broader fallback: an arbitrarily old snapshot can silently corrupt ATH
+        // valuations by feeding stale prices through the proportional scaling.
+        val nearestSnap = tradesRepo.getSnapshotsInRange(
+            eventTime.minusSeconds(180),
+            eventTime.plusSeconds(180),
+        ).minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
+
+        val snapPrice = nearestSnap?.assets?.get(asset)?.price
+        if (snapPrice != null && snapPrice > BigDecimal.ZERO) {
+            return snapPrice
+        }
+
+        // 2. Fallback to exchange ticker
+        try {
+            val pair = Asset(asset).tradingPair
+            val raw = krakenService.getTickerPrices(pair)
+            val price = resolvePriceFromTicker(asset, raw)
+            if (price > BigDecimal.ZERO) {
+                return price
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Failed to fetch ticker price for asset {} at {}: {}", asset, eventTime, e.message)
+        }
+
+        // 3. Fail closed on unresolved price: do NOT treat as zero, do NOT advance watermark
+        throw IllegalStateException("Cannot reliably price external capital flow for asset $asset at $eventTime")
     }
 
     override fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal =

@@ -177,6 +177,7 @@ val coreModule =
                 portfolioAnalyzer = get(),
                 orderExecutor = get(),
                 krakenService = get(),
+                inceptionDiscoveryService = get(),
             )
         }
         single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {

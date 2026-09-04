@@ -273,7 +273,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
             }
         }
 
-        "pruneSnapshotsOlderThan retains inception snapshot and snapshots at or after inception epoch" {
+        "pruneSnapshotsOlderThan retains inception snapshot and prunes routine snapshots older than 90 days" {
             runTest {
                 val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
                 val preInceptionOld = TestFixtures.emptySnapshot(
@@ -305,19 +305,119 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 )
 
                 // Cutoff is 90 days ago.
-                // preInceptionOld is 120 days ago (< inception - 5s, not inceptionId) -> pruned!
-                // inceptionOld is 100 days ago (has INCEPTION_SNAPSHOT_ID and timestamp) -> retained!
-                // postInceptionOld is 95 days ago (timestamp >= inception - 5s) -> retained!
+                // preInceptionOld is 120 days ago -> pruned!
+                // postInceptionOld is 95 days ago (routine snapshot) -> pruned to prevent unbounded DB growth!
+                // inceptionOld is 100 days ago (exact INCEPTION_SNAPSHOT_ID) -> strictly retained!
                 // recent is 0 days ago (>= cutoff) -> retained!
+                val pruned = repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
+                pruned shouldBe 2
+
+                val loaded = repository.load()
+                loaded.size shouldBe 2
+                loaded.any { it.timestamp == preInceptionOld.timestamp } shouldBe false
+                loaded.any { it.timestamp == inceptionOld.timestamp } shouldBe true
+                loaded.any { it.timestamp == postInceptionOld.timestamp } shouldBe false
+                loaded.any { it.timestamp == recent.timestamp } shouldBe true
+            }
+        }
+
+        "exact anchor snapshot ID survives pruning even if taken >5s before nominal inception" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val nominalInception = baseTime.minus(100, ChronoUnit.DAYS)
+                // Anchor snapshot was taken 60 seconds before first rebalance trades
+                val anchorSnap = TestFixtures.emptySnapshot(
+                    nominalInception.minusSeconds(60),
+                    BigDecimal("1500.00"),
+                )
+                val routineOld = TestFixtures.emptySnapshot(
+                    baseTime.minus(95, ChronoUnit.DAYS),
+                    BigDecimal("1600.00"),
+                )
+                val recent = TestFixtures.emptySnapshot(baseTime, BigDecimal("2000.00"))
+
+                val anchorId = repository.saveSnapshot(anchorSnap)
+                val routineId = repository.saveSnapshot(routineOld)
+                val recentId = repository.saveSnapshot(recent)
+
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_SNAPSHOT_ID,
+                    anchorId.toString(),
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    nominalInception.toEpochMilli().toString(),
+                )
+
                 val pruned = repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
                 pruned shouldBe 1
 
                 val loaded = repository.load()
-                loaded.size shouldBe 3
-                loaded.any { it.timestamp == preInceptionOld.timestamp } shouldBe false
-                loaded.any { it.timestamp == inceptionOld.timestamp } shouldBe true
-                loaded.any { it.timestamp == postInceptionOld.timestamp } shouldBe true
+                loaded.size shouldBe 2
+                loaded.any { it.timestamp == anchorSnap.timestamp } shouldBe true
+                loaded.any { it.timestamp == routineOld.timestamp } shouldBe false
                 loaded.any { it.timestamp == recent.timestamp } shouldBe true
+            }
+        }
+
+        "pruneSnapshotsOlderThan behaves deterministically when no inception metadata exists (migration)" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val old1 = TestFixtures.emptySnapshot(baseTime.minus(100, ChronoUnit.DAYS), BigDecimal("1000.00"))
+                val old2 = TestFixtures.emptySnapshot(baseTime.minus(95, ChronoUnit.DAYS), BigDecimal("1200.00"))
+                val recent = TestFixtures.emptySnapshot(baseTime, BigDecimal("2000.00"))
+
+                repository.saveSnapshot(old1)
+                repository.saveSnapshot(old2)
+                repository.saveSnapshot(recent)
+
+                // No INCEPTION_SNAPSHOT_ID or DETECTED_INCEPTION_EPOCH_MS metadata present yet
+                val pruned = repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
+                pruned shouldBe 2
+
+                val loaded = repository.load()
+                loaded.size shouldBe 1
+                loaded.single().timestamp shouldBe recent.timestamp
+            }
+        }
+
+        "pruneSnapshotsOlderThan falls back to timestamp match when INCEPTION_SNAPSHOT_ID is not set" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val nominalInception = baseTime.minus(100, ChronoUnit.DAYS)
+                val anchorSnap = TestFixtures.emptySnapshot(nominalInception, BigDecimal("1500.00"))
+                val routineOld = TestFixtures.emptySnapshot(baseTime.minus(95, ChronoUnit.DAYS), BigDecimal("1600.00"))
+                val recent = TestFixtures.emptySnapshot(baseTime, BigDecimal("2000.00"))
+
+                repository.saveSnapshot(anchorSnap)
+                repository.saveSnapshot(routineOld)
+                repository.saveSnapshot(recent)
+
+                // Only DETECTED_INCEPTION_EPOCH_MS is set, no INCEPTION_SNAPSHOT_ID
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    nominalInception.toEpochMilli().toString(),
+                )
+
+                val pruned = repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
+                pruned shouldBe 1
+
+                val loaded = repository.load()
+                loaded.size shouldBe 2
+                loaded.any { it.timestamp == anchorSnap.timestamp } shouldBe true
+                loaded.any { it.timestamp == routineOld.timestamp } shouldBe false
+                loaded.any { it.timestamp == recent.timestamp } shouldBe true
+            }
+        }
+
+        "getSnapshotId returns id when snapshot exists and null when not found" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val snapshot = TestFixtures.emptySnapshot(now, BigDecimal("1000.00"))
+                val id = repository.saveSnapshot(snapshot)
+
+                repository.getSnapshotId(now) shouldBe id
+                repository.getSnapshotId(now.minusSeconds(3600)) shouldBe null
             }
         }
 
@@ -369,6 +469,48 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 allTrades.any { it.timestamp == inceptionTrade.timestamp } shouldBe true
                 allTrades.any { it.timestamp == postInceptionTrade.timestamp } shouldBe true
                 allTrades.any { it.timestamp == recentTrade.timestamp } shouldBe true
+            }
+        }
+
+        "pruneTradesOlderThan prunes routine bot trades older than 90 days" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val botTradeOld = TestFixtures.tradeRecord(
+                    timestamp = baseTime.minus(95, ChronoUnit.DAYS),
+                    pair = Asset.BTC_USD_PAIR,
+                    side = OrderSide.BUY.name,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("500.00"),
+                ).copy(cycleId = "cycle-123", clientOrderId = "cl-456")
+
+                val manualTradeOld = TestFixtures.tradeRecord(
+                    timestamp = baseTime.minus(95, ChronoUnit.DAYS),
+                    pair = Asset.BTC_USD_PAIR,
+                    side = OrderSide.BUY.name,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("500.00"),
+                ).copy(cycleId = null, clientOrderId = null)
+
+                repository.saveTrade(botTradeOld)
+                repository.saveTrade(manualTradeOld)
+
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    baseTime.minus(100, ChronoUnit.DAYS).toEpochMilli().toString(),
+                )
+
+                // Bot trade older than 90 days is pruned; manual trade at or after inception is retained
+                val pruned = repository.pruneTradesOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
+                pruned shouldBe 1
+
+                val remaining = repository.getTradesInRange(
+                    baseTime.minus(150, ChronoUnit.DAYS),
+                    baseTime.plus(1, ChronoUnit.DAYS),
+                )
+                remaining.size shouldBe 1
+                remaining.single().clientOrderId shouldBe null
             }
         }
 

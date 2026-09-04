@@ -7,8 +7,10 @@ import com.gemini.krakenbot.repository.table.LedgerTable
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.greaterEq
+import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
+import org.jetbrains.exposed.v1.core.not
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
@@ -71,7 +73,10 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
             LedgerTable.deleteWhere {
                 val condition = timestamp less cutoffMillis
                 if (inceptionEpochMs != null) {
-                    condition and (timestamp less (inceptionEpochMs - 5000L))
+                    condition and not(
+                        (type inList LedgerEvent.OWNER_CAPITAL_TYPES) and
+                            (timestamp greaterEq (inceptionEpochMs - 5000L)),
+                    )
                 } else {
                     condition
                 }

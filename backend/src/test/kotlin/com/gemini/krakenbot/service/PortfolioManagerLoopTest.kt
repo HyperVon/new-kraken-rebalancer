@@ -22,6 +22,7 @@ import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -56,6 +57,7 @@ class PortfolioManagerLoopTest : StringSpec() {
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
+    private val inceptionDiscoveryService = mockk<InceptionDiscoveryService>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
     private lateinit var portfolioAnalyzer: PortfolioAnalyzer
     private lateinit var orderExecutor: OrderExecutor
@@ -78,6 +80,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 tradeHistoryService = tradeHistoryService,
                 portfolioAnalyzer = portfolioAnalyzer,
                 orderExecutor = orderExecutor,
+                inceptionDiscoveryService = inceptionDiscoveryService,
             )
             every { configService.watchConfigChanges() } answers {
                 flowOf(configService.getConfig().settings)

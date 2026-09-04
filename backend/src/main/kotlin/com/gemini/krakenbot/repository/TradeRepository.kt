@@ -32,7 +32,10 @@ interface TradeRepository {
 
     suspend fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats
 
-    suspend fun saveSnapshot(snapshot: PortfolioSnapshot)
+    suspend fun saveSnapshot(snapshot: PortfolioSnapshot): Int
+
+    /** Loads the database ID for the snapshot matching [timestamp], or null if none exists. */
+    suspend fun getSnapshotId(timestamp: Instant): Int?
 
     suspend fun saveTrade(trade: TradeRecord): Int
 

@@ -47,6 +47,18 @@ data class LedgerEvent(
                 KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
             )
 
+        /**
+         * Genuine owner capital flows entering or leaving the investment strategy (deposits, withdrawals, transfers).
+         * These scale the portfolio All-Time High proportionally to preserve true economic drawdown, and are
+         * mirrored into the Buy & Hold benchmark.
+         */
+        val OWNER_CAPITAL_TYPES: Set<String> =
+            setOf(
+                KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+            )
+
         /** Strategy-neutral external balance ledger types that alter account balances without rebalancing trades. */
         val EXTERNAL_BALANCE_TYPES: Set<String> =
             setOf(

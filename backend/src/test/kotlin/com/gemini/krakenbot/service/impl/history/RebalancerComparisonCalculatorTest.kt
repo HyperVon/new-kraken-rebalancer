@@ -4591,6 +4591,260 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.points.size shouldBe 2
         }
+
+        "calculate with inception snapshot whose asset universe differs returns ASSET_UNIVERSE_CHANGED" {
+            val t0 = now.minusSeconds(86400 * 30)
+            val t1 = now
+            val t2 = now.plusSeconds(3600)
+
+            // Inception had BTC and USD
+            val inceptionSnap = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+
+            // Current window snapshots have BTC, ETH, and USD
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.5", "40000.00", "20000.00"),
+                    "ETH" to assetRow("10.0", "3000.00", "30000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t2,
+                totalValueUSD = "95000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.5", "30000.00", "15000.00"),
+                    "ETH" to assetRow("10.0", "3000.00", "30000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                anchorSnapshot = null,
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+            result.unavailableAt shouldBe t1
+            result.baselineTimestamp shouldBe t0
+        }
+
+        "calculate with request window starting before inception trims output to inception" {
+            val tInception = now
+            val tPre = now.minusSeconds(3600)
+            val tPost1 = now.plusSeconds(3600)
+            val tPost2 = now.plusSeconds(7200)
+
+            val inceptionSnap = snapshot(
+                timestamp = tInception,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val preSnap = snapshot(
+                timestamp = tPre,
+                totalValueUSD = "90000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val post1 = snapshot(
+                timestamp = tPost1,
+                totalValueUSD = "110000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "60000.00", "60000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val post2 = snapshot(
+                timestamp = tPost2,
+                totalValueUSD = "120000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "70000.00", "70000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+
+            // Request window includes preSnap (before inception)
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(preSnap, post1, post2),
+                trades = emptyList(),
+                anchorSnapshot = null,
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.baselineTimestamp shouldBe tInception
+            // Trimmed output should start at inception!
+            result.points.size shouldBe 3
+            result.points[0].timestamp shouldBe tInception
+            result.points[1].timestamp shouldBe tPost1
+            result.points[2].timestamp shouldBe tPost2
+        }
+
+        "calculate with request window entirely before inception returns INSUFFICIENT_SNAPSHOTS" {
+            val tInception = now
+            val tPre1 = now.minusSeconds(7200)
+            val tPre2 = now.minusSeconds(3600)
+
+            val inceptionSnap = snapshot(
+                timestamp = tInception,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val pre1 = snapshot(
+                timestamp = tPre1,
+                totalValueUSD = "90000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val pre2 = snapshot(
+                timestamp = tPre2,
+                totalValueUSD = "95000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "45000.00", "45000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(pre1, pre2),
+                trades = emptyList(),
+                anchorSnapshot = null,
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            result.unavailableAt shouldBe tPre2
+            result.baselineTimestamp shouldBe tInception
+        }
+
+        "calculate with request window containing exact inception timestamp does not prepend duplicate inception" {
+            val tInception = now
+            val tPre = now.minusSeconds(3600)
+            val tPost = now.plusSeconds(3600)
+
+            val inceptionSnap = snapshot(
+                timestamp = tInception,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val preSnap = snapshot(
+                timestamp = tPre,
+                totalValueUSD = "90000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val exactSnap = snapshot(
+                timestamp = tInception,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val postSnap = snapshot(
+                timestamp = tPost,
+                totalValueUSD = "110000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "60000.00", "60000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(preSnap, exactSnap, postSnap),
+                trades = emptyList(),
+                anchorSnapshot = null,
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.baselineTimestamp shouldBe tInception
+            result.points.size shouldBe 2
+            result.points[0].timestamp shouldBe tInception
+            result.points[1].timestamp shouldBe tPost
+        }
+
+        // Regression: before the trim-then-check reorder, a pre-inception snapshot with a
+        // different asset set would cause a premature ASSET_UNIVERSE_CHANGED.  After the fix,
+        // it must be silently trimmed away and the comparison must be AVAILABLE.
+        "pre-inception snapshot with different assets is trimmed before universe check, result is AVAILABLE" {
+            val tInception = now
+            val tPre = now.minusSeconds(3600)
+            val tPost = now.plusSeconds(3600)
+
+            // Pre-inception snapshot had only BTC+USD (no ETH)
+            val preSnap = snapshot(
+                timestamp = tPre,
+                totalValueUSD = "50000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("0.00", "1.00", "0.00"),
+                ),
+            )
+            // Inception snapshot introduces ETH; asset universe changes vs preSnap
+            val inceptionSnap = snapshot(
+                timestamp = tInception,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "ETH" to assetRow("10.0", "2500.00", "25000.00"),
+                    "USD" to assetRow("25000.00", "1.00", "25000.00"),
+                ),
+            )
+            // Post-inception snapshot has the same universe as inception.
+            // Balances are identical — only prices change so reconciliation
+            // passes with no trades in between.
+            val postSnap = snapshot(
+                timestamp = tPost,
+                totalValueUSD = "108000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "58000.00", "58000.00"),
+                    "ETH" to assetRow("10.0", "2500.00", "25000.00"),
+                    "USD" to assetRow("25000.00", "1.00", "25000.00"),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(preSnap, postSnap),
+                trades = emptyList(),
+                anchorSnapshot = null,
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            // Pre-inception preSnap is trimmed; universe check must not fire on it
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.baselineTimestamp shouldBe tInception
+            result.points.size shouldBe 2
+            result.points[0].timestamp shouldBe tInception
+            result.points[1].timestamp shouldBe tPost
+        }
     }
 
     private fun mixedCostSnapshots(knownObservation: Boolean): List<PortfolioSnapshot> =

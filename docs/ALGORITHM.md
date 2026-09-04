@@ -144,11 +144,18 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    is reached.
    - **Cash-Flow Neutrality**: Monotonic ATH tracking without flow adjustment would cause external deposits
      to artificially raise ATH and external withdrawals to plunge the bot into false drawdowns. To preserve true
-     strategy performance, external cash flows (deposits, withdrawals, transfers from the Kraken ledger) adjust ATH
-     proportionally:
+     strategy performance, external owner capital flows (`OWNER_CAPITAL_TYPES`: deposits, withdrawals, transfers)
+     adjust ATH proportionally:
      `Adjusted ATH = Current ATH * (Pre-Flow Value + Net External Flow) / Pre-Flow Value`
      This ensures an external deposit scales ATH without wiping out an existing drawdown percentage, and an external
-     withdrawal scales ATH down without triggering artificial drawdown or forced fiat deployment.
+     withdrawal scales ATH down without triggering artificial drawdown or forced fiat deployment. Staking rewards
+     and dividends (`REWARD_TYPES`) are investment performance that improve portfolio value and reduce drawdown
+     without scaling ATH.
+   - **Ledger Watermark Ceiling & Safe Pricing**: ATH flow processing is upper-bounded by confirmed ledger
+     synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events cannot be skipped
+     if a rebalance cycle runs before ledger polling catches up. Non-USD flows are priced using historical portfolio
+     snapshots within ±180s before falling back to live exchange tickers; unresolvable prices fail closed without
+     advancing the ATH watermark.
    - **Safety & Persistence**: Missing or explicitly null stats represent an empty initial
      state. A database read or legacy-file migration failure aborts the analysis
      before ATH persistence or order planning, rather than treating the ATH as

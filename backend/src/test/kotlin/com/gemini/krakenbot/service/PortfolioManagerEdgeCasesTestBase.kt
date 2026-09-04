@@ -21,6 +21,7 @@ abstract class PortfolioManagerEdgeCasesTestBase : StringSpec() {
     protected val portfolioAnalyzer get() = fixture.portfolioAnalyzer
     protected val orderExecutor get() = fixture.orderExecutor
     protected val portfolioManager: PortfolioManagerImpl get() = fixture.portfolioManager
+    protected val inceptionDiscoveryService get() = fixture.inceptionDiscoveryService
 
     init {
         beforeTest {

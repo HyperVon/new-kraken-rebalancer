@@ -333,7 +333,7 @@ The comparison cannot be computed when:
 | Non-positive baseline | First snapshot total value is $0 (no baseline to scale from). |
 | Baseline mismatch | First snapshot's total value doesn't match the sum of its priced assets (stale data). |
 | Missing price | An asset lacks a price in a snapshot. |
-| Asset universe changed | An asset was added or removed during the window. |
+| Asset universe changed | An asset was added or removed during the window, or the window assets differ from the inception baseline. |
 | Unsupported trade | A trade with a side other than BUY or SELL or non-USD quotes. |
 | Ambiguous trade ownership | A tracked trade, including a late fill, cannot be proven to belong to the bot or an external/manual source. |
 | Unexplained balance change | A tracked balance changed without a matching authoritative trade or supported ledger event, or a known event does not reconcile to the next snapshot. |

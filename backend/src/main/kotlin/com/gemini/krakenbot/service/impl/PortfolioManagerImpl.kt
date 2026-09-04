@@ -11,6 +11,7 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.RebalanceEventFormatter
 import com.gemini.krakenbot.view.util.ViewText
@@ -41,6 +42,7 @@ class PortfolioManagerImpl(
     private val portfolioAnalyzer: PortfolioAnalyzer,
     private val orderExecutor: OrderExecutor,
     private val krakenService: KrakenService? = null,
+    private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
 ) : PortfolioManager {
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
@@ -192,6 +194,7 @@ class PortfolioManagerImpl(
         synchronizeLedgers("on startup")
         synchronizeTrades("on startup")
         synchronizeHistoricalSnapshots("on startup")
+        resolveInception("on startup")
 
         try {
             // Hot SharedFlow + collectLatest: config changes restart an idle delay immediately.
@@ -293,6 +296,19 @@ class PortfolioManagerImpl(
         } catch (e: Exception) {
             log.error("Failed to rebuild historical snapshots {}", context, e)
             markCycleSyncWarning("Historical snapshot reconstruction $context", e)
+        }
+    }
+
+    private suspend fun resolveInception(context: String) {
+        try {
+            val resolved = inceptionDiscoveryService?.resolveInception()
+            if (resolved != null) {
+                log.info("Resolved portfolio inception {} at {}", context, resolved.inceptionTime)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to resolve portfolio inception {}", context, e)
         }
     }
 

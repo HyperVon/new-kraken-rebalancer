@@ -49,31 +49,53 @@ object RebalancerComparisonCalculator {
             )
         }
         val orderedSnapshots = snapshots.sortedBy(PortfolioSnapshot::timestamp)
-        val baseline = if (inceptionSnapshot != null &&
-            inceptionSnapshot.timestamp <= orderedSnapshots.first().timestamp &&
-            inceptionSnapshot.assets.keys == orderedSnapshots.first().assets.keys
-        ) {
-            inceptionSnapshot
+        val (baseline, effectiveSnapshots) = if (inceptionSnapshot != null) {
+            val trimmed = if (orderedSnapshots.first().timestamp < inceptionSnapshot.timestamp) {
+                val postInception = orderedSnapshots.filter { it.timestamp >= inceptionSnapshot.timestamp }
+                if (postInception.isEmpty() || postInception.first().timestamp > inceptionSnapshot.timestamp) {
+                    listOf(inceptionSnapshot) + postInception
+                } else {
+                    postInception
+                }
+            } else {
+                orderedSnapshots
+            }
+            if (trimmed.size < 2) {
+                return unavailable(
+                    reason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                    unavailableAt = orderedSnapshots.last().timestamp,
+                    baselineTimestamp = inceptionSnapshot.timestamp,
+                )
+            }
+            // Universe check runs against the trimmed first snapshot, not a pre-inception one
+            if (inceptionSnapshot.assets.keys != trimmed.first().assets.keys) {
+                return unavailable(
+                    reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
+                    unavailableAt = trimmed.first().timestamp,
+                    baselineTimestamp = inceptionSnapshot.timestamp,
+                )
+            }
+            inceptionSnapshot to trimmed
         } else {
-            orderedSnapshots.first()
+            orderedSnapshots.first() to orderedSnapshots
         }
 
-        val universeError = validateAssetUniverse(orderedSnapshots, baseline)
+        val universeError = validateAssetUniverse(effectiveSnapshots, baseline)
         if (universeError != null) return universeError
 
         val baselineError = validateBaseline(baseline)
         if (baselineError != null) return baselineError
 
-        val priceError = validatePrices(orderedSnapshots, baseline)
+        val priceError = validatePrices(effectiveSnapshots, baseline)
         if (priceError != null) return priceError
 
         val effectiveAnchor = anchorSnapshot?.takeIf {
             it.timestamp < baseline.timestamp && it.assets.keys == baseline.assets.keys
         }
         val validationSnapshots = if (effectiveAnchor != null) {
-            listOf(effectiveAnchor) + orderedSnapshots
+            listOf(effectiveAnchor) + effectiveSnapshots
         } else {
-            orderedSnapshots
+            effectiveSnapshots
         }
 
         val balanceResult = validateTrackedBalanceChanges(
@@ -145,7 +167,7 @@ object RebalancerComparisonCalculator {
         var eventIndex = 0
 
         val points = mutableListOf<RebalancerComparisonPoint>()
-        for (snapshot in orderedSnapshots) {
+        for (snapshot in effectiveSnapshots) {
             while (eventIndex < benchmarkEvents.size && benchmarkEvents[eventIndex].timestamp <= snapshot.timestamp) {
                 replayBenchmarkEvent(runningSyntheticBalances, benchmarkEvents[eventIndex])
                 eventIndex++
@@ -171,7 +193,7 @@ object RebalancerComparisonCalculator {
             )
         }
 
-        val isStartingAtBaseline = orderedSnapshots.first().timestamp == baseline.timestamp
+        val isStartingAtBaseline = effectiveSnapshots.first().timestamp == baseline.timestamp
         if (isStartingAtBaseline) {
             val baselineFirstPoint = points.first()
             val firstDiffFromCalc = baselineFirstPoint.rebalancerValueUSD

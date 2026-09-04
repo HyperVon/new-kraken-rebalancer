@@ -34,6 +34,11 @@ class InceptionDiscoveryService(
                 SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
                 configured.toEpochMilli().toString(),
             )
+            if (snapshot != null) {
+                tradeRepository.getSnapshotId(snapshot.timestamp)?.let { id ->
+                    tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
+                }
+            }
             log.info("Using configured inception date: {}", configured)
             return InceptionResolution(
                 inceptionTime = configured,
@@ -42,22 +47,16 @@ class InceptionDiscoveryService(
             )
         }
 
-        // 2. Auto-detect from trade clusters
-        val detected = detectBurstInception()
-        if (detected != null) {
-            tradeRepository.setSyncMetadata(
-                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
-                detected.inceptionTime.toEpochMilli().toString(),
-            )
-            log.info("Auto-detected inception from rebalance burst at {}", detected.inceptionTime)
-            return detected
-        }
-
-        // 3. Check cached metadata if already detected previously
+        // 2. Check cached/previously-committed metadata if already detected previously
         val cachedEpoch = tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)?.toLongOrNull()
         if (cachedEpoch != null && cachedEpoch > 0) {
             val cachedTime = Instant.ofEpochMilli(cachedEpoch)
             val snapshot = findClosestSnapshot(cachedTime)
+            if (snapshot != null) {
+                tradeRepository.getSnapshotId(snapshot.timestamp)?.let { id ->
+                    tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
+                }
+            }
             return InceptionResolution(
                 inceptionTime = cachedTime,
                 inceptionSnapshot = snapshot,
@@ -65,9 +64,28 @@ class InceptionDiscoveryService(
             )
         }
 
-        // 4. Fallback: earliest snapshot in database
+        // 3. One-time auto-detect from trade clusters
+        val detected = detectBurstInception()
+        if (detected != null) {
+            tradeRepository.setSyncMetadata(
+                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                detected.inceptionTime.toEpochMilli().toString(),
+            )
+            if (detected.inceptionSnapshot != null) {
+                tradeRepository.getSnapshotId(detected.inceptionSnapshot.timestamp)?.let { id ->
+                    tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
+                }
+            }
+            log.info("Auto-detected inception from rebalance burst at {}", detected.inceptionTime)
+            return detected
+        }
+
+        // 4. Defensible fallback: earliest snapshot in database
         val earliestSnapshot = tradeRepository.getSnapshotsInRange(Instant.EPOCH, nowProvider()).firstOrNull()
         if (earliestSnapshot != null) {
+            tradeRepository.getSnapshotId(earliestSnapshot.timestamp)?.let { id ->
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
+            }
             tradeRepository.setSyncMetadata(
                 SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
                 earliestSnapshot.timestamp.toEpochMilli().toString(),
@@ -80,7 +98,7 @@ class InceptionDiscoveryService(
             )
         }
 
-        // 5. Default fallback to current time
+        // 5. Default fallback to current time when database has no snapshots
         val now = nowProvider()
         return InceptionResolution(
             inceptionTime = now,
@@ -105,15 +123,13 @@ class InceptionDiscoveryService(
         if (trades.isEmpty()) return null
 
         var clusterStart = trades.first()
-        var clusterPrev = trades.first()
         val currentClusterSymbols = mutableSetOf(clusterStart.symbol.uppercase())
 
         for (i in 1 until trades.size) {
             val trade = trades[i]
-            val gapMs = trade.timestamp.toEpochMilli() - clusterPrev.timestamp.toEpochMilli()
-            if (gapMs <= BURST_WINDOW_MS) {
+            val totalSpanMs = trade.timestamp.toEpochMilli() - clusterStart.timestamp.toEpochMilli()
+            if (totalSpanMs <= BURST_WINDOW_MS) {
                 currentClusterSymbols.add(trade.symbol.uppercase())
-                clusterPrev = trade
                 if (currentClusterSymbols.size >= MIN_DISTINCT_SYMBOLS_FOR_BURST) {
                     val burstTime = clusterStart.timestamp
                     val snapshot = findClosestSnapshot(burstTime)
@@ -125,7 +141,6 @@ class InceptionDiscoveryService(
                 }
             } else {
                 clusterStart = trade
-                clusterPrev = trade
                 currentClusterSymbols.clear()
                 currentClusterSymbols.add(trade.symbol.uppercase())
             }
@@ -135,23 +150,27 @@ class InceptionDiscoveryService(
 
     suspend fun findClosestSnapshot(targetTime: Instant): PortfolioSnapshot? {
         val candidatesRange = tradeRepository.getSnapshotsInRange(
-            targetTime.minusSeconds(30),
-            targetTime.plusSeconds(30),
+            targetTime.minusSeconds(MAX_ANCHOR_PROXIMITY_SECONDS),
+            targetTime.plusSeconds(MAX_ANCHOR_PROXIMITY_SECONDS),
         )
         if (candidatesRange.isNotEmpty()) {
             return candidatesRange.minByOrNull {
                 abs(it.timestamp.toEpochMilli() - targetTime.toEpochMilli())
             }
         }
-        return tradeRepository.getSnapshotBefore(targetTime.plusMillis(1000))
-            ?: tradeRepository.load().minByOrNull {
-                abs(it.timestamp.toEpochMilli() - targetTime.toEpochMilli())
-            }
+        val before = tradeRepository.getSnapshotBefore(targetTime.plusMillis(1000))
+        if (before != null &&
+            abs(before.timestamp.toEpochMilli() - targetTime.toEpochMilli()) <= MAX_ANCHOR_PROXIMITY_SECONDS * 1000L
+        ) {
+            return before
+        }
+        return null
     }
 
     companion object {
         const val BURST_WINDOW_MS = 5000L
         const val MIN_DISTINCT_SYMBOLS_FOR_BURST = 2
+        const val MAX_ANCHOR_PROXIMITY_SECONDS = 300L
 
         fun parseInceptionDate(text: String?): Instant? {
             if (text.isNullOrBlank()) return null
