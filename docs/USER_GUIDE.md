@@ -313,6 +313,8 @@ achieved against a **synthetic buy-and-hold** strategy:
   exchange/local clock skew, accepting events only when the complete tracked balance change
   reconciles. API fills use precise `price × volume` first; historical rounded costs are
   accepted per interval only when they represent the same fill and all tracked balances match.
+- Historical Kraken ledger entries are reconciled using their recorded post-event balance when
+  the stored fee precision is insufficient; mixed or ambiguous balance changes remain unavailable.
 - **Rebalancer** is the actual portfolio value at each snapshot, incorporating rebalancing bot
   trade executions that create genuine divergence from Buy & Hold.
 - The **delta badge** next to the chart title shows the cumulative

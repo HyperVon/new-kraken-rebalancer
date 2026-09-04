@@ -111,6 +111,8 @@ object KrakenParsers {
             val time = entryNode.path(KrakenApiConstants.FIELD_TIME).asDouble()
             val amountStr = entryNode.path(KrakenApiConstants.FIELD_AMOUNT).asText()
             val balanceStr = entryNode.path(KrakenApiConstants.FIELD_BALANCE).asText()
+            val parsedBalance = runCatching { BigDecimal(balanceStr) }.getOrNull()
+            val scaledBalance = safeParseBigDecimal(balanceStr, PrecisionConstants.SCALE_CRYPTO)
             val feeStr = entryNode.path(KrakenApiConstants.FIELD_FEE).asText()
             val refidNode = entryNode.path(KrakenApiConstants.FIELD_REFID)
             val refid =
@@ -144,8 +146,9 @@ object KrakenParsers {
                     aclass = aclass,
                     asset = Asset.normalizeLedgerAsset(entryNode.path(KrakenApiConstants.FIELD_ASSET).asText()),
                     amount = safeParseBigDecimal(amountStr, PrecisionConstants.SCALE_CRYPTO),
-                    fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_FEE),
-                    balance = safeParseBigDecimal(balanceStr, PrecisionConstants.SCALE_CRYPTO),
+                    fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_LEDGER_FEE),
+                    balance = scaledBalance,
+                    hasAuthoritativeBalance = parsedBalance != null && scaledBalance.signum() != 0,
                 ),
             )
         }

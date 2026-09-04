@@ -135,7 +135,7 @@ class KrakenParsersTest : StringSpec() {
                       "aclass": "currency",
                       "asset": "DOT.S",
                       "amount": "1.25000000",
-                      "fee": "0.01000000",
+                      "fee": "0.01001234",
                       "balance": "10.50000000"
                     },
                     "L2": {
@@ -164,8 +164,46 @@ class KrakenParsersTest : StringSpec() {
             staking.asset shouldBe "DOT"
             staking.subtype shouldBe "reward"
             staking.amount.shouldBeEqualComparingTo(BigDecimal("1.25"))
-            staking.fee.shouldBeEqualComparingTo(BigDecimal("0.01"))
+            staking.fee.shouldBeEqualComparingTo(BigDecimal("0.01001234"))
             staking.balance.shouldBeEqualComparingTo(BigDecimal("10.5"))
+            staking.hasAuthoritativeBalance shouldBe true
+        }
+
+        "does not mark malformed or zero ledger balances authoritative" {
+            val response = objectMapper.readTree(
+                """
+                {
+                  "count": 2,
+                  "ledger": {
+                    "L1": {
+                      "time": 1700000100.0000,
+                      "type": "staking",
+                      "asset": "DOT",
+                      "amount": "1.25000000",
+                      "fee": "0.01001234",
+                      "balance": "not-a-number"
+                    },
+                    "L2": {
+                      "time": 1700000200.0000,
+                      "type": "staking",
+                      "asset": "ETH",
+                      "amount": "0.00000001",
+                      "fee": "0.00000000",
+                      "balance": "0.00000000"
+                    }
+                  }
+                }
+                """.trimIndent(),
+            )
+
+            val (entries, count) = KrakenParsers.parseLedgerPage(
+                response,
+                setOf(KrakenApiConstants.LEDGER_TYPE_STAKING),
+            )
+
+            count shouldBe 2
+            entries.size shouldBe 2
+            entries.forEach { it.hasAuthoritativeBalance.shouldBeFalse() }
         }
 
         "parses OHLC golden response while ignoring last and malformed rows" {

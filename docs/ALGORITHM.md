@@ -374,6 +374,18 @@ from the preceding reconciled event assignments; failed attempts are discarded. 
 interval must reconcile, and the selected representation is reused during Buy & Hold
 replay. An error identifies the first interval that remains unexplained after the retry.
 
+Kraken ledger fees are denominated in the ledger asset and are persisted at crypto
+precision; they must not use the four-decimal fiat trade-fee scale. Existing rows
+may already contain a truncated fee. When an interval has no tracked trade and at
+most one authoritative ledger event per tracked asset, reconciliation uses that
+event's persisted post-ledger balance to derive the exact tracked delta. This
+compatibility path is intentionally not used for mixed or repeated same-asset
+events, where absolute post-event balances could be order-dependent. A genuine
+zero post-event balance is intentionally treated as non-authoritative because
+legacy rows used zero as the missing-balance sentinel. The accepted
+delta is reused for Buy & Hold replay, and the comparison remains fail-closed when
+the event sequence cannot be reconciled.
+
 ### Trade economics & slippage lifecycle
 
 Each executed order creates a **local estimate** row at rebalance time:
@@ -418,7 +430,8 @@ Monetary and ratio math uses `BigDecimal` with these scales (`PrecisionConstants
 | `SCALE_CRYPTO` | **8** | Balances, prices, order volumes |
 | `SCALE_USD` | **2** | USD notionals and **persisted snapshot** percent/USD display fields |
 | `SCALE_PERCENT` | **4** | Internal analysis percents (drawdown, deploy, deviation triggers) |
-| `SCALE_FEE` | **4** | Fee amounts |
+| `SCALE_FEE` | **4** | Fiat trade fee amounts |
+| `SCALE_LEDGER_FEE` | **8** | Ledger-asset fee amounts |
 
 Snapshot/UI asset percents are rounded to `SCALE_USD` (2 dp) when persisted;
 trigger math keeps `SCALE_PERCENT` (4 dp).

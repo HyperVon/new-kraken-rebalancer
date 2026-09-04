@@ -32,6 +32,7 @@ class LedgerTableTest : StringSpec() {
                 amount = BigDecimal("5.50000000"),
                 fee = BigDecimal("0.0010"),
                 balance = BigDecimal("105.50000000"),
+                hasAuthoritativeBalance = true,
             )
 
             transaction(db) {
@@ -52,6 +53,39 @@ class LedgerTableTest : StringSpec() {
                 loaded.amount.shouldBeEqualComparingTo(original.amount)
                 loaded.fee.shouldBeEqualComparingTo(original.fee)
                 loaded.balance.shouldBeEqualComparingTo(original.balance)
+                loaded.hasAuthoritativeBalance shouldBe true
+
+                LedgerTable.insert {
+                    LedgerTable.applyTo(
+                        it,
+                        original.copy(
+                            ledgerId = "ledger-8dp-fee",
+                            fee = BigDecimal("0.01001234"),
+                            balance = BigDecimal("105.48998766"),
+                        ),
+                    )
+                }
+                val eightDpFee = LedgerTable.selectAll()
+                    .single { it[LedgerTable.ledgerId] == "ledger-8dp-fee" }
+                    .let(LedgerTable::toModel)
+                eightDpFee.fee.shouldBeEqualComparingTo(BigDecimal("0.01001234"))
+                eightDpFee.balance.shouldBeEqualComparingTo(BigDecimal("105.48998766"))
+                eightDpFee.hasAuthoritativeBalance shouldBe true
+
+                LedgerTable.insert {
+                    LedgerTable.applyTo(
+                        it,
+                        original.copy(
+                            ledgerId = "ledger-zero-balance",
+                            balance = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = false,
+                        ),
+                    )
+                }
+                val zeroBalance = LedgerTable.selectAll()
+                    .single { it[LedgerTable.ledgerId] == "ledger-zero-balance" }
+                    .let(LedgerTable::toModel)
+                zeroBalance.hasAuthoritativeBalance shouldBe false
             }
         }
     }

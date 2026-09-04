@@ -29,6 +29,8 @@ data class LedgerEvent(
     val amount: BigDecimal,
     val fee: BigDecimal = BigDecimal.ZERO,
     val balance: BigDecimal = BigDecimal.ZERO,
+    /** True when [balance] came from Kraken or a persisted database row; false for synthetic events. */
+    val hasAuthoritativeBalance: Boolean = false,
 ) {
     /**
      * Net balance delta contributed by this ledger event: `amount - fee`.
