@@ -380,7 +380,9 @@ may already contain a truncated fee. When an interval has no tracked trade and a
 most one authoritative ledger event per tracked asset, reconciliation uses that
 event's persisted post-ledger balance to derive the exact tracked delta. This
 compatibility path is intentionally not used for mixed or repeated same-asset
-events, where absolute post-event balances could be order-dependent. The accepted
+events, where absolute post-event balances could be order-dependent. A genuine
+zero post-event balance is intentionally treated as non-authoritative because
+legacy rows used zero as the missing-balance sentinel. The accepted
 delta is reused for Buy & Hold replay, and the comparison remains fail-closed when
 the event sequence cannot be reconciled.
 

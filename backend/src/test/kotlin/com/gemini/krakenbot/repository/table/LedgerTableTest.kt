@@ -59,6 +59,23 @@ class LedgerTableTest : StringSpec() {
                     LedgerTable.applyTo(
                         it,
                         original.copy(
+                            ledgerId = "ledger-8dp-fee",
+                            fee = BigDecimal("0.01001234"),
+                            balance = BigDecimal("105.48998766"),
+                        ),
+                    )
+                }
+                val eightDpFee = LedgerTable.selectAll()
+                    .single { it[LedgerTable.ledgerId] == "ledger-8dp-fee" }
+                    .let(LedgerTable::toModel)
+                eightDpFee.fee.shouldBeEqualComparingTo(BigDecimal("0.01001234"))
+                eightDpFee.balance.shouldBeEqualComparingTo(BigDecimal("105.48998766"))
+                eightDpFee.hasAuthoritativeBalance shouldBe true
+
+                LedgerTable.insert {
+                    LedgerTable.applyTo(
+                        it,
+                        original.copy(
                             ledgerId = "ledger-zero-balance",
                             balance = BigDecimal.ZERO,
                             hasAuthoritativeBalance = false,
