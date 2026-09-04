@@ -929,6 +929,40 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
+        "postSettings_RejectsInvalidInceptionDate" {
+            val serverConfig = dashboardConfig()
+            every { configService.getConfig() } returns serverConfig
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("10.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("20.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.INCEPTION_DATE to listOf("not-a-valid-date"),
+                            FormFields.SYMBOLS to listOf("BTC", "USD"),
+                            FormFields.TARGETS to listOf("80.0", "20.0"),
+                            FormFields.COLORS to listOf("#f7931a", "#85bb65"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain
+                    "Invalid settings field: inception date must be a valid ISO-8601 date or timestamp."
+            }
+        }
+
         "getDashboardFragment_WhenNoSnapshot_RendersWaitingState" {
             coEvery { tradeHistoryService.getHistory() } returns emptyList()
             every { configService.getConfig() } returns dashboardConfig()

@@ -339,6 +339,14 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
+                val plainUsdDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                    ledgerId = "L0",
+                    time = fixedTime.minusSeconds(2400),
+                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                    fee = BigDecimal.ZERO,
+                )
                 val usdDeposit = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L1",
                     time = fixedTime.minusSeconds(1800),
@@ -355,15 +363,16 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     amount = BigDecimal("0.10000000"),
                     fee = BigDecimal.ZERO,
                 )
-                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(usdDeposit, btcDeposit)
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(plainUsdDeposit, usdDeposit, btcDeposit)
                 coEvery { krakenService.getTickerPrices("XXBTZUSD") } returns mapOf(
                     "XXBTZUSD" to BigDecimal("50000.00"),
                 )
 
-                // Total net flow = 2000 + 0.1 * 50000 = 2000 + 5000 = 7000.
-                // Current total: 17,000. Pre-flow: 10,000. ATH scales from 10,000 to 17,000.
+                // Total net flow = 1000 + 2000 + 0.1 * 50000 = 1000 + 2000 + 5000 = 8000.
+                // Current total: 18,000. Pre-flow: 10,000. ATH scales from 10,000 to 18,000.
                 val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
-                    totalPortfolioValueUSD = BigDecimal("17000.00"),
+                    totalPortfolioValueUSD = BigDecimal("18000.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
                 )
 
@@ -375,7 +384,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     )
                     portfolioStatsRepository.save(
                         match {
-                            it.allTimeHigh.compareTo(BigDecimal("17000.00")) == 0
+                            it.allTimeHigh.compareTo(BigDecimal("18000.00")) == 0
                         },
                     )
                 }
@@ -524,6 +533,110 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal("6000.00"),
                 )
                 dd.shouldBeEqualComparingTo(BigDecimal("50.0000"))
+            }
+        }
+
+        "updateAth does not advance watermark when portfolioStatsRepository save throws" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val mockStatsRepo = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>()
+                coEvery { mockStatsRepo.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery { mockStatsRepo.save(any()) } throws RuntimeException("disk full")
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val analyzerWithFailingSave = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = mockStatsRepo,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+
+                io.kotest.assertions.throwables.shouldThrow<RuntimeException> {
+                    analyzerWithFailingSave.updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("10000.00"),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                    )
+                }
+
+                coVerify(exactly = 0) {
+                    mockTrades.setSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "updateAth does not initialize watermark when portfolioStatsRepository save throws and watermark was missing" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val mockStatsRepo = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>()
+                coEvery { mockStatsRepo.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery { mockStatsRepo.save(any()) } throws RuntimeException("disk full")
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns null
+
+                val analyzerWithFailingSave = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = mockStatsRepo,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+
+                io.kotest.assertions.throwables.shouldThrow<RuntimeException> {
+                    analyzerWithFailingSave.updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("10000.00"),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                    )
+                }
+
+                coVerify(exactly = 0) {
+                    mockTrades.setSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "updateAth does not advance watermark or query ledgers when watermark is already at or ahead of current epoch" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithAheadWatermark = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.plusSeconds(10).epochSecond.toString()
+
+                val dd = analyzerWithAheadWatermark.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                )
+
+                dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify(exactly = 0) {
+                    mockLedgers.getLedgersInRange(any(), any())
+                }
             }
         }
     }

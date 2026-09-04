@@ -66,7 +66,7 @@ class InceptionDiscoveryService(
         }
 
         // 4. Fallback: earliest snapshot in database
-        val earliestSnapshot = tradeRepository.load().minByOrNull { it.timestamp }
+        val earliestSnapshot = tradeRepository.getSnapshotsInRange(Instant.EPOCH, nowProvider()).firstOrNull()
         if (earliestSnapshot != null) {
             tradeRepository.setSyncMetadata(
                 SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
@@ -99,25 +99,20 @@ class InceptionDiscoveryService(
         if (configuredSymbols.isEmpty()) return null
 
         val trades = tradeRepository.getTradesInRange(Instant.EPOCH, nowProvider())
-            .filter { it.success && !it.dryRun }
+            .filter { it.success && !it.dryRun && it.symbol.uppercase() in configuredSymbols }
             .sortedBy { it.timestamp }
 
         if (trades.isEmpty()) return null
 
         var clusterStart = trades.first()
         var clusterPrev = trades.first()
-        val currentClusterSymbols = mutableSetOf<String>()
-        if (clusterStart.symbol.uppercase() in configuredSymbols) {
-            currentClusterSymbols.add(clusterStart.symbol.uppercase())
-        }
+        val currentClusterSymbols = mutableSetOf(clusterStart.symbol.uppercase())
 
         for (i in 1 until trades.size) {
             val trade = trades[i]
             val gapMs = trade.timestamp.toEpochMilli() - clusterPrev.timestamp.toEpochMilli()
-            if (gapMs in 0..BURST_WINDOW_MS) {
-                if (trade.symbol.uppercase() in configuredSymbols) {
-                    currentClusterSymbols.add(trade.symbol.uppercase())
-                }
+            if (gapMs <= BURST_WINDOW_MS) {
+                currentClusterSymbols.add(trade.symbol.uppercase())
                 clusterPrev = trade
                 if (currentClusterSymbols.size >= MIN_DISTINCT_SYMBOLS_FOR_BURST) {
                     val burstTime = clusterStart.timestamp
@@ -132,9 +127,7 @@ class InceptionDiscoveryService(
                 clusterStart = trade
                 clusterPrev = trade
                 currentClusterSymbols.clear()
-                if (trade.symbol.uppercase() in configuredSymbols) {
-                    currentClusterSymbols.add(trade.symbol.uppercase())
-                }
+                currentClusterSymbols.add(trade.symbol.uppercase())
             }
         }
         return null
@@ -169,7 +162,7 @@ class InceptionDiscoveryService(
                 try {
                     LocalDate.parse(trimmed).atStartOfDay(ZoneOffset.UTC).toInstant()
                 } catch (_: DateTimeParseException) {
-                    trimmed.toLongOrNull()?.let { Instant.ofEpochMilli(it) }
+                    null
                 }
             }
         }

@@ -96,12 +96,49 @@ object RebalancerComparisonCalculator {
             is TrackedBalanceValidation.Passed -> balanceResult.trades to balanceResult.ledgers
         }
 
-        val benchmarkEvents = buildBenchmarkEvents(
+        val windowObservationStart = validationSnapshots.first().balancesObservedAt
+            ?: validationSnapshots.first().timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+
+        val intermediateLedgers = if (baseline.timestamp < windowObservationStart) {
+            rewards.filter {
+                it.type in externalBalanceLedgerTypes &&
+                    it.time > baseline.timestamp &&
+                    it.time <= windowObservationStart
+            }.map { ReconciledLedger(it, it.time, it.netBalanceDelta()) }
+        } else {
+            emptyList()
+        }
+
+        val intermediateTrades = if (baseline.timestamp < windowObservationStart) {
+            trades.filter {
+                it.success &&
+                    !it.dryRun &&
+                    it.timestamp > baseline.timestamp &&
+                    it.timestamp <= windowObservationStart &&
+                    TradeOwnershipClassifier.classify(
+                        it,
+                        knownRebalancerOrderTxids,
+                    ) == TradeOwnership.MANUAL_OR_EXTERNAL
+            }.map { ReconciledTrade(it, it.timestamp, it.usdAmount) }
+        } else {
+            emptyList()
+        }
+
+        val intermediateBenchmarkEvents = buildBenchmarkEvents(
+            trades = intermediateTrades,
+            ledgers = intermediateLedgers,
+            knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+            baseline = baseline,
+        )
+
+        val windowBenchmarkEvents = buildBenchmarkEvents(
             trades = reconciledTrades,
             ledgers = reconciledLedgers,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             baseline = baseline,
         )
+
+        val benchmarkEvents = (intermediateBenchmarkEvents + windowBenchmarkEvents).sortedBy { it.timestamp }
 
         val baselineBalances = extractBaselineBalances(baseline)
         val runningSyntheticBalances = baselineBalances.toMutableMap()

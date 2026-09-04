@@ -109,10 +109,16 @@ object RebalancerEngine {
     }
 
     fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal {
-        val threshold = BigDecimal.valueOf(settings.fiatDeploymentThresholdPercent)
-        if (drawdownPct <= threshold || settings.fiatMaxDrawdown <= 0.0 ||
+        if (!settings.fiatDeploymentThresholdPercent.isFinite() ||
+            drawdownPct <= BigDecimal.ZERO ||
+            settings.fiatMaxDrawdown <= 0.0 ||
             settings.fiatDeploymentExponent <= 0.0
         ) {
+            return BigDecimal.ZERO
+        }
+
+        val threshold = BigDecimal.valueOf(settings.fiatDeploymentThresholdPercent.coerceAtLeast(0.0))
+        if (drawdownPct <= threshold) {
             return BigDecimal.ZERO
         }
 
@@ -126,7 +132,7 @@ object RebalancerEngine {
         var ratio =
             effectiveDrawdown.divide(
                 effectiveMaxDD,
-                PrecisionConstants.SCALE_PERCENT,
+                PrecisionConstants.SCALE_PERCENT + 4,
                 RoundingMode.HALF_UP,
             )
         ratio = ratio.coerceAtMost(BigDecimal.ONE)

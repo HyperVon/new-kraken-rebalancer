@@ -194,7 +194,7 @@ ViewText:
   HISTORY_REBALANCER_VS_BUY_AND_HOLD: "Rebalancer vs Buy & Hold"
   REBALANCER: "Rebalancer"
   BUY_AND_HOLD: "Buy & Hold"
-  COMPARISON_CAPTION: "Based on stored snapshots and recorded trades. Starting quantities are frozen at the first snapshot in the selected range."
+  COMPARISON_CAPTION: "Based on stored snapshots and recorded trades. Starting quantities are anchored to the strategy inception baseline."
   COMPARISON_UNAVAILABLE_PREFIX: "Comparison unavailable: "
   UNAVAILABLE_INSUFFICIENT_SNAPSHOTS: "Not enough history exists in this range to compare strategies."
   UNAVAILABLE_NON_POSITIVE_BASELINE: "The comparison needs a positive starting portfolio value."

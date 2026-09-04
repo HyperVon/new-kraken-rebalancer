@@ -92,10 +92,11 @@ class PortfolioAnalyzerImpl(
         val stats = portfolioStatsRepository.load()
         var ath = stats.allTimeHigh
 
-        val effectiveNetFlow = if (netExternalFlowUSD.signum() != 0) {
-            netExternalFlowUSD
+        val (effectiveNetFlow, pendingWatermarkSec) = if (netExternalFlowUSD.signum() != 0) {
+            netExternalFlowUSD to null
         } else {
-            calculateUnappliedExternalFlow()
+            val flowCalc = calculateUnappliedExternalFlow()
+            flowCalc.netFlow to flowCalc.pendingWatermarkSec
         }
 
         if (effectiveNetFlow.signum() != 0 && ath > BigDecimal.ZERO) {
@@ -141,27 +142,42 @@ class PortfolioAnalyzerImpl(
             throw e
         }
 
+        if (pendingWatermarkSec != null) {
+            tradeRepository?.setSyncMetadata(
+                SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                pendingWatermarkSec.toString(),
+            )
+        }
+
         return RebalancerEngine.calculateDrawdown(totalPortfolioValueUSD, ath)
     }
 
-    private suspend fun calculateUnappliedExternalFlow(): BigDecimal {
-        val ledgersRepo = ledgerRepository ?: return BigDecimal.ZERO
-        val tradesRepo = tradeRepository ?: return BigDecimal.ZERO
+    private data class ExternalFlowCalculation(val netFlow: BigDecimal, val pendingWatermarkSec: Long?)
+
+    private suspend fun calculateUnappliedExternalFlow(): ExternalFlowCalculation {
+        val ledgersRepo = ledgerRepository ?: return ExternalFlowCalculation(BigDecimal.ZERO, null)
+        val tradesRepo = tradeRepository ?: return ExternalFlowCalculation(BigDecimal.ZERO, null)
 
         val now = nowProvider()
+        val currentEpochSec = now.epochSecond
+        val watermarkUpper = Instant.ofEpochSecond(currentEpochSec)
         val watermarkStr = tradesRepo.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
         if (watermarkStr == null) {
-            tradesRepo.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC, now.epochSecond.toString())
-            return BigDecimal.ZERO
+            return ExternalFlowCalculation(BigDecimal.ZERO, currentEpochSec)
         }
 
-        val watermark = Instant.ofEpochSecond(watermarkStr.toLong())
-        val events = ledgersRepo.getLedgersInRange(watermark, now)
-            .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+        val watermarkSec = watermarkStr.toLongOrNull() ?: currentEpochSec
+        if (watermarkSec >= currentEpochSec) {
+            return ExternalFlowCalculation(BigDecimal.ZERO, watermarkSec)
+        }
 
-        tradesRepo.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC, now.epochSecond.toString())
+        val watermark = Instant.ofEpochSecond(watermarkSec)
+        val events = ledgersRepo.getLedgersInRange(watermark, watermarkUpper)
+            .filter {
+                it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES && it.time > watermark && it.time <= watermarkUpper
+            }
 
-        if (events.isEmpty()) return BigDecimal.ZERO
+        if (events.isEmpty()) return ExternalFlowCalculation(BigDecimal.ZERO, currentEpochSec)
 
         var netFlow = BigDecimal.ZERO
         for (event in events) {
@@ -183,7 +199,10 @@ class PortfolioAnalyzerImpl(
             }
             netFlow = netFlow.add(usdDelta)
         }
-        return netFlow.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+        return ExternalFlowCalculation(
+            netFlow = netFlow.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+            pendingWatermarkSec = currentEpochSec,
+        )
     }
 
     override fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal =

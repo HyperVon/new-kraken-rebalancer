@@ -4512,6 +4512,85 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("80000.00"))
             result.points[1].differenceUSD.shouldBeEqualComparingTo(BigDecimal("15000.00"))
         }
+
+        "calculate applies intermediate external ledger and manual trade events before sub-window observation start" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val tMidLedger = Instant.parse("2026-06-05T12:00:00Z")
+            val tMidTrade = Instant.parse("2026-06-06T12:00:00Z")
+            val t1 = Instant.parse("2026-06-10T12:00:00Z")
+            val t2 = Instant.parse("2026-06-10T13:00:00Z")
+
+            val inceptionSnap = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "120000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("65000.00", "1.00", "65000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t2,
+                totalValueUSD = "120000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                    "USD" to assetRow("65000.00", "1.00", "65000.00"),
+                ),
+            )
+
+            // Intermediate deposit: +19,000 USD
+            val dep = ledgerEvent(
+                timestamp = tMidLedger,
+                asset = "USD",
+                amount = "19000.00",
+                type = "deposit",
+            )
+            // Filtered ledgers: wrong type, pre-inception, and post-observation
+            val nonBalanceLedger =
+                ledgerEvent(timestamp = tMidLedger, asset = "USD", amount = "1.00", type = "rollover")
+            val preInceptionLedger =
+                ledgerEvent(timestamp = t0.minusSeconds(10), asset = "USD", amount = "5.00", type = "deposit")
+            val postObservationLedger =
+                ledgerEvent(timestamp = t2.plusSeconds(3600), asset = "USD", amount = "5.00", type = "deposit")
+
+            // Intermediate manual trade: buy 0.1 BTC with 4,000 USD
+            val manualBuy = trade(
+                timestamp = tMidTrade,
+                side = "buy",
+                symbol = "BTC",
+                volume = "0.1",
+                usdAmount = "4000.00",
+                source = TradeSource.API_FILL,
+                cycleId = null,
+                tradeId = "MANUAL-1",
+            )
+            // Filtered trades: unsuccessful, dryRun, pre-inception, post-observation, and bot rebalancer trade
+            val failedTrade = manualBuy.copy(id = 901, tradeId = "T-FAIL", success = false)
+            val dryRunTrade = manualBuy.copy(id = 902, tradeId = "T-DRY", dryRun = true)
+            val preInceptionTrade = manualBuy.copy(id = 903, tradeId = "T-PRE", timestamp = t0.minusSeconds(10))
+            val postObservationTrade = manualBuy.copy(id = 904, tradeId = "T-POST", timestamp = t2.plusSeconds(3600))
+            val botTrade = manualBuy.copy(id = 905, tradeId = "T-BOT", orderTxid = "BOT-ORDER-1")
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = listOf(manualBuy, failedTrade, dryRunTrade, preInceptionTrade, postObservationTrade, botTrade),
+                rewards = listOf(dep, nonBalanceLedger, preInceptionLedger, postObservationLedger),
+                knownRebalancerOrderTxids = setOf("BOT-ORDER-1"),
+                anchorSnapshot = null,
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+        }
     }
 
     private fun mixedCostSnapshots(knownObservation: Boolean): List<PortfolioSnapshot> =

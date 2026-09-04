@@ -205,7 +205,7 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Minimum Order Size ($)** | Dual role: absolute USD deviation must meet this for an asset to trigger, and orders below this notional are skipped at execution. **Minimum `2` (enforced).** |
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
 | **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Must be positive (any value > 0). |
-| **Fiat Deployment Threshold (%)** | Minimum drawdown before cash deployment begins (deadband). Drawdowns below this deploy 0% cash. Bounded **0–100**. |
+| **Drawdown Activation Threshold (%)** | Minimum drawdown before cash deployment begins (deadband). Drawdowns below this deploy 0% cash. Bounded **0–100**. |
 | **Inception Date (Optional)** | Anchor date for strategy performance comparison (`YYYY-MM-DD` or ISO-8601). If empty, auto-detects from the earliest multi-asset rebalance burst in your trade history. |
 
 ### Safety modes
@@ -305,9 +305,9 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 The first chart below the summary cards compares what the rebalancer actually
 achieved against a **synthetic buy-and-hold** strategy:
 
-- **Buy & Hold** starts from the first snapshot in the selected window. Strategy-neutral
-  economic flows (staking rewards, crypto dividends, USD cash dividends, external deposits,
-  withdrawals, transfers, adjustments, consumer Buy Crypto `spend`/`receive` legs, and manual
+- **Buy & Hold** starts from the strategy inception baseline snapshot across all view windows.
+  Strategy-neutral economic flows (staking rewards, crypto dividends, USD cash dividends, external
+  deposits, withdrawals, transfers, adjustments, consumer Buy Crypto `spend`/`receive` legs, and manual
   user trades) are replayed into Buy & Hold identically to the actual portfolio. Kraken app/Buy
   Crypto activity is read from Ledger history, including both asset legs, rather than inferred
   from the trade-history feed.
@@ -323,7 +323,7 @@ achieved against a **synthetic buy-and-hold** strategy:
   outperformance or underperformance (e.g. `+$5,000.00 (+4.76%)`).
 
 A caption below the chart reads: *Based on stored snapshots and recorded trades.
-Starting quantities are frozen at the first snapshot in the selected range.*
+Starting quantities are anchored to the strategy inception baseline.*
 
 The comparison cannot be computed when:
 

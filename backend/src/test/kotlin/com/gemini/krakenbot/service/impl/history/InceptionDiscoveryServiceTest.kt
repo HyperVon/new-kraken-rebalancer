@@ -89,11 +89,12 @@ class InceptionDiscoveryServiceTest : StringSpec() {
     )
 
     init {
-        "parseInceptionDate parses ISO-8601, LocalDate, and epoch ms" {
+        "parseInceptionDate parses ISO-8601 and LocalDate, rejects invalid and epoch strings" {
             InceptionDiscoveryService.parseInceptionDate(null) shouldBe null
             InceptionDiscoveryService.parseInceptionDate("") shouldBe null
             InceptionDiscoveryService.parseInceptionDate("   ") shouldBe null
             InceptionDiscoveryService.parseInceptionDate("invalid-date-format") shouldBe null
+            InceptionDiscoveryService.parseInceptionDate("1780740763000") shouldBe null
 
             val iso = "2026-06-06T10:12:43Z"
             InceptionDiscoveryService.parseInceptionDate(iso) shouldBe Instant.parse(iso)
@@ -101,10 +102,6 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             val dateOnly = "2026-06-06"
             InceptionDiscoveryService.parseInceptionDate(dateOnly) shouldBe
                 Instant.parse("2026-06-06T00:00:00Z")
-
-            val epochMs = "1780740763000"
-            InceptionDiscoveryService.parseInceptionDate(epochMs) shouldBe
-                Instant.ofEpochMilli(1780740763000L)
         }
 
         "resolveInception uses configured inception date when present" {
@@ -180,7 +177,8 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
                 val earliestSnap = dummySnapshot(Instant.parse("2026-05-01T00:00:00Z"))
                 val laterSnap = dummySnapshot(Instant.parse("2026-05-02T00:00:00Z"))
-                coEvery { tradeRepository.load() } returns listOf(laterSnap, earliestSnap)
+                coEvery { tradeRepository.getSnapshotsInRange(Instant.EPOCH, any()) } returns
+                    listOf(earliestSnap, laterSnap)
 
                 val result = service.resolveInception()
 
@@ -201,7 +199,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
                 coEvery { tradeRepository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
-                coEvery { tradeRepository.load() } returns emptyList()
+                coEvery { tradeRepository.getSnapshotsInRange(Instant.EPOCH, any()) } returns emptyList()
 
                 val result = service.resolveInception()
 
@@ -263,7 +261,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                     tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
                 } returns "0"
                 val earliestSnap = dummySnapshot(Instant.parse("2026-05-01T00:00:00Z"))
-                coEvery { tradeRepository.load() } returns listOf(earliestSnap)
+                coEvery { tradeRepository.getSnapshotsInRange(Instant.EPOCH, any()) } returns listOf(earliestSnap)
 
                 val result = service.resolveInception()
                 result.inceptionTime shouldBe earliestSnap.timestamp

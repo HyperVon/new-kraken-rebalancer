@@ -433,6 +433,8 @@ The behavior is controlled by `rebalancer-config.json`:
 | `simulation` | If set to `true`, `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator). Empty DB pre-seeds ~**15 days** of snapshots at 6-hour steps. Snapshots/trades older than **90 days** are pruned on each `addSnapshot`. |
 | `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
 | `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
+| `fiatDeploymentThresholdPercent` | Deadband threshold below which no fiat is deployed (0.0 to 100.0). Prevents micro-deployments during small drawdowns. |
+| `inceptionDate` | Strategy start date (ISO-8601 string or `YYYY-MM-DD`). When omitted or blank, auto-detected from bot order prefixes or initial trade bursts. |
 
 ## Precision
 

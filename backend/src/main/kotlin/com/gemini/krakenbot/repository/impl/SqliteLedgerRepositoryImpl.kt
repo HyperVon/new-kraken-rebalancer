@@ -68,13 +68,13 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
                 SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
             )?.toLongOrNull()
             val cutoffMillis = cutoff.toEpochMilli()
-            val effectiveCutoff = if (inceptionEpochMs != null && cutoffMillis > inceptionEpochMs) {
-                minOf(cutoffMillis, inceptionEpochMs - 5000L)
-            } else {
-                cutoffMillis
-            }
             LedgerTable.deleteWhere {
-                timestamp less effectiveCutoff
+                val condition = timestamp less cutoffMillis
+                if (inceptionEpochMs != null) {
+                    condition and (timestamp less (inceptionEpochMs - 5000L))
+                } else {
+                    condition
+                }
             }
         }
 }

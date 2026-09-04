@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
@@ -295,11 +296,11 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 val id4 = repository.saveSnapshot(recent)
 
                 repository.setSyncMetadata(
-                    com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_SNAPSHOT_ID,
+                    SyncMetadataKeys.INCEPTION_SNAPSHOT_ID,
                     id2.toString(),
                 )
                 repository.setSyncMetadata(
-                    com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
                     inceptionOld.timestamp.toEpochMilli().toString(),
                 )
 
@@ -347,7 +348,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 repository.saveTrade(recentTrade)
 
                 repository.setSyncMetadata(
-                    com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
                     inceptionTrade.timestamp.toEpochMilli().toString(),
                 )
 

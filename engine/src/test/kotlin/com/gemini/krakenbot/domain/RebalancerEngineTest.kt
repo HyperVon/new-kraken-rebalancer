@@ -153,6 +153,22 @@ class RebalancerEngineTest : StringSpec() {
             )
             zeroDdDeployment.shouldBeEqualComparingTo(BigDecimal.ZERO)
 
+            // Zero drawdown with negative threshold must still return ZERO
+            RebalancerEngine.calculateFiatDeployment(
+                BigDecimal.ZERO,
+                settings.copy(fiatDeploymentThresholdPercent = -5.0),
+            ).shouldBeEqualComparingTo(BigDecimal.ZERO)
+
+            // Non-finite threshold must return ZERO safely without throwing NumberFormatException
+            RebalancerEngine.calculateFiatDeployment(
+                BigDecimal("10.00"),
+                settings.copy(fiatDeploymentThresholdPercent = Double.NaN),
+            ).shouldBeEqualComparingTo(BigDecimal.ZERO)
+            RebalancerEngine.calculateFiatDeployment(
+                BigDecimal("10.00"),
+                settings.copy(fiatDeploymentThresholdPercent = Double.POSITIVE_INFINITY),
+            ).shouldBeEqualComparingTo(BigDecimal.ZERO)
+
             val zeroExpDeployment = RebalancerEngine.calculateFiatDeployment(
                 BigDecimal("10.00"),
                 settings.copy(fiatDeploymentExponent = 0.0),
@@ -164,6 +180,17 @@ class RebalancerEngineTest : StringSpec() {
                 settings.copy(fiatDeploymentExponent = -1.5),
             )
             negExpDeployment.shouldBeEqualComparingTo(BigDecimal.ZERO)
+        }
+
+        "calculateFiatDeployment preserves intermediate ratio precision without premature truncation" {
+            // 10 / 30 = 1/3 = 0.33333333... With linear exponent, Deploy% = 33.3333%
+            val thirdSettings = settings.copy(
+                fiatMaxDrawdown = 30.0,
+                fiatDeploymentExponent = 1.0,
+                fiatDeploymentThresholdPercent = 0.0,
+            )
+            val deployment = RebalancerEngine.calculateFiatDeployment(BigDecimal("10.00"), thirdSettings)
+            deployment.shouldBeEqualComparingTo(BigDecimal("33.3333"))
         }
 
         "calculateFiatDeployment caps deployment at 100 percent" {
