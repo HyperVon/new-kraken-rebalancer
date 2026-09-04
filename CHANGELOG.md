@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.24] - 2026-09-03
+
+### Fixed
+
+- **Kraken ledger precision in History comparison**: Preserve ledger-asset
+  fees at crypto precision instead of the four-decimal fiat trade-fee scale.
+  For existing rows whose fee precision is already truncated, reconciliation
+  can use Kraken's persisted post-ledger balance for an interval containing
+  only one authoritative ledger event per tracked asset. The resulting
+  balance delta is carried into Buy & Hold replay; ambiguous or mixed
+  trade/ledger intervals remain unavailable.
+
 ## [6.17.23] - 2026-09-02
 
 ### Changed

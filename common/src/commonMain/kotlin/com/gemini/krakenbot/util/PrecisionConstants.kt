@@ -14,6 +14,9 @@ object PrecisionConstants {
 
     const val SCALE_PERCENT = 4
     const val SCALE_FEE = 4
+
+    /** Ledger-asset fee decimal places; ledger fees are not fiat trade fees. */
+    const val SCALE_LEDGER_FEE = 8
     const val HUNDRED_INT = 100
 
     /** Post-sell buy budget: spend at most 99% of settled USD. */

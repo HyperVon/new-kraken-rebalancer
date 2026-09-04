@@ -16,7 +16,9 @@ object LedgerTable : Table("ledgers") {
     val aclass = varchar("aclass", 16).nullable()
     val asset = varchar("asset", 16)
     val amount = decimal("amount", 24, 8)
-    val fee = decimal("fee", 18, 4)
+
+    // Ledger fees are denominated in the ledger asset, unlike trade fees which are USD-scale.
+    val fee = decimal("fee", 24, 8)
     val balance = decimal("balance", 24, 8)
 
     init {
@@ -38,6 +40,8 @@ object LedgerTable : Table("ledgers") {
         amount = row[amount],
         fee = row[fee],
         balance = row[balance],
+        // The legacy schema used zero as the in-memory sentinel for a missing/unparseable balance.
+        hasAuthoritativeBalance = row[balance].signum() != 0,
     )
 
     fun applyTo(builder: UpdateBuilder<*>, event: LedgerEvent) {

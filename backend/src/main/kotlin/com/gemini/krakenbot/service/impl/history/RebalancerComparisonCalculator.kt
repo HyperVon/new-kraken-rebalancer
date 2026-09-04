@@ -20,6 +20,9 @@ import java.time.Instant
 
 object RebalancerComparisonCalculator {
     private val baselineMismatchTolerance = BigDecimal("0.01")
+
+    // A HALF_UP four-decimal fee parse can lose at most half of one 4-decimal unit.
+    private val legacyLedgerFeeDeltaTolerance = BigDecimal("0.00005")
     private val externalBalanceLedgerTypes = LedgerEvent.EXTERNAL_BALANCE_TYPES
 
     // Bounded window (1,000ms) admitting clock skew and exchange timestamp truncation/precision differences
@@ -189,6 +192,7 @@ object RebalancerComparisonCalculator {
         val effectiveTradeTimestamps: MutableList<Instant>,
         val effectiveTradeAccountingModes: MutableList<TradeAccountingMode>,
         val effectiveLedgerTimestamps: MutableList<Instant>,
+        val effectiveLedgerDeltas: MutableList<BigDecimal>,
         val assignedTradeIndexes: MutableSet<Int> = mutableSetOf(),
         val assignedLedgerIndexes: MutableSet<Int> = mutableSetOf(),
         val embeddedTradeIndexes: MutableSet<Int> = mutableSetOf(),
@@ -198,6 +202,7 @@ object RebalancerComparisonCalculator {
             effectiveTradeTimestamps = effectiveTradeTimestamps.toMutableList(),
             effectiveTradeAccountingModes = effectiveTradeAccountingModes.toMutableList(),
             effectiveLedgerTimestamps = effectiveLedgerTimestamps.toMutableList(),
+            effectiveLedgerDeltas = effectiveLedgerDeltas.toMutableList(),
             assignedTradeIndexes = assignedTradeIndexes.toMutableSet(),
             assignedLedgerIndexes = assignedLedgerIndexes.toMutableSet(),
             embeddedTradeIndexes = embeddedTradeIndexes.toMutableSet(),
@@ -215,6 +220,7 @@ object RebalancerComparisonCalculator {
     private data class ReconciledLedger(
         val ledger: LedgerEvent,
         val timestamp: Instant,
+        val netBalanceDelta: BigDecimal,
         val embeddedInBaseline: Boolean = false,
     )
 
@@ -230,6 +236,7 @@ object RebalancerComparisonCalculator {
         val tradeIndexes: List<Int>,
         val ledgerIndexes: List<Int>,
         val balances: Map<String, BigDecimal>,
+        val ledgerDeltas: Map<Int, BigDecimal>,
     )
 
     private fun validateBaseline(baseline: PortfolioSnapshot): RebalancerComparison? {
@@ -323,6 +330,7 @@ object RebalancerComparisonCalculator {
                 TradeAccountingMode.PRECISE_FILL_NOTIONAL
             },
             effectiveLedgerTimestamps = externalEvents.map(LedgerEvent::time).toMutableList(),
+            effectiveLedgerDeltas = externalEvents.map(LedgerEvent::netBalanceDelta).toMutableList(),
         )
 
         for ((_, trade) in indexedTrades.filter { (_, trade) -> trade.timestamp <= lastObservationTime }) {
@@ -350,6 +358,7 @@ object RebalancerComparisonCalculator {
             val effectiveTradeTimestamps = attempt.effectiveTradeTimestamps
             val effectiveTradeAccountingModes = attempt.effectiveTradeAccountingModes
             val effectiveLedgerTimestamps = attempt.effectiveLedgerTimestamps
+            val effectiveLedgerDeltas = attempt.effectiveLedgerDeltas
             val prev = snapshots[i - 1]
             val curr = snapshots[i]
             val prevObs = prev.balancesObservedAt ?: prev.timestamp
@@ -581,6 +590,21 @@ object RebalancerComparisonCalculator {
                         ledger.time <= currObs
                 }
             }
+            val intervalLedgerCandidates = buildList {
+                initialLedgerCandidates.forEach { add(it.value) }
+                regularIntervalLedgers.forEach { add(it.value) }
+                lateCandidates.filterIsInstance<LateCandidate.Ledger>().forEach { add(it.ledger) }
+            }
+            val intervalTradeCandidates = buildList {
+                initialTradeCandidates.forEach { add(it.value) }
+                regularIntervalTrades.forEach { add(it.value) }
+                lateCandidates.filterIsInstance<LateCandidate.Trade>().forEach { add(it.trade) }
+            }
+            val useAuthoritativeLedgerBalances = canUseAuthoritativeLedgerBalances(
+                intervalTradeCandidates,
+                intervalLedgerCandidates,
+                baseline.assets.keys,
+            )
 
             if (initialTradeCandidates.isNotEmpty() || initialLedgerCandidates.isNotEmpty()) {
                 for ((_, initialTrade) in initialTradeCandidates) {
@@ -616,6 +640,7 @@ object RebalancerComparisonCalculator {
                     startingBalances = impliedBalances,
                     snapshot = curr,
                     accountingMode = intervalAccountingMode,
+                    useAuthoritativeLedgerBalances = useAuthoritativeLedgerBalances,
                 ) ?: return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                     unavailableAt = curr.timestamp,
@@ -628,6 +653,8 @@ object RebalancerComparisonCalculator {
                 }
                 for (index in initialAssignment.embeddedLedgerIndexes) {
                     assignedLedgerIndexes += index
+                    effectiveLedgerDeltas[index] = initialAssignment.ledgerDeltas[index]
+                        ?: externalEvents[index].netBalanceDelta()
                     embeddedLedgerIndexes += index
                 }
                 for (index in initialAssignment.postBaselineTradeIndexes) {
@@ -641,6 +668,8 @@ object RebalancerComparisonCalculator {
                 }
                 for (index in initialAssignment.postBaselineLedgerIndexes) {
                     assignedLedgerIndexes += index
+                    effectiveLedgerDeltas[index] = initialAssignment.ledgerDeltas[index]
+                        ?: externalEvents[index].netBalanceDelta()
                     effectiveLedgerTimestamps[index] = calculateIntervalEventTimestamp(
                         externalEvents[index].time,
                         prev,
@@ -653,6 +682,11 @@ object RebalancerComparisonCalculator {
                     effectiveTradeTimestamps[index] = calculateIntervalEventTimestamp(trade.timestamp, prev, curr)
                 }
                 for ((index, ledger) in regularIntervalLedgers) {
+                    effectiveLedgerDeltas[index] = applyLedgerEvent(
+                        impliedBalances,
+                        ledger,
+                        useAuthoritativeLedgerBalances,
+                    )
                     assignedLedgerIndexes += index
                     effectiveLedgerTimestamps[index] = calculateIntervalEventTimestamp(ledger.time, prev, curr)
                 }
@@ -664,6 +698,8 @@ object RebalancerComparisonCalculator {
                     }
                     for (index in initialAssignment.lateAssignment.ledgerIndexes) {
                         assignedLedgerIndexes += index
+                        effectiveLedgerDeltas[index] = initialAssignment.lateAssignment.ledgerDeltas[index]
+                            ?: externalEvents[index].netBalanceDelta()
                         effectiveLedgerTimestamps[index] = curr.timestamp
                     }
                 }
@@ -682,12 +718,22 @@ object RebalancerComparisonCalculator {
                     effectiveTradeTimestamps[index] = calculateIntervalEventTimestamp(trade.timestamp, prev, curr)
                 }
                 for ((index, ledger) in regularIntervalLedgers) {
-                    applyLedgerEvent(impliedBalances, ledger)
+                    effectiveLedgerDeltas[index] = applyLedgerEvent(
+                        impliedBalances,
+                        ledger,
+                        useAuthoritativeLedgerBalances,
+                    )
                     assignedLedgerIndexes += index
                     effectiveLedgerTimestamps[index] = calculateIntervalEventTimestamp(ledger.time, prev, curr)
                 }
                 val lateAssignment = if (!balancesMatchSnapshot(impliedBalances, curr)) {
-                    findLateAssignment(lateCandidates, impliedBalances, curr, intervalAccountingMode)
+                    findLateAssignment(
+                        lateCandidates,
+                        impliedBalances,
+                        curr,
+                        intervalAccountingMode,
+                        useAuthoritativeLedgerBalances,
+                    )
                 } else {
                     null
                 }
@@ -699,6 +745,8 @@ object RebalancerComparisonCalculator {
                     }
                     for (index in lateAssignment.ledgerIndexes) {
                         assignedLedgerIndexes += index
+                        effectiveLedgerDeltas[index] = lateAssignment.ledgerDeltas[index]
+                            ?: externalEvents[index].netBalanceDelta()
                         effectiveLedgerTimestamps[index] = curr.timestamp
                     }
                     impliedBalances.clear()
@@ -753,6 +801,7 @@ object RebalancerComparisonCalculator {
             ReconciledLedger(
                 ledger = externalEvents[index],
                 timestamp = state.effectiveLedgerTimestamps[index],
+                netBalanceDelta = state.effectiveLedgerDeltas[index],
                 embeddedInBaseline = index in state.embeddedLedgerIndexes,
             )
         }
@@ -796,6 +845,23 @@ object RebalancerComparisonCalculator {
         return true
     }
 
+    private fun canUseAuthoritativeLedgerBalances(
+        trades: List<TradeRecord>,
+        ledgers: List<LedgerEvent>,
+        trackedAssets: Set<String>,
+    ): Boolean {
+        if (trades.any { it.symbol.uppercase() in trackedAssets }) return false
+        val trackedLedgers = ledgers.filter {
+            Asset.normalizeLedgerAsset(it.asset).uppercase() in trackedAssets
+        }
+        return trackedLedgers.isNotEmpty() &&
+            trackedLedgers.all(LedgerEvent::hasAuthoritativeBalance) &&
+            trackedLedgers.groupingBy { Asset.normalizeLedgerAsset(it.asset).uppercase() }
+                .eachCount()
+                .values
+                .all { it == 1 }
+    }
+
     private data class InitialAssignmentMatch(
         val embeddedTradeIndexes: List<Int>,
         val embeddedLedgerIndexes: List<Int>,
@@ -803,6 +869,7 @@ object RebalancerComparisonCalculator {
         val postBaselineLedgerIndexes: List<Int>,
         val lateAssignment: LateAssignment?,
         val resultingBalances: Map<String, BigDecimal>,
+        val ledgerDeltas: Map<Int, BigDecimal>,
     )
 
     private fun findInitialAssignment(
@@ -813,6 +880,7 @@ object RebalancerComparisonCalculator {
         startingBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
         accountingMode: TradeAccountingMode,
+        useAuthoritativeLedgerBalances: Boolean,
     ): InitialAssignmentMatch? {
         if (initialCandidates.size + lateCandidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
 
@@ -849,12 +917,14 @@ object RebalancerComparisonCalculator {
                     initialCandidates.filter {
                         it is LateCandidate.Ledger && it.index in postLedgers
                     }.map {
-                        (it as LateCandidate.Ledger).ledger
-                    } + regularLedgers.map { it.value }
-                    ).sortedBy(LedgerEvent::time)
+                        val candidate = it as LateCandidate.Ledger
+                        IndexedValue(candidate.index, candidate.ledger)
+                    } + regularLedgers
+                    ).sortedBy { it.value.time }
 
-                for (ledger in allPostLedgers) {
-                    applyLedgerEvent(testBalances, ledger)
+                val ledgerDeltas = mutableMapOf<Int, BigDecimal>()
+                for ((index, ledger) in allPostLedgers) {
+                    ledgerDeltas[index] = applyLedgerEvent(testBalances, ledger, useAuthoritativeLedgerBalances)
                 }
 
                 val candidateMatch = if (balancesMatchSnapshot(testBalances, snapshot)) {
@@ -865,9 +935,16 @@ object RebalancerComparisonCalculator {
                         postBaselineLedgerIndexes = postLedgers.toList(),
                         lateAssignment = null,
                         resultingBalances = testBalances.toMap(),
+                        ledgerDeltas = ledgerDeltas,
                     )
                 } else {
-                    val late = findLateAssignment(lateCandidates, testBalances, snapshot, accountingMode)
+                    val late = findLateAssignment(
+                        lateCandidates,
+                        testBalances,
+                        snapshot,
+                        accountingMode,
+                        useAuthoritativeLedgerBalances,
+                    )
                     if (late != null) {
                         InitialAssignmentMatch(
                             embeddedTradeIndexes = embeddedTrades.toList(),
@@ -876,6 +953,7 @@ object RebalancerComparisonCalculator {
                             postBaselineLedgerIndexes = postLedgers.toList(),
                             lateAssignment = late,
                             resultingBalances = late.balances,
+                            ledgerDeltas = ledgerDeltas + late.ledgerDeltas,
                         )
                     } else {
                         null
@@ -924,6 +1002,7 @@ object RebalancerComparisonCalculator {
         startingBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
         accountingMode: TradeAccountingMode,
+        useAuthoritativeLedgerBalances: Boolean,
     ): LateAssignment? {
         if (candidates.isEmpty() || candidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
 
@@ -931,6 +1010,7 @@ object RebalancerComparisonCalculator {
         var multipleMatches = false
         val selectedTrades = mutableListOf<Int>()
         val selectedLedgers = mutableListOf<Int>()
+        val selectedLedgerDeltas = mutableMapOf<Int, BigDecimal>()
 
         fun search(position: Int, balances: Map<String, BigDecimal>) {
             if (multipleMatches) return
@@ -942,6 +1022,7 @@ object RebalancerComparisonCalculator {
                         tradeIndexes = selectedTrades.toList(),
                         ledgerIndexes = selectedLedgers.toList(),
                         balances = balances.toMap(),
+                        ledgerDeltas = selectedLedgerDeltas.toMap(),
                     )
                     if (match == null) {
                         match = candidateMatch
@@ -967,9 +1048,15 @@ object RebalancerComparisonCalculator {
 
                 is LateCandidate.Ledger -> {
                     val nextBalances = balances.toMutableMap()
-                    applyLedgerEvent(nextBalances, candidate.ledger)
+                    val appliedDelta = applyLedgerEvent(
+                        nextBalances,
+                        candidate.ledger,
+                        useAuthoritativeLedgerBalances,
+                    )
                     selectedLedgers += candidate.index
+                    selectedLedgerDeltas[candidate.index] = appliedDelta
                     search(position + 1, nextBalances)
+                    selectedLedgerDeltas.remove(candidate.index)
                     selectedLedgers.removeAt(selectedLedgers.lastIndex)
                 }
             }
@@ -995,7 +1082,7 @@ object RebalancerComparisonCalculator {
                 events += BenchmarkEvent.ExternalBalance(
                     timestamp = reconciledLedger.timestamp,
                     asset = ledger.asset,
-                    netAmount = ledger.netBalanceDelta(),
+                    netAmount = reconciledLedger.netBalanceDelta,
                     event = ledger,
                 )
             }
@@ -1039,11 +1126,36 @@ object RebalancerComparisonCalculator {
         }
     }
 
-    private fun applyLedgerEvent(balances: MutableMap<String, BigDecimal>, ledger: LedgerEvent) {
+    private fun applyLedgerEvent(
+        balances: MutableMap<String, BigDecimal>,
+        ledger: LedgerEvent,
+        useAuthoritativeBalance: Boolean = false,
+    ): BigDecimal {
         val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
         if (symbol in balances) {
-            balances[symbol] = balances.getValue(symbol).add(ledger.netBalanceDelta())
+            val currentBalance = balances.getValue(symbol)
+            val netDelta = ledger.netBalanceDelta()
+            val authoritativeDelta = if (useAuthoritativeBalance && ledger.hasAuthoritativeBalance) {
+                ledger.balance.subtract(currentBalance)
+            } else {
+                null
+            }
+            // Existing rows may have a fee rounded to four decimals. Use the stored post-event
+            // balance only as a compatible correction, not as an arbitrary replacement for the
+            // ledger economics; this also keeps an embedded event from becoming a false zero-delta
+            // post-baseline match during boundary assignment.
+            val delta = if (
+                authoritativeDelta != null &&
+                authoritativeDelta.subtract(netDelta).abs() <= legacyLedgerFeeDeltaTolerance
+            ) {
+                authoritativeDelta
+            } else {
+                netDelta
+            }
+            balances[symbol] = currentBalance.add(delta)
+            return delta
         }
+        return ledger.netBalanceDelta()
     }
 
     private fun applyRealizedTrade(

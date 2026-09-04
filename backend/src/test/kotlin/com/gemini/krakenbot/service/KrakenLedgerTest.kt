@@ -72,6 +72,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 staking.amount.shouldBeEqualComparingTo(BigDecimal("0.1"))
                 staking.fee.shouldBeEqualComparingTo(BigDecimal("0"))
                 staking.balance.shouldBeEqualComparingTo(BigDecimal("10.5"))
+                staking.hasAuthoritativeBalance shouldBe true
                 val dividend = entries.first { it.type == KrakenApiConstants.LEDGER_TYPE_DIVIDEND }
                 dividend.ledgerId shouldBe "L2"
                 dividend.refid shouldBe "R2"

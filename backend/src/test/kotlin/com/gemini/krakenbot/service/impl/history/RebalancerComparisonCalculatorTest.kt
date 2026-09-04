@@ -1181,6 +1181,83 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             }
         }
 
+        "authoritative ledger balance reconciles a legacy truncated crypto fee" {
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "100000", "100000.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "140491.91",
+                        mapOf(
+                            "BTC" to assetRow("1.40391909", "100000", "140391.909"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(5),
+                        asset = "BTC",
+                        amount = "0.57702727",
+                        fee = "0.1731",
+                        balance = "1.40391909",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "authoritative ledger balance does not turn an embedded boundary event into a zero delta" {
+            val t0 = now
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0.plusMillis(500),
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                        balancesObservedAt = t0,
+                    ),
+                    snapshot(
+                        t0.plusSeconds(10),
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                        balancesObservedAt = t0.plusSeconds(10),
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(200),
+                        asset = "BTC",
+                        amount = "0.10000000",
+                        balance = "1.00000000",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
         "legacy cost fallback reports the later interval with an unexplained balance change" {
             val snapshots = mixedCostSnapshots(knownObservation = false).toMutableList()
             val last = snapshots.last()
@@ -4505,6 +4582,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         amount: String,
         type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
         fee: String = "0",
+        balance: String? = null,
         ledgerId: String? = null,
         refid: String? = null,
     ): LedgerEvent = LedgerEvent(
@@ -4515,5 +4593,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         asset = asset,
         amount = BigDecimal(amount),
         fee = BigDecimal(fee),
+        balance = balance?.let(::BigDecimal) ?: BigDecimal.ZERO,
+        hasAuthoritativeBalance = balance != null,
     )
 }
