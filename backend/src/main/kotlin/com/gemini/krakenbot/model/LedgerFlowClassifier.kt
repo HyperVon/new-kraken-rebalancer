@@ -122,11 +122,14 @@ object LedgerFlowClassifier {
                     continue
                 }
             }
-            // Mixed-asset groups (or same-asset groups with real net flow)
-            // are not raw-netted. Funding legs inside a larger event cannot
-            // be proven to be external capital on their own.
+            // Linked legs that do not prove an internal move are not
+            // independent observations: a shared refid means Kraken booked
+            // them as one economic event (fee-bearing internal moves,
+            // conversions, batch funding). Funding legs inside such a group
+            // cannot be proven to be external capital on their own, so they
+            // are AMBIGUOUS rather than assumed owner capital.
             for (leg in legs) {
-                if (!sameAsset && isFundingType(leg.type)) {
+                if (isFundingType(leg.type)) {
                     result[leg.ledgerId] = FlowCategory.AMBIGUOUS
                     pairedIds.add(leg.ledgerId)
                 }

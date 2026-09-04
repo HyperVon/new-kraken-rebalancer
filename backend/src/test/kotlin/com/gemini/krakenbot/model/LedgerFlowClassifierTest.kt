@@ -124,15 +124,28 @@ class LedgerFlowClassifierTest : StringSpec() {
             result["2"] shouldBe FlowCategory.INTERNAL_MOVE
         }
 
-        "refid-paired non-zero-net legs fall back to single rules" {
+        "refid-linked funding legs without zero net are ambiguous, not capital" {
+            // One refid means Kraken booked one economic event: linked legs
+            // are not independent deposits, so neither may scale ATH alone.
             val legs =
                 listOf(
                     event("1", "deposit", "100.00", refid = "R2"),
                     event("2", "deposit", "50.00", refid = "R2"),
                 )
             val result = LedgerFlowClassifier.classifyAll(legs)
-            result["1"] shouldBe FlowCategory.OWNER_CAPITAL
-            result["2"] shouldBe FlowCategory.OWNER_CAPITAL
+            result["1"] shouldBe FlowCategory.AMBIGUOUS
+            result["2"] shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "non-funding legs in a linked group still use single rules" {
+            val legs =
+                listOf(
+                    event("1", "transfer", "25.00", refid = "R3", asset = "BTC"),
+                    event("2", "transfer", "-10.00", refid = "R3", asset = "BTC"),
+                )
+            val result = LedgerFlowClassifier.classifyAll(legs)
+            result["1"] shouldBe FlowCategory.INTERNAL_MOVE
+            result["2"] shouldBe FlowCategory.INTERNAL_MOVE
         }
 
         "internal subtype keyword forces internal move even for deposits" {

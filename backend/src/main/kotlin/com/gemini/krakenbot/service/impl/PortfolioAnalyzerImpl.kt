@@ -117,16 +117,44 @@ class PortfolioAnalyzerImpl(
                 }
             }
         } else {
-            // No ATH history to scale yet: every flow folds into initial ATH
+            // No ATH history to scale yet: fold all flows into initial ATH
             // below. Still advance the watermark so the unapplied window does
             // not grow unboundedly across fresh-start cycles.
-            val flowCalc = if (ath > BigDecimal.ZERO) {
-                calculateUnappliedExternalFlow(totalPortfolioValueUSD, balancesObservedAt)
-            } else {
-                val coverage = ledgerRepository
-                    ?.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
-                    ?.toLongOrNull()
-                ExternalFlowCalculation(emptyList(), coverage)
+            //
+            // An unpriceable or unbasis-able flow defers the whole update
+            // instead of aborting the cycle: aborting would skip the snapshot
+            // save and could stall later cycles forever, while deferring keeps
+            // snapshotting (which is exactly what future basis resolution
+            // needs) with deployment forced to zero.
+            val flowCalc = try {
+                if (ath > BigDecimal.ZERO) {
+                    calculateUnappliedExternalFlow(totalPortfolioValueUSD, balancesObservedAt)
+                } else {
+                    val coverage = ledgerRepository
+                        ?.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                        ?.toLongOrNull()
+                    // A present ledger subsystem with unknown coverage plus a
+                    // dated observation means the total may contain unseen
+                    // owner capital: no initial ATH may be established from it.
+                    // A null subsystem (no ledger history exists anywhere, so
+                    // no sync could ever confirm coverage) keeps the legacy
+                    // proceed behavior instead of deferring forever.
+                    if (ledgerRepository != null && coverage == null && balancesObservedAt != null) {
+                        // Fails closed via the IllegalStateException handler
+                        // above.
+                        throw IllegalStateException(
+                            "ledger coverage unknown for balances observed at $balancesObservedAt",
+                        )
+                    }
+                    ExternalFlowCalculation(emptyList(), coverage)
+                }
+            } catch (e: CancellationException) {
+                // Coroutine cancellation is an IllegalStateException subtype:
+                // it must propagate, never degrade into a deferral.
+                throw e
+            } catch (e: IllegalStateException) {
+                log.warn("Deferring ATH update: owner-capital flow cannot be valued reliably ({})", e.message)
+                return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct)
             }
             if (flowCalc.coverageStale) {
                 // The balance may already contain owner capital the ledger
@@ -135,10 +163,10 @@ class PortfolioAnalyzerImpl(
                 // the previous trusted state untouched and let the caller fail
                 // closed on deployment.
                 log.warn(
-                    "Deferring ATH update: balances observed at {} are newer than ledger coverage {}; " +
-                        "preserving trusted ATH {}",
+                    "Deferring ATH update: balances observed at {} are not covered by confirmed ledger history " +
+                        "(coverage horizon: {}); preserving trusted ATH {}",
                     balancesObservedAt,
-                    flowCalc.coverageHorizon,
+                    flowCalc.coverageHorizon?.toString() ?: "unknown",
                     ath.toUsdScale(),
                 )
                 return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct)
@@ -155,7 +183,31 @@ class PortfolioAnalyzerImpl(
                     brokeEarly = true
                     break
                 }
-                val basis = flowCalc.groupBasisResolver.basisFor(groupIndex)
+                if (step.flowUSD.signum() == 0) {
+                    // Net-zero simultaneous group: no scaling, but its
+                    // identities are still consumed so they are not retried.
+                    for (ledgerId in step.ledgerIds) {
+                        appliedFlows.add(
+                            com.gemini.krakenbot.repository.AppliedAthFlow(
+                                ledgerId = ledgerId,
+                                eventTimeSec = step.eventTime.epochSecond,
+                            ),
+                        )
+                    }
+                    continue
+                }
+                // Fail-closed: an unbasis-able group defers the whole update
+                // with no writes (the checkpoint below is skipped), so the
+                // prefix is retried verbatim next cycle.
+                val basis = try {
+                    flowCalc.groupBasisResolver.basisFor(groupIndex)
+                } catch (e: IllegalStateException) {
+                    log.warn(
+                        "Deferring ATH update: pre-flow basis cannot be established reliably ({})",
+                        e.message,
+                    )
+                    return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct)
+                }
                 val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, basis, step.flowUSD)
                 if (adjustedAth.compareTo(ath) != 0) {
                     log.info(
@@ -240,7 +292,19 @@ class PortfolioAnalyzerImpl(
         val tradesRepo = tradeRepository ?: return ExternalFlowCalculation(emptyList(), null)
 
         val ledgerCoverageSec = ledgersRepo.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)?.toLongOrNull()
-            ?: return ExternalFlowCalculation(emptyList(), null)
+        if (ledgerCoverageSec == null) {
+            // No confirmed ledger coverage (sync never succeeded or metadata
+            // corrupt). With a dated observation the total may contain unseen
+            // owner capital, so defer rather than ratchet ATH on it. Callers
+            // without an observation keep the previous proceed-without-flows
+            // behavior. Fails closed via the IllegalStateException handler.
+            if (balancesObservedAt != null) {
+                throw IllegalStateException(
+                    "ledger coverage unknown for balances observed at $balancesObservedAt",
+                )
+            }
+            return ExternalFlowCalculation(emptyList(), null)
+        }
 
         val confirmedHorizon = Instant.ofEpochSecond(ledgerCoverageSec)
         // Temporal coverage gate: balances observed after ledger coverage may
@@ -256,7 +320,13 @@ class PortfolioAnalyzerImpl(
             return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
         }
 
-        val watermarkSec = watermarkStr.toLongOrNull() ?: ledgerCoverageSec
+        val watermarkSec = watermarkStr.toLongOrNull()
+            // A corrupt watermark must not silently advance past unapplied
+            // flows (skipped withdrawals would overstate drawdown and
+            // over-deploy). Fail closed via the IllegalStateException handler;
+            // the operator repairs the key and the missing-watermark path above
+            // re-establishes the window.
+            ?: throw IllegalStateException("malformed ATH flow watermark: $watermarkStr")
         if (watermarkSec >= ledgerCoverageSec) {
             return ExternalFlowCalculation(emptyList(), watermarkSec)
         }
@@ -280,9 +350,27 @@ class PortfolioAnalyzerImpl(
         if (unapplied.isEmpty()) return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
 
         // Classify with refid pairing: internal wallet moves and trade rows
-        // must never scale ATH. Only OWNER_CAPITAL proceeds.
+        // must never scale ATH. Only OWNER_CAPITAL proceeds. Ambiguous,
+        // unsupported, and off-universe rows are skipped loudly: they keep
+        // their ATH-neutrality, and the watermark still advances because
+        // reprocessing them later would decide identically.
         val classifications = com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(unapplied)
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
+        for (event in unapplied) {
+            val category = classifications[event.ledgerId]
+            if (category != com.gemini.krakenbot.model.FlowCategory.OWNER_CAPITAL &&
+                category != com.gemini.krakenbot.model.FlowCategory.INTERNAL_MOVE &&
+                category != com.gemini.krakenbot.model.FlowCategory.TRADE_IGNORED
+            ) {
+                log.warn(
+                    "Skipping ATH scaling for {} flow {} at {} (category {})",
+                    event.type,
+                    event.ledgerId,
+                    event.time,
+                    category,
+                )
+            }
+        }
         val events = unapplied
             .filter { event ->
                 classifications[event.ledgerId] == com.gemini.krakenbot.model.FlowCategory.OWNER_CAPITAL &&
@@ -375,17 +463,21 @@ class PortfolioAnalyzerImpl(
     }
 
     /**
-     * Best defensible portfolio value immediately BEFORE an owner flow:
-     * 1. a recorded snapshot within +/-180s of the event (exact);
-     * 2. otherwise the latest snapshot at/before the event plus priced owner
-     *    flows strictly after it (reconstructed; gap duration is logged);
-     * 3. otherwise — no snapshot exists at/before the event anywhere in the
-     *    database (fresh or migrated install) — the residual approximation
-     *    (current total minus not-yet-applied flows) with an explicit warning.
-     *    Residual error equals market movement between the event and now, so
-     *    it is only acceptable when no event-time state exists at all.
+     * Best defensible portfolio value immediately BEFORE an owner flow: the
+     * latest recorded snapshot at or before the event plus priced owner flows
+     * strictly after it (a snapshot at the event is exact; older ones carry
+     * market drift over the logged gap, which the residual approximation
+     * would extend all the way to now). Snapshots after the event already
+     * contain the flow and must never serve as its pre-flow basis.
      *
-     * Fail-closed when no positive basis can be established.
+     * With no snapshot at/before the event anywhere in the database (fresh or
+     * migrated install), the residual approximation (current total minus
+     * not-yet-applied flows) applies with an explicit warning; its error
+     * equals market movement between the event and now, so it is only
+     * acceptable when no event-time state exists at all.
+     *
+     * Fail-closed (via the caller's Deferred state) when no positive basis
+     * can be established.
      */
     private fun resolveEventTimeBasis(
         eventTime: Instant,
@@ -393,15 +485,6 @@ class PortfolioAnalyzerImpl(
         history: List<PortfolioSnapshot>,
         residualFallback: BigDecimal,
     ): BigDecimal {
-        val exact = history
-            .filter {
-                kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) <=
-                    EVENT_BASIS_SNAPSHOT_WINDOW_SECONDS * 1000L
-            }
-            .minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
-        if (exact != null && exact.totalValueUSD > BigDecimal.ZERO) {
-            return exact.totalValueUSD
-        }
         val predecessor = history.filter { !it.timestamp.isAfter(eventTime) }.maxByOrNull { it.timestamp }
         if (predecessor != null) {
             val subsequentFlows = priorFlows
@@ -578,9 +661,6 @@ class PortfolioAnalyzerImpl(
     }
 
     companion object {
-        /** A recorded snapshot this close to a flow event is its exact pre-flow basis. */
-        const val EVENT_BASIS_SNAPSHOT_WINDOW_SECONDS = 180L
-
         /**
          * Placeholder resolver: flow-less calculations never resolve a basis,
          * so this instance is never invoked.

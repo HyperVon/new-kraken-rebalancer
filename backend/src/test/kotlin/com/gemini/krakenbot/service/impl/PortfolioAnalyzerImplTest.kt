@@ -459,7 +459,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     tradeRepository = mockTrades,
                     nowProvider = { coverageTime },
                 )
-                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                // Balances observed after ledger coverage may already include
+                // the deposit, so the whole update defers: ATH must NOT
+                // ratchet to 12,000, nothing is persisted, and the last
+                // trusted drawdown is preserved for display.
+                coEvery { portfolioStatsRepository.load() } returns
+                    PortfolioStats(BigDecimal("10000.00"), BigDecimal("20.0000"))
                 coEvery {
                     mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns coverageTime.epochSecond.toString()
@@ -474,13 +479,6 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                             fee = BigDecimal.ZERO,
                         ),
                     )
-
-                // Balances observed after ledger coverage may already include
-                // the deposit, so the whole update defers: ATH must NOT
-                // ratchet to 12,000, nothing is persisted, and the last
-                // trusted drawdown is preserved for display.
-                coEvery { portfolioStatsRepository.load() } returns
-                    PortfolioStats(BigDecimal("10000.00"), BigDecimal("20.0000"))
                 val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
                     totalPortfolioValueUSD = BigDecimal("12000.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
@@ -490,9 +488,6 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 result shouldBe
                     com.gemini.krakenbot.service.AthUpdateResult.Deferred(BigDecimal("20.0000"))
                 coVerify(exactly = 0) { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) }
-                coVerify(exactly = 0) {
-                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
-                }
             }
         }
 
@@ -750,7 +745,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
-        "updateAth treats a malformed flow watermark as fully caught up" {
+        "updateAth defers on a malformed flow watermark without reading ledgers" {
             runTest {
                 val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
                 val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
@@ -777,9 +772,17 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     balancesObservedAt = fixedTime,
                 )
 
-                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
-                    .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                // A corrupt watermark must not silently advance past unapplied
+                // flows: skipped withdrawals would overstate drawdown and
+                // over-deploy. Defer with no writes; the operator repairs the
+                // key. Ledgers are never even read.
+                (result as com.gemini.krakenbot.service.AthUpdateResult.Deferred)
+                    .lastTrustedDrawdownPct shouldBe null
                 coVerify(exactly = 0) { mockLedgers.getLedgersInRange(any(), any()) }
+                coVerify(exactly = 0) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
+                    mockTrades.setSyncMetadata(any(), any())
+                }
             }
         }
 
@@ -842,7 +845,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
-        "updateAth fails closed when an owner-capital flow cannot be priced" {
+        "updateAth defers without writes when an owner-capital flow cannot be priced" {
             runTest {
                 val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
                 val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
@@ -861,14 +864,17 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
                     mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
-                } returns fixedTime.minusSeconds(86400L * 31).epochSecond.toString()
+                } returns fixedTime.minusSeconds(86400L * 32).epochSecond.toString()
                 // Stale crypto deposit: no snapshot nearby and older than the
-                // 24h ticker bound, so pricing must fail closed, not zero it.
+                // 24h ticker bound, so pricing defers the whole update (no
+                // zeroing, no checkpoint, cycle keeps snapshotting) instead
+                // of aborting the cycle. (The watermark must strictly precede
+                // the event: an event AT the watermark was already processed.)
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "LS",
-                            time = fixedTime.minusSeconds(86400 * 30),
+                            time = fixedTime.minusSeconds(86400L * 31),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "XXBT",
                             amount = BigDecimal("0.10000000"),
@@ -876,12 +882,19 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         ),
                     )
                 coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { portfolioStatsRepository.load() } returns
+                    PortfolioStats(BigDecimal("10000.00"), BigDecimal("5.0000"))
 
-                shouldThrow<IllegalStateException> {
-                    analyzerWithRepos.updateAthAndCalculateDrawdown(
-                        totalPortfolioValueUSD = BigDecimal("10000.00"),
-                        netExternalFlowUSD = BigDecimal.ZERO,
-                    )
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+
+                result shouldBe
+                    com.gemini.krakenbot.service.AthUpdateResult.Deferred(BigDecimal("5.0000"))
+                coVerify(exactly = 0) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
                 }
             }
         }
@@ -1011,13 +1024,14 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
                 coEvery { krakenService.getTickerPrices("SOLUSD") } throws RuntimeException("network down")
 
-                // Step 1: Pricing fails -> throws IllegalStateException, watermark does not advance, ATH not saved
-                shouldThrow<IllegalStateException> {
-                    analyzerWithRepos.updateAthAndCalculateDrawdown(
-                        totalPortfolioValueUSD = BigDecimal("11000.00"),
-                        netExternalFlowUSD = BigDecimal.ZERO,
-                    )
-                }
+                // Step 1: Pricing fails -> Deferred (no trusted drawdown yet),
+                // watermark does not advance, ATH not saved
+                val deferred = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("11000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+                deferred shouldBe com.gemini.krakenbot.service.AthUpdateResult.Deferred(null)
                 coVerify(exactly = 0) {
                     mockTrades.setSyncMetadata(
                         com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
@@ -1041,6 +1055,51 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     )
                 }
                 coVerify(exactly = 0) { mockTrades.setSyncMetadata(any(), any()) }
+            }
+        }
+
+        "two-arg overload throws IllegalStateException on deferral instead of ClassCastException" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                    ledgerId = "L2",
+                    time = fixedTime.minusSeconds(900),
+                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "SOL",
+                    amount = BigDecimal("10.0"),
+                    fee = BigDecimal.ZERO,
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(cryptoDeposit)
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getTickerPrices("SOLUSD") } throws RuntimeException("network down")
+
+                // Pricing fails -> the update defers, and the legacy overload
+                // surfaces that as IllegalStateException (fail-closed abort),
+                // never ClassCastException from a blind Trusted cast.
+                shouldThrow<IllegalStateException> {
+                    analyzerWithRepos.updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("11000.00"),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                    )
+                }
             }
         }
 
@@ -1213,12 +1272,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
 
                 coEvery { krakenService.getTickerPrices("SOLUSD") } returns mapOf("SOLUSD" to BigDecimal.ZERO)
-                shouldThrow<IllegalStateException> {
-                    analyzerWithRepos.updateAthAndCalculateDrawdown(
-                        totalPortfolioValueUSD = BigDecimal("10000.00"),
-                        netExternalFlowUSD = BigDecimal.ZERO,
-                    )
-                }
+                val zeroPrice = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+                zeroPrice shouldBe com.gemini.krakenbot.service.AthUpdateResult.Deferred(null)
 
                 coEvery { krakenService.getTickerPrices("SOLUSD") } throws
                     kotlinx.coroutines.CancellationException("ticker cancelled")

@@ -45,6 +45,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that Kraken cannot distinguish are `AMBIGUOUS` (never scale ATH, fail
   closed in comparisons as `AMBIGUOUS_LEDGER_TYPE`); `refid` zero-net pairing
   is asset-aware and never nets across assets.
+- **Fail-closed coverage gaps (review hardening)**: unknown or missing ledger
+  coverage with a dated observation now defers the ATH update instead of
+  ratcheting ATH on a total that may contain unseen owner capital (startup
+  sync failures are swallowed by the sync wrapper, so this path is reachable);
+  deployments without a ledger subsystem keep the legacy proceed behavior. A
+  malformed ATH flow watermark defers with no state advanced instead of
+  silently skipping unapplied flows. The legacy no-timestamp ATH overload now
+  throws `IllegalStateException` on deferral instead of `ClassCastException`.
+  Owner withdrawals absorbed by the $1 dust tolerance are logged.
 
 ## [6.17.26] - 2026-09-04
 

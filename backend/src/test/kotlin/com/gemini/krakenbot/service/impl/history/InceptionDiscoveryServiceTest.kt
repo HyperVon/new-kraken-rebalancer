@@ -252,6 +252,33 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
+        "resolveInception reports truncated history for a retained burst older than retention" {
+            runTest {
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
+                val oldBurst = fixedNow.minusSeconds(86400L * 100)
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns
+                    listOf(
+                        dummyTrade(Asset.BTC, oldBurst),
+                        dummyTrade(Asset.ETH, oldBurst.plusMillis(1200)),
+                        dummyTrade(Asset.BTC, fixedNow.minusSeconds(86400)),
+                    )
+
+                val result = service.resolveInception()
+
+                result.isAutoDetected shouldBe true
+                result.inceptionTime shouldBe oldBurst
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.TRUNCATED
+                coVerify(exactly = 0) {
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                        any(),
+                    )
+                }
+            }
+        }
+
         "resolveInception reports truncated history instead of inventing inception on migrated installs" {
             runTest {
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
@@ -557,19 +584,6 @@ class InceptionDiscoveryServiceTest : StringSpec() {
 
                 service.detectBurstInception() shouldBe null
             }
-        }
-
-        "InceptionResolution data class properties and copy" {
-            val res = InceptionResolution(
-                inceptionTime = fixedNow,
-                inceptionSnapshot = null,
-                isAutoDetected = true,
-            )
-            res.inceptionTime shouldBe fixedNow
-            res.inceptionSnapshot shouldBe null
-            res.isAutoDetected shouldBe true
-            val copy = res.copy(isAutoDetected = false)
-            copy.isAutoDetected shouldBe false
         }
     }
 }

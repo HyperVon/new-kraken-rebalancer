@@ -163,7 +163,9 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      if a rebalance cycle runs before ledger polling catches up. When balances were observed after ledger
      coverage, the whole ATH update defers: the balance must neither establish a new ATH nor produce a
      drawdown that drives fiat deployment, so the cycle preserves the last trusted drawdown and forces
-     deployment to zero. Flows apply sequentially oldest-first (simultaneous flows net into one step), each
+           deployment to zero. Unknown or missing ledger coverage with a dated observation defers the same way
+      (a total that may contain unseen owner capital must never ratchet ATH); a malformed flow watermark
+      also defers with no state advanced, leaving the key for the operator to repair. Flows apply sequentially oldest-first (simultaneous flows net into one step), each
      against its event-time pre-flow basis: the nearest snapshot within ±180s, else the latest prior snapshot
      plus intervening priced flows, else — only when no prior snapshot exists at all — the residual
      approximation with an explicit warning (fail-closed when no positive basis exists). Non-USD flows are priced

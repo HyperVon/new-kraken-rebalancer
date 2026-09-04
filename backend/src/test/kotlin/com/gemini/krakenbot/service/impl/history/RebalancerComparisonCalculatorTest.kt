@@ -3376,6 +3376,47 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
+        "Withdrawal beyond synthetic holdings fails closed instead of flooring" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-10T12:00:00Z")
+            val tMid = Instant.parse("2026-06-10T18:00:00Z")
+            val t2 = Instant.parse("2026-06-11T12:00:00Z")
+            val flatAssets = mapOf(
+                "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                "USD" to assetRow("50000.00", "1.0", "50000.00"),
+            )
+            val inceptionSnap = snapshot(t0, "100000.00", flatAssets)
+            val s1 = snapshot(t1, "100000.00", flatAssets)
+            // Mechanically reconcilable (-150k USD against the withdrawal
+            // row) but economically impossible: the thesis never held it.
+            val s2 = snapshot(
+                t2,
+                "0.00",
+                mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("-50000.00", "1.0", "-50000.00"),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = tMid,
+                        asset = "USD",
+                        amount = "-150000.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    ),
+                ),
+                inceptionSnapshot = inceptionSnap,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
         "Truncated history fails closed with INCEPTION_HISTORY_TRUNCATED" {
             val t1 = Instant.parse("2026-06-10T12:00:00Z")
             val t2 = Instant.parse("2026-06-10T13:00:00Z")

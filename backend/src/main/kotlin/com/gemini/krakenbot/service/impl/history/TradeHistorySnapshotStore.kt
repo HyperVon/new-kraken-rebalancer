@@ -384,9 +384,9 @@ class TradeHistorySnapshotStore(
             val prunedSnapshots = repository.pruneSnapshotsOlderThan(effectiveCutoff)
             if (prunedSnapshots > 0) {
                 log.info(
-                    "Pruned {} snapshots older than {} days",
+                    "Pruned {} snapshots older than {}",
                     prunedSnapshots,
-                    PrecisionConstants.HISTORICAL_DAYS_BACK,
+                    effectiveCutoff,
                 )
             }
             val prunedTrades = repository.pruneTradesOlderThan(effectiveCutoff)

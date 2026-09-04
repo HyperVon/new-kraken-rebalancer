@@ -101,12 +101,31 @@ class InceptionDiscoveryService(
             }
         }
 
-        // 3. One-time auto-detect from trade clusters
+        // 3. One-time auto-detect from trade clusters. The first RETAINED
+        // burst is only the true first burst if no earlier burst could have
+        // been pruned: retention only ever removed trades older than the
+        // horizon, so a burst at/before it is unprovable and must not be
+        // cached as inception.
         val detected = detectBurstInception()
         if (detected != null) {
-            persistDetection(detected.inceptionTime, detected.inceptionSnapshot, source = INCEPTION_SOURCE_AUTO)
-            log.info("Auto-detected inception from rebalance burst at {}", detected.inceptionTime)
-            return detected
+            val retentionHorizon = nowProvider().minusSeconds(
+                com.gemini.krakenbot.util.PrecisionConstants.HISTORICAL_DAYS_BACK.toLong() * 86400L,
+            )
+            if (!detected.inceptionTime.isBefore(retentionHorizon)) {
+                persistDetection(detected.inceptionTime, detected.inceptionSnapshot, source = INCEPTION_SOURCE_AUTO)
+                log.info("Auto-detected inception from rebalance burst at {}", detected.inceptionTime)
+                return detected
+            }
+            log.warn(
+                "Retained burst at {} predates trustworthy retention; inception must be configured manually",
+                detected.inceptionTime,
+            )
+            return InceptionResolution(
+                inceptionTime = detected.inceptionTime,
+                inceptionSnapshot = null,
+                isAutoDetected = true,
+                confidence = InceptionConfidence.TRUNCATED,
+            )
         }
 
         // 4. Earliest retained snapshot: only a valid inception when the

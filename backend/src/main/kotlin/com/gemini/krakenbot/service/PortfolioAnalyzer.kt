@@ -48,10 +48,22 @@ interface PortfolioAnalyzer {
     suspend fun updateAthAndCalculateDrawdown(
         totalPortfolioValueUSD: BigDecimal,
         netExternalFlowUSD: BigDecimal,
-    ): BigDecimal = // A null observation never trips the coverage gate, so deferral is
-        // impossible here; the cast fails loudly if that invariant breaks.
-        (updateAthAndCalculateDrawdown(totalPortfolioValueUSD, netExternalFlowUSD, null) as AthUpdateResult.Trusted)
-            .drawdownPct
+    ): BigDecimal = // Legacy overload for tests and callers without balance
+        // timing; production uses the 3-arg overload. A null observation
+        // never trips the temporal coverage gate, but pricing/basis failures
+        // still defer. A deferral carries no deployable drawdown, so fail
+        // loudly with a clear exception instead of ClassCastException on a
+        // blind cast.
+        when (
+            val result = updateAthAndCalculateDrawdown(totalPortfolioValueUSD, netExternalFlowUSD, null)
+        ) {
+            is AthUpdateResult.Trusted -> result.drawdownPct
+
+            is AthUpdateResult.Deferred ->
+                throw IllegalStateException(
+                    "ATH update deferred with null observation time; retry with an observation timestamp",
+                )
+        }
 
     suspend fun updateAthAndCalculateDrawdown(
         totalPortfolioValueUSD: BigDecimal,

@@ -15,7 +15,6 @@ import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -202,7 +201,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
-        "worthless exact snapshot falls through to the residual basis" {
+        "worthless snapshot falls through to the residual basis" {
             runTest {
                 statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
                 // A zero-total snapshot at the event instant carries no basis
@@ -367,9 +366,9 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
-        "unbasis-able flow with no positive residual fails closed" {
+        "unbasis-able flow defers without writes instead of stalling the cycle" {
             runTest {
-                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("7.5000")))
                 ledgerRepository.saveLedgers(listOf(deposit("dep-zero", t70, "10000.00")))
                 tradeRepository.setSyncMetadata(
                     SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
@@ -380,13 +379,106 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     t80.epochSecond.toString(),
                 )
 
-                shouldThrow<IllegalStateException> {
-                    analyzer(t80).updateAthAndCalculateDrawdown(
-                        totalPortfolioValueUSD = BigDecimal.ZERO,
-                        netExternalFlowUSD = BigDecimal.ZERO,
-                        balancesObservedAt = t80,
-                    )
-                }
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal.ZERO,
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+
+                result shouldBe AthUpdateResult.Deferred(BigDecimal("7.5000"))
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+            }
+        }
+
+        "zero-net simultaneous group consumes its identities without scaling" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        deposit("z-in", t70, "5000.00"),
+                        LedgerEvent(
+                            ledgerId = "z-out",
+                            time = t70,
+                            type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                            asset = "USD",
+                            amount = BigDecimal("-5000.00"),
+                        ),
+                    ),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("100000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                (result as AthUpdateResult.Trusted).drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                // The identities are checkpointed, then reaped: the checkpoint
+                // advances the watermark past them, and below-watermark journal
+                // rows are deleted in the same transaction. Empty here pins
+                // that reap (no unbounded journal growth); a rerun is excluded
+                // by the advanced watermark, not the journal.
+                statsRepository.getAppliedAthFlowIds(listOf("z-in", "z-out")) shouldBe emptySet()
+            }
+        }
+
+        "malformed ATH flow watermark defers without advancing state" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("10000.00"), BigDecimal.ZERO))
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    "not-a-number",
+                )
+
+                // A corrupt watermark must not silently advance past unapplied
+                // flows: skipped withdrawals would overstate drawdown and
+                // over-deploy. The corrupt key is left for the operator; the
+                // missing-watermark path re-establishes the window afterwards.
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                requireNotNull((result as AthUpdateResult.Deferred).lastTrustedDrawdownPct)
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                ) shouldBe "not-a-number"
+            }
+        }
+
+        "missing ledger coverage defers a dated observation without ratcheting ATH" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("10000.00"), BigDecimal.ZERO))
+                // No LEDGER_WATERMARK_EPOCH_SEC: startup sync never confirmed
+                // coverage (e.g. network failure, swallowed by the sync
+                // wrapper). The 12,000 total may contain unseen owner capital,
+                // so it must neither establish nor ratchet ATH, and nothing is
+                // persisted.
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                requireNotNull((result as AthUpdateResult.Deferred).lastTrustedDrawdownPct)
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                ) shouldBe null
             }
         }
     }

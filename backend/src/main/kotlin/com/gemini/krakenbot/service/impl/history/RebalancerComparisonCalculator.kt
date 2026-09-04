@@ -44,6 +44,10 @@ object RebalancerComparisonCalculator {
     // Withdrawal shrink factor: 10 decimals so proportional cuts stay exact.
     private const val WITHDRAWAL_FACTOR_SCALE = 10
 
+    // Withdrawals overshooting synthetic holdings by more than a dollar of
+    // rounding dust fail closed instead of flooring to a false fresh start.
+    private val OVERDRAWN_DUST_TOLERANCE_USD = BigDecimal("1.00")
+
     suspend fun calculate(
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
@@ -253,15 +257,15 @@ object RebalancerComparisonCalculator {
         val points = mutableListOf<RebalancerComparisonPoint>()
         for (snapshot in effectiveSnapshots) {
             while (eventIndex < benchmarkEvents.size && benchmarkEvents[eventIndex].timestamp <= snapshot.timestamp) {
-                val unpriceableAt = replayBenchmarkEvent(
+                val replayFailure = replayBenchmarkEvent(
                     runningSyntheticBalances,
                     benchmarkEvents[eventIndex],
                     priceProvider,
                 )
-                if (unpriceableAt != null) {
+                if (replayFailure != null) {
                     return unavailable(
-                        reason = ComparisonUnavailableReason.MISSING_PRICE,
-                        unavailableAt = unpriceableAt,
+                        reason = replayFailure.first,
+                        unavailableAt = replayFailure.second,
                         baselineTimestamp = baseline.timestamp,
                     )
                 }
@@ -1247,13 +1251,16 @@ object RebalancerComparisonCalculator {
         data object Unpriceable : OwnerFlowBuild
     }
 
-    /** Original inception value weights (normalized symbol to fraction). */
+    /** Original inception value weights (normalized symbol to fraction, renormalized to 1). */
     private fun baselineValueWeights(baseline: PortfolioSnapshot): Map<String, BigDecimal> {
         val total = baseline.totalValueUSD
         if (total.signum() <= 0) return emptyMap()
-        return baseline.assets.mapValues { (_, asset) ->
+        val raw = baseline.assets.mapValues { (_, asset) ->
             asset.valueUSD.divide(total, WEIGHT_DIVISION_SCALE, RoundingMode.HALF_UP)
         }.filterValues { it.signum() > 0 }
+        val sum = raw.values.fold(BigDecimal.ZERO) { acc, weight -> acc.add(weight) }
+        if (sum.signum() <= 0) return emptyMap()
+        return raw.mapValues { (_, weight) -> weight.divide(sum, WEIGHT_DIVISION_SCALE, RoundingMode.HALF_UP) }
     }
 
     private suspend fun buildBenchmarkEvents(
@@ -1474,15 +1481,15 @@ object RebalancerComparisonCalculator {
     }
 
     /**
-     * Replays one benchmark event into synthetic holdings. Returns the event
-     * timestamp when a withdrawal cannot be valued from recorded history
+     * Replays one benchmark event into synthetic holdings. Returns a
+     * (reason, event timestamp) pair when replay cannot proceed honestly
      * (caller fails closed), null on success.
      */
     private suspend fun replayBenchmarkEvent(
         balances: MutableMap<String, BigDecimal>,
         event: BenchmarkEvent,
         priceProvider: HistoricalPriceProvider?,
-    ): Instant? {
+    ): Pair<ComparisonUnavailableReason, Instant>? {
         when (event) {
             is BenchmarkEvent.ExternalBalance -> {
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
@@ -1504,11 +1511,37 @@ object RebalancerComparisonCalculator {
                     val price = if (symbol == Asset.USD) {
                         BigDecimal.ONE
                     } else {
-                        priceProvider?.priceAt(symbol, event.timestamp) ?: return event.timestamp
+                        priceProvider?.priceAt(symbol, event.timestamp)
+                            ?: return ComparisonUnavailableReason.MISSING_PRICE to event.timestamp
                     }
                     syntheticTotal = syntheticTotal.add(balance.multiply(price))
                 }
-                if (syntheticTotal.signum() <= 0) return event.timestamp
+                if (syntheticTotal.signum() <= 0) {
+                    return ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE to event.timestamp
+                }
+                val overdrawn = event.withdrawalUsd.subtract(syntheticTotal)
+                if (overdrawn.signum() > 0 && overdrawn.compareTo(OVERDRAWN_DUST_TOLERANCE_USD) > 0) {
+                    // The synthetic thesis cannot cover this withdrawal: the
+                    // history diverged somewhere unobserved. Flooring to zero
+                    // would mask real underperformance as a fresh start.
+                    log.warn(
+                        "Owner withdrawal of {} exceeds synthetic holdings {}; failing closed",
+                        event.withdrawalUsd,
+                        syntheticTotal,
+                    )
+                    return ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE to event.timestamp
+                }
+                if (overdrawn.signum() > 0) {
+                    // Within the $1 dust tolerance: sub-cent rounding across
+                    // decimal conversions makes exact zero unreachable in
+                    // practice, so absorb visibly instead of failing closed.
+                    log.info(
+                        "Owner withdrawal of {} exceeds synthetic holdings {} by {} (within dust tolerance)",
+                        event.withdrawalUsd,
+                        syntheticTotal,
+                        overdrawn,
+                    )
+                }
                 val factor = syntheticTotal.subtract(event.withdrawalUsd)
                     .divide(syntheticTotal, WITHDRAWAL_FACTOR_SCALE, RoundingMode.HALF_UP)
                     .coerceAtLeast(BigDecimal.ZERO)
