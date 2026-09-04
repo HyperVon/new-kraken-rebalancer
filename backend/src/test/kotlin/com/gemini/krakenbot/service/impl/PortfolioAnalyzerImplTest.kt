@@ -394,6 +394,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 val plainUsdDeposit = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L0",
+                    refid = "FT-L0",
                     time = fixedTime.minusSeconds(2400),
                     type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "USD",
@@ -402,6 +403,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 val usdDeposit = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L1",
+                    refid = "FT-L1",
                     time = fixedTime.minusSeconds(1800),
                     type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "ZUSD",
@@ -410,6 +412,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 val btcDeposit = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L2",
+                    refid = "tx-btc-deposit",
                     time = fixedTime.minusSeconds(900),
                     type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "XXBT",
@@ -472,6 +475,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "L9",
+                            refid = "FT-L9",
                             time = coverageTime.minusSeconds(60),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
@@ -522,6 +526,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "LX",
+                            refid = "tx-LX",
                             time = fixedTime.minusSeconds(900),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "ETH",
@@ -530,6 +535,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         ),
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "LB",
+                            refid = "tx-LB",
                             time = fixedTime.minusSeconds(600),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "XXBT",
@@ -605,6 +611,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "L1",
+                            refid = "FT-L1",
                             time = fixedTime.minusSeconds(1800),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
@@ -613,6 +620,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         ),
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "L2",
+                            refid = "FT-L2",
                             time = fixedTime.minusSeconds(900),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
@@ -668,6 +676,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "L1",
+                            refid = "FT-L1",
                             time = fixedTime.minusSeconds(1800),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
@@ -719,6 +728,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "LDUST",
+                            refid = "FT-LDUST",
                             time = fixedTime.minusSeconds(900),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
@@ -820,6 +830,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "L-OLD",
+                            refid = "FT-L-OLD",
                             time = fixedTime.minusSeconds(7200),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
@@ -828,6 +839,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         ),
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "L-NEW",
+                            refid = "FT-L-NEW",
                             time = fixedTime.minusSeconds(900),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
@@ -886,6 +898,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "LS",
+                            refid = "tx-LS",
                             time = fixedTime.minusSeconds(86400L * 31),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "XXBT",
@@ -1026,6 +1039,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L2",
+                    refid = "tx-L2",
                     time = fixedTime.minusSeconds(900),
                     type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
@@ -1093,6 +1107,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L2",
+                    refid = "tx-L2",
                     time = fixedTime.minusSeconds(900),
                     type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
@@ -1138,6 +1153,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L2",
+                    refid = "tx-L2",
                     time = fixedTime.minusSeconds(900),
                     type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
@@ -1156,6 +1172,13 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                             price = BigDecimal("150.00"),
                             valueUSD = BigDecimal("1500.00"),
                             targetPercent = BigDecimal("15.0"),
+                        ),
+                        "USD" to com.gemini.krakenbot.TestFixtures.assetSnapshot(
+                            symbol = "USD",
+                            balance = BigDecimal("8500.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("8500.00"),
+                            targetPercent = BigDecimal("85.0"),
                         ),
                     ),
                     actions = emptyList<String>(),
@@ -1210,6 +1233,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L3",
+                    refid = "tx-L3",
                     time = fixedTime.minusSeconds(900),
                     type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
@@ -1274,6 +1298,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L2",
+                    refid = "tx-L2",
                     time = fixedTime.minusSeconds(900),
                     type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
@@ -1386,6 +1411,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 } returns t0.plusSeconds(150).epochSecond.toString()
                 val depositAt70 = com.gemini.krakenbot.model.LedgerEvent(
                     ledgerId = "L70",
+                    refid = "FT-L70",
                     time = t0.plusSeconds(70),
                     type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "USD",
@@ -1636,6 +1662,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     listOf(
                         com.gemini.krakenbot.model.LedgerEvent(
                             ledgerId = "L-PAST",
+                            refid = "FT-L-PAST",
                             time = fixedTime.minusSeconds(60),
                             type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",

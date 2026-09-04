@@ -19,3 +19,4 @@ SyncMetadataKeys:
   DETECTED_INCEPTION_SOURCE: "detected_inception_source"
   ATH_FLOW_WATERMARK_EPOCH_SEC: "ath_flow_watermark_epoch_sec"
   ATH_FLOW_JOURNAL_MIGRATED: "ath_flow_journal_migrated"
+  INCEPTION_INSTALL_TYPE: "inception_install_type"

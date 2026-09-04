@@ -252,28 +252,31 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
-        "resolveInception reports truncated history for a retained burst older than retention" {
+        "resolveInception reports truncated history on seeded install even if earliest snapshot is recent" {
             runTest {
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                coEvery { tradeRepository.isHistorySeeded() } returns true
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE) } returns null
                 coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
-                val oldBurst = fixedNow.minusSeconds(86400L * 100)
-                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns
-                    listOf(
-                        dummyTrade(Asset.BTC, oldBurst),
-                        dummyTrade(Asset.ETH, oldBurst.plusMillis(1200)),
-                        dummyTrade(Asset.BTC, fixedNow.minusSeconds(86400)),
-                    )
+                val snapshotWithinRetention = dummySnapshot(fixedNow.minusSeconds(86400L * 20))
+                coEvery { tradeRepository.getSnapshotsInRange(Instant.EPOCH, any()) } returns
+                    listOf(snapshotWithinRetention)
 
                 val result = service.resolveInception()
 
-                result.isAutoDetected shouldBe true
-                result.inceptionTime shouldBe oldBurst
-                result.inceptionSnapshot shouldBe null
                 result.confidence shouldBe InceptionConfidence.TRUNCATED
+                result.inceptionSnapshot shouldBe null
+                result.inceptionTime shouldBe snapshotWithinRetention.timestamp
                 coVerify(exactly = 0) {
                     tradeRepository.setSyncMetadata(
                         SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
                         any(),
+                    )
+                }
+                coVerify {
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.INCEPTION_INSTALL_TYPE,
+                        InceptionDiscoveryService.INSTALL_TYPE_UPGRADED,
                     )
                 }
             }
@@ -282,9 +285,8 @@ class InceptionDiscoveryServiceTest : StringSpec() {
         "resolveInception reports truncated history instead of inventing inception on migrated installs" {
             runTest {
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
-                // Old installation: trades exist (strategy is older than
-                // retention) but the earliest retained snapshot is 100 days
-                // old, so pre-inception evidence was pruned away.
+                coEvery { tradeRepository.isHistorySeeded() } returns true
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE) } returns null
                 coEvery { tradeRepository.getTradesInRange(any(), any()) } returns
                     listOf(dummyTrade("BTC", fixedNow.minusSeconds(86400)))
                 coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
@@ -313,6 +315,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
                 coEvery { tradeRepository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { tradeRepository.isHistorySeeded() } returns true
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE) } returns null
                 coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
                 val earliestSnap = dummySnapshot(fixedNow.minusSeconds(86400L * 100))
                 coEvery { tradeRepository.getSnapshotsInRange(Instant.EPOCH, any()) } returns listOf(earliestSnap)
@@ -321,6 +324,73 @@ class InceptionDiscoveryServiceTest : StringSpec() {
 
                 result.confidence shouldBe InceptionConfidence.TRUNCATED
                 result.inceptionSnapshot shouldBe null
+            }
+        }
+
+        "resolveInception on upgraded install without snapshots defaults inceptionTime to nowProvider" {
+            runTest {
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE) } returns
+                    InceptionDiscoveryService.INSTALL_TYPE_UPGRADED
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
+                coEvery { tradeRepository.getSnapshotsInRange(Instant.EPOCH, any()) } returns emptyList()
+
+                val result = service.resolveInception()
+
+                result.confidence shouldBe InceptionConfidence.TRUNCATED
+                result.inceptionSnapshot shouldBe null
+                result.inceptionTime shouldBe fixedNow
+            }
+        }
+
+        "resolveInception with strong persisted fresh provenance auto-detects burst inception" {
+            runTest {
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE) } returns
+                    InceptionDiscoveryService.INSTALL_TYPE_FRESH
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) } returns null
+                val burstTime = fixedNow.minusSeconds(86400L * 10)
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns
+                    listOf(
+                        dummyTrade(Asset.BTC, burstTime),
+                        dummyTrade(Asset.ETH, burstTime.plusMillis(1200)),
+                    )
+                val anchorSnap = dummySnapshot(burstTime.plusSeconds(5))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(anchorSnap)
+                coEvery { tradeRepository.getSnapshotId(anchorSnap.timestamp) } returns 201
+
+                val result = service.resolveInception()
+
+                result.confidence shouldBe InceptionConfidence.CONFIDENT
+                result.isAutoDetected shouldBe true
+                result.inceptionTime shouldBe burstTime
+                result.inceptionSnapshot shouldBe anchorSnap
+                coVerify {
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                        burstTime.toEpochMilli().toString(),
+                    )
+                }
+            }
+        }
+
+        "resolveInception with configured inception on upgraded install resolves as CONFIDENT when anchor exists" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                coEvery { tradeRepository.isHistorySeeded() } returns true
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE) } returns
+                    InceptionDiscoveryService.INSTALL_TYPE_UPGRADED
+                val snap = dummySnapshot(configuredInstant.plusSeconds(5))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                coEvery { tradeRepository.getSnapshotId(snap.timestamp) } returns 301
+
+                val result = service.resolveInception()
+
+                result.isAutoDetected shouldBe false
+                result.inceptionTime shouldBe configuredInstant
+                result.inceptionSnapshot shouldBe snap
+                result.confidence shouldBe InceptionConfidence.CONFIDENT
             }
         }
 

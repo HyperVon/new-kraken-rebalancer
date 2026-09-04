@@ -13,16 +13,21 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
+import com.gemini.krakenbot.repository.table.LedgerTable
 import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.comparables.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.update
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -64,8 +69,9 @@ class AthTrustAndIdempotencyTest : StringSpec() {
         tradeRepository = tradeRepository,
     )
 
-    private fun deposit(id: String, time: Instant, amountUsd: String) = LedgerEvent(
+    private fun deposit(id: String, time: Instant, amountUsd: String, refid: String? = null) = LedgerEvent(
         ledgerId = id,
+        refid = refid ?: "FT-$id",
         time = time,
         type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
         asset = "USD",
@@ -316,6 +322,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     listOf(
                         LedgerEvent(
                             ledgerId = "w-full",
+                            refid = "WIRE-w-full",
                             time = t70,
                             type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
                             asset = "USD",
@@ -421,6 +428,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                         deposit("z-in", t70, "5000.00"),
                         LedgerEvent(
                             ledgerId = "z-out",
+                            refid = "WIRE-z-out",
                             time = t70,
                             type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
                             asset = "USD",
@@ -772,6 +780,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     listOf(
                         LedgerEvent(
                             ledgerId = "dep-sell",
+                            refid = "FT-dep-sell",
                             time = t70,
                             type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "ZUSD",
@@ -880,7 +889,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     listOf(
                         LedgerEvent(
                             ledgerId = "d-pair",
-                            refid = "R1",
+                            refid = "FT-PAIR",
                             time = t70,
                             type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
@@ -905,7 +914,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     listOf(
                         LedgerEvent(
                             ledgerId = "w-pair",
-                            refid = "R1",
+                            refid = "FT-PAIR",
                             time = t71,
                             type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
                             asset = "USD",
@@ -1030,6 +1039,588 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     .shouldBeEqualComparingTo(BigDecimal.ZERO)
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 statsRepository.getAppliedAthFlowIds(listOf("dep-gate")) shouldBe emptySet()
+            }
+        }
+
+        "ambiguous deposit blocks ATH update, defers fail-closed, and is not journaled" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("10.0000")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "bare-dep",
+                            refid = "DEP-1",
+                            time = t70,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("10000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    ),
+                )
+
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("110000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                result shouldBe AthUpdateResult.Deferred(BigDecimal("10.0000"))
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("bare-dep")) shouldBe emptySet()
+
+                // Rerunning sees the exact same unresolved flow and defers again
+                val rerun = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("110000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                rerun shouldBe AthUpdateResult.Deferred(BigDecimal("10.0000"))
+                statsRepository.getAppliedAthFlowIds(listOf("bare-dep")) shouldBe emptySet()
+            }
+        }
+
+        "ambiguous withdrawal blocks ATH update, defers fail-closed, and is not journaled" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("5.0000")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "bare-wdr",
+                            refid = "WDR-1",
+                            time = t70,
+                            type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                            asset = "USD",
+                            amount = BigDecimal("-10000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    ),
+                )
+
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("90000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                result shouldBe AthUpdateResult.Deferred(BigDecimal("5.0000"))
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("bare-wdr")) shouldBe emptySet()
+            }
+        }
+
+        "staking dividend remains performance and is terminal and journaled" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "stk-1",
+                            refid = "STK-1",
+                            time = t70,
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = "ETH",
+                            amount = BigDecimal("0.5"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    ),
+                )
+
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("100000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                (result as AthUpdateResult.Trusted).drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("stk-1")) shouldBe setOf("stk-1")
+            }
+        }
+
+        "reclassifying an ambiguous event later allows ATH processing exactly once" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t60, BigDecimal("80000.00")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "dep-resolve",
+                            refid = "AMB-1",
+                            time = t70,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("20000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    ),
+                )
+
+                // Ambiguous deposit defers
+                val deferred = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("100000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                requireNotNull((deferred as AthUpdateResult.Deferred).lastTrustedDrawdownPct)
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("dep-resolve")) shouldBe emptySet()
+
+                // Later update replaces row with affirmative banking refid
+                transaction(db) {
+                    LedgerTable.update({ LedgerTable.ledgerId eq "dep-resolve" }) {
+                        it[refid] = "FT-RESOLVED-1"
+                    }
+                }
+
+                val trusted = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("100000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                (trusted as AthUpdateResult.Trusted).drawdownPct.shouldBeEqualComparingTo(BigDecimal("20.0000"))
+                // 100k * 100/80 = 125k; 100k total against it is a 20% drawdown
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("125000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("dep-resolve")) shouldBe setOf("dep-resolve")
+
+                // Subsequent run does not re-apply the resolved deposit
+                val replay = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("100000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                (replay as AthUpdateResult.Trusted).drawdownPct.shouldBeEqualComparingTo(BigDecimal("20.0000"))
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("125000.00"))
+            }
+        }
+
+        "pre-flow basis accounts for market price movement: snapshot BTC 80k, flow-time BTC 88k, deposit 20k" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t0.epochSecond.toString(),
+                )
+                // Predecessor snapshot: 1 BTC at $80k, total 80k
+                tradeRepository.saveSnapshot(
+                    PortfolioSnapshot(
+                        timestamp = t0,
+                        totalValueUSD = BigDecimal("80000.00"),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal.ONE,
+                                price = BigDecimal("80000.00"),
+                                valueUSD = BigDecimal("80000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                            "USD" to TestFixtures.assetSnapshot(
+                                symbol = "USD",
+                                balance = BigDecimal.ZERO,
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal.ZERO,
+                                targetPercent = BigDecimal("50"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    ),
+                )
+
+                // Recent trade right before flow establishes 88k flow-time execution price
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = t70.minusSeconds(1),
+                        pair = "USDBTC",
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("8800.00"),
+                        fee = BigDecimal.ZERO,
+                    ),
+                )
+
+                ledgerRepository.saveLedgers(listOf(deposit("dep-88k", t70, "20000.00")))
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+
+                // Before deposit, holdings = 1.1 BTC, USD = -8800.
+                // At 88k execution price: 1.1 * 88,000 - 8,800 = 88,000 basis (not 80,000)!
+                // ATH adjustment: 100,000 * (88,000 + 20,000) / 88,000 = 100,000 * 108,000 / 88,000 = 122727.27.
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("108000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                (result as AthUpdateResult.Trusted).drawdownPct.shouldBeEqualComparingTo(BigDecimal("12.0000"))
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("122727.27"))
+                statsRepository.getAppliedAthFlowIds(listOf("dep-88k")) shouldBe setOf("dep-88k")
+            }
+        }
+
+        "ETH and BTC mixed portfolio movement properly reconstructs pre-flow basis" {
+            runTest {
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.ETH, 30.0),
+                        Allocation(Asset.USD, 20.0),
+                    ),
+                )
+                statsRepository.save(PortfolioStats(BigDecimal("150000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                // Predecessor snapshot at t60: BTC at 50k (1 BTC = 50k), ETH at 3k (10 ETH = 30k), USD = 20k. Total = 100k
+                tradeRepository.saveSnapshot(
+                    PortfolioSnapshot(
+                        timestamp = t60,
+                        totalValueUSD = BigDecimal("100000.00"),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal.ONE,
+                                price = BigDecimal("50000.00"),
+                                valueUSD = BigDecimal("50000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                            "ETH" to TestFixtures.assetSnapshot(
+                                symbol = "ETH",
+                                balance = BigDecimal("10"),
+                                price = BigDecimal("3000.00"),
+                                valueUSD = BigDecimal("30000.00"),
+                                targetPercent = BigDecimal("30"),
+                            ),
+                            "USD" to TestFixtures.assetSnapshot(
+                                symbol = "USD",
+                                balance = BigDecimal("20000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("20000.00"),
+                                targetPercent = BigDecimal("20"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    ),
+                )
+
+                // Snapshot at flow time t70 records market price movement: BTC 60k, ETH 3.5k
+                tradeRepository.saveSnapshot(
+                    PortfolioSnapshot(
+                        timestamp = t70,
+                        totalValueUSD = BigDecimal("115000.00"),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal.ONE,
+                                price = BigDecimal("60000.00"),
+                                valueUSD = BigDecimal("60000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                            "ETH" to TestFixtures.assetSnapshot(
+                                symbol = "ETH",
+                                balance = BigDecimal("10"),
+                                price = BigDecimal("3500.00"),
+                                valueUSD = BigDecimal("35000.00"),
+                                targetPercent = BigDecimal("30"),
+                            ),
+                            "USD" to TestFixtures.assetSnapshot(
+                                symbol = "USD",
+                                balance = BigDecimal("20000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("20000.00"),
+                                targetPercent = BigDecimal("20"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    ),
+                )
+
+                ledgerRepository.saveLedgers(listOf(deposit("dep-mix", t70, "15000.00")))
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+
+                // Basis valued at flow-time prices = 1 * 60k + 10 * 3.5k + 20k = 115k.
+                // Scaled ATH = 150k * (115k + 15k) / 115k = 150k * 130k / 115k = 169565.22.
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("130000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                (result as AthUpdateResult.Trusted).drawdownPct.shouldBeEqualComparingTo(BigDecimal("23.3333"))
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("169565.22"))
+                statsRepository.getAppliedAthFlowIds(listOf("dep-mix")) shouldBe setOf("dep-mix")
+            }
+        }
+
+        "stale predecessor gap exceeding 7 days defers ATH trust fail-closed" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t0, BigDecimal("80000.00")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t0.epochSecond.toString(),
+                )
+                val flowTime = t0.plusSeconds(8L * 86400L) // 8 days later > 7 day limit
+                val horizonTime = flowTime.plusSeconds(60)
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    horizonTime.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(listOf(deposit("dep-stale-gap", flowTime, "10000.00")))
+
+                val result = analyzer(horizonTime).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("90000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = horizonTime,
+                )
+                requireNotNull((result as AthUpdateResult.Deferred).lastTrustedDrawdownPct)
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("dep-stale-gap")) shouldBe emptySet()
+            }
+        }
+
+        "missing flow-time price defers ATH trust fail-closed" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal.ZERO))
+                val snapTime = t0
+                val flowTime = t0.plusSeconds(48L * 3600L)
+                val horizonTime = flowTime.plusSeconds(60)
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    snapTime.epochSecond.toString(),
+                )
+                tradeRepository.saveSnapshot(
+                    PortfolioSnapshot(
+                        timestamp = snapTime,
+                        totalValueUSD = BigDecimal("50000.00"),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal.ONE,
+                                price = BigDecimal("50000.00"),
+                                valueUSD = BigDecimal("50000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    ),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    horizonTime.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(listOf(deposit("dep-noprice", flowTime, "10000.00")))
+
+                val result = analyzer(horizonTime).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("60000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = horizonTime,
+                )
+                requireNotNull((result as AthUpdateResult.Deferred).lastTrustedDrawdownPct)
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("dep-noprice")) shouldBe emptySet()
+            }
+        }
+
+        "event-time basis correctly accounts for intervening sell trades and intervening prior flows" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("300000.00"), BigDecimal.ZERO))
+                val snapTime = t0
+                tradeRepository.saveSnapshot(
+                    PortfolioSnapshot(
+                        timestamp = snapTime,
+                        totalValueUSD = BigDecimal("100000.00"),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal.ONE,
+                                price = BigDecimal("80000.00"),
+                                valueUSD = BigDecimal("80000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                            "USD" to TestFixtures.assetSnapshot(
+                                symbol = "USD",
+                                balance = BigDecimal("20000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("20000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    ),
+                )
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    snapTime.epochSecond.toString(),
+                )
+
+                // Trade at snapTime exactly: ignored by trade.timestamp.isAfter(predecessor.timestamp)
+                val tradeAtSnap = TestFixtures.tradeRecord(
+                    timestamp = snapTime,
+                    pair = "XBTUSD",
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("8000.00"),
+                    fee = BigDecimal("5.00"),
+                )
+
+                // Intervening SELL trade of tracked asset BTC
+                val tradeSellBtc = TestFixtures.tradeRecord(
+                    timestamp = snapTime.plusSeconds(1800),
+                    pair = "XBTUSD",
+                    side = "sell",
+                    symbol = "BTC",
+                    volume = BigDecimal("0.2"),
+                    usdAmount = BigDecimal("16000.00"),
+                    fee = BigDecimal("10.00"),
+                )
+
+                // Intervening SELL trade of untracked asset SOL
+                val tradeSellSol = TestFixtures.tradeRecord(
+                    timestamp = snapTime.plusSeconds(2000),
+                    pair = "SOLUSD",
+                    side = "sell",
+                    symbol = "SOL",
+                    volume = BigDecimal("10.0"),
+                    usdAmount = BigDecimal("1000.00"),
+                    fee = BigDecimal("5.00"),
+                )
+
+                // Trade at flow1 to establish BTC price
+                val tradePrice1 = TestFixtures.tradeRecord(
+                    timestamp = snapTime.plusSeconds(3595),
+                    pair = "XBTUSD",
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("800.00"),
+                    price = BigDecimal("80000.00"),
+                    fee = BigDecimal("1.00"),
+                )
+
+                // Trade at flow3 to establish BTC price
+                val tradePrice3 = TestFixtures.tradeRecord(
+                    timestamp = snapTime.plusSeconds(7195),
+                    pair = "XBTUSD",
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("800.00"),
+                    price = BigDecimal("80000.00"),
+                    fee = BigDecimal("1.00"),
+                )
+
+                // Trade at flow4 to establish BTC price
+                val tradePrice4 = TestFixtures.tradeRecord(
+                    timestamp = snapTime.plusSeconds(8995),
+                    pair = "XBTUSD",
+                    side = "buy",
+                    symbol = "BTC",
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("800.00"),
+                    price = BigDecimal("80000.00"),
+                    fee = BigDecimal("1.00"),
+                )
+
+                listOf(tradeAtSnap, tradeSellBtc, tradeSellSol, tradePrice1, tradePrice3, tradePrice4)
+                    .forEach { tradeRepository.saveTrade(it) }
+
+                // Ledger flow 0 at snapTime exactly: ignored by event.time.isAfter(predecessor.timestamp)
+                val flow0 = deposit("f0", snapTime, "100.00")
+                // Ledger flow 1: BTC deposit at snap + 3600
+                val txHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                val flow1 = LedgerEvent(
+                    ledgerId = "f1",
+                    refid = txHash,
+                    time = snapTime.plusSeconds(3600),
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "BTC",
+                    amount = BigDecimal("0.1"),
+                    fee = BigDecimal.ZERO,
+                )
+                // Ledger flow 2: SOL deposit at snap + 5400 (untracked crypto, fee > 0 -> EXTERNAL_BALANCE)
+                val flow2 = LedgerEvent(
+                    ledgerId = "f2",
+                    refid = null,
+                    time = snapTime.plusSeconds(5400),
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "SOL",
+                    amount = BigDecimal("5.0"),
+                    fee = BigDecimal.ZERO,
+                )
+                // Ledger flow 3: USD deposit at snap + 7200
+                val flow3 = deposit("f3", snapTime.plusSeconds(7200), "5000.00")
+                // Ledger flow 4: USD deposit at snap + 9000
+                val flow4 = deposit("f4", snapTime.plusSeconds(9000), "10000.00")
+
+                val horizonTime = snapTime.plusSeconds(9060)
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    horizonTime.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(listOf(flow0, flow1, flow2, flow3, flow4))
+
+                val result = analyzer(horizonTime).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("200000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = horizonTime,
+                )
+                (result as AthUpdateResult.Trusted).drawdownPct.shouldBeGreaterThan(BigDecimal.ZERO)
+                statsRepository.getAppliedAthFlowIds(listOf("f0", "f1", "f2", "f3", "f4")) shouldBe
+                    setOf("f0", "f1", "f2", "f3", "f4")
             }
         }
     }

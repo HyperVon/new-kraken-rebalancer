@@ -151,62 +151,66 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      and dividends are investment performance that improve portfolio value and reduce drawdown
      without scaling ATH.
    - **Ledger Flow Classification**: Kraken reuses coarse ledger types for economically distinct activity, so
-      `LedgerFlowClassifier` decides what counts as owner capital: only bare `deposit`/`withdrawal` rows scale ATH
-      and seed the Buy & Hold benchmark. A bare crypto `deposit` that carries a fee is economically unclear
-      (fee-free internal transfers have no fee leg), so it is treated as `EXTERNAL_BALANCE` and never scales ATH;
-      zero-fee crypto deposits and all fiat deposits (fee or not) stay owner capital. Same-asset `refid`-paired
-      zero-net legs and internal-subtype rows (spot/futures/staking wallet moves, earn allocation, migration) are
-      internal moves; cross-asset `refid` funding legs and subtyped funding rows that Kraken cannot distinguish
-      are `AMBIGUOUS` and never scale ATH.
-      `trade` rows defer to `TradesHistory`, margin-family rows (`margin`, `rollover`, `settled`, `credit`,
-      `sale`) replay in-kind without scaling ATH, and unrecognized types fail closed. Flows for assets outside
-      the configured allocation universe are ignored.
+     `LedgerFlowClassifier` requires affirmative evidence before treating deposits and withdrawals as owner capital:
+     fiat deposits require a banking reference ID prefix (`FT`, `WIRE`, `ACH`, `SEPA`, `SYNAPSE`, `FEDWIRE`, `BANK`,
+     `Q`) or `fee > 0`; crypto deposits require a blockchain transaction ID refid (`0x` + 64 hex, 64 hex, or `tx-`)
+     AND `fee == 0` (fee-bearing crypto deposits lack clean external provenance and classify as `EXTERNAL_BALANCE`,
+     never scaling ATH); withdrawals require banking/txid refids or `fee > 0`. Same-asset `refid`-paired zero-net
+     legs and internal-subtype rows (spot/futures/staking wallet moves, earn allocation, migration) are
+     `INTERNAL_MOVE`. Any bare deposit or withdrawal lacking affirmative external evidence and internal signatures
+     is classified as `AMBIGUOUS`.
+     `trade` rows defer to `TradesHistory`, margin-family rows (`margin`, `rollover`, `settled`, `credit`,
+     `sale`) replay in-kind without scaling ATH, and unrecognized types fail closed. Flows for assets outside
+     the configured allocation universe are ignored.
+   - **Ambiguous Funding Deferral & Fail-Closed Safety**: Unlike terminal neutral events (`INTERNAL_MOVE`,
+     `TRADE_IGNORED`) or performance events (`EXTERNAL_BALANCE`) which are acknowledged in the decision journal,
+     flows classified as `AMBIGUOUS` or `UNSUPPORTED` MUST NOT be journaled as decided or skipped. Instead, they
+     fail closed by deferring the entire ATH update (`AthUpdateResult.Deferred`), preserving the last trusted
+     drawdown and forcing fiat deployment to zero. They remain unjournaled so future sync cycles or operator
+     reconciliations can re-evaluate them with fresh metadata, and once resolved with affirmative evidence, they
+     apply exactly once.
    - **Ledger Coverage Ceiling & Identity-Driven Reconciliation**: ATH flow processing is upper-bounded by
-      confirmed ledger synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events
-      cannot be skipped if a rebalance cycle runs before ledger polling catches up. The cycle takes its balance
-      observation before the ledger sync that stamps the coverage watermark, so coverage normally confirms the
-      whole observation; the reconciliation horizon is the earlier of the two, and rows between the observation
-      and a wider coverage wait for the next cycle because they are not in the observed total yet.
-      When balances were observed
-      after ledger coverage, the whole ATH update defers: the balance must neither establish a new ATH nor produce
-      a drawdown that drives fiat deployment, so the cycle preserves the last trusted drawdown and forces
-      deployment to zero. Unknown or missing ledger coverage with a dated observation defers the same way
-      (a total that may contain unseen owner capital must never ratchet ATH); a malformed flow watermark
-      also defers with no state advanced, leaving the key for the operator to repair. Which rows still need a
-      decision is determined by identity, not timestamp: every retained ledger row up to the reconciliation
-      horizon is
-      rescanned and the applied-flow journal (below) filters what was already decided, so late-arriving
-     backfill below an old watermark is reconciled exactly once — scaled when a retained snapshot predates
-     it, consciously skipped and journaled otherwise — instead of being silently dropped.
-     Rows classified `AMBIGUOUS`, `UNSUPPORTED`, `EXTERNAL_BALANCE`, or outside the allocation universe are
-     consciously skipped with a warning and journaled as decided, so a committed cycle does not re-warn them
-     (a cycle that later defers re-derives the warning until it commits).
-     Flows apply sequentially oldest-first (simultaneous flows net into one step), each
-     against its event-time pre-flow basis: the latest snapshot at or before the event plus intervening priced
-     owner-capital flows plus retained successful trades replayed at the predecessor snapshot's prices (a buy
-     or sell moves value by its fee drag and the difference between fill value and snapshot-priced inventory;
-      assets outside the snapshot universe contribute only their fiat leg). With no retained snapshot at or
-      before the event there is no honest basis — the flow is assumed to predate ATH establishment (its
-      effect baked into the initial baseline), so it is consciously skipped with a warning and journaled as
-      decided rather than approximated; a backfill that actually postdates the baseline conservatively
-      leaves ATH unadjusted.
-     Non-USD flows are priced
-     using historical portfolio snapshots within ±180s before falling back to live exchange tickers bounded to
-     events at most 24h old; unresolvable prices fail closed without recording the flow.
-   - **Crash-Idempotent Checkpoint**: the ATH value, the applied per-ledger flow identities, and the flow
-      watermark persist in a single SQLite transaction. A crash before commit retries safely; after commit
-      nothing is double-applied — restarts skip recorded ledger IDs even inside a held watermark window, so
-      same-second events stay exact. The journal is a lifetime decision log: it is never pruned by the
-       watermark, because the identity rescan trusts it as the record of everything already decided. When the
-        initial ATH is established from the current total, every undecided decision-bearing row below the
-        earlier of the coverage horizon and the balance observation is journaled as absorbed (its effect
-        is already inside that baseline), which prevents
-        a fresh install with seeded history from re-scaling lifetime history on the next cycle. Databases
-        upgraded from the old timestamp-window semantics perform a one-time migration
-        (`SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED`): rows below the legacy watermark whose journal entries
-        the old pruning deleted are presumed decided, so legacy applied flows are never re-applied. Forcing a
-        genuine re-scan additionally requires restoring a database backup taken before the scaling — emptying
-        the journal on a live database would re-apply flows already baked into the ATH.
+     confirmed ledger synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events
+     cannot be skipped if a rebalance cycle runs before ledger polling catches up. The cycle takes its balance
+     observation before the ledger sync that stamps the coverage watermark, so coverage normally confirms the
+     whole observation; the reconciliation horizon is the earlier of the two, and rows between the observation
+     and a wider coverage wait for the next cycle because they are not in the observed total yet.
+     When balances were observed
+     after ledger coverage, the whole ATH update defers: the balance must neither establish a new ATH nor produce
+     a drawdown that drives fiat deployment, so the cycle preserves the last trusted drawdown and forces
+     deployment to zero. Unknown or missing ledger coverage with a dated observation defers the same way
+     (a total that may contain unseen owner capital must never ratchet ATH); a malformed flow watermark
+     also defers with no state advanced, leaving the key for the operator to repair. Which rows still need a
+     decision is determined by identity, not timestamp: every retained ledger row up to the reconciliation
+     horizon is rescanned and the applied-flow journal filters what was already decided, so late-arriving backfill
+     below an old watermark is reconciled exactly once.
+     *Performance & Storage Tradeoff*: Rescanning every retained row is linear in the retained ledger set, which
+     is naturally bounded by the 90-day retention horizon (typically a few thousand rows in active accounts).
+     This design choice prioritizes correctness and exact-once reconciliation over sliding-window heuristics,
+     as bounded overlap cursors can silently miss backfilled rows older than their window. Future optimization
+     paths include an indexed database status column or a hybrid bounded overlap cursor with periodic full sweeps.
+   - **Pre-Flow Basis Reconstruction with Market Price Revaluation**: Flows apply sequentially oldest-first
+     (simultaneous flows net into one step), each against its event-time pre-flow basis. The basis reconstructs
+     exact portfolio holdings immediately before the flow:
+     `holdings_at_flow = predecessor_holdings + replayed_trades + replayed_crypto_flows`.
+     Successful non-dry-run trades adjust tracked crypto quantities and fiat outlays/proceeds (including fees),
+     and off-universe trades adjust only the fiat leg. Holdings are then revalued at event-time prices:
+     `Pre-flow basis = sum(holding_i * price_at_flow_i)`.
+     Flow-time prices are resolved first from recent trade execution prices within ±180s, then from the nearest
+     portfolio snapshot within ±180s, and finally from a bounded live exchange ticker (only for events ≤24h old).
+     If flow-time prices cannot be resolved, or if the predecessor snapshot is older than 7 days
+     (`MAX_PREDECESSOR_GAP_SECONDS` = 604,800s), the update defers fail-closed (`AthUpdateResult.Deferred`) rather
+     than risking an inaccurate proportional adjustment. If no predecessor snapshot exists at all, the flow is
+     assumed to predate ATH establishment and is journaled as absorbed into the initial baseline.
+   - **Crash-Idempotent Checkpoint & Migration Limitations**: The ATH value, applied per-ledger flow identities,
+     and the flow watermark persist in a single SQLite transaction. A crash before commit retries safely; after commit
+     nothing is double-applied — restarts skip recorded ledger IDs even inside a held watermark window.
+     The journal is a lifetime decision log: it is never pruned by the watermark. When the initial ATH is
+     established, undecided decision-bearing rows below the observation are journaled as absorbed.
+     *Migration Limitation*: Databases upgraded from older timestamp-window releases perform a one-time migration
+     (`SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED`): rows below the legacy watermark whose journal entries were
+     pruned under earlier versions are presumed decided, so historical flows are not double-counted. Forcing a
+     genuine re-scan requires restoring a pre-scaling database backup.
    - **Safety & Persistence**: Missing or explicitly null stats represent an empty initial
      state. A database read or legacy-file migration failure aborts the analysis
      before ATH persistence or order planning, rather than treating the ATH as
@@ -464,13 +468,16 @@ running the rebalancer versus holding the original inception investment thesis w
 the same external capital over time:
 
 - **Inception resolution** (configured date → cached detection → trade-burst
-  detection → earliest snapshot) carries a confidence flag. On migrated installs
-  whose earliest retained snapshot predates the trustworthy retention horizon
-  (older history was removed by a previous retention era), the earliest row is
-  NOT adopted as inception: the comparison reports `INCEPTION_HISTORY_TRUNCATED`
-  and the user must set `inceptionDate` manually. A known inception whose anchor
+  detection → earliest snapshot) carries a confidence flag. Rather than relying on
+  fragile snapshot age checks against the 90-day retention horizon, inception confidence
+  relies on a durable install state marker (`SyncMetadataKeys.INCEPTION_INSTALL_TYPE`),
+  falling back to checking whether history was already seeded (`tradeRepository.isHistorySeeded()`).
+  On upgraded installs (where early history may have been pruned under a previous retention era),
+  the earliest snapshot is NOT adopted as inception: the comparison reports
+  `INCEPTION_HISTORY_TRUNCATED`, leaves the inception snapshot null without caching,
+  and the user must set `inceptionDate` manually. Fresh installs record `fresh` install state
+  and auto-detect inception with `InceptionConfidence.CONFIDENT`. A known inception whose anchor
   snapshot is no longer retained likewise fails closed (`INCEPTION_SNAPSHOT_PRUNED`).
-  Fresh installs may still anchor on their first snapshot.
 - **Owner contributions after inception are invested by original inception value
   weights** (existing synthetic holdings untouched); only the new money moves.
   Same-timestamp USD funding plumbing that nets to zero (e.g. an instant

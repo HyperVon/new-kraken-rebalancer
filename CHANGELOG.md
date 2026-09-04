@@ -40,6 +40,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   snapshot and the flow at predecessor snapshot prices, so fee drag and
   inventory changes no longer inflate the basis and understate ATH scaling.
   Assets outside the snapshot universe contribute only their fiat leg.
+- **Fail-closed deferral for ambiguous funding**: unapplied `AMBIGUOUS` and
+  `UNSUPPORTED` funding events now defer ATH trust (`AthUpdateResult.Deferred`),
+  forcing fiat deployment to zero and remaining unjournaled so future metadata
+  resolution or operator classification can replay them exactly once.
+- **Affirmative external flow classification**: deposits and withdrawals now
+  require affirmative external evidence before scaling ATH — fiat deposits
+  require banking refid prefixes (`FT`, `WIRE`, etc.) or non-zero fees; crypto
+  deposits require 64-hex / `0x` / `tx-` txids and zero fee; withdrawals
+  require banking/txid refids or non-zero fees. Bare deposits and withdrawals
+  without external proof classify as `AMBIGUOUS`.
+- **Event-time market price revaluation for pre-flow basis**: the pre-flow basis
+  reconstructs exact portfolio holdings immediately before the flow and values
+  them at flow-time prices (`sum(holding_i * price_at_flow_i)`), utilizing
+  recent trade execution prices, nearest portfolio snapshots, or bounded
+  live tickers. Gaps older than 7 days (`MAX_PREDECESSOR_GAP_SECONDS`) or
+  unresolvable prices defer ATH trust fail-closed.
+- **Durable install state for inception confidence**: inception detection on
+  upgraded installs now uses a durable install marker
+  (`SyncMetadataKeys.INCEPTION_INSTALL_TYPE`) with fallback to
+  `tradeRepository.isHistorySeeded()`, returning `InceptionConfidence.TRUNCATED`
+  and requiring explicit `inceptionDate` rather than relying on dynamic row-age
+  checks against the 90-day retention window.
 - **Initial-ATH absorption**: when the ATH is first established from the
   current total, undecided decision-bearing rows below the earlier of the
   coverage horizon and the balance observation are journaled as absorbed,
@@ -53,8 +75,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Docs
 
-- `docs/ALGORITHM.md`: ATH flow classification, identity reconciliation,
-  basis reconstruction, absorption, and journal-migration semantics updated.
+- `docs/ALGORITHM.md`: ATH flow classification, ambiguous flow fail-closed
+  deferral, event-time basis revaluation, inception confidence model,
+  lifetime scan performance tradeoffs, and journal-migration semantics updated.
 
 ## [6.17.27] - 2026-09-04
 

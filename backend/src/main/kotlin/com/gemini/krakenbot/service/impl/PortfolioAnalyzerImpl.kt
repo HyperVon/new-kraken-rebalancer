@@ -200,9 +200,9 @@ class PortfolioAnalyzerImpl(
                 return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct)
             }
             var brokeEarly = false
-            // Consciously-skipped decisions (ambiguous, unsupported, off-universe)
-            // are terminal regardless of what the scaling loop below does, so they
-            // join the journal now and are never re-warned.
+            // Consciously-skipped decisions (internal move, trade ignored, external balance,
+            // off-universe owner capital) are terminal regardless of what the scaling loop
+            // below does, so they join the journal now and are never re-warned.
             appliedFlows.addAll(flowCalc.skippedDecided)
             // Bases resolve lazily per group: groups after an early break are
             // never priced, so an unbasis-able later flow cannot fail a cycle
@@ -372,6 +372,20 @@ class PortfolioAnalyzerImpl(
         val absorbed = mutableListOf<AppliedAthFlow>()
         for (event in unapplied) {
             val category = classifications[event.ledgerId]
+            if (category == FlowCategory.AMBIGUOUS || category == FlowCategory.UNSUPPORTED) {
+                log.warn(
+                    "Cannot establish initial ATH baseline: ledger history contains unresolved " +
+                        "ambiguous funding event {} ({}, {}) at {}",
+                    event.ledgerId,
+                    event.type,
+                    event.asset,
+                    event.time,
+                )
+                throw IllegalStateException(
+                    "Cannot establish initial ATH baseline: unresolved ambiguous funding event " +
+                        "${event.ledgerId} (${event.type}, ${event.asset}) at ${event.time}",
+                )
+            }
             if (category != FlowCategory.INTERNAL_MOVE && category != FlowCategory.TRADE_IGNORED) {
                 absorbed.add(AppliedAthFlow(ledgerId = event.ledgerId, eventTimeSec = event.time.epochSecond))
             }
@@ -476,25 +490,40 @@ class PortfolioAnalyzerImpl(
         val (unapplied, classifications) = scanUndecidedLedgerEvents(confirmedHorizon)
         if (unapplied.isEmpty()) return ExternalFlowCalculation(emptyList(), confirmedHorizon.epochSecond)
 
-        // Classify with refid pairing: internal wallet moves and trade rows
-        // must never scale ATH. Only OWNER_CAPITAL proceeds. Ambiguous,
-        // unsupported, and off-universe rows are skipped loudly and journaled
-        // as decided: reprocessing them later would decide identically, and
-        // without journaling them the identity scan would re-warn them every
-        // cycle. INTERNAL_MOVE and TRADE_IGNORED rows are terminal-neutral
-        // and never warn, so they are re-derived cheaply instead of journaled.
+        // Classify with refid pairing: internal wallet moves, trade rows, and
+        // external balance events must never scale ATH. Terminal neutral events
+        // (INTERNAL_MOVE, TRADE_IGNORED) and performance events (EXTERNAL_BALANCE)
+        // are acknowledged in the journal so they are not re-processed.
+        // Off-universe OWNER_CAPITAL is acknowledged as skipped.
+        // Crucially, AMBIGUOUS and UNSUPPORTED funding events MUST NOT be journaled
+        // as decided: they fail-closed by deferring the ATH update until affirmative
+        // evidence or resolution arrives, preserving exact-once replay later.
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
         val skippedDecided = mutableListOf<AppliedAthFlow>()
         val events = mutableListOf<LedgerEvent>()
         for (event in unapplied) {
             val category = classifications[event.ledgerId]
+            if (category == FlowCategory.AMBIGUOUS || category == FlowCategory.UNSUPPORTED) {
+                log.warn(
+                    "Deferring ATH update: unapplied ambiguous funding event {} (type={}, asset={}, amount={}) " +
+                        "at {} cannot be classified as owner capital or internal move",
+                    event.ledgerId,
+                    event.type,
+                    event.asset,
+                    event.amount,
+                    event.time,
+                )
+                throw IllegalStateException(
+                    "unapplied ambiguous funding event ${event.ledgerId} (${event.type}, ${event.asset}) at ${event.time}",
+                )
+            }
             if (category == FlowCategory.OWNER_CAPITAL &&
                 isInAthUniverse(Asset.normalizeLedgerAsset(event.asset).uppercase(), universe)
             ) {
                 events.add(event)
             } else if (category != FlowCategory.INTERNAL_MOVE && category != FlowCategory.TRADE_IGNORED) {
                 log.warn(
-                    "Skipping ATH scaling for {} flow {} at {} (category {})",
+                    "Skipping ATH scaling for off-universe or terminal {} flow {} at {} (category {})",
                     event.type,
                     event.ledgerId,
                     event.time,
@@ -556,7 +585,9 @@ class PortfolioAnalyzerImpl(
             pendingWatermarkSec = confirmedHorizon.epochSecond,
             skippedDecided = skippedDecided,
             groupBasisResolver = GroupBasisResolver(
-                ::resolveEventTimeBasis,
+                resolve = { eventTime, priorFlows, snapHistory, snapTrades ->
+                    resolveEventTimeBasis(eventTime, priorFlows, snapHistory, snapTrades, tradesRepo)
+                },
                 pricedFlows,
                 groupStarts,
                 history,
@@ -571,7 +602,7 @@ class PortfolioAnalyzerImpl(
      * a cycle whose applicable prefix is fine.
      */
     private class GroupBasisResolver(
-        private val resolve: (
+        private val resolve: suspend (
             eventTime: Instant,
             priorFlows: List<Pair<LedgerEvent, BigDecimal>>,
             history: List<PortfolioSnapshot>,
@@ -582,7 +613,7 @@ class PortfolioAnalyzerImpl(
         private val history: List<PortfolioSnapshot>,
         private val trades: List<TradeRecord>,
     ) {
-        fun basisFor(groupIndex: Int): BigDecimal? {
+        suspend fun basisFor(groupIndex: Int): BigDecimal? {
             val start = groupStarts[groupIndex]
             return resolve(
                 pricedFlows[start].first.time,
@@ -594,74 +625,114 @@ class PortfolioAnalyzerImpl(
     }
 
     /**
-     * Best defensible portfolio value immediately BEFORE an owner flow: the
-     * latest recorded snapshot at or before the event, plus priced owner flows
-     * strictly after it, plus retained successful trades replayed at the
-     * predecessor snapshot's prices between that snapshot and the event (fee
-     * drag and inventory changes move portfolio value without being owner
-     * capital). A snapshot at the event is exact; older ones carry market
-     * drift over the logged gap. Snapshots after the event already contain
-     * the flow and must never serve as its pre-flow basis.
+     * Best defensible portfolio value immediately BEFORE an owner flow:
+     * reconstructs the tracked portfolio holdings immediately before the flow
+     * (starting from the predecessor snapshot's asset balances, replaying intervening
+     * trades and prior flows), then values them at flow-time historical prices.
      *
-     * Returns null when no snapshot at or before the event exists anywhere in
-     * the database: such a flow predates recorded history, its effect is
-     * already baked into the initial ATH baseline, and the caller journals it
-     * as consciously skipped. The former residual approximation silently
-     * scaled ATH by an error equal to market movement between the event and
-     * now, so it is gone.
-     *
-     * Fail-closed (via the caller's Deferred state) when no positive basis can
-     * be established from the reconstructed state.
+     * This properly accounts for market price movement between the predecessor snapshot
+     * and the flow event. Returns null when no predecessor snapshot exists (baked into
+     * initial baseline). Fails closed (via Deferred state) if flow-time prices cannot
+     * be resolved or if the predecessor snapshot is older than [MAX_PREDECESSOR_GAP_SECONDS].
      */
-    private fun resolveEventTimeBasis(
+    private suspend fun resolveEventTimeBasis(
         eventTime: Instant,
         priorFlows: List<Pair<LedgerEvent, BigDecimal>>,
         history: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
+        tradesRepo: TradeRepository,
     ): BigDecimal? {
         val predecessor = history.filter { !it.timestamp.isAfter(eventTime) }.maxByOrNull { it.timestamp }
             ?: return null
-        var basis = predecessor.totalValueUSD
-        for ((event, usd) in priorFlows) {
-            if (event.time.isAfter(predecessor.timestamp)) {
-                basis = basis.add(usd)
+
+        val gapSeconds = eventTime.epochSecond - predecessor.timestamp.epochSecond
+        if (gapSeconds > MAX_PREDECESSOR_GAP_SECONDS) {
+            throw IllegalStateException(
+                "Predecessor snapshot at ${predecessor.timestamp} is older than maximum allowed gap " +
+                    "(${MAX_PREDECESSOR_GAP_SECONDS}s; gap was ${gapSeconds}s) for event at $eventTime",
+            )
+        }
+
+        // 1. Reconstruct tracked holdings immediately before the flow
+        val reconstructedHoldings = mutableMapOf<String, BigDecimal>()
+        if (predecessor.assets.isEmpty()) {
+            if (predecessor.totalValueUSD > BigDecimal.ZERO) {
+                reconstructedHoldings["USD"] = predecessor.totalValueUSD
+            }
+        } else {
+            for ((asset, assetSnap) in predecessor.assets) {
+                reconstructedHoldings[asset.uppercase()] = assetSnap.balance
+            }
+            if (!reconstructedHoldings.containsKey("USD") && !reconstructedHoldings.containsKey("ZUSD")) {
+                val nonUsdTotal = predecessor.assets.values.sumOf { it.valueUSD }
+                val residualFiat = predecessor.totalValueUSD.subtract(nonUsdTotal)
+                if (residualFiat > BigDecimal.ZERO) {
+                    reconstructedHoldings["USD"] = residualFiat
+                }
             }
         }
+
+        // Replay intervening trades between predecessor snapshot and flow time
+        val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
         for (trade in trades) {
             if (trade.timestamp.isAfter(predecessor.timestamp) && !trade.timestamp.isAfter(eventTime)) {
-                basis = basis.add(tradeValueDeltaAtPredecessorPrices(trade, predecessor))
+                val asset = Asset.normalizeLedgerAsset(trade.symbol).uppercase()
+                val isTrackedCrypto = isInAthUniverse(asset, universe) && asset != "USD" && asset != "ZUSD"
+                if (OrderSide.isBuy(trade.side)) {
+                    if (isTrackedCrypto) {
+                        reconstructedHoldings[asset] =
+                            (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(trade.volume)
+                    }
+                    reconstructedHoldings["USD"] = (reconstructedHoldings["USD"] ?: BigDecimal.ZERO)
+                        .subtract(trade.usdAmount).subtract(trade.fee)
+                } else {
+                    if (isTrackedCrypto) {
+                        reconstructedHoldings[asset] =
+                            (reconstructedHoldings[asset] ?: BigDecimal.ZERO).subtract(trade.volume)
+                    }
+                    reconstructedHoldings["USD"] = (reconstructedHoldings["USD"] ?: BigDecimal.ZERO)
+                        .add(trade.usdAmount).subtract(trade.fee)
+                }
             }
         }
+
+        // Replay intervening prior flows between predecessor snapshot and flow time
+        for ((event, _) in priorFlows) {
+            if (event.time.isAfter(predecessor.timestamp) && !event.time.isAfter(eventTime)) {
+                val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
+                if (asset == "USD" || asset == "ZUSD" || isInAthUniverse(asset, universe)) {
+                    reconstructedHoldings[asset] =
+                        (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(event.netBalanceDelta())
+                }
+            }
+        }
+
+        // 2. Value reconstructed holdings at flow-time prices
+        var totalUSD = BigDecimal.ZERO
+        for ((asset, balance) in reconstructedHoldings) {
+            if (balance.compareTo(BigDecimal.ZERO) == 0) continue
+            if (asset == "USD" || asset == "ZUSD") {
+                totalUSD = totalUSD.add(balance)
+                continue
+            }
+            val price = resolveHistoricalOrTickerPrice(asset, eventTime, tradesRepo)
+            totalUSD = totalUSD.add(balance.multiply(price))
+        }
+
+        val basis = totalUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
         if (basis > BigDecimal.ZERO) {
             log.info(
-                "ATH flow basis reconstructed from snapshot at {} (gap {}s) for event at {}",
+                "ATH flow basis reconstructed from holdings at {} with flow-time prices (gap {}s) for event at {}: basis={}",
                 predecessor.timestamp,
-                eventTime.epochSecond - predecessor.timestamp.epochSecond,
+                gapSeconds,
                 eventTime,
+                basis,
             )
             return basis
         }
-        throw IllegalStateException("Cannot establish a positive pre-flow portfolio basis for event at $eventTime")
-    }
-
-    /**
-     * Fill value change at predecessor snapshot prices: a BUY converts
-     * (usdAmount + fee) fiat into `volume` crypto, a SELL converts `volume`
-     * crypto into (usdAmount - fee) fiat. Valuing the crypto leg with the
-     * snapshot's own price keeps the basis consistent with how the snapshot
-     * total was priced. An asset outside the snapshot universe has no tracked
-     * crypto leg: only its fiat movement leaves the recorded total.
-     */
-    private fun tradeValueDeltaAtPredecessorPrices(trade: TradeRecord, predecessor: PortfolioSnapshot): BigDecimal {
-        val asset = Asset.normalizeLedgerAsset(trade.symbol).uppercase()
-        if (asset == "USD" || asset == "ZUSD") return BigDecimal.ZERO
-        val price = predecessor.assets[asset]?.price?.takeIf { it > BigDecimal.ZERO }
-        val cryptoValueUSD = price?.let { trade.volume.multiply(it) }
-        return if (OrderSide.isBuy(trade.side)) {
-            (cryptoValueUSD ?: BigDecimal.ZERO).subtract(trade.usdAmount).subtract(trade.fee)
-        } else {
-            trade.usdAmount.subtract(trade.fee).subtract(cryptoValueUSD ?: BigDecimal.ZERO)
-        }
+        throw IllegalStateException(
+            "Cannot establish a positive pre-flow portfolio basis for event at $eventTime: basis=$basis",
+        )
     }
 
     private fun isInAthUniverse(normalizedAsset: String, universe: Set<String>): Boolean {
@@ -683,9 +754,21 @@ class PortfolioAnalyzerImpl(
         eventTime: Instant,
         tradesRepo: TradeRepository,
     ): BigDecimal {
-        // 1. Look for closest recorded portfolio snapshot within +/- 180 seconds.
-        // No broader fallback: an arbitrarily old snapshot can silently corrupt ATH
-        // valuations by feeding stale prices through the proportional scaling.
+        // 1. If a trade occurred at or near flow time (within +/- 180 seconds), use the trade execution price
+        val recentTrade = tradesRepo.getTradesInRange(eventTime.minusSeconds(180), eventTime.plusSeconds(180))
+            .filter {
+                it.success && !it.dryRun && Asset.normalizeLedgerAsset(it.symbol).equals(asset, ignoreCase = true)
+            }
+            .minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
+        if (recentTrade != null && recentTrade.volume > BigDecimal.ZERO && recentTrade.usdAmount > BigDecimal.ZERO) {
+            return recentTrade.usdAmount.divide(
+                recentTrade.volume,
+                PrecisionConstants.SCALE_CRYPTO,
+                RoundingMode.HALF_UP,
+            )
+        }
+
+        // 2. Look for closest recorded portfolio snapshot within +/- 180 seconds.
         val nearestSnap = tradesRepo.getSnapshotsInRange(
             eventTime.minusSeconds(180),
             eventTime.plusSeconds(180),
@@ -813,6 +896,8 @@ class PortfolioAnalyzerImpl(
     }
 
     companion object {
+        const val MAX_PREDECESSOR_GAP_SECONDS = 7L * 86400L
+
         /**
          * Placeholder resolver: flow-less calculations never resolve a basis,
          * so this instance is never invoked.

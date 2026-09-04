@@ -738,12 +738,26 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         amount: String,
         type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
         fee: String = "0",
-    ): LedgerEvent = LedgerEvent(
-        ledgerId = ledgerId,
-        time = timestamp,
-        type = type,
-        asset = asset,
-        amount = BigDecimal(amount),
-        fee = BigDecimal(fee),
-    )
+        refid: String? = null,
+    ): LedgerEvent {
+        val resolvedRefid = refid ?: when (type) {
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> {
+                val norm = Asset.normalizeLedgerAsset(asset).uppercase()
+                if (norm == Asset.USD) "FT-$ledgerId" else "tx-$ledgerId"
+            }
+
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> "WIRE-$ledgerId"
+
+            else -> null
+        }
+        return LedgerEvent(
+            ledgerId = ledgerId,
+            refid = resolvedRefid,
+            time = timestamp,
+            type = type,
+            asset = asset,
+            amount = BigDecimal(amount),
+            fee = BigDecimal(fee),
+        )
+    }
 }

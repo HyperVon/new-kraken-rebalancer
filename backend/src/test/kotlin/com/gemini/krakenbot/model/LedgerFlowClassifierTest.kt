@@ -33,40 +33,103 @@ class LedgerFlowClassifierTest : StringSpec() {
     )
 
     init {
-        "deposit defaults to owner capital" {
-            LedgerFlowClassifier.classify(event("1", "deposit", "100.00")) shouldBe FlowCategory.OWNER_CAPITAL
+        "bare deposit with insufficient evidence => AMBIGUOUS" {
+            LedgerFlowClassifier.classify(event("1", "deposit", "100.00")) shouldBe FlowCategory.AMBIGUOUS
+            LedgerFlowClassifier.classify(event("2", "deposit", "0.5", asset = "BTC")) shouldBe FlowCategory.AMBIGUOUS
         }
 
-        "withdrawal defaults to owner capital" {
-            LedgerFlowClassifier.classify(event("1", "withdrawal", "-50.00")) shouldBe FlowCategory.OWNER_CAPITAL
+        "bare withdrawal with insufficient evidence => AMBIGUOUS" {
+            LedgerFlowClassifier.classify(event("1", "withdrawal", "-50.00")) shouldBe FlowCategory.AMBIGUOUS
+            LedgerFlowClassifier.classify(event("2", "withdrawal", "-0.1", asset = "ETH")) shouldBe
+                FlowCategory.AMBIGUOUS
+        }
+
+        "clear external fiat deposit" {
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "100.00", refid = "FT123456"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(
+                event("2", "deposit", "5000.00", refid = "WIRE-FED-99"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(
+                event("3", "deposit", "250.00", refid = "SEPA-TRANSFER"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+        }
+
+        "clear external crypto deposit, if distinguishable" {
+            val txHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "0.5", asset = "BTC", refid = txHash),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(
+                event("2", "deposit", "10.0", asset = "ETH", refid = "0x$txHash"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(
+                event("3", "deposit", "1.0", asset = "SOL", refid = "tx-onchain-proof"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+        }
+
+        "Futures -> Spot deposit" {
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "1000.00", refid = "KF-futures-pnl"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("2", "deposit", "0.50", subtype = "spotfromfutures", asset = "BTC"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "Spot -> Futures withdrawal" {
+            LedgerFlowClassifier.classify(
+                event("1", "withdrawal", "-1000.00", refid = "KF-margin-topup"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("2", "withdrawal", "-0.50", subtype = "spottofutures", asset = "BTC"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "fee-bearing withdrawal if Kraken semantics make it identifiable" {
+            LedgerFlowClassifier.classify(
+                event("1", "withdrawal", "-50.00", fee = "0.25"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(
+                event("2", "withdrawal", "-0.1", asset = "BTC", fee = "0.0002"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+        }
+
+        "known internal subtype => INTERNAL_MOVE" {
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "10.00", subtype = "spotfromspot"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("2", "deposit", "10.00", subtype = "allocation"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("3", "withdrawal", "-10.00", subtype = "deallocation"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("4", "deposit", "10.00", subtype = "migration"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event("5", "transfer", "10.00", subtype = "spottostaking"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
         }
 
         "unpaired transfer defaults to internal move, never owner capital" {
             LedgerFlowClassifier.classify(event("1", "transfer", "25.00")) shouldBe FlowCategory.INTERNAL_MOVE
         }
 
-        "zero-fee crypto deposit is owner capital" {
-            LedgerFlowClassifier.classify(event("1", "deposit", "0.5", asset = "BTC")) shouldBe
-                FlowCategory.OWNER_CAPITAL
-        }
-
         "crypto deposit carrying a fee is exchange-side balance, not owner capital" {
-            // A bare deposit with a positive fee is not a simple user funding
+            // A deposit with a positive fee is not a simple user funding
             // event (e.g. conversion artifacts); its USD-equivalent is not
             // cleanly attributable, so ATH must not scale on it.
             LedgerFlowClassifier.classify(event("1", "deposit", "0.5", asset = "BTC", fee = "0.001")) shouldBe
                 FlowCategory.EXTERNAL_BALANCE
         }
 
-        "fiat deposit keeps owner-capital status even with a fee" {
+        "fiat deposit keeps owner-capital status with a fee" {
             LedgerFlowClassifier.classify(event("1", "deposit", "100.00", fee = "0.50")) shouldBe
                 FlowCategory.OWNER_CAPITAL
-            LedgerFlowClassifier.classify(event("1", "deposit", "100.00", asset = "ZUSD", fee = "0.50")) shouldBe
-                FlowCategory.OWNER_CAPITAL
-        }
-
-        "withdrawal keeps owner-capital status even with a fee" {
-            LedgerFlowClassifier.classify(event("1", "withdrawal", "-50.00", fee = "0.25")) shouldBe
+            LedgerFlowClassifier.classify(event("2", "deposit", "100.00", asset = "ZUSD", fee = "0.50")) shouldBe
                 FlowCategory.OWNER_CAPITAL
         }
 
@@ -88,24 +151,6 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.INTERNAL_MOVE
         }
 
-        "staking wallet and earn subtypes are internal moves" {
-            LedgerFlowClassifier.classify(
-                event("1", "transfer", "10.00", subtype = "spottostaking"),
-            ) shouldBe FlowCategory.INTERNAL_MOVE
-            LedgerFlowClassifier.classify(
-                event("2", "deposit", "10.00", subtype = "stakingfromspot"),
-            ) shouldBe FlowCategory.INTERNAL_MOVE
-            LedgerFlowClassifier.classify(
-                event("3", "deposit", "10.00", subtype = "allocation"),
-            ) shouldBe FlowCategory.INTERNAL_MOVE
-            LedgerFlowClassifier.classify(
-                event("4", "withdrawal", "-10.00", subtype = "deallocation"),
-            ) shouldBe FlowCategory.INTERNAL_MOVE
-            LedgerFlowClassifier.classify(
-                event("5", "deposit", "10.00", subtype = "migration"),
-            ) shouldBe FlowCategory.INTERNAL_MOVE
-        }
-
         "cross-asset refid group funding legs are ambiguous" {
             val legs =
                 listOf(
@@ -121,7 +166,7 @@ class LedgerFlowClassifierTest : StringSpec() {
             val result = LedgerFlowClassifier.classifyAll(
                 listOf(
                     event("1", "transfer", "25.00", refid = "R1", asset = "BTC"),
-                    event("2", "deposit", "100.00"),
+                    event("2", "deposit", "100.00", refid = "FT100"),
                 ),
             )
             result["1"] shouldBe FlowCategory.INTERNAL_MOVE
@@ -130,13 +175,13 @@ class LedgerFlowClassifierTest : StringSpec() {
 
         "blank subtype behaves like no subtype" {
             LedgerFlowClassifier.classify(
-                event("1", "deposit", "100.00", subtype = ""),
+                event("1", "deposit", "100.00", subtype = "", refid = "FT100"),
             ) shouldBe FlowCategory.OWNER_CAPITAL
         }
 
         "single-leg refid group still uses single rules" {
             LedgerFlowClassifier.classify(
-                event("1", "deposit", "100.00", refid = "SOLO"),
+                event("1", "deposit", "100.00", refid = "FT-SOLO"),
             ) shouldBe FlowCategory.OWNER_CAPITAL
         }
 
@@ -202,6 +247,71 @@ class LedgerFlowClassifierTest : StringSpec() {
 
         "unknown ledger types are unsupported" {
             LedgerFlowClassifier.classify(event("1", "mystery", "5.00")) shouldBe FlowCategory.UNSUPPORTED
+        }
+
+        "external fiat refid variations" {
+            LedgerFlowClassifier.classify(event("1", "deposit", "100.00", refid = "Q12345")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("2", "deposit", "100.00", refid = "ACH12345")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("3", "deposit", "100.00", refid = "SYNAPSE123")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("4", "deposit", "100.00", refid = "FEDWIRE123")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("5", "deposit", "100.00", refid = "BANK123")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+
+            LedgerFlowClassifier.classify(event("6", "deposit", "100.00", refid = "REF-WIRE-99")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("7", "deposit", "100.00", refid = "REF-SEPA-99")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("8", "deposit", "100.00", refid = "REF-ACH-99")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("9", "deposit", "100.00", refid = "REF-SYNAPSE-99")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("10", "deposit", "100.00", refid = "REF-FEDWIRE-99")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(event("11", "deposit", "100.00", refid = "REF-BANK-99")) shouldBe
+                FlowCategory.OWNER_CAPITAL
+        }
+
+        "external crypto refid variations" {
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "0.5", asset = "BTC", refid = "onchain-hash-123"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(
+                event("2", "deposit", "0.5", asset = "BTC", refid = "txid:0123456789"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(
+                event("3", "deposit", "0.5", asset = "BTC", refid = "arbitrary-ref"),
+            ) shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "internal refid variations" {
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "100.00", refid = "INTERNAL-TRANSFER-01"),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "withdrawal variations with zero fee" {
+            LedgerFlowClassifier.classify(
+                event("1", "withdrawal", "-100.00", fee = "0", refid = "WIRE-123", asset = "USD"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(
+                event("2", "withdrawal", "-0.1", fee = "0", refid = "0x" + "a".repeat(64), asset = "BTC"),
+            ) shouldBe FlowCategory.OWNER_CAPITAL
+            LedgerFlowClassifier.classify(
+                event("3", "withdrawal", "-0.1", fee = "0", refid = "non-external-ref", asset = "BTC"),
+            ) shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "blank or non-matching refid on fiat deposit falls back to AMBIGUOUS" {
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "100.00", refid = "   ", fee = "0"),
+            ) shouldBe FlowCategory.AMBIGUOUS
+            LedgerFlowClassifier.classify(
+                event("2", "deposit", "100.00", refid = "NON-MATCHING-REFID-123", fee = "0"),
+            ) shouldBe FlowCategory.AMBIGUOUS
         }
     }
 }

@@ -20,15 +20,23 @@ import java.math.BigDecimal
  *   netted: their legs fall back to single-row rules, except funding legs
  *   (`deposit`/`withdrawal`) in a multi-leg group, which become
  *   [FlowCategory.AMBIGUOUS] (part of a larger event, e.g. a conversion).
- * - `subtype` keywords: Kraken marks internal wallet moves with subtypes such
- *   as `spotfromspot`, `spot to futures`, `allocation`, or `migration`.
- * - Conservative funding rule: a bare `deposit`/`withdrawal` (no subtype) is
- *   [FlowCategory.OWNER_CAPITAL], except a crypto `deposit` carrying a fee —
- *   the fee never reaches the balance, so it is [FlowCategory.EXTERNAL_BALANCE]
- *   and the benchmark replays the drag in-kind. A funding row carrying any
- *   other subtype is [FlowCategory.AMBIGUOUS] — Kraken cannot reliably
- *   distinguish an external bank transfer from an internal wallet move there,
- *   so ATH scaling must not assume owner capital.
+ * - `subtype` and `refid` internal keywords: Kraken marks internal wallet moves
+ *   with subtypes such as `spotfromspot`, `spot to futures`, `allocation`, or
+ *   `migration`, or refids matching Futures signatures (e.g. `KF...` or `futures`).
+ * - Affirmative external funding rule: Kraken can represent internal Spot/Futures
+ *   movements as deposit or withdrawal rows. Absence of subtype is not proof of
+ *   external capital. Only classify as [FlowCategory.OWNER_CAPITAL] when affirmative
+ *   evidence proves external provenance:
+ *     - Fiat deposit: banking refid patterns (`FT...`, `WIRE`, `ACH`, `SEPA`,
+ *       `SYNAPSE`, `FEDWIRE`, `BANK`, `Q...`) or intermediary deposit fee > 0.
+ *     - Crypto deposit: verified on-chain transaction hash in `refid` (64 hex
+ *       chars, `0x...`, or `tx-...`) and zero fee. Crypto deposits carrying a fee
+ *       never reach the balance intact and classify as [FlowCategory.EXTERNAL_BALANCE].
+ *     - Withdrawal: `fee > 0` (Kraken charges network/wire fees for external
+ *       withdrawals; internal Spot/Futures transfers are fee-free) OR affirmative
+ *       external banking/on-chain refid.
+ *     - Insufficient evidence: bare deposits or bare zero-fee withdrawals without
+ *       affirmative external evidence fall back conservatively to [FlowCategory.AMBIGUOUS].
  * - Conservative default: an unpaired `transfer` with no internal subtype is
  *   [FlowCategory.INTERNAL_MOVE] (never owner capital).
  */
@@ -37,9 +45,9 @@ enum class FlowCategory {
     OWNER_CAPITAL,
 
     /**
-     * Economically unclear funding (e.g. a `deposit` with an internal-movement
-     * subtype Kraken also uses for wallet moves). Never scales ATH; fails
-     * closed in the Buy & Hold comparison.
+     * Economically unclear funding (e.g. a `deposit` or `withdrawal` with
+     * insufficient provenance to exclude internal Futures/wallet moves).
+     * Defers ATH updates fail-closed; fails closed in the Buy & Hold comparison.
      */
     AMBIGUOUS,
 
@@ -92,6 +100,9 @@ object LedgerFlowClassifier {
         )
 
     private val ZERO_NET_TOLERANCE = BigDecimal("0.00000001")
+    private val HEX_TXID_REGEX = Regex("^(0x)?[0-9a-fA-F]{64}$")
+    private val FIAT_BANKING_REFID_REGEX =
+        Regex("^(FT|Q[0-9A-Za-z]|WIRE|ACH|SEPA|SYNAPSE|FEDWIRE|BANK).*", RegexOption.IGNORE_CASE)
 
     /**
      * Classifies a single event without group context.
@@ -145,25 +156,44 @@ object LedgerFlowClassifier {
     }
 
     private fun classifySingle(event: LedgerEvent): FlowCategory {
-        if (isInternalSubtype(event.subtype)) return FlowCategory.INTERNAL_MOVE
+        if (isInternalSubtype(event.subtype) || isInternalRefid(event.refid)) {
+            return FlowCategory.INTERNAL_MOVE
+        }
         if (isFundingType(event.type) && !event.subtype.isNullOrBlank()) {
             return FlowCategory.AMBIGUOUS
         }
         return when (event.type) {
-            // A bare crypto deposit whose `amount` arrived intact is owner
-            // capital. A deposit carrying a fee is not: the ledger amount is
-            // the gross request, the fee never reaches the balance, and the
-            // net credit is what the benchmark would have to replay in-kind,
-            // so it classifies as EXTERNAL_BALANCE (conservative B&H drag).
-            // Fiat funding has no such fee ambiguity and stays owner capital.
-            KrakenApiConstants.LEDGER_TYPE_DEPOSIT ->
-                if (isFiatAsset(event.asset) || event.fee <= BigDecimal.ZERO) {
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> {
+                if (isFiatAsset(event.asset)) {
+                    if (event.fee > BigDecimal.ZERO || isExternalFiatRefid(event.refid)) {
+                        FlowCategory.OWNER_CAPITAL
+                    } else {
+                        FlowCategory.AMBIGUOUS
+                    }
+                } else {
+                    if (event.fee > BigDecimal.ZERO) {
+                        FlowCategory.EXTERNAL_BALANCE
+                    } else if (isExternalCryptoRefid(event.refid)) {
+                        FlowCategory.OWNER_CAPITAL
+                    } else {
+                        FlowCategory.AMBIGUOUS
+                    }
+                }
+            }
+
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> {
+                if (event.fee > BigDecimal.ZERO) {
+                    // Kraken charges fees on external withdrawals (mining or bank wire fee);
+                    // internal Spot/Futures wallet moves are fee-free.
+                    FlowCategory.OWNER_CAPITAL
+                } else if (isFiatAsset(event.asset) && isExternalFiatRefid(event.refid)) {
+                    FlowCategory.OWNER_CAPITAL
+                } else if (!isFiatAsset(event.asset) && isExternalCryptoRefid(event.refid)) {
                     FlowCategory.OWNER_CAPITAL
                 } else {
-                    FlowCategory.EXTERNAL_BALANCE
+                    FlowCategory.AMBIGUOUS
                 }
-
-            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> FlowCategory.OWNER_CAPITAL
+            }
 
             KrakenApiConstants.LEDGER_TYPE_TRANSFER -> FlowCategory.INTERNAL_MOVE
 
@@ -190,8 +220,8 @@ object LedgerFlowClassifier {
         }
     }
 
-    private fun isFundingType(type: String): Boolean = type == KrakenApiConstants.LEDGER_TYPE_DEPOSIT ||
-        type == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL
+    private fun isFundingType(type: String): Boolean =
+        type == KrakenApiConstants.LEDGER_TYPE_DEPOSIT || type == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL
 
     // normalizeLedgerAsset already folds the ZUSD alias into USD.
     private fun isFiatAsset(asset: String): Boolean = normalizeAsset(asset) == "USD"
@@ -204,5 +234,30 @@ object LedgerFlowClassifier {
         return INTERNAL_SUBTYPE_KEYWORDS.any { keyword ->
             normalized.contains(keyword.replace(" ", "").replace("_", "").replace("-", ""))
         }
+    }
+
+    private fun isInternalRefid(refid: String?): Boolean {
+        if (refid.isNullOrBlank()) return false
+        val normalized = refid.lowercase().replace("_", "").replace("-", "")
+        return normalized.contains("futures") ||
+            normalized.startsWith("kf") ||
+            normalized.contains("internal")
+    }
+
+    private fun isExternalFiatRefid(refid: String?): Boolean {
+        if (refid.isNullOrBlank()) return false
+        val trimmed = refid.trim()
+        if (FIAT_BANKING_REFID_REGEX.matches(trimmed)) return true
+        val lower = trimmed.lowercase()
+        return lower.contains("wire") || lower.contains("sepa") || lower.contains("ach") ||
+            lower.contains("synapse") || lower.contains("fedwire") || lower.contains("bank")
+    }
+
+    private fun isExternalCryptoRefid(refid: String?): Boolean {
+        if (refid.isNullOrBlank()) return false
+        val trimmed = refid.trim()
+        if (HEX_TXID_REGEX.matches(trimmed)) return true
+        val lower = trimmed.lowercase()
+        return lower.startsWith("tx-") || lower.startsWith("onchain") || lower.startsWith("txid:")
     }
 }

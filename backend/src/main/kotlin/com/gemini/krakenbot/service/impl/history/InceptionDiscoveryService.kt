@@ -101,82 +101,74 @@ class InceptionDiscoveryService(
             }
         }
 
-        // 3. One-time auto-detect from trade clusters. The first RETAINED
-        // burst is only the true first burst if no earlier burst could have
-        // been pruned: retention only ever removed trades older than the
-        // horizon, so a burst at/before it is unprovable and must not be
-        // cached as inception.
+        // 3. Check for upgraded vs fresh installation.
+        // An existing database where history was already seeded or existing
+        // trades/snapshots exist prior to this feature could have had older history
+        // pruned by the 90-day retention loop. Row age alone cannot prove completeness.
+        // On upgraded installs, auto-detection cannot be trusted as strategy inception
+        // without an explicit user-configured date.
+        if (isUpgradedInstall()) {
+            val earliestSnapshot = tradeRepository.getSnapshotsInRange(Instant.EPOCH, nowProvider()).firstOrNull()
+            val time = earliestSnapshot?.timestamp ?: nowProvider()
+            log.warn(
+                "Database is an upgraded installation with pre-existing history; " +
+                    "earlier history may have been pruned. Inception must be configured manually.",
+            )
+            return InceptionResolution(
+                inceptionTime = time,
+                inceptionSnapshot = null,
+                isAutoDetected = true,
+                confidence = InceptionConfidence.TRUNCATED,
+            )
+        }
+
+        // 4. Fresh installation: history starts from strategy start.
+        // One-time auto-detect from trade clusters.
         val detected = detectBurstInception()
         if (detected != null) {
-            val retentionHorizon = nowProvider().minusSeconds(
-                com.gemini.krakenbot.util.PrecisionConstants.HISTORICAL_DAYS_BACK.toLong() * 86400L,
-            )
-            if (!detected.inceptionTime.isBefore(retentionHorizon)) {
-                persistDetection(detected.inceptionTime, detected.inceptionSnapshot, source = INCEPTION_SOURCE_AUTO)
-                log.info("Auto-detected inception from rebalance burst at {}", detected.inceptionTime)
-                return detected
-            }
-            log.warn(
-                "Retained burst at {} predates trustworthy retention; inception must be configured manually",
-                detected.inceptionTime,
-            )
-            return InceptionResolution(
-                inceptionTime = detected.inceptionTime,
-                inceptionSnapshot = null,
-                isAutoDetected = true,
-                confidence = InceptionConfidence.TRUNCATED,
-            )
+            persistDetection(detected.inceptionTime, detected.inceptionSnapshot, source = INCEPTION_SOURCE_AUTO)
+            log.info("Auto-detected inception from rebalance burst at {}", detected.inceptionTime)
+            return detected
         }
 
-        // 4. Earliest retained snapshot: only a valid inception when the
-        // retained history provably starts at strategy start. Retention only
-        // ever removed data older than HISTORICAL_DAYS_BACK, so an earliest
-        // snapshot newer than that horizon means nothing could have been
-        // pruned. Otherwise the database is a migrated/truncated install and
-        // the earliest row must NOT be cached or presented as inception.
+        // 5. Earliest retained snapshot on a fresh database
         val earliestSnapshot = tradeRepository.getSnapshotsInRange(Instant.EPOCH, nowProvider()).firstOrNull()
         if (earliestSnapshot != null) {
-            // Retention only ever removed snapshots older than this horizon, so
-            // an earliest snapshot newer than it proves nothing was pruned.
-            val retentionHorizon = nowProvider().minusSeconds(
-                com.gemini.krakenbot.util.PrecisionConstants.HISTORICAL_DAYS_BACK.toLong() * 86400L,
-            )
-            val tradesExist = tradeRepository.getTradesInRange(Instant.EPOCH, nowProvider()).isNotEmpty()
-            if (!earliestSnapshot.timestamp.isBefore(retentionHorizon) ||
-                (!tradesExist && !tradeRepository.isHistorySeeded())
-            ) {
-                persistDetection(
-                    earliestSnapshot.timestamp,
-                    earliestSnapshot,
-                    source = INCEPTION_SOURCE_AUTO,
-                )
-                log.info("Falling back to earliest snapshot as inception: {}", earliestSnapshot.timestamp)
-                return InceptionResolution(
-                    inceptionTime = earliestSnapshot.timestamp,
-                    inceptionSnapshot = earliestSnapshot,
-                    isAutoDetected = true,
-                )
-            }
-            log.warn(
-                "Earliest retained snapshot at {} predates trustworthy retention; " +
-                    "inception must be configured manually",
+            persistDetection(
                 earliestSnapshot.timestamp,
+                earliestSnapshot,
+                source = INCEPTION_SOURCE_AUTO,
             )
+            log.info("Falling back to earliest snapshot as inception: {}", earliestSnapshot.timestamp)
             return InceptionResolution(
                 inceptionTime = earliestSnapshot.timestamp,
-                inceptionSnapshot = null,
+                inceptionSnapshot = earliestSnapshot,
                 isAutoDetected = true,
-                confidence = InceptionConfidence.TRUNCATED,
+                confidence = InceptionConfidence.CONFIDENT,
             )
         }
 
-        // 5. Default fallback to current time when database has no snapshots
+        // 6. Default fallback to current time when database has no snapshots
         val now = nowProvider()
         return InceptionResolution(
             inceptionTime = now,
             inceptionSnapshot = null,
             isAutoDetected = true,
         )
+    }
+
+    private suspend fun isUpgradedInstall(): Boolean {
+        val installType = tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE)
+        if (installType == INSTALL_TYPE_UPGRADED) return true
+        if (installType == INSTALL_TYPE_FRESH) return false
+
+        // No explicit install type recorded yet. Check durable database state:
+        // If history was already seeded before this feature was introduced,
+        // previous retention could have pruned old snapshots and trades.
+        val hasSeededHistory = tradeRepository.isHistorySeeded()
+        val recordedType = if (hasSeededHistory) INSTALL_TYPE_UPGRADED else INSTALL_TYPE_FRESH
+        tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE, recordedType)
+        return hasSeededHistory
     }
 
     suspend fun detectBurstInception(): InceptionResolution? {
@@ -258,6 +250,8 @@ class InceptionDiscoveryService(
         const val MAX_ANCHOR_PROXIMITY_SECONDS = 300L
         const val INCEPTION_SOURCE_CONFIGURED = "configured"
         const val INCEPTION_SOURCE_AUTO = "auto"
+        const val INSTALL_TYPE_FRESH = "fresh"
+        const val INSTALL_TYPE_UPGRADED = "upgraded"
 
         fun parseInceptionDate(text: String?): Instant? {
             if (text.isNullOrBlank()) return null

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures.assetSnapshot
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
@@ -3928,7 +3929,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     asset = "USD",
                     amount = "5000.00",
                     type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
-                    refid = "CARD-DEP-1",
+                    refid = "FT-CARD-DEP-1",
                 ),
                 ledgerEvent(
                     timestamp = now.plusSeconds(1800),
@@ -5836,15 +5837,27 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         balance: String? = null,
         ledgerId: String? = null,
         refid: String? = null,
-    ): LedgerEvent = LedgerEvent(
-        ledgerId = ledgerId ?: "ledger-$timestamp-$asset-$type",
-        refid = refid,
-        time = timestamp,
-        type = type,
-        asset = asset,
-        amount = BigDecimal(amount),
-        fee = BigDecimal(fee),
-        balance = balance?.let(::BigDecimal) ?: BigDecimal.ZERO,
-        hasAuthoritativeBalance = balance != null,
-    )
+    ): LedgerEvent {
+        val resolvedRefid = refid ?: when (type) {
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> {
+                val norm = Asset.normalizeLedgerAsset(asset).uppercase()
+                if (norm == Asset.USD) "FT-${ledgerId ?: "dep-$timestamp"}" else "tx-${ledgerId ?: "dep-$timestamp"}"
+            }
+
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> "WIRE-${ledgerId ?: "wdr-$timestamp"}"
+
+            else -> null
+        }
+        return LedgerEvent(
+            ledgerId = ledgerId ?: "ledger-$timestamp-$asset-$type",
+            refid = resolvedRefid,
+            time = timestamp,
+            type = type,
+            asset = asset,
+            amount = BigDecimal(amount),
+            fee = BigDecimal(fee),
+            balance = balance?.let(::BigDecimal) ?: BigDecimal.ZERO,
+            hasAuthoritativeBalance = balance != null,
+        )
+    }
 }
