@@ -33,6 +33,12 @@ interface PortfolioAnalyzer {
     suspend fun updateAthAndCalculateDrawdown(
         totalPortfolioValueUSD: BigDecimal,
         netExternalFlowUSD: BigDecimal,
+    ): BigDecimal = updateAthAndCalculateDrawdown(totalPortfolioValueUSD, netExternalFlowUSD, null)
+
+    suspend fun updateAthAndCalculateDrawdown(
+        totalPortfolioValueUSD: BigDecimal,
+        netExternalFlowUSD: BigDecimal,
+        balancesObservedAt: Instant?,
     ): BigDecimal
 
     fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal

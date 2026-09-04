@@ -580,6 +580,14 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 coEvery { repository.getSnapshotBefore(any()) } returns snapInception
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                // Bounded inception fallback queries [inception-300s, inception+30s];
+                // answer with the true inception snapshot, not the window snapshots.
+                coEvery {
+                    repository.getSnapshotsInRange(
+                        inceptionTime.minusSeconds(300),
+                        inceptionTime.plusSeconds(30),
+                    )
+                } returns listOf(snapInception)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
 

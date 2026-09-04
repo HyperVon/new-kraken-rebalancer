@@ -361,8 +361,22 @@ class TradeHistorySnapshotStore(
     suspend fun addSnapshot(snapshot: PortfolioSnapshot) {
         repository.saveSnapshot(snapshot)
         try {
+            // Lifetime retention contract: never prune anything at or after
+            // inception. Without resolved inception metadata, skip pruning
+            // entirely rather than destroying evidence future inception
+            // resolution (burst detect / earliest snapshot) depends on.
+            val inceptionEpochMs = repository.getSyncMetadata(
+                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+            )?.toLongOrNull()
+            if (inceptionEpochMs == null) {
+                log.debug("Skipping snapshot/trade prune: inception not yet resolved")
+                snapshotFlow.tryEmit(snapshot)
+                return
+            }
             val cutoff = Instant.now().minus(PrecisionConstants.HISTORICAL_DAYS_BACK.toLong(), ChronoUnit.DAYS)
-            val prunedSnapshots = repository.pruneSnapshotsOlderThan(cutoff)
+            val inceptionBound = Instant.ofEpochMilli(inceptionEpochMs).minusSeconds(5)
+            val effectiveCutoff = if (inceptionBound.isBefore(cutoff)) inceptionBound else cutoff
+            val prunedSnapshots = repository.pruneSnapshotsOlderThan(effectiveCutoff)
             if (prunedSnapshots > 0) {
                 log.info(
                     "Pruned {} snapshots older than {} days",
@@ -370,7 +384,7 @@ class TradeHistorySnapshotStore(
                     PrecisionConstants.HISTORICAL_DAYS_BACK,
                 )
             }
-            val prunedTrades = repository.pruneTradesOlderThan(cutoff)
+            val prunedTrades = repository.pruneTradesOlderThan(effectiveCutoff)
             if (prunedTrades > 0) {
                 log.info(
                     "Pruned {} trades older than {} days",

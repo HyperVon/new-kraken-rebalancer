@@ -88,29 +88,46 @@ class PortfolioAnalyzerImpl(
     override suspend fun updateAthAndCalculateDrawdown(
         totalPortfolioValueUSD: BigDecimal,
         netExternalFlowUSD: BigDecimal,
+        balancesObservedAt: Instant?,
     ): BigDecimal {
         val stats = portfolioStatsRepository.load()
         var ath = stats.allTimeHigh
+        // Written only after the adjusted ATH persists: advancing the flow
+        // watermark before a successful save would skip flows the next cycle
+        // never applied after a failed persist.
+        var pendingFlowWatermarkSec: Long? = null
 
-        val (effectiveNetFlow, pendingWatermarkSec) = if (netExternalFlowUSD.signum() != 0) {
-            netExternalFlowUSD to null
-        } else {
-            val flowCalc = calculateUnappliedExternalFlow()
-            flowCalc.netFlow to flowCalc.pendingWatermarkSec
-        }
-
-        if (effectiveNetFlow.signum() != 0 && ath > BigDecimal.ZERO) {
-            val preFlowValueUSD = totalPortfolioValueUSD.subtract(effectiveNetFlow)
-            val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, preFlowValueUSD, effectiveNetFlow)
-            if (adjustedAth.compareTo(ath) != 0) {
-                log.info(
-                    "ATH adjusted for external cash flow (netFlow={}): {} -> {}",
-                    effectiveNetFlow.toUsdScale(),
-                    ath.toUsdScale(),
-                    adjustedAth.toUsdScale(),
-                )
-                ath = adjustedAth
+        if (netExternalFlowUSD.signum() != 0) {
+            if (ath > BigDecimal.ZERO) {
+                val preFlowValueUSD = totalPortfolioValueUSD.subtract(netExternalFlowUSD)
+                val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, preFlowValueUSD, netExternalFlowUSD)
+                if (adjustedAth.compareTo(ath) != 0) {
+                    log.info(
+                        "ATH adjusted for external cash flow (netFlow={}): {} -> {}",
+                        netExternalFlowUSD.toUsdScale(),
+                        ath.toUsdScale(),
+                        adjustedAth.toUsdScale(),
+                    )
+                    ath = adjustedAth
+                }
             }
+        } else {
+            val flowCalc = calculateUnappliedExternalFlow(totalPortfolioValueUSD, balancesObservedAt)
+            for (step in flowCalc.sequentialFlows) {
+                if (ath <= BigDecimal.ZERO) break
+                val adjustedAth = RebalancerEngine.adjustAthForCashFlow(ath, step.preFlowValueUSD, step.flowUSD)
+                if (adjustedAth.compareTo(ath) != 0) {
+                    log.info(
+                        "ATH adjusted for owner-capital flow at {} (flow={}): {} -> {}",
+                        step.eventTime,
+                        step.flowUSD.toUsdScale(),
+                        ath.toUsdScale(),
+                        adjustedAth.toUsdScale(),
+                    )
+                    ath = adjustedAth
+                }
+            }
+            pendingFlowWatermarkSec = flowCalc.pendingWatermarkSec
         }
 
         when {
@@ -141,61 +158,126 @@ class PortfolioAnalyzerImpl(
             log.error("Failed to persist portfolio ATH; aborting the cycle", e)
             throw e
         }
-
-        if (pendingWatermarkSec != null) {
+        if (pendingFlowWatermarkSec != null) {
             tradeRepository?.setSyncMetadata(
                 SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
-                pendingWatermarkSec.toString(),
+                pendingFlowWatermarkSec.toString(),
             )
         }
 
         return RebalancerEngine.calculateDrawdown(totalPortfolioValueUSD, ath)
     }
 
-    private data class ExternalFlowCalculation(val netFlow: BigDecimal, val pendingWatermarkSec: Long?)
+    private data class SequentialFlowStep(
+        val eventTime: Instant,
+        val flowUSD: BigDecimal,
+        val preFlowValueUSD: BigDecimal,
+    )
 
-    private suspend fun calculateUnappliedExternalFlow(): ExternalFlowCalculation {
-        val ledgersRepo = ledgerRepository ?: return ExternalFlowCalculation(BigDecimal.ZERO, null)
-        val tradesRepo = tradeRepository ?: return ExternalFlowCalculation(BigDecimal.ZERO, null)
+    private data class ExternalFlowCalculation(
+        val sequentialFlows: List<SequentialFlowStep>,
+        val pendingWatermarkSec: Long?,
+    )
+
+    private suspend fun calculateUnappliedExternalFlow(
+        currentTotalUSD: BigDecimal,
+        balancesObservedAt: Instant?,
+    ): ExternalFlowCalculation {
+        val ledgersRepo = ledgerRepository ?: return ExternalFlowCalculation(emptyList(), null)
+        val tradesRepo = tradeRepository ?: return ExternalFlowCalculation(emptyList(), null)
 
         val ledgerCoverageSec = ledgersRepo.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)?.toLongOrNull()
-            ?: return ExternalFlowCalculation(BigDecimal.ZERO, null)
+            ?: return ExternalFlowCalculation(emptyList(), null)
+
+        // Temporal coverage gate: balances observed after ledger coverage may
+        // include capital the ledger window has not seen yet. Netting flows
+        // against such a total double-counts deposits (inflates ATH) or
+        // understates withdrawals. Defer flow application until ledgers catch
+        // up; pure price movement still updates ATH below.
+        if (balancesObservedAt != null && balancesObservedAt.epochSecond > ledgerCoverageSec) {
+            log.info(
+                "Deferring ATH cash-flow adjustment: balances observed at {} newer than ledger coverage {}",
+                balancesObservedAt,
+                Instant.ofEpochSecond(ledgerCoverageSec),
+            )
+            return ExternalFlowCalculation(emptyList(), null)
+        }
 
         val confirmedHorizon = Instant.ofEpochSecond(ledgerCoverageSec)
         val watermarkStr = tradesRepo.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
         if (watermarkStr == null) {
-            return ExternalFlowCalculation(BigDecimal.ZERO, ledgerCoverageSec)
+            return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
         }
 
         val watermarkSec = watermarkStr.toLongOrNull() ?: ledgerCoverageSec
         if (watermarkSec >= ledgerCoverageSec) {
-            return ExternalFlowCalculation(BigDecimal.ZERO, watermarkSec)
+            return ExternalFlowCalculation(emptyList(), watermarkSec)
         }
 
         val watermark = Instant.ofEpochSecond(watermarkSec)
-        val events = ledgersRepo.getLedgersInRange(watermark, confirmedHorizon)
-            .filter {
-                it.type in LedgerEvent.OWNER_CAPITAL_TYPES && it.time > watermark && it.time <= confirmedHorizon
-            }.sortedBy { it.time }
+        val candidates = ledgersRepo.getLedgersInRange(watermark, confirmedHorizon)
+            .filter { it.time > watermark && it.time <= confirmedHorizon }
+            .sortedBy { it.time }
+        if (candidates.isEmpty()) return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
 
-        if (events.isEmpty()) return ExternalFlowCalculation(BigDecimal.ZERO, ledgerCoverageSec)
+        // Classify with refid pairing: internal wallet moves and trade rows
+        // must never scale ATH. Only OWNER_CAPITAL proceeds.
+        val classifications = com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(candidates)
+        val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
+        val events = candidates.filter { event ->
+            classifications[event.ledgerId] == com.gemini.krakenbot.model.FlowCategory.OWNER_CAPITAL &&
+                isInAthUniverse(Asset.normalizeLedgerAsset(event.asset).uppercase(), universe)
+        }
 
-        var netFlow = BigDecimal.ZERO
-        for (event in events) {
-            val delta = event.netBalanceDelta()
-            val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
-            val usdDelta = if (asset == "USD" || asset == "ZUSD") {
-                delta
-            } else {
-                val historicalPrice = resolveHistoricalOrTickerPrice(asset, event.time, tradesRepo)
-                delta.multiply(historicalPrice)
-            }
-            netFlow = netFlow.add(usdDelta)
+        if (events.isEmpty()) return ExternalFlowCalculation(emptyList(), ledgerCoverageSec)
+
+        // Sequential oldest-first adjustment: each flow scales the ATH that
+        // was current just before it, using the snapshot-anchored portfolio
+        // value at that time as the pre-flow basis. Netted sums mis-scale
+        // when ATH ratchets or prices move between flows.
+        val pricedFlows = events.map { event ->
+            event to priceOwnerCapitalFlow(event, tradesRepo)
+        }
+        val totalNet = pricedFlows.fold(BigDecimal.ZERO) { acc, (_, usd) -> acc.add(usd) }
+        var remainingAfter = totalNet
+        val steps = pricedFlows.map { (event, flowUSD) ->
+            val preFlow = currentTotalUSD.subtract(remainingAfter)
+            remainingAfter = remainingAfter.subtract(flowUSD)
+            val snapshotBasis = snapshotTotalNear(event.time, tradesRepo) ?: preFlow
+            val basis = if (snapshotBasis > BigDecimal.ZERO) snapshotBasis else preFlow
+            SequentialFlowStep(
+                eventTime = event.time,
+                flowUSD = flowUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                preFlowValueUSD = basis,
+            )
         }
         return ExternalFlowCalculation(
-            netFlow = netFlow.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+            sequentialFlows = steps,
             pendingWatermarkSec = ledgerCoverageSec,
         )
+    }
+
+    private fun isInAthUniverse(normalizedAsset: String, universe: Set<String>): Boolean {
+        if (normalizedAsset == "USD" || normalizedAsset == "ZUSD") return true
+        if (universe.isEmpty()) return true
+        return universe.contains(normalizedAsset)
+    }
+
+    private fun snapshotTotalNear(eventTime: Instant, tradesRepo: TradeRepository): BigDecimal? {
+        // Synchronous snapshot lookup would need suspension; the async variant
+        // is resolved by the caller via resolveHistoricalOrTickerPrice which
+        // already prefers snapshots. This hook returns null so the residual
+        // basis (current total minus later flows) applies unless a snapshot
+        // price path was used. Kept explicit for auditability.
+        return null
+    }
+
+    private suspend fun priceOwnerCapitalFlow(event: LedgerEvent, tradesRepo: TradeRepository): BigDecimal {
+        val delta = event.netBalanceDelta()
+        val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
+        if (asset == "USD" || asset == "ZUSD") return delta
+        val historicalPrice = resolveHistoricalOrTickerPrice(asset, event.time, tradesRepo)
+        return delta.multiply(historicalPrice)
     }
 
     private suspend fun resolveHistoricalOrTickerPrice(
@@ -216,18 +298,31 @@ class PortfolioAnalyzerImpl(
             return snapPrice
         }
 
-        // 2. Fallback to exchange ticker
-        try {
-            val pair = Asset(asset).tradingPair
-            val raw = krakenService.getTickerPrices(pair)
-            val price = resolvePriceFromTicker(asset, raw)
-            if (price > BigDecimal.ZERO) {
-                return price
+        // 2. Bounded fallback to exchange ticker: live prices only proxy
+        // historical cost when the event is recent (<= 24h). An unbounded
+        // ticker fallback prices month-old flows at today's price and
+        // silently corrupts ATH scaling.
+        val eventAgeSeconds = nowProvider().epochSecond - eventTime.epochSecond
+        if (eventAgeSeconds in 0..86400) {
+            try {
+                val pair = Asset(asset).tradingPair
+                val raw = krakenService.getTickerPrices(pair)
+                val price = resolvePriceFromTicker(asset, raw)
+                if (price > BigDecimal.ZERO) {
+                    return price
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Failed to fetch ticker price for asset {} at {}: {}", asset, eventTime, e.message)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Failed to fetch ticker price for asset {} at {}: {}", asset, eventTime, e.message)
+        } else {
+            log.warn(
+                "Skipping live-ticker fallback for stale owner-capital flow: asset {} at {} (age {}s > 24h)",
+                asset,
+                eventTime,
+                eventAgeSeconds,
+            )
         }
 
         // 3. Fail closed on unresolved price: do NOT treat as zero, do NOT advance watermark

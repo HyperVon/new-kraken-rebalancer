@@ -204,6 +204,8 @@ ViewText:
   UNAVAILABLE_UNSUPPORTED_TRADE: "A recorded trade cannot be reconciled safely."
   UNAVAILABLE_AMBIGUOUS_TRADE_OWNERSHIP: "A recorded trade has ambiguous ownership and cannot be attributed safely."
   UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE: "A deposit, withdrawal, transfer, or incomplete trade history may exist."
+  UNAVAILABLE_INCEPTION_SNAPSHOT_PRUNED: "The inception baseline snapshot is no longer retained; the comparison cannot anchor safely."
+  UNAVAILABLE_UNSUPPORTED_LEDGER_TYPE: "A ledger entry of an unsupported type blocks safe comparison."
   UNAVAILABLE_INVALID_RESPONSE: "Comparison data could not be validated."
   COMPARISON_CONFIDENCE_ESTIMATED: "Estimated (external balance changes may affect precision)"
   # Staking rewards

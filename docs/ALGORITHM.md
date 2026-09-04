@@ -144,18 +144,25 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    is reached.
    - **Cash-Flow Neutrality**: Monotonic ATH tracking without flow adjustment would cause external deposits
      to artificially raise ATH and external withdrawals to plunge the bot into false drawdowns. To preserve true
-     strategy performance, external owner capital flows (`OWNER_CAPITAL_TYPES`: deposits, withdrawals, transfers)
-     adjust ATH proportionally:
+     strategy performance, owner capital flows adjust ATH proportionally:
      `Adjusted ATH = Current ATH * (Pre-Flow Value + Net External Flow) / Pre-Flow Value`
      This ensures an external deposit scales ATH without wiping out an existing drawdown percentage, and an external
      withdrawal scales ATH down without triggering artificial drawdown or forced fiat deployment. Staking rewards
-     and dividends (`REWARD_TYPES`) are investment performance that improve portfolio value and reduce drawdown
+     and dividends are investment performance that improve portfolio value and reduce drawdown
      without scaling ATH.
+   - **Ledger Flow Classification**: Kraken reuses coarse ledger types for economically distinct activity, so
+     `LedgerFlowClassifier` decides what counts as owner capital: only `deposit`/`withdrawal` scale ATH and seed
+     the Buy & Hold benchmark. `refid`-paired zero-net legs and internal-subtype rows are internal moves,
+     `trade` rows defer to `TradesHistory`, margin-family rows (`margin`, `rollover`, `settled`, `credit`,
+     `sale`) replay in-kind without scaling ATH, and unrecognized types fail closed. Flows for assets outside
+     the configured allocation universe are ignored.
    - **Ledger Watermark Ceiling & Safe Pricing**: ATH flow processing is upper-bounded by confirmed ledger
      synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events cannot be skipped
-     if a rebalance cycle runs before ledger polling catches up. Non-USD flows are priced using historical portfolio
-     snapshots within ±180s before falling back to live exchange tickers; unresolvable prices fail closed without
-     advancing the ATH watermark.
+     if a rebalance cycle runs before ledger polling catches up. When balances were observed after ledger
+     coverage, cash-flow adjustment defers a cycle rather than double-counting deposits. Flows apply
+     sequentially oldest-first against snapshot-anchored pre-flow values. Non-USD flows are priced using
+     historical portfolio snapshots within ±180s before falling back to live exchange tickers bounded to
+     events at most 24h old; unresolvable prices fail closed without advancing the ATH watermark.
    - **Safety & Persistence**: Missing or explicitly null stats represent an empty initial
      state. A database read or legacy-file migration failure aborts the analysis
      before ATH persistence or order planning, rather than treating the ATH as
@@ -437,11 +444,11 @@ The behavior is controlled by `rebalancer-config.json`:
 | `deviationTriggerPercent` | Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees). |
 | `minimumOrderSizeUSD` | Minimum significant USD deviation **and** minimum order notional. Assets below this USD deviation do not trigger; smaller orders are also skipped at execution. **Minimum `2` (enforced in `ConfigService` + UI `min="2"`).** |
 | `dryRun` | Suppresses order placement on the **active** backend. Server logs: `[DRY RUN]` live / `[EMULATOR DRY RUN]` simulation; activity log always `[DRY RUN]`. Orthogonal to `simulation`. |
-| `simulation` | If set to `true`, `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator). Empty DB pre-seeds ~**15 days** of snapshots at 6-hour steps. Snapshots/trades older than **90 days** are pruned on each `addSnapshot`. |
+| `simulation` | If set to `true`, `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator). Empty DB pre-seeds ~**15 days** of snapshots at 6-hour steps. Ledger entries are retained indefinitely; snapshots/trades prune only before `min(90-day cutoff, inception − 5s)` and never while inception is unresolved. |
 | `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
 | `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
 | `fiatDeploymentThresholdPercent` | Deadband threshold below which no fiat is deployed (0.0 to 100.0). Prevents micro-deployments during small drawdowns. |
-| `inceptionDate` | Strategy start date (ISO-8601 string or `YYYY-MM-DD`). When omitted or blank, auto-detected from bot order prefixes or initial trade bursts. |
+| `inceptionDate` | Strategy start date (ISO-8601 string or `YYYY-MM-DD`). When omitted or blank, auto-detected from bot order prefixes or initial trade bursts. Future-dated values are ignored. |
 
 ## Precision
 

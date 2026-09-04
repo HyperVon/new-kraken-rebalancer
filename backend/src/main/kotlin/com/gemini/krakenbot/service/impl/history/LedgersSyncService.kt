@@ -124,8 +124,8 @@ class LedgersSyncService(
         val effectiveLatest = calculateEffectiveLatestTime()
         // Incremental sync overlaps by 5 minutes so entries near the previous watermark are
         // re-fetched and deduplicated rather than missed. Unseeded initial sync and recovery both
-        // bound to SEED_HISTORY_LOOKBACK_DAYS like TradeHistorySyncService to avoid fetching
-        // historical entries that would be immediately pruned.
+        // bound to SEED_HISTORY_LOOKBACK_DAYS like TradeHistorySyncService. Ledger entries are
+        // retained indefinitely (lifetime retention contract), so no prune follows the fetch.
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
         val paginationStartSec = if (isRecoveringInitialSync) {
@@ -215,23 +215,16 @@ class LedgersSyncService(
         lastSyncTime = nowProvider()
     }
 
-    /** Mirrors the snapshot/trade retention window (HISTORICAL_DAYS_BACK) for ledger entries. */
+    /**
+     * Ledger entries are retained indefinitely. Lifetime reconstruction
+     * (ATH owner-capital netting and Buy & Hold benchmark replay) needs the
+     * full ledger history from inception onward; pruning by
+     * HISTORICAL_DAYS_BACK would silently corrupt both. Storage cost is
+     * negligible (small rows, one exchange).
+     */
+    @Suppress("UnusedPrivateMember", "UnusedParameter")
     private suspend fun pruneOldEntries(reference: Instant) {
-        try {
-            val cutoff = reference.minus(PrecisionConstants.HISTORICAL_DAYS_BACK.toLong(), ChronoUnit.DAYS)
-            val pruned = repository.pruneLedgersOlderThan(cutoff)
-            if (pruned > 0) {
-                log.info(
-                    "Pruned {} ledger entries older than {} days.",
-                    pruned,
-                    PrecisionConstants.HISTORICAL_DAYS_BACK,
-                )
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.error("Failed to prune old ledger entries", e)
-        }
+        // Intentional no-op: see retention contract above.
     }
 
     private suspend fun readSyncWatermark(): Instant? =

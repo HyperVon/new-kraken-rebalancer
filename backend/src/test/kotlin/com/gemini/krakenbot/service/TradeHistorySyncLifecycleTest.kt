@@ -155,6 +155,9 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
         "addSnapshot_HandlesPruneException" {
             runTest {
                 val tradeHistoryService = createService()
+                coEvery {
+                    repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns Instant.now().minusSeconds(86400L * 100).toEpochMilli().toString()
                 coEvery { repository.pruneSnapshotsOlderThan(any()) } throws RuntimeException("Prune failed")
 
                 val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
@@ -167,6 +170,9 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
         "addSnapshot_SuccessfullyPrunes" {
             runTest {
                 val tradeHistoryService = createService()
+                coEvery {
+                    repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns Instant.now().minusSeconds(86400L * 100).toEpochMilli().toString()
                 coEvery { repository.pruneSnapshotsOlderThan(any()) } returns 5
 
                 val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
@@ -175,6 +181,41 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                 coVerify(exactly = 1) { repository.saveSnapshot(snapshot) }
                 coVerify(exactly = 1) { repository.pruneSnapshotsOlderThan(any()) }
                 coVerify(exactly = 1) { repository.pruneTradesOlderThan(any()) }
+            }
+        }
+
+        "addSnapshot_PrunesAtRetentionCutoffWhenInceptionIsRecent" {
+            runTest {
+                val tradeHistoryService = createService()
+                coEvery {
+                    repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns Instant.now().minusSeconds(86400L * 10).toEpochMilli().toString()
+                coEvery { repository.pruneSnapshotsOlderThan(any()) } returns 2
+
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
+
+                tradeHistoryService.addSnapshot(snapshot)
+                coVerify(exactly = 1) { repository.saveSnapshot(snapshot) }
+                // Inception (10d ago) is newer than the 90d retention cutoff,
+                // so pruning is bounded by the retention window, not inception.
+                coVerify(exactly = 1) { repository.pruneSnapshotsOlderThan(any()) }
+                coVerify(exactly = 1) { repository.pruneTradesOlderThan(any()) }
+            }
+        }
+
+        "addSnapshot_SkipsPruneWhenInceptionUnresolved" {
+            runTest {
+                val tradeHistoryService = createService()
+                coEvery {
+                    repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns null
+
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
+
+                tradeHistoryService.addSnapshot(snapshot)
+                coVerify(exactly = 1) { repository.saveSnapshot(snapshot) }
+                coVerify(exactly = 0) { repository.pruneSnapshotsOlderThan(any()) }
+                coVerify(exactly = 0) { repository.pruneTradesOlderThan(any()) }
             }
         }
     }

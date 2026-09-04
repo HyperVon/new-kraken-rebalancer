@@ -130,6 +130,41 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
+        "resolveInception ignores a configured inception date in the future" {
+            runTest {
+                coEvery { configService.getConfig() } returns
+                    testConfig(inceptionDate = fixedNow.plusSeconds(86400 * 10).toString())
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns null
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns emptyList()
+                val earliest = dummySnapshot(fixedNow.minusSeconds(86400 * 20))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(earliest)
+
+                val result = service.resolveInception()
+
+                result.isAutoDetected shouldBe true
+                result.inceptionTime shouldBe earliest.timestamp
+            }
+        }
+
+        "resolveInception ignores cached inception timestamp in the future" {
+            runTest {
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns fixedNow.plusSeconds(86400 * 5).toEpochMilli().toString()
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns emptyList()
+                val earliest = dummySnapshot(fixedNow.minusSeconds(86400 * 20))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(earliest)
+
+                val result = service.resolveInception()
+
+                result.isAutoDetected shouldBe true
+                result.inceptionTime shouldBe earliest.timestamp
+            }
+        }
+
         "resolveInception auto-detects from rebalance trade burst when no date is configured" {
             runTest {
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = null)

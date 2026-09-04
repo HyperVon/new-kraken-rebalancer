@@ -455,7 +455,7 @@ class LedgersSyncServiceTest : StringSpec() {
             }
         }
 
-        "prunes ledger entries older than the 90-day retention window during finalize" {
+        "retains ledger entries indefinitely during finalize for lifetime reconstruction" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             repository.saveLedgers(
@@ -471,8 +471,10 @@ class LedgersSyncServiceTest : StringSpec() {
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
+            // Lifetime retention contract: even century-old entries stay so ATH
+            // owner-capital netting and Buy & Hold replay keep full history.
             val remaining = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plus(1, ChronoUnit.DAYS))
-            remaining.map { it.ledgerId } shouldBe listOf("ledger-1")
+            remaining.map { it.ledgerId }.toSet() shouldBe setOf("ledger-0", "ledger-1")
         }
 
         "existing seeded v1/v2 database triggers bounded backfill across 96 days for newly supported types" {

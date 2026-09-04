@@ -650,7 +650,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                         currentValuesUSD = mapOf(TestFixtures.A to BigDecimal("100.00")),
                     ),
                 )
-                coEvery { analyzer.updateAthAndCalculateDrawdown(any()) } returns BigDecimal.ZERO
+                coEvery { analyzer.updateAthAndCalculateDrawdown(any(), any(), any()) } returns BigDecimal.ZERO
                 every { analyzer.calculateFiatDeployment(any(), any()) } returns BigDecimal.ZERO
                 every { analyzer.calculateEffectiveUsdTarget(any()) } returns BigDecimal.ZERO
                 every { analyzer.calculateCryptoScaleFactor(any()) } returns BigDecimal.ONE

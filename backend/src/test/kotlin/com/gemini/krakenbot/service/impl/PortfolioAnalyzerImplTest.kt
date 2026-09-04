@@ -399,6 +399,192 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
+        "updateAth defers cash-flow adjustment when balances are newer than ledger coverage" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val coverageTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { coverageTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns coverageTime.epochSecond.toString()
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "L9",
+                            time = coverageTime.minusSeconds(60),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    )
+
+                // Balances observed after ledger coverage may already include
+                // the deposit; netting it would double-count. ATH ratchets on
+                // price movement only (12,000 > 10,000), watermark untouched.
+                val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = coverageTime.plusSeconds(120),
+                )
+
+                dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify {
+                    portfolioStatsRepository.save(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("12000.00")) == 0
+                        },
+                    )
+                }
+                coVerify(exactly = 0) {
+                    mockTrades.setSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "updateAth skips owner-capital flows for assets outside the configured universe" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0),
+                    ),
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "LX",
+                            time = fixedTime.minusSeconds(900),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "ETH",
+                            amount = BigDecimal("1.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "LB",
+                            time = fixedTime.minusSeconds(600),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "XXBT",
+                            amount = BigDecimal("0.10000000"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
+                    listOf(
+                        PortfolioSnapshot(
+                            timestamp = fixedTime.minusSeconds(600),
+                            totalValueUSD = BigDecimal("10000.00"),
+                            assets = mapOf(
+                                "BTC" to TestFixtures.assetSnapshot(
+                                    symbol = "BTC",
+                                    balance = BigDecimal("1.0"),
+                                    price = BigDecimal("50000.00"),
+                                    valueUSD = BigDecimal("50000.00"),
+                                    targetPercent = BigDecimal("50.0"),
+                                ),
+                            ),
+                            actions = emptyList(),
+                            drawdownPercent = BigDecimal.ZERO,
+                            fiatDeploymentPercent = BigDecimal.ZERO,
+                            effectiveUsdTargetPercent = BigDecimal.ZERO,
+                        ),
+                    )
+
+                // ETH is outside the configured universe so only the 0.1 BTC
+                // deposit (5,000 at the snapshot price) scales ATH: 10,000 to
+                // 15,000. Observed-at equals ledger coverage, so flows apply.
+                val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("15000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+
+                dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify {
+                    portfolioStatsRepository.save(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("15000.00")) == 0
+                        },
+                    )
+                }
+            }
+        }
+
+        "updateAth fails closed when an owner-capital flow cannot be priced" {
+            runTest {
+                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = portfolioStatsRepository,
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(86400L * 31).epochSecond.toString()
+                // Stale crypto deposit: no snapshot nearby and older than the
+                // 24h ticker bound, so pricing must fail closed, not zero it.
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        com.gemini.krakenbot.model.LedgerEvent(
+                            ledgerId = "LS",
+                            time = fixedTime.minusSeconds(86400 * 30),
+                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "XXBT",
+                            amount = BigDecimal("0.10000000"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
+
+                shouldThrow<IllegalStateException> {
+                    analyzerWithRepos.updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("10000.00"),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                    )
+                }
+            }
+        }
+
         "calculateCryptoScaleFactor and analyzeDeviations delegate to engine" {
             every { configService.getConfig() } returns TestFixtures.config(
                 settings = TestFixtures.settings(),

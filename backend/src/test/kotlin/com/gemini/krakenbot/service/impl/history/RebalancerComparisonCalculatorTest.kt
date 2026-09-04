@@ -4592,6 +4592,144 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.size shouldBe 2
         }
 
+        "calculate with known inception time but pruned snapshot returns INCEPTION_SNAPSHOT_PRUNED" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-10T12:00:00Z")
+            val t2 = Instant.parse("2026-06-10T13:00:00Z")
+
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t2,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = emptyList(),
+                inceptionSnapshot = null,
+                knownInceptionTime = t0,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED
+            result.baselineTimestamp shouldBe t0
+        }
+
+        "calculate with unknown ledger type returns UNSUPPORTED_LEDGER_TYPE" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val tMid = Instant.parse("2026-06-05T12:00:00Z")
+            val t1 = Instant.parse("2026-06-10T12:00:00Z")
+            val t2 = Instant.parse("2026-06-10T13:00:00Z")
+
+            val inceptionSnap = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t2,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val mystery = ledgerEvent(
+                timestamp = tMid,
+                asset = "USD",
+                amount = "5.00",
+                type = "mystery",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = listOf(mystery),
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
+        }
+
+        "calculate skips internal transfers and trade-type ledgers in the benchmark" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val tMid = Instant.parse("2026-06-05T12:00:00Z")
+            val t1 = Instant.parse("2026-06-10T12:00:00Z")
+            val t2 = Instant.parse("2026-06-10T13:00:00Z")
+
+            val inceptionSnap = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val s2 = snapshot(
+                timestamp = t2,
+                totalValueUSD = "100000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
+                ),
+            )
+            val transfer = ledgerEvent(
+                timestamp = tMid,
+                asset = "USD",
+                amount = "500.00",
+                type = "transfer",
+            )
+            val tradeRow = ledgerEvent(
+                timestamp = tMid.plusSeconds(60),
+                asset = "BTC",
+                amount = "0.01000000",
+                type = "trade",
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = listOf(transfer, tradeRow),
+                inceptionSnapshot = inceptionSnap,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            result.points[0].buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+        }
+
         "calculate with inception snapshot whose asset universe differs returns ASSET_UNIVERSE_CHANGED" {
             val t0 = now.minusSeconds(86400 * 30)
             val t1 = now

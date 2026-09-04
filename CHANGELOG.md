@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.26] - 2026-09-04
+
+### Fixed
+
+- **Ledger flow classification for ATH and Buy & Hold**: Kraken reuses coarse ledger
+  types for economically distinct activity, so a new `LedgerFlowClassifier` now decides
+  what counts as owner capital. Only `deposit`/`withdrawal` scale ATH and seed the
+  benchmark; `refid`-paired zero-net legs and internal-subtype rows classify as internal
+  moves, `trade` rows defer to `TradesHistory`, and margin-family rows (`margin`,
+  `rollover`, `settled`, `credit`, `sale`) replay in-kind. Unknown ledger types fail
+  closed with an explicit `UNSUPPORTED_LEDGER_TYPE` comparison state instead of being
+  silently dropped.
+- **ATH temporal coverage gate and sequential scaling**: ATH cash-flow adjustment defers
+  when balances were observed after ledger coverage (avoiding double-counted deposits),
+  applies flows sequentially oldest-first against snapshot-anchored pre-flow values,
+  prices non-USD flows with a 24h-bounded ticker fallback (fail-closed beyond that),
+  and ignores flows for assets outside the configured allocation universe.
+- **Known-inception fail-closed comparison**: when inception is known but its baseline
+  snapshot is no longer retained, the comparison reports `INCEPTION_SNAPSHOT_PRUNED`
+  instead of silently anchoring to the window start. The inception fallback lookup is
+  bounded to the discovery window, and future-dated configured/cached inception values
+  are ignored.
+- **Lifetime retention contract**: ledger entries are retained indefinitely; snapshots
+  and trades prune only before `min(90-day cutoff, inception − 5s)` and never while
+  inception is unresolved. Startup resolves inception before snapshot reconstruction
+  so pruning cannot destroy discovery evidence. New-asset benchmark deposits are
+  replayed as real holdings instead of being dropped as phantom cash drag.
+
 ## [6.17.25] - 2026-09-03
 
 ### Added

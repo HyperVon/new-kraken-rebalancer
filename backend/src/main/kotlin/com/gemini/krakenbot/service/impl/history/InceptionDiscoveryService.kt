@@ -27,7 +27,13 @@ class InceptionDiscoveryService(
     suspend fun resolveInception(): InceptionResolution {
         val settings = configService.getConfig().settings
         // 1. Check user-configured inception date
-        val configured = parseInceptionDate(settings.inceptionDate)
+        val parsedConfigured = parseInceptionDate(settings.inceptionDate)
+        val configured = if (parsedConfigured != null && parsedConfigured.isAfter(nowProvider())) {
+            log.warn("Ignoring configured inception date in the future: {}", parsedConfigured)
+            null
+        } else {
+            parsedConfigured
+        }
         if (configured != null) {
             val snapshot = findClosestSnapshot(configured)
             tradeRepository.setSyncMetadata(
@@ -51,17 +57,21 @@ class InceptionDiscoveryService(
         val cachedEpoch = tradeRepository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)?.toLongOrNull()
         if (cachedEpoch != null && cachedEpoch > 0) {
             val cachedTime = Instant.ofEpochMilli(cachedEpoch)
-            val snapshot = findClosestSnapshot(cachedTime)
-            if (snapshot != null) {
-                tradeRepository.getSnapshotId(snapshot.timestamp)?.let { id ->
-                    tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
+            if (cachedTime.isAfter(nowProvider())) {
+                log.warn("Ignoring cached inception timestamp in the future: {}", cachedTime)
+            } else {
+                val snapshot = findClosestSnapshot(cachedTime)
+                if (snapshot != null) {
+                    tradeRepository.getSnapshotId(snapshot.timestamp)?.let { id ->
+                        tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
+                    }
                 }
+                return InceptionResolution(
+                    inceptionTime = cachedTime,
+                    inceptionSnapshot = snapshot,
+                    isAutoDetected = true,
+                )
             }
-            return InceptionResolution(
-                inceptionTime = cachedTime,
-                inceptionSnapshot = snapshot,
-                isAutoDetected = true,
-            )
         }
 
         // 3. One-time auto-detect from trade clusters

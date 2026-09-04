@@ -191,10 +191,14 @@ class PortfolioManagerImpl(
     private suspend fun runLoopBody() {
         // Startup syncs establish their own session/backend pin; they are not grouped under the
         // cycle-wide execution session/backend pin.
+        // Inception resolves before snapshot reconstruction/pruning so
+        // prune logic can honor the lifetime retention contract (never
+        // prune at or after inception). Burst detection needs trades, so
+        // ledgers + trades sync first.
         synchronizeLedgers("on startup")
         synchronizeTrades("on startup")
-        synchronizeHistoricalSnapshots("on startup")
         resolveInception("on startup")
+        synchronizeHistoricalSnapshots("on startup")
 
         try {
             // Hot SharedFlow + collectLatest: config changes restart an idle delay immediately.
@@ -395,7 +399,7 @@ class PortfolioManagerImpl(
 
         val drawdownPct =
             portfolioAnalyzer
-                .updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
+                .updateAthAndCalculateDrawdown(totalPortfolioValueUSD, BigDecimal.ZERO, preObservedAt)
         val hasDeployableCryptoTarget =
             config.allocations.any { allocation ->
                 !allocation.symbol.isUsd && allocation.targetPercent > 0.0

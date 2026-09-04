@@ -54,7 +54,21 @@ class TradeHistoryQueryService(
         val inceptionResolution = inceptionDiscoveryService?.resolveInception()
         val inceptionSnapshot = inceptionResolution?.inceptionSnapshot
             ?: inceptionResolution?.inceptionTime?.let { time ->
-                repository.getSnapshotBefore(time.plusSeconds(30))
+                // Bounded fallback: only accept a snapshot within the same
+                // +/-300s discovery window used by InceptionDiscoveryService.
+                // An unbounded getSnapshotBefore() here silently anchored the
+                // benchmark to an unrelated months-old snapshot when inception
+                // was known but its snapshot had been pruned.
+                val candidates =
+                    repository.getSnapshotsInRange(
+                        time.minusSeconds(300),
+                        time.plusSeconds(30),
+                    )
+                candidates.minByOrNull {
+                    kotlin.math.abs(
+                        it.timestamp.epochSecond - time.epochSecond,
+                    )
+                }
             }
 
         val anchorSnapshot = repository.getSnapshotBefore(firstTimestamp)
@@ -69,6 +83,10 @@ class TradeHistoryQueryService(
             .plusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
         val trades = getTradesInRange(queryFrom, queryTo)
+        // Closed world: LedgersSyncService only fetches EXTERNAL_BALANCE_TYPES,
+        // so unknown types cannot arrive here. LedgerFlowClassifier inside
+        // RebalancerComparisonCalculator is the second layer: it replays the
+        // margin-family in-kind and fails closed on anything unrecognized.
         val ledgers =
             ledgerRepository
                 .getLedgersInRange(queryFrom, queryTo)
@@ -91,6 +109,7 @@ class TradeHistoryQueryService(
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             anchorSnapshot = anchorSnapshot,
             inceptionSnapshot = inceptionSnapshot,
+            knownInceptionTime = inceptionResolution?.inceptionTime,
         )
     }
 

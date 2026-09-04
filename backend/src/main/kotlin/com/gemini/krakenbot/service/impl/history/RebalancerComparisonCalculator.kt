@@ -39,7 +39,18 @@ object RebalancerComparisonCalculator {
         knownRebalancerOrderTxids: Set<String> = emptySet(),
         anchorSnapshot: PortfolioSnapshot? = null,
         inceptionSnapshot: PortfolioSnapshot? = null,
+        knownInceptionTime: Instant? = null,
     ): RebalancerComparison {
+        if (inceptionSnapshot == null && knownInceptionTime != null) {
+            // Fail closed: inception is known but its baseline snapshot is no
+            // longer retained (pruned). Anchoring B&H to the window start
+            // would silently compare against the wrong baseline.
+            return unavailable(
+                reason = ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED,
+                unavailableAt = snapshots.lastOrNull()?.timestamp,
+                baselineTimestamp = knownInceptionTime,
+            )
+        }
         if (snapshots.size < 2) {
             val firstTime = snapshots.firstOrNull()?.timestamp
             return unavailable(
@@ -121,9 +132,26 @@ object RebalancerComparisonCalculator {
         val windowObservationStart = validationSnapshots.first().balancesObservedAt
             ?: validationSnapshots.first().timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
+        // Ledger types outside Kraken's documented set cannot be replayed
+        // safely; surface UNAVAILABLE instead of silently dropping a
+        // balance-affecting flow.
+        val ledgerClassifications = com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(rewards)
+        val unsupportedLedger = rewards.firstOrNull {
+            ledgerClassifications[it.ledgerId] == com.gemini.krakenbot.model.FlowCategory.UNSUPPORTED
+        }
+        if (unsupportedLedger != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE,
+                unavailableAt = unsupportedLedger.time,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
+
         val intermediateLedgers = if (baseline.timestamp < windowObservationStart) {
             rewards.filter {
                 it.type in externalBalanceLedgerTypes &&
+                    ledgerClassifications[it.ledgerId] != com.gemini.krakenbot.model.FlowCategory.INTERNAL_MOVE &&
+                    ledgerClassifications[it.ledgerId] != com.gemini.krakenbot.model.FlowCategory.TRADE_IGNORED &&
                     it.time > baseline.timestamp &&
                     it.time <= windowObservationStart
             }.map { ReconciledLedger(it, it.time, it.netBalanceDelta()) }
@@ -1143,8 +1171,16 @@ object RebalancerComparisonCalculator {
         baseline: PortfolioSnapshot,
     ): List<BenchmarkEvent> {
         val events = mutableListOf<BenchmarkEvent>()
+        val classifications =
+            com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(ledgers.map { it.ledger })
         for (reconciledLedger in ledgers) {
             val ledger = reconciledLedger.ledger
+            val category = classifications[ledger.ledgerId]
+            if (category == com.gemini.krakenbot.model.FlowCategory.INTERNAL_MOVE ||
+                category == com.gemini.krakenbot.model.FlowCategory.TRADE_IGNORED
+            ) {
+                continue
+            }
             if (!reconciledLedger.embeddedInBaseline &&
                 reconciledLedger.timestamp > baseline.timestamp &&
                 (baseline.balancesObservedAt == null || ledger.time > baseline.balancesObservedAt)
@@ -1183,9 +1219,11 @@ object RebalancerComparisonCalculator {
         when (event) {
             is BenchmarkEvent.ExternalBalance -> {
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-                if (symbol in balances) {
-                    balances[symbol] = balances.getValue(symbol).add(event.netAmount)
-                }
+                // Owner-capital deposits of a new asset (and yield in a new
+                // asset) are real benchmark holdings. Dropping them because
+                // the baseline lacked the symbol understates Buy & Hold and
+                // creates phantom cash drag.
+                balances[symbol] = (balances[symbol] ?: BigDecimal.ZERO).add(event.netAmount)
             }
 
             is BenchmarkEvent.Trade -> {
@@ -1310,10 +1348,10 @@ object RebalancerComparisonCalculator {
             val price = if (symbol == Asset.USD) {
                 BigDecimal.ONE
             } else {
-                snapshot.assets[symbol]?.price
-                    ?: error(
-                        "Asset $symbol missing in snapshot ${snapshot.timestamp}; validatePrices should have caught this",
-                    )
+                // New-asset deposits after baseline legitimately lack a
+                // baseline price; skip symbols the current snapshot cannot
+                // price rather than crashing the comparison.
+                snapshot.assets[symbol]?.price ?: continue
             }
             val product = balance.multiply(price)
             total = total.add(product)
