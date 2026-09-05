@@ -166,10 +166,10 @@ class LedgerFlowClassifierTest : StringSpec() {
         "explicit internal marker remains neutral in linked funding plumbing" {
             val result = LedgerFlowClassifier.classifyAll(
                 listOf(
-                    event("deposit", "deposit", "100.00", refid = "futures-transfer"),
-                    event("spend", "spend", "-60.00", refid = "futures-transfer"),
+                    event("deposit", "deposit", "100.00", refid = "documented-internal", subtype = "spotfromfutures"),
+                    event("spend", "spend", "-60.00", refid = "documented-internal"),
                 ),
-                FundingProvenanceResolver { FundingEvidence.EXTERNAL },
+                FundingProvenanceResolver.NONE,
             )
 
             result["deposit"] shouldBe FlowCategory.INTERNAL_MOVE
@@ -185,7 +185,7 @@ class LedgerFlowClassifierTest : StringSpec() {
                         "spend",
                         "-60.00",
                         refid = "PLUMB-CONFLICT",
-                        subtype = "futures-transfer",
+                        subtype = "spottofutures",
                     ),
                 ),
                 FundingProvenanceResolver { FundingEvidence.EXTERNAL },
@@ -290,22 +290,22 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.AMBIGUOUS
         }
 
-        "Futures -> Spot deposit with refid or subtype" {
+        "opaque Futures-looking refids do not prove internal funding" {
             LedgerFlowClassifier.classify(
                 event("1", "deposit", "1000.00", refid = "KF-futures-pnl"),
-            ) shouldBe FlowCategory.INTERNAL_MOVE
+            ) shouldBe FlowCategory.AMBIGUOUS
             LedgerFlowClassifier.classify(
                 event("2", "deposit", "0.50", subtype = "spotfromfutures", asset = "BTC"),
             ) shouldBe FlowCategory.INTERNAL_MOVE
             LedgerFlowClassifier.classify(
                 event("3", "deposit", "100.00", refid = "INTERNAL-TRANSFER-01"),
-            ) shouldBe FlowCategory.INTERNAL_MOVE
+            ) shouldBe FlowCategory.AMBIGUOUS
         }
 
-        "Spot -> Futures withdrawal with refid or subtype" {
+        "opaque Futures-looking withdrawal refid does not prove internal funding" {
             LedgerFlowClassifier.classify(
                 event("1", "withdrawal", "-1000.00", refid = "KF-margin-topup"),
-            ) shouldBe FlowCategory.INTERNAL_MOVE
+            ) shouldBe FlowCategory.AMBIGUOUS
             LedgerFlowClassifier.classify(
                 event("2", "withdrawal", "-0.50", subtype = "spottofutures", asset = "BTC"),
             ) shouldBe FlowCategory.INTERNAL_MOVE
@@ -329,8 +329,168 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.INTERNAL_MOVE
         }
 
-        "unpaired transfer defaults to internal move, never owner capital" {
-            LedgerFlowClassifier.classify(event("1", "transfer", "25.00")) shouldBe FlowCategory.INTERNAL_MOVE
+        "earn subtypes preserve reward versus allocation semantics" {
+            LedgerFlowClassifier.classify(
+                event("earn-reward", KrakenApiConstants.LEDGER_TYPE_EARN, "0.10", subtype = "reward", asset = "ETH"),
+            ) shouldBe FlowCategory.EXTERNAL_BALANCE
+            LedgerFlowClassifier.classify(
+                event(
+                    "earn-allocation",
+                    KrakenApiConstants.LEDGER_TYPE_EARN,
+                    "-1.00",
+                    subtype = "allocation",
+                    asset = "ETH",
+                ),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event(
+                    "earn-deallocation",
+                    KrakenApiConstants.LEDGER_TYPE_EARN,
+                    "1.00",
+                    subtype = "deallocation",
+                    asset = "ETH",
+                ),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event(
+                    "earn-autoallocate",
+                    KrakenApiConstants.LEDGER_TYPE_EARN,
+                    "-1.00",
+                    subtype = "autoallocate",
+                    asset = "ETH",
+                ),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+            LedgerFlowClassifier.classify(
+                event(
+                    "earn-migration",
+                    KrakenApiConstants.LEDGER_TYPE_EARN,
+                    "1.00",
+                    subtype = "migration",
+                    asset = "ETH",
+                ),
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "reward predicate recognizes only legacy rewards and earn reward" {
+            LedgerEvent.isRewardEvent(event("staking", KrakenApiConstants.LEDGER_TYPE_STAKING, "1.00")) shouldBe true
+            LedgerEvent.isRewardEvent(
+                event("earn-reward", KrakenApiConstants.LEDGER_TYPE_EARN, "1.00", subtype = " Reward "),
+            ) shouldBe true
+            LedgerEvent.isRewardEvent(
+                event("earn-allocation", KrakenApiConstants.LEDGER_TYPE_EARN, "1.00", subtype = "allocation"),
+            ) shouldBe false
+            LedgerEvent.isRewardEvent(event("deposit", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "1.00")) shouldBe false
+        }
+
+        "unknown earn subtype is fail-closed" {
+            LedgerFlowClassifier.classify(
+                event("earn-unknown", KrakenApiConstants.LEDGER_TYPE_EARN, "1.00", subtype = "bonus", asset = "ETH"),
+            ) shouldBe FlowCategory.AMBIGUOUS
+            LedgerFlowClassifier.classify(
+                event("earn-missing", KrakenApiConstants.LEDGER_TYPE_EARN, "1.00", asset = "ETH"),
+            ) shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "documented transfer distribution semantics are performance" {
+            LedgerFlowClassifier.classify(
+                event("airdrop", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "airdrop", asset = "ETH"),
+            ) shouldBe FlowCategory.EXTERNAL_BALANCE
+            LedgerFlowClassifier.classify(
+                event("fork", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "fork", asset = "ETH"),
+            ) shouldBe FlowCategory.EXTERNAL_BALANCE
+            LedgerFlowClassifier.classify(
+                event(
+                    "distribution",
+                    KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                    "1.00",
+                    subtype = "distribution",
+                    asset = "ETH",
+                ),
+            ) shouldBe FlowCategory.EXTERNAL_BALANCE
+            LedgerFlowClassifier.classify(
+                event("reward", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "reward", asset = "ETH"),
+            ) shouldBe FlowCategory.EXTERNAL_BALANCE
+        }
+
+        "authoritative transfer provenance overrides an opaque refid" {
+            val external = FundingProvenanceResolver { FundingEvidence.EXTERNAL }
+            val internal = FundingProvenanceResolver { FundingEvidence.INTERNAL }
+
+            LedgerFlowClassifier.classify(
+                event("external-transfer", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", refid = "KF-opaque"),
+                external,
+            ) shouldBe FlowCategory.EXTERNAL_BALANCE
+            LedgerFlowClassifier.classify(
+                event("internal-transfer", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", refid = "futures-opaque"),
+                internal,
+            ) shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "known internal transfer subtype conflicts with authoritative external evidence" {
+            LedgerFlowClassifier.classify(
+                event(
+                    "contradictory-transfer",
+                    KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                    "1.00",
+                    subtype = "spottofutures",
+                ),
+                FundingProvenanceResolver { FundingEvidence.EXTERNAL },
+            ) shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "funding and transfer semantic conflicts remain ambiguous" {
+            LedgerFlowClassifier.classify(
+                event(
+                    "contradictory-deposit",
+                    KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    "1.00",
+                    subtype = "spotfromfutures",
+                ),
+                FundingProvenanceResolver { FundingEvidence.EXTERNAL },
+            ) shouldBe FlowCategory.AMBIGUOUS
+            LedgerFlowClassifier.classify(
+                event(
+                    "contradictory-airdrop",
+                    KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                    "1.00",
+                    subtype = "airdrop",
+                ),
+                FundingProvenanceResolver { FundingEvidence.INTERNAL },
+            ) shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "internal and external authoritative records conflict fail-closed" {
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "CONFLICT",
+                        txid = "wire-1",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = now,
+                        status = "Success",
+                        method = "Wire",
+                    ),
+                ),
+                internalTransfers = listOf(
+                    InternalTransferRecord(
+                        refid = "CONFLICT",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = now,
+                        ledgerType = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                ),
+            )
+
+            LedgerFlowClassifier.classify(
+                event("conflict", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00", refid = "CONFLICT"),
+                resolver,
+            ) shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "unpaired transfer with no evidence is ambiguous" {
+            LedgerFlowClassifier.classify(event("1", "transfer", "25.00")) shouldBe FlowCategory.AMBIGUOUS
         }
 
         "unrecognized subtype on funding is ambiguous, never owner capital" {
@@ -372,14 +532,150 @@ class LedgerFlowClassifierTest : StringSpec() {
             result["2"] shouldBe FlowCategory.AMBIGUOUS
         }
 
-        "non-funding legs in a linked group still use single rules" {
+        "nonzero linked transfer legs without internal evidence remain ambiguous" {
             val legs = listOf(
                 event("1", "transfer", "25.00", refid = "R3", asset = "BTC"),
                 event("2", "transfer", "-10.00", refid = "R3", asset = "BTC"),
             )
             val result = LedgerFlowClassifier.classifyAll(legs)
-            result["1"] shouldBe FlowCategory.INTERNAL_MOVE
-            result["2"] shouldBe FlowCategory.INTERNAL_MOVE
+            result["1"] shouldBe FlowCategory.AMBIGUOUS
+            result["2"] shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "zero-net pairing rejects performance, trade, unknown, and semantic external legs" {
+            val performance = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("staking-in", KrakenApiConstants.LEDGER_TYPE_STAKING, "1.00", refid = "STAKING-PAIR"),
+                    event("staking-out", KrakenApiConstants.LEDGER_TYPE_STAKING, "-1.00", refid = "STAKING-PAIR"),
+                ),
+            )
+            performance.values.toSet() shouldBe setOf(FlowCategory.EXTERNAL_BALANCE)
+
+            val trades = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("trade-in", KrakenApiConstants.LEDGER_TYPE_TRADE, "1.00", refid = "TRADE-PAIR"),
+                    event("trade-out", KrakenApiConstants.LEDGER_TYPE_TRADE, "-1.00", refid = "TRADE-PAIR"),
+                ),
+            )
+            trades.values.toSet() shouldBe setOf(FlowCategory.TRADE_IGNORED)
+
+            val unsupported = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("unknown-in", "mystery", "1.00", refid = "UNKNOWN-PAIR"),
+                    event("unknown-out", "mystery", "-1.00", refid = "UNKNOWN-PAIR"),
+                ),
+            )
+            unsupported.values.toSet() shouldBe setOf(FlowCategory.UNSUPPORTED)
+
+            val earnUnknown = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "earn-unknown-in",
+                        KrakenApiConstants.LEDGER_TYPE_EARN,
+                        "1.00",
+                        refid = "EARN-UNKNOWN-PAIR",
+                        subtype = "bonus",
+                        asset = "ETH",
+                    ),
+                    event(
+                        "earn-unknown-out",
+                        KrakenApiConstants.LEDGER_TYPE_EARN,
+                        "-1.00",
+                        refid = "EARN-UNKNOWN-PAIR",
+                        subtype = "bonus",
+                        asset = "ETH",
+                    ),
+                ),
+            )
+            earnUnknown.values.toSet() shouldBe setOf(FlowCategory.AMBIGUOUS)
+
+            val earnInternal = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "earn-internal-in",
+                        KrakenApiConstants.LEDGER_TYPE_EARN,
+                        "1.00",
+                        refid = "EARN-INTERNAL-PAIR",
+                        subtype = "allocation",
+                        asset = "ETH",
+                    ),
+                    event(
+                        "earn-internal-out",
+                        KrakenApiConstants.LEDGER_TYPE_EARN,
+                        "-1.00",
+                        refid = "EARN-INTERNAL-PAIR",
+                        subtype = "deallocation",
+                        asset = "ETH",
+                    ),
+                ),
+            )
+            earnInternal.values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+
+            val transferReward = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "transfer-reward-in",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "1.00",
+                        refid = "TRANSFER-REWARD-PAIR",
+                        subtype = "reward",
+                        asset = "ETH",
+                    ),
+                    event(
+                        "transfer-reward-out",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "-1.00",
+                        refid = "TRANSFER-REWARD-PAIR",
+                        subtype = "reward",
+                        asset = "ETH",
+                    ),
+                ),
+            )
+            transferReward.values.toSet() shouldBe setOf(FlowCategory.EXTERNAL_BALANCE)
+
+            val externallyProvenFunding = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "external-in",
+                        KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        "100.00",
+                        refid = "EXTERNAL-PAIR",
+                    ),
+                    event(
+                        "external-out",
+                        KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        "-100.00",
+                        refid = "EXTERNAL-PAIR",
+                    ),
+                ),
+                FundingProvenanceResolver { FundingEvidence.EXTERNAL },
+            )
+            // Two separately external funding legs sharing one refid are a
+            // semantic conflict, not a neutral wallet move.
+            externallyProvenFunding.values.toSet() shouldBe setOf(FlowCategory.AMBIGUOUS)
+        }
+
+        "authoritative internal funding covers an internally marked passthrough leg" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "internal-funding",
+                        KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        "100.00",
+                        refid = "INTERNAL-PLUMBING",
+                    ),
+                    event(
+                        "internal-passthrough",
+                        KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        "-60.00",
+                        refid = "INTERNAL-PLUMBING",
+                        subtype = "spottofutures",
+                    ),
+                ),
+                FundingProvenanceResolver { FundingEvidence.INTERNAL },
+            )
+
+            result.values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
         }
 
         "staking and rewards are external balance, not owner capital" {
@@ -442,7 +738,7 @@ class LedgerFlowClassifierTest : StringSpec() {
             result["reward"] shouldBe FlowCategory.EXTERNAL_BALANCE
         }
 
-        "zero-net linked funding with a non-plumbing leg remains an internal group" {
+        "zero-net linked funding with a non-plumbing leg stays fail-closed" {
             val result = LedgerFlowClassifier.classifyAll(
                 listOf(
                     event("deposit", "deposit", "100.00", refid = "ZERO-MIXED"),
@@ -452,7 +748,9 @@ class LedgerFlowClassifierTest : StringSpec() {
                 FundingProvenanceResolver { FundingEvidence.EXTERNAL },
             )
 
-            result.values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+            result["deposit"] shouldBe FlowCategory.AMBIGUOUS
+            result["spend"] shouldBe FlowCategory.EXTERNAL_BALANCE
+            result["reward"] shouldBe FlowCategory.EXTERNAL_BALANCE
         }
     }
 }

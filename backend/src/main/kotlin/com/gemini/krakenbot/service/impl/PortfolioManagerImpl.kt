@@ -357,6 +357,7 @@ class PortfolioManagerImpl(
         operationalStatus = operationalStatus.copy(
             lastCycleStartedAt = startedAt,
             lastCycleError = null,
+            lastAthDeferredReason = null,
         )
         try {
             val snapshot = performRebalanceCyclePinned(cycleId, athObservation)
@@ -442,13 +443,14 @@ class PortfolioManagerImpl(
                 // drawdown and force deployment to zero below.
                 is AthUpdateResult.Deferred -> {
                     athDeferred = true
+                    operationalStatus = operationalStatus.copy(lastAthDeferredReason = athUpdate.reason)
                     log.warn(
-                        "ATH state deferred (stale ledger coverage); preserving last trusted drawdown {}",
+                        "ATH state deferred (reason={}); preserving last trusted drawdown {}",
+                        athUpdate.reason,
                         athUpdate.lastTrustedDrawdownPct,
                     )
                     actionLog.add(
-                        "ATH update deferred: balances are newer than confirmed ledger coverage; " +
-                            "fiat deployment disabled this cycle.",
+                        "ATH update deferred (${athUpdate.reason}); fiat deployment disabled this cycle.",
                     )
                     athUpdate.lastTrustedDrawdownPct ?: BigDecimal.ZERO
                 }

@@ -35,6 +35,10 @@ class ComparisonUnavailableReasonTest {
             "A deposit, withdrawal, transfer, or incomplete trade history may exist.",
             ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE.displayText,
         )
+        assertEquals(
+            "Funding provenance could not be retrieved; the comparison cannot classify funding safely.",
+            ComparisonUnavailableReason.FUNDING_PROVENANCE_UNAVAILABLE.displayText,
+        )
     }
 
     @Test
@@ -66,6 +70,10 @@ class ComparisonUnavailableReasonTest {
         assertEquals(
             "A deposit, withdrawal, transfer, or incomplete trade history may exist.",
             ComparisonUnavailableReason.displayTextFor("UNEXPLAINED_BALANCE_CHANGE"),
+        )
+        assertEquals(
+            "Funding provenance could not be retrieved; the comparison cannot classify funding safely.",
+            ComparisonUnavailableReason.displayTextFor("FUNDING_PROVENANCE_UNAVAILABLE"),
         )
     }
 

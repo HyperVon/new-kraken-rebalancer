@@ -9,6 +9,7 @@ data class RebalanceOperationalStatus(
     val lastCycleCompletedAt: Instant? = null,
     val lastCycleError: String? = null,
     val lastCycleSyncWarning: String? = null,
+    val lastAthDeferredReason: AthTrustFailureReason? = null,
 )
 
 interface PortfolioManager {

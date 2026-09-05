@@ -7,6 +7,8 @@ import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.FundingEvidence
+import com.gemini.krakenbot.model.FundingProvenanceFailure
+import com.gemini.krakenbot.model.FundingProvenanceFailureReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
@@ -19,6 +21,7 @@ import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.repository.table.LedgerTable
+import com.gemini.krakenbot.service.AthTrustFailureReason
 import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -154,7 +157,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = t120,
                 )
-                stale shouldBe AthUpdateResult.Deferred(BigDecimal("20.0000"))
+                stale shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("20.0000"),
+                    AthTrustFailureReason.LEDGER_COVERAGE_STALE,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
 
                 // Ledger sync advances past the deposit; a fresh observation
@@ -217,7 +223,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     balancesObservedAt = t60.plusMillis(500),
                 )
 
-                result shouldBe AthUpdateResult.Deferred(BigDecimal("20.0000"))
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("20.0000"),
+                    AthTrustFailureReason.LEDGER_COVERAGE_STALE,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
             }
         }
@@ -480,7 +489,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     balancesObservedAt = t80,
                 )
 
-                result shouldBe AthUpdateResult.Deferred(BigDecimal("7.5000"))
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("7.5000"),
+                    AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
             }
         }
@@ -898,6 +910,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                             ledgerId = "mv-1",
                             time = t70,
                             type = "transfer",
+                            subtype = "spotfromfutures",
                             asset = "USD",
                             amount = BigDecimal("10.00"),
                         ),
@@ -1006,11 +1019,12 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                         ),
                     ),
                 )
-                val second = analyzer(t90).updateAthAndCalculateDrawdown(
-                    totalPortfolioValueUSD = BigDecimal("100000.00"),
-                    netExternalFlowUSD = BigDecimal.ZERO,
-                    balancesObservedAt = t90,
-                )
+                val second = analyzer(t90, FundingProvenanceResolver { FundingEvidence.INTERNAL })
+                    .updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("100000.00"),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                        balancesObservedAt = t90,
+                    )
                 (second as AthUpdateResult.Trusted)
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("101000.00"))
                 statsRepository.getAppliedAthFlowIds(listOf("w-pair")) shouldBe emptySet()
@@ -1126,6 +1140,40 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
+        "unsupported ledger event defers initial ATH without journaling" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal.ZERO, BigDecimal.ZERO))
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "unsupported-initial",
+                            time = t70,
+                            type = "unknown-type",
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                        ),
+                    ),
+                )
+
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("101000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("0.0000"),
+                    AthTrustFailureReason.UNSUPPORTED_LEDGER_EVENT,
+                )
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                statsRepository.getAppliedAthFlowIds(listOf("unsupported-initial")) shouldBe emptySet()
+            }
+        }
+
         "ambiguous deposit blocks ATH update, defers fail-closed, and is not journaled" {
             runTest {
                 statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("10.0000")))
@@ -1156,7 +1204,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = t80,
                 )
-                result shouldBe AthUpdateResult.Deferred(BigDecimal("10.0000"))
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("10.0000"),
+                    AthTrustFailureReason.AMBIGUOUS_FUNDING,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
                 statsRepository.getAppliedAthFlowIds(listOf("bare-dep")) shouldBe emptySet()
 
@@ -1166,8 +1217,137 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = t80,
                 )
-                rerun shouldBe AthUpdateResult.Deferred(BigDecimal("10.0000"))
+                rerun shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("10.0000"),
+                    AthTrustFailureReason.AMBIGUOUS_FUNDING,
+                )
                 statsRepository.getAppliedAthFlowIds(listOf("bare-dep")) shouldBe emptySet()
+            }
+        }
+
+        "bare transfer blocks ATH update, defers fail-closed, and is not journaled" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("10.0000")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "bare-transfer",
+                            time = t70,
+                            type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            asset = "USD",
+                            amount = BigDecimal("10000.00"),
+                            fee = BigDecimal.ZERO,
+                        ),
+                    ),
+                )
+
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("110000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("10.0000"),
+                    AthTrustFailureReason.AMBIGUOUS_FUNDING,
+                )
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("bare-transfer")) shouldBe emptySet()
+            }
+        }
+
+        "funding provenance preparation failure defers ATH without journaling" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("10.0000")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(listOf(deposit("provenance-failure", t70, "10000.00")))
+
+                val resolver = FundingProvenanceResolver.unavailable(
+                    FundingProvenanceFailure(
+                        reason = FundingProvenanceFailureReason.PERMISSION_DENIED,
+                        message = "DepositStatus permission denied",
+                    ),
+                )
+                val result = analyzer(t80, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("110000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("10.0000"),
+                    AthTrustFailureReason.FUNDING_PROVENANCE_UNAVAILABLE,
+                )
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("provenance-failure")) shouldBe emptySet()
+
+                val throwingResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                    override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver =
+                        throw RuntimeException()
+                }
+                val thrownResult = analyzer(t80, throwingResolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("110000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+                thrownResult shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("10.0000"),
+                    AthTrustFailureReason.FUNDING_PROVENANCE_UNAVAILABLE,
+                )
+            }
+        }
+
+        "unsupported ledger event defers an established ATH without journaling" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("100000.00"), BigDecimal("10.0000")))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t80.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "unsupported-established",
+                            time = t70,
+                            type = "unknown-type",
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                        ),
+                    ),
+                )
+
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("101000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t80,
+                )
+
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("10.0000"),
+                    AthTrustFailureReason.UNSUPPORTED_LEDGER_EVENT,
+                )
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("unsupported-established")) shouldBe emptySet()
             }
         }
 
@@ -1201,7 +1381,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = t80,
                 )
-                result shouldBe AthUpdateResult.Deferred(BigDecimal("5.0000"))
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("5.0000"),
+                    AthTrustFailureReason.AMBIGUOUS_FUNDING,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
                 statsRepository.getAppliedAthFlowIds(listOf("bare-wdr")) shouldBe emptySet()
             }
@@ -1839,7 +2022,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     balancesObservedAt = t90,
                 )
 
-                result shouldBe AthUpdateResult.Deferred(BigDecimal("0.0000"))
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("0.0000"),
+                    AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
                 statsRepository.getAppliedAthFlowIds(listOf("same-time-reward", "same-time-owner")) shouldBe emptySet()
             }
@@ -1939,7 +2125,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     balancesObservedAt = t90,
                 )
 
-                result shouldBe AthUpdateResult.Deferred(BigDecimal("0.0000"))
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("0.0000"),
+                    AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
                 statsRepository.getAppliedAthFlowIds(listOf("ambiguous-reward", "boundary-owner")) shouldBe emptySet()
             }
@@ -2018,7 +2207,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     balancesObservedAt = t90,
                 )
 
-                result shouldBe AthUpdateResult.Deferred(BigDecimal("0.0000"))
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("0.0000"),
+                    AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
                 statsRepository.getAppliedAthFlowIds(listOf("chain-owner")) shouldBe emptySet()
             }
@@ -2086,7 +2278,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = obsTime,
                 )
-                result shouldBe AthUpdateResult.Deferred(BigDecimal("5.0000"))
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("5.0000"),
+                    AthTrustFailureReason.HISTORICAL_PRICE_UNAVAILABLE,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
                 statsRepository.getAppliedAthFlowIds(listOf("dep-stale-btc")) shouldBe emptySet()
             }
@@ -2311,7 +2506,10 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     balancesObservedAt = obsTime,
                 )
 
-                result shouldBe AthUpdateResult.Deferred(BigDecimal("0.0000"))
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("0.0000"),
+                    AthTrustFailureReason.HISTORICAL_PRICE_UNAVAILABLE,
+                )
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("100000.00"))
             }
         }

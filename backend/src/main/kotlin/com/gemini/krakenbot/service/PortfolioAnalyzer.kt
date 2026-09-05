@@ -15,6 +15,24 @@ import java.time.Instant
 
 data class ObservedBalances(val balances: RawBalances, val observedAt: Instant = Instant.now())
 
+/** Why an ATH update could not establish a trustworthy drawdown. */
+enum class AthTrustFailureReason {
+    LEDGER_COVERAGE_STALE,
+    LEDGER_COVERAGE_UNKNOWN,
+    FUNDING_PROVENANCE_UNAVAILABLE,
+    AMBIGUOUS_FUNDING,
+    UNSUPPORTED_LEDGER_EVENT,
+    HISTORICAL_PRICE_UNAVAILABLE,
+    PRE_FLOW_BASIS_UNCERTAIN,
+    BALANCE_OBSERVATION_UNCERTAIN,
+    EVENT_ORDERING_UNCERTAIN,
+    PERSISTENCE_FAILURE,
+}
+
+/** Typed fail-closed signal used internally while calculating the ATH basis. */
+class AthTrustFailureException(val reason: AthTrustFailureReason, message: String, cause: Throwable? = null) :
+    IllegalStateException(message, cause)
+
 /**
  * Outcome of an ATH/drawdown update.
  *
@@ -22,12 +40,13 @@ data class ObservedBalances(val balances: RawBalances, val observedAt: Instant =
  * may already contain capital the ledger window has not seen yet. Such a
  * balance must neither establish a new ATH nor drive drawdown-based fiat
  * deployment, so the update comes back [Deferred] with the last trustworthy
- * drawdown preserved and no state written.
+ * drawdown preserved and no state written. [reason] is operator-facing
+ * diagnostic state; it does not change the fail-closed behavior.
  */
 sealed interface AthUpdateResult {
     data class Trusted(val drawdownPct: BigDecimal) : AthUpdateResult
 
-    data class Deferred(val lastTrustedDrawdownPct: BigDecimal?) : AthUpdateResult
+    data class Deferred(val lastTrustedDrawdownPct: BigDecimal?, val reason: AthTrustFailureReason) : AthUpdateResult
 }
 
 interface PortfolioAnalyzer {
@@ -62,7 +81,8 @@ interface PortfolioAnalyzer {
 
             is AthUpdateResult.Deferred ->
                 throw IllegalStateException(
-                    "ATH update deferred with null observation time; retry with an observation timestamp",
+                    "ATH update deferred (${result.reason}) with null observation time; " +
+                        "retry with an observation timestamp",
                 )
         }
 

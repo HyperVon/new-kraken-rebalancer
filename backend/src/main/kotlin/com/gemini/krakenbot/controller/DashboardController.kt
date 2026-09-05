@@ -590,6 +590,8 @@ class DashboardController(
             HealthStatusKeys.LAST_CYCLE_COMPLETED_AT to (cycleStatus.lastCycleCompletedAt?.toString() ?: "N/A"),
             HealthStatusKeys.LAST_CYCLE_ERROR to (cycleStatus.lastCycleError ?: "N/A"),
             HealthStatusKeys.LAST_CYCLE_SYNC_WARNING to (cycleStatus.lastCycleSyncWarning ?: "N/A"),
+            HealthStatusKeys.LAST_ATH_DEFERRED_REASON to
+                (cycleStatus.lastAthDeferredReason?.name ?: "N/A"),
             HealthStatusKeys.LAST_TRADE_SYNC_TIME to syncTime,
             HealthStatusKeys.UNRESOLVED_ORDER_INTENTS to unresolvedOrderIntents,
             HealthStatusKeys.LEGACY_UNRESOLVED_SUBMISSIONS to legacyUnresolvedSubmissions,

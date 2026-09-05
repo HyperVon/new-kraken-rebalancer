@@ -65,6 +65,7 @@ KrakenApiConstants:
   SUBSTRING_CLOSED_ORDERS: "ClosedOrders"
   LEDGER_TYPE_STAKING: "staking"
   LEDGER_TYPE_DIVIDEND: "dividend"
+  LEDGER_TYPE_EARN: "earn"
   LEDGER_TYPE_DEPOSIT: "deposit"
   LEDGER_TYPE_WITHDRAWAL: "withdrawal"
   LEDGER_TYPE_TRANSFER: "transfer"

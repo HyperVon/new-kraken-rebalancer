@@ -306,11 +306,14 @@ The first chart below the summary cards compares what the rebalancer actually
 achieved against a **synthetic buy-and-hold** strategy:
 
 - **Buy & Hold** starts from the strategy inception baseline snapshot across all view windows.
-  Strategy-neutral flows (staking rewards, crypto dividends, USD cash dividends, adjustments,
-  consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
+  Strategy-neutral flows (legacy staking rewards, crypto dividends, modern `earn/reward`, USD cash
+  dividends, adjustments, consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
   identically to the actual portfolio. Genuine owner contributions after inception are instead
   invested by the original inception weights, and owner withdrawals shrink the whole synthetic
   portfolio proportionally — so the cash event itself never invents alpha for either side.
+  When a documented card purchase links an external funding row, USD spend, and purchased-asset
+  receive row with one shared refid, the benchmark keeps the owner contribution and replays the
+  conversion once; an unproven relationship is unavailable rather than guessed.
   Kraken app/Buy Crypto activity is read from Ledger history, including both asset legs, rather
   than inferred from the trade-history feed.
 - Funding rows count as owner capital only when the production resolver finds one confirmed,
@@ -320,6 +323,14 @@ achieved against a **synthetic buy-and-hold** strategy:
   amount or `amount - fee`; withdrawal debits allow the record's amount or `amount + fee` in
   magnitude. Missing or conflicting records, and Spot/Futures transfers without explicit internal
   evidence, keep the comparison unavailable.
+- `transfer` is not automatically internal: an exact documented internal subtype, authoritative
+  internal evidence, or same-asset zero-net paired movement can prove `INTERNAL_MOVE`; documented
+  `airdrop`, `fork`, `distribution`, and `reward` subtypes are `EXTERNAL_BALANCE`. A bare transfer
+  is ambiguous. `refid` values provide correlation identity only, so strings such as `KF...`,
+  `futures`, or `internal` do not prove wallet semantics.
+- Modern `earn` rows are explicit: `reward` is replayed as performance, while `allocation`,
+  `deallocation`, `autoallocate`, and `migration` are internal and excluded from the rewards chart.
+  Unknown Earn subtypes keep the comparison unavailable.
 - The comparison accounts for the balance request's duration and up to one second of
   exchange/local clock skew, accepting events only when the complete tracked balance change
   reconciles. API fills use precise `price × volume` first; historical rounded costs are
@@ -327,9 +338,10 @@ achieved against a **synthetic buy-and-hold** strategy:
 - Historical flow pricing excludes future trades, future snapshots, and active OHLC candles. It
   uses a completed 15-minute candle only when its end is at or before the event (an exact end is
   valid); a live ticker is allowed only within 300 seconds of the balance observation.
-- Same-source-timestamp funding plumbing is netted only after original classification and retains
-  its source ledger IDs. Mixed-sign or overdrawn groups are not reclassified into an opposite
-  owner-flow direction.
+- Same-source-timestamp USD-only funding plumbing is netted only after original classification and
+  retains its source ledger IDs. A linked mixed-asset card purchase instead keeps its weighted
+  owner contribution and consumer legs separate. Mixed-sign or overdrawn groups are not
+  reclassified into an opposite owner-flow direction.
 - Historical Kraken ledger entries are reconciled using their recorded post-event balance when
   the stored fee precision is insufficient; mixed or ambiguous balance changes remain unavailable.
 - **Rebalancer** is the actual portfolio value at each snapshot, incorporating rebalancing bot
@@ -355,6 +367,7 @@ The comparison cannot be computed when:
 | Inception snapshot pruned | The strategy start is known but its baseline snapshot is no longer retained. |
 | Unsupported ledger type | A ledger entry of a type outside Kraken's documented set blocks safe comparison. |
 | Ambiguous ledger type | A ledger entry cannot be classified as owner capital or an internal movement. |
+| Funding provenance unavailable | Deposit/withdrawal status evidence could not be retrieved; funding is not guessed. |
 | Inception history truncated | Early history was removed by a previous version; set the strategy inception date in Settings. |
 
 When an unavailability reason applies, the chart hides and a message explains why.
@@ -366,16 +379,30 @@ Late fills are accepted only when their ownership is authoritative and their
 complete tracked balance change reconciles. Rendered comparisons are fully
 reconciled.
 
-### Staking Rewards
+### ATH trust status
+
+When ATH cannot safely establish a drawdown, the cycle records a concrete
+`lastAthDeferredReason` in the backend status and disables fiat deployment for
+that cycle. Reasons include `LEDGER_COVERAGE_STALE`, `LEDGER_COVERAGE_UNKNOWN`,
+`FUNDING_PROVENANCE_UNAVAILABLE`, `AMBIGUOUS_FUNDING`,
+`UNSUPPORTED_LEDGER_EVENT`, `HISTORICAL_PRICE_UNAVAILABLE`,
+`PRE_FLOW_BASIS_UNCERTAIN`, `BALANCE_OBSERVATION_UNCERTAIN`,
+`EVENT_ORDERING_UNCERTAIN`, and `PERSISTENCE_FAILURE`. A funding-status
+permission denial is reported as `FUNDING_PROVENANCE_UNAVAILABLE` with the
+required Kraken permission in the server log.
+
+### Staking & Earn Rewards
 
 A dedicated chart below the comparison shows the cumulative USD value of
-`staking` and `dividend` ledger entries for tracked assets in the selected
+`staking`, `dividend`, and `earn/reward` ledger entries for tracked assets in the selected
 range, with one series per asset and a total shown beside the title. Values are
 aligned to portfolio snapshots and use each snapshot's asset price; the chart is
 empty until ledger data has been synchronized. Untracked asset cash dividends credited
 in USD are accounted for in portfolio comparison but omitted from crypto staking asset series.
+Earn allocation mechanics are retained for account reconstruction but are not
+shown as rewards or treated as performance.
 A caption below the chart reads:
-*Cumulative staking and dividend reward value accrued during the selected range.
+*Cumulative staking, dividend, and Earn reward value accrued during the selected range.
 Assets without a snapshot price in the range are excluded.*
 
 ### Portfolio Value & Asset Holdings
@@ -450,7 +477,11 @@ badges instead.
 
 ### 2. Rehearse against live market data (no orders)
 
-1. Provide Kraken API keys with appropriate permissions.
+1. Provide Kraken API keys with **Query Funds**, **Query Closed Orders & Trades**,
+   **Query Ledgers**, and **Create & Modify Orders**. Funding provenance also
+   reads `DepositStatus` (Funds: Query, covered by Query Funds) and
+   `WithdrawStatus` (Funds: Withdraw or Data: Query ledger entries, covered by
+   Query Ledgers); no withdrawal-placement permission is needed.
 2. Leave **Simulation** off; enable **Dry Run**.
 3. Confirm Dashboard prices and History sync look right before considering live
    mode.

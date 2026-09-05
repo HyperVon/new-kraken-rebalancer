@@ -21,6 +21,9 @@ import java.util.concurrent.atomic.AtomicLong
 
 internal class AmbiguousOrderSubmissionException(message: String) : RuntimeException(message)
 
+/** Kraken rejected an authenticated endpoint because the API key lacks its permission. */
+internal class KrakenApiPermissionDeniedException(val endpoint: String, message: String) : RuntimeException(message)
+
 internal fun krakenPrivateEndpointCost(path: String): Double = when {
     path == KrakenApiConstants.PATH_ADD_ORDER || path.endsWith("/CancelOrder") -> 0.0
 
@@ -133,6 +136,14 @@ class KrakenTransport(
                             nonceGenerator.addAndGet(bumpAmount)
                             retryCount++
                             null
+                        } else if (
+                            errorMsg.contains("permission", ignoreCase = true) &&
+                            path in setOf(
+                                KrakenApiConstants.PATH_DEPOSIT_STATUS,
+                                KrakenApiConstants.PATH_WITHDRAW_STATUS,
+                            )
+                        ) {
+                            throw KrakenApiPermissionDeniedException(path, errorMsg)
                         } else {
                             throw RuntimeException("${KrakenApiConstants.ERROR_API_PREFIX}$errorMsg")
                         }

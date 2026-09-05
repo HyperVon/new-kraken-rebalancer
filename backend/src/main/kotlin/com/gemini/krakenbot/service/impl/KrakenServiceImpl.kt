@@ -393,7 +393,17 @@ class KrakenServiceImpl(
         do {
             val params = baseParams.toMutableMap()
             if (cursor != null) params[KrakenApiConstants.PARAM_CURSOR] = cursor
-            val result = queryPrivate(path, params)
+            val result = try {
+                queryPrivate(path, params)
+            } catch (e: KrakenApiPermissionDeniedException) {
+                log.error(
+                    "Kraken denied funding-status endpoint {}. DepositStatus requires Funds: Query; " +
+                        "WithdrawStatus requires Funds: Withdraw or Data: Query ledger entries.",
+                    path,
+                    e,
+                )
+                throw e
+            }
             val page = parser(result)
             records += page.records
             val nextCursor = page.nextCursor?.trim()?.takeIf(String::isNotEmpty)

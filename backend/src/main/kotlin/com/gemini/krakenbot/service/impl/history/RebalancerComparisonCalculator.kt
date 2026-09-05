@@ -168,6 +168,18 @@ object RebalancerComparisonCalculator {
         // be replayed safely; surface UNAVAILABLE instead of silently dropping
         // a balance-affecting flow.
         val preparedProvenanceResolver = provenanceResolver.prepare(rewards)
+        preparedProvenanceResolver.preparationFailure?.let { failure ->
+            log.warn(
+                "Funding provenance unavailable for comparison ({}): {}",
+                failure.reason,
+                failure.message,
+            )
+            return unavailable(
+                reason = ComparisonUnavailableReason.FUNDING_PROVENANCE_UNAVAILABLE,
+                unavailableAt = rewards.firstOrNull()?.time,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
         val ledgerClassifications = LedgerFlowClassifier.classifyAll(rewards, preparedProvenanceResolver)
         val ambiguousLedger = rewards.firstOrNull {
             ledgerClassifications[it.ledgerId] == FlowCategory.AMBIGUOUS
@@ -231,6 +243,13 @@ object RebalancerComparisonCalculator {
             priceProvider = priceProvider,
             classifications = ledgerClassifications,
         )
+        if (intermediateBuilt.ambiguousAt != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE,
+                unavailableAt = intermediateBuilt.ambiguousAt,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
         if (intermediateBuilt.unpriceableAt != null) {
             return unavailable(
                 reason = ComparisonUnavailableReason.MISSING_PRICE,
@@ -247,6 +266,13 @@ object RebalancerComparisonCalculator {
             priceProvider = priceProvider,
             classifications = ledgerClassifications,
         )
+        if (windowBuilt.ambiguousAt != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE,
+                unavailableAt = windowBuilt.ambiguousAt,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
         if (windowBuilt.unpriceableAt != null) {
             return unavailable(
                 reason = ComparisonUnavailableReason.MISSING_PRICE,
@@ -1272,7 +1298,11 @@ object RebalancerComparisonCalculator {
         val events: List<BenchmarkEvent>,
         /** Set when an owner flow could not be priced from recorded history. */
         val unpriceableAt: Instant?,
+        /** Set when mixed-asset funding plumbing lacks one authoritative identity. */
+        val ambiguousAt: Instant? = null,
     )
+
+    private data class NettedFunding(val ledgers: List<ClassifiedReconciledLedger>, val ambiguousAt: Instant? = null)
 
     private sealed interface OwnerFlowBuild {
         data class Event(val event: BenchmarkEvent) : OwnerFlowBuild
@@ -1325,8 +1355,15 @@ object RebalancerComparisonCalculator {
             )
         }
         val netted = netPassthroughFunding(classified)
+        if (netted.ambiguousAt != null) {
+            return BuiltEvents(
+                events = emptyList(),
+                unpriceableAt = null,
+                ambiguousAt = netted.ambiguousAt,
+            )
+        }
         val events = mutableListOf<BenchmarkEvent>()
-        for (reconciledLedger in netted) {
+        for (reconciledLedger in netted.ledgers) {
             val reconciled = reconciledLedger.reconciled
             val ledger = reconciled.ledger
             val category = reconciledLedger.category
@@ -1384,15 +1421,18 @@ object RebalancerComparisonCalculator {
     }
 
     /**
-     * Nets same-timestamp USD funding plumbing only after the original rows
-     * have been classified. A deposit that is immediately spent (card buy,
-     * instant conversion) remains OWNER_CAPITAL with the net economics and
-     * carries every source ledger id. The result is typed data, not a bare
-     * synthetic ledger, so it is never classified a second time.
+     * Nets same-timestamp USD-only funding plumbing only after the original
+     * rows have been classified. A mixed-asset card conversion keeps its typed
+     * owner contribution and passthrough legs intact, so Buy & Hold applies
+     * the contribution by inception weights and replays the same conversion.
+     * USD-only plumbing can collapse to a zero-valued passthrough when every
+     * funding and passthrough leg shares one non-blank refid; otherwise mixed
+     * asset comparison is unavailable.
      */
-    private fun netPassthroughFunding(ledgers: List<ClassifiedReconciledLedger>): List<ClassifiedReconciledLedger> {
-        if (ledgers.size < 2) return ledgers
+    private fun netPassthroughFunding(ledgers: List<ClassifiedReconciledLedger>): NettedFunding {
+        if (ledgers.size < 2) return NettedFunding(ledgers)
         val out = mutableListOf<ClassifiedReconciledLedger>()
+        var ambiguousAt: Instant? = null
         // Group by the original exchange event time. Reconciled timestamps
         // may be moved to snapshot boundaries; grouping on those effective
         // times could make distinct transactions look simultaneous.
@@ -1403,17 +1443,55 @@ object RebalancerComparisonCalculator {
             }
             val fundingLegs = usdLegs.filter(::isOwnerFundingLeg)
             val plumbingLegs = usdLegs.filter(::isPassthroughLeg)
+            val hasNonUsdPassthrough = group.any { reconciled ->
+                isPassthroughLeg(reconciled) &&
+                    Asset.normalizeLedgerAsset(reconciled.reconciled.ledger.asset).uppercase() != Asset.USD
+            }
+            val hasOwnerFundingLeg = group.any(::isOwnerFundingLeg)
+            if (hasNonUsdPassthrough && hasOwnerFundingLeg && (fundingLegs.isEmpty() || plumbingLegs.isEmpty())) {
+                log.warn(
+                    "Cannot correlate mixed-asset funding plumbing at {}; expected USD funding and spend legs",
+                    timestamp,
+                )
+                ambiguousAt = ambiguousAt ?: timestamp
+                out += group
+                continue
+            }
             if (fundingLegs.isEmpty() || plumbingLegs.isEmpty()) {
+                out += group
+                continue
+            }
+            if (hasNonUsdPassthrough && !hasFundingPlumbingIdentity(group, fundingLegs)) {
+                log.warn(
+                    "Cannot correlate mixed-asset funding plumbing at {}; funding and passthrough refids do not agree",
+                    timestamp,
+                )
+                ambiguousAt = ambiguousAt ?: timestamp
                 out += group
                 continue
             }
             val fundingSigns = fundingLegs.map { it.reconciled.netBalanceDelta.signum() }.toSet()
             val plumbingSigns = plumbingLegs.map { it.reconciled.netBalanceDelta.signum() }.toSet()
             val fundingSign = fundingSigns.singleOrNull()
-            if (fundingSign == null || fundingSign == 0 ||
-                plumbingSigns.size != 1 || plumbingSigns.single() == 0 || plumbingSigns.single() == fundingSign ||
-                !hasFundingPlumbingIdentity(group, usdLegs, fundingLegs, plumbingLegs)
-            ) {
+            val invalidDirection = fundingSign == null || fundingSign == 0 ||
+                plumbingSigns.size != 1 || plumbingSigns.single() == 0 || plumbingSigns.single() == fundingSign
+            if (invalidDirection || !hasFundingPlumbingIdentity(group, fundingLegs)) {
+                if (hasNonUsdPassthrough && invalidDirection) {
+                    log.warn(
+                        "Cannot correlate mixed-asset funding plumbing at {}; funding and spend directions conflict",
+                        timestamp,
+                    )
+                    ambiguousAt = ambiguousAt ?: timestamp
+                }
+                out += group
+                continue
+            }
+            if (hasNonUsdPassthrough) {
+                // This is a confirmed mixed-asset conversion. Retain the
+                // owner-capital row and the consumer legs as separate typed
+                // events: the former is invested by inception weights and
+                // the latter is replayed identically, without double-counting
+                // the deposited cash or inventing a synthetic trade.
                 out += group
                 continue
             }
@@ -1455,36 +1533,22 @@ object RebalancerComparisonCalculator {
                 },
             )
         }
-        return out
+        return NettedFunding(out, ambiguousAt)
     }
 
     /**
-     * Same-second rows are not an identity by themselves. Require one shared
-     * reference id, or a linked non-USD consumer leg that proves the USD
-     * passthrough pair belongs to one transaction (for example card funding,
-     * USD spend, and BTC receive). Unrelated deposits and spends remain
-     * separate and therefore fail the later ordering/reconciliation checks.
+     * Same-second rows are not an identity by themselves. A mixed-asset
+     * funding event must carry one shared non-blank reference id across its
+     * funding and passthrough legs. No refid-shape or timestamp-only inference
+     * is sufficient to join a card deposit to a separate Buy Crypto event.
      */
     private fun hasFundingPlumbingIdentity(
         group: List<ClassifiedReconciledLedger>,
-        usdLegs: List<ClassifiedReconciledLedger>,
         fundingLegs: List<ClassifiedReconciledLedger>,
-        plumbingLegs: List<ClassifiedReconciledLedger>,
     ): Boolean {
-        val usdRefids = usdLegs.map { it.reconciled.ledger.refid?.trim().orEmpty() }
-        if (usdRefids.all(String::isNotBlank) && usdRefids.toSet().size == 1) return true
-
-        val passthroughRefids = plumbingLegs.map { it.reconciled.ledger.refid?.trim().orEmpty() }
-        if (fundingLegs.size != 1 || passthroughRefids.any(String::isBlank) || passthroughRefids.toSet().size != 1) {
-            return false
-        }
-        val passthroughRefid = passthroughRefids.single()
-        return group.any { candidate ->
-            candidate !in usdLegs &&
-                isPassthroughLeg(candidate) &&
-                candidate.reconciled.ledger.refid?.trim() == passthroughRefid &&
-                Asset.normalizeLedgerAsset(candidate.reconciled.ledger.asset).uppercase() != Asset.USD
-        }
+        val relevantRefids = (fundingLegs + group.filter(::isPassthroughLeg))
+            .map { it.reconciled.ledger.refid?.trim().orEmpty() }
+        return relevantRefids.all(String::isNotBlank) && relevantRefids.toSet().size == 1
     }
 
     private fun isOwnerFundingLeg(ledger: ClassifiedReconciledLedger): Boolean =
@@ -1506,10 +1570,9 @@ object RebalancerComparisonCalculator {
      * applied before or after a trade or owner flow. Additive movements in
      * established baseline assets are safe, but owner withdrawals, trades on
      * unallocated assets, and non-plumbing balance changes are not commutative.
-     * Passthrough USD legs are exempt
-     * because [netPassthroughFunding] has already collapsed their typed
-     * economics into one owner event where that is safe; otherwise defer
-     * instead of replaying an arbitrary sort order.
+     * Passthrough USD legs are exempt because [netPassthroughFunding] has
+     * already collapsed their typed economics into one owner event where that
+     * is safe; otherwise defer instead of replaying an arbitrary sort order.
      */
     private fun findUnorderedBenchmarkEventTimestamp(
         events: List<BenchmarkEvent>,
@@ -1545,9 +1608,10 @@ object RebalancerComparisonCalculator {
         // replay when the balance reconciliation established their placement.
         // New/unallocated assets are not safe because a contribution may be
         // before or after the first purchase. Exact USD passthrough rows have
-        // already been collapsed by netPassthroughFunding. Owner contributions
-        // and strategy-neutral balance changes are both additive, so their
-        // relative order does not alter holdings.
+        // already been collapsed by netPassthroughFunding; a mixed-asset conversion retains its typed
+        // owner and passthrough events, which are additive at one timestamp.
+        // Owner contributions and strategy-neutral balance changes are both
+        // additive, so their relative order does not alter holdings.
         earliestNearPairTimestamp(ownerContributions, unallocatedTrades)?.let(unorderedTimes::add)
         earliestNearPairTimestamp(ownerContributions, ownerWithdrawals)?.let(unorderedTimes::add)
 

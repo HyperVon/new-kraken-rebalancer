@@ -123,6 +123,25 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getRewardsOverTime_IncludesEarnRewardsButExcludesAllocationMechanics" {
+            runTest {
+                val snap = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                val earnReward = ledgerEvent("EARN-REWARD", now.minusSeconds(3600), "BTC", "0.1")
+                    .copy(type = KrakenApiConstants.LEDGER_TYPE_EARN, subtype = "reward")
+                val earnAllocation = ledgerEvent("EARN-ALLOCATION", now.minusSeconds(1800), "BTC", "-1.0")
+                    .copy(type = KrakenApiConstants.LEDGER_TYPE_EARN, subtype = "allocation")
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
+                    listOf(earnReward, earnAllocation)
+
+                val rewards = service.getRewardsOverTime(Instant.EPOCH, now)
+
+                rewards.points[0].perAssetUSD.getValue(Asset.BTC)
+                    .shouldBeEqualComparingTo(BigDecimal("5000.00"))
+                rewards.totalRewardsUSD.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+            }
+        }
+
         "getLedgersInRange_DelegatesToLedgerRepository" {
             runTest {
                 val expected = listOf(ledgerEvent("L1", now.minusSeconds(3600), "BTC", "0.1"))

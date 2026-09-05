@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.service.AthTrustFailureReason
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.view.util.FormFields
 import io.kotest.matchers.shouldBe
@@ -54,6 +55,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 lastCycleStartedAt = snapshot.timestamp.minusSeconds(30),
                 lastCycleCompletedAt = snapshot.timestamp,
                 lastCycleSyncWarning = "Trade synchronization during cycle failed (RuntimeException)",
+                lastAthDeferredReason = AthTrustFailureReason.AMBIGUOUS_FUNDING,
             )
             every { configService.getConfig() } returns TestFixtures.config(
                 settings = TestFixtures.settings(simulation = true),
@@ -67,6 +69,7 @@ class DashboardOperationalApiTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain "\"readiness\":\"READY\""
                 response.bodyAsText() shouldContain "\"activeMode\":\"SIMULATION\""
                 response.bodyAsText() shouldContain "lastCycleSyncWarning"
+                response.bodyAsText() shouldContain "\"lastAthDeferredReason\":\"AMBIGUOUS_FUNDING\""
 
                 val syncResponse = client.get("/api/history/sync-progress")
                 syncResponse.status shouldBe HttpStatusCode.OK

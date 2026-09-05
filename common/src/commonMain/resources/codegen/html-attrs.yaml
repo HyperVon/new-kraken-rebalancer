@@ -141,6 +141,7 @@ HealthStatusKeys:
   LAST_CYCLE_COMPLETED_AT: "lastCycleCompletedAt"
   LAST_CYCLE_ERROR: "lastCycleError"
   LAST_CYCLE_SYNC_WARNING: "lastCycleSyncWarning"
+  LAST_ATH_DEFERRED_REASON: "lastAthDeferredReason"
   LAST_TRADE_SYNC_TIME: "lastTradeSyncTime"
   UNRESOLVED_ORDER_INTENTS: "unresolvedOrderIntents"
   LEGACY_UNRESOLVED_SUBMISSIONS: "legacyUnresolvedSubmissions"

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.FundingEvidence
+import com.gemini.krakenbot.model.FundingProvenanceFailureReason
 import com.gemini.krakenbot.model.InternalTransferRecord
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
@@ -17,6 +18,7 @@ import com.gemini.krakenbot.service.impl.history.RebalancerComparisonCalculator
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -114,6 +116,37 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
                 val prepared = resolver.prepare(listOf(event))
 
                 prepared.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+                prepared.preparationFailure?.reason shouldBe FundingProvenanceFailureReason.REQUEST_FAILED
+
+                val nullMessageService = FakeKrakenService()
+                nullMessageService.depositStatusSupplier = { _, _ -> throw RuntimeException() }
+                val nullMessagePrepared = KrakenFundingProvenanceResolver(nullMessageService)
+                    .prepare(listOf(event))
+
+                nullMessagePrepared.preparationFailure?.message shouldContain "RuntimeException"
+            }
+        }
+
+        "permission denial preserves an actionable funding-provenance failure" {
+            runTest {
+                val backingService = FakeKrakenService()
+                val deniedService = object : KrakenService by backingService {
+                    override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
+
+                    override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> =
+                        throw KrakenApiPermissionDeniedException(
+                            endpoint = KrakenApiConstants.PATH_DEPOSIT_STATUS,
+                            message = "EGeneral:Permission denied",
+                        )
+                }
+                val resolver = KrakenFundingProvenanceResolver(deniedService)
+                val event = fundingEvent("permission-denied", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+
+                val prepared = resolver.prepare(listOf(event))
+
+                prepared.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+                prepared.preparationFailure?.reason shouldBe FundingProvenanceFailureReason.PERMISSION_DENIED
+                prepared.preparationFailure?.message?.contains("Funds: Query") shouldBe true
             }
         }
 

@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.api
 
 /**
- * Staking rewards over time, aligned to portfolio snapshot timestamps.
+ * Staking, dividend, and Earn rewards over time, aligned to portfolio snapshot timestamps.
  *
  * History `/api/history/rewards` JSON body — decimal and timestamp fields are strings.
  */

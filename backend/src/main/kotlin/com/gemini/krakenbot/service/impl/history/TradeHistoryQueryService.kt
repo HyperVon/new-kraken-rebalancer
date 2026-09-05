@@ -188,7 +188,7 @@ class TradeHistoryQueryService(
         val rewardEvents =
             ledgerRepository
                 .getLedgersInRange(from, to)
-                .filter { it.type in LedgerEvent.REWARD_TYPES }
+                .filter(LedgerEvent::isRewardEvent)
                 .sortedBy { it.time }
         val cumulativeByAsset = mutableMapOf<String, BigDecimal>()
         var eventIndex = 0

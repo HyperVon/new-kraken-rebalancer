@@ -24,6 +24,8 @@ import com.gemini.krakenbot.repository.AppliedAthFlow
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.AthTrustFailureException
+import com.gemini.krakenbot.service.AthTrustFailureReason
 import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -162,8 +164,9 @@ class PortfolioAnalyzerImpl(
                     if (ledgerRepository != null && coverage == null && balancesObservedAt != null) {
                         // Fails closed via the IllegalStateException handler
                         // above.
-                        throw IllegalStateException(
-                            "ledger coverage unknown for balances observed at $balancesObservedAt",
+                        throw AthTrustFailureException(
+                            reason = AthTrustFailureReason.LEDGER_COVERAGE_UNKNOWN,
+                            message = "ledger coverage unknown for balances observed at $balancesObservedAt",
                         )
                     }
                     // Mirror of the ath>0 temporal gate: a balance observed
@@ -174,8 +177,9 @@ class PortfolioAnalyzerImpl(
                         balancesObservedAt != null &&
                         balancesObservedAt.isAfter(coverageInstant)
                     ) {
-                        throw IllegalStateException(
-                            "ledger coverage $coverage predates balances observed at $balancesObservedAt",
+                        throw AthTrustFailureException(
+                            reason = AthTrustFailureReason.LEDGER_COVERAGE_STALE,
+                            message = "ledger coverage $coverage predates balances observed at $balancesObservedAt",
                         )
                     }
                     // The initial ATH is the current total, which already
@@ -203,9 +207,27 @@ class PortfolioAnalyzerImpl(
                 // Coroutine cancellation is an IllegalStateException subtype:
                 // it must propagate, never degrade into a deferral.
                 throw e
+            } catch (e: AthTrustFailureException) {
+                log.warn(
+                    "Deferring ATH update: reason={} detail={}",
+                    e.reason,
+                    e.message,
+                )
+                return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct, e.reason)
             } catch (e: IllegalStateException) {
-                log.warn("Deferring ATH update: owner-capital flow cannot be valued reliably ({})", e.message)
-                return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct)
+                log.warn(
+                    "Deferring ATH update: reason={} detail={}",
+                    AthTrustFailureReason.PERSISTENCE_FAILURE,
+                    e.message,
+                )
+                return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct, AthTrustFailureReason.PERSISTENCE_FAILURE)
+            } catch (e: Exception) {
+                log.warn(
+                    "Deferring ATH update: reason={} detail={}",
+                    AthTrustFailureReason.PERSISTENCE_FAILURE,
+                    e.message,
+                )
+                return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct, AthTrustFailureReason.PERSISTENCE_FAILURE)
             }
             if (flowCalc.coverageStale) {
                 // The balance may already contain owner capital the ledger
@@ -220,7 +242,10 @@ class PortfolioAnalyzerImpl(
                     flowCalc.coverageHorizon?.toString() ?: "unknown",
                     ath.toUsdScale(),
                 )
-                return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct)
+                return AthUpdateResult.Deferred(
+                    stats.lastTrustedDrawdownPct,
+                    AthTrustFailureReason.LEDGER_COVERAGE_STALE,
+                )
             }
             var brokeEarly = false
             // Consciously-skipped decisions (internal move, trade ignored, external balance,
@@ -256,12 +281,23 @@ class PortfolioAnalyzerImpl(
                 // prefix is retried verbatim next cycle.
                 val basis = try {
                     flowCalc.groupBasisResolver.basisFor(groupIndex)
-                } catch (e: IllegalStateException) {
+                } catch (e: AthTrustFailureException) {
                     log.warn(
-                        "Deferring ATH update: pre-flow basis cannot be established reliably ({})",
+                        "Deferring ATH update: reason={} detail={}",
+                        e.reason,
                         e.message,
                     )
-                    return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct)
+                    return AthUpdateResult.Deferred(stats.lastTrustedDrawdownPct, e.reason)
+                } catch (e: IllegalStateException) {
+                    log.warn(
+                        "Deferring ATH update: reason={} detail={}",
+                        AthTrustFailureReason.PERSISTENCE_FAILURE,
+                        e.message,
+                    )
+                    return AthUpdateResult.Deferred(
+                        stats.lastTrustedDrawdownPct,
+                        AthTrustFailureReason.PERSISTENCE_FAILURE,
+                    )
                 }
                 if (basis == null) {
                     // The flow predates every retained snapshot: its effect is
@@ -383,7 +419,23 @@ class PortfolioAnalyzerImpl(
         if (rows.isEmpty()) return ScannedLedgers(emptyList(), emptyMap(), emptyList())
         // Resolve funding provenance once for the full retained batch. The
         // classifier itself stays pure and never performs one request per row.
-        val preparedResolver = provenanceResolver.prepare(rows)
+        val preparedResolver = try {
+            provenanceResolver.prepare(rows)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw AthTrustFailureException(
+                reason = AthTrustFailureReason.FUNDING_PROVENANCE_UNAVAILABLE,
+                message = "Funding provenance preparation failed: ${e.message ?: e::class.simpleName}",
+                cause = e,
+            )
+        }
+        preparedResolver.preparationFailure?.let { failure ->
+            throw AthTrustFailureException(
+                reason = AthTrustFailureReason.FUNDING_PROVENANCE_UNAVAILABLE,
+                message = failure.message,
+            )
+        }
         val decided = portfolioStatsRepository.getAppliedAthFlowIds(rows.map { it.ledgerId })
         val unapplied = if (decided.isEmpty()) rows else rows.filterNot { it.ledgerId in decided }
         // Classify the full retained set: refid pairing must see decided
@@ -417,8 +469,13 @@ class PortfolioAnalyzerImpl(
                     event.asset,
                     event.time,
                 )
-                throw IllegalStateException(
-                    "Cannot establish initial ATH baseline: unresolved ambiguous funding event " +
+                throw AthTrustFailureException(
+                    reason = if (category == FlowCategory.UNSUPPORTED) {
+                        AthTrustFailureReason.UNSUPPORTED_LEDGER_EVENT
+                    } else {
+                        AthTrustFailureReason.AMBIGUOUS_FUNDING
+                    },
+                    message = "Cannot establish initial ATH baseline: unresolved ambiguous funding event " +
                         "${event.ledgerId} (${event.type}, ${event.asset}) at ${event.time}",
                 )
             }
@@ -451,8 +508,9 @@ class PortfolioAnalyzerImpl(
             // without an observation keep the previous proceed-without-flows
             // behavior. Fails closed via the IllegalStateException handler.
             if (balancesObservedAt != null) {
-                throw IllegalStateException(
-                    "ledger coverage unknown for balances observed at $balancesObservedAt",
+                throw AthTrustFailureException(
+                    reason = AthTrustFailureReason.LEDGER_COVERAGE_UNKNOWN,
+                    message = "ledger coverage unknown for balances observed at $balancesObservedAt",
                 )
             }
             return ExternalFlowCalculation(emptyList(), null)
@@ -491,7 +549,10 @@ class PortfolioAnalyzerImpl(
             // over-deploy). Fail closed via the IllegalStateException handler;
             // the operator repairs the key and the missing-watermark path above
             // re-establishes the window.
-            ?: throw IllegalStateException("malformed ATH flow watermark: $watermarkStr")
+            ?: throw AthTrustFailureException(
+                reason = AthTrustFailureReason.LEDGER_COVERAGE_UNKNOWN,
+                message = "malformed ATH flow watermark: $watermarkStr",
+            )
 
         if (ledgersRepo.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED) == null) {
             // One-time upgrade from the timestamp-window semantics: rows below
@@ -551,7 +612,13 @@ class PortfolioAnalyzerImpl(
                     event.amount,
                     event.time,
                 )
-                throw IllegalStateException(
+                throw AthTrustFailureException(
+                    reason = if (category == FlowCategory.UNSUPPORTED) {
+                        AthTrustFailureReason.UNSUPPORTED_LEDGER_EVENT
+                    } else {
+                        AthTrustFailureReason.AMBIGUOUS_FUNDING
+                    },
+                    message =
                     "unapplied ambiguous funding event ${event.ledgerId} (${event.type}, ${event.asset}) at ${event.time}",
                 )
             }
@@ -714,8 +781,9 @@ class PortfolioAnalyzerImpl(
             .filter { !it.timestamp.isAfter(eventTime) }
             .maxByOrNull { it.timestamp }
             ?: if (observationEligible.any { it.timestamp.isAfter(eventTime) }) {
-                throw IllegalStateException(
-                    "all snapshots covering the observation boundary were saved after flow at $eventTime; " +
+                throw AthTrustFailureException(
+                    reason = AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN,
+                    message = "all snapshots covering the observation boundary were saved after flow at $eventTime; " +
                         "pre-flow state is uncertain",
                 )
             } else {
@@ -727,9 +795,10 @@ class PortfolioAnalyzerImpl(
         val predecessorGap = Duration.between(predecessorObservationBoundary, eventTime)
         val gapSeconds = predecessorGap.seconds
         if (predecessorGap > Duration.ofSeconds(MAX_PREDECESSOR_GAP_SECONDS)) {
-            throw IllegalStateException(
-                "Predecessor observation at $predecessorObservationBoundary is older than maximum allowed gap " +
-                    "(${MAX_PREDECESSOR_GAP_SECONDS}s; gap was ${gapSeconds}s) for event at $eventTime",
+            throw AthTrustFailureException(
+                reason = AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN,
+                message = "Predecessor observation at $predecessorObservationBoundary is older than maximum " +
+                    "allowed gap (${MAX_PREDECESSOR_GAP_SECONDS}s; gap was ${gapSeconds}s) for event at $eventTime",
             )
         }
 
@@ -742,8 +811,9 @@ class PortfolioAnalyzerImpl(
         if (externalBalances.any { isNearEventTime(it.time, eventTime) } ||
             trades.any { isNearEventTime(it.timestamp, eventTime) }
         ) {
-            throw IllegalStateException(
-                "cannot establish ordering of a near-instant performance event and owner flow at $eventTime",
+            throw AthTrustFailureException(
+                reason = AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN,
+                message = "cannot establish ordering of a near-instant performance event and owner flow at $eventTime",
             )
         }
 
@@ -777,7 +847,10 @@ class PortfolioAnalyzerImpl(
             .values
             .map { sameId ->
                 if (sameId.distinct().size != 1) {
-                    throw IllegalStateException("conflicting ledger rows for ${sameId.first().ledgerId}")
+                    throw AthTrustFailureException(
+                        reason = AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
+                        message = "conflicting ledger rows for ${sameId.first().ledgerId}",
+                    )
                 }
                 sameId.first()
             }
@@ -792,8 +865,9 @@ class PortfolioAnalyzerImpl(
                 !trade.timestamp.isAfter(eventTime)
         }
         if (uncertainTrades.isNotEmpty()) {
-            throw IllegalStateException(
-                "trade state falls inside the uncertain balance-observation interval before $eventTime",
+            throw AthTrustFailureException(
+                reason = AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
+                message = "trade state falls inside the uncertain balance-observation interval before $eventTime",
             )
         }
         for (trade in trades) {
@@ -873,8 +947,9 @@ class PortfolioAnalyzerImpl(
             )
             return basis
         }
-        throw IllegalStateException(
-            "Cannot establish a positive pre-flow portfolio basis for event at $eventTime: basis=$basis",
+        throw AthTrustFailureException(
+            reason = AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN,
+            message = "Cannot establish a positive pre-flow portfolio basis for event at $eventTime: basis=$basis",
         )
     }
 
@@ -895,13 +970,16 @@ class PortfolioAnalyzerImpl(
         }) {
             val ordered = events.sortedWith(compareBy({ it.time }, { it.ledgerId }))
             if (ordered.zipWithNext().any { (first, second) -> first.time == second.time }) {
-                throw IllegalStateException(
-                    "cannot order same-timestamp ledger rows in uncertain balance-observation interval for $asset",
+                throw AthTrustFailureException(
+                    reason = AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
+                    message = "cannot order same-timestamp ledger rows in uncertain balance-observation interval " +
+                        "for $asset",
                 )
             }
             if (ordered.any { !it.hasAuthoritativeBalance }) {
-                throw IllegalStateException(
-                    "ledger row in uncertain balance-observation interval has no authoritative balance: " +
+                throw AthTrustFailureException(
+                    reason = AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
+                    message = "ledger row in uncertain balance-observation interval has no authoritative balance: " +
                         ordered.first { !it.hasAuthoritativeBalance }.ledgerId,
                 )
             }
@@ -913,9 +991,10 @@ class PortfolioAnalyzerImpl(
                     .compareTo(INTERVENING_BALANCE_TOLERANCE) > 0
             }
             if (inconsistentChain != null) {
-                throw IllegalStateException(
-                    "ledger balance chain is inconsistent between ${inconsistentChain.first.ledgerId} " +
-                        "and ${inconsistentChain.second.ledgerId} for $asset",
+                throw AthTrustFailureException(
+                    reason = AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
+                    message = "ledger balance chain is inconsistent between " +
+                        "${inconsistentChain.first.ledgerId} and ${inconsistentChain.second.ledgerId} for $asset",
                 )
             }
             val observedBalance = predecessor.assets.entries.firstOrNull {
@@ -930,8 +1009,9 @@ class PortfolioAnalyzerImpl(
                 expected.subtract(observedBalance).abs() <= INTERVENING_BALANCE_TOLERANCE
             }
             if (possibleCutoffs.size != 1) {
-                throw IllegalStateException(
-                    "cannot uniquely assign ${ordered.size} ledger row(s) in uncertain " +
+                throw AthTrustFailureException(
+                    reason = AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
+                    message = "cannot uniquely assign ${ordered.size} ledger row(s) in uncertain " +
                         "balance-observation interval for $asset",
                 )
             }
@@ -998,9 +1078,11 @@ class PortfolioAnalyzerImpl(
             )
         }
 
-        throw IllegalStateException(
-            "Cannot reliably price external capital flow for asset $asset at $eventTime " +
-                "(age ${eventAgeSeconds}s exceeds ${MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS}s and no historical trade/snapshot/OHLC price found)",
+        throw AthTrustFailureException(
+            reason = AthTrustFailureReason.HISTORICAL_PRICE_UNAVAILABLE,
+            message = "Cannot reliably price external capital flow for asset $asset at $eventTime " +
+                "(age ${eventAgeSeconds}s exceeds ${MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS}s and no historical " +
+                "trade/snapshot/OHLC price found)",
         )
     }
 

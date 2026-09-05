@@ -706,7 +706,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                     ),
                 )
                 coEvery { analyzer.updateAthAndCalculateDrawdown(any(), any(), any()) } returns
-                    AthUpdateResult.Deferred(BigDecimal("20.0000"))
+                    AthUpdateResult.Deferred(BigDecimal("20.0000"), AthTrustFailureReason.LEDGER_COVERAGE_STALE)
                 // Trap: must never be consulted while deferred.
                 every { analyzer.calculateFiatDeployment(any(), any()) } returns BigDecimal("99")
                 every { analyzer.calculateEffectiveUsdTarget(any()) } returns BigDecimal.ZERO

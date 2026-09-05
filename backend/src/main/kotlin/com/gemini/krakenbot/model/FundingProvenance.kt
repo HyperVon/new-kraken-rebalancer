@@ -18,6 +18,14 @@ enum class FundingEvidence {
     UNRESOLVED,
 }
 
+/** Operational failure while preparing authoritative funding evidence. */
+enum class FundingProvenanceFailureReason {
+    PERMISSION_DENIED,
+    REQUEST_FAILED,
+}
+
+data class FundingProvenanceFailure(val reason: FundingProvenanceFailureReason, val message: String)
+
 /**
  * Authoritative record of a deposit transaction from Kraken's DepositStatus API.
  *
@@ -77,6 +85,10 @@ data class InternalTransferRecord(
 fun interface FundingProvenanceResolver {
     fun resolve(event: LedgerEvent): FundingEvidence
 
+    /** Non-null when the immutable evidence snapshot could not be prepared. */
+    val preparationFailure: FundingProvenanceFailure?
+        get() = null
+
     /**
      * Loads/caches all evidence needed for a batch of ledger rows before
      * [resolve] is called. The returned resolver is the immutable evidence
@@ -89,6 +101,14 @@ fun interface FundingProvenanceResolver {
     companion object {
         /** Fallback resolver with no external provenance (all unproven funding classifies as UNRESOLVED). */
         val NONE: FundingProvenanceResolver = FundingProvenanceResolver { FundingEvidence.UNRESOLVED }
+
+        /** Resolver that keeps all funding rows unresolved while preserving the operational failure reason. */
+        fun unavailable(failure: FundingProvenanceFailure): FundingProvenanceResolver =
+            object : FundingProvenanceResolver {
+                override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                override val preparationFailure: FundingProvenanceFailure = failure
+            }
     }
 }
 

@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.FundingEvidence
+import com.gemini.krakenbot.model.FundingProvenanceFailure
+import com.gemini.krakenbot.model.FundingProvenanceFailureReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
@@ -124,16 +126,34 @@ class KrakenFundingProvenanceResolver(
                 resolver
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: KrakenApiPermissionDeniedException) {
+                prepared = null
+                val message =
+                    "Kraken denied ${e.endpoint}; enable Funds: Query for DepositStatus and " +
+                        "Funds: Withdraw or Data: Query ledger entries for WithdrawStatus."
+                log.error(message, e)
+                FundingProvenanceResolver.unavailable(
+                    FundingProvenanceFailure(
+                        reason = FundingProvenanceFailureReason.PERMISSION_DENIED,
+                        message = message,
+                    ),
+                )
             } catch (e: Exception) {
                 // Do not retain an incomplete or stale batch after a fetch
-                // failure. The caller receives NONE for this operation and a
-                // later operation may retry the authoritative source.
+                // failure. The caller receives unresolved evidence with the
+                // operational failure attached, and a later operation may
+                // retry the authoritative source.
                 prepared = null
                 log.warn(
                     "Funding provenance fetch failed; funding rows remain unresolved ({})",
                     e::class.simpleName ?: "unknown",
                 )
-                FundingProvenanceResolver.NONE
+                FundingProvenanceResolver.unavailable(
+                    FundingProvenanceFailure(
+                        reason = FundingProvenanceFailureReason.REQUEST_FAILED,
+                        message = "Funding provenance request failed: ${e.message ?: e::class.simpleName}",
+                    ),
+                )
             }
         }
     }

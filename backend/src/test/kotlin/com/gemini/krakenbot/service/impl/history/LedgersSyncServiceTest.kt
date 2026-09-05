@@ -78,8 +78,8 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
             service.syncLedgersFromKraken()
 
-            // Per-type cursors: 8 ledger types each fetch once per sync (offset 0), second sync throttled.
-            coVerify(exactly = 8) { krakenService.getLedgers(any(), any(), any(), any()) }
+            // Per-type cursors: 9 ledger types each fetch once per sync (offset 0), second sync throttled.
+            coVerify(exactly = 9) { krakenService.getLedgers(any(), any(), any(), any()) }
             requestedTypes.toSet() shouldBe LedgersSyncService.SUPPORTED_LEDGER_TYPES.map { setOf(it) }.toSet()
             service.isLedgersSeeded() shouldBe true
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
@@ -123,9 +123,9 @@ class LedgersSyncServiceTest : StringSpec() {
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
                 fixedNow.epochSecond.toString()
-            // Per-type cursors: each offset is fetched for all 8 types (duplicates are deduped by unique index).
-            coVerify(exactly = 8) { krakenService.getLedgers(any(), 0, any(), any()) }
-            coVerify(exactly = 8) { krakenService.getLedgers(any(), 50, any(), any()) }
+            // Per-type cursors: each offset is fetched for all 9 types (duplicates are deduped by unique index).
+            coVerify(exactly = 9) { krakenService.getLedgers(any(), 0, any(), any()) }
+            coVerify(exactly = 9) { krakenService.getLedgers(any(), 50, any(), any()) }
         }
 
         "deduplicates the newest-first offset overlap across pages" {
@@ -340,7 +340,7 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             val expectedInitialStart = baseTime.minusSeconds(300).epochSecond
-            coVerify(exactly = 8) {
+            coVerify(exactly = 9) {
                 krakenService.getLedgers(
                     startSec = expectedInitialStart,
                     offset = 0,
@@ -349,7 +349,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 )
             }
             val expectedIncrementalStart = fixedNow.minusSeconds(300).epochSecond
-            coVerify(exactly = 8) {
+            coVerify(exactly = 9) {
                 krakenService.getLedgers(
                     startSec = expectedIncrementalStart,
                     offset = 0,
@@ -394,7 +394,9 @@ class LedgersSyncServiceTest : StringSpec() {
             now = fixedNow.plusSeconds(1_200)
             failureEnabled = false
             service.syncLedgersFromKraken()
-            coVerify(exactly = 9) {
+            // The failed retry reaches the first per-type request before
+            // throwing: 1 failed call + 9 retry calls at the preserved watermark.
+            coVerify(exactly = 10) {
                 krakenService.getLedgers(
                     startSec = fixedNow.minusSeconds(300).epochSecond,
                     offset = 0,
@@ -497,6 +499,13 @@ class LedgersSyncServiceTest : StringSpec() {
                 .copy(type = KrakenApiConstants.LEDGER_TYPE_SPEND, asset = "USD", amount = BigDecimal("-5000.00"))
             val receiveEvent = event(6, time = fixedNow.minus(3, ChronoUnit.DAYS))
                 .copy(type = KrakenApiConstants.LEDGER_TYPE_RECEIVE, asset = "BTC", amount = BigDecimal("0.10"))
+            val earnRewardEvent = event(7, time = fixedNow.minus(2, ChronoUnit.DAYS))
+                .copy(
+                    type = KrakenApiConstants.LEDGER_TYPE_EARN,
+                    subtype = "reward",
+                    asset = "ETH",
+                    amount = BigDecimal("0.01000000"),
+                )
 
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
@@ -516,6 +525,8 @@ class LedgersSyncServiceTest : StringSpec() {
 
                     setOf(KrakenApiConstants.LEDGER_TYPE_STAKING) -> listOf(event(0, time = baseTime))
 
+                    setOf(KrakenApiConstants.LEDGER_TYPE_EARN) -> listOf(earnRewardEvent)
+
                     // duplicate
                     else -> emptyList()
                 }
@@ -527,10 +538,11 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             service.isLedgerCoverageCurrent() shouldBe true
-            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "3"
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
             val allEvents = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(300))
             allEvents.map { it.ledgerId }.toSet() shouldBe
-                setOf("ledger-0", "ledger-1", "ledger-2", "ledger-3", "ledger-4", "ledger-5", "ledger-6")
+                setOf("ledger-0", "ledger-1", "ledger-2", "ledger-3", "ledger-4", "ledger-5", "ledger-6", "ledger-7")
 
             val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
             coVerify {
@@ -564,7 +576,8 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             service.isLedgerCoverageCurrent() shouldBe true
-            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "3"
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
         }
 
         "partial backfill failure across multiple ledger types leaves coverage version stale" {

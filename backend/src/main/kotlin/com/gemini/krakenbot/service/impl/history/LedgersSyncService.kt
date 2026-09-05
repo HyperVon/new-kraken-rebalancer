@@ -19,7 +19,7 @@ import java.time.temporal.ChronoUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Pulls Kraken's strategy-neutral ledger entries into the local database: staking, dividend,
+ * Pulls Kraken's strategy-neutral ledger entries into the local database: staking, dividend, earn,
  * deposit, withdrawal, transfer, adjustment, and consumer-transaction spend/receive rows.
  * The live adapter maps the latter two response types to Kraken's documented `sale` query filter.
  *
@@ -38,10 +38,11 @@ class LedgersSyncService(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     companion object {
-        const val CURRENT_LEDGER_COVERAGE_VERSION = "3"
+        const val CURRENT_LEDGER_COVERAGE_VERSION = "4"
         val SUPPORTED_LEDGER_TYPES = listOf(
             KrakenApiConstants.LEDGER_TYPE_STAKING,
             KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+            KrakenApiConstants.LEDGER_TYPE_EARN,
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
             KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
             KrakenApiConstants.LEDGER_TYPE_TRANSFER,

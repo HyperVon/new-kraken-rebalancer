@@ -147,16 +147,22 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      strategy performance, owner capital flows adjust ATH proportionally:
      `Adjusted ATH = Current ATH * (Pre-Flow Value + Net External Flow) / Pre-Flow Value`
      This ensures an external deposit scales ATH without wiping out an existing drawdown percentage, and an external
-     withdrawal scales ATH down without triggering artificial drawdown or forced fiat deployment. Staking rewards
-     and dividends are investment performance that improve portfolio value and reduce drawdown
-     without scaling ATH.
+     withdrawal scales ATH down without triggering artificial drawdown or forced fiat deployment. Staking rewards,
+     dividends, and `earn/reward` are investment performance that improve portfolio value and reduce drawdown
+     without scaling ATH; Earn allocation mechanics remain internal.
    - **Two-Layer Funding Provenance & Flow Classification**: Kraken reuses coarse ledger types for economically
      distinct activity, so classification follows a strict two-layer architecture:
      1. *Intrinsic classification (`LedgerFlowClassifier`)*: Evaluates intrinsic ledger metadata. Same-asset
         `refid`-paired zero-net legs and known internal-subtype rows (spot/futures/staking wallet moves, earn
         allocation, migration) classify as `INTERNAL_MOVE`. Trade rows defer to `TradesHistory` (`TRADE_IGNORED`),
         margin-family rows (`margin`, `rollover`, `settled`, `credit`, `sale`) replay in-kind as `EXTERNAL_BALANCE`
-        without scaling ATH, and unrecognized ledger types fail closed. For deposits and withdrawals, the classifier
+        without scaling ATH, and unrecognized ledger types fail closed. Modern `earn/reward` is
+        `EXTERNAL_BALANCE`; `earn/allocation`, `deallocation`, `autoallocate`, and `migration` are
+        `INTERNAL_MOVE`; another Earn subtype is ambiguous. For `transfer`, exact internal subtypes,
+        authoritative internal evidence, or an asset-aware same-asset zero-net pairing may prove
+        `INTERNAL_MOVE`; documented `airdrop`, `fork`, `distribution`, and `reward` subtypes are
+        `EXTERNAL_BALANCE`; a bare transfer remains ambiguous. `refid` is used only to correlate
+        rows and never parsed for undocumented meaning. For deposits and withdrawals, the classifier
         delegates external validation to an affirmative `FundingProvenanceResolver`.
      2. *External provenance verification (`FundingProvenanceResolver`)*: In production,
         `KrakenFundingProvenanceResolver` batches authenticated `/0/private/DepositStatus` and
@@ -180,7 +186,13 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      `TRADE_IGNORED`) or performance events (`EXTERNAL_BALANCE`) which are acknowledged in the decision journal,
      flows classified as `AMBIGUOUS` or `UNSUPPORTED` MUST NOT be journaled as decided or skipped. Instead, they
      fail closed by deferring the entire ATH update (`AthUpdateResult.Deferred`), preserving the last trusted
-     drawdown and forcing fiat deployment to zero. They remain unjournaled so future sync cycles or operator
+     drawdown and forcing fiat deployment to zero. Every deferred result carries a structured
+     `AthTrustFailureReason`: `LEDGER_COVERAGE_STALE`, `LEDGER_COVERAGE_UNKNOWN`,
+     `FUNDING_PROVENANCE_UNAVAILABLE`, `AMBIGUOUS_FUNDING`, `UNSUPPORTED_LEDGER_EVENT`,
+     `HISTORICAL_PRICE_UNAVAILABLE`, `PRE_FLOW_BASIS_UNCERTAIN`, `BALANCE_OBSERVATION_UNCERTAIN`,
+     `EVENT_ORDERING_UNCERTAIN`, or `PERSISTENCE_FAILURE`. The reason is logged and exposed as
+     `lastAthDeferredReason` in backend health status; it is diagnostic only and every deferral still
+     forces fiat deployment to zero. They remain unjournaled so future sync cycles or operator
      reconciliations can re-evaluate them with fresh metadata, and once resolved with affirmative evidence, they
      apply exactly once.
    - **Ledger Coverage Ceiling & Identity-Driven Reconciliation**: ATH flow processing is upper-bounded by
@@ -413,29 +425,45 @@ failure.
       dry-run returns before changing balances.
 5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
 
-### Ledger history and staking rewards
+### Ledger history and staking/Earn rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
-once every **300 seconds**, requesting the eight strategy-neutral response types
-(`staking`, `dividend`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
+once every **300 seconds**, requesting the nine strategy-neutral response types
+(`staking`, `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
 `spend`, and `receive`) in pages of **50**. Kraken's API query filter uses
 `sale` for the consumer `spend`/`receive` rows; the live adapter filters those
-response types locally. The first and recovered initial syncs use a bounded
-**96-day** seed window and store durable progress metadata; later syncs use the
-latest stored ledger time (or watermark) with a **300-second overlap**. SQLite
-enforces the `(ledger id, timestamp, asset, type)` identity so overlapping pages
-and retries are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
+response types locally. A seeded installation whose coverage version predates
+version `4` performs a bounded **96-day** backfill with the same identity
+deduplication; ledgers remain retained for the lifetime of the account. The
+first and recovered initial syncs also use a bounded **96-day** seed window and
+store durable progress metadata; later syncs use the latest stored ledger time
+(or watermark) with a **300-second overlap**. SQLite enforces the
+`(ledger id, timestamp, asset, type)` identity so overlapping pages and retries
+are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
 and [ledger field guidance](https://support.kraken.com/articles/360001169383-how-to-interpret-ledger-history-fields).
 
-The History `/api/history/rewards` endpoint charts `staking` and `dividend`
-entries for tracked allocation assets. It aligns cumulative per-asset amounts to
+Funding provenance uses authenticated `DepositStatus` and `WithdrawStatus`
+lookups. Kraken documents `DepositStatus` with **Funds: Query** and
+`WithdrawStatus` with **Funds: Withdraw** or **Data: Query ledger entries**;
+the configured **Query Funds** and **Query Ledgers** permissions therefore
+cover the application's read-only use. A permission denial is retained as
+`FUNDING_PROVENANCE_UNAVAILABLE` and logged with the required permission.
+
+The History `/api/history/rewards` endpoint charts `staking`, `dividend`, and
+`earn/reward` entries for tracked allocation assets. It aligns cumulative
+per-asset amounts to
 stored portfolio snapshot timestamps, values each asset using that snapshot's
 price, and returns total and per-asset USD series for the selected range.
-Dividend entries for untracked assets remain persisted but excluded as external
-inflows.
+Earn allocation mechanics are persisted for account reconstruction but are not
+performance rewards; unknown Earn subtypes remain fail-closed. Dividend entries
+for untracked assets remain persisted but excluded as external inflows.
 
-For benchmark and reconstruction accounting, all eight external ledger types are
-applied as `amount - fee`, preserving both legs of a consumer transaction. Kraken
+For ATH and benchmark accounting, all nine synchronized ledger types are
+classified before application and use `amount - fee` where replayed, preserving
+both legs of a consumer transaction. `earn/reward` is an in-kind performance
+event; Earn allocation mechanics are internal and ignored by ATH and Buy & Hold.
+Historical snapshot reconstruction replays the corresponding account-balance
+legs so reconstructed Spot balances remain faithful. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
 and not Trades history, so the comparison does not try to deduplicate these ledger
 rows against `TradesHistory`. The reconstruction marker is paired with the ledger
@@ -444,15 +472,24 @@ rebuild.
 
 Benchmark events are built from the original classified ledger rows before any
 passthrough reduction. Safe same-source-timestamp USD funding plumbing (`OWNER_CAPITAL`
-deposit/withdrawal plus `spend`/`receive`) carries the original typed category,
-net economics, and every source ledger ID; it is never represented by a synthetic
-row that is classified a second time. Thus a confirmed deposit followed by a
-consumer `spend` remains owner capital with its net contribution, while internal
-moves remain neutral and unresolved funding remains unavailable. A mixed-sign or
-overdrawn funding/plumbing group is left separate rather than being reclassified
-as the opposite owner-flow direction. Where a trade, owner flow, or non-plumbing
-balance movement shares a timestamp and the economic order cannot be proven, the
-comparison returns unavailable rather than imposing a lexical order.
+deposit/withdrawal plus `spend`/`receive`) carries the original typed category
+and every source ledger ID; it is never represented by a synthetic row that is
+classified a second time. USD-only plumbing may collapse to its net economics,
+while mixed-asset card plumbing keeps the funding contribution and consumer legs
+separate, as described below. Internal moves remain neutral and unresolved
+funding remains unavailable. A mixed-sign or overdrawn funding/plumbing group is
+left separate rather than being reclassified as the opposite owner-flow
+direction. Where a trade, owner flow, or non-plumbing balance movement shares a
+timestamp and the economic order cannot be proven, the comparison returns
+unavailable rather than imposing a lexical order.
+
+For a mixed-asset card purchase, the external funding row, USD `spend`, and
+purchased-asset `receive` must all share one non-blank `refid` and have opposing
+USD directions. The benchmark then keeps the owner contribution (invested by
+inception weights) and replays the linked conversion once. A missing relationship
+is reported as `AMBIGUOUS_LEDGER_TYPE`; the comparison never treats the deposit
+as performance or counts the funding twice. A provenance preparation failure is
+reported separately as `FUNDING_PROVENANCE_UNAVAILABLE`.
 
 Before rendering benchmark points, each interval replays every successful
 authoritative trade, supported external ledger event, and fee into the previous

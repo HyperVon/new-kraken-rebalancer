@@ -13,6 +13,7 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.AthTrustFailureReason
 import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -376,6 +377,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
+                    defaultProvenanceResolver = testProvenanceResolver,
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
@@ -520,7 +522,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
 
                 result shouldBe
-                    AthUpdateResult.Deferred(BigDecimal("20.0000"))
+                    AthUpdateResult.Deferred(
+                        BigDecimal("20.0000"),
+                        AthTrustFailureReason.LEDGER_COVERAGE_STALE,
+                    )
                 coVerify(exactly = 0) { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) }
             }
         }
@@ -585,7 +590,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     balancesObservedAt = observation,
                 )
 
-                result shouldBe AthUpdateResult.Deferred(null)
+                result shouldBe AthUpdateResult.Deferred(null, AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN)
                 coVerify(exactly = 0) {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
                 }
@@ -620,7 +625,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val reward = LedgerEvent(
                     ledgerId = "OBSERVATION-REWARD",
                     time = rewardTime,
-                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    type = KrakenApiConstants.LEDGER_TYPE_EARN,
+                    subtype = "reward",
                     asset = "BTC",
                     amount = BigDecimal("0.1"),
                     balance = BigDecimal("1.1"),
@@ -1133,6 +1139,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
+                    defaultProvenanceResolver = testProvenanceResolver,
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
@@ -1169,7 +1176,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
 
                 result shouldBe
-                    AthUpdateResult.Deferred(BigDecimal("5.0000"))
+                    AthUpdateResult.Deferred(
+                        BigDecimal("5.0000"),
+                        AthTrustFailureReason.HISTORICAL_PRICE_UNAVAILABLE,
+                    )
                 coVerify(exactly = 0) {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
                 }
@@ -1306,7 +1316,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = fixedTime,
                 )
-                deferred shouldBe AthUpdateResult.Deferred(null)
+                deferred shouldBe AthUpdateResult.Deferred(null, AthTrustFailureReason.HISTORICAL_PRICE_UNAVAILABLE)
                 coVerify(exactly = 0) {
                     mockTrades.setSyncMetadata(
                         SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
@@ -1846,7 +1856,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = fixedTime,
                 )
-                zeroPrice shouldBe AthUpdateResult.Deferred(null)
+                zeroPrice shouldBe AthUpdateResult.Deferred(null, AthTrustFailureReason.HISTORICAL_PRICE_UNAVAILABLE)
 
                 coEvery { krakenService.getTickerPrices("SOLUSD") } throws
                     CancellationException("ticker cancelled")
@@ -1908,7 +1918,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     totalPortfolioValueUSD = BigDecimal("10000.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = fixedTime,
-                ) shouldBe AthUpdateResult.Deferred(null)
+                ) shouldBe AthUpdateResult.Deferred(null, AthTrustFailureReason.LEDGER_COVERAGE_UNKNOWN)
 
                 val staleLedgers = mockk<LedgerRepository>(relaxed = true)
                 val staleTrades = mockk<TradeRepository>(relaxed = true)
@@ -1925,7 +1935,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     totalPortfolioValueUSD = BigDecimal("10000.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = fixedTime,
-                ) shouldBe AthUpdateResult.Deferred(null)
+                ) shouldBe AthUpdateResult.Deferred(null, AthTrustFailureReason.LEDGER_COVERAGE_STALE)
             }
         }
 
@@ -1988,7 +1998,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         totalPortfolioValueUSD = BigDecimal("11000.00"),
                         netExternalFlowUSD = BigDecimal.ZERO,
                         balancesObservedAt = flowTime,
-                    ) shouldBe AthUpdateResult.Deferred(null)
+                    ) shouldBe AthUpdateResult.Deferred(
+                        null,
+                        AthTrustFailureReason.BALANCE_OBSERVATION_UNCERTAIN,
+                    )
                 }
 
                 assertDeferred(

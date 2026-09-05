@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.30] - 2026-09-05
+
+### Fixed
+
+- **Modern Earn ledger semantics**: synchronized `earn` rows are classified by
+  documented subtype: `reward` is investment performance, while `allocation`,
+  `deallocation`, `autoallocate`, and `migration` are internal moves. Unknown
+  Earn subtypes fail closed. Coverage version `4` triggers a bounded 96-day
+  backfill on seeded installs while preserving identity deduplication,
+  watermark behavior, and lifetime ledger retention.
+- **Transfer and refid safety**: bare `transfer` rows are now ambiguous unless
+  an exact internal subtype, authoritative internal evidence, or an asset-aware
+  zero-net pairing proves neutrality. Documented distribution/reward subtypes
+  replay as external balance. Opaque `refid` values remain correlation
+  identities only; semantic conflicts stay unresolved.
+- **Mixed-asset Buy Crypto accounting**: a card-style `deposit` plus post-fee
+  USD `spend` and purchased-asset `receive` retains the weighted owner
+  contribution and replays the linked conversion once only when every leg has
+  one shared non-blank parent refid. Unproven relationships return unavailable
+  instead of double-counting funding or inventing benchmark alpha.
+- **Comparison provenance diagnostics**: funding-status preparation failures
+  now have a dedicated comparison-unavailable reason instead of being rendered
+  as generic ledger ambiguity.
+- **Actionable ATH deferrals**: `AthUpdateResult.Deferred` now carries a
+  concrete trust-failure reason and exposes it as `lastAthDeferredReason` in
+  backend status. Every deferred reason continues to force zero fiat deployment.
+- **Funding permission diagnostics**: denied `DepositStatus`/`WithdrawStatus`
+  calls now log the required Kraken permission and preserve a structured
+  funding-provenance failure for the fail-closed ATH path.
+
+### Docs
+
+- Documented the nine ledger families, Earn subtype handling, transfer/refid
+  evidence rules, funding-status permissions, structured ATH deferral reasons,
+  mixed-asset Buy Crypto correlation, and completed 15-minute OHLC pricing.
+
 ## [6.17.29] - 2026-09-04
 
 ### Fixed

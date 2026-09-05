@@ -5,6 +5,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.service.impl.KrakenApiPermissionDeniedException
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -170,6 +171,22 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 shouldThrow<IllegalStateException> {
                     service.getDepositStatus()
                 }
+            }
+        }
+
+        "funding status permission errors preserve the denied endpoint" {
+            runTest {
+                val service = createService("{\"error\":[\"EGeneral:Permission denied\"]}")
+
+                val depositError = shouldThrow<KrakenApiPermissionDeniedException> {
+                    service.getDepositStatus()
+                }
+                depositError.endpoint shouldBe KrakenApiConstants.PATH_DEPOSIT_STATUS
+
+                val withdrawalError = shouldThrow<KrakenApiPermissionDeniedException> {
+                    service.getWithdrawStatus()
+                }
+                withdrawalError.endpoint shouldBe KrakenApiConstants.PATH_WITHDRAW_STATUS
             }
         }
 
