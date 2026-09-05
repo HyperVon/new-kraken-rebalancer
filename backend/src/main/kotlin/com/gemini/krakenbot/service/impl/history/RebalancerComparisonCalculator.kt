@@ -1487,12 +1487,49 @@ object RebalancerComparisonCalculator {
                 continue
             }
             if (hasNonUsdPassthrough) {
-                // This is a confirmed mixed-asset conversion. Retain the
-                // owner-capital row and the consumer legs as separate typed
-                // events: the former is invested by inception weights and
-                // the latter is replayed identically, without double-counting
-                // the deposited cash or inventing a synthetic trade.
-                out += group
+                // A confirmed linked card funding transaction (deposit, spend, receive)
+                // represents owner capital entering the strategy, followed by an actual
+                // portfolio decision. The synthetic Buy & Hold benchmark invests the
+                // owner contribution strictly by original inception weights; the actual
+                // asset conversion legs are consumed as plumbing evidence and not replayed.
+                val nonFundingFees = group.filterNot(::isOwnerFundingLeg)
+                    .fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.reconciled.ledger.fee) }
+                val netFunding = fundingLegs.fold(BigDecimal.ZERO) { acc, leg ->
+                    acc.add(leg.reconciled.netBalanceDelta)
+                }
+                val net = if (netFunding.signum() > 0) {
+                    netFunding.subtract(nonFundingFees)
+                } else {
+                    netFunding.add(nonFundingFees)
+                }
+                if (net.signum() != 0 && net.signum() != fundingSign) {
+                    ambiguousAt = ambiguousAt ?: timestamp
+                    out += group
+                    continue
+                }
+                val nonPlumbingRest = group.filterNot { isOwnerFundingLeg(it) || isPassthroughLeg(it) }
+                out += nonPlumbingRest
+                if (net.signum() != 0) {
+                    val representative = fundingLegs.minWith(
+                        compareBy<ClassifiedReconciledLedger>(
+                            { it.reconciled.timestamp },
+                            { it.reconciled.ledger.ledgerId },
+                        ),
+                    )
+                    out += representative.copy(
+                        reconciled = representative.reconciled.copy(
+                            netBalanceDelta = net,
+                        ),
+                        sourceLedgerIds = (fundingLegs + group.filter(::isPassthroughLeg))
+                            .flatMap { it.sourceLedgerIds }
+                            .distinct(),
+                        ownerFlowType = if (net.signum() > 0) {
+                            KrakenApiConstants.LEDGER_TYPE_DEPOSIT
+                        } else {
+                            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL
+                        },
+                    )
+                }
                 continue
             }
             val net = usdLegs.fold(BigDecimal.ZERO) { acc, reconciled ->
@@ -1937,4 +1974,31 @@ object RebalancerComparisonCalculator {
         unavailableReason = reason,
         unavailableAt = unavailableAt,
     )
+
+    internal suspend fun buildBenchmarkEventsForTest(
+        ledgers: List<LedgerEvent>,
+        baseline: PortfolioSnapshot,
+        inceptionWeights: Map<String, BigDecimal>,
+        priceProvider: HistoricalPriceProvider?,
+        provenanceResolver: FundingProvenanceResolver,
+    ): List<BenchmarkEvent> {
+        val prepared = provenanceResolver.prepare(ledgers)
+        val classifications = LedgerFlowClassifier.classifyAll(ledgers, prepared)
+        val reconciled = ledgers.map {
+            ReconciledLedger(
+                ledger = it,
+                timestamp = it.time,
+                netBalanceDelta = it.netBalanceDelta(),
+            )
+        }
+        return buildBenchmarkEvents(
+            trades = emptyList(),
+            ledgers = reconciled,
+            knownRebalancerOrderTxids = emptySet(),
+            baseline = baseline,
+            inceptionWeights = inceptionWeights,
+            priceProvider = priceProvider,
+            classifications = classifications,
+        ).events
+    }
 }

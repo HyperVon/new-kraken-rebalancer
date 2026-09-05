@@ -63,10 +63,13 @@ class KrakenServiceImpl(
 
     private val lastFetchedCount = AtomicInteger(0)
     private val lastLedgerCount = AtomicInteger(0)
+    private val lastLedgerRawPageSize = AtomicInteger(0)
 
     override fun getLastTradeHistoryTotalCount(): Int = lastFetchedCount.get()
 
     override fun getLastLedgerTotalCount(): Int = lastLedgerCount.get()
+
+    override fun getLastLedgerRawPageSize(): Int = lastLedgerRawPageSize.get()
 
     override suspend fun getApiCallCounter(): Double = rateLimiter.getCurrentCounter()
 
@@ -338,8 +341,9 @@ class KrakenServiceImpl(
                     responseTypes.toSet(),
                 )
             }
-            lastLedgerCount.set(pages.sumOf { it.second })
-            return pages.flatMap { it.first }
+            lastLedgerCount.set(pages.sumOf { it.totalCount })
+            lastLedgerRawPageSize.set(pages.sumOf { it.rawPageSize })
+            return pages.flatMap { it.entries }
         }
 
         val pageParams = if (queryTypes != null) {
@@ -347,11 +351,14 @@ class KrakenServiceImpl(
         } else {
             params
         }
-        val (entries, count) = queryLedgerPage(pageParams, types)
-        lastLedgerCount.set(count)
-        return entries
+        val pageResult = queryLedgerPage(pageParams, types)
+        lastLedgerCount.set(pageResult.totalCount)
+        lastLedgerRawPageSize.set(pageResult.rawPageSize)
+        return pageResult.entries
     }
 
+    // TODO: Funding provenance currently uses legacy DepositStatus/WithdrawStatus APIs.
+    // Migrate to List Funding Deposits / List Funding Withdrawals in a follow-up.
     override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> = getFundingStatus(
         path = KrakenApiConstants.PATH_DEPOSIT_STATUS,
         startSec = startSec,
@@ -423,13 +430,15 @@ class KrakenServiceImpl(
         KrakenApiConstants.LEDGER_TYPE_RECEIVE,
         -> KrakenApiConstants.LEDGER_TYPE_SALE
 
+        KrakenApiConstants.LEDGER_TYPE_EARN -> KrakenApiConstants.LEDGER_TYPE_ALL
+
         else -> type
     }
 
     private suspend fun queryLedgerPage(
         params: Map<String, String>,
         expectedTypes: Set<String>?,
-    ): Pair<List<LedgerEvent>, Int> {
+    ): KrakenParsers.LedgerPageResult {
         val result =
             try {
                 queryPrivate(KrakenApiConstants.PATH_LEDGERS, params)

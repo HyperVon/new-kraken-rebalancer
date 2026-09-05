@@ -21,22 +21,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Modern Earn ledger semantics**: synchronized `earn` rows are classified by
-  documented subtype: `reward` is investment performance, while `allocation`,
-  `deallocation`, `autoallocate`, and `migration` are internal moves. Unknown
-  Earn subtypes fail closed. Coverage version `4` triggers a bounded 96-day
-  backfill on seeded installs while preserving identity deduplication,
-  watermark behavior, and lifetime ledger retention.
-- **Transfer and refid safety**: bare `transfer` rows are now ambiguous unless
-  an exact internal subtype, authoritative internal evidence, or an asset-aware
-  zero-net pairing proves neutrality. Documented distribution/reward subtypes
-  replay as external balance. Opaque `refid` values remain correlation
+- **Modern Earn ledger semantics & retrieval**: `/0/private/Ledgers` does not
+  support `type=earn`; queries request `type=all` when retrieving Earn and filter
+  locally for `type == "earn"`. Pagination checks Kraken's authoritative total
+  count and raw page size so intermediate pages with zero Earn rows do not terminate
+  retrieval prematurely. Synchronized `earn` rows are classified by documented
+  subtype: `reward` is investment performance, while `allocation`, `deallocation`,
+  `autoallocate`, and `migration` are internal moves. Unknown Earn subtypes fail closed.
+  Coverage version `4` triggers a bounded 96-day backfill on seeded installs while
+  preserving identity deduplication, watermark behavior, and lifetime ledger retention.
+- **Transfer and refid safety**: bare `transfer` rows are ambiguous unless an
+  exact internal subtype, authoritative internal evidence, or an asset-aware
+  zero-net pairing proves neutrality. Documented `reward` replays as external balance,
+  while undocumented descriptive prose (`airdrop`, `fork`, `distribution`) stays
+  ambiguous without external provenance. Opaque `refid` values remain correlation
   identities only; semantic conflicts stay unresolved.
-- **Mixed-asset Buy Crypto accounting**: a card-style `deposit` plus post-fee
-  USD `spend` and purchased-asset `receive` retains the weighted owner
-  contribution and replays the linked conversion once only when every leg has
-  one shared non-blank parent refid. Unproven relationships return unavailable
-  instead of double-counting funding or inventing benchmark alpha.
+- **Card-funded Buy Crypto accounting & counterfactual**: confirmed 3-leg card
+  transactions (`deposit` plus post-fee USD `spend` and purchased-asset `receive`
+  sharing a non-blank `refid`) collapse into a single owner contribution net of
+  fees ($5,000 gross - $20 fee = $4,980 net). Synthetic Buy & Hold allocates this
+  capital strictly by original inception weights; spend and receive legs are
+  consumed as plumbing evidence and not replayed into B&H. Applied consistently
+  to ATH neutralization without fee-induced drawdown.
 - **Comparison provenance diagnostics**: funding-status preparation failures
   now have a dedicated comparison-unavailable reason instead of being rendered
   as generic ledger ambiguity.
@@ -49,9 +55,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Docs
 
-- Documented the nine ledger families, Earn subtype handling, transfer/refid
-  evidence rules, funding-status permissions, structured ATH deferral reasons,
-  mixed-asset Buy Crypto correlation, and completed 15-minute OHLC pricing.
+- Documented the nine ledger families, Earn subtype handling and `type=all` retrieval,
+  transfer/refid evidence rules, funding-status permissions and endpoint deprecation note,
+  structured ATH deferral reasons, card Buy Crypto counterfactual economics, and
+  completed 15-minute OHLC pricing.
 
 ## [6.17.29] - 2026-09-04
 

@@ -647,5 +647,172 @@ class LedgersSyncServiceTest : StringSpec() {
             ledgerIds.toSet() shouldBe (0..50).map { "ledger-$it" }.toSet()
             ledgerIds.size shouldBe 51
         }
+
+        "earn pagination continues across raw pages when early pages contain zero earn rows" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+
+            val earnEvent1 = LedgerEvent(
+                ledgerId = "earn-1",
+                time = fixedNow.minusSeconds(60),
+                type = KrakenApiConstants.LEDGER_TYPE_EARN,
+                subtype = "reward",
+                asset = "DOT.HOLD",
+                amount = BigDecimal("1.50"),
+            )
+            val earnEvent2 = LedgerEvent(
+                ledgerId = "earn-2",
+                time = fixedNow.minusSeconds(30),
+                type = KrakenApiConstants.LEDGER_TYPE_EARN,
+                subtype = "reward",
+                asset = "DOT.HOLD",
+                amount = BigDecimal("2.00"),
+            )
+
+            var lastTotalCount = 0
+            var lastRawPageSize = 0
+            coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { lastTotalCount }
+            coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { lastRawPageSize }
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                val types = arg<Set<String>?>(3)
+                val offset = secondArg<Int?>() ?: 0
+                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_EARN)) {
+                    lastTotalCount = 100
+                    when (offset) {
+                        0 -> {
+                            // Page 1: 50 non-earn rows received from type=all query; filtered down to empty
+                            lastRawPageSize = 50
+                            emptyList()
+                        }
+
+                        50 -> {
+                            // Page 2: 50 raw rows with 2 earn rows
+                            lastRawPageSize = 50
+                            listOf(earnEvent1, earnEvent2)
+                        }
+
+                        else -> {
+                            lastRawPageSize = 0
+                            emptyList()
+                        }
+                    }
+                } else {
+                    lastTotalCount = 0
+                    lastRawPageSize = 0
+                    emptyList()
+                }
+            }
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            val stored = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(300))
+            stored.map { it.ledgerId }.toSet() shouldBe setOf("earn-1", "earn-2")
+            stored.all { it.type == KrakenApiConstants.LEDGER_TYPE_EARN } shouldBe true
+
+            // Idempotency: duplicate identities in a subsequent sync pass are harmless
+            val advancedNow = fixedNow.plusSeconds(600)
+            val service2 = LedgersSyncService(repository, krakenService, configService, nowProvider = { advancedNow })
+            service2.syncLedgersFromKraken()
+
+            val storedAfterSecondSync = repository.getLedgersInRange(Instant.EPOCH, advancedNow.plusSeconds(300))
+            storedAfterSecondSync.map { it.ledgerId }.toSet() shouldBe setOf("earn-1", "earn-2")
+        }
+
+        "pagination falls back to rawPageSize when totalCount is unstated or zero" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+
+            val earnEvent = LedgerEvent(
+                ledgerId = "earn-fallback",
+                time = fixedNow.minusSeconds(60),
+                type = KrakenApiConstants.LEDGER_TYPE_EARN,
+                subtype = "reward",
+                asset = "DOT.HOLD",
+                amount = BigDecimal("1.50"),
+            )
+
+            var lastRawPageSize = 0
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { lastRawPageSize }
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                val types = arg<Set<String>?>(3)
+                val offset = secondArg<Int?>() ?: 0
+                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_EARN)) {
+                    when (offset) {
+                        0 -> {
+                            lastRawPageSize = 50
+                            emptyList()
+                        }
+
+                        50 -> {
+                            lastRawPageSize = 10
+                            listOf(earnEvent)
+                        }
+
+                        else -> {
+                            lastRawPageSize = 0
+                            emptyList()
+                        }
+                    }
+                } else {
+                    lastRawPageSize = 0
+                    emptyList()
+                }
+            }
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            val stored = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(300))
+            stored.map { it.ledgerId } shouldBe listOf("earn-fallback")
+        }
+
+        "pagination falls back to filtered page size when both totalCount and rawPageSize are unstated" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                val offset = secondArg<Int?>() ?: 0
+                val types = arg<Set<String>?>(3)
+                if (offset == 0) {
+                    List(50) { i ->
+                        LedgerEvent(
+                            ledgerId = "ledger-fallback-$i",
+                            refid = "ref-$i",
+                            time = baseTime.plusSeconds(i.toLong()),
+                            type = types?.singleOrNull() ?: KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("10.00"),
+                        )
+                    }
+                } else {
+                    emptyList()
+                }
+            }
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            val stored = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(300))
+            stored.isEmpty() shouldBe false
+        }
     }
 }

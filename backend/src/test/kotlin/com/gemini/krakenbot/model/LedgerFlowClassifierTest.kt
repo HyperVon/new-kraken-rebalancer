@@ -391,13 +391,16 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.AMBIGUOUS
         }
 
-        "documented transfer distribution semantics are performance" {
+        "documented transfer reward semantics are performance, while undocumented prose subtypes stay ambiguous" {
+            LedgerFlowClassifier.classify(
+                event("reward", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "reward", asset = "ETH"),
+            ) shouldBe FlowCategory.EXTERNAL_BALANCE
             LedgerFlowClassifier.classify(
                 event("airdrop", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "airdrop", asset = "ETH"),
-            ) shouldBe FlowCategory.EXTERNAL_BALANCE
+            ) shouldBe FlowCategory.AMBIGUOUS
             LedgerFlowClassifier.classify(
                 event("fork", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "fork", asset = "ETH"),
-            ) shouldBe FlowCategory.EXTERNAL_BALANCE
+            ) shouldBe FlowCategory.AMBIGUOUS
             LedgerFlowClassifier.classify(
                 event(
                     "distribution",
@@ -406,10 +409,7 @@ class LedgerFlowClassifierTest : StringSpec() {
                     subtype = "distribution",
                     asset = "ETH",
                 ),
-            ) shouldBe FlowCategory.EXTERNAL_BALANCE
-            LedgerFlowClassifier.classify(
-                event("reward", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "reward", asset = "ETH"),
-            ) shouldBe FlowCategory.EXTERNAL_BALANCE
+            ) shouldBe FlowCategory.AMBIGUOUS
         }
 
         "authoritative transfer provenance overrides an opaque refid" {
@@ -450,10 +450,10 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.AMBIGUOUS
             LedgerFlowClassifier.classify(
                 event(
-                    "contradictory-airdrop",
+                    "contradictory-reward",
                     KrakenApiConstants.LEDGER_TYPE_TRANSFER,
                     "1.00",
-                    subtype = "airdrop",
+                    subtype = "reward",
                 ),
                 FundingProvenanceResolver { FundingEvidence.INTERNAL },
             ) shouldBe FlowCategory.AMBIGUOUS

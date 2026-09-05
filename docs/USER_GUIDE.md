@@ -325,9 +325,9 @@ achieved against a **synthetic buy-and-hold** strategy:
   evidence, keep the comparison unavailable.
 - `transfer` is not automatically internal: an exact documented internal subtype, authoritative
   internal evidence, or same-asset zero-net paired movement can prove `INTERNAL_MOVE`; documented
-  `airdrop`, `fork`, `distribution`, and `reward` subtypes are `EXTERNAL_BALANCE`. A bare transfer
-  is ambiguous. `refid` values provide correlation identity only, so strings such as `KF...`,
-  `futures`, or `internal` do not prove wallet semantics.
+  `reward` subtype is `EXTERNAL_BALANCE`. Undocumented prose descriptions (`airdrop`, `fork`, `distribution`)
+  and bare transfers stay ambiguous without affirmative external provenance. `refid` values provide correlation
+  identity only, so strings such as `KF...`, `futures`, or `internal` do not prove wallet semantics.
 - Modern `earn` rows are explicit: `reward` is replayed as performance, while `allocation`,
   `deallocation`, `autoallocate`, and `migration` are internal and excluded from the rewards chart.
   Unknown Earn subtypes keep the comparison unavailable.
@@ -339,8 +339,9 @@ achieved against a **synthetic buy-and-hold** strategy:
   uses a completed 15-minute candle only when its end is at or before the event (an exact end is
   valid); a live ticker is allowed only within 300 seconds of the balance observation.
 - Same-source-timestamp USD-only funding plumbing is netted only after original classification and
-  retains its source ledger IDs. A linked mixed-asset card purchase instead keeps its weighted
-  owner contribution and consumer legs separate. Mixed-sign or overdrawn groups are not
+  retains its source ledger IDs. A linked mixed-asset card purchase collapses into one owner capital contribution
+  net of non-funding fees, allocated strictly by original inception weights (spend/receive legs are consumed as
+  plumbing evidence without being replayed into Buy & Hold). Mixed-sign or overdrawn groups are not
   reclassified into an opposite owner-flow direction.
 - Historical Kraken ledger entries are reconciled using their recorded post-event balance when
   the stored fee precision is insufficient; mixed or ambiguous balance changes remain unavailable.

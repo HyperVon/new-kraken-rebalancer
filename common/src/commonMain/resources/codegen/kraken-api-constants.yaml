@@ -63,6 +63,7 @@ KrakenApiConstants:
   SUBSTRING_TRADES_HISTORY: "TradesHistory"
   SUBSTRING_LEDGERS: "Ledgers"
   SUBSTRING_CLOSED_ORDERS: "ClosedOrders"
+  LEDGER_TYPE_ALL: "all"
   LEDGER_TYPE_STAKING: "staking"
   LEDGER_TYPE_DIVIDEND: "dividend"
   LEDGER_TYPE_EARN: "earn"

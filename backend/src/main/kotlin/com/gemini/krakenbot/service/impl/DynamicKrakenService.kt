@@ -50,6 +50,7 @@ class DynamicKrakenService(
 
     /** Cached after [getLedgers] so sync progress metadata need not downcast the port. */
     private val lastLedgerTotalCount = AtomicInteger(0)
+    private val lastLedgerRawPageSize = AtomicInteger(0)
 
     /**
      * Pins the live vs simulation backend for [block] at entry. If a pin is already
@@ -114,10 +115,13 @@ class DynamicKrakenService(
         val backend = currentBackend()
         val ledgers = backend.getLedgers(startSec, offset, endSec, types)
         lastLedgerTotalCount.set(backend.getLastLedgerTotalCount())
+        lastLedgerRawPageSize.set(backend.getLastLedgerRawPageSize())
         return ledgers
     }
 
     override fun getLastLedgerTotalCount(): Int = lastLedgerTotalCount.get()
+
+    override fun getLastLedgerRawPageSize(): Int = lastLedgerRawPageSize.get()
 
     override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> =
         currentBackend().getDepositStatus(startSec, endSec)

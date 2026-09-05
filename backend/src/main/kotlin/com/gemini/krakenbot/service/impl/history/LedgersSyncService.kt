@@ -270,16 +270,16 @@ class LedgersSyncService(
                     types = setOf(type),
                 )
                 val totalCount = krakenService.getLastLedgerTotalCount()
+                val rawPageSize = krakenService.getLastLedgerRawPageSize()
                 perTypeTotal[type] = totalCount
                 batches.add(page)
                 combinedBatchSize += page.size
                 val nextOffset = offset + KrakenApiConstants.LEDGER_PAGE_SIZE
-                val hasMoreForType = if (totalCount >
-                    0
-                ) {
+                val hasMoreForType = if (totalCount > 0) {
                     nextOffset < totalCount
                 } else {
-                    page.size >= KrakenApiConstants.LEDGER_PAGE_SIZE
+                    val pageSizeToCheck = if (rawPageSize > 0) rawPageSize else page.size
+                    pageSizeToCheck >= KrakenApiConstants.LEDGER_PAGE_SIZE
                 }
                 if (!hasMoreForType) perTypeDone[type] = true else perTypeOffset[type] = nextOffset
             }

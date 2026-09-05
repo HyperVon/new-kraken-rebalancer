@@ -47,6 +47,7 @@ class FakeKrakenService : KrakenService {
     var tradeHistoryTotalCountOverride = 0
     var getLedgersCallCount = 0
     var ledgerTotalCountOverride = 0
+    var ledgerRawPageSizeOverride = 0
     var getDepositStatusCallCount = 0
     var getWithdrawStatusCallCount = 0
     var getInternalTransfersCallCount = 0
@@ -92,6 +93,8 @@ class FakeKrakenService : KrakenService {
     }
 
     override fun getLastLedgerTotalCount(): Int = ledgerTotalCountOverride
+
+    override fun getLastLedgerRawPageSize(): Int = ledgerRawPageSizeOverride
 
     override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> {
         getDepositStatusCallCount++

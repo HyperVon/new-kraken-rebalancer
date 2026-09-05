@@ -160,8 +160,9 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
         `EXTERNAL_BALANCE`; `earn/allocation`, `deallocation`, `autoallocate`, and `migration` are
         `INTERNAL_MOVE`; another Earn subtype is ambiguous. For `transfer`, exact internal subtypes,
         authoritative internal evidence, or an asset-aware same-asset zero-net pairing may prove
-        `INTERNAL_MOVE`; documented `airdrop`, `fork`, `distribution`, and `reward` subtypes are
-        `EXTERNAL_BALANCE`; a bare transfer remains ambiguous. `refid` is used only to correlate
+        `INTERNAL_MOVE`; documented `reward` subtype is `EXTERNAL_BALANCE`; undocumented prose
+        descriptions (`airdrop`, `fork`, `distribution`) and bare transfers remain ambiguous without
+        affirmative external provenance. `refid` is used only to correlate
         rows and never parsed for undocumented meaning. For deposits and withdrawals, the classifier
         delegates external validation to an affirmative `FundingProvenanceResolver`.
      2. *External provenance verification (`FundingProvenanceResolver`)*: In production,
@@ -430,14 +431,19 @@ failure.
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
 once every **300 seconds**, requesting the nine strategy-neutral response types
 (`staking`, `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
-`spend`, and `receive`) in pages of **50**. Kraken's API query filter uses
-`sale` for the consumer `spend`/`receive` rows; the live adapter filters those
-response types locally. A seeded installation whose coverage version predates
-version `4` performs a bounded **96-day** backfill with the same identity
-deduplication; ledgers remain retained for the lifetime of the account. The
-first and recovered initial syncs also use a bounded **96-day** seed window and
-store durable progress metadata; later syncs use the latest stored ledger time
-(or watermark) with a **300-second overlap**. SQLite enforces the
+`spend`, and `receive`) in pages of **50**. Kraken's API query filter does not
+support `type=earn` (passing `type=earn` returns `EGeneral:Invalid arguments`);
+the service queries `type=all` when requesting `earn` and filters rows locally
+for `type == "earn"`. Similarly, the API query filter uses `type=sale` for the
+consumer `spend`/`receive` rows and filters locally. Pagination for filtered queries
+checks Kraken's authoritative total count (`nextOffset < totalCount`) and the
+raw response page size (`rawPageSize >= 50`) so intermediate pages containing
+zero target rows continue paginating until completion. A seeded installation
+whose coverage version predates version `4` performs a bounded **96-day** backfill
+with the same identity deduplication; ledgers remain retained for the lifetime
+of the account. The first and recovered initial syncs also use a bounded **96-day**
+seed window and store durable progress metadata; later syncs use the latest stored
+ledger time (or watermark) with a **300-second overlap**. SQLite enforces the
 `(ledger id, timestamp, asset, type)` identity so overlapping pages and retries
 are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
 and [ledger field guidance](https://support.kraken.com/articles/360001169383-how-to-interpret-ledger-history-fields).
@@ -446,8 +452,12 @@ Funding provenance uses authenticated `DepositStatus` and `WithdrawStatus`
 lookups. Kraken documents `DepositStatus` with **Funds: Query** and
 `WithdrawStatus` with **Funds: Withdraw** or **Data: Query ledger entries**;
 the configured **Query Funds** and **Query Ledgers** permissions therefore
-cover the application's read-only use. A permission denial is retained as
-`FUNDING_PROVENANCE_UNAVAILABLE` and logged with the required permission.
+cover the application's read-only use. Note: Kraken's REST documentation marks
+`DepositStatus` and `WithdrawStatus` as deprecated in favor of `List Funding Deposits`
+and `List Funding Withdrawals`. The endpoints will be migrated in a follow-up
+pass without changing the contract or fail-closed permission semantics. A permission
+denial is retained as `FUNDING_PROVENANCE_UNAVAILABLE` and logged with the required
+permission.
 
 The History `/api/history/rewards` endpoint charts `staking`, `dividend`, and
 `earn/reward` entries for tracked allocation assets. It aligns cumulative
@@ -475,18 +485,22 @@ passthrough reduction. Safe same-source-timestamp USD funding plumbing (`OWNER_C
 deposit/withdrawal plus `spend`/`receive`) carries the original typed category
 and every source ledger ID; it is never represented by a synthetic row that is
 classified a second time. USD-only plumbing may collapse to its net economics,
-while mixed-asset card plumbing keeps the funding contribution and consumer legs
-separate, as described below. Internal moves remain neutral and unresolved
+while mixed-asset card plumbing collapses confirmed 3-leg transactions into net owner capital,
+as described below. Internal moves remain neutral and unresolved
 funding remains unavailable. A mixed-sign or overdrawn funding/plumbing group is
 left separate rather than being reclassified as the opposite owner-flow
 direction. Where a trade, owner flow, or non-plumbing balance movement shares a
 timestamp and the economic order cannot be proven, the comparison returns
 unavailable rather than imposing a lexical order.
 
-For a mixed-asset card purchase, the external funding row, USD `spend`, and
+For a confirmed 3-leg card purchase, the external funding row (USD deposit), USD `spend`, and
 purchased-asset `receive` must all share one non-blank `refid` and have opposing
-USD directions. The benchmark then keeps the owner contribution (invested by
-inception weights) and replays the linked conversion once. A missing relationship
+USD directions. The benchmark collapses the transaction into a single owner contribution
+net of non-funding fees ($5,000 gross deposit - $20 spend fee = $4,980 net) and allocates
+it strictly by original inception weights; the spend and receive legs are consumed as
+plumbing evidence and are not replayed into B&H. This preserves counterfactual neutrality
+between the rebalancer and B&H without double-counting assets, inventing conversion alpha,
+or treating transaction fees as performance drawdown. A missing relationship
 is reported as `AMBIGUOUS_LEDGER_TYPE`; the comparison never treats the deposit
 as performance or counts the funding twice. A provenance preparation failure is
 reported separately as `FUNDING_PROVENANCE_UNAVAILABLE`.

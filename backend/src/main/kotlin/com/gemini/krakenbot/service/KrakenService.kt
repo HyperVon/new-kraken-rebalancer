@@ -87,6 +87,9 @@ interface KrakenService {
     /** Total ledger entry count from the last [getLedgers] response (Kraken `count`). */
     fun getLastLedgerTotalCount(): Int = 0
 
+    /** Number of raw entries returned in the last [getLedgers] page before local type filtering. */
+    fun getLastLedgerRawPageSize(): Int = 0
+
     /** Current private-API call-counter load; 0 for backends without a rate limiter. */
     suspend fun getApiCallCounter(): Double = 0.0
 

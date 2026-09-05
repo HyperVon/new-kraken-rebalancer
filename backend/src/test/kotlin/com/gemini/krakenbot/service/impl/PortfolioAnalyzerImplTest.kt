@@ -1754,6 +1754,196 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
+        "updateAth scales ATH using net contribution for card-funded buy crypto without fee-induced drawdown" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val cardRef = "CARD-BUY-2026-08-01T1145Z"
+                val cardTime = fixedTime.minusSeconds(900)
+                val cardDeposit = LedgerEvent(
+                    ledgerId = "L-CARD-DEP",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("5000.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val cardSpend = LedgerEvent(
+                    ledgerId = "L-CARD-SPEND",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                val cardReceive = LedgerEvent(
+                    ledgerId = "L-CARD-RCV",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    asset = "BTC",
+                    amount = BigDecimal("0.0996"),
+                    fee = BigDecimal.ZERO,
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(cardDeposit, cardSpend, cardReceive)
+
+                val snap = PortfolioSnapshot(
+                    timestamp = cardTime.minusSeconds(5),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        "BTC" to TestFixtures.assetSnapshot(
+                            symbol = "BTC",
+                            balance = BigDecimal("0.10"),
+                            price = BigDecimal("50000.00"),
+                            valueUSD = BigDecimal("5000.00"),
+                            targetPercent = BigDecimal("50.0"),
+                        ),
+                        "USD" to TestFixtures.assetSnapshot(
+                            symbol = "USD",
+                            balance = BigDecimal("5000.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("5000.00"),
+                            targetPercent = BigDecimal("50.0"),
+                        ),
+                    ),
+                    actions = emptyList<String>(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+
+                // Current total portfolio: 10,000 baseline + 4,980 net card funding = 14,980.00
+                val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("14980.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                )
+                dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
+
+                coVerify(exactly = 1) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("14980.00")) == 0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "updateAth scales ATH using net capital for card-funded withdrawal with linked fee" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val cardRef = "CARD-WITHDRAW-2026-08-01T1145Z"
+                val cardTime = fixedTime.minusSeconds(900)
+                val cardWithdrawal = LedgerEvent(
+                    ledgerId = "L-CARD-WTH",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    asset = "USD",
+                    amount = BigDecimal("-1000.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val cardReceive = LedgerEvent(
+                    ledgerId = "L-CARD-RCV",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                val cardSpend = LedgerEvent(
+                    ledgerId = "L-CARD-SPEND",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "BTC",
+                    amount = BigDecimal("-0.02"),
+                    fee = BigDecimal.ZERO,
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(cardWithdrawal, cardReceive, cardSpend)
+
+                val snap = PortfolioSnapshot(
+                    timestamp = cardTime.minusSeconds(5),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        "BTC" to TestFixtures.assetSnapshot(
+                            symbol = "BTC",
+                            balance = BigDecimal("0.10"),
+                            price = BigDecimal("50000.00"),
+                            valueUSD = BigDecimal("5000.00"),
+                            targetPercent = BigDecimal("50.0"),
+                        ),
+                        "USD" to TestFixtures.assetSnapshot(
+                            symbol = "USD",
+                            balance = BigDecimal("5000.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("5000.00"),
+                            targetPercent = BigDecimal("50.0"),
+                        ),
+                    ),
+                    actions = emptyList<String>(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+
+                // -1000 withdrawal + 20 fee = -980 net outflow; portfolio becomes 9,020
+                val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("9020.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                )
+                dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
+
+                coVerify(exactly = 1) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("9020.00")) == 0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
         // Regression: the removed getSnapshotBefore fallback could have served a snapshot
         // hours or days old, silently corrupting ATH valuations. After the fix, only
         // snapshots within ±180s are accepted; anything older must fall through to ticker.
@@ -2397,6 +2587,141 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         fixedTime.epochSecond,
                     )
                 }
+            }
+        }
+
+        "isLinkedPassthroughLeg correctly identifies spend and receive legs linked to funding" {
+            val analyzer = createAnalyzerWithRepos()
+            val ref = "CARD-123"
+            val deposit = LedgerEvent(
+                ledgerId = "L-DEP",
+                refid = ref,
+                time = Instant.now(),
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                fee = BigDecimal.ZERO,
+            )
+            val withdrawal = LedgerEvent(
+                ledgerId = "L-WTH",
+                refid = "WTH-123",
+                time = Instant.now(),
+                type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                asset = "USD",
+                amount = BigDecimal("-100.00"),
+                fee = BigDecimal.ZERO,
+            )
+            val spend = LedgerEvent(
+                ledgerId = "L-SPEND",
+                refid = ref,
+                time = Instant.now(),
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                asset = "USD",
+                amount = BigDecimal("-100.00"),
+                fee = BigDecimal.ZERO,
+            )
+            val receive = LedgerEvent(
+                ledgerId = "L-RCV",
+                refid = "WTH-123",
+                time = Instant.now(),
+                type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                fee = BigDecimal.ZERO,
+            )
+            val unlinkedSpend = LedgerEvent(
+                ledgerId = "L-UNLINKED",
+                refid = "NO-FUNDING",
+                time = Instant.now(),
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                asset = "USD",
+                amount = BigDecimal("-50.00"),
+                fee = BigDecimal.ZERO,
+            )
+            val blankRefidSpend = LedgerEvent(
+                ledgerId = "L-BLANK",
+                refid = "   ",
+                time = Instant.now(),
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                asset = "USD",
+                amount = BigDecimal("-50.00"),
+                fee = BigDecimal.ZERO,
+            )
+
+            analyzer.isLinkedPassthroughLeg(deposit, listOf(deposit, spend)) shouldBe false
+            analyzer.isLinkedPassthroughLeg(blankRefidSpend, listOf(deposit, spend)) shouldBe false
+            analyzer.isLinkedPassthroughLeg(unlinkedSpend, listOf(deposit, spend)) shouldBe false
+            analyzer.isLinkedPassthroughLeg(spend, listOf(deposit, spend)) shouldBe true
+            analyzer.isLinkedPassthroughLeg(receive, listOf(withdrawal, receive)) shouldBe true
+        }
+
+        "priceOwnerCapitalFlow handles ZUSD and non-representative or unlinked card flows" {
+            runTest {
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val analyzer = createAnalyzerWithRepos(tradeRepository = mockTrades)
+                val ref = "CARD-456"
+                val nowTime = Instant.now()
+                val zusdEvent = LedgerEvent(
+                    ledgerId = "L-ZUSD",
+                    refid = null,
+                    time = nowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "ZUSD",
+                    amount = BigDecimal("500.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val unlinkedDeposit = LedgerEvent(
+                    ledgerId = "L-UNLINKED-DEP",
+                    refid = "PLAIN-REF",
+                    time = nowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("250.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val dep1 = LedgerEvent(
+                    ledgerId = "L-DEP-1",
+                    refid = ref,
+                    time = nowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("100.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val dep2 = LedgerEvent(
+                    ledgerId = "L-DEP-2",
+                    refid = ref,
+                    time = nowTime.plusSeconds(1),
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("100.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val spend = LedgerEvent(
+                    ledgerId = "L-SPEND",
+                    refid = ref,
+                    time = nowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-100.00"),
+                    fee = BigDecimal("5.00"),
+                )
+
+                // ZUSD returns delta directly
+                analyzer.priceOwnerCapitalFlow(zusdEvent, nowTime, mockTrades, emptyList())
+                    .shouldBeEqualComparingTo(BigDecimal("500.00"))
+
+                // USD without passthrough returns delta
+                analyzer.priceOwnerCapitalFlow(unlinkedDeposit, nowTime, mockTrades, listOf(unlinkedDeposit))
+                    .shouldBeEqualComparingTo(BigDecimal("250.00"))
+
+                // Representative deposit nets fee
+                analyzer.priceOwnerCapitalFlow(dep1, nowTime, mockTrades, listOf(dep1, dep2, spend))
+                    .shouldBeEqualComparingTo(BigDecimal("95.00"))
+
+                // Non-representative deposit returns un-netted delta
+                analyzer.priceOwnerCapitalFlow(dep2, nowTime, mockTrades, listOf(dep1, dep2, spend))
+                    .shouldBeEqualComparingTo(BigDecimal("100.00"))
             }
         }
     }

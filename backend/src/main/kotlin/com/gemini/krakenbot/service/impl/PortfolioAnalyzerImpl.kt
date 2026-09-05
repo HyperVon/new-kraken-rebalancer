@@ -13,6 +13,7 @@ import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.FundingProvenanceResolver
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.OrderSide
@@ -647,7 +648,8 @@ class PortfolioAnalyzerImpl(
         }
 
         val externalBalanceEvents = allRetained.filter {
-            classifications[it.ledgerId] == FlowCategory.EXTERNAL_BALANCE
+            classifications[it.ledgerId] == FlowCategory.EXTERNAL_BALANCE &&
+                !isLinkedPassthroughLeg(it, allRetained)
         }
 
         // Sequential oldest-first adjustment: each flow scales the ATH that
@@ -655,7 +657,7 @@ class PortfolioAnalyzerImpl(
         // snapshots or the bounded ticker (fail-closed); each pre-flow basis
         // is reconstructed at event time (see resolveEventTimeBasis).
         val pricedFlows = events.map { event ->
-            event to priceOwnerCapitalFlow(event, balancesObservedAt, tradesRepo)
+            event to priceOwnerCapitalFlow(event, balancesObservedAt, tradesRepo, allRetained)
         }
         val maxEventTime = pricedFlows.maxOf { (event, _) -> event.time }
         // Include snapshots saved shortly after a flow so an observation
@@ -1027,14 +1029,60 @@ class PortfolioAnalyzerImpl(
     private fun isInAthUniverse(normalizedAsset: String, universe: Set<String>): Boolean =
         normalizedAsset == "USD" || normalizedAsset == "ZUSD" || isTrackedCrypto(normalizedAsset, universe)
 
-    private suspend fun priceOwnerCapitalFlow(
+    internal fun isLinkedPassthroughLeg(event: LedgerEvent, allRetained: List<LedgerEvent>): Boolean {
+        if (event.refid.isNullOrBlank()) return false
+        if (!event.type.equals(KrakenApiConstants.LEDGER_TYPE_SPEND, ignoreCase = true) &&
+            !event.type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)
+        ) {
+            return false
+        }
+        return allRetained.any {
+            it.refid == event.refid &&
+                (
+                    it.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, ignoreCase = true) ||
+                        it.type.equals(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL, ignoreCase = true)
+                    )
+        }
+    }
+
+    internal suspend fun priceOwnerCapitalFlow(
         event: LedgerEvent,
         balancesObservedAt: Instant?,
         tradesRepo: TradeRepository,
+        allRetained: List<LedgerEvent> = emptyList(),
     ): BigDecimal {
         val delta = event.netBalanceDelta()
         val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
-        if (asset == "USD" || asset == "ZUSD") return delta
+        if (asset == "USD" || asset == "ZUSD") {
+            if (!event.refid.isNullOrBlank() && allRetained.isNotEmpty()) {
+                val group = allRetained.filter { it.refid == event.refid }
+                val hasPassthrough = group.any {
+                    it.type.equals(KrakenApiConstants.LEDGER_TYPE_SPEND, ignoreCase = true) ||
+                        it.type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)
+                }
+                if (hasPassthrough) {
+                    val fundingLegs = group.filter {
+                        it.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, ignoreCase = true) ||
+                            it.type.equals(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL, ignoreCase = true)
+                    }
+                    val isRepresentative = fundingLegs.minWithOrNull(
+                        compareBy<LedgerEvent>({ it.time }, { it.ledgerId }),
+                    )?.ledgerId == event.ledgerId
+                    if (isRepresentative) {
+                        val nonFundingFees = group.filter {
+                            it.type.equals(KrakenApiConstants.LEDGER_TYPE_SPEND, ignoreCase = true) ||
+                                it.type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)
+                        }.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.fee) }
+                        return if (delta.signum() > 0) {
+                            delta.subtract(nonFundingFees)
+                        } else {
+                            delta.add(nonFundingFees)
+                        }
+                    }
+                }
+            }
+            return delta
+        }
         val historicalPrice = resolvePriceForEvent(asset, event.time, balancesObservedAt, tradesRepo)
         return delta.multiply(historicalPrice)
     }

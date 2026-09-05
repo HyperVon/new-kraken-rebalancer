@@ -34,9 +34,10 @@ import java.math.BigDecimal
  * - Insufficient evidence: bare deposits or withdrawals without affirmative external
  *   or internal provenance fall back conservatively to [FlowCategory.AMBIGUOUS].
  * - Conservative transfer rule: known internal transfer evidence is
- *   [FlowCategory.INTERNAL_MOVE], documented distribution/reward semantics are
- *   [FlowCategory.EXTERNAL_BALANCE], and an unproven bare transfer is
- *   [FlowCategory.AMBIGUOUS].
+ *   [FlowCategory.INTERNAL_MOVE], documented reward semantics are
+ *   [FlowCategory.EXTERNAL_BALANCE], and an unproven bare transfer (including
+ *   prose-only descriptions like airdrop, fork, or distribution that Kraken does not
+ *   formally document as API subtype values) is [FlowCategory.AMBIGUOUS].
  */
 enum class FlowCategory {
     /** Genuine funding entering/leaving the strategy; scales ATH and seeds B&H. */
@@ -87,9 +88,6 @@ object LedgerFlowClassifier {
     private val EARN_REWARD_SUBTYPE = "reward"
 
     private val TRANSFER_EXTERNAL_SUBTYPES = setOf(
-        "airdrop",
-        "fork",
-        "distribution",
         "reward",
     )
 

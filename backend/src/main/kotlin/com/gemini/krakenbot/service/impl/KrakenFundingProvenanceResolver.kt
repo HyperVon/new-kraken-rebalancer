@@ -19,6 +19,9 @@ import java.time.Instant
  * family. It deliberately does not infer external ownership from a ledger
  * row's shape: when Kraken status or optional internal-transfer evidence is
  * unavailable, the resolver returns [FundingEvidence.UNRESOLVED].
+ *
+ * Limitation note: Funding provenance currently uses legacy DepositStatus/WithdrawStatus APIs.
+ * Migrate to List Funding Deposits / List Funding Withdrawals in a follow-up.
  */
 class KrakenFundingProvenanceResolver(
     private val krakenService: KrakenService,
@@ -89,6 +92,8 @@ class KrakenFundingProvenanceResolver(
                 // All three calls use the backend selected by one stable
                 // DynamicKrakenService pin. A mode flip cannot mix live and
                 // simulated evidence within this batch.
+                // TODO: Funding provenance currently uses legacy DepositStatus/WithdrawStatus APIs.
+                // Migrate to List Funding Deposits / List Funding Withdrawals in a follow-up.
                 val deposits = if (KrakenApiConstants.LEDGER_TYPE_DEPOSIT in requiredFamilies) {
                     backend.getDepositStatus(requestedRange.startSec, requestedRange.endSec)
                 } else {

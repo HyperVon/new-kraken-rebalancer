@@ -353,6 +353,62 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
             }
         }
 
+        "getLedgers_QueriesAllForEarnLedgerTypeAndFiltersReturnedRows" {
+            runTest {
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "ledger": {
+                                "EARN-1": {
+                                    "refid": "REWARD-1",
+                                    "time": 1700000000.0000,
+                                    "type": "earn",
+                                    "subtype": "reward",
+                                    "asset": "DOT.HOLD",
+                                    "amount": "1.50000000",
+                                    "fee": "0.00000000",
+                                    "balance": "100.00000000"
+                                },
+                                "TRADE-1": {
+                                    "refid": "TRADE-1",
+                                    "time": 1700000000.0000,
+                                    "type": "trade",
+                                    "asset": "ZUSD",
+                                    "amount": "-10.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "4989.00000000"
+                                },
+                                "DEPOSIT-1": {
+                                    "refid": "DEP-1",
+                                    "time": 1700000000.0000,
+                                    "type": "deposit",
+                                    "asset": "ZUSD",
+                                    "amount": "100.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "5089.00000000"
+                                }
+                            },
+                            "count": 3
+                        }
+                    }
+                """.trimIndent()
+                var capturedBody = ""
+                val service = createService(responseJson) { request ->
+                    capturedBody = (request.body as TextContent).text
+                }
+
+                val entries = service.getLedgers(types = setOf(KrakenApiConstants.LEDGER_TYPE_EARN))
+
+                capturedBody shouldContain "type=${KrakenApiConstants.LEDGER_TYPE_ALL}"
+                entries.map { it.ledgerId } shouldBe listOf("EARN-1")
+                entries.single().type shouldBe KrakenApiConstants.LEDGER_TYPE_EARN
+                entries.single().subtype shouldBe "reward"
+                service.getLastLedgerTotalCount() shouldBe 3
+                service.getLastLedgerRawPageSize() shouldBe 3
+            }
+        }
+
         "getLedgers_MultipleTypes_QueriesEachTypeSeparatelyAndMerges" {
             runTest {
                 val stakingJson = """
