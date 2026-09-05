@@ -150,18 +150,22 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      withdrawal scales ATH down without triggering artificial drawdown or forced fiat deployment. Staking rewards
      and dividends are investment performance that improve portfolio value and reduce drawdown
      without scaling ATH.
-   - **Ledger Flow Classification**: Kraken reuses coarse ledger types for economically distinct activity, so
-     `LedgerFlowClassifier` requires affirmative evidence before treating deposits and withdrawals as owner capital:
-     fiat deposits require a banking reference ID prefix (`FT`, `WIRE`, `ACH`, `SEPA`, `SYNAPSE`, `FEDWIRE`, `BANK`,
-     `Q`) or `fee > 0`; crypto deposits require a blockchain transaction ID refid (`0x` + 64 hex, 64 hex, or `tx-`)
-     AND `fee == 0` (fee-bearing crypto deposits lack clean external provenance and classify as `EXTERNAL_BALANCE`,
-     never scaling ATH); withdrawals require banking/txid refids or `fee > 0`. Same-asset `refid`-paired zero-net
-     legs and internal-subtype rows (spot/futures/staking wallet moves, earn allocation, migration) are
-     `INTERNAL_MOVE`. Any bare deposit or withdrawal lacking affirmative external evidence and internal signatures
-     is classified as `AMBIGUOUS`.
-     `trade` rows defer to `TradesHistory`, margin-family rows (`margin`, `rollover`, `settled`, `credit`,
-     `sale`) replay in-kind without scaling ATH, and unrecognized types fail closed. Flows for assets outside
-     the configured allocation universe are ignored.
+   - **Two-Layer Funding Provenance & Flow Classification**: Kraken reuses coarse ledger types for economically
+     distinct activity, so classification follows a strict two-layer architecture:
+     1. *Intrinsic classification (`LedgerFlowClassifier`)*: Evaluates intrinsic ledger metadata. Same-asset
+        `refid`-paired zero-net legs and known internal-subtype rows (spot/futures/staking wallet moves, earn
+        allocation, migration) classify as `INTERNAL_MOVE`. Trade rows defer to `TradesHistory` (`TRADE_IGNORED`),
+        margin-family rows (`margin`, `rollover`, `settled`, `credit`, `sale`) replay in-kind as `EXTERNAL_BALANCE`
+        without scaling ATH, and unrecognized ledger types fail closed. For deposits and withdrawals, the classifier
+        delegates external validation to an affirmative `FundingProvenanceResolver`.
+     2. *External provenance verification (`FundingProvenanceResolver`)*: External funding must be affirmatively
+        corroborated by deposit/withdrawal status records (`DepositStatusRecord`, `WithdrawStatusRecord`) or explicit
+        transaction receipts. Unproven deposits and withdrawals fail closed to `AMBIGUOUS`. Confirmed external
+        deposits and withdrawals classify as `OWNER_CAPITAL`.
+     Flows for assets outside the configured allocation universe are ignored.
+   - **Net Capital for Fee-Bearing Deposits**: Confirmed external deposits contribute their net capital
+     (`event.netBalanceDelta() = amount - fee`) as `OWNER_CAPITAL`. ATH scales strictly on the net contributed
+     funds, preventing fee drag from being misattributed as strategy loss or unproven plumbing.
    - **Ambiguous Funding Deferral & Fail-Closed Safety**: Unlike terminal neutral events (`INTERNAL_MOVE`,
      `TRADE_IGNORED`) or performance events (`EXTERNAL_BALANCE`) which are acknowledged in the decision journal,
      flows classified as `AMBIGUOUS` or `UNSUPPORTED` MUST NOT be journaled as decided or skipped. Instead, they
@@ -189,19 +193,23 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      This design choice prioritizes correctness and exact-once reconciliation over sliding-window heuristics,
      as bounded overlap cursors can silently miss backfilled rows older than their window. Future optimization
      paths include an indexed database status column or a hybrid bounded overlap cursor with periodic full sweeps.
-   - **Pre-Flow Basis Reconstruction with Market Price Revaluation**: Flows apply sequentially oldest-first
+   - **Pre-Flow Basis Reconstruction with Intervening Balance Replay**: Flows apply sequentially oldest-first
      (simultaneous flows net into one step), each against its event-time pre-flow basis. The basis reconstructs
      exact portfolio holdings immediately before the flow:
-     `holdings_at_flow = predecessor_holdings + replayed_trades + replayed_crypto_flows`.
+     `holdings_at_flow = predecessor_holdings + replayed_trades + replayed_external_balances + replayed_crypto_flows`.
      Successful non-dry-run trades adjust tracked crypto quantities and fiat outlays/proceeds (including fees),
-     and off-universe trades adjust only the fiat leg. Holdings are then revalued at event-time prices:
+     off-universe trades adjust only the fiat leg, and intervening `EXTERNAL_BALANCE` events (such as staking
+     rewards, ledger adjustments, or dividends occurring between predecessor snapshot and the flow event time)
+     are replayed in-kind into holdings before valuation. Holdings are then revalued at event-time prices:
      `Pre-flow basis = sum(holding_i * price_at_flow_i)`.
-     Flow-time prices are resolved first from recent trade execution prices within ±180s, then from the nearest
-     portfolio snapshot within ±180s, and finally from a bounded live exchange ticker (only for events ≤24h old).
-     If flow-time prices cannot be resolved, or if the predecessor snapshot is older than 7 days
-     (`MAX_PREDECESSOR_GAP_SECONDS` = 604,800s), the update defers fail-closed (`AthUpdateResult.Deferred`) rather
-     than risking an inaccurate proportional adjustment. If no predecessor snapshot exists at all, the flow is
-     assumed to predate ATH establishment and is journaled as absorbed into the initial baseline.
+     Flow-time prices are resolved strictly from historical evidence: first from recent trade execution prices
+     within ±180s, then from the nearest portfolio snapshot within ±180s, and finally from Kraken OHLC historical
+     intervals (≤24h). Live exchange ticker prices are strictly decoupled from historical lookups: live tickers
+     are only permitted for near-real-time events within a tight 300-second window
+     (`MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS = 300L`). Historical flows older than 300s without verified
+     historical trade, snapshot, or OHLC pricing fail closed by deferring the update (`AthUpdateResult.Deferred`).
+     If no predecessor snapshot exists at all, the flow is assumed to predate ATH establishment and is journaled as
+     absorbed into the initial baseline.
    - **Crash-Idempotent Checkpoint & Migration Limitations**: The ATH value, applied per-ledger flow identities,
      and the flow watermark persist in a single SQLite transaction. A crash before commit retries safely; after commit
      nothing is double-applied — restarts skip recorded ledger IDs even inside a held watermark window.

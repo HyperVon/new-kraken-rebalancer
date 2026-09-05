@@ -12,6 +12,7 @@ import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.FlowCategory
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.OrderSide
@@ -43,6 +44,7 @@ class PortfolioAnalyzerImpl(
     private val nowProvider: () -> Instant = Instant::now,
     private val ledgerRepository: LedgerRepository? = null,
     private val tradeRepository: TradeRepository? = null,
+    private val defaultProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
 ) : PortfolioAnalyzer {
     private val log = LoggerFactory.getLogger(PortfolioAnalyzerImpl::class.java)
 
@@ -95,6 +97,18 @@ class PortfolioAnalyzerImpl(
         totalPortfolioValueUSD: BigDecimal,
         netExternalFlowUSD: BigDecimal,
         balancesObservedAt: Instant?,
+    ): AthUpdateResult = updateAthAndCalculateDrawdown(
+        totalPortfolioValueUSD,
+        netExternalFlowUSD,
+        balancesObservedAt,
+        defaultProvenanceResolver,
+    )
+
+    override suspend fun updateAthAndCalculateDrawdown(
+        totalPortfolioValueUSD: BigDecimal,
+        netExternalFlowUSD: BigDecimal,
+        balancesObservedAt: Instant?,
+        provenanceResolver: FundingProvenanceResolver,
     ): AthUpdateResult {
         val stats = portfolioStatsRepository.load()
         var ath = stats.allTimeHigh
@@ -133,7 +147,7 @@ class PortfolioAnalyzerImpl(
             // needs) with deployment forced to zero.
             val flowCalc = try {
                 if (ath > BigDecimal.ZERO) {
-                    calculateUnappliedExternalFlow(balancesObservedAt)
+                    calculateUnappliedExternalFlow(balancesObservedAt, provenanceResolver)
                 } else {
                     val coverage = ledgerRepository
                         ?.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
@@ -169,7 +183,12 @@ class PortfolioAnalyzerImpl(
                     // are not in the baseline and scale on later cycles.
                     val absorbHorizonSec = coverage?.let { minOf(it, balancesObservedAt?.epochSecond ?: it) }
                     if (absorbHorizonSec != null) {
-                        appliedFlows.addAll(absorbUnappliedFlowsIntoInitialAth(Instant.ofEpochSecond(absorbHorizonSec)))
+                        appliedFlows.addAll(
+                            absorbUnappliedFlowsIntoInitialAth(
+                                Instant.ofEpochSecond(absorbHorizonSec),
+                                provenanceResolver,
+                            ),
+                        )
                     }
                     // Hold the watermark at the absorb horizon: rows above it
                     // were not in the baseline, and a later one-time migration
@@ -337,6 +356,12 @@ class PortfolioAnalyzerImpl(
         val groupBasisResolver: GroupBasisResolver = noFlowsResolver(),
     )
 
+    private data class ScannedLedgers(
+        val unapplied: List<LedgerEvent>,
+        val classifications: Map<String, FlowCategory>,
+        val allRetained: List<LedgerEvent>,
+    )
+
     /**
      * Identity-driven reconciliation: every retained ledger row up to
      * [horizon] minus the decision journal, classified with refid pairing.
@@ -346,17 +371,18 @@ class PortfolioAnalyzerImpl(
      */
     private suspend fun scanUndecidedLedgerEvents(
         horizon: Instant,
-    ): Pair<List<LedgerEvent>, Map<String, FlowCategory>> {
-        val ledgersRepo = ledgerRepository ?: return emptyList<LedgerEvent>() to emptyMap()
+        provenanceResolver: FundingProvenanceResolver,
+    ): ScannedLedgers {
+        val ledgersRepo = ledgerRepository ?: return ScannedLedgers(emptyList(), emptyMap(), emptyList())
         val rows = ledgersRepo.getLedgersInRange(Instant.EPOCH, horizon)
             .sortedBy { it.time }
-        if (rows.isEmpty()) return emptyList<LedgerEvent>() to emptyMap()
+        if (rows.isEmpty()) return ScannedLedgers(emptyList(), emptyMap(), emptyList())
         val decided = portfolioStatsRepository.getAppliedAthFlowIds(rows.map { it.ledgerId })
         val unapplied = if (decided.isEmpty()) rows else rows.filterNot { it.ledgerId in decided }
         // Classify the full retained set: refid pairing must see decided
         // partners, or a late backfill completing an internal move would
         // classify its lone leg as owner capital and scale ATH again.
-        return unapplied to LedgerFlowClassifier.classifyAll(rows)
+        return ScannedLedgers(unapplied, LedgerFlowClassifier.classifyAll(rows, provenanceResolver), rows)
     }
 
     /**
@@ -367,8 +393,11 @@ class PortfolioAnalyzerImpl(
      * against the post-fold baseline on the next cycle (the old watermark
      * advance used to absorb them implicitly).
      */
-    private suspend fun absorbUnappliedFlowsIntoInitialAth(horizon: Instant): List<AppliedAthFlow> {
-        val (unapplied, classifications) = scanUndecidedLedgerEvents(horizon)
+    private suspend fun absorbUnappliedFlowsIntoInitialAth(
+        horizon: Instant,
+        provenanceResolver: FundingProvenanceResolver,
+    ): List<AppliedAthFlow> {
+        val (unapplied, classifications, _) = scanUndecidedLedgerEvents(horizon, provenanceResolver)
         val absorbed = mutableListOf<AppliedAthFlow>()
         for (event in unapplied) {
             val category = classifications[event.ledgerId]
@@ -400,7 +429,10 @@ class PortfolioAnalyzerImpl(
         return absorbed
     }
 
-    private suspend fun calculateUnappliedExternalFlow(balancesObservedAt: Instant?): ExternalFlowCalculation {
+    private suspend fun calculateUnappliedExternalFlow(
+        balancesObservedAt: Instant?,
+        provenanceResolver: FundingProvenanceResolver,
+    ): ExternalFlowCalculation {
         val ledgersRepo = ledgerRepository ?: return ExternalFlowCalculation(emptyList(), null)
         val tradesRepo = tradeRepository ?: return ExternalFlowCalculation(emptyList(), null)
 
@@ -487,7 +519,7 @@ class PortfolioAnalyzerImpl(
         // decided exactly once because the decision journal (not the
         // watermark timestamp) filters what has already been through
         // classification.
-        val (unapplied, classifications) = scanUndecidedLedgerEvents(confirmedHorizon)
+        val (unapplied, classifications, allRetained) = scanUndecidedLedgerEvents(confirmedHorizon, provenanceResolver)
         if (unapplied.isEmpty()) return ExternalFlowCalculation(emptyList(), confirmedHorizon.epochSecond)
 
         // Classify with refid pairing: internal wallet moves, trade rows, and
@@ -541,12 +573,16 @@ class PortfolioAnalyzerImpl(
             )
         }
 
+        val externalBalanceEvents = allRetained.filter {
+            classifications[it.ledgerId] == FlowCategory.EXTERNAL_BALANCE
+        }
+
         // Sequential oldest-first adjustment: each flow scales the ATH that
         // was current just before it. Flows themselves are priced via
         // snapshots or the bounded ticker (fail-closed); each pre-flow basis
         // is reconstructed at event time (see resolveEventTimeBasis).
         val pricedFlows = events.map { event ->
-            event to priceOwnerCapitalFlow(event, tradesRepo)
+            event to priceOwnerCapitalFlow(event, balancesObservedAt, tradesRepo)
         }
         val maxEventTime = pricedFlows.maxOf { (event, _) -> event.time }
         val history = tradesRepo.getSnapshotsInRange(Instant.EPOCH, maxEventTime)
@@ -586,7 +622,15 @@ class PortfolioAnalyzerImpl(
             skippedDecided = skippedDecided,
             groupBasisResolver = GroupBasisResolver(
                 resolve = { eventTime, priorFlows, snapHistory, snapTrades ->
-                    resolveEventTimeBasis(eventTime, priorFlows, snapHistory, snapTrades, tradesRepo)
+                    resolveEventTimeBasis(
+                        eventTime = eventTime,
+                        priorFlows = priorFlows,
+                        history = snapHistory,
+                        trades = snapTrades,
+                        externalBalances = externalBalanceEvents,
+                        balancesObservedAt = balancesObservedAt,
+                        tradesRepo = tradesRepo,
+                    )
                 },
                 pricedFlows,
                 groupStarts,
@@ -640,6 +684,8 @@ class PortfolioAnalyzerImpl(
         priorFlows: List<Pair<LedgerEvent, BigDecimal>>,
         history: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
+        externalBalances: List<LedgerEvent>,
+        balancesObservedAt: Instant?,
         tradesRepo: TradeRepository,
     ): BigDecimal? {
         val predecessor = history.filter { !it.timestamp.isAfter(eventTime) }.maxByOrNull { it.timestamp }
@@ -677,7 +723,7 @@ class PortfolioAnalyzerImpl(
         for (trade in trades) {
             if (trade.timestamp.isAfter(predecessor.timestamp) && !trade.timestamp.isAfter(eventTime)) {
                 val asset = Asset.normalizeLedgerAsset(trade.symbol).uppercase()
-                val isTrackedCrypto = isInAthUniverse(asset, universe) && asset != "USD" && asset != "ZUSD"
+                val isTrackedCrypto = isTrackedCrypto(asset, universe)
                 if (OrderSide.isBuy(trade.side)) {
                     if (isTrackedCrypto) {
                         reconstructedHoldings[asset] =
@@ -696,11 +742,22 @@ class PortfolioAnalyzerImpl(
             }
         }
 
+        // Replay intervening external balance events (staking, dividends, adjustments, spend/receive, etc.)
+        for (extBal in externalBalances) {
+            if (extBal.time.isAfter(predecessor.timestamp) && !extBal.time.isAfter(eventTime)) {
+                val asset = Asset.normalizeLedgerAsset(extBal.asset).uppercase()
+                if (isInAthUniverse(asset, universe)) {
+                    reconstructedHoldings[asset] =
+                        (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(extBal.netBalanceDelta())
+                }
+            }
+        }
+
         // Replay intervening prior flows between predecessor snapshot and flow time
         for ((event, _) in priorFlows) {
             if (event.time.isAfter(predecessor.timestamp) && !event.time.isAfter(eventTime)) {
                 val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
-                if (asset == "USD" || asset == "ZUSD" || isInAthUniverse(asset, universe)) {
+                if (isInAthUniverse(asset, universe)) {
                     reconstructedHoldings[asset] =
                         (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(event.netBalanceDelta())
                 }
@@ -715,7 +772,7 @@ class PortfolioAnalyzerImpl(
                 totalUSD = totalUSD.add(balance)
                 continue
             }
-            val price = resolveHistoricalOrTickerPrice(asset, eventTime, tradesRepo)
+            val price = resolvePriceForEvent(asset, eventTime, balancesObservedAt, tradesRepo)
             totalUSD = totalUSD.add(balance.multiply(price))
         }
 
@@ -735,25 +792,74 @@ class PortfolioAnalyzerImpl(
         )
     }
 
-    private fun isInAthUniverse(normalizedAsset: String, universe: Set<String>): Boolean {
-        if (normalizedAsset == "USD" || normalizedAsset == "ZUSD") return true
-        if (universe.isEmpty()) return true
-        return universe.contains(normalizedAsset)
-    }
+    private fun isTrackedCrypto(normalizedAsset: String, universe: Set<String>): Boolean =
+        normalizedAsset != "USD" && normalizedAsset != "ZUSD" &&
+            (universe.isEmpty() || universe.contains(normalizedAsset))
 
-    private suspend fun priceOwnerCapitalFlow(event: LedgerEvent, tradesRepo: TradeRepository): BigDecimal {
+    private fun isInAthUniverse(normalizedAsset: String, universe: Set<String>): Boolean =
+        normalizedAsset == "USD" || normalizedAsset == "ZUSD" || isTrackedCrypto(normalizedAsset, universe)
+
+    private suspend fun priceOwnerCapitalFlow(
+        event: LedgerEvent,
+        balancesObservedAt: Instant?,
+        tradesRepo: TradeRepository,
+    ): BigDecimal {
         val delta = event.netBalanceDelta()
         val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
         if (asset == "USD" || asset == "ZUSD") return delta
-        val historicalPrice = resolveHistoricalOrTickerPrice(asset, event.time, tradesRepo)
+        val historicalPrice = resolvePriceForEvent(asset, event.time, balancesObservedAt, tradesRepo)
         return delta.multiply(historicalPrice)
     }
 
-    private suspend fun resolveHistoricalOrTickerPrice(
+    private suspend fun resolvePriceForEvent(
+        asset: String,
+        eventTime: Instant,
+        balancesObservedAt: Instant?,
+        tradesRepo: TradeRepository,
+    ): BigDecimal {
+        val historicalPrice = resolveHistoricalPrice(asset, eventTime, tradesRepo)
+        if (historicalPrice != null && historicalPrice > BigDecimal.ZERO) {
+            return historicalPrice
+        }
+
+        // Bounded fallback to exchange ticker: live prices only proxy
+        // historical cost when the event is near-real-time (<= 300s).
+        val referenceTime = balancesObservedAt ?: nowProvider()
+        val eventAgeSeconds = kotlin.math.abs(referenceTime.epochSecond - eventTime.epochSecond)
+        if (eventAgeSeconds <= MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS) {
+            try {
+                val pair = Asset(asset).tradingPair
+                val raw = krakenService.getTickerPrices(pair)
+                val price = resolvePriceFromTicker(asset, raw)
+                if (price > BigDecimal.ZERO) {
+                    return price
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Failed to fetch ticker price for asset {} at {}: {}", asset, eventTime, e.message)
+            }
+        } else {
+            log.warn(
+                "Skipping live-ticker fallback for stale flow: asset {} at {} (age {}s > {}s)",
+                asset,
+                eventTime,
+                eventAgeSeconds,
+                MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS,
+            )
+        }
+
+        throw IllegalStateException(
+            "Cannot reliably price external capital flow for asset $asset at $eventTime " +
+                "(age ${eventAgeSeconds}s exceeds ${MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS}s and no historical trade/snapshot/OHLC price found)",
+        )
+    }
+
+    private suspend fun resolveHistoricalPrice(
         asset: String,
         eventTime: Instant,
         tradesRepo: TradeRepository,
-    ): BigDecimal {
+    ): BigDecimal? {
         // 1. If a trade occurred at or near flow time (within +/- 180 seconds), use the trade execution price
         val recentTrade = tradesRepo.getTradesInRange(eventTime.minusSeconds(180), eventTime.plusSeconds(180))
             .filter {
@@ -779,35 +885,23 @@ class PortfolioAnalyzerImpl(
             return snapPrice
         }
 
-        // 2. Bounded fallback to exchange ticker: live prices only proxy
-        // historical cost when the event is recent (<= 24h). An unbounded
-        // ticker fallback prices month-old flows at today's price and
-        // silently corrupts ATH scaling.
-        val eventAgeSeconds = nowProvider().epochSecond - eventTime.epochSecond
-        if (eventAgeSeconds in 0..86400) {
-            try {
-                val pair = Asset(asset).tradingPair
-                val raw = krakenService.getTickerPrices(pair)
-                val price = resolvePriceFromTicker(asset, raw)
-                if (price > BigDecimal.ZERO) {
-                    return price
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.warn("Failed to fetch ticker price for asset {} at {}: {}", asset, eventTime, e.message)
+        // 3. Look for OHLC daily candle at or before event time (within 24 hours)
+        try {
+            val pair = Asset(asset).tradingPair
+            val sinceSec = eventTime.minusSeconds(86400).epochSecond
+            val candles = krakenService.getOHLC(pair, interval = 1440, since = sinceSec)
+            val matched = candles.filter { it.first <= eventTime.epochSecond }
+                .maxByOrNull { it.first }
+            if (matched != null && matched.second > BigDecimal.ZERO) {
+                return matched.second
             }
-        } else {
-            log.warn(
-                "Skipping live-ticker fallback for stale owner-capital flow: asset {} at {} (age {}s > 24h)",
-                asset,
-                eventTime,
-                eventAgeSeconds,
-            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Failed to fetch OHLC price for asset {} at {}: {}", asset, eventTime, e.message)
         }
 
-        // 3. Fail closed on unresolved price: do NOT treat as zero, do NOT advance watermark
-        throw IllegalStateException("Cannot reliably price external capital flow for asset $asset at $eventTime")
+        return null
     }
 
     override fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal =
@@ -897,6 +991,7 @@ class PortfolioAnalyzerImpl(
 
     companion object {
         const val MAX_PREDECESSOR_GAP_SECONDS = 7L * 86400L
+        const val MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS = 300L
 
         /**
          * Placeholder resolver: flow-less calculations never resolve a basis,

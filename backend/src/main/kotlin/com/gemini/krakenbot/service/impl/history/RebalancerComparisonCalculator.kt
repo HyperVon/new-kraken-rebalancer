@@ -4,8 +4,11 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.FlowCategory
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
@@ -58,6 +61,7 @@ object RebalancerComparisonCalculator {
         knownInceptionTime: Instant? = null,
         historyTruncated: Boolean = false,
         priceProvider: HistoricalPriceProvider? = null,
+        provenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
     ): RebalancerComparison {
         if (historyTruncated) {
             // The local history cannot support a lifetime baseline (retention
@@ -163,9 +167,9 @@ object RebalancerComparisonCalculator {
         // Ledger rows that are unrecognized or economically ambiguous cannot
         // be replayed safely; surface UNAVAILABLE instead of silently dropping
         // a balance-affecting flow.
-        val ledgerClassifications = com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(rewards)
+        val ledgerClassifications = LedgerFlowClassifier.classifyAll(rewards, provenanceResolver)
         val ambiguousLedger = rewards.firstOrNull {
-            ledgerClassifications[it.ledgerId] == com.gemini.krakenbot.model.FlowCategory.AMBIGUOUS
+            ledgerClassifications[it.ledgerId] == FlowCategory.AMBIGUOUS
         }
         if (ambiguousLedger != null) {
             return unavailable(
@@ -175,7 +179,7 @@ object RebalancerComparisonCalculator {
             )
         }
         val unsupportedLedger = rewards.firstOrNull {
-            ledgerClassifications[it.ledgerId] == com.gemini.krakenbot.model.FlowCategory.UNSUPPORTED
+            ledgerClassifications[it.ledgerId] == FlowCategory.UNSUPPORTED
         }
         if (unsupportedLedger != null) {
             return unavailable(
@@ -188,8 +192,8 @@ object RebalancerComparisonCalculator {
         val intermediateLedgers = if (baseline.timestamp < windowObservationStart) {
             rewards.filter {
                 it.type in externalBalanceLedgerTypes &&
-                    ledgerClassifications[it.ledgerId] != com.gemini.krakenbot.model.FlowCategory.INTERNAL_MOVE &&
-                    ledgerClassifications[it.ledgerId] != com.gemini.krakenbot.model.FlowCategory.TRADE_IGNORED &&
+                    ledgerClassifications[it.ledgerId] != FlowCategory.INTERNAL_MOVE &&
+                    ledgerClassifications[it.ledgerId] != FlowCategory.TRADE_IGNORED &&
                     it.time > baseline.timestamp &&
                     it.time <= windowObservationStart
             }.map { ReconciledLedger(it, it.time, it.netBalanceDelta()) }
@@ -224,6 +228,7 @@ object RebalancerComparisonCalculator {
             baseline = baseline,
             inceptionWeights = inceptionWeights,
             priceProvider = priceProvider,
+            provenanceResolver = provenanceResolver,
         )
         if (intermediateBuilt.unpriceableAt != null) {
             return unavailable(
@@ -239,6 +244,7 @@ object RebalancerComparisonCalculator {
             baseline = baseline,
             inceptionWeights = inceptionWeights,
             priceProvider = priceProvider,
+            provenanceResolver = provenanceResolver,
         )
         if (windowBuilt.unpriceableAt != null) {
             return unavailable(
@@ -1270,6 +1276,7 @@ object RebalancerComparisonCalculator {
         baseline: PortfolioSnapshot,
         inceptionWeights: Map<String, BigDecimal>,
         priceProvider: HistoricalPriceProvider?,
+        provenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
     ): BuiltEvents {
         val postBaseline = ledgers.filter { reconciledLedger ->
             !reconciledLedger.embeddedInBaseline &&
@@ -1284,16 +1291,16 @@ object RebalancerComparisonCalculator {
         val netted = netPassthroughFunding(postBaseline)
         val events = mutableListOf<BenchmarkEvent>()
         val classifications =
-            com.gemini.krakenbot.model.LedgerFlowClassifier.classifyAll(netted.map { it.ledger })
+            LedgerFlowClassifier.classifyAll(netted.map { it.ledger }, provenanceResolver)
         for (reconciledLedger in netted) {
             val ledger = reconciledLedger.ledger
             val category = classifications[ledger.ledgerId]
-            if (category == com.gemini.krakenbot.model.FlowCategory.INTERNAL_MOVE ||
-                category == com.gemini.krakenbot.model.FlowCategory.TRADE_IGNORED
+            if (category == FlowCategory.INTERNAL_MOVE ||
+                category == FlowCategory.TRADE_IGNORED
             ) {
                 continue
             }
-            if (category == com.gemini.krakenbot.model.FlowCategory.OWNER_CAPITAL) {
+            if (category == FlowCategory.OWNER_CAPITAL) {
                 when (
                     val built = buildOwnerCapitalEvent(
                         ledger = ledger,

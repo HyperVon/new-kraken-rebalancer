@@ -5,9 +5,12 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.FundingEvidence
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
@@ -22,6 +25,44 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val now = Instant.parse("2026-07-01T12:00:00Z")
+
+    private val testProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver { event ->
+        if (event.subtype.isNullOrBlank()) {
+            when (event.type) {
+                KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                -> FundingEvidence.EXTERNAL
+
+                else -> FundingEvidence.UNRESOLVED
+            }
+        } else {
+            FundingEvidence.UNRESOLVED
+        }
+    }
+
+    private suspend fun calculate(
+        snapshots: List<PortfolioSnapshot>,
+        trades: List<TradeRecord> = emptyList(),
+        rewards: List<LedgerEvent> = emptyList(),
+        knownRebalancerOrderTxids: Set<String> = emptySet(),
+        anchorSnapshot: PortfolioSnapshot? = null,
+        inceptionSnapshot: PortfolioSnapshot? = null,
+        knownInceptionTime: Instant? = null,
+        historyTruncated: Boolean = false,
+        priceProvider: HistoricalPriceProvider? = null,
+        provenanceResolver: FundingProvenanceResolver = testProvenanceResolver,
+    ): RebalancerComparison = RebalancerComparisonCalculator.calculate(
+        snapshots = snapshots,
+        trades = trades,
+        rewards = rewards,
+        knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+        anchorSnapshot = anchorSnapshot,
+        inceptionSnapshot = inceptionSnapshot,
+        knownInceptionTime = knownInceptionTime,
+        historyTruncated = historyTruncated,
+        priceProvider = priceProvider,
+        provenanceResolver = provenanceResolver,
+    )
 
     init {
         "trade and ledger inside the request window reconcile beyond one second after request start" {
@@ -44,7 +85,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     next.copy(timestamp = now.plusSeconds(20), balancesObservedAt = now.plusSeconds(19)),
                 )
                 for (size in listOf(2, 3)) {
-                    val result = RebalancerComparisonCalculator.calculate(
+                    val result = calculate(
                         snapshots.take(size),
                         listOf(manualTrade(now.plusMillis(10400), "buy", "BTC", "1", "1")),
                         listOf(ledgerEvent(now.plusMillis(10500), "USD", "2")),
@@ -68,7 +109,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 mapOf("BTC" to assetRow("2", "1", "2"), "USD" to assetRow("99", "1", "99")),
                 balancesObservedAt = now.plusSeconds(8),
             )
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 listOf(first, next),
                 listOf(manualTrade(now.plusMillis(11001), "buy", "BTC", "1", "1")),
             )
@@ -97,7 +138,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 val late = (0 until 6).map {
                     ledgerEvent(now.plusMillis(10100 + it * 10L), "USD", (1 shl it).toString())
                 }
-                val result = RebalancerComparisonCalculator.calculate(
+                val result = calculate(
                     listOf(first, next),
                     emptyList(),
                     initial + late,
@@ -123,7 +164,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 balancesObservedAt = now,
             )
             val next = first.copy(timestamp = now.plusSeconds(10), balancesObservedAt = now.plusSeconds(9))
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 listOf(first, next),
                 listOf(manualTrade(now.plusMillis(1500), "buy", "BTC", "1", "1")),
                 listOf(ledgerEvent(now.plusMillis(1600), "USD", "2")),
@@ -148,7 +189,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     mapOf("BTC" to assetRow((1 + totalReward).toString(), "1", (1 + totalReward).toString())),
                     balancesObservedAt = null,
                 )
-                val result = RebalancerComparisonCalculator.calculate(
+                val result = calculate(
                     listOf(first, next),
                     emptyList(),
                     (0 until count).map { index ->
@@ -174,7 +215,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 snapshot(now.plusSeconds(3600), "55000.00", mapOf("BTC" to assetRow("1.0", "55000.00", "55000.00"))),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.points.size shouldBe 2
@@ -214,7 +255,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             (result.latestDifferenceUSD!! > BigDecimal.ZERO) shouldBe true
@@ -250,7 +291,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             (result.latestDifferenceUSD!! < BigDecimal.ZERO) shouldBe true
@@ -285,7 +326,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val suffix = snapshots.takeLast(2)
 
-            val result = RebalancerComparisonCalculator.calculate(suffix, emptyList())
+            val result = calculate(suffix, emptyList())
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.points.size shouldBe 2
@@ -300,7 +341,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 snapshot(now.plusSeconds(3600), "0", mapOf("BTC" to assetRow("1.0", "0", "0"))),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
@@ -321,7 +362,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
@@ -340,7 +381,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 snapshot(now.plusSeconds(3600), "50000.00", mapOf("BTC" to assetRow("1.0", "50000.00", "50000.00"))),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
@@ -366,7 +407,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.confidence shouldBe null
@@ -388,7 +429,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.confidence shouldBe null
@@ -416,7 +457,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.confidence shouldBe null
@@ -444,7 +485,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.confidence shouldBe null
@@ -480,7 +521,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -517,7 +558,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -566,7 +607,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -619,7 +660,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -669,7 +710,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -724,7 +765,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -764,13 +805,13 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
             result.unavailableAt shouldBe now.plusMillis(1250)
 
-            val lowercaseSymbolResult = RebalancerComparisonCalculator.calculate(
+            val lowercaseSymbolResult = calculate(
                 snapshots = snapshots,
                 trades = trades.map { it.copy(symbol = "btc", pair = "btcUSD") },
             )
@@ -827,7 +868,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
@@ -881,7 +922,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
@@ -920,7 +961,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
@@ -961,7 +1002,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
@@ -1015,7 +1056,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -1057,7 +1098,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 )
             }
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -1099,7 +1140,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -1141,13 +1182,13 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
 
-            val legacyObservationResult = RebalancerComparisonCalculator.calculate(
+            val legacyObservationResult = calculate(
                 snapshots = snapshots.map { it.copy(balancesObservedAt = null) },
                 trades = trades,
             )
@@ -1156,7 +1197,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             legacyObservationResult.confidence shouldBe ComparisonConfidence.RECONCILED
             legacyObservationResult.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
 
-            val incompatiblePersistedCostResult = RebalancerComparisonCalculator.calculate(
+            val incompatiblePersistedCostResult = calculate(
                 snapshots = snapshots.map { it.copy(balancesObservedAt = null) },
                 trades = trades.map { it.copy(usdAmount = BigDecimal("21.01")) },
             )
@@ -1168,7 +1209,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
         "mixed rounded and precise fill costs reconcile each interval independently" {
             for (knownObservation in listOf(false, true)) {
-                val result = RebalancerComparisonCalculator.calculate(
+                val result = calculate(
                     snapshots = mixedCostSnapshots(knownObservation),
                     trades = mixedCostTrades(),
                 )
@@ -1183,7 +1224,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         }
 
         "authoritative ledger balance reconciles a legacy truncated crypto fee" {
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(
                     snapshot(
                         now,
@@ -1222,7 +1263,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
         "authoritative ledger balance does not turn an embedded boundary event into a zero delta" {
             val t0 = now
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(
                     snapshot(
                         t0.plusMillis(500),
@@ -1266,7 +1307,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 assets = last.assets + ("USD" to last.assets.getValue("USD").copy(balance = BigDecimal("93.024"))),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, mixedCostTrades())
+            val result = calculate(snapshots, mixedCostTrades())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -1295,7 +1336,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     balancesObservedAt = null,
                 ),
             )
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = snapshots,
                 trades = listOf(
                     manualTrade(
@@ -1347,7 +1388,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = snapshots,
                 trades = listOf(
                     manualTrade(
@@ -1376,7 +1417,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
         "legacy previous row with known current boundary reconciles trade and ledger events" {
             val current = now.plusSeconds(2)
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(
                     snapshot(
                         now,
@@ -1474,7 +1515,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ledgerEvent(now.plusMillis(500), "SOL", "0.5"),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards = ledgers)
+            val result = calculate(snapshots, emptyList(), rewards = ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -1516,7 +1557,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ledgerEvent(now.plusMillis(150), "BTC", "0.1", ledgerId = "AMBIGUOUS-2"),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards = ledgers)
+            val result = calculate(snapshots, emptyList(), rewards = ledgers)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
@@ -1552,7 +1593,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -1589,7 +1630,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.confidence shouldBe null
@@ -1628,7 +1669,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.confidence shouldBe null
@@ -1666,18 +1707,18 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
         }
 
         "insufficient history: zero and one snapshot both return INSUFFICIENT_SNAPSHOTS" {
-            val zeroResult = RebalancerComparisonCalculator.calculate(emptyList(), emptyList())
+            val zeroResult = calculate(emptyList(), emptyList())
             zeroResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
             zeroResult.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
 
-            val oneResult = RebalancerComparisonCalculator.calculate(
+            val oneResult = calculate(
                 listOf(snapshot(now, "100000.00", mapOf("BTC" to assetRow("1.0", "50000.00", "50000.00")))),
                 emptyList(),
             )
@@ -1691,7 +1732,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 snapshot(now.plusSeconds(3600), "0", mapOf("USD" to assetRow("0", "1.0", "0"))),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.NON_POSITIVE_BASELINE
@@ -1717,7 +1758,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.BASELINE_MISMATCH
@@ -1753,7 +1794,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
         }
@@ -1764,7 +1805,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 snapshot(now, "50000.00", mapOf("BTC" to assetRow("1.0", "50000.00", "50000.00"))),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.baselineTimestamp shouldBe now
@@ -1801,7 +1842,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.unavailableReason shouldBe null
@@ -1834,7 +1875,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "20000.00",
             ).copy(pair = "BTCEUR")
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, listOf(trade))
+            val result = calculate(snapshots, listOf(trade))
 
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
         }
@@ -1866,7 +1907,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "20000.00",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, listOf(trade))
+            val result = calculate(snapshots, listOf(trade))
 
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
         }
@@ -1891,7 +1932,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+            val result = calculate(snapshots, emptyList())
 
             result.unavailableReason shouldBe ComparisonUnavailableReason.NON_POSITIVE_BASELINE
             result.baselineTimestamp shouldBe now
@@ -1938,7 +1979,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -1965,7 +2006,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val rewards = listOf(ledgerEvent(now.plusSeconds(1800), "BTC", "0.1"))
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards)
+            val result = calculate(snapshots, emptyList(), rewards)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -1992,7 +2033,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val rewards = listOf(ledgerEvent(now.plusSeconds(1800), "BTC", "0.2"))
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards)
+            val result = calculate(snapshots, emptyList(), rewards)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.confidence shouldBe null
@@ -2022,7 +2063,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val rewards =
                 listOf(ledgerEvent(now.plusSeconds(1800), "BTC", "0.1", KrakenApiConstants.LEDGER_TYPE_DIVIDEND))
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards)
+            val result = calculate(snapshots, emptyList(), rewards)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2050,7 +2091,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val rewards = listOf(ledgerEvent(now.minusSeconds(3600), "BTC", "0.1"))
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards)
+            val result = calculate(snapshots, emptyList(), rewards)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2078,7 +2119,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val rewards = listOf(ledgerEvent(now.plusSeconds(1800), "SOL", "0.5"))
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), rewards)
+            val result = calculate(snapshots, emptyList(), rewards)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2110,7 +2151,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 trade(now.plusSeconds(2700), "SELL", "BTC", "0.5", "25000.00"),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades, emptyList())
+            val result = calculate(snapshots, trades, emptyList())
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
@@ -2146,7 +2187,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2186,7 +2227,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2223,7 +2264,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2262,7 +2303,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2301,7 +2342,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2340,7 +2381,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2381,7 +2422,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2431,7 +2472,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2481,7 +2522,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2532,7 +2573,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -2577,7 +2618,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
@@ -2611,7 +2652,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots,
                 emptyList(),
                 ledgers,
@@ -2654,7 +2695,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots,
                 emptyList(),
                 ledgers,
@@ -2701,7 +2742,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             // full coin, so when BTC reaches 60k the bot is ahead by exactly
             // the allocation effect (0.5 * 10k) — strategy signal, not
             // contribution alpha: both sides received the same $50,000.
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots,
                 emptyList(),
                 ledgers,
@@ -2713,6 +2754,57 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("170000.00")
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("165000.00")
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("5000.00")
+        }
+
+        "confirmed crypto deposit with fee scales net contribution across inception weights" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "139940.00",
+                    mapOf(
+                        "BTC" to assetRow("1.499", "60000.00", "89940.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = now.plusSeconds(1800),
+                    asset = "BTC",
+                    amount = "0.500",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    fee = "0.001",
+                ),
+            )
+
+            // Net contribution = (0.500 - 0.001) BTC = 0.499 BTC @ $50,000 = $24,950.00 USD.
+            // Inception weights (50/50): B&H receives +0.2495 BTC and +$12,475.00 cash.
+            // At snap 2 (BTC @ $60k):
+            // Actual holds 1.499 BTC @ $60k ($89,940) + $50k USD = $139,940.00.
+            // B&H holds 1.2495 BTC @ $60k ($74,970) + $62,475 USD = $137,445.00.
+            // Strategy divergence = $139,940 - $137,445 = $2,495.00.
+            // The deposit is not replayed as an investment return (which would have added
+            // 0.499 BTC directly to B&H with zero divergence).
+            val result = calculate(
+                snapshots,
+                emptyList(),
+                ledgers,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("139940.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("137445.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("2495.00")
         }
 
         "Scenario P: External crypto withdrawal decreases holdings on both actual and Buy & Hold" {
@@ -2749,7 +2841,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             // 0.499 BTC into the rally while Buy & Hold holds 0.7495, so the
             // bot trails by the allocation effect — a fair cost of withdrawing
             // an appreciating asset, identical in kind for both sides.
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots,
                 emptyList(),
                 ledgers,
@@ -2818,7 +2910,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 mapOf("BTC" to BigDecimal("55000.00"), "ETH" to BigDecimal("3000.00")),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2, s3),
                 trades = emptyList(),
                 rewards = listOf(contribution),
@@ -2868,7 +2960,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 mapOf("BTC" to BigDecimal("55000.00"), "ETH" to BigDecimal("3000.00")),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(contribution),
@@ -2914,7 +3006,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 mapOf("BTC" to BigDecimal("50000.00"), "ETH" to BigDecimal("3000.00")),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(withdrawal),
@@ -2958,7 +3050,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00")))
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2, s3),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3009,7 +3101,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2funded),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3050,7 +3142,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2funded),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3100,7 +3192,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3141,7 +3233,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             // No BTC price: the $10k withdrawal builds (USD needs none) but
             // valuing the synthetic portfolio for the proportional cut fails.
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3182,7 +3274,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3227,7 +3319,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             // USD deposit prices fine, but the BTC allocation leg has no
             // contribution-time price: fail closed, do not half-invest.
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3269,7 +3361,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3309,7 +3401,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3351,7 +3443,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3399,7 +3491,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(
@@ -3426,7 +3518,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 "USD" to assetRow("50000.00", "1.0", "50000.00"),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(
                     snapshot(t1, "100000.00", flatAssets),
                     snapshot(t2, "100000.00", flatAssets),
@@ -3472,7 +3564,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3510,7 +3602,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3562,7 +3654,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades, ledgers)
+            val result = calculate(snapshots, trades, ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3603,7 +3695,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
@@ -3650,7 +3742,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
@@ -3700,7 +3792,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
+            val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3753,7 +3845,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = snapshots,
                 trades = trades,
                 knownRebalancerOrderTxids = setOf("BOT-TXID-100"),
@@ -3799,7 +3891,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = snapshots,
                 trades = trades,
             )
@@ -3837,7 +3929,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3890,7 +3982,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3947,7 +4039,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -3992,7 +4084,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -4039,7 +4131,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -4082,7 +4174,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList(), ledgers)
+            val result = calculate(snapshots, emptyList(), ledgers)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -4121,7 +4213,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(listOf(s1, s2), trades)
+            val result = calculate(listOf(s1, s2), trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -4168,7 +4260,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = trades,
                 anchorSnapshot = s0,
@@ -4213,7 +4305,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(listOf(s1, s2), trades)
+            val result = calculate(listOf(s1, s2), trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
@@ -4250,7 +4342,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = ledgers,
@@ -4291,7 +4383,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = ledgers,
@@ -4339,7 +4431,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = trades,
                 rewards = ledgers,
@@ -4388,7 +4480,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = trades,
                 anchorSnapshot = s0,
@@ -4440,14 +4532,14 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val res1 = RebalancerComparisonCalculator.calculate(
+            val res1 = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 anchorSnapshot = anchorFuture,
             )
             res1.availability shouldBe ComparisonAvailability.AVAILABLE
 
-            val res2 = RebalancerComparisonCalculator.calculate(
+            val res2 = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 anchorSnapshot = anchorDifferentAssets,
@@ -4481,7 +4573,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "5000.00",
             ).copy(pair = "BTCEUR")
 
-            val res = RebalancerComparisonCalculator.calculate(
+            val res = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(badPairTrade),
             )
@@ -4508,7 +4600,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val res = RebalancerComparisonCalculator.calculate(
+            val res = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
             )
@@ -4550,7 +4642,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "5000.00",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(trade),
             )
@@ -4590,7 +4682,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 type = KrakenApiConstants.LEDGER_TYPE_STAKING,
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(ledger),
@@ -4631,7 +4723,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "5000.00",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(trade),
                 anchorSnapshot = null,
@@ -4673,7 +4765,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "5000.00",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(trade),
                 anchorSnapshot = null,
@@ -4714,7 +4806,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 type = KrakenApiConstants.LEDGER_TYPE_STAKING,
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(ledger),
@@ -4756,7 +4848,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 type = KrakenApiConstants.LEDGER_TYPE_STAKING,
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(ledger),
@@ -4806,7 +4898,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "5000.00",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(trade1, trade2),
                 anchorSnapshot = null,
@@ -4844,7 +4936,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "5000.00",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(trade),
                 anchorSnapshot = null,
@@ -4883,7 +4975,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 orderTxid = "BOT-ORDER-INIT",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(botTrade),
                 knownRebalancerOrderTxids = setOf("BOT-ORDER-INIT"),
@@ -4931,7 +5023,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(spendLedger, receiveLedger),
@@ -4976,7 +5068,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 cycleId = null,
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(unknownTrade),
                 anchorSnapshot = null,
@@ -5014,7 +5106,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "5000.00",
             ).copy(pair = "BTCEUR")
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(badTrade),
                 anchorSnapshot = null,
@@ -5054,7 +5146,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 )
             }
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = excessiveTrades,
                 anchorSnapshot = null,
@@ -5105,7 +5197,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 type = KrakenApiConstants.LEDGER_TYPE_STAKING,
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(initTrade, regularTrade),
                 rewards = listOf(regularLedger),
@@ -5156,7 +5248,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 usdAmount = "6000.00",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(initTrade, lateTradeAtS2),
                 anchorSnapshot = null,
@@ -5206,7 +5298,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 anchorSnapshot = null,
@@ -5295,7 +5387,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val postObservationTrade = manualBuy.copy(id = 904, tradeId = "T-POST", timestamp = t2.plusSeconds(3600))
             val botTrade = manualBuy.copy(id = 905, tradeId = "T-BOT", orderTxid = "BOT-ORDER-1")
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(manualBuy, failedTrade, dryRunTrade, preInceptionTrade, postObservationTrade, botTrade),
                 rewards = listOf(dep, nonBalanceLedger, tradeRowLedger, preInceptionLedger, postObservationLedger),
@@ -5331,7 +5423,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = emptyList(),
@@ -5381,7 +5473,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 type = "mystery",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(mystery),
@@ -5435,7 +5527,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 type = "trade",
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 rewards = listOf(transfer, tradeRow),
@@ -5482,7 +5574,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
                 anchorSnapshot = null,
@@ -5535,7 +5627,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             // Request window includes preSnap (before inception)
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(preSnap, post1, post2),
                 trades = emptyList(),
                 anchorSnapshot = null,
@@ -5581,7 +5673,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(pre1, pre2),
                 trades = emptyList(),
                 anchorSnapshot = null,
@@ -5632,7 +5724,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(preSnap, exactSnap, postSnap),
                 trades = emptyList(),
                 anchorSnapshot = null,
@@ -5686,7 +5778,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            val result = RebalancerComparisonCalculator.calculate(
+            val result = calculate(
                 snapshots = listOf(preSnap, postSnap),
                 trades = emptyList(),
                 anchorSnapshot = null,

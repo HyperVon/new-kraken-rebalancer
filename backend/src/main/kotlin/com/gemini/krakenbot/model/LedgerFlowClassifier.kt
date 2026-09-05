@@ -23,20 +23,16 @@ import java.math.BigDecimal
  * - `subtype` and `refid` internal keywords: Kraken marks internal wallet moves
  *   with subtypes such as `spotfromspot`, `spot to futures`, `allocation`, or
  *   `migration`, or refids matching Futures signatures (e.g. `KF...` or `futures`).
- * - Affirmative external funding rule: Kraken can represent internal Spot/Futures
+ * - Authoritative external funding rule: Kraken can represent internal Spot/Futures
  *   movements as deposit or withdrawal rows. Absence of subtype is not proof of
- *   external capital. Only classify as [FlowCategory.OWNER_CAPITAL] when affirmative
- *   evidence proves external provenance:
- *     - Fiat deposit: banking refid patterns (`FT...`, `WIRE`, `ACH`, `SEPA`,
- *       `SYNAPSE`, `FEDWIRE`, `BANK`, `Q...`) or intermediary deposit fee > 0.
- *     - Crypto deposit: verified on-chain transaction hash in `refid` (64 hex
- *       chars, `0x...`, or `tx-...`) and zero fee. Crypto deposits carrying a fee
- *       never reach the balance intact and classify as [FlowCategory.EXTERNAL_BALANCE].
- *     - Withdrawal: `fee > 0` (Kraken charges network/wire fees for external
- *       withdrawals; internal Spot/Futures transfers are fee-free) OR affirmative
- *       external banking/on-chain refid.
- *     - Insufficient evidence: bare deposits or bare zero-fee withdrawals without
- *       affirmative external evidence fall back conservatively to [FlowCategory.AMBIGUOUS].
+ *   external capital, and string-shape heuristics on `refid` are not authoritative.
+ *   Only classify as [FlowCategory.OWNER_CAPITAL] when affirmative evidence from a
+ *   [FundingProvenanceResolver] proves external provenance (e.g. matching DepositStatus
+ *   or WithdrawStatus).
+ * - When external provenance is confirmed, owner capital is the net amount entering or
+ *   leaving the portfolio ([LedgerEvent.netBalanceDelta]), even if Kraken deducted a fee.
+ * - Insufficient evidence: bare deposits or withdrawals without affirmative external
+ *   or internal provenance fall back conservatively to [FlowCategory.AMBIGUOUS].
  * - Conservative default: an unpaired `transfer` with no internal subtype is
  *   [FlowCategory.INTERNAL_MOVE] (never owner capital).
  */
@@ -100,21 +96,24 @@ object LedgerFlowClassifier {
         )
 
     private val ZERO_NET_TOLERANCE = BigDecimal("0.00000001")
-    private val HEX_TXID_REGEX = Regex("^(0x)?[0-9a-fA-F]{64}$")
-    private val FIAT_BANKING_REFID_REGEX =
-        Regex("^(FT|Q[0-9A-Za-z]|WIRE|ACH|SEPA|SYNAPSE|FEDWIRE|BANK).*", RegexOption.IGNORE_CASE)
 
     /**
      * Classifies a single event without group context.
      * Unpaired `transfer` rows default to [FlowCategory.INTERNAL_MOVE].
      */
-    fun classify(event: LedgerEvent): FlowCategory = classifyAll(listOf(event)).getValue(event.ledgerId)
+    fun classify(
+        event: LedgerEvent,
+        provenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
+    ): FlowCategory = classifyAll(listOf(event), provenanceResolver).getValue(event.ledgerId)
 
     /**
      * Classifies [events], pairing legs by non-blank `refid` first.
      * Returns a map from `ledgerId` to category; unknown ids are absent.
      */
-    fun classifyAll(events: List<LedgerEvent>): Map<String, FlowCategory> {
+    fun classifyAll(
+        events: List<LedgerEvent>,
+        provenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
+    ): Map<String, FlowCategory> {
         if (events.isEmpty()) return emptyMap()
         val result = mutableMapOf<String, FlowCategory>()
         val byRefid = events.filter { !it.refid.isNullOrBlank() }.groupBy { it.refid!! }
@@ -150,12 +149,12 @@ object LedgerFlowClassifier {
         }
         for (event in events) {
             if (result.containsKey(event.ledgerId)) continue
-            result[event.ledgerId] = classifySingle(event)
+            result[event.ledgerId] = classifySingle(event, provenanceResolver)
         }
         return result
     }
 
-    private fun classifySingle(event: LedgerEvent): FlowCategory {
+    private fun classifySingle(event: LedgerEvent, provenanceResolver: FundingProvenanceResolver): FlowCategory {
         if (isInternalSubtype(event.subtype) || isInternalRefid(event.refid)) {
             return FlowCategory.INTERNAL_MOVE
         }
@@ -163,35 +162,13 @@ object LedgerFlowClassifier {
             return FlowCategory.AMBIGUOUS
         }
         return when (event.type) {
-            KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> {
-                if (isFiatAsset(event.asset)) {
-                    if (event.fee > BigDecimal.ZERO || isExternalFiatRefid(event.refid)) {
-                        FlowCategory.OWNER_CAPITAL
-                    } else {
-                        FlowCategory.AMBIGUOUS
-                    }
-                } else {
-                    if (event.fee > BigDecimal.ZERO) {
-                        FlowCategory.EXTERNAL_BALANCE
-                    } else if (isExternalCryptoRefid(event.refid)) {
-                        FlowCategory.OWNER_CAPITAL
-                    } else {
-                        FlowCategory.AMBIGUOUS
-                    }
-                }
-            }
-
-            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> {
-                if (event.fee > BigDecimal.ZERO) {
-                    // Kraken charges fees on external withdrawals (mining or bank wire fee);
-                    // internal Spot/Futures wallet moves are fee-free.
-                    FlowCategory.OWNER_CAPITAL
-                } else if (isFiatAsset(event.asset) && isExternalFiatRefid(event.refid)) {
-                    FlowCategory.OWNER_CAPITAL
-                } else if (!isFiatAsset(event.asset) && isExternalCryptoRefid(event.refid)) {
-                    FlowCategory.OWNER_CAPITAL
-                } else {
-                    FlowCategory.AMBIGUOUS
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+            -> {
+                when (provenanceResolver.resolve(event)) {
+                    FundingEvidence.EXTERNAL -> FlowCategory.OWNER_CAPITAL
+                    FundingEvidence.INTERNAL -> FlowCategory.INTERNAL_MOVE
+                    FundingEvidence.UNRESOLVED -> FlowCategory.AMBIGUOUS
                 }
             }
 
@@ -223,9 +200,6 @@ object LedgerFlowClassifier {
     private fun isFundingType(type: String): Boolean =
         type == KrakenApiConstants.LEDGER_TYPE_DEPOSIT || type == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL
 
-    // normalizeLedgerAsset already folds the ZUSD alias into USD.
-    private fun isFiatAsset(asset: String): Boolean = normalizeAsset(asset) == "USD"
-
     private fun normalizeAsset(asset: String): String = Asset.normalizeLedgerAsset(asset).uppercase()
 
     private fun isInternalSubtype(subtype: String?): Boolean {
@@ -242,22 +216,5 @@ object LedgerFlowClassifier {
         return normalized.contains("futures") ||
             normalized.startsWith("kf") ||
             normalized.contains("internal")
-    }
-
-    private fun isExternalFiatRefid(refid: String?): Boolean {
-        if (refid.isNullOrBlank()) return false
-        val trimmed = refid.trim()
-        if (FIAT_BANKING_REFID_REGEX.matches(trimmed)) return true
-        val lower = trimmed.lowercase()
-        return lower.contains("wire") || lower.contains("sepa") || lower.contains("ach") ||
-            lower.contains("synapse") || lower.contains("fedwire") || lower.contains("bank")
-    }
-
-    private fun isExternalCryptoRefid(refid: String?): Boolean {
-        if (refid.isNullOrBlank()) return false
-        val trimmed = refid.trim()
-        if (HEX_TXID_REGEX.matches(trimmed)) return true
-        val lower = trimmed.lowercase()
-        return lower.startsWith("tx-") || lower.startsWith("onchain") || lower.startsWith("txid:")
     }
 }

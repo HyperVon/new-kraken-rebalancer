@@ -4,6 +4,7 @@ import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.toPercentScale
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
@@ -433,13 +434,13 @@ class PortfolioManagerImpl(
                     portfolioAnalyzer
                         .updateAthAndCalculateDrawdown(totalPortfolioValueUSD, BigDecimal.ZERO, preObservedAt)
             ) {
-                is com.gemini.krakenbot.service.AthUpdateResult.Trusted -> athUpdate.drawdownPct
+                is AthUpdateResult.Trusted -> athUpdate.drawdownPct
 
                 // Fail closed: the balance may contain owner capital the
                 // ledger window has not seen yet, so no drawdown derived from
                 // it may drive fiat deployment. Keep showing the last trusted
                 // drawdown and force deployment to zero below.
-                is com.gemini.krakenbot.service.AthUpdateResult.Deferred -> {
+                is AthUpdateResult.Deferred -> {
                     athDeferred = true
                     log.warn(
                         "ATH state deferred (stale ledger coverage); preserving last trusted drawdown {}",

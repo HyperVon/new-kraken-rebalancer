@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -23,6 +24,7 @@ class TradeHistoryQueryService(
     private val ledgerRepository: LedgerRepository,
     private val orderIntentRepository: OrderIntentRepository? = null,
     private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
+    private val fundingProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
 ) {
     suspend fun getHistory(): List<PortfolioSnapshot> = repository.load()
 
@@ -159,6 +161,7 @@ class TradeHistoryQueryService(
             inceptionSnapshot = inceptionSnapshot,
             knownInceptionTime = inceptionResolution?.inceptionTime,
             priceProvider = priceProvider,
+            provenanceResolver = fundingProvenanceResolver,
         )
     }
 

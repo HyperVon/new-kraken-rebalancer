@@ -7,6 +7,7 @@ import com.gemini.krakenbot.domain.PortfolioValues
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.RebalancePlan
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import java.math.BigDecimal
@@ -69,6 +70,18 @@ interface PortfolioAnalyzer {
         totalPortfolioValueUSD: BigDecimal,
         netExternalFlowUSD: BigDecimal,
         balancesObservedAt: Instant?,
+    ): AthUpdateResult = updateAthAndCalculateDrawdown(
+        totalPortfolioValueUSD,
+        netExternalFlowUSD,
+        balancesObservedAt,
+        FundingProvenanceResolver.NONE,
+    )
+
+    suspend fun updateAthAndCalculateDrawdown(
+        totalPortfolioValueUSD: BigDecimal,
+        netExternalFlowUSD: BigDecimal,
+        balancesObservedAt: Instant?,
+        provenanceResolver: FundingProvenanceResolver,
     ): AthUpdateResult
 
     fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal

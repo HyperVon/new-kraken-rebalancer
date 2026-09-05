@@ -3,9 +3,17 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.FundingEvidence
+import com.gemini.krakenbot.model.FundingProvenanceResolver
+import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import io.kotest.assertions.throwables.shouldThrow
@@ -29,6 +37,31 @@ class PortfolioAnalyzerImplTest : StringSpec() {
     private val configService = mockk<ConfigService>(relaxed = true)
     private val portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     private val krakenService = mockk<KrakenService>(relaxed = true)
+
+    private val testProvenanceResolver = FundingProvenanceResolver { event ->
+        when (event.type) {
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+            -> FundingEvidence.EXTERNAL
+
+            else -> FundingEvidence.UNRESOLVED
+        }
+    }
+
+    private fun createAnalyzerWithRepos(
+        ledgerRepository: LedgerRepository? = null,
+        tradeRepository: TradeRepository? = null,
+        nowProvider: () -> Instant = Instant::now,
+        provenanceResolver: FundingProvenanceResolver = testProvenanceResolver,
+    ): PortfolioAnalyzerImpl = PortfolioAnalyzerImpl(
+        krakenService = krakenService,
+        configService = configService,
+        portfolioStatsRepository = portfolioStatsRepository,
+        ledgerRepository = ledgerRepository,
+        tradeRepository = tradeRepository,
+        nowProvider = nowProvider,
+        defaultProvenanceResolver = provenanceResolver,
+    )
 
     private val analyzer =
         PortfolioAnalyzerImpl(
@@ -333,8 +366,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth with unapplied ledger flows initializes watermark when missing" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerWithRepos = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -346,10 +379,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns null
 
                 val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
@@ -373,48 +406,45 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth with unapplied ledger flows aggregates USD and crypto events" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
-                val plainUsdDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                val plainUsdDeposit = LedgerEvent(
                     ledgerId = "L0",
                     refid = "FT-L0",
                     time = fixedTime.minusSeconds(2400),
-                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "USD",
                     amount = BigDecimal("1000.00"),
                     fee = BigDecimal.ZERO,
                 )
-                val usdDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                val usdDeposit = LedgerEvent(
                     ledgerId = "L1",
                     refid = "FT-L1",
                     time = fixedTime.minusSeconds(1800),
-                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "ZUSD",
                     amount = BigDecimal("2000.00"),
                     fee = BigDecimal.ZERO,
                 )
-                val btcDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                val btcDeposit = LedgerEvent(
                     ledgerId = "L2",
                     refid = "tx-btc-deposit",
-                    time = fixedTime.minusSeconds(900),
-                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    time = fixedTime.minusSeconds(120),
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "XXBT",
                     amount = BigDecimal("0.10000000"),
                     fee = BigDecimal.ZERO,
@@ -451,8 +481,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth defers cash-flow adjustment when balances are newer than ledger coverage" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val coverageTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerWithRepos = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -469,15 +499,15 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 coEvery { portfolioStatsRepository.load() } returns
                     PortfolioStats(BigDecimal("10000.00"), BigDecimal("20.0000"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns coverageTime.epochSecond.toString()
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "L9",
                             refid = "FT-L9",
                             time = coverageTime.minusSeconds(60),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
                             amount = BigDecimal("5000.00"),
                             fee = BigDecimal.ZERO,
@@ -490,20 +520,17 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
 
                 result shouldBe
-                    com.gemini.krakenbot.service.AthUpdateResult.Deferred(BigDecimal("20.0000"))
+                    AthUpdateResult.Deferred(BigDecimal("20.0000"))
                 coVerify(exactly = 0) { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) }
             }
         }
 
         "updateAth skips owner-capital flows for assets outside the configured universe" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
@@ -517,27 +544,27 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "LX",
                             refid = "tx-LX",
                             time = fixedTime.minusSeconds(900),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "ETH",
                             amount = BigDecimal("1.00"),
                             fee = BigDecimal.ZERO,
                         ),
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "LB",
                             refid = "tx-LB",
                             time = fixedTime.minusSeconds(600),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "XXBT",
                             amount = BigDecimal("0.10000000"),
                             fee = BigDecimal.ZERO,
@@ -574,7 +601,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
 
                 result shouldBe
-                    com.gemini.krakenbot.service.AthUpdateResult.Trusted(BigDecimal.ZERO)
+                    AthUpdateResult.Trusted(BigDecimal.ZERO)
                 coVerify {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
@@ -589,40 +616,37 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth skips already-checkpointed flows and applies only the remainder" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "L1",
                             refid = "FT-L1",
                             time = fixedTime.minusSeconds(1800),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
                             amount = BigDecimal("1000.00"),
                             fee = BigDecimal.ZERO,
                         ),
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "L2",
                             refid = "FT-L2",
                             time = fixedTime.minusSeconds(900),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
                             amount = BigDecimal("2000.00"),
                             fee = BigDecimal.ZERO,
@@ -640,7 +664,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
 
                 // Basis 11000 (13000 - 2000): 11000 * 13000/11000 = 13000.
-                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
+                (result as AthUpdateResult.Trusted)
                     .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
@@ -654,8 +678,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth is a no-op when every candidate flow is already checkpointed" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerWithRepos = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -667,18 +691,18 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "L1",
                             refid = "FT-L1",
                             time = fixedTime.minusSeconds(1800),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
                             amount = BigDecimal("1000.00"),
                             fee = BigDecimal.ZERO,
@@ -692,7 +716,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     balancesObservedAt = fixedTime,
                 )
 
-                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
+                (result as AthUpdateResult.Trusted)
                     .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
@@ -706,31 +730,28 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth leaves ATH unchanged for a dust flow that rounds to zero" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "LDUST",
                             refid = "FT-LDUST",
                             time = fixedTime.minusSeconds(900),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
                             amount = BigDecimal("0.001"),
                             fee = BigDecimal.ZERO,
@@ -743,7 +764,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     balancesObservedAt = fixedTime,
                 )
 
-                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
+                (result as AthUpdateResult.Trusted)
                     .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
@@ -757,8 +778,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth defers on a malformed flow watermark without reading ledgers" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerWithRepos = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -770,10 +791,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns "bogus"
 
                 val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
@@ -786,7 +807,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 // flows: skipped withdrawals would overstate drawdown and
                 // over-deploy. Defer with no writes; the operator repairs the
                 // key. Ledgers are never even read.
-                (result as com.gemini.krakenbot.service.AthUpdateResult.Deferred)
+                (result as AthUpdateResult.Deferred)
                     .lastTrustedDrawdownPct shouldBe null
                 coVerify(exactly = 0) { mockLedgers.getLedgersInRange(any(), any()) }
                 coVerify(exactly = 0) {
@@ -798,26 +819,23 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth decides late-arriving rows by identity, not by the legacy watermark window" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
                 } returns "true"
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
                 // A backfilled historical row (L-OLD) below the legacy ATH
                 // watermark and a fresh row (L-NEW) above it, neither decided
@@ -828,20 +846,20 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 // without any decision record.
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "L-OLD",
                             refid = "FT-L-OLD",
                             time = fixedTime.minusSeconds(7200),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
                             amount = BigDecimal("99999.00"),
                             fee = BigDecimal.ZERO,
                         ),
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "L-NEW",
                             refid = "FT-L-NEW",
                             time = fixedTime.minusSeconds(900),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
                             amount = BigDecimal("1000.00"),
                             fee = BigDecimal.ZERO,
@@ -857,7 +875,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     balancesObservedAt = fixedTime,
                 )
 
-                (result as com.gemini.krakenbot.service.AthUpdateResult.Trusted)
+                (result as AthUpdateResult.Trusted)
                     .drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
@@ -871,8 +889,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth defers without writes when an owner-capital flow cannot be priced" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerWithRepos = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -884,10 +902,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(86400L * 32).epochSecond.toString()
                 // Stale crypto deposit: no snapshot nearby and older than the
                 // 24h ticker bound, so pricing defers the whole update (no
@@ -896,11 +914,11 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 // the event: an event AT the watermark was already processed.)
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "LS",
                             refid = "tx-LS",
                             time = fixedTime.minusSeconds(86400L * 31),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "XXBT",
                             amount = BigDecimal("0.10000000"),
                             fee = BigDecimal.ZERO,
@@ -917,7 +935,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
 
                 result shouldBe
-                    com.gemini.krakenbot.service.AthUpdateResult.Deferred(BigDecimal("5.0000"))
+                    AthUpdateResult.Deferred(BigDecimal("5.0000"))
                 coVerify(exactly = 0) {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
                 }
@@ -973,7 +991,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth returns zero flow when tradeRepository is missing or events are empty" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerNoTrades = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -991,12 +1009,12 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 dd1.shouldBeEqualComparingTo(BigDecimal.ZERO)
 
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(60).epochSecond.toString()
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
 
@@ -1018,30 +1036,27 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "pricing failure on crypto owner capital fails closed without advancing watermark and succeeds on retry" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
-                val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                val cryptoDeposit = LedgerEvent(
                     ledgerId = "L2",
                     refid = "tx-L2",
-                    time = fixedTime.minusSeconds(900),
-                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    time = fixedTime.minusSeconds(120),
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
                     amount = BigDecimal("10.0"),
                     fee = BigDecimal.ZERO,
@@ -1057,10 +1072,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = fixedTime,
                 )
-                deferred shouldBe com.gemini.krakenbot.service.AthUpdateResult.Deferred(null)
+                deferred shouldBe AthUpdateResult.Deferred(null)
                 coVerify(exactly = 0) {
                     mockTrades.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                        SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
                         any(),
                     )
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
@@ -1086,8 +1101,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "two-arg overload throws IllegalStateException on deferral instead of ClassCastException" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerWithRepos = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -1099,17 +1114,17 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
-                val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                val cryptoDeposit = LedgerEvent(
                     ledgerId = "L2",
                     refid = "tx-L2",
                     time = fixedTime.minusSeconds(900),
-                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
                     amount = BigDecimal("10.0"),
                     fee = BigDecimal.ZERO,
@@ -1132,30 +1147,27 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "crypto flow pricing uses historical portfolio snapshot price without querying ticker" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
-                val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                val cryptoDeposit = LedgerEvent(
                     ledgerId = "L2",
                     refid = "tx-L2",
                     time = fixedTime.minusSeconds(900),
-                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
                     amount = BigDecimal("10.0"),
                     fee = BigDecimal.ZERO,
@@ -1166,14 +1178,14 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     timestamp = fixedTime.minusSeconds(905),
                     totalValueUSD = BigDecimal("10000.00"),
                     assets = mapOf(
-                        "SOL" to com.gemini.krakenbot.TestFixtures.assetSnapshot(
+                        "SOL" to TestFixtures.assetSnapshot(
                             symbol = "SOL",
                             balance = BigDecimal("10.0"),
                             price = BigDecimal("150.00"),
                             valueUSD = BigDecimal("1500.00"),
                             targetPercent = BigDecimal("15.0"),
                         ),
-                        "USD" to com.gemini.krakenbot.TestFixtures.assetSnapshot(
+                        "USD" to TestFixtures.assetSnapshot(
                             symbol = "USD",
                             balance = BigDecimal("8500.00"),
                             price = BigDecimal.ONE,
@@ -1207,35 +1219,105 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
-        // Regression: the removed getSnapshotBefore fallback could have served a snapshot
-        // hours or days old, silently corrupting ATH valuations. After the fix, only
-        // snapshots within ±180s are accepted; anything older must fall through to ticker.
-        "crypto flow pricing rejects snapshot outside ±180s window and falls through to ticker" {
+        "updateAth scales ATH using net contribution for confirmed external crypto deposit with fee" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
-                val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                val cryptoDeposit = LedgerEvent(
+                    ledgerId = "L-FEE-DEP",
+                    refid = "tx-L-FEE-DEP",
+                    time = fixedTime.minusSeconds(900),
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "SOL",
+                    amount = BigDecimal("10.0"),
+                    fee = BigDecimal("0.1"),
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(cryptoDeposit)
+
+                val snap = PortfolioSnapshot(
+                    timestamp = fixedTime.minusSeconds(905),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        "SOL" to TestFixtures.assetSnapshot(
+                            symbol = "SOL",
+                            balance = BigDecimal("10.0"),
+                            price = BigDecimal("150.00"),
+                            valueUSD = BigDecimal("1500.00"),
+                            targetPercent = BigDecimal("15.0"),
+                        ),
+                        "USD" to TestFixtures.assetSnapshot(
+                            symbol = "USD",
+                            balance = BigDecimal("8500.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("8500.00"),
+                            targetPercent = BigDecimal("85.0"),
+                        ),
+                    ),
+                    actions = emptyList<String>(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+
+                val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("11485.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                )
+                dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
+
+                coVerify(exactly = 1) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("11485.00")) == 0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
+        // Regression: the removed getSnapshotBefore fallback could have served a snapshot
+        // hours or days old, silently corrupting ATH valuations. After the fix, only
+        // snapshots within ±180s are accepted; anything older must fall through to ticker.
+        "crypto flow pricing rejects snapshot outside ±180s window and falls through to ticker" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val cryptoDeposit = LedgerEvent(
                     ledgerId = "L3",
                     refid = "tx-L3",
-                    time = fixedTime.minusSeconds(900),
-                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    time = fixedTime.minusSeconds(240),
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
                     amount = BigDecimal("5.0"),
                     fee = BigDecimal.ZERO,
@@ -1246,7 +1328,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     timestamp = fixedTime.minusSeconds(1800),
                     totalValueUSD = BigDecimal("9000.00"),
                     assets = mapOf(
-                        "SOL" to com.gemini.krakenbot.TestFixtures.assetSnapshot(
+                        "SOL" to TestFixtures.assetSnapshot(
                             symbol = "SOL",
                             balance = BigDecimal("10.0"),
                             price = BigDecimal("1.00"), // wrong price - must NOT be used
@@ -1277,30 +1359,27 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "crypto flow pricing fails closed when ticker returns zero price or cancellation occurs" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { fixedTime },
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
-                val cryptoDeposit = com.gemini.krakenbot.model.LedgerEvent(
+                val cryptoDeposit = LedgerEvent(
                     ledgerId = "L2",
                     refid = "tx-L2",
-                    time = fixedTime.minusSeconds(900),
-                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    time = fixedTime.minusSeconds(120),
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "SOL",
                     amount = BigDecimal("10.0"),
                     fee = BigDecimal.ZERO,
@@ -1314,11 +1393,11 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = fixedTime,
                 )
-                zeroPrice shouldBe com.gemini.krakenbot.service.AthUpdateResult.Deferred(null)
+                zeroPrice shouldBe AthUpdateResult.Deferred(null)
 
                 coEvery { krakenService.getTickerPrices("SOLUSD") } throws
-                    kotlinx.coroutines.CancellationException("ticker cancelled")
-                shouldThrow<kotlinx.coroutines.CancellationException> {
+                    CancellationException("ticker cancelled")
+                shouldThrow<CancellationException> {
                     analyzerWithRepos.updateAthAndCalculateDrawdown(
                         totalPortfolioValueUSD = BigDecimal("10000.00"),
                         netExternalFlowUSD = BigDecimal.ZERO,
@@ -1329,8 +1408,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "ledger coverage watermark missing halts ATH flow calculation safely without advancing watermark" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerWithRepos = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -1342,7 +1421,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns null
 
                 val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
@@ -1359,14 +1438,11 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "deposit occurring after ledger sync is not skipped when rebalance runs before next ledger sync" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val t0 = Instant.parse("2026-08-01T12:00:00Z")
                 var currentTime = t0
-                val analyzerWithRepos = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = portfolioStatsRepository,
+                val analyzerWithRepos = createAnalyzerWithRepos(
                     ledgerRepository = mockLedgers,
                     tradeRepository = mockTrades,
                     nowProvider = { currentTime },
@@ -1376,10 +1452,10 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 // Cycle 1 at T=100s, ledger coverage is at T=60s. Initial watermark set to 60s.
                 currentTime = t0.plusSeconds(100)
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns t0.plusSeconds(60).epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns null
 
                 analyzerWithRepos.updateAthAndCalculateDrawdown(BigDecimal("10000.00"), BigDecimal.ZERO)
@@ -1396,7 +1472,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 // Range query (60..60] is empty. Watermark does NOT advance past 60s.
                 currentTime = t0.plusSeconds(120)
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns t0.plusSeconds(60).epochSecond.toString()
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
 
@@ -1407,13 +1483,13 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 // (EPOCH..150], not just (watermark..coverage], so the late deposit is decided once.
                 currentTime = t0.plusSeconds(160)
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns t0.plusSeconds(150).epochSecond.toString()
-                val depositAt70 = com.gemini.krakenbot.model.LedgerEvent(
+                val depositAt70 = LedgerEvent(
                     ledgerId = "L70",
                     refid = "FT-L70",
                     time = t0.plusSeconds(70),
-                    type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "USD",
                     amount = BigDecimal("5000.00"),
                     fee = BigDecimal.ZERO,
@@ -1441,8 +1517,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "staking rewards improve portfolio value and reduce drawdown without scaling ATH" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerWithRepos = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -1455,14 +1531,14 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 // ATH = 100,000. Pre-flow portfolio = 80,000 (20% drawdown).
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("100000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
                 // Staking reward of $10,000 USD increases portfolio to 90,000
-                val stakingReward = com.gemini.krakenbot.model.LedgerEvent(
+                val stakingReward = LedgerEvent(
                     ledgerId = "S1",
                     time = fixedTime.minusSeconds(1800),
                     type = "staking",
@@ -1552,18 +1628,18 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth does not advance watermark when portfolioStatsRepository save throws" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val mockStatsRepo = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>()
+                val mockStatsRepo = mockk<PortfolioStatsRepository>()
                 coEvery { mockStatsRepo.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery { mockStatsRepo.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
                     RuntimeException("disk full")
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
                 val analyzerWithFailingSave = PortfolioAnalyzerImpl(
@@ -1584,7 +1660,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 coVerify(exactly = 0) {
                     mockTrades.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                        SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
                         any(),
                     )
                 }
@@ -1593,18 +1669,18 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth does not initialize watermark when portfolioStatsRepository save throws and watermark was missing" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
-                val mockStatsRepo = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>()
+                val mockStatsRepo = mockk<PortfolioStatsRepository>()
                 coEvery { mockStatsRepo.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery { mockStatsRepo.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
                     RuntimeException("disk full")
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns null
 
                 val analyzerWithFailingSave = PortfolioAnalyzerImpl(
@@ -1625,7 +1701,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 coVerify(exactly = 0) {
                     mockTrades.setSyncMetadata(
-                        com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                        SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
                         any(),
                     )
                 }
@@ -1634,8 +1710,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
         "updateAth rescans by identity when the watermark is ahead of coverage without re-applying decided rows" {
             runTest {
-                val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
-                val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
                 val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
                 val analyzerWithAheadWatermark = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -1647,24 +1723,24 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 )
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.epochSecond.toString()
                 coEvery {
-                    mockLedgers.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
                 } returns "true"
                 coEvery {
-                    mockTrades.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.plusSeconds(10).epochSecond.toString()
                 // The watermark is only observability: the scan still reads
                 // every retained row, and the decision journal — not the
                 // timestamp — is what prevents a second scaling of L-PAST.
                 coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
                     listOf(
-                        com.gemini.krakenbot.model.LedgerEvent(
+                        LedgerEvent(
                             ledgerId = "L-PAST",
                             refid = "FT-L-PAST",
                             time = fixedTime.minusSeconds(60),
-                            type = com.gemini.krakenbot.model.KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             asset = "USD",
                             amount = BigDecimal("5000.00"),
                             fee = BigDecimal.ZERO,

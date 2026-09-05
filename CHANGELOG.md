@@ -44,18 +44,32 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `UNSUPPORTED` funding events now defer ATH trust (`AthUpdateResult.Deferred`),
   forcing fiat deployment to zero and remaining unjournaled so future metadata
   resolution or operator classification can replay them exactly once.
-- **Affirmative external flow classification**: deposits and withdrawals now
-  require affirmative external evidence before scaling ATH — fiat deposits
-  require banking refid prefixes (`FT`, `WIRE`, etc.) or non-zero fees; crypto
-  deposits require 64-hex / `0x` / `tx-` txids and zero fee; withdrawals
-  require banking/txid refids or non-zero fees. Bare deposits and withdrawals
-  without external proof classify as `AMBIGUOUS`.
+- **Two-layer funding provenance architecture**: ledger flow classification
+  now decouples intrinsic ledger patterns (`LedgerFlowClassifier`) from
+  external funding verification (`FundingProvenanceResolver`). Fiat deposits,
+  crypto deposits, and withdrawals require affirmative external proof
+  (`FundingEvidence.EXTERNAL`) before scaling ATH; unproven or ambiguous
+  events fail closed to `AMBIGUOUS` and defer ATH updates without journaling.
+- **Confirmed fee-bearing deposits scale ATH using net capital**: confirmed
+  external crypto and fiat deposits carrying network/processing fees now
+  classify as `OWNER_CAPITAL` and scale ATH using their net balance
+  contribution (`event.netBalanceDelta() = amount - fee`), accurately reflecting
+  the true external capital injected into the portfolio.
+- **Intervening balance event replay in pre-flow basis**: the pre-flow basis
+  reconstruction now replays intervening `EXTERNAL_BALANCE` events (such as
+  staking rewards, dividends, and balance adjustments) alongside trades and
+  prior flows between the predecessor snapshot and the flow event time before
+  valuing holdings, preventing basis undercounting and distorted ATH scaling.
+- **Strict historical price sources with decoupled live ticker**: historical
+  price lookup during pre-flow basis and flow valuation now uses dedicated
+  historical sources (predecessor/successor snapshots and recent trade
+  executions) without unconstrained ticker fallback; live ticker fallback is
+  strictly bounded to near-real-time events within 300 seconds of observation.
 - **Event-time market price revaluation for pre-flow basis**: the pre-flow basis
   reconstructs exact portfolio holdings immediately before the flow and values
-  them at flow-time prices (`sum(holding_i * price_at_flow_i)`), utilizing
-  recent trade execution prices, nearest portfolio snapshots, or bounded
-  live tickers. Gaps older than 7 days (`MAX_PREDECESSOR_GAP_SECONDS`) or
-  unresolvable prices defer ATH trust fail-closed.
+  them at flow-time prices (`sum(holding_i * price_at_flow_i)`). Gaps older
+  than 7 days (`MAX_PREDECESSOR_GAP_SECONDS`) or unresolvable prices defer ATH
+  trust fail-closed.
 - **Durable install state for inception confidence**: inception detection on
   upgraded installs now uses a durable install marker
   (`SyncMetadataKeys.INCEPTION_INSTALL_TYPE`) with fallback to
@@ -67,17 +81,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   coverage horizon and the balance observation are journaled as absorbed,
   preventing a fresh install with seeded history from re-scaling lifetime
   history on the next cycle.
-- **Fee-bearing crypto deposits classify as externally balanced**: a bare
-  crypto `deposit` ledger row carrying a fee is economically unclear (fee-free
-  internal transfers have no fee leg) and is now `EXTERNAL_BALANCE`, never
-  ATH-scaling owner capital. Zero-fee crypto deposits and all fiat deposits
-  keep their owner-capital classification.
 
 ### Docs
 
-- `docs/ALGORITHM.md`: ATH flow classification, ambiguous flow fail-closed
-  deferral, event-time basis revaluation, inception confidence model,
-  lifetime scan performance tradeoffs, and journal-migration semantics updated.
+- `docs/ALGORITHM.md`: updated with two-layer funding provenance architecture,
+  net capital scaling for fee-bearing external deposits, pre-flow basis replay
+  of intervening balance events, strict historical price source requirements,
+  and fail-closed ambiguous flow handling.
 
 ## [6.17.27] - 2026-09-04
 
