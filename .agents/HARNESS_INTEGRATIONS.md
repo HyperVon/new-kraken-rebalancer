@@ -45,3 +45,13 @@ standard Gradle/README workflows and shared .agents guidance.
   or runtime logs.
 - Bring worktree changes back with Agent Manager Apply, a normal merge, or a
   PR. Do not use shared git stash or autostash across worktrees.
+
+## zvec-grep workspace search
+
+The optional local semantic-search integration requires Node.js 22+ and the
+global `zg` command from `@zvec/zvec-grep`. Install it with
+`npm install --global @zvec/zvec-grep@0.2.1`, then create or update this
+workspace's local index with `zg index --embedding local/potion-code-16m-v2`.
+Codex is managed by `zg install --target codex --yes`; `.kilo/kilo.json`
+launches the same local stdio bridge for KiloCode. The generated `.zvec-grep/`
+directory is ignored and must not be committed.
