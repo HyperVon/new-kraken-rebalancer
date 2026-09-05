@@ -34,6 +34,7 @@ import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Duration
 import java.time.Instant
 import com.gemini.krakenbot.domain.resolveBalance as resolveBalanceFromKeys
 
@@ -168,9 +169,10 @@ class PortfolioAnalyzerImpl(
                     // Mirror of the ath>0 temporal gate: a balance observed
                     // past coverage may contain owner capital the ledger has
                     // not confirmed, so no baseline may be established from it.
-                    if (coverage != null &&
+                    val coverageInstant = coverage?.let(Instant::ofEpochSecond)
+                    if (coverageInstant != null &&
                         balancesObservedAt != null &&
-                        balancesObservedAt.epochSecond > coverage
+                        balancesObservedAt.isAfter(coverageInstant)
                     ) {
                         throw IllegalStateException(
                             "ledger coverage $coverage predates balances observed at $balancesObservedAt",
@@ -181,11 +183,13 @@ class PortfolioAnalyzerImpl(
                     // the ledger has not confirmed: absorb to the earlier of
                     // coverage and the observation. Rows above the observation
                     // are not in the baseline and scale on later cycles.
-                    val absorbHorizonSec = coverage?.let { minOf(it, balancesObservedAt?.epochSecond ?: it) }
-                    if (absorbHorizonSec != null) {
+                    val absorbHorizon = coverageInstant?.let { coverageTime ->
+                        balancesObservedAt?.let { observation -> minOf(coverageTime, observation) } ?: coverageTime
+                    }
+                    if (absorbHorizon != null) {
                         appliedFlows.addAll(
                             absorbUnappliedFlowsIntoInitialAth(
-                                Instant.ofEpochSecond(absorbHorizonSec),
+                                absorbHorizon,
                                 provenanceResolver,
                             ),
                         )
@@ -193,7 +197,7 @@ class PortfolioAnalyzerImpl(
                     // Hold the watermark at the absorb horizon: rows above it
                     // were not in the baseline, and a later one-time migration
                     // must never presume them decided.
-                    ExternalFlowCalculation(emptyList(), absorbHorizonSec)
+                    ExternalFlowCalculation(emptyList(), absorbHorizon?.epochSecond)
                 }
             } catch (e: CancellationException) {
                 // Coroutine cancellation is an IllegalStateException subtype:
@@ -357,9 +361,9 @@ class PortfolioAnalyzerImpl(
     )
 
     private data class ScannedLedgers(
-        val unapplied: List<LedgerEvent>,
-        val classifications: Map<String, FlowCategory>,
-        val allRetained: List<LedgerEvent>,
+        @JvmField val unapplied: List<LedgerEvent>,
+        @JvmField val classifications: Map<String, FlowCategory>,
+        @JvmField val allRetained: List<LedgerEvent>,
     )
 
     /**
@@ -377,12 +381,15 @@ class PortfolioAnalyzerImpl(
         val rows = ledgersRepo.getLedgersInRange(Instant.EPOCH, horizon)
             .sortedBy { it.time }
         if (rows.isEmpty()) return ScannedLedgers(emptyList(), emptyMap(), emptyList())
+        // Resolve funding provenance once for the full retained batch. The
+        // classifier itself stays pure and never performs one request per row.
+        val preparedResolver = provenanceResolver.prepare(rows)
         val decided = portfolioStatsRepository.getAppliedAthFlowIds(rows.map { it.ledgerId })
         val unapplied = if (decided.isEmpty()) rows else rows.filterNot { it.ledgerId in decided }
         // Classify the full retained set: refid pairing must see decided
         // partners, or a late backfill completing an internal move would
         // classify its lone leg as owner capital and scale ATH again.
-        return ScannedLedgers(unapplied, LedgerFlowClassifier.classifyAll(rows, provenanceResolver), rows)
+        return ScannedLedgers(unapplied, LedgerFlowClassifier.classifyAll(rows, preparedResolver), rows)
     }
 
     /**
@@ -455,21 +462,20 @@ class PortfolioAnalyzerImpl(
         // include capital the ledger window has not seen yet. The caller
         // treats a stale gate as an untrusted balance: no flow processing, no
         // ATH ratchet, no deployment-driving drawdown.
-        if (balancesObservedAt != null && balancesObservedAt.epochSecond > ledgerCoverageSec) {
+        val ledgerCoverage = Instant.ofEpochSecond(ledgerCoverageSec)
+        if (balancesObservedAt != null && balancesObservedAt.isAfter(ledgerCoverage)) {
             return ExternalFlowCalculation(
                 emptyList(),
                 null,
                 coverageStale = true,
-                coverageHorizon = Instant.ofEpochSecond(ledgerCoverageSec),
+                coverageHorizon = ledgerCoverage,
             )
         }
         // Coverage may run past the observation (production observes balances
         // before the sync that confirms coverage): flows between the
         // observation and coverage are not reflected in the total yet, so cap
         // the scan horizon at the observation; they reconcile on later cycles.
-        val confirmedHorizon = Instant.ofEpochSecond(
-            minOf(ledgerCoverageSec, balancesObservedAt?.epochSecond ?: ledgerCoverageSec),
-        )
+        val confirmedHorizon = balancesObservedAt?.let { minOf(ledgerCoverage, it) } ?: ledgerCoverage
 
         val watermarkStr = tradesRepo.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
         if (watermarkStr == null) {
@@ -585,7 +591,15 @@ class PortfolioAnalyzerImpl(
             event to priceOwnerCapitalFlow(event, balancesObservedAt, tradesRepo)
         }
         val maxEventTime = pricedFlows.maxOf { (event, _) -> event.time }
-        val history = tradesRepo.getSnapshotsInRange(Instant.EPOCH, maxEventTime)
+        // Include snapshots saved shortly after a flow so an observation
+        // boundary can distinguish a real predecessor from a row that was
+        // merely saved later. resolveEventTimeBasis still refuses a future
+        // save when no snapshot saved before the flow can establish the
+        // pre-flow state.
+        val history = tradesRepo.getSnapshotsInRange(
+            Instant.EPOCH,
+            maxEventTime.plusSeconds(MAX_PREDECESSOR_GAP_SECONDS),
+        )
         // Successful non-dry trades between the predecessor snapshot and each
         // flow move portfolio value without being owner capital; replaying
         // them (at predecessor prices) keeps the reconstructed basis honest
@@ -688,14 +702,48 @@ class PortfolioAnalyzerImpl(
         balancesObservedAt: Instant?,
         tradesRepo: TradeRepository,
     ): BigDecimal? {
-        val predecessor = history.filter { !it.timestamp.isAfter(eventTime) }.maxByOrNull { it.timestamp }
-            ?: return null
+        // `timestamp` is when the snapshot was saved; `balancesObservedAt` is
+        // the request-start lower bound for the balance state it contains.
+        // Rows between those instants cannot be assigned from timestamps alone.
+        // Legacy rows retain the conservative old boundary (their save time).
+        fun observationBoundary(snapshot: PortfolioSnapshot): Instant =
+            snapshot.balancesObservedAt ?: snapshot.timestamp
 
-        val gapSeconds = eventTime.epochSecond - predecessor.timestamp.epochSecond
-        if (gapSeconds > MAX_PREDECESSOR_GAP_SECONDS) {
+        val observationEligible = history.filter { !observationBoundary(it).isAfter(eventTime) }
+        val predecessor = observationEligible
+            .filter { !it.timestamp.isAfter(eventTime) }
+            .maxByOrNull { it.timestamp }
+            ?: if (observationEligible.any { it.timestamp.isAfter(eventTime) }) {
+                throw IllegalStateException(
+                    "all snapshots covering the observation boundary were saved after flow at $eventTime; " +
+                        "pre-flow state is uncertain",
+                )
+            } else {
+                // No retained snapshot has an observation boundary before the
+                // event. This is the existing initial-baseline case.
+                return null
+            }
+        val predecessorObservationBoundary = predecessor.balancesObservedAt ?: predecessor.timestamp
+        val predecessorGap = Duration.between(predecessorObservationBoundary, eventTime)
+        val gapSeconds = predecessorGap.seconds
+        if (predecessorGap > Duration.ofSeconds(MAX_PREDECESSOR_GAP_SECONDS)) {
             throw IllegalStateException(
-                "Predecessor snapshot at ${predecessor.timestamp} is older than maximum allowed gap " +
+                "Predecessor observation at $predecessorObservationBoundary is older than maximum allowed gap " +
                     "(${MAX_PREDECESSOR_GAP_SECONDS}s; gap was ${gapSeconds}s) for event at $eventTime",
+            )
+        }
+
+        // A persisted timestamp does not establish whether a trade or a
+        // performance ledger row happened before or after the owner flow
+        // when the records are simultaneous or within exchange-clock skew.
+        // Do not impose an arbitrary lexical order on money-moving events;
+        // the next cycle can retry once a more precise source or balance
+        // boundary is available.
+        if (externalBalances.any { isNearEventTime(it.time, eventTime) } ||
+            trades.any { isNearEventTime(it.timestamp, eventTime) }
+        ) {
+            throw IllegalStateException(
+                "cannot establish ordering of a near-instant performance event and owner flow at $eventTime",
             )
         }
 
@@ -707,7 +755,7 @@ class PortfolioAnalyzerImpl(
             }
         } else {
             for ((asset, assetSnap) in predecessor.assets) {
-                reconstructedHoldings[asset.uppercase()] = assetSnap.balance
+                reconstructedHoldings[Asset.normalizeLedgerAsset(asset).uppercase()] = assetSnap.balance
             }
             if (!reconstructedHoldings.containsKey("USD") && !reconstructedHoldings.containsKey("ZUSD")) {
                 val nonUsdTotal = predecessor.assets.values.sumOf { it.valueUSD }
@@ -720,6 +768,34 @@ class PortfolioAnalyzerImpl(
 
         // Replay intervening trades between predecessor snapshot and flow time
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
+        val uniqueInterveningLedgerEvents = (externalBalances + priorFlows.map { it.first })
+            .filter { ledger ->
+                isInAthUniverse(Asset.normalizeLedgerAsset(ledger.asset).uppercase(), universe) &&
+                    !ledger.time.isAfter(eventTime)
+            }
+            .groupBy { it.ledgerId }
+            .values
+            .map { sameId ->
+                if (sameId.distinct().size != 1) {
+                    throw IllegalStateException("conflicting ledger rows for ${sameId.first().ledgerId}")
+                }
+                sameId.first()
+            }
+        val uncertainLedgerEvents = uniqueInterveningLedgerEvents.filter { ledger ->
+            ledger.time.isAfter(predecessorObservationBoundary) &&
+                !ledger.time.isAfter(predecessor.timestamp)
+        }
+        val embeddedLedgerIds = resolveEmbeddedLedgerIds(uncertainLedgerEvents, predecessor)
+        val uncertainTrades = trades.filter { trade ->
+            trade.timestamp.isAfter(predecessorObservationBoundary) &&
+                !trade.timestamp.isAfter(predecessor.timestamp) &&
+                !trade.timestamp.isAfter(eventTime)
+        }
+        if (uncertainTrades.isNotEmpty()) {
+            throw IllegalStateException(
+                "trade state falls inside the uncertain balance-observation interval before $eventTime",
+            )
+        }
         for (trade in trades) {
             if (trade.timestamp.isAfter(predecessor.timestamp) && !trade.timestamp.isAfter(eventTime)) {
                 val asset = Asset.normalizeLedgerAsset(trade.symbol).uppercase()
@@ -744,7 +820,12 @@ class PortfolioAnalyzerImpl(
 
         // Replay intervening external balance events (staking, dividends, adjustments, spend/receive, etc.)
         for (extBal in externalBalances) {
-            if (extBal.time.isAfter(predecessor.timestamp) && !extBal.time.isAfter(eventTime)) {
+            val replayAfterSnapshot = extBal.time.isAfter(predecessor.timestamp) && !extBal.time.isAfter(eventTime)
+            val replayAfterObservation = extBal.ledgerId !in embeddedLedgerIds &&
+                extBal.time.isAfter(predecessorObservationBoundary) &&
+                !extBal.time.isAfter(predecessor.timestamp) &&
+                !extBal.time.isAfter(eventTime)
+            if (replayAfterSnapshot || replayAfterObservation) {
                 val asset = Asset.normalizeLedgerAsset(extBal.asset).uppercase()
                 if (isInAthUniverse(asset, universe)) {
                     reconstructedHoldings[asset] =
@@ -755,7 +836,12 @@ class PortfolioAnalyzerImpl(
 
         // Replay intervening prior flows between predecessor snapshot and flow time
         for ((event, _) in priorFlows) {
-            if (event.time.isAfter(predecessor.timestamp) && !event.time.isAfter(eventTime)) {
+            val replayAfterSnapshot = event.time.isAfter(predecessor.timestamp) && !event.time.isAfter(eventTime)
+            val replayAfterObservation = event.ledgerId !in embeddedLedgerIds &&
+                event.time.isAfter(predecessorObservationBoundary) &&
+                !event.time.isAfter(predecessor.timestamp) &&
+                !event.time.isAfter(eventTime)
+            if (replayAfterSnapshot || replayAfterObservation) {
                 val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
                 if (isInAthUniverse(asset, universe)) {
                     reconstructedHoldings[asset] =
@@ -792,6 +878,68 @@ class PortfolioAnalyzerImpl(
         )
     }
 
+    /**
+     * Assigns ledger rows that fall between a balance request start and the
+     * later snapshot timestamp. An authoritative post-event balance permits a
+     * unique prefix/suffix split; every other case is ambiguous and must defer
+     * the ATH update rather than double-count or drop the row.
+     */
+    private fun resolveEmbeddedLedgerIds(
+        uncertainEvents: List<LedgerEvent>,
+        predecessor: PortfolioSnapshot,
+    ): Set<String> {
+        if (uncertainEvents.isEmpty()) return emptySet()
+        val embeddedIds = mutableSetOf<String>()
+        for ((asset, events) in uncertainEvents.groupBy {
+            Asset.normalizeLedgerAsset(it.asset).uppercase()
+        }) {
+            val ordered = events.sortedWith(compareBy({ it.time }, { it.ledgerId }))
+            if (ordered.zipWithNext().any { (first, second) -> first.time == second.time }) {
+                throw IllegalStateException(
+                    "cannot order same-timestamp ledger rows in uncertain balance-observation interval for $asset",
+                )
+            }
+            if (ordered.any { !it.hasAuthoritativeBalance }) {
+                throw IllegalStateException(
+                    "ledger row in uncertain balance-observation interval has no authoritative balance: " +
+                        ordered.first { !it.hasAuthoritativeBalance }.ledgerId,
+                )
+            }
+            val inconsistentChain = ordered.zipWithNext().firstOrNull { (previous, current) ->
+                previous.balance
+                    .add(current.netBalanceDelta())
+                    .subtract(current.balance)
+                    .abs()
+                    .compareTo(INTERVENING_BALANCE_TOLERANCE) > 0
+            }
+            if (inconsistentChain != null) {
+                throw IllegalStateException(
+                    "ledger balance chain is inconsistent between ${inconsistentChain.first.ledgerId} " +
+                        "and ${inconsistentChain.second.ledgerId} for $asset",
+                )
+            }
+            val observedBalance = predecessor.assets.entries.firstOrNull {
+                Asset.normalizeLedgerAsset(it.key).uppercase() == asset
+            }?.value?.balance ?: BigDecimal.ZERO
+            val possibleCutoffs = (0..ordered.size).filter { cutoff ->
+                val expected = if (cutoff == 0) {
+                    ordered.first().balance.subtract(ordered.first().netBalanceDelta())
+                } else {
+                    ordered[cutoff - 1].balance
+                }
+                expected.subtract(observedBalance).abs() <= INTERVENING_BALANCE_TOLERANCE
+            }
+            if (possibleCutoffs.size != 1) {
+                throw IllegalStateException(
+                    "cannot uniquely assign ${ordered.size} ledger row(s) in uncertain " +
+                        "balance-observation interval for $asset",
+                )
+            }
+            embeddedIds += ordered.take(possibleCutoffs.single()).map { it.ledgerId }
+        }
+        return embeddedIds
+    }
+
     private fun isTrackedCrypto(normalizedAsset: String, universe: Set<String>): Boolean =
         normalizedAsset != "USD" && normalizedAsset != "ZUSD" &&
             (universe.isEmpty() || universe.contains(normalizedAsset))
@@ -825,8 +973,9 @@ class PortfolioAnalyzerImpl(
         // Bounded fallback to exchange ticker: live prices only proxy
         // historical cost when the event is near-real-time (<= 300s).
         val referenceTime = balancesObservedAt ?: nowProvider()
-        val eventAgeSeconds = kotlin.math.abs(referenceTime.epochSecond - eventTime.epochSecond)
-        if (eventAgeSeconds <= MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS) {
+        val eventAgeMillis = kotlin.math.abs(referenceTime.toEpochMilli() - eventTime.toEpochMilli())
+        val eventAgeSeconds = eventAgeMillis / 1000L
+        if (eventAgeMillis <= MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS * 1000L) {
             try {
                 val pair = Asset(asset).tradingPair
                 val raw = krakenService.getTickerPrices(pair)
@@ -861,9 +1010,14 @@ class PortfolioAnalyzerImpl(
         tradesRepo: TradeRepository,
     ): BigDecimal? {
         // 1. If a trade occurred at or near flow time (within +/- 180 seconds), use the trade execution price
-        val recentTrade = tradesRepo.getTradesInRange(eventTime.minusSeconds(180), eventTime.plusSeconds(180))
+        val recentTradeStart = eventTime.minusSeconds(180)
+        val recentTrade = tradesRepo.getTradesInRange(recentTradeStart, eventTime.plusSeconds(180))
             .filter {
-                it.success && !it.dryRun && Asset.normalizeLedgerAsset(it.symbol).equals(asset, ignoreCase = true)
+                it.success &&
+                    !it.dryRun &&
+                    !it.timestamp.isBefore(recentTradeStart) &&
+                    !it.timestamp.isAfter(eventTime) &&
+                    Asset.normalizeLedgerAsset(it.symbol).equals(asset, ignoreCase = true)
             }
             .minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
         if (recentTrade != null && recentTrade.volume > BigDecimal.ZERO && recentTrade.usdAmount > BigDecimal.ZERO) {
@@ -875,22 +1029,39 @@ class PortfolioAnalyzerImpl(
         }
 
         // 2. Look for closest recorded portfolio snapshot within +/- 180 seconds.
+        val recentSnapshotStart = eventTime.minusSeconds(180)
         val nearestSnap = tradesRepo.getSnapshotsInRange(
-            eventTime.minusSeconds(180),
-            eventTime.plusSeconds(180),
-        ).minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
+            recentSnapshotStart,
+            eventTime,
+        ).filter {
+            !it.timestamp.isBefore(recentSnapshotStart) &&
+                !it.timestamp.isAfter(eventTime) &&
+                !(it.balancesObservedAt ?: it.timestamp).isAfter(eventTime)
+        }.minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
 
         val snapPrice = nearestSnap?.assets?.get(asset)?.price
         if (snapPrice != null && snapPrice > BigDecimal.ZERO) {
             return snapPrice
         }
 
-        // 3. Look for OHLC daily candle at or before event time (within 24 hours)
+        // 3. Use only a completed intraday candle. Selecting a daily candle
+        // whose start is before the event would otherwise use that candle's
+        // close, which includes price movement after the funding event.
         try {
             val pair = Asset(asset).tradingPair
             val sinceSec = eventTime.minusSeconds(86400).epochSecond
-            val candles = krakenService.getOHLC(pair, interval = 1440, since = sinceSec)
-            val matched = candles.filter { it.first <= eventTime.epochSecond }
+            val candles = krakenService.getOHLC(
+                pair,
+                interval = HISTORICAL_OHLC_INTERVAL_MINUTES,
+                since = sinceSec,
+            )
+            val candleDurationSeconds = HISTORICAL_OHLC_INTERVAL_MINUTES * 60L
+            val earliestCandleStart = eventTime.minusSeconds(86400)
+            val matched = candles.filter {
+                val candleStart = Instant.ofEpochSecond(it.first)
+                !candleStart.isBefore(earliestCandleStart) &&
+                    candleStart.plusSeconds(candleDurationSeconds) <= eventTime
+            }
                 .maxByOrNull { it.first }
             if (matched != null && matched.second > BigDecimal.ZERO) {
                 return matched.second
@@ -992,6 +1163,12 @@ class PortfolioAnalyzerImpl(
     companion object {
         const val MAX_PREDECESSOR_GAP_SECONDS = 7L * 86400L
         const val MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS = 300L
+        const val HISTORICAL_OHLC_INTERVAL_MINUTES = 15
+        private const val MAX_EVENT_ORDERING_SKEW_MILLIS = 1_000L
+        private val INTERVENING_BALANCE_TOLERANCE = BigDecimal("0.00000001")
+
+        private fun isNearEventTime(first: Instant, second: Instant): Boolean =
+            kotlin.math.abs(first.toEpochMilli() - second.toEpochMilli()) < MAX_EVENT_ORDERING_SKEW_MILLIS
 
         /**
          * Placeholder resolver: flow-less calculations never resolve a basis,

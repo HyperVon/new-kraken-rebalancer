@@ -455,6 +455,37 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getLedgers(12345L, 10, 12399L, setOf("dividend")) }
         }
 
+        "delegates funding evidence and API counter queries to the selected backend" {
+            every { configService.getConfig() } returns appConfig(simulation = false)
+            val dynamicService = createService()
+
+            dynamicService.getDepositStatus(10L, 20L)
+            dynamicService.getWithdrawStatus(10L, 20L)
+            dynamicService.getInternalTransfers(10L, 20L)
+            dynamicService.getFundingEvidenceScope()
+            dynamicService.getApiCallCounter()
+
+            coVerify(exactly = 1) { realService.getDepositStatus(10L, 20L) }
+            coVerify(exactly = 1) { realService.getWithdrawStatus(10L, 20L) }
+            coVerify(exactly = 1) { realService.getInternalTransfers(10L, 20L) }
+            coVerify(exactly = 1) { realService.getFundingEvidenceScope() }
+            coVerify(exactly = 1) { realService.getApiCallCounter() }
+            coVerify(exactly = 0) { simulatedService.getDepositStatus(any(), any()) }
+
+            every { configService.getConfig() } returns appConfig(simulation = true)
+            dynamicService.getDepositStatus(30L, 40L)
+            dynamicService.getWithdrawStatus(30L, 40L)
+            dynamicService.getInternalTransfers(30L, 40L)
+            dynamicService.getFundingEvidenceScope()
+            dynamicService.getApiCallCounter()
+
+            coVerify(exactly = 1) { simulatedService.getDepositStatus(30L, 40L) }
+            coVerify(exactly = 1) { simulatedService.getWithdrawStatus(30L, 40L) }
+            coVerify(exactly = 1) { simulatedService.getInternalTransfers(30L, 40L) }
+            coVerify(exactly = 1) { simulatedService.getFundingEvidenceScope() }
+            coVerify(exactly = 1) { simulatedService.getApiCallCounter() }
+        }
+
         "caches the last ledger total count from the selected backend" {
             every { configService.getConfig() } returns appConfig(simulation = false)
             every { realService.getLastLedgerTotalCount() } returns 7

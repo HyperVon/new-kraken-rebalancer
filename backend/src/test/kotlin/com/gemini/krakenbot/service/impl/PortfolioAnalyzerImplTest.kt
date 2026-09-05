@@ -525,6 +525,240 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
+        "updateAth does not treat a post-flow snapshot save as an absorbed predecessor" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val observation = Instant.parse("2026-08-01T12:00:00Z")
+                val flowTime = observation.minusSeconds(600)
+                val savedAfterFlow = flowTime.plusSeconds(5)
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { observation },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns observation.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns observation.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                val deposit = LedgerEvent(
+                    ledgerId = "POST-SAVE-FLOW",
+                    refid = "POST-SAVE-FLOW-REF",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(deposit)
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns emptySet()
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(
+                    PortfolioSnapshot(
+                        timestamp = savedAfterFlow,
+                        totalValueUSD = BigDecimal("10000.00"),
+                        assets = mapOf(
+                            "USD" to TestFixtures.assetSnapshot(
+                                symbol = "USD",
+                                balance = BigDecimal("10000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("10000.00"),
+                                targetPercent = BigDecimal("100.0"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal("100.0"),
+                        balancesObservedAt = flowTime.minusSeconds(5),
+                    ),
+                )
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("11000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = observation,
+                )
+
+                result shouldBe AthUpdateResult.Deferred(null)
+                coVerify(exactly = 0) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
+                }
+            }
+        }
+
+        "updateAth replays a balance event after observation when the saved snapshot did not embed it" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val observation = Instant.parse("2026-08-01T12:00:00Z")
+                val rewardTime = observation.plusSeconds(1)
+                val flowTime = observation.plusSeconds(600)
+                val predecessor = PortfolioSnapshot(
+                    timestamp = observation.plusSeconds(3),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        "BTC" to TestFixtures.assetSnapshot(
+                            symbol = "BTC",
+                            balance = BigDecimal("1.0"),
+                            price = BigDecimal("10000.00"),
+                            valueUSD = BigDecimal("10000.00"),
+                            targetPercent = BigDecimal("100.0"),
+                        ),
+                    ),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal("100.0"),
+                    balancesObservedAt = observation,
+                )
+                val reward = LedgerEvent(
+                    ledgerId = "OBSERVATION-REWARD",
+                    time = rewardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "BTC",
+                    amount = BigDecimal("0.1"),
+                    balance = BigDecimal("1.1"),
+                    hasAuthoritativeBalance = true,
+                )
+                val deposit = LedgerEvent(
+                    ledgerId = "OBSERVATION-DEPOSIT",
+                    refid = "OBSERVATION-DEPOSIT-REF",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                )
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { flowTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns flowTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns observation.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(reward, deposit)
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns emptySet()
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(predecessor)
+                coEvery { krakenService.getTickerPrices("XBTUSD") } returns mapOf(
+                    "XBTUSD" to BigDecimal("10000.00"),
+                )
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10900.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = flowTime,
+                )
+
+                // The pre-flow basis is 11,000 (1.1 BTC at 10,000), proving
+                // the reward was replayed from the observation boundary even
+                // though the predecessor was saved three seconds later.
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("10909.09")) == 0 },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "updateAth does not double-count a balance event proven embedded in the snapshot" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val observation = Instant.parse("2026-08-01T12:00:00Z")
+                val rewardTime = observation.plusSeconds(1)
+                val flowTime = observation.plusSeconds(600)
+                val predecessor = PortfolioSnapshot(
+                    timestamp = observation.plusSeconds(3),
+                    totalValueUSD = BigDecimal("11000.00"),
+                    assets = mapOf(
+                        "BTC" to TestFixtures.assetSnapshot(
+                            symbol = "BTC",
+                            balance = BigDecimal("1.1"),
+                            price = BigDecimal("10000.00"),
+                            valueUSD = BigDecimal("11000.00"),
+                            targetPercent = BigDecimal("100.0"),
+                        ),
+                    ),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal("100.0"),
+                    balancesObservedAt = observation,
+                )
+                val reward = LedgerEvent(
+                    ledgerId = "EMBEDDED-REWARD",
+                    time = rewardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "BTC",
+                    amount = BigDecimal("0.1"),
+                    balance = BigDecimal("1.1"),
+                    hasAuthoritativeBalance = true,
+                )
+                val deposit = LedgerEvent(
+                    ledgerId = "EMBEDDED-DEPOSIT",
+                    refid = "EMBEDDED-DEPOSIT-REF",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                )
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { flowTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns flowTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns observation.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(reward, deposit)
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns emptySet()
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(predecessor)
+                coEvery { krakenService.getTickerPrices("XBTUSD") } returns mapOf(
+                    "XBTUSD" to BigDecimal("10000.00"),
+                )
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10900.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = flowTime,
+                )
+
+                // The same 11,000 pre-flow basis is obtained from the
+                // snapshot itself; the reward is not added a second time.
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("10909.09")) == 0 },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
         "updateAth skips owner-capital flows for assets outside the configured universe" {
             runTest {
                 val mockLedgers = mockk<LedgerRepository>(relaxed = true)
@@ -1199,6 +1433,22 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     effectiveUsdTargetPercent = BigDecimal.ZERO,
                 )
                 coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                val recentZeroVolumeTrade = TestFixtures.tradeRecord(
+                    timestamp = cryptoDeposit.time.minusSeconds(60),
+                    pair = "SOLUSD",
+                    side = TestFixtures.BUY,
+                    symbol = "SOL",
+                    volume = BigDecimal.ZERO,
+                    usdAmount = BigDecimal.ZERO,
+                )
+                val recentZeroNotionalTrade = recentZeroVolumeTrade.copy(
+                    volume = BigDecimal.ONE,
+                )
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returnsMany listOf(
+                    listOf(recentZeroVolumeTrade),
+                    emptyList(),
+                    listOf(recentZeroNotionalTrade),
+                )
 
                 val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
                     totalPortfolioValueUSD = BigDecimal("11500.00"),
@@ -1212,6 +1462,208 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("11500.00")) == 0
                         },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "crypto flow pricing prefers a successful historical trade over OHLC" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val flowTime = fixedTime.minusSeconds(600)
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns flowTime.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+
+                val deposit = LedgerEvent(
+                    ledgerId = "TRADE-PRICED-DEPOSIT",
+                    refid = "TRADE-PRICED-REF",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "SOL",
+                    amount = BigDecimal("5.0"),
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(deposit)
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns emptySet()
+
+                val validTrade = TestFixtures.tradeRecord(
+                    timestamp = flowTime.minusSeconds(60),
+                    pair = "SOLUSD",
+                    side = TestFixtures.BUY,
+                    symbol = "SOL",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal("100.00"),
+                    price = BigDecimal("100.00"),
+                )
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns listOf(
+                    validTrade.copy(success = false),
+                    validTrade.copy(dryRun = true),
+                    validTrade.copy(symbol = "BTC"),
+                    validTrade,
+                )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(
+                    PortfolioSnapshot(
+                        timestamp = flowTime.minusSeconds(600),
+                        totalValueUSD = BigDecimal("10000.00"),
+                        assets = mapOf(
+                            "SOL" to TestFixtures.assetSnapshot(
+                                symbol = "SOL",
+                                balance = BigDecimal("10.0"),
+                                price = BigDecimal("100.00"),
+                                valueUSD = BigDecimal("1000.00"),
+                                targetPercent = BigDecimal("10.0"),
+                            ),
+                            Asset.USD to TestFixtures.assetSnapshot(
+                                symbol = Asset.USD,
+                                balance = BigDecimal("9000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("9000.00"),
+                                targetPercent = BigDecimal("90.0"),
+                            ),
+                        ),
+                        actions = emptyList<String>(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                        balancesObservedAt = flowTime.minusSeconds(600),
+                    ),
+                )
+
+                analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10505.05"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                ) shouldBe AthUpdateResult.Trusted(BigDecimal.ZERO)
+
+                coVerify(exactly = 0) { krakenService.getOHLC(any(), any(), any()) }
+                coVerify(exactly = 0) { krakenService.getTickerPrices(any()) }
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("10505.05")) == 0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "crypto flow pricing uses only completed 15-minute OHLC candles" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val flowTime = fixedTime.minusSeconds(600)
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns flowTime.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                val deposit = LedgerEvent(
+                    ledgerId = "OHLC-DEPOSIT",
+                    refid = "OHLC-DEPOSIT-REF",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "SOL",
+                    amount = BigDecimal("5.0"),
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(deposit)
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns emptySet()
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+                val predecessor = PortfolioSnapshot(
+                    timestamp = flowTime.minusSeconds(600),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        "SOL" to TestFixtures.assetSnapshot(
+                            symbol = "SOL",
+                            balance = BigDecimal("10.0"),
+                            price = BigDecimal("100.00"),
+                            valueUSD = BigDecimal("1000.00"),
+                            targetPercent = BigDecimal("10.0"),
+                        ),
+                        Asset.USD to TestFixtures.assetSnapshot(
+                            symbol = Asset.USD,
+                            balance = BigDecimal("9000.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("9000.00"),
+                            targetPercent = BigDecimal("90.0"),
+                        ),
+                    ),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    balancesObservedAt = flowTime.minusSeconds(600),
+                )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(predecessor)
+                coEvery {
+                    krakenService.getOHLC(
+                        pair = "SOLUSD",
+                        interval = PortfolioAnalyzerImpl.HISTORICAL_OHLC_INTERVAL_MINUTES,
+                        since = flowTime.minusSeconds(86400).epochSecond,
+                    )
+                } returns listOf(
+                    // A candle starting at the event is still open and must be rejected.
+                    flowTime.epochSecond to BigDecimal("1.00"),
+                    // The completed candle ending exactly at the event is valid.
+                    flowTime.minusSeconds(900).epochSecond to BigDecimal("150.00"),
+                    // Future candles must never be selected.
+                    flowTime.plusSeconds(1).epochSecond to BigDecimal("999.00"),
+                )
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10750.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                )
+
+                result shouldBe AthUpdateResult.Trusted(BigDecimal.ZERO)
+                coVerify(exactly = 2) {
+                    krakenService.getOHLC(
+                        pair = "SOLUSD",
+                        interval = PortfolioAnalyzerImpl.HISTORICAL_OHLC_INTERVAL_MINUTES,
+                        since = flowTime.minusSeconds(86400).epochSecond,
+                    )
+                }
+                coVerify(exactly = 0) { krakenService.getTickerPrices(any()) }
+                coVerify {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match { it.allTimeHigh.compareTo(BigDecimal("10750.00")) == 0 },
                         any(),
                         any(),
                     )
@@ -1341,8 +1793,9 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     fiatDeploymentPercent = BigDecimal.ZERO,
                     effectiveUsdTargetPercent = BigDecimal.ZERO,
                 )
-                // getSnapshotsInRange returns empty for the ±180s window around the event
-                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
+                // A defensive provider-boundary check: even if a repository implementation returns
+                // an out-of-range row, the historical resolver must not use it as a nearby price.
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(staleSnap)
 
                 // Ticker provides the correct price
                 coEvery { krakenService.getTickerPrices("SOLUSD") } returns mapOf("SOLUSD" to BigDecimal("150.00"))
@@ -1352,8 +1805,8 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     netExternalFlowUSD = BigDecimal.ZERO,
                 )
                 dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                // Ticker was queried because the stale snapshot was not in range
-                coVerify(exactly = 1) { krakenService.getTickerPrices("SOLUSD") }
+                // Ticker was queried because the stale snapshot was rejected by the resolver's bounds.
+                coVerify(exactly = 2) { krakenService.getTickerPrices("SOLUSD") }
             }
         }
 
@@ -1433,6 +1886,175 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     mockTrades.setSyncMetadata(any(), any())
                     mockLedgers.getLedgersInRange(any(), any())
                 }
+            }
+        }
+
+        "initial ATH defers when dated balances are not covered by ledger history" {
+            runTest {
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val unknownLedgers = mockk<LedgerRepository>(relaxed = true)
+                val unknownTrades = mockk<TradeRepository>(relaxed = true)
+                val unknownCoverageAnalyzer = createAnalyzerWithRepos(
+                    ledgerRepository = unknownLedgers,
+                    tradeRepository = unknownTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal.ZERO)
+                coEvery {
+                    unknownLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns null
+
+                unknownCoverageAnalyzer.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                ) shouldBe AthUpdateResult.Deferred(null)
+
+                val staleLedgers = mockk<LedgerRepository>(relaxed = true)
+                val staleTrades = mockk<TradeRepository>(relaxed = true)
+                val staleCoverageAnalyzer = createAnalyzerWithRepos(
+                    ledgerRepository = staleLedgers,
+                    tradeRepository = staleTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery {
+                    staleLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(1).epochSecond.toString()
+
+                staleCoverageAnalyzer.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                ) shouldBe AthUpdateResult.Deferred(null)
+            }
+        }
+
+        "uncertain balance-observation assignments defer on unsafe boundary evidence" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val observation = Instant.parse("2026-08-01T12:00:00Z")
+                val flowTime = observation.plusSeconds(600)
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { flowTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns flowTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns observation.minusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED)
+                } returns "true"
+                coEvery { portfolioStatsRepository.getAppliedAthFlowIds(any()) } returns emptySet()
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+
+                val deposit = LedgerEvent(
+                    ledgerId = "BOUNDARY-DEPOSIT",
+                    refid = "BOUNDARY-DEPOSIT-REF",
+                    time = flowTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                )
+                fun predecessor(balance: String = "1.0") = PortfolioSnapshot(
+                    timestamp = observation.plusSeconds(3),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        "BTC" to TestFixtures.assetSnapshot(
+                            symbol = "BTC",
+                            balance = BigDecimal(balance),
+                            price = BigDecimal("10000.00"),
+                            valueUSD = BigDecimal(balance).multiply(BigDecimal("10000.00")),
+                            targetPercent = BigDecimal("100.0"),
+                        ),
+                    ),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal("100.0"),
+                    balancesObservedAt = observation,
+                )
+
+                suspend fun assertDeferred(rows: List<LedgerEvent>, snapshot: PortfolioSnapshot) {
+                    coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns rows + deposit
+                    coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(snapshot)
+
+                    analyzerWithRepos.updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("11000.00"),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                        balancesObservedAt = flowTime,
+                    ) shouldBe AthUpdateResult.Deferred(null)
+                }
+
+                assertDeferred(
+                    rows = listOf(
+                        LedgerEvent(
+                            ledgerId = "MISSING-BALANCE",
+                            time = observation.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = "BTC",
+                            amount = BigDecimal("0.1"),
+                            balance = BigDecimal("1.1"),
+                        ),
+                    ),
+                    snapshot = predecessor(),
+                )
+                assertDeferred(
+                    rows = listOf(
+                        LedgerEvent(
+                            ledgerId = "SAME-TIME-1",
+                            time = observation.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = "BTC",
+                            amount = BigDecimal("0.1"),
+                            balance = BigDecimal("1.1"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "SAME-TIME-2",
+                            time = observation.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = "BTC",
+                            amount = BigDecimal("0.1"),
+                            balance = BigDecimal("1.2"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                    snapshot = predecessor(),
+                )
+                assertDeferred(
+                    rows = listOf(
+                        LedgerEvent(
+                            ledgerId = "INCONSISTENT-CHAIN",
+                            time = observation.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = "BTC",
+                            amount = BigDecimal("0.1"),
+                            balance = BigDecimal("1.3"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                    snapshot = predecessor(),
+                )
+                assertDeferred(
+                    rows = listOf(
+                        LedgerEvent(
+                            ledgerId = "AMBIGUOUS-CUTOFF",
+                            time = observation.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = "BTC",
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal("1.0"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                    snapshot = predecessor(),
+                )
             }
         }
 

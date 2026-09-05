@@ -74,6 +74,7 @@ object LedgerFlowClassifier {
             "internal",
             "wallet",
             // Spot <-> futures wallet movements.
+            "futures",
             "spottofutures",
             "spotfromfutures",
             "spot to futures",
@@ -116,8 +117,7 @@ object LedgerFlowClassifier {
     ): Map<String, FlowCategory> {
         if (events.isEmpty()) return emptyMap()
         val result = mutableMapOf<String, FlowCategory>()
-        val byRefid = events.filter { !it.refid.isNullOrBlank() }.groupBy { it.refid!! }
-        val pairedIds = mutableSetOf<String>()
+        val byRefid = events.filter { !it.refid.isNullOrBlank() }.groupBy { it.refid!!.trim() }
         for ((_, legs) in byRefid) {
             if (legs.size < 2) continue
             val sameAsset = legs.map { normalizeAsset(it.asset) }.toSet().size == 1
@@ -127,10 +127,35 @@ object LedgerFlowClassifier {
                         acc.add(e.netBalanceDelta())
                     }
                 if (net.abs().compareTo(ZERO_NET_TOLERANCE) <= 0) {
-                    for (leg in legs) {
-                        result[leg.ledgerId] = FlowCategory.INTERNAL_MOVE
-                        pairedIds.add(leg.ledgerId)
+                    if (legs.any { isFundingType(it.type) } &&
+                        legs.any { isPassthroughType(it.type) } &&
+                        legs.all { isFundingType(it.type) || isPassthroughType(it.type) }
+                    ) {
+                        // A confirmed deposit plus an equal USD spend is
+                        // economically zero for the benchmark, but it is not
+                        // an internal wallet move. Preserve the original
+                        // funding provenance; benchmark netting may later
+                        // discard the zero-valued typed event.
+                        classifyFundingPlumbing(legs, provenanceResolver, result)
+                    } else {
+                        for (leg in legs) {
+                            result[leg.ledgerId] = FlowCategory.INTERNAL_MOVE
+                        }
                     }
+                    continue
+                }
+
+                // A confirmed external deposit/withdrawal can be one leg of
+                // Kraken's same-asset funding plumbing (for example a USD
+                // deposit followed by a consumer `spend`). Classify the
+                // original funding row with its authoritative resolver before
+                // benchmark netting; an unresolved or non-plumbing linked
+                // group remains ambiguous.
+                if (legs.any { isFundingType(it.type) } &&
+                    legs.any { isPassthroughType(it.type) } &&
+                    legs.all { isFundingType(it.type) || isPassthroughType(it.type) }
+                ) {
+                    classifyFundingPlumbing(legs, provenanceResolver, result)
                     continue
                 }
             }
@@ -143,7 +168,6 @@ object LedgerFlowClassifier {
             for (leg in legs) {
                 if (isFundingType(leg.type)) {
                     result[leg.ledgerId] = FlowCategory.AMBIGUOUS
-                    pairedIds.add(leg.ledgerId)
                 }
             }
         }
@@ -161,7 +185,7 @@ object LedgerFlowClassifier {
         if (isFundingType(event.type) && !event.subtype.isNullOrBlank()) {
             return FlowCategory.AMBIGUOUS
         }
-        return when (event.type) {
+        return when (event.type.lowercase()) {
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
             KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
             -> {
@@ -198,7 +222,69 @@ object LedgerFlowClassifier {
     }
 
     private fun isFundingType(type: String): Boolean =
-        type == KrakenApiConstants.LEDGER_TYPE_DEPOSIT || type == KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL
+        type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, ignoreCase = true) ||
+            type.equals(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL, ignoreCase = true)
+
+    private fun isPassthroughType(type: String): Boolean =
+        type.equals(KrakenApiConstants.LEDGER_TYPE_SPEND, ignoreCase = true) ||
+            type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)
+
+    private fun classifyFunding(event: LedgerEvent, provenanceResolver: FundingProvenanceResolver): FlowCategory {
+        // Preserve the deterministic internal markers used by the normal
+        // single-row path. Authoritative external evidence cannot turn an
+        // explicitly Futures/wallet-labelled leg into owner capital.
+        if (isInternalSubtype(event.subtype) || isInternalRefid(event.refid)) {
+            return FlowCategory.INTERNAL_MOVE
+        }
+        if (!event.subtype.isNullOrBlank()) return FlowCategory.AMBIGUOUS
+        return when (provenanceResolver.resolve(event)) {
+            FundingEvidence.EXTERNAL -> FlowCategory.OWNER_CAPITAL
+            FundingEvidence.INTERNAL -> FlowCategory.INTERNAL_MOVE
+            FundingEvidence.UNRESOLVED -> FlowCategory.AMBIGUOUS
+        }
+    }
+
+    private fun classifyFundingPlumbing(
+        legs: List<LedgerEvent>,
+        provenanceResolver: FundingProvenanceResolver,
+        result: MutableMap<String, FlowCategory>,
+    ) {
+        val fundingCategories = legs.filter { isFundingType(it.type) }
+            .associate { it.ledgerId to classifyFunding(it, provenanceResolver) }
+        val passthroughCategories = legs.filter { isPassthroughType(it.type) }
+            .associate { it.ledgerId to classifySingle(it, provenanceResolver) }
+        result.putAll(fundingCategories)
+        result.putAll(passthroughCategories)
+        val distinctFundingCategories = fundingCategories.values.toSet()
+        when {
+            distinctFundingCategories.size > 1 ||
+                distinctFundingCategories.any { it == FlowCategory.AMBIGUOUS || it == FlowCategory.UNSUPPORTED } -> {
+                // A shared refid is one economic event. If its funding legs
+                // disagree or one is unproven, do not replay the passthrough
+                // leg as an independently observed balance change.
+                legs.forEach { result[it.ledgerId] = FlowCategory.AMBIGUOUS }
+            }
+
+            distinctFundingCategories.singleOrNull() == FlowCategory.INTERNAL_MOVE &&
+                passthroughCategories.values.all {
+                    it == FlowCategory.INTERNAL_MOVE ||
+                        it == FlowCategory.EXTERNAL_BALANCE
+                } -> {
+                // Generic authoritative internal evidence must cover every
+                // linked leg, not only the deposit/withdrawal row.
+                legs.filter { isPassthroughType(it.type) }
+                    .forEach { result[it.ledgerId] = FlowCategory.INTERNAL_MOVE }
+            }
+
+            passthroughCategories.values.any { it != FlowCategory.EXTERNAL_BALANCE } -> {
+                // A linked passthrough leg carrying an explicit internal
+                // marker conflicts with an externally proven funding leg.
+                // Do not let one side of the shared event become owner
+                // capital while the other side is neutral.
+                legs.forEach { result[it.ledgerId] = FlowCategory.AMBIGUOUS }
+            }
+        }
+    }
 
     private fun normalizeAsset(asset: String): String = Asset.normalizeLedgerAsset(asset).uppercase()
 

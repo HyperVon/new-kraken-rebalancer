@@ -71,6 +71,130 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.OWNER_CAPITAL
         }
 
+        "confirmed external funding keeps owner provenance through same-refid spend plumbing" {
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "PLUMB-1",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = now,
+                        status = "Success",
+                        method = "Wire",
+                    ),
+                ),
+            )
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("deposit", "deposit", "100.00", refid = "PLUMB-1"),
+                    event("spend", "spend", "-60.00", refid = "PLUMB-1"),
+                ),
+                resolver,
+            )
+
+            result["deposit"] shouldBe FlowCategory.OWNER_CAPITAL
+            result["spend"] shouldBe FlowCategory.EXTERNAL_BALANCE
+        }
+
+        "confirmed external funding stays owner capital when spend nets it to zero" {
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "PLUMB-ZERO",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = now,
+                        status = "Success",
+                        method = "Wire",
+                    ),
+                ),
+            )
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("deposit", "deposit", "100.00", refid = "PLUMB-ZERO"),
+                    event("spend", "spend", "-100.00", refid = "PLUMB-ZERO"),
+                ),
+                resolver,
+            )
+
+            result["deposit"] shouldBe FlowCategory.OWNER_CAPITAL
+            result["spend"] shouldBe FlowCategory.EXTERNAL_BALANCE
+        }
+
+        "authoritative internal funding marks every linked passthrough leg internal" {
+            val resolver = SimpleFundingProvenanceResolver(
+                internalTransfers = listOf(
+                    InternalTransferRecord(
+                        refid = "GENERIC-INTERNAL",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = now,
+                    ),
+                ),
+            )
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("deposit", "deposit", "100.00", refid = "GENERIC-INTERNAL"),
+                    event("spend", "spend", "-60.00", refid = "GENERIC-INTERNAL"),
+                ),
+                resolver,
+            )
+
+            result["deposit"] shouldBe FlowCategory.INTERNAL_MOVE
+            result["spend"] shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "linked funding with an unrecognized subtype remains ambiguous" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "deposit",
+                        "deposit",
+                        "100.00",
+                        refid = "PLUMB-SUBTYPE",
+                        subtype = "staking-reward",
+                    ),
+                    event("spend", "spend", "-60.00", refid = "PLUMB-SUBTYPE"),
+                ),
+                FundingProvenanceResolver { FundingEvidence.EXTERNAL },
+            )
+
+            result["deposit"] shouldBe FlowCategory.AMBIGUOUS
+            result["spend"] shouldBe FlowCategory.AMBIGUOUS
+        }
+
+        "explicit internal marker remains neutral in linked funding plumbing" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("deposit", "deposit", "100.00", refid = "futures-transfer"),
+                    event("spend", "spend", "-60.00", refid = "futures-transfer"),
+                ),
+                FundingProvenanceResolver { FundingEvidence.EXTERNAL },
+            )
+
+            result["deposit"] shouldBe FlowCategory.INTERNAL_MOVE
+            result["spend"] shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "external funding conflicts with an explicitly internal passthrough leg" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("deposit", "deposit", "100.00", refid = "PLUMB-CONFLICT"),
+                    event(
+                        "spend",
+                        "spend",
+                        "-60.00",
+                        refid = "PLUMB-CONFLICT",
+                        subtype = "futures-transfer",
+                    ),
+                ),
+                FundingProvenanceResolver { FundingEvidence.EXTERNAL },
+            )
+
+            result["deposit"] shouldBe FlowCategory.AMBIGUOUS
+            result["spend"] shouldBe FlowCategory.AMBIGUOUS
+        }
+
         "confirmed external crypto deposit without fee => OWNER_CAPITAL" {
             val resolver = SimpleFundingProvenanceResolver(
                 deposits = listOf(
@@ -279,6 +403,56 @@ class LedgerFlowClassifierTest : StringSpec() {
 
         "unknown ledger types are unsupported" {
             LedgerFlowClassifier.classify(event("1", "mystery", "5.00")) shouldBe FlowCategory.UNSUPPORTED
+        }
+
+        "empty batches and conflicting funding legs fail closed" {
+            LedgerFlowClassifier.classifyAll(emptyList()) shouldBe emptyMap()
+
+            val resolver = FundingProvenanceResolver { fundingEvent ->
+                when (fundingEvent.ledgerId) {
+                    "external-funding" -> FundingEvidence.EXTERNAL
+                    "internal-funding" -> FundingEvidence.INTERNAL
+                    else -> FundingEvidence.UNRESOLVED
+                }
+            }
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("external-funding", "deposit", "100.00", refid = "CONFLICTING-PLUMBING"),
+                    event("internal-funding", "withdrawal", "-20.00", refid = "CONFLICTING-PLUMBING"),
+                    event("passthrough", "spend", "-30.00", refid = "CONFLICTING-PLUMBING"),
+                ),
+                resolver,
+            )
+
+            result.values.toSet() shouldBe setOf(FlowCategory.AMBIGUOUS)
+        }
+
+        "linked funding groups with a non-plumbing leg do not get partial ownership" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("funding", "deposit", "100.00", refid = "MIXED-LINK"),
+                    event("spend", "spend", "-20.00", refid = "MIXED-LINK"),
+                    event("reward", "staking", "1.00", refid = "MIXED-LINK"),
+                ),
+                FundingProvenanceResolver { FundingEvidence.EXTERNAL },
+            )
+
+            result["funding"] shouldBe FlowCategory.AMBIGUOUS
+            result["spend"] shouldBe FlowCategory.EXTERNAL_BALANCE
+            result["reward"] shouldBe FlowCategory.EXTERNAL_BALANCE
+        }
+
+        "zero-net linked funding with a non-plumbing leg remains an internal group" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("deposit", "deposit", "100.00", refid = "ZERO-MIXED"),
+                    event("spend", "spend", "-100.00", refid = "ZERO-MIXED"),
+                    event("reward", "staking", "0.00", refid = "ZERO-MIXED"),
+                ),
+                FundingProvenanceResolver { FundingEvidence.EXTERNAL },
+            )
+
+            result.values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
         }
     }
 }

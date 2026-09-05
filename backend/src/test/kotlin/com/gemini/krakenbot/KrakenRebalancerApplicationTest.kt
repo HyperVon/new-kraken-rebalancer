@@ -1,9 +1,14 @@
 package com.gemini.krakenbot
 
 import com.gemini.krakenbot.config.appModule
+import com.gemini.krakenbot.model.FundingProvenanceResolver
+import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
+import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -59,6 +64,18 @@ class KrakenRebalancerApplicationTest :
                 val krakenField = PortfolioManagerImpl::class.java.getDeclaredField("krakenService")
                 krakenField.isAccessible = true
                 krakenField.get(pm).shouldBeInstanceOf<DynamicKrakenService>()
+                val resolver: FundingProvenanceResolver by inject()
+                resolver.shouldBeInstanceOf<KrakenFundingProvenanceResolver>()
+                val analyzer: PortfolioAnalyzer by inject()
+                val analyzerField = PortfolioAnalyzerImpl::class.java
+                    .getDeclaredField("defaultProvenanceResolver")
+                    .also { it.isAccessible = true }
+                analyzerField.get(analyzer) shouldBe resolver
+                val query: TradeHistoryQueryService by inject()
+                val queryField = TradeHistoryQueryService::class.java
+                    .getDeclaredField("fundingProvenanceResolver")
+                    .also { it.isAccessible = true }
+                queryField.get(query) shouldBe resolver
             } finally {
                 stopKoin()
                 if (!existed) {

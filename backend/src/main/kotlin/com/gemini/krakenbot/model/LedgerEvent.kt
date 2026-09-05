@@ -31,6 +31,10 @@ data class LedgerEvent(
     val balance: BigDecimal = BigDecimal.ZERO,
     /** True when [balance] came from Kraken or a persisted database row; false for synthetic events. */
     val hasAuthoritativeBalance: Boolean = false,
+    /** True when the fee was present and parsed at the exchange boundary. */
+    val hasAuthoritativeFee: Boolean = fee.signum() != 0,
+    /** False when the exchange fee field was malformed or had an impossible negative value. */
+    val hasValidFee: Boolean = true,
 ) {
     /**
      * Net balance delta contributed by this ledger event: `amount - fee`.

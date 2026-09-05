@@ -73,6 +73,193 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
+        "getLedgers and getOHLC forward optional query bounds" {
+            runTest {
+                var ledgerBody = ""
+                val ledgerService = createService(
+                    responseContent =
+                    """
+                        {
+                          "error": [],
+                          "result": {
+                            "ledger": {
+                              "L1": {
+                                "time": 1700000000,
+                                "type": "staking",
+                                "asset": "USD",
+                                "amount": "1.00",
+                                "fee": "0.00",
+                                "balance": "1.00"
+                              }
+                            }
+                          }
+                        }
+                    """.trimIndent(),
+                    onRequest = { request -> ledgerBody = (request.body as TextContent).text },
+                )
+
+                ledgerService.getLedgers(startSec = 100L, offset = 5, endSec = 200L)
+                ledgerService.getLedgers(types = emptySet()) shouldBe emptyList()
+
+                ledgerBody.contains("start=100").shouldBeTrue()
+                ledgerBody.contains("end=200").shouldBeTrue()
+                ledgerBody.contains("ofs=5").shouldBeTrue()
+
+                var ohlcUrl = ""
+                val ohlcService = createService(
+                    responseContent =
+                    """
+                        {
+                          "error": [],
+                          "result": {
+                            "XXBTZUSD": [[1700000000, "1", "2", "0.5", "1.5", "10", 1]],
+                            "last": 1700000100
+                          }
+                        }
+                    """.trimIndent(),
+                    onRequest = { request -> ohlcUrl = request.url.toString() },
+                )
+
+                ohlcService.getOHLC(TestFixtures.XBTUSD, interval = 15, since = 100L).single().second shouldBe
+                    BigDecimal("1.5")
+                ohlcUrl.contains("since=100").shouldBeTrue()
+            }
+        }
+
+        "getFundingStatus_UsesAuthenticatedPagesAndFollowsCursor" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                val credentials = KrakenCredentials(
+                    apiKey = TestConstants.API_KEY,
+                    privateKey = Base64.getEncoder()
+                        .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = credentials,
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = listOf(
+                    """
+                    {
+                      "error": [],
+                      "result": {
+                        "deposit": [{
+                          "method": "Wire",
+                          "asset": "USD",
+                          "refid": "DEP-PAGE-1",
+                          "amount": "100.00",
+                          "fee": "0.00",
+                          "time": 1700000000,
+                          "status": "Success"
+                        }],
+                        "cursor": "next-page"
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "error": [],
+                      "result": {
+                        "deposit": [{
+                          "method": "Wire",
+                          "asset": "USD",
+                          "refid": "DEP-PAGE-2",
+                          "amount": "50.00",
+                          "fee": "",
+                          "time": 1700000100,
+                          "status": "Settled"
+                        }],
+                        "cursor": "   "
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "error": [],
+                      "result": {
+                        "withdrawal": [{
+                          "method": "Wire",
+                          "asset": "USD",
+                          "refid": "WITH-PAGE-1",
+                          "amount": "25.00",
+                          "fee": "0.00",
+                          "time": 1700000200,
+                          "status": "Success"
+                        }]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                val bodies = mutableListOf<String>()
+                var requestIndex = 0
+                val client = HttpClient(
+                    MockEngine { request ->
+                        bodies += (request.body as TextContent).text
+                        respond(
+                            content = responses[requestIndex++],
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val deposits = service.getDepositStatus(startSec = 100L, endSec = 200L)
+                val withdrawals = service.getWithdrawStatus()
+
+                deposits.map { it.refid } shouldBe listOf("DEP-PAGE-1", "DEP-PAGE-2")
+                withdrawals.single().refid shouldBe "WITH-PAGE-1"
+                bodies[0].contains("start=100").shouldBeTrue()
+                bodies[0].contains("end=200").shouldBeTrue()
+                bodies[0].contains("cursor=true").shouldBeTrue()
+                bodies[0].contains("limit=25").shouldBeTrue()
+                bodies[1].contains("cursor=next-page").shouldBeTrue()
+                bodies[2].contains("cursor=true").shouldBeTrue()
+            }
+        }
+
+        "getFundingStatus_rejects_repeated_cursor_and_missing_credentials" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(TestConstants.API_KEY, ""),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val repeatedResponse = """
+                    {
+                      "error": [],
+                      "result": {
+                        "deposit": [],
+                        "cursor": "repeat"
+                      }
+                    }
+                """.trimIndent()
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = repeatedResponse,
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                shouldThrow<IllegalStateException> { service.getDepositStatus() }
+
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials("", ""),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                shouldThrow<KrakenCredentialsUnavailableException> { service.getWithdrawStatus() }
+            }
+        }
+
         "executeOrder_Success" {
             runTest {
                 val responseJson =
@@ -88,6 +275,27 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 )
                 result.success.shouldBeTrue()
                 result.orderTxid shouldBe "THVR-...-TC"
+            }
+        }
+
+        "executeOrder rejects empty txid arrays and blank txid values" {
+            runTest {
+                for (txid in listOf("[]", "[\"\"]")) {
+                    val service = createService(
+                        """{"error":[],"result":{"txid":$txid}}""",
+                    )
+
+                    val result = service.executeOrder(
+                        pair = TestFixtures.XBTUSD,
+                        type = OrderType.MARKET.apiValue,
+                        side = OrderSide.BUY.apiValue,
+                        volume = BigDecimal.ONE,
+                        dryRun = false,
+                    )
+
+                    result.success.shouldBeFalse()
+                    result.submissionUncertain shouldBe true
+                }
             }
         }
 
