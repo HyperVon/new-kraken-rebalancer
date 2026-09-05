@@ -431,6 +431,7 @@ benefits from read-time diagnostics.
 | Complex-code comments | `.cursor/rules/complex-code-comments.mdc` (`alwaysApply`) |
 | Lean, contract-aware code | `.cursor/rules/lean-contract-aware-code.mdc` (`alwaysApply`) |
 | Native model selection | `.cursor/rules/cost-aware-model-selection.mdc` (`alwaysApply`) |
+| Optional semantic workspace search | `.cursor/rules/retrieval-routing.mdc` (`alwaysApply`) |
 | UI change verification | `.cursor/rules/ui-change-verification.mdc` (path globs) |
 
 Each `.cursor/rules/*.mdc` is a thin pointer to the portable section above; the
@@ -454,6 +455,7 @@ pointers automatically and other harnesses still have a single portable source.
 | Complex-code comments | `.clinerules/complex-code-comments.md` (universal) |
 | Lean, contract-aware code | `.clinerules/lean-contract-aware-code.md` (universal) |
 | Native model selection | `.clinerules/cost-aware-model-selection.md` (universal) |
+| Optional semantic workspace search | `.clinerules/retrieval-routing.md` (universal) |
 | UI change verification | `.clinerules/ui-change-verification.md` (path-scoped) |
 
 Each `.clinerules/*.md` is a thin pointer to the portable section above; the
