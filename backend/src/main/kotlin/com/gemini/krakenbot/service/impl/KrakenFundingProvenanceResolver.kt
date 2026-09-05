@@ -34,6 +34,7 @@ class KrakenFundingProvenanceResolver(
     private var prepared: PreparedEvidence? = null
 
     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+    override fun isCardFunding(event: LedgerEvent): Boolean = prepared?.resolver?.isCardFunding(event) ?: false
 
     /**
      * Returns an immutable resolver snapshot for this batch. The production

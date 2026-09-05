@@ -4553,7 +4553,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
-        "Scenario BB: confirmed card Buy Crypto preserves weighted funding and conversion once" {
+        "Scenario BB: confirmed card Buy Crypto applies only inception-weighted net owner contribution" {
             val cardRef = "CARD-BUY-2026-07-01T1230Z"
             val cardTime = now.plusSeconds(1800)
             val snapshots = listOf(
@@ -4652,6 +4652,297 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val contribution = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
             contribution.contributionUsd shouldBeEqualComparingTo BigDecimal("4980.00")
             contribution.sourceLedgerIds shouldContainExactlyInAnyOrder ledgers.map { it.ledgerId }
+        }
+
+        "Scenario BB: card Buy Crypto legs with sub-second and several-second offsets are linked within 120s" {
+            val cardRef = "CARD-BUY-OFFSET-2026-07-01"
+            val cardTime = now.plusSeconds(1800)
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                snapshot(
+                    cardTime.plusSeconds(60),
+                    "54980.00",
+                    mapOf(
+                        "BTC" to assetRow("0.5996", "50000.00", "29980.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+            )
+            // Deposit at T, spend at T+350ms, receive at T+45s (all within 120s)
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "USD",
+                    amount = "5000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime.plusMillis(350),
+                    asset = "USD",
+                    amount = "-4980.00",
+                    fee = "20.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime.plusSeconds(45),
+                    asset = "BTC",
+                    amount = "0.0996",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    refid = cardRef,
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = cardRef,
+                        asset = "USD",
+                        amount = BigDecimal("5000.00"),
+                        time = cardTime,
+                        status = "Success",
+                        method = "Visa",
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = ledgers,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("54980.00")
+        }
+
+        "Scenario BB: card Buy Crypto legs spanning greater than 120s fail closed as ambiguous" {
+            val cardRef = "CARD-BUY-DISTANT-2026-07-01"
+            val cardTime = now.plusSeconds(1800)
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                snapshot(
+                    cardTime.plusSeconds(300),
+                    "54980.00",
+                    mapOf(
+                        "BTC" to assetRow("0.5996", "50000.00", "29980.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+            )
+            // Deposit at T, receive at T+125s (>120s span)
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "USD",
+                    amount = "5000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime.plusSeconds(30),
+                    asset = "USD",
+                    amount = "-4980.00",
+                    fee = "20.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime.plusSeconds(125),
+                    asset = "BTC",
+                    amount = "0.0996",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    refid = cardRef,
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = cardRef,
+                        asset = "USD",
+                        amount = BigDecimal("5000.00"),
+                        time = cardTime,
+                        status = "Success",
+                        method = "Visa",
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = ledgers,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+        }
+
+        "Scenario BB: card Buy Crypto with non-USD fee converts fee at event time before subtracting" {
+            val cardRef = "CARD-BUY-FEE-2026-07-01"
+            val cardTime = now.plusSeconds(1800)
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                snapshot(
+                    cardTime.plusSeconds(60),
+                    "54975.00",
+                    mapOf(
+                        "BTC" to assetRow("0.5995", "50000.00", "29975.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+            )
+            // Spend fee $20 USD + Receive fee 0.0001 BTC @ $50k ($5 USD) = $25 USD total fee
+            // Net owner capital = $5,000 - $25 = $4,975 USD
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "USD",
+                    amount = "5000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "USD",
+                    amount = "-4980.00",
+                    fee = "20.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "BTC",
+                    amount = "0.0996",
+                    fee = "0.0001",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    refid = cardRef,
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = cardRef,
+                        asset = "USD",
+                        amount = BigDecimal("5000.00"),
+                        time = cardTime,
+                        status = "Success",
+                        method = "Visa",
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = ledgers,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            val builtEvents = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = ledgers,
+                baseline = snapshots.first(),
+                inceptionWeights = mapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("0.5")),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            )
+            val contribution = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
+            contribution.contributionUsd shouldBeEqualComparingTo BigDecimal("4975.00")
+        }
+
+        "Scenario BB: card Buy Crypto with unpriceable crypto fee fails closed with missing price" {
+            val cardRef = "CARD-BUY-UNPRICEABLE-2026-07-01"
+            val cardTime = now.plusSeconds(1800)
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                snapshot(
+                    cardTime.plusSeconds(60),
+                    "54975.00",
+                    mapOf(
+                        "BTC" to assetRow("0.5995", "50000.00", "29975.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "USD",
+                    amount = "5000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "USD",
+                    amount = "-4980.00",
+                    fee = "20.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "BTC",
+                    amount = "0.0996",
+                    fee = "0.0001",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    refid = cardRef,
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = cardRef,
+                        asset = "USD",
+                        amount = BigDecimal("5000.00"),
+                        time = cardTime,
+                        status = "Success",
+                        method = "Visa",
+                    ),
+                ),
+            )
+
+            // Missing price provider for BTC
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = ledgers,
+                priceProvider = mapPriceProvider(emptyMap()),
+                provenanceResolver = provenance,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
         }
 
         "Scenario BB: non-funding fee exceeding deposit flips sign and marks transaction ambiguous" {
@@ -4799,9 +5090,27 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             withdrawal.sourceLedgerIds shouldContainExactlyInAnyOrder ledgers.map { it.ledgerId }
         }
 
-        "Scenario BB: card funding with net zero amount after fee is dropped from owner flow" {
+        "Scenario BB: card funding with net zero amount after fee is ambiguous and unavailable" {
             val cardRef = "CARD-ZERO-NET"
             val cardTime = now.plusSeconds(1800)
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.5004", "50000.00", "25020.00"),
+                        "USD" to assetRow("24980.00", "1.0", "24980.00"),
+                    ),
+                ),
+            )
             val ledgers = listOf(
                 ledgerEvent(
                     timestamp = cardTime,
@@ -4836,24 +5145,19 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                         amount = BigDecimal("20.00"),
                         time = cardTime,
                         status = "Success",
+                        method = "Visa",
                     ),
                 ),
             )
-            val events = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
-                ledgers = ledgers,
-                baseline = snapshot(
-                    now,
-                    "50000.00",
-                    mapOf(
-                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
-                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
-                    ),
-                ),
-                inceptionWeights = mapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("0.5")),
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = ledgers,
                 priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
                 provenanceResolver = provenance,
             )
-            events shouldBe emptyList()
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+            result.unavailableAt shouldBe cardTime
         }
 
         "Scenario BB ambiguous: card deposit and Buy Crypto refs without a shared parent stay unavailable" {
@@ -4961,6 +5265,66 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                         asset = "BTC",
                         amount = "0.0996",
                         type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                        refid = cardRef,
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = cardRef,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            time = cardTime,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+            result.unavailableAt shouldBe cardTime
+        }
+
+        "Scenario BB incomplete: mixed-asset funding without a purchased asset receive stays unavailable" {
+            val cardRef = "CARD-BUY-NO-RECEIVE-20260701"
+            val cardTime = now.plusSeconds(1800)
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+            )
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = cardTime,
+                        asset = "USD",
+                        amount = "5000.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = cardRef,
+                    ),
+                    ledgerEvent(
+                        timestamp = cardTime,
+                        asset = "USD",
+                        amount = "-4980.00",
+                        fee = "20.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
                         refid = cardRef,
                     ),
                 ),

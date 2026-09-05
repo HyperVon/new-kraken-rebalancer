@@ -485,25 +485,35 @@ passthrough reduction. Safe same-source-timestamp USD funding plumbing (`OWNER_C
 deposit/withdrawal plus `spend`/`receive`) carries the original typed category
 and every source ledger ID; it is never represented by a synthetic row that is
 classified a second time. USD-only plumbing may collapse to its net economics,
-while mixed-asset card plumbing collapses confirmed 3-leg transactions into net owner capital,
-as described below. Internal moves remain neutral and unresolved
+while mixed-asset card plumbing collapses confirmed card transactions into net owner capital via
+centralized normalization, as described below. Internal moves remain neutral and unresolved
 funding remains unavailable. A mixed-sign or overdrawn funding/plumbing group is
 left separate rather than being reclassified as the opposite owner-flow
 direction. Where a trade, owner flow, or non-plumbing balance movement shares a
 timestamp and the economic order cannot be proven, the comparison returns
 unavailable rather than imposing a lexical order.
 
-For a confirmed 3-leg card purchase, the external funding row (USD deposit), USD `spend`, and
-purchased-asset `receive` must all share one non-blank `refid` and have opposing
-USD directions. The benchmark collapses the transaction into a single owner contribution
-net of non-funding fees ($5,000 gross deposit - $20 spend fee = $4,980 net) and allocates
-it strictly by original inception weights; the spend and receive legs are consumed as
-plumbing evidence and are not replayed into B&H. This preserves counterfactual neutrality
-between the rebalancer and B&H without double-counting assets, inventing conversion alpha,
-or treating transaction fees as performance drawdown. A missing relationship
-is reported as `AMBIGUOUS_LEDGER_TYPE`; the comparison never treats the deposit
-as performance or counts the funding twice. A provenance preparation failure is
-reported separately as `FUNDING_PROVENANCE_UNAVAILABLE`.
+For card-funded Buy Crypto transactions, a centralized normalizer (`CardFundingNormalizer`)
+governs both ATH neutralization and Buy & Hold accounting, guaranteeing identical economic
+interpretation across the engine. Card funding legs must share a non-blank `refid` within a
+120-second proximity window (`MAX_CARD_TRANSACTION_SPAN_SECONDS = 120L`). The normalizer
+validates complete transaction shapes:
+
+1. *3-leg USD card buy crypto*: external funding (USD deposit), USD `spend`, and purchased-asset
+   `receive` with opposing USD directions.
+2. *2-leg direct asset plumbing*: external funding in a non-USD asset and opposite-signed plumbing
+   in the same asset.
+
+Incomplete shapes (such as deposit plus spend without receive leg) or USD-only plumbing netting to zero
+fail closed as ambiguous (`AMBIGUOUS_FUNDING` for ATH, `AMBIGUOUS_LEDGER_TYPE` for B&H).
+Non-USD leg fees (such as BTC receive fees) are converted to USD at event-time historical prices
+before deducting from gross capital; unpriceable fees fail closed (`HISTORICAL_PRICE_UNAVAILABLE`
+for ATH, `MISSING_PRICE` for B&H). The confirmed transaction collapses into a single owner contribution
+net of all fees ($5,000 gross deposit - $20 spend fee = $4,980 net) and allocates it strictly by original
+inception weights; spend and receive legs are consumed as plumbing evidence and are not replayed
+into B&H. This preserves counterfactual neutrality between the rebalancer and B&H without double-counting
+assets, inventing conversion alpha, or treating transaction fees as performance drawdown.
+A provenance preparation failure is reported separately as `FUNDING_PROVENANCE_UNAVAILABLE`.
 
 Before rendering benchmark points, each interval replays every successful
 authoritative trade, supported external ledger event, and fee into the previous
@@ -574,10 +584,10 @@ the same external capital over time:
   snapshot is no longer retained likewise fails closed (`INCEPTION_SNAPSHOT_PRUNED`).
 - **Owner contributions after inception are invested by original inception value
   weights** (existing synthetic holdings untouched); only the new money moves.
-  Same-timestamp USD funding plumbing that nets to zero (e.g. an instant
-  deposit-then-spend card buy) is passthrough, not a contribution. Contribution
-  prices come only from recorded snapshots near the event — never a live ticker
-  for an old contribution — and missing prices fail closed.
+  Confirmed card Buy Crypto transactions collapse into a single net owner contribution
+  allocated by inception weights; any USD funding plumbing netting to zero fails closed
+  as ambiguous. Contribution prices come only from recorded snapshots near the event —
+  never a live ticker for an old contribution — and missing prices fail closed.
 - **Owner withdrawals scale the whole synthetic portfolio proportionally by
   market value**, so the cash event itself creates no artificial alpha either way.
 - Investment returns (staking, dividends, adjustments) replay in-kind;

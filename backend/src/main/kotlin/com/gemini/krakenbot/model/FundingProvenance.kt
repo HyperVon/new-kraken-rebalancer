@@ -85,6 +85,8 @@ data class InternalTransferRecord(
 fun interface FundingProvenanceResolver {
     fun resolve(event: LedgerEvent): FundingEvidence
 
+    fun isCardFunding(event: LedgerEvent): Boolean = false
+
     /** Non-null when the immutable evidence snapshot could not be prepared. */
     val preparationFailure: FundingProvenanceFailure?
         get() = null
@@ -178,6 +180,27 @@ class SimpleFundingProvenanceResolver(
             // 0, duplicate, or external/internal conflict are all fail-closed.
             FundingEvidence.UNRESOLVED
         }
+    }
+
+    override fun isCardFunding(event: LedgerEvent): Boolean {
+        val refid = event.refid?.trim()?.takeIf(String::isNotEmpty)
+        val deposit = if (refid != null) {
+            allDeposits.firstOrNull { it.refid.trim() == refid }
+        } else {
+            allDeposits.firstOrNull {
+                matchesFundingRecord(
+                    event = event,
+                    recordAsset = it.asset,
+                    recordAmount = it.amount,
+                    recordFee = it.fee,
+                    recordHasFee = it.hasAuthoritativeFee,
+                    recordTime = it.time,
+                    eventType = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                )
+            }
+        } ?: return false
+        val method = deposit.method?.lowercase() ?: return false
+        return CARD_METHOD_MARKERS.any(method::contains)
     }
 
     private fun compatibleCandidate(event: LedgerEvent, record: Any): Candidate? = when (record) {
@@ -349,6 +372,8 @@ class SimpleFundingProvenanceResolver(
         @JvmField val AMOUNT_TOLERANCE = BigDecimal("0.00000001")
 
         @JvmField val INTERNAL_METHOD_MARKERS = setOf("futures", "internal", "wallet", "spot")
+
+        @JvmField val CARD_METHOD_MARKERS = setOf("visa", "mastercard", "card", "apple", "google", "pay")
 
         @JvmField val SUPPORTED_FUNDING_TYPES = setOf(
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT,

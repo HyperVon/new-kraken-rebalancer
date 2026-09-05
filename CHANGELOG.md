@@ -36,13 +36,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   while undocumented descriptive prose (`airdrop`, `fork`, `distribution`) stays
   ambiguous without external provenance. Opaque `refid` values remain correlation
   identities only; semantic conflicts stay unresolved.
-- **Card-funded Buy Crypto accounting & counterfactual**: confirmed 3-leg card
-  transactions (`deposit` plus post-fee USD `spend` and purchased-asset `receive`
-  sharing a non-blank `refid`) collapse into a single owner contribution net of
-  fees ($5,000 gross - $20 fee = $4,980 net). Synthetic Buy & Hold allocates this
-  capital strictly by original inception weights; spend and receive legs are
-  consumed as plumbing evidence and not replayed into B&H. Applied consistently
-  to ATH neutralization without fee-induced drawdown.
+- **Card-funded Buy Crypto accounting & counterfactual**: centralized normalization
+  (`CardFundingNormalizer`) correlates card funding legs via non-blank `refid` across a
+  120-second proximity window rather than exact timestamps. Enforces complete transaction
+  shapes (3-leg USD card buy crypto or 2-leg direct asset plumbing), failing closed on
+  incomplete shapes or USD-only net-zero plumbing. Evaluates non-USD leg fees in USD using
+  event-time historical prices before subtracting from gross capital, failing closed
+  (`HISTORICAL_PRICE_UNAVAILABLE` in ATH, `MISSING_PRICE` in B&H) if unpriceable. Synthetic
+  Buy & Hold allocates net owner capital strictly by original inception weights ($2,490 BTC /
+  $2,490 USD for Scenario BB); spend and receive legs are consumed as plumbing evidence
+  and are not replayed into B&H. Both ATH neutralization and B&H benchmark consume identical
+  net capital and source ledger IDs.
 - **Comparison provenance diagnostics**: funding-status preparation failures
   now have a dedicated comparison-unavailable reason instead of being rendered
   as generic ledger ambiguity.
@@ -57,8 +61,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Documented the nine ledger families, Earn subtype handling and `type=all` retrieval,
   transfer/refid evidence rules, funding-status permissions and endpoint deprecation note,
-  structured ATH deferral reasons, card Buy Crypto counterfactual economics, and
-  completed 15-minute OHLC pricing.
+  structured ATH deferral reasons, centralized card funding normalization with 120-second
+  proximity window, cross-asset fee valuation, card Buy Crypto counterfactual economics,
+  and completed 15-minute OHLC pricing.
 
 ## [6.17.29] - 2026-09-04
 

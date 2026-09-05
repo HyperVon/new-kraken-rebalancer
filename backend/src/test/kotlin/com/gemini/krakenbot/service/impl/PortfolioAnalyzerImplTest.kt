@@ -3,12 +3,14 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -1846,6 +1848,264 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         any(),
                     )
                 }
+            }
+        }
+
+        "updateAth scales ATH using net contribution for card buy crypto with offset and crypto fee" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val cardRef = "CARD-BUY-OFFSET-2026"
+                val cardTime = fixedTime.minusSeconds(900)
+                val cardDeposit = LedgerEvent(
+                    ledgerId = "L-CARD-DEP",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("5000.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val cardSpend = LedgerEvent(
+                    ledgerId = "L-CARD-SPEND",
+                    refid = cardRef,
+                    time = cardTime.plusMillis(300),
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                val cardReceive = LedgerEvent(
+                    ledgerId = "L-CARD-RCV",
+                    refid = cardRef,
+                    time = cardTime.plusSeconds(30),
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    asset = "BTC",
+                    amount = BigDecimal("0.0996"),
+                    fee = BigDecimal("0.0001"),
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(cardDeposit, cardSpend, cardReceive)
+
+                val snap = PortfolioSnapshot(
+                    timestamp = cardTime.minusSeconds(5),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        "BTC" to TestFixtures.assetSnapshot(
+                            symbol = "BTC",
+                            balance = BigDecimal("0.10"),
+                            price = BigDecimal("50000.00"),
+                            valueUSD = BigDecimal("5000.00"),
+                            targetPercent = BigDecimal("50.0"),
+                        ),
+                        "USD" to TestFixtures.assetSnapshot(
+                            symbol = "USD",
+                            balance = BigDecimal("5000.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("5000.00"),
+                            targetPercent = BigDecimal("50.0"),
+                        ),
+                    ),
+                    actions = emptyList<String>(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+
+                val provenance = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = cardRef,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            time = cardTime,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                    ),
+                )
+
+                // Gross 5000 - spend fee $20 - crypto fee (0.0001 * 50k = $5) = $4,975 net capital
+                // Total portfolio: 10,000 + 4,975 = 14,975.00
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("14975.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                    provenanceResolver = provenance,
+                )
+                (result as AthUpdateResult.Trusted).drawdownPct.shouldBeEqualComparingTo(BigDecimal.ZERO)
+
+                coVerify(exactly = 1) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("14975.00")) == 0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "updateAth defers with AMBIGUOUS_FUNDING when card buy crypto is missing receive leg" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val cardRef = "CARD-INCOMPLETE"
+                val cardTime = fixedTime.minusSeconds(900)
+                val cardDeposit = LedgerEvent(
+                    ledgerId = "L-CARD-DEP",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("5000.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val cardSpend = LedgerEvent(
+                    ledgerId = "L-CARD-SPEND",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(cardDeposit, cardSpend)
+
+                val provenance = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = cardRef,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            time = cardTime,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                    ),
+                )
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("15000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                    provenanceResolver = provenance,
+                )
+                result shouldBe AthUpdateResult.Deferred(
+                    lastTrustedDrawdownPct = null,
+                    reason = AthTrustFailureReason.AMBIGUOUS_FUNDING,
+                )
+            }
+        }
+
+        "updateAth defers with HISTORICAL_PRICE_UNAVAILABLE when card crypto fee cannot be priced" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val cardRef = "CARD-UNPRICEABLE"
+                val cardTime = fixedTime.minusSeconds(900)
+                val cardDeposit = LedgerEvent(
+                    ledgerId = "L-CARD-DEP",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("5000.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val cardSpend = LedgerEvent(
+                    ledgerId = "L-CARD-SPEND",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                val cardReceive = LedgerEvent(
+                    ledgerId = "L-CARD-RCV",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    asset = "BTC",
+                    amount = BigDecimal("0.0996"),
+                    fee = BigDecimal("0.0001"),
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(cardDeposit, cardSpend, cardReceive)
+
+                // No snapshot returned to price BTC at cardTime
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getTickerPrices(any()) } throws RuntimeException("Ticker unavailable")
+
+                val provenance = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = cardRef,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            time = cardTime,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                    ),
+                )
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("15000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                    provenanceResolver = provenance,
+                )
+                result shouldBe AthUpdateResult.Deferred(
+                    lastTrustedDrawdownPct = null,
+                    reason = AthTrustFailureReason.HISTORICAL_PRICE_UNAVAILABLE,
+                )
             }
         }
 

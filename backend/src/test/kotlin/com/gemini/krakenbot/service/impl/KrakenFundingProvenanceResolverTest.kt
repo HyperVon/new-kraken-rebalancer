@@ -408,6 +408,37 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
                 comparison.points.last().buyAndHoldValueUSD shouldBe BigDecimal("110000.00")
             }
         }
+
+        "isCardFunding delegates to prepared resolver and returns false when unprepared" {
+            runTest {
+                val krakenService = FakeKrakenService()
+                val resolver = KrakenFundingProvenanceResolver(krakenService)
+                val deposit = fundingEvent("deposit", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+
+                // Unprepared resolver returns false
+                resolver.isCardFunding(deposit) shouldBe false
+
+                krakenService.depositStatusSupplier = { _, _ ->
+                    listOf(
+                        DepositStatusRecord(
+                            refid = "deposit-ref",
+                            asset = "USD",
+                            amount = BigDecimal("100.00"),
+                            time = now,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                    )
+                }
+
+                val prepared = resolver.prepare(listOf(deposit))
+                prepared.isCardFunding(deposit) shouldBe true
+                resolver.isCardFunding(deposit) shouldBe true
+
+                val nonCardEvent = fundingEvent("wire-dep", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+                prepared.isCardFunding(nonCardEvent) shouldBe false
+            }
+        }
     }
 
     private fun fundingEvent(id: String, type: String, amount: String): LedgerEvent = LedgerEvent(

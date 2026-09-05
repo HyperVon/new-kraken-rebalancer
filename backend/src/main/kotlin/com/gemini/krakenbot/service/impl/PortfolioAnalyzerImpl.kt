@@ -11,11 +11,13 @@ import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.CardFeePriceProvider
 import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.LedgerFlowClassifier
+import com.gemini.krakenbot.model.NormalizedFundingTransaction
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
@@ -32,6 +34,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.service.impl.history.CardFundingNormalizer
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -599,9 +602,69 @@ class PortfolioAnalyzerImpl(
         // as decided: they fail-closed by deferring the ATH update until affirmative
         // evidence or resolution arrives, preserving exact-once replay later.
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
+        val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
+            resolvePriceForEvent(feeAsset, timestamp, balancesObservedAt, tradesRepo)
+        }
+        val cardNormalizations = CardFundingNormalizer.normalizeAll(
+            events = allRetained,
+            provenanceResolver = provenanceResolver,
+            priceProvider = feePriceProvider,
+        )
+        for (norm in cardNormalizations) {
+            when (norm) {
+                is NormalizedFundingTransaction.Ambiguous -> {
+                    log.warn(
+                        "Card funding normalization ambiguous at {} (refid {}): {}",
+                        norm.unavailableAt,
+                        norm.refid,
+                        norm.reason,
+                    )
+                    throw AthTrustFailureException(
+                        reason = AthTrustFailureReason.AMBIGUOUS_FUNDING,
+                        message = norm.reason,
+                    )
+                }
+
+                is NormalizedFundingTransaction.UnpriceableFee -> {
+                    log.warn(
+                        "Cannot price fee asset {} at {} for card refid {}",
+                        norm.asset,
+                        norm.unavailableAt,
+                        norm.refid,
+                    )
+                    throw AthTrustFailureException(
+                        reason = AthTrustFailureReason.HISTORICAL_PRICE_UNAVAILABLE,
+                        message = "Cannot price fee asset ${norm.asset} for card refid ${norm.refid}",
+                    )
+                }
+
+                else -> Unit
+            }
+        }
+        val cardContributions = cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerContribution>()
+            .associateBy { it.representativeLedgerId }
+        val cardWithdrawals = cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerWithdrawal>()
+            .associateBy { it.representativeLedgerId }
+        val allCardPlumbingIds = cardNormalizations.flatMap { norm ->
+            when (norm) {
+                is NormalizedFundingTransaction.OwnerContribution -> norm.sourceLedgerIds.filter {
+                    it != norm.representativeLedgerId
+                }
+
+                is NormalizedFundingTransaction.OwnerWithdrawal -> norm.sourceLedgerIds.filter {
+                    it != norm.representativeLedgerId
+                }
+
+                else -> emptyList()
+            }
+        }.toSet()
+
         val skippedDecided = mutableListOf<AppliedAthFlow>()
         val events = mutableListOf<LedgerEvent>()
         for (event in unapplied) {
+            if (event.ledgerId in allCardPlumbingIds) {
+                continue
+            }
             val category = classifications[event.ledgerId]
             if (category == FlowCategory.AMBIGUOUS || category == FlowCategory.UNSUPPORTED) {
                 log.warn(
@@ -649,15 +712,24 @@ class PortfolioAnalyzerImpl(
 
         val externalBalanceEvents = allRetained.filter {
             classifications[it.ledgerId] == FlowCategory.EXTERNAL_BALANCE &&
-                !isLinkedPassthroughLeg(it, allRetained)
+                it.ledgerId !in allCardPlumbingIds
         }
+
+        val candidateOwnerEvents = events.filter { it.ledgerId !in allCardPlumbingIds }
 
         // Sequential oldest-first adjustment: each flow scales the ATH that
         // was current just before it. Flows themselves are priced via
         // snapshots or the bounded ticker (fail-closed); each pre-flow basis
         // is reconstructed at event time (see resolveEventTimeBasis).
-        val pricedFlows = events.map { event ->
-            event to priceOwnerCapitalFlow(event, balancesObservedAt, tradesRepo, allRetained)
+        val pricedFlows = candidateOwnerEvents.map { event ->
+            val cardContribution = cardContributions[event.ledgerId]
+            val cardWithdrawal = cardWithdrawals[event.ledgerId]
+            val pricedAmount = when {
+                cardContribution != null -> cardContribution.netOwnerCapitalUsd
+                cardWithdrawal != null -> cardWithdrawal.netOwnerCapitalUsd
+                else -> priceOwnerCapitalFlow(event, balancesObservedAt, tradesRepo)
+            }
+            event to pricedAmount
         }
         val maxEventTime = pricedFlows.maxOf { (event, _) -> event.time }
         // Include snapshots saved shortly after a flow so an observation
@@ -693,8 +765,13 @@ class PortfolioAnalyzerImpl(
                 if (groupIndex + 1 < groupStarts.size) groupStarts[groupIndex + 1] else pricedFlows.size
             val groupNet = pricedFlows.subList(groupStart, groupEnd)
                 .fold(BigDecimal.ZERO) { acc, (_, usd) -> acc.add(usd) }
+            val ledgerIds = pricedFlows.subList(groupStart, groupEnd).flatMap { (event, _) ->
+                cardContributions[event.ledgerId]?.sourceLedgerIds
+                    ?: cardWithdrawals[event.ledgerId]?.sourceLedgerIds
+                    ?: listOf(event.ledgerId)
+            }
             SequentialFlowStep(
-                ledgerIds = pricedFlows.subList(groupStart, groupEnd).map { (event, _) -> event.ledgerId },
+                ledgerIds = ledgerIds,
                 eventTime = pricedFlows[groupStart].first.time,
                 flowUSD = groupNet.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
             )
@@ -1030,19 +1107,10 @@ class PortfolioAnalyzerImpl(
         normalizedAsset == "USD" || normalizedAsset == "ZUSD" || isTrackedCrypto(normalizedAsset, universe)
 
     internal fun isLinkedPassthroughLeg(event: LedgerEvent, allRetained: List<LedgerEvent>): Boolean {
-        if (event.refid.isNullOrBlank()) return false
-        if (!event.type.equals(KrakenApiConstants.LEDGER_TYPE_SPEND, ignoreCase = true) &&
-            !event.type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)
-        ) {
-            return false
-        }
-        return allRetained.any {
-            it.refid == event.refid &&
-                (
-                    it.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, ignoreCase = true) ||
-                        it.type.equals(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL, ignoreCase = true)
-                    )
-        }
+        if (!CardFundingNormalizer.isPassthroughLeg(event)) return false
+        val refid = event.refid?.trim()?.takeIf(String::isNotEmpty) ?: return false
+        val group = allRetained.filter { it.refid?.trim() == refid }
+        return group.any(CardFundingNormalizer::isFundingLeg)
     }
 
     internal suspend fun priceOwnerCapitalFlow(
@@ -1055,24 +1123,16 @@ class PortfolioAnalyzerImpl(
         val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
         if (asset == "USD" || asset == "ZUSD") {
             if (!event.refid.isNullOrBlank() && allRetained.isNotEmpty()) {
-                val group = allRetained.filter { it.refid == event.refid }
-                val hasPassthrough = group.any {
-                    it.type.equals(KrakenApiConstants.LEDGER_TYPE_SPEND, ignoreCase = true) ||
-                        it.type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)
-                }
+                val group = allRetained.filter { it.refid?.trim() == event.refid.trim() }
+                val hasPassthrough = group.any(CardFundingNormalizer::isPassthroughLeg)
                 if (hasPassthrough) {
-                    val fundingLegs = group.filter {
-                        it.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, ignoreCase = true) ||
-                            it.type.equals(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL, ignoreCase = true)
-                    }
+                    val fundingLegs = group.filter(CardFundingNormalizer::isFundingLeg)
                     val isRepresentative = fundingLegs.minWithOrNull(
                         compareBy<LedgerEvent>({ it.time }, { it.ledgerId }),
                     )?.ledgerId == event.ledgerId
                     if (isRepresentative) {
-                        val nonFundingFees = group.filter {
-                            it.type.equals(KrakenApiConstants.LEDGER_TYPE_SPEND, ignoreCase = true) ||
-                                it.type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)
-                        }.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.fee) }
+                        val nonFundingFees = group.filter(CardFundingNormalizer::isPassthroughLeg)
+                            .fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.fee) }
                         return if (delta.signum() > 0) {
                             delta.subtract(nonFundingFees)
                         } else {
