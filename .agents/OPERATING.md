@@ -32,6 +32,17 @@ When opening a PR: complete **every** Test plan / Verification item **before**
 `gh pr create` — never defer spot-checks to after merge (see §2 and
 [open-pr](skills/open-pr/SKILL.md)).
 
+### Optional semantic workspace search
+
+When the active harness exposes `zvec_grep_search`, use it for workspace-grounded
+semantic or fuzzy discovery when wording or location is unknown, or when the
+answer requires relationship, chronology, causality, or cross-file synthesis.
+Use native `rg` for known exact words, paths, filenames, keys, literals, or
+regexes. Pass an absolute workspace `root` to zvec-grep and treat its bounded
+snippets as evidence. If the index is unavailable, use native `rg`; creating,
+rebuilding, or dropping a persistent `.zvec-grep/` index requires explicit user
+authorization.
+
 ---
 
 ## 2. Complete PR verifications before opening

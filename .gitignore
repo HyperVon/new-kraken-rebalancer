@@ -31,6 +31,7 @@ portfolio-stats.json
 /engine/bin/
 .kotlin/
 .playwright-mcp/
+.zvec-grep/
 .worktrees/
 
 
