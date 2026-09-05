@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.31] - 2026-09-05
+
+### Added
+
+- **zvec-grep workspace retrieval**: Integrated `zvec-grep` MCP search across
+  the codebase with `.zvec-grep/` excluded from git tracking. Configured
+  workspace MCP registration in `.kilo/kilo.json`, added workspace retrieval
+  routing norms to `.agents/OPERATING.md` (§1) and `.agents/AGENTS.md` (§7),
+  and created thin pointers in `.cursor/rules/retrieval-routing.mdc` and
+  `.clinerules/retrieval-routing.md`.
+
 ## [6.17.30] - 2026-09-05
 
 ### Fixed

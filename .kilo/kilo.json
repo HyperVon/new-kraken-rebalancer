@@ -12,6 +12,16 @@
   },
   "lsp": false,
   "mcp": {
+    "zvec_grep": {
+      "type": "local",
+      "command": [
+        "zg",
+        "server",
+        "--stdio"
+      ],
+      "enabled": true,
+      "timeout": 600000
+    },
     "context7": {
       "type": "local",
       "command": [
