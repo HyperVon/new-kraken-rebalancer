@@ -278,6 +278,10 @@ domain skills.
   entry; typed catalogs remain fine for non-assertion setup.
 - **No ARIA attributes**: Do not introduce `aria-*` attributes (`aria-hidden`, `aria-sort`, `aria-label`, etc.) into HTML DSL templates, `:common` attribute catalogs, or client Kotlin/JS. Rely on standard semantic HTML elements.
 - **No absolute user paths** or machine-specific hostnames in source/tests.
+- **Retrieval routing**: When `zvec_grep_search` is available, prefer it over
+  broad grep/read sweeps for architectural, relational, cross-file, or conceptual
+  discovery; keep exact single-symbol and literal lookups on native grep/rg
+  (see [OPERATING.md](OPERATING.md) §1 Optional semantic workspace search).
 - Markdown: lint per [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md)
   (`.agents/AGENTS.md`, `OPERATING.md`, skills, product docs, harness stubs).
 - Offload blocking IO with `withContext(Dispatchers.IO)`.
