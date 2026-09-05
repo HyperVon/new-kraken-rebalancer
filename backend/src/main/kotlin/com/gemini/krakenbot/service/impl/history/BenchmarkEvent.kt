@@ -25,6 +25,8 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
         val asset: String,
         val netAmount: BigDecimal,
         val event: LedgerEvent,
+        /** Original ledger identities represented by this economic event. */
+        val sourceLedgerIds: List<String> = listOf(event.ledgerId),
     ) : BenchmarkEvent()
 
     /**
@@ -39,6 +41,8 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
         val contributionUsd: BigDecimal,
         val allocations: Map<String, BigDecimal>,
         val event: LedgerEvent,
+        /** Original ledger identities represented by this economic event. */
+        val sourceLedgerIds: List<String> = listOf(event.ledgerId),
     ) : BenchmarkEvent()
 
     /**
@@ -50,6 +54,8 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
         override val timestamp: Instant,
         val withdrawalUsd: BigDecimal,
         val event: LedgerEvent,
+        /** Original ledger identities represented by this economic event. */
+        val sourceLedgerIds: List<String> = listOf(event.ledgerId),
     ) : BenchmarkEvent()
 
     /**

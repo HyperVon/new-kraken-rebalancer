@@ -119,6 +119,9 @@ class TradeHistoryQueryService(
             ledgerRepository
                 .getLedgersInRange(queryFrom, queryTo)
                 .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+        // The production resolver batches the funding-status lookups once for
+        // this complete history query; the calculator remains offline/pure.
+        val preparedProvenanceResolver = fundingProvenanceResolver.prepare(ledgers)
         val candidateTrades = trades.filter { it.success && !it.dryRun }
         val candidateOrderTxids = candidateTrades.mapNotNull {
             it.orderTxid?.trim()?.takeIf(String::isNotBlank)
@@ -134,15 +137,19 @@ class TradeHistoryQueryService(
         // event (never a live ticker for an old contribution). Absent prices
         // fail the comparison closed inside the calculator.
         val priceProvider = HistoricalPriceProvider { symbol, time ->
-            if (symbol == Asset.USD) {
+            if (Asset.normalizeLedgerAsset(symbol).uppercase() == Asset.USD) {
                 BigDecimal.ONE
             } else {
+                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
                 repository.getSnapshotsInRange(
                     time.minusSeconds(CONTRIBUTION_PRICE_LOOKUP_SECONDS),
-                    time.plusSeconds(CONTRIBUTION_PRICE_LOOKUP_SECONDS),
+                    time,
                 ).mapNotNull { snapshot ->
-                    val price = snapshot.assets[symbol]?.price
-                    if (price != null && price.signum() > 0) {
+                    val price = snapshot.assets.entries.firstOrNull { (asset, _) ->
+                        Asset.normalizeLedgerAsset(asset).uppercase() == normalizedSymbol
+                    }?.value?.price
+                    val observationTime = snapshot.balancesObservedAt ?: snapshot.timestamp
+                    if (price != null && price.signum() > 0 && !observationTime.isAfter(time)) {
                         snapshot.timestamp to price
                     } else {
                         null
@@ -161,7 +168,7 @@ class TradeHistoryQueryService(
             inceptionSnapshot = inceptionSnapshot,
             knownInceptionTime = inceptionResolution?.inceptionTime,
             priceProvider = priceProvider,
-            provenanceResolver = fundingProvenanceResolver,
+            provenanceResolver = preparedProvenanceResolver,
         )
     }
 

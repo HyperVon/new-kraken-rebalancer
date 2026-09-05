@@ -3421,7 +3421,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("100.00")
         }
 
-        "Same-timestamp deposit and larger spend net to one synthetic withdrawal" {
+        "Same-timestamp deposit and larger spend are not reclassified as a withdrawal" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-10T12:00:00Z")
             val tMid = Instant.parse("2026-06-10T18:00:00Z")
@@ -3432,13 +3432,14 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val inceptionSnap = snapshot(t0, "100000.00", flatAssets)
             val s1 = snapshot(t1, "100000.00", flatAssets)
-            // +3000 funding, -5000 spend at one instant: net -$2000, so the
-            // benchmark scales 2% off the whole thesis (factor 0.98).
+            // +3000 funding, -5000 spend at one instant has a negative net.
+            // Keep the already-typed owner contribution and neutral spend
+            // separate rather than inventing an owner withdrawal.
             val s2 = snapshot(
                 t2,
-                "98000.00",
+                "108000.00",
                 mapOf(
-                    "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                    "BTC" to assetRow("1.0", "60000.00", "60000.00"),
                     "USD" to assetRow("48000.00", "1.0", "48000.00"),
                 ),
             )
@@ -3452,12 +3453,14 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                         asset = "USD",
                         amount = "3000.00",
                         type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "NET-PLUMBING-1",
                     ),
                     ledgerEvent(
                         timestamp = tMid,
                         asset = "USD",
                         amount = "-5000.00",
                         type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        refid = "NET-PLUMBING-1",
                     ),
                 ),
                 inceptionSnapshot = inceptionSnap,
@@ -3465,8 +3468,474 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("98000.00")
-            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("108300.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("-300.00")
+        }
+
+        "Same-timestamp funding passthrough preserves a positive typed net contribution" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val baselineAssets = mapOf(
+                "BTC" to assetRow("0.00", "50000.00", "0.00"),
+                "USD" to assetRow("10000.00", "1.0", "10000.00"),
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(t0, "10000.00", baselineAssets),
+                    snapshot(
+                        t2,
+                        "12000.00",
+                        mapOf(
+                            "BTC" to assetRow("0.02", "50000.00", "1000.00"),
+                            "USD" to assetRow("11000.00", "1.0", "11000.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "5000.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "FUNDING-PASSTHROUGH-1",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "-4000.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        refid = "PLUMBING-PASSTHROUGH-1",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "0.02",
+                        type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                        refid = "PLUMBING-PASSTHROUGH-1",
+                    ),
+                ),
+                inceptionSnapshot = snapshot(t0, "10000.00", baselineAssets),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("12000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Same-timestamp funding passthrough preserves a negative typed net withdrawal" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val baselineAssets = mapOf(
+                "BTC" to assetRow("0.00", "50000.00", "0.00"),
+                "USD" to assetRow("10000.00", "1.0", "10000.00"),
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(t0, "10000.00", baselineAssets),
+                    snapshot(
+                        t2,
+                        "9000.00",
+                        mapOf(
+                            "BTC" to assetRow("0.00", "50000.00", "0.00"),
+                            "USD" to assetRow("9000.00", "1.0", "9000.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "-5000.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        refid = "ROUNDTRIP-WITHDRAWAL",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "4000.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                        refid = "ROUNDTRIP-WITHDRAWAL",
+                    ),
+                ),
+                inceptionSnapshot = snapshot(t0, "10000.00", baselineAssets),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("9000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-timestamp plumbing with multiple funding legs stays separately typed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val baselineAssets = mapOf(
+                "BTC" to assetRow("0.00", "50000.00", "0.00"),
+                "USD" to assetRow("10000.00", "1.0", "10000.00"),
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(t0, "10000.00", baselineAssets),
+                    snapshot(
+                        t2,
+                        "10050.00",
+                        baselineAssets + (
+                            "USD" to assetRow("10050.00", "1.0", "10050.00")
+                            ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "MULTI-FUNDING-A",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "50.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "MULTI-FUNDING-B",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "-100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        refid = "MULTI-SPEND",
+                    ),
+                ),
+                inceptionSnapshot = snapshot(t0, "10000.00", baselineAssets),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10050.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-timestamp plumbing with a blank passthrough refid stays separately typed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val baselineAssets = mapOf(
+                "BTC" to assetRow("0.00", "50000.00", "0.00"),
+                "USD" to assetRow("10000.00", "1.0", "10000.00"),
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(t0, "10000.00", baselineAssets),
+                    snapshot(t2, "10000.00", baselineAssets),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "BLANK-PASSTHROUGH-FUNDING",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "-100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    ),
+                ),
+                inceptionSnapshot = snapshot(t0, "10000.00", baselineAssets),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Same-timestamp opposite plumbing legs without a shared identity stay separate" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "100000.00", "100000.00"),
+                            "USD" to assetRow("0.00", "1.0", "0.00"),
+                        ),
+                    ),
+                    snapshot(
+                        t2,
+                        "120040.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "120000.00", "120000.00"),
+                            "USD" to assetRow("40.00", "1.0", "40.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "UNRELATED-DEPOSIT",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "-60.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        refid = "UNRELATED-SPEND",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("120060.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-20.00")
+        }
+
+        "Same-timestamp same-sign funding plumbing is never netted into owner capital" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "100000.00", "100000.00"),
+                            "USD" to assetRow("0.00", "1.0", "0.00"),
+                        ),
+                    ),
+                    snapshot(
+                        t2,
+                        "120150.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "120000.00", "120000.00"),
+                            "USD" to assetRow("150.00", "1.0", "150.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "CREDIT-1",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "50.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                        refid = "CREDIT-2",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("120170.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-20.00")
+        }
+
+        "Same-timestamp reward and owner funding are additive and preserve parity" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val baselineAssets = mapOf(
+                "BTC" to assetRow("1.0", "100000.00", "100000.00"),
+                "USD" to assetRow("0.00", "1.0", "0.00"),
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(t0, "100000.00", baselineAssets),
+                    snapshot(
+                        t2,
+                        "120100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.2", "100000.00", "120000.00"),
+                            "USD" to assetRow("100.00", "1.0", "100.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "0.2",
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        ledgerId = "reward-same-time",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "owner-same-time",
+                        refid = "FT-owner-same-time",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("120100.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Near-timestamp reward and owner funding are additive and preserve parity" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val baselineAssets = mapOf(
+                "BTC" to assetRow("1.0", "100000.00", "100000.00"),
+                "USD" to assetRow("0.00", "1.0", "0.00"),
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(t0, "100000.00", baselineAssets),
+                    snapshot(
+                        t2,
+                        "120100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.2", "100000.00", "120000.00"),
+                            "USD" to assetRow("100.00", "1.0", "100.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "0.2",
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        ledgerId = "reward-near-time",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1.plusMillis(500),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "owner-near-time",
+                        refid = "FT-owner-near-time",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("120100.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Near-timestamp bot trade does not make an owner withdrawal unavailable" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "100000.00", "100000.00"),
+                            "USD" to assetRow("100.00", "1.0", "100.00"),
+                        ),
+                    ),
+                    snapshot(
+                        t2,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("0.999", "100000.00", "99900.00"),
+                            "USD" to assetRow("100.00", "1.0", "100.00"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    trade(
+                        timestamp = t1.plusMillis(500),
+                        side = "SELL",
+                        symbol = "BTC",
+                        volume = "0.001",
+                        usdAmount = "100.00",
+                        price = "100000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "-100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        refid = "WITHDRAWAL-BOT-1",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "Exactly one second between owner withdrawal and manual trade remains the ordering boundary" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "100000.00", "100000.00"),
+                            "USD" to assetRow("100.00", "1.0", "100.00"),
+                        ),
+                    ),
+                    snapshot(
+                        t2,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("0.999", "100000.00", "99900.00"),
+                            "USD" to assetRow("100.00", "1.0", "100.00"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = t1.plusSeconds(1),
+                        side = "SELL",
+                        symbol = "BTC",
+                        volume = "0.001",
+                        usdAmount = "100.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "-100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        refid = "WITHDRAWAL-EXACT-1",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
         }
 
         "Withdrawal beyond synthetic holdings fails closed instead of flooring" {

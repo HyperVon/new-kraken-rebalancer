@@ -83,6 +83,96 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
             }
         }
 
+        "getDepositStatus_UsesAuthenticatedFundingEndpointAndParsesRecord" {
+            runTest {
+                val responseJson = """
+                    {
+                      "error": [],
+                      "result": [
+                        {
+                          "method": "Wire",
+                          "asset": "ZUSD",
+                          "refid": "DEP-1",
+                          "txid": "wire-1",
+                          "amount": "100.00",
+                          "fee": "0.00",
+                          "time": 1700000000,
+                          "status": "Success"
+                        }
+                      ]
+                    }
+                """.trimIndent()
+                var capturedPath = ""
+                var capturedBody = ""
+                val service = createService(responseJson) { request ->
+                    capturedPath = request.url.encodedPath
+                    capturedBody = (request.body as TextContent).text
+                }
+
+                val records = service.getDepositStatus(startSec = 1700000000L, endSec = 1700003600L)
+
+                capturedPath shouldBe KrakenApiConstants.PATH_DEPOSIT_STATUS
+                capturedBody shouldContain "start=1700000000"
+                capturedBody shouldContain "end=1700003600"
+                capturedBody shouldContain "cursor=true"
+                capturedBody shouldContain "limit=25"
+                records.single().refid shouldBe "DEP-1"
+                records.single().asset shouldBe "USD"
+                records.single().hasAuthoritativeFee shouldBe true
+            }
+        }
+
+        "getWithdrawStatus_UsesAuthenticatedFundingEndpointAndParsesRecord" {
+            runTest {
+                val responseJson = """
+                    {
+                      "error": [],
+                      "result": [
+                        {
+                          "method": "Bitcoin",
+                          "asset": "XXBT",
+                          "refid": "W-1",
+                          "txid": "tx-1",
+                          "amount": "0.25",
+                          "fee": "0.0002",
+                          "time": 1700000000,
+                          "status": "Pending"
+                        }
+                      ]
+                    }
+                """.trimIndent()
+                var capturedPath = ""
+                val service = createService(responseJson) { request ->
+                    capturedPath = request.url.encodedPath
+                }
+
+                val records = service.getWithdrawStatus()
+
+                capturedPath shouldBe KrakenApiConstants.PATH_WITHDRAW_STATUS
+                records.single().asset shouldBe "BTC"
+                records.single().status shouldBe "Pending"
+            }
+        }
+
+        "funding status pagination fails closed on a repeated cursor" {
+            runTest {
+                val responseJson = """
+                    {
+                      "error": [],
+                      "result": {
+                        "deposit": [],
+                        "cursor": "true"
+                      }
+                    }
+                """.trimIndent()
+                val service = createService(responseJson)
+
+                shouldThrow<IllegalStateException> {
+                    service.getDepositStatus()
+                }
+            }
+        }
+
         "getLedgers_FiltersByRequestedTypes" {
             runTest {
                 val responseJson = """

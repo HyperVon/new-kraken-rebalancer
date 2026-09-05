@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -22,6 +23,7 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
+import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
@@ -107,6 +109,7 @@ val coreModule =
                 ledgerRepository = get(),
                 orderIntentRepository = get(),
                 inceptionDiscoveryService = get(),
+                fundingProvenanceResolver = get(),
             )
         }
         single {
@@ -152,6 +155,9 @@ val coreModule =
                 configService = get(),
             )
         }
+        single<FundingProvenanceResolver> {
+            KrakenFundingProvenanceResolver(krakenService = get())
+        }
         single<PortfolioAnalyzer> {
             PortfolioAnalyzerImpl(
                 krakenService = get(),
@@ -159,6 +165,7 @@ val coreModule =
                 portfolioStatsRepository = get(),
                 ledgerRepository = get(),
                 tradeRepository = get(),
+                defaultProvenanceResolver = get(),
             )
         }
         single<OrderExecutor> {

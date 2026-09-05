@@ -313,10 +313,23 @@ achieved against a **synthetic buy-and-hold** strategy:
   portfolio proportionally — so the cash event itself never invents alpha for either side.
   Kraken app/Buy Crypto activity is read from Ledger history, including both asset legs, rather
   than inferred from the trade-history feed.
+- Funding rows count as owner capital only when the production resolver finds one confirmed,
+  matching Kraken funding-status record. The resolver batches and caches authenticated
+  `DepositStatus`/`WithdrawStatus` lookups for the history range; asset, direction, amount/net
+  amount, known fee, time, and terminal status must agree. Deposit credits allow the record's
+  amount or `amount - fee`; withdrawal debits allow the record's amount or `amount + fee` in
+  magnitude. Missing or conflicting records, and Spot/Futures transfers without explicit internal
+  evidence, keep the comparison unavailable.
 - The comparison accounts for the balance request's duration and up to one second of
   exchange/local clock skew, accepting events only when the complete tracked balance change
   reconciles. API fills use precise `price × volume` first; historical rounded costs are
   accepted per interval only when they represent the same fill and all tracked balances match.
+- Historical flow pricing excludes future trades, future snapshots, and active OHLC candles. It
+  uses a completed 15-minute candle only when its end is at or before the event (an exact end is
+  valid); a live ticker is allowed only within 300 seconds of the balance observation.
+- Same-source-timestamp funding plumbing is netted only after original classification and retains
+  its source ledger IDs. Mixed-sign or overdrawn groups are not reclassified into an opposite
+  owner-flow direction.
 - Historical Kraken ledger entries are reconciled using their recorded post-event balance when
   the stored fee precision is insufficient; mixed or ambiguous balance changes remain unavailable.
 - **Rebalancer** is the actual portfolio value at each snapshot, incorporating rebalancing bot

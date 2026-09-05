@@ -3,8 +3,11 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.InternalTransferRecord
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.WithdrawStatusRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -115,6 +118,17 @@ class DynamicKrakenService(
     }
 
     override fun getLastLedgerTotalCount(): Int = lastLedgerTotalCount.get()
+
+    override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> =
+        currentBackend().getDepositStatus(startSec, endSec)
+
+    override suspend fun getWithdrawStatus(startSec: Long?, endSec: Long?): List<WithdrawStatusRecord> =
+        currentBackend().getWithdrawStatus(startSec, endSec)
+
+    override suspend fun getInternalTransfers(startSec: Long?, endSec: Long?): List<InternalTransferRecord> =
+        currentBackend().getInternalTransfers(startSec, endSec)
+
+    override suspend fun getFundingEvidenceScope(): String = currentBackend().getFundingEvidenceScope()
 
     override suspend fun getApiCallCounter(): Double = currentBackend().getApiCallCounter()
 }

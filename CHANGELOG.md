@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.29] - 2026-09-04
+
+### Fixed
+
+- **Production funding provenance wiring**: ATH and Buy & Hold history paths now
+  use the same production resolver, which batches authenticated
+  `/0/private/DepositStatus` and `/0/private/WithdrawStatus` lookups over the
+  required ledger range and caches the evidence for the batch. Direct and fuzzy
+  correlations validate funding family, normalized asset, direction, amount/net
+  amount, fee when authoritative, time, and terminal status (including the
+  withdrawal account-debit `amount + fee` alternative); missing, duplicate, or
+  contradictory evidence remains unresolved instead of becoming owner capital.
+  Kraken's Spot REST surface has no historical Futures-transfer query, so an
+  indistinguishable Spot/Futures leg remains unresolved without an internal
+  marker or additional authoritative source.
+- **Observation-safe historical reconciliation**: pre-flow basis reconstruction
+  uses the predecessor snapshot's `balancesObservedAt` boundary, falls back to
+  the legacy snapshot timestamp, and defers when events in the uncertain
+  `(balancesObservedAt, snapshot.timestamp]` interval cannot be assigned to one
+  unique embedded prefix.
+- **Typed Buy & Hold passthrough**: original classified ledger rows now carry
+  their source identities through safe USD funding-plumbing netting. A confirmed
+  deposit plus `spend` remains owner capital with net economics rather than being
+  reclassified as an external balance; mixed-sign/overdrawn groups are not
+  reclassified into the opposite owner-flow direction, and non-commutative
+  same-timestamp events remain unavailable.
+- **Look-ahead-free flow pricing**: historical flow prices prefer prior trades,
+  prior snapshots, and completed 15-minute OHLC candles. An active candle is
+  excluded, an exact candle end is allowed, and live ticker fallback is limited
+  to events within 300 seconds of the observation time.
+
+### Docs
+
+- `docs/ALGORITHM.md` and `docs/USER_GUIDE.md`: documented funding endpoints,
+  batch/cache and Futures limitations, strict correlation and ambiguity rules,
+  observation boundaries, typed passthrough, timestamp ordering, and historical
+  price lookahead protections.
+
 ## [6.17.28] - 2026-09-04
 
 ### Fixed

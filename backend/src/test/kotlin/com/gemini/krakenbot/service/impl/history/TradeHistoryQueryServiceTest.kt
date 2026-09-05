@@ -18,6 +18,8 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.FakeKrakenService
+import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -147,6 +149,64 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+            }
+        }
+
+        "getRebalancerComparison_UsesProductionFundingResolver" {
+            runTest {
+                val snap1 = snapshot(
+                    now,
+                    "1000.00",
+                    btc = "0.0" to "50000.00",
+                    usdBalance = "1000.00",
+                )
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "1100.00",
+                    btc = "0.0" to "50000.00",
+                    usdBalance = "1100.00",
+                )
+                val deposit = ledgerEvent(
+                    ledgerId = "LIVE-DEPOSIT",
+                    timestamp = now.plusSeconds(1800),
+                    asset = Asset.USD,
+                    amount = "100.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = "LIVE-DEPOSIT-REF",
+                )
+                val kraken = FakeKrakenService().apply {
+                    depositStatusSupplier = { _, _ ->
+                        listOf(
+                            DepositStatusRecord(
+                                refid = "LIVE-DEPOSIT-REF",
+                                asset = Asset.USD,
+                                amount = BigDecimal("100.00"),
+                                time = deposit.time,
+                                status = "Success",
+                                method = "Wire",
+                            ),
+                        )
+                    }
+                }
+                val productionBoundService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    fundingProvenanceResolver = KrakenFundingProvenanceResolver(kraken),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(deposit)
+
+                val comparison = productionBoundService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1100.00"))
+                kraken.getDepositStatusCallCount shouldBe 1
+                kraken.getWithdrawStatusCallCount shouldBe 0
+                kraken.getInternalTransfersCallCount shouldBe 1
             }
         }
 
@@ -744,6 +804,92 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
+            }
+        }
+
+        "getRebalancerComparison_RejectsFutureObservedPriceCandidates" {
+            runTest {
+                val t0 = now.minusSeconds(86400 * 30)
+                val tMid = now.plusSeconds(1800)
+                val snap0 = snapshot(
+                    t0,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = t0,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "125000.00",
+                    btc = "1.5" to "50000.00",
+                    usdBalance = "50000.00",
+                )
+                val futureObserved = snap1.copy(
+                    timestamp = tMid.minusSeconds(60),
+                    balancesObservedAt = tMid.plusSeconds(1),
+                    assets = snap1.assets.mapValues { (symbol, asset) ->
+                        if (symbol == Asset.BTC) asset.copy(price = BigDecimal("99999.00")) else asset
+                    },
+                )
+                val missingAsset = snap1.copy(
+                    timestamp = tMid.minusSeconds(90),
+                    assets = snap1.assets - Asset.BTC,
+                )
+                val validPrice = snap1.copy(
+                    timestamp = tMid.minusSeconds(120),
+                    balancesObservedAt = tMid.minusSeconds(120),
+                )
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(
+                    ledgerEvent(
+                        ledgerId = "future-observation-deposit",
+                        timestamp = tMid,
+                        asset = Asset.BTC,
+                        amount = "0.50000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } answers {
+                    if (secondArg<Instant>() == tMid) {
+                        listOf(futureObserved, missingAsset, validPrice)
+                    } else {
+                        listOf(snap1, snap2)
+                    }
+                }
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                    fundingProvenanceResolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                refid = "tx-future-observation-deposit",
+                                txid = "0xfuture-observation",
+                                asset = Asset.BTC,
+                                amount = BigDecimal("0.50000000"),
+                                time = tMid,
+                                status = "Success",
+                                method = "Bitcoin",
+                            ),
+                        ),
+                    ),
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
             }

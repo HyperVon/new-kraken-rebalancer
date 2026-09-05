@@ -158,10 +158,20 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
         margin-family rows (`margin`, `rollover`, `settled`, `credit`, `sale`) replay in-kind as `EXTERNAL_BALANCE`
         without scaling ATH, and unrecognized ledger types fail closed. For deposits and withdrawals, the classifier
         delegates external validation to an affirmative `FundingProvenanceResolver`.
-     2. *External provenance verification (`FundingProvenanceResolver`)*: External funding must be affirmatively
-        corroborated by deposit/withdrawal status records (`DepositStatusRecord`, `WithdrawStatusRecord`) or explicit
-        transaction receipts. Unproven deposits and withdrawals fail closed to `AMBIGUOUS`. Confirmed external
-        deposits and withdrawals classify as `OWNER_CAPITAL`.
+     2. *External provenance verification (`FundingProvenanceResolver`)*: In production,
+        `KrakenFundingProvenanceResolver` batches authenticated `/0/private/DepositStatus` and
+        `/0/private/WithdrawStatus` requests over the ledger range (with a bounded correlation margin),
+        paginates with Kraken's `cursor`/`limit` parameters, and caches the fetched families while they
+        cover the batch. It does not make one funding request per ledger row. A direct reference or fuzzy
+        candidate must agree on the ledger family, normalized asset, direction, gross/net amount, fee when
+        authoritative, timestamp, and terminal status; for withdrawals the account-debit alternative is
+        `amount + fee`, while deposit credit uses `amount - fee`. Fuzzy correlation accepts exactly one candidate only.
+        Zero, duplicate, or contradictory candidates remain unresolved. The legacy status endpoints are
+        active but deprecated in Kraken's API documentation; Spot REST does not provide a historical
+        Futures-transfer query, so a Spot/Futures leg that is not explicitly marked or represented by an
+        authoritative internal source remains unresolved. An indistinguishable status record cannot be
+        separated from external funding by the Spot API alone. Confirmed external deposits and withdrawals
+        classify as `OWNER_CAPITAL`.
      Flows for assets outside the configured allocation universe are ignored.
    - **Net Capital for Fee-Bearing Deposits**: Confirmed external deposits contribute their net capital
      (`event.netBalanceDelta() = amount - fee`) as `OWNER_CAPITAL`. ATH scales strictly on the net contributed
@@ -202,14 +212,24 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      rewards, ledger adjustments, or dividends occurring between predecessor snapshot and the flow event time)
      are replayed in-kind into holdings before valuation. Holdings are then revalued at event-time prices:
      `Pre-flow basis = sum(holding_i * price_at_flow_i)`.
-     Flow-time prices are resolved strictly from historical evidence: first from recent trade execution prices
-     within ±180s, then from the nearest portfolio snapshot within ±180s, and finally from Kraken OHLC historical
-     intervals (≤24h). Live exchange ticker prices are strictly decoupled from historical lookups: live tickers
-     are only permitted for near-real-time events within a tight 300-second window
+     The predecessor's `balancesObservedAt` is the lower request-start boundary; legacy snapshots without it
+     fall back to their save timestamp. Ledger rows in the uncertain interval
+     `(balancesObservedAt, predecessor.timestamp]` are accepted only when authoritative post-event balances
+     prove one unique embedded prefix; ambiguous, missing-balance, or same-timestamp rows defer the update
+     instead of receiving a lexical order. If a modern snapshot is observed before the flow but saved after
+     it and no snapshot saved before the flow establishes the pre-flow state, the update also defers. Flow-time
+     prices are resolved strictly from event-time evidence:
+     first from a successful non-dry-run trade at or before the event within ±180s, then from the nearest
+     recorded snapshot at or before the event within ±180s, and finally from a completed 15-minute OHLC candle
+     whose `candleStart + 900s <= eventTime` (an exact candle end is valid). Future trades/snapshots and active
+     candles are excluded. Live exchange ticker prices are strictly decoupled from historical lookups: live
+     tickers are only permitted for near-real-time events within a tight 300-second window
      (`MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS = 300L`). Historical flows older than 300s without verified
-     historical trade, snapshot, or OHLC pricing fail closed by deferring the update (`AthUpdateResult.Deferred`).
-     If no predecessor snapshot exists at all, the flow is assumed to predate ATH establishment and is journaled as
-     absorbed into the initial baseline.
+     historical trade, snapshot, or completed OHLC pricing fail closed by deferring the update
+     (`AthUpdateResult.Deferred`).
+     If no predecessor snapshot exists at all, the legacy/initial-baseline case assumes the flow predates ATH
+     establishment and journals it as absorbed; a modern observation boundary that proves a later-saved snapshot
+     could have observed the flow instead fails closed as described above.
    - **Crash-Idempotent Checkpoint & Migration Limitations**: The ATH value, applied per-ledger flow identities,
      and the flow watermark persist in a single SQLite transaction. A crash before commit retries safely; after commit
      nothing is double-applied — restarts skip recorded ledger IDs even inside a held watermark window.
@@ -422,6 +442,18 @@ rows against `TradesHistory`. The reconstruction marker is paired with the ledge
 coverage version it replayed, so a coverage migration cannot suppress the required
 rebuild.
 
+Benchmark events are built from the original classified ledger rows before any
+passthrough reduction. Safe same-source-timestamp USD funding plumbing (`OWNER_CAPITAL`
+deposit/withdrawal plus `spend`/`receive`) carries the original typed category,
+net economics, and every source ledger ID; it is never represented by a synthetic
+row that is classified a second time. Thus a confirmed deposit followed by a
+consumer `spend` remains owner capital with its net contribution, while internal
+moves remain neutral and unresolved funding remains unavailable. A mixed-sign or
+overdrawn funding/plumbing group is left separate rather than being reclassified
+as the opposite owner-flow direction. Where a trade, owner flow, or non-plumbing
+balance movement shares a timestamp and the economic order cannot be proven, the
+comparison returns unavailable rather than imposing a lexical order.
+
 Before rendering benchmark points, each interval replays every successful
 authoritative trade, supported external ledger event, and fee into the previous
 tracked balances. If any tracked asset still differs from the next snapshot after
@@ -435,7 +467,10 @@ balance-request start boundary, distinct from the snapshot creation/display
 timestamp. Events after this instant are not assumed to be reflected in the returned
 balances unless reconciliation proves they were. Rows written before this field existed
 retain a null observation boundary; their display timestamp is used only as a bounded
-search boundary, never treated as an exact request-start time. The comparison engine reasons about
+search boundary, never treated as an exact request-start time. For pre-flow replay,
+the predecessor snapshot's interval `(balancesObservedAt, snapshot.timestamp]` is
+uncertain: an authoritative post-event balance must identify one unique embedded
+prefix before those rows are excluded from replay. The comparison engine reasons about
 exchange events (trades and external ledgers) relative to these conservative balance
 observation boundaries. The request start is a lower bound, while snapshot creation
 is the conservative upper bound of the balance-request window. Candidate events
