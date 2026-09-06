@@ -29,6 +29,7 @@ class SchemaMigrationsTest : StringSpec() {
                 "order-intent-trade-foreign-key",
                 "portfolio-stats-singleton",
                 "ath-applied-flow-semantics",
+                "ath-applied-flow-event-millisecond-precision",
             )
         }
 
@@ -43,7 +44,7 @@ class SchemaMigrationsTest : StringSpec() {
                             "(ledger_id VARCHAR(128) PRIMARY KEY, event_time_sec BIGINT NOT NULL)",
                     )
                     statement.executeUpdate("INSERT INTO ath_applied_flows VALUES ('old-ach', 1000)")
-                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 8")
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 9")
                     repeat(2) { DatabaseConfig.init(url) }
                     statement.executeQuery("SELECT * FROM ath_applied_flows").use { rows ->
                         rows.next() shouldBe true
@@ -55,9 +56,48 @@ class SchemaMigrationsTest : StringSpec() {
                             "actual_balance_delta",
                             "normalized_group_id",
                             "decision_version",
+                            "event_time_millis",
                         )) {
                             rows.getObject(column) shouldBe null
                         }
+                        rows.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "v8 semantic journal gains nullable exact time without fabricating milliseconds" {
+            val url = "jdbc:sqlite:file:ath-v8-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(url)
+            DriverManager.getConnection(url).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP TABLE ath_applied_flows")
+                    statement.executeUpdate(
+                        """
+                        CREATE TABLE ath_applied_flows (
+                            ledger_id VARCHAR(128) PRIMARY KEY,
+                            event_time_sec BIGINT NOT NULL,
+                            decision_category VARCHAR(32),
+                            asset VARCHAR(16),
+                            actual_balance_delta DECIMAL(24, 8),
+                            normalized_group_id VARCHAR(128),
+                            decision_version INTEGER
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate(
+                        "INSERT INTO ath_applied_flows " +
+                            "VALUES ('v8-ach', 1000, 'OWNER_CAPITAL', 'USD', 1000.00, NULL, 1)",
+                    )
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 9")
+                    DatabaseConfig.init(url)
+                    statement.executeQuery("SELECT * FROM ath_applied_flows").use { rows ->
+                        rows.next() shouldBe true
+                        rows.getString("ledger_id") shouldBe "v8-ach"
+                        rows.getLong("event_time_sec") shouldBe 1000
+                        rows.getObject("event_time_millis") shouldBe null
+                        rows.getString("decision_category") shouldBe "OWNER_CAPITAL"
+                        rows.getString("asset") shouldBe "USD"
                         rows.next() shouldBe false
                     }
                 }
@@ -104,6 +144,7 @@ class SchemaMigrationsTest : StringSpec() {
                         6 to "order-intent-trade-foreign-key",
                         7 to "portfolio-stats-singleton",
                         8 to "ath-applied-flow-semantics",
+                        9 to "ath-applied-flow-event-millisecond-precision",
                     )
                 }
             }
@@ -156,6 +197,7 @@ class SchemaMigrationsTest : StringSpec() {
                         6 to "order-intent-trade-foreign-key",
                         7 to "portfolio-stats-singleton",
                         8 to "ath-applied-flow-semantics",
+                        9 to "ath-applied-flow-event-millisecond-precision",
                     )
                 }
             }

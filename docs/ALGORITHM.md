@@ -212,6 +212,12 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
       basis window `(predecessor actual-state boundary, target flow time]`. Multi-leg card transactions replay their
       actual balance deltas exclusively via `TimedAssetDelta` entries; card representative deposits and plumbing rows
       are strictly excluded from ordinary owner-flow replay to ensure exact-once balance attribution.
+      New durable semantic rows retain the original ledger event time as `event_time_millis`, so replay cannot move an
+      already-decided owner flow across a predecessor snapshot, balance-observation, or ordering boundary through
+      second-level timestamp truncation. A new semantic row must match the retained ledger timestamp exactly;
+      a mismatch defers with `PRE_FLOW_BASIS_UNCERTAIN`. Legacy identity-only rows keep a null semantic timestamp
+      and the existing conservative fallback. A pre-v9 semantic row with otherwise-valid meaning uses the retained
+      ledger row's exact time until it can be replaced by a newly journaled decision; no timestamp precision is invented.
    - **Undecided Card Overlap Ordering Safety**: If another undecided owner-capital event falls strictly inside the
       source-time span of an undecided multi-leg card transaction (`minCardTime < other.time < maxCardTime`),
       micro-ordering between the external flow and the intermediate card conversion legs cannot be proven without
@@ -299,14 +305,16 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      nothing is double-applied — restarts skip recorded ledger IDs even inside a held watermark window.
      The journal is a lifetime decision log: it is never pruned by the watermark. When the initial ATH is
      established, undecided decision-bearing rows below the observation are journaled as absorbed.
-     *Durable Owner-Capital Semantics (schema v8)*: alongside each journaled identity, the
+     *Durable Owner-Capital Semantics (schema v8; exact event time in schema v9)*: alongside each journaled identity, the
      `ath_applied_flows` journal persists the decision category, asset, actual balance delta, optional
-     normalized group (card refid), and a decision version in the same checkpoint transaction. Already-decided
+     normalized group (card refid), decision version, and exact `event_time_millis` for new semantic rows in the same
+     checkpoint transaction. Already-decided
      ordinary owner flows (ACH/wire deposits and withdrawals) replay from these persisted semantics, so a
      late-arriving flow still reconstructs the correct pre-flow basis even when exchange provenance no longer
      proves the historical event; current authoritative provenance remains mandatory only for rows that have
-     not been decided yet. Persisted semantics that disagree with the raw ledger row fail closed with
-     `PRE_FLOW_BASIS_UNCERTAIN`. Legacy identity-only journal rows (pre-v8 or presumed by the migration below)
+     not been decided yet. New persisted semantic timestamps and raw ledger identity must agree at millisecond
+     precision; disagreement fails closed with `PRE_FLOW_BASIS_UNCERTAIN`. Pre-v9 semantic rows use the retained
+     ledger timestamp when their exact column is null. Legacy identity-only journal rows (pre-v8 or presumed by the migration below)
      keep their prior behavior when current provenance still proves owner capital and fail closed instead of
      silently omitting when it cannot, if the row intersects the active reconstruction interval.
      *Migration Limitation*: Databases upgraded from older timestamp-window releases perform a one-time migration

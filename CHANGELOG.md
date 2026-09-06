@@ -32,6 +32,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disagree with the raw ledger row fail closed with `PRE_FLOW_BASIS_UNCERTAIN`; legacy
   identity-only journal rows keep their prior behavior when current provenance still
   proves owner capital, and fail closed in the active reconstruction interval when it cannot.
+- **Millisecond-faithful owner-flow replay (schema v9 `ath-applied-flow-event-millisecond-precision`)**:
+  new semantic decisions persist the exact ledger event timestamp alongside the compatibility
+  second timestamp. Historical replay now uses `event_time_millis` and rejects semantic rows
+  whose exact timestamp disagrees with the retained ledger identity, so a committed ACH/wire
+  decision cannot cross a predecessor snapshot, observation, or ordering boundary because of
+  truncation. Pre-v9 semantic rows use the retained ledger timestamp when the new column is null;
+  legacy identity-only rows retain null semantic columns and do not receive invented precision.
 
 ## [6.17.34] - 2026-09-05
 

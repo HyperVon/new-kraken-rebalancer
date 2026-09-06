@@ -4563,6 +4563,258 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
+        "durable ACH after a same-second predecessor is replayed with millisecond precision" {
+            runTest {
+                val predecessor = t0.plusMillis(500)
+                val achA = deposit("ach-ms-after", t0.plusMillis(900), "1000.00", "ACH-MS-A")
+                val achB = deposit("ach-ms-late", t0.plusSeconds(2), "1000.00", "ACH-MS-B")
+                val observation = t0.plusSeconds(3)
+                seedDurableOwnerReplay(
+                    predecessor = predecessor,
+                    predecessorTotal = "10000.00",
+                    currentAth = "11000.00",
+                    decidedFlow = achA,
+                    lateFlow = achB,
+                    observation = observation,
+                )
+
+                val result = analyzer(
+                    observation,
+                    FundingProvenanceResolver { event ->
+                        if (event.ledgerId == achB.ledgerId) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+                    },
+                ).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = observation,
+                )
+
+                // The exact predecessor basis is 10,000 + ACH A 1,000 = 11,000;
+                // 11,000 * (11,000 + 1,000) / 11,000 = 12,000.
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("12000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf(achB.ledgerId)) shouldBe setOf(achB.ledgerId)
+                statsRepository.getAppliedAthFlows(listOf(achB.ledgerId)).single().eventTimeMillis shouldBe
+                    achB.time.toEpochMilli()
+            }
+        }
+
+        "pre-v9 durable semantic owner flow replays with the retained ledger timestamp" {
+            runTest {
+                val predecessor = t0.plusMillis(500)
+                val achA = deposit("ach-ms-v8", t0.plusMillis(900), "1000.00", "ACH-MS-V8")
+                val achB = deposit("ach-ms-v8-late", t0.plusSeconds(2), "1000.00", "ACH-MS-V8-LATE")
+                val observation = t0.plusSeconds(3)
+                seedDurableOwnerReplay(
+                    predecessor = predecessor,
+                    predecessorTotal = "10000.00",
+                    currentAth = "11000.00",
+                    decidedFlow = achA,
+                    lateFlow = achB,
+                    observation = observation,
+                    decidedEventTimeMillis = null,
+                )
+
+                val result = analyzer(
+                    observation,
+                    FundingProvenanceResolver { event ->
+                        if (event.ledgerId == achB.ledgerId) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+                    },
+                ).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = observation,
+                )
+
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("12000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf(achB.ledgerId)) shouldBe setOf(achB.ledgerId)
+            }
+        }
+
+        "durable ACH before a same-second predecessor is not replayed" {
+            runTest {
+                val predecessor = t0.plusMillis(500)
+                val achA = deposit("ach-ms-before", t0.plusMillis(400), "1000.00", "ACH-MS-BEFORE")
+                val achB = deposit("ach-ms-late-before", t0.plusSeconds(2), "1000.00", "ACH-MS-LATE-BEFORE")
+                val observation = t0.plusSeconds(3)
+                seedDurableOwnerReplay(
+                    predecessor = predecessor,
+                    predecessorTotal = "11000.00",
+                    currentAth = "20000.00",
+                    decidedFlow = achA,
+                    lateFlow = achB,
+                    observation = observation,
+                )
+
+                val result = analyzer(
+                    observation,
+                    FundingProvenanceResolver { event ->
+                        if (event.ledgerId == achB.ledgerId) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+                    },
+                ).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = observation,
+                )
+
+                // ACH A is already embedded in the 11,000 predecessor snapshot:
+                // 20,000 * (11,000 + 1,000) / 11,000 = 21,818.18.
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("21818.18"))
+                statsRepository.getAppliedAthFlowIds(listOf(achB.ledgerId)) shouldBe setOf(achB.ledgerId)
+            }
+        }
+
+        "durable semantic timestamp mismatch defers the late owner flow" {
+            runTest {
+                val predecessor = t0.plusMillis(500)
+                val achA = deposit("ach-ms-mismatch", t0.plusMillis(800), "1000.00", "ACH-MS-MISMATCH")
+                val achB = deposit("ach-ms-mismatch-late", t0.plusSeconds(2), "1000.00", "ACH-MS-MISMATCH-LATE")
+                val observation = t0.plusSeconds(3)
+                seedDurableOwnerReplay(
+                    predecessor = predecessor,
+                    predecessorTotal = "10000.00",
+                    currentAth = "11000.00",
+                    decidedFlow = achA,
+                    lateFlow = achB,
+                    observation = observation,
+                    decidedEventTimeMillis = t0.plusMillis(900).toEpochMilli(),
+                )
+
+                val result = analyzer(
+                    observation,
+                    FundingProvenanceResolver { event ->
+                        if (event.ledgerId == achB.ledgerId) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+                    },
+                ).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = observation,
+                )
+
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("0.0000"),
+                    AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN,
+                )
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("11000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf(achB.ledgerId)) shouldBe emptySet()
+            }
+        }
+
+        "sub-second owner-flow ordering uncertainty remains fail closed" {
+            runTest {
+                val predecessor = t0
+                val achA = deposit("ach-ms-ordering", t0.plusMillis(100), "1000.00", "ACH-MS-ORDERING")
+                val achB = deposit("ach-ms-ordering-late", t0.plusMillis(900), "1000.00", "ACH-MS-ORDERING-LATE")
+                val observation = t0.plusSeconds(2)
+                seedDurableOwnerReplay(
+                    predecessor = predecessor,
+                    predecessorTotal = "10000.00",
+                    currentAth = "11000.00",
+                    decidedFlow = achA,
+                    lateFlow = achB,
+                    observation = observation,
+                )
+
+                val result = analyzer(
+                    observation,
+                    FundingProvenanceResolver { event ->
+                        if (event.ledgerId == achB.ledgerId) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+                    },
+                ).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = observation,
+                )
+
+                result shouldBe AthUpdateResult.Deferred(
+                    BigDecimal("0.0000"),
+                    AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN,
+                )
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("11000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf(achB.ledgerId)) shouldBe emptySet()
+            }
+        }
+
+        "one-second owner-flow ordering boundary is not treated as uncertain" {
+            runTest {
+                val predecessor = t0.minusSeconds(1)
+                val achA = deposit("ach-ms-boundary", t0, "1000.00", "ACH-MS-BOUNDARY")
+                val achB = deposit("ach-ms-boundary-late", t0.plusMillis(1000), "1000.00", "ACH-MS-BOUNDARY-LATE")
+                val observation = t0.plusSeconds(2)
+                seedDurableOwnerReplay(
+                    predecessor = predecessor,
+                    predecessorTotal = "10000.00",
+                    currentAth = "11000.00",
+                    decidedFlow = achA,
+                    lateFlow = achB,
+                    observation = observation,
+                )
+
+                val result = analyzer(
+                    observation,
+                    FundingProvenanceResolver { event ->
+                        if (event.ledgerId == achB.ledgerId) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+                    },
+                ).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = observation,
+                )
+
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("12000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf(achB.ledgerId)) shouldBe setOf(achB.ledgerId)
+            }
+        }
+
+        "durable withdrawal after a same-second predecessor replays its negative delta" {
+            runTest {
+                val predecessor = t0.plusMillis(500)
+                val withdrawal = LedgerEvent(
+                    ledgerId = "withdraw-ms-after",
+                    refid = "WITHDRAW-MS-A",
+                    time = t0.plusMillis(900),
+                    type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    asset = "USD",
+                    amount = BigDecimal("-3000.00"),
+                )
+                val lateDeposit = deposit("withdraw-ms-late", t0.plusSeconds(2), "1000.00", "WITHDRAW-MS-LATE")
+                val observation = t0.plusSeconds(3)
+                seedDurableOwnerReplay(
+                    predecessor = predecessor,
+                    predecessorTotal = "15000.00",
+                    currentAth = "20000.00",
+                    decidedFlow = withdrawal,
+                    lateFlow = lateDeposit,
+                    observation = observation,
+                )
+
+                val result = analyzer(
+                    observation,
+                    FundingProvenanceResolver { event ->
+                        if (event.ledgerId == lateDeposit.ledgerId) {
+                            FundingEvidence.EXTERNAL
+                        } else {
+                            FundingEvidence.UNRESOLVED
+                        }
+                    },
+                ).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("13000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = observation,
+                )
+
+                // The exact predecessor basis is 15,000 - 3,000 = 12,000;
+                // 20,000 * (12,000 + 1,000) / 12,000
+                // = 21,666.67.
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("21666.67"))
+                statsRepository.getAppliedAthFlowIds(listOf(lateDeposit.ledgerId)) shouldBe setOf(lateDeposit.ledgerId)
+            }
+        }
+
         "decided card plus decided ACH plus late-arriving ACH correctly replays card timed deltas and raw ACH" {
             runTest {
                 val tSnapshot = t60
@@ -5590,6 +5842,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                                         actualBalanceDelta =
                                         BigDecimal(if (semanticKind == "conflict") "2000" else "1000"),
                                         decisionVersion = if (semanticKind == "unknown-version") 2 else 1,
+                                        eventTimeMillis = oldTime.toEpochMilli(),
                                     )
                                 },
                             ),
@@ -5658,6 +5911,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                             asset = "USD",
                             actualBalanceDelta = BigDecimal("-3000.00"),
                             decisionVersion = 1,
+                            eventTimeMillis = withdrawal.time.toEpochMilli(),
                         ),
                     ),
                 )
@@ -5817,6 +6071,42 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     setOf("card-dep-same", "bank-same")
             }
         }
+    }
+
+    private suspend fun seedDurableOwnerReplay(
+        predecessor: Instant,
+        predecessorTotal: String,
+        currentAth: String,
+        decidedFlow: LedgerEvent,
+        lateFlow: LedgerEvent,
+        observation: Instant,
+        decidedEventTimeMillis: Long? = decidedFlow.time.toEpochMilli(),
+    ) {
+        statsRepository.save(PortfolioStats(BigDecimal(currentAth), BigDecimal.ZERO))
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+            predecessor.epochSecond.toString(),
+        )
+        ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+        tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(predecessor, BigDecimal(predecessorTotal)))
+        ledgerRepository.saveLedgers(listOf(decidedFlow, lateFlow))
+        statsRepository.journalPresumedDecidedFlows(
+            listOf(
+                AppliedAthFlow(
+                    ledgerId = decidedFlow.ledgerId,
+                    eventTimeSec = decidedFlow.time.epochSecond,
+                    decisionCategory = FlowCategory.OWNER_CAPITAL.name,
+                    asset = Asset.normalizeLedgerAsset(decidedFlow.asset).uppercase(),
+                    actualBalanceDelta = decidedFlow.netBalanceDelta(),
+                    decisionVersion = 1,
+                    eventTimeMillis = decidedEventTimeMillis,
+                ),
+            ),
+        )
+        ledgerRepository.setSyncMetadata(
+            SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+            observation.epochSecond.toString(),
+        )
     }
 
     private suspend fun seedObservationBoundaryCase(

@@ -140,6 +140,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                     actualBalanceDelta = BigDecimal("1000.00000000"),
                     normalizedGroupId = "card-ref-1",
                     decisionVersion = 1,
+                    eventTimeMillis = 3000123L,
                 )
                 val identityOnly = AppliedAthFlow("dep-legacy", 4000L)
                 repository.saveAthStateWithFlowCheckpoint(
@@ -157,8 +158,10 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                     .shouldBeEqualComparingTo(BigDecimal("1000.00000000"))
                 loaded.getValue("dep-sem").normalizedGroupId shouldBe "card-ref-1"
                 loaded.getValue("dep-sem").decisionVersion shouldBe 1
+                loaded.getValue("dep-sem").eventTimeMillis shouldBe 3000123L
                 loaded.getValue("dep-legacy").decisionCategory shouldBe null
                 loaded.getValue("dep-legacy").actualBalanceDelta shouldBe null
+                loaded.getValue("dep-legacy").eventTimeMillis shouldBe null
 
                 // Insert-if-absent: re-checkpointing a semantic identity keeps
                 // the originally journaled decision semantics intact.
@@ -169,7 +172,10 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                     ),
                     flowWatermarkSec = 6000L,
                 )
-                repository.getAppliedAthFlows(listOf("dep-sem")).single().eventTimeSec shouldBe 3000L
+                repository.getAppliedAthFlows(listOf("dep-sem")).single().let {
+                    it.eventTimeSec shouldBe 3000L
+                    it.eventTimeMillis shouldBe 3000123L
+                }
             }
         }
 

@@ -1004,9 +1004,11 @@ class PortfolioAnalyzerImpl(
             if (journalCategory == FlowCategory.OWNER_CAPITAL.name) {
                 val journalAsset = journal.asset
                 val journalDelta = journal.actualBalanceDelta
+                val journalEventTime = journal.eventTimeMillis?.let(Instant::ofEpochMilli) ?: event.time
                 if (journal.decisionVersion != 1 || journal.normalizedGroupId != null ||
                     journalAsset == null || journalDelta == null ||
                     journal.eventTimeSec != event.time.epochSecond ||
+                    (journal.eventTimeMillis != null && journal.eventTimeMillis != event.time.toEpochMilli()) ||
                     Asset.normalizeLedgerAsset(journalAsset).uppercase() !=
                     Asset.normalizeLedgerAsset(event.asset).uppercase() ||
                     journalDelta.compareTo(event.netBalanceDelta()) != 0
@@ -1021,7 +1023,7 @@ class PortfolioAnalyzerImpl(
                     decidedOwnerFlowContexts.add(
                         ActualOwnerFlowContext(
                             ledgerId = event.ledgerId,
-                            timestamp = Instant.ofEpochSecond(journal.eventTimeSec),
+                            timestamp = journalEventTime,
                             asset = Asset.normalizeLedgerAsset(journalAsset).uppercase(),
                             actualBalanceDelta = journalDelta,
                             isCardRepresentative = false,
@@ -1565,7 +1567,7 @@ class PortfolioAnalyzerImpl(
         reason: String,
         journal: AppliedAthFlow? = null,
     ): UnusableDecidedFundingContext {
-        val journalTime = journal?.let { Instant.ofEpochSecond(it.eventTimeSec) } ?: event.time
+        val journalTime = journal?.eventTimeMillis?.let(Instant::ofEpochMilli) ?: event.time
         return UnusableDecidedFundingContext(
             refid = event.refid ?: event.ledgerId,
             sourceLedgerIds = setOf(event.ledgerId),
@@ -1587,6 +1589,7 @@ class PortfolioAnalyzerImpl(
         actualBalanceDelta = event.netBalanceDelta(),
         normalizedGroupId = normalizedGroupId,
         decisionVersion = 1,
+        eventTimeMillis = event.time.toEpochMilli(),
     )
 
     internal fun isLinkedPassthroughLeg(event: LedgerEvent, allRetained: List<LedgerEvent>): Boolean {

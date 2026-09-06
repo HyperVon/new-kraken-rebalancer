@@ -145,6 +145,7 @@ class SqlitePortfolioStatsRepositoryImpl(
                     AthAppliedFlowTable.insertIgnore {
                         it[ledgerId] = flow.ledgerId
                         it[eventTimeSec] = flow.eventTimeSec
+                        it[eventTimeMillis] = flow.eventTimeMillis
                         it[decisionCategory] = flow.decisionCategory
                         it[asset] = flow.asset
                         it[actualBalanceDelta] = flow.actualBalanceDelta
@@ -181,6 +182,7 @@ class SqlitePortfolioStatsRepositoryImpl(
                             AppliedAthFlow(
                                 ledgerId = row[AthAppliedFlowTable.ledgerId],
                                 eventTimeSec = row[AthAppliedFlowTable.eventTimeSec],
+                                eventTimeMillis = row[AthAppliedFlowTable.eventTimeMillis],
                                 decisionCategory = row[AthAppliedFlowTable.decisionCategory],
                                 asset = row[AthAppliedFlowTable.asset],
                                 actualBalanceDelta = row[AthAppliedFlowTable.actualBalanceDelta],

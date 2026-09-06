@@ -14,6 +14,8 @@ data class AppliedAthFlow(
     val actualBalanceDelta: BigDecimal? = null,
     val normalizedGroupId: String? = null,
     val decisionVersion: Int? = null,
+    /** Exact ledger event time for semantic rows; null preserves legacy identity-only rows. */
+    val eventTimeMillis: Long? = null,
 )
 
 interface PortfolioStatsRepository {
