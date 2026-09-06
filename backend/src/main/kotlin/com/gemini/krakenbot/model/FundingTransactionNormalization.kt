@@ -10,8 +10,11 @@ import java.time.Instant
  * consume the synthetic USD owner-capital amount, while ATH basis replay uses
  * these raw per-leg effects to preserve the portfolio's real asset conversion
  * and fee drag exactly once.
+ *
+ * Each delta carries temporal and ledger identity so basis reconstruction at an
+ * arbitrary target time never replayed future card legs prematurely.
  */
-data class AssetDelta(val asset: String, val amount: BigDecimal)
+data class TimedAssetDelta(val ledgerId: String, val timestamp: Instant, val asset: String, val amount: BigDecimal)
 
 /**
  * Functional pricing interface for valuing transaction fees into USD.
@@ -36,7 +39,7 @@ sealed interface NormalizedFundingTransaction {
         val grossFundingUsd: BigDecimal,
         val feeUsd: BigDecimal,
         val netOwnerCapitalUsd: BigDecimal,
-        val actualPortfolioDeltas: List<AssetDelta>,
+        val actualPortfolioDeltas: List<TimedAssetDelta>,
         val sourceLedgerIds: List<String>,
         val representativeLedgerId: String,
     ) : NormalizedFundingTransaction
@@ -50,7 +53,7 @@ sealed interface NormalizedFundingTransaction {
         val grossFundingUsd: BigDecimal,
         val feeUsd: BigDecimal,
         val netOwnerCapitalUsd: BigDecimal,
-        val actualPortfolioDeltas: List<AssetDelta>,
+        val actualPortfolioDeltas: List<TimedAssetDelta>,
         val sourceLedgerIds: List<String>,
         val representativeLedgerId: String,
     ) : NormalizedFundingTransaction

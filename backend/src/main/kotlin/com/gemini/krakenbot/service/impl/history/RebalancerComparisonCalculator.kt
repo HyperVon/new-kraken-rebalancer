@@ -236,56 +236,41 @@ object RebalancerComparisonCalculator {
         // thesis instead of leaving new money in cash.
         val inceptionWeights = baselineValueWeights(baseline)
 
-        val intermediateBuilt = buildBenchmarkEvents(
-            trades = intermediateTrades,
-            ledgers = intermediateLedgers,
+        val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
+            priceProvider?.priceAt(feeAsset, timestamp)
+        }
+        val cardNormalizations = CardFundingNormalizer.normalizeAll(
+            events = rewards,
+            provenanceResolver = preparedProvenanceResolver,
+            priceProvider = feePriceProvider,
+        )
+
+        val benchmarkBuilt = buildBenchmarkEvents(
+            trades = intermediateTrades + reconciledTrades,
+            ledgers = intermediateLedgers + reconciledLedgers,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             baseline = baseline,
             inceptionWeights = inceptionWeights,
             priceProvider = priceProvider,
             classifications = ledgerClassifications,
-            provenanceResolver = preparedProvenanceResolver,
+            cardNormalizations = cardNormalizations,
         )
-        if (intermediateBuilt.ambiguousAt != null) {
+        if (benchmarkBuilt.ambiguousAt != null) {
             return unavailable(
                 reason = ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE,
-                unavailableAt = intermediateBuilt.ambiguousAt,
+                unavailableAt = benchmarkBuilt.ambiguousAt,
                 baselineTimestamp = baseline.timestamp,
             )
         }
-        if (intermediateBuilt.unpriceableAt != null) {
+        if (benchmarkBuilt.unpriceableAt != null) {
             return unavailable(
                 reason = ComparisonUnavailableReason.MISSING_PRICE,
-                unavailableAt = intermediateBuilt.unpriceableAt,
-                baselineTimestamp = baseline.timestamp,
-            )
-        }
-        val windowBuilt = buildBenchmarkEvents(
-            trades = reconciledTrades,
-            ledgers = reconciledLedgers,
-            knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-            baseline = baseline,
-            inceptionWeights = inceptionWeights,
-            priceProvider = priceProvider,
-            classifications = ledgerClassifications,
-            provenanceResolver = preparedProvenanceResolver,
-        )
-        if (windowBuilt.ambiguousAt != null) {
-            return unavailable(
-                reason = ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE,
-                unavailableAt = windowBuilt.ambiguousAt,
-                baselineTimestamp = baseline.timestamp,
-            )
-        }
-        if (windowBuilt.unpriceableAt != null) {
-            return unavailable(
-                reason = ComparisonUnavailableReason.MISSING_PRICE,
-                unavailableAt = windowBuilt.unpriceableAt,
+                unavailableAt = benchmarkBuilt.unpriceableAt,
                 baselineTimestamp = baseline.timestamp,
             )
         }
 
-        val benchmarkEvents = (intermediateBuilt.events + windowBuilt.events).sortedBy { it.timestamp }
+        val benchmarkEvents = benchmarkBuilt.events.sortedBy { it.timestamp }
         val unorderedAt = findUnorderedBenchmarkEventTimestamp(
             events = benchmarkEvents,
             baselineAssetSymbols = baseline.assets.keys.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet(),
@@ -1328,7 +1313,7 @@ object RebalancerComparisonCalculator {
         inceptionWeights: Map<String, BigDecimal>,
         priceProvider: HistoricalPriceProvider?,
         classifications: Map<String, FlowCategory>,
-        provenanceResolver: FundingProvenanceResolver,
+        cardNormalizations: List<NormalizedFundingTransaction>,
     ): BuiltEvents {
         val postBaseline = ledgers.filter { reconciledLedger ->
             !reconciledLedger.embeddedInBaseline &&
@@ -1338,14 +1323,6 @@ object RebalancerComparisonCalculator {
                         reconciledLedger.ledger.time > baseline.balancesObservedAt
                     )
         }
-        val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
-            priceProvider?.priceAt(feeAsset, timestamp)
-        }
-        val cardNormalizations = CardFundingNormalizer.normalizeAll(
-            events = ledgers.map { it.ledger },
-            provenanceResolver = provenanceResolver,
-            priceProvider = feePriceProvider,
-        )
         val postBaselineById = postBaseline.associateBy { it.ledger.ledgerId }
         val events = mutableListOf<BenchmarkEvent>()
         val consumedLedgerIds = mutableSetOf<String>()
@@ -1909,6 +1886,14 @@ object RebalancerComparisonCalculator {
     ): List<BenchmarkEvent> {
         val prepared = provenanceResolver.prepare(ledgers)
         val classifications = LedgerFlowClassifier.classifyAll(ledgers, prepared)
+        val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
+            priceProvider?.priceAt(feeAsset, timestamp)
+        }
+        val cardNormalizations = CardFundingNormalizer.normalizeAll(
+            events = ledgers,
+            provenanceResolver = prepared,
+            priceProvider = feePriceProvider,
+        )
         val reconciled = ledgers.map {
             ReconciledLedger(
                 ledger = it,
@@ -1924,7 +1909,7 @@ object RebalancerComparisonCalculator {
             inceptionWeights = inceptionWeights,
             priceProvider = priceProvider,
             classifications = classifications,
-            provenanceResolver = prepared,
+            cardNormalizations = cardNormalizations,
         ).events
     }
 }

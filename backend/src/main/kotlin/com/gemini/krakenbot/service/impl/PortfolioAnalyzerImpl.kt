@@ -11,7 +11,6 @@ import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.AssetDelta
 import com.gemini.krakenbot.model.CardFeePriceProvider
 import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.FundingProvenanceResolver
@@ -23,6 +22,7 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TimedAssetDelta
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.AppliedAthFlow
 import com.gemini.krakenbot.repository.LedgerRepository
@@ -420,7 +420,7 @@ class PortfolioAnalyzerImpl(
         val eventTime: Instant,
         val sourceLedgerIds: Set<String>,
         val sourceTimes: List<Instant>,
-        val actualPortfolioDeltas: List<AssetDelta>,
+        val actualPortfolioDeltas: List<TimedAssetDelta>,
     )
 
     /**
@@ -714,7 +714,8 @@ class PortfolioAnalyzerImpl(
                     "funding/plumbing siblings; refusing partial migration replay",
             )
         }
-        val relevantRefids = CardFundingNormalizer.identifyCandidateGroups(allRetained)
+        val candidateGroups = CardFundingNormalizer.identifyCandidateGroups(allRetained)
+        val relevantRefids = candidateGroups
             .filterValues { group -> group.any { it.ledgerId in unappliedIds } }
             .keys
 
@@ -730,20 +731,23 @@ class PortfolioAnalyzerImpl(
         val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
             resolvePriceForEvent(feeAsset, timestamp, balancesObservedAt, tradesRepo)
         }
-        val cardNormalizations = CardFundingNormalizer.normalizeAll(
-            events = allRetained,
-            provenanceResolver = scanned.preparedProvenanceResolver,
-            priceProvider = feePriceProvider,
-        )
-        for (norm in cardNormalizations) {
-            val normRefid = when (norm) {
-                is NormalizedFundingTransaction.Ambiguous -> norm.refid
-                is NormalizedFundingTransaction.UnpriceableFee -> norm.refid
-                is NormalizedFundingTransaction.OwnerContribution -> norm.refid
-                is NormalizedFundingTransaction.OwnerWithdrawal -> norm.refid
-                NormalizedFundingTransaction.NotApplicable -> null
+
+        // 1. Economic owner-capital normalization: ONLY for groups that intersect undecided identities.
+        // Full normalization requires converting crypto-denominated fees to USD.
+        val cardNormalizations = mutableListOf<NormalizedFundingTransaction>()
+        for (refid in relevantRefids) {
+            val group = candidateGroups.getValue(refid)
+            val norm = CardFundingNormalizer.normalizeGroup(
+                refid = refid,
+                group = group,
+                provenanceResolver = scanned.preparedProvenanceResolver,
+                priceProvider = feePriceProvider,
+            )
+            if (norm !is NormalizedFundingTransaction.NotApplicable) {
+                cardNormalizations.add(norm)
             }
-            if (normRefid !in relevantRefids) continue
+        }
+        for (norm in cardNormalizations) {
             when (norm) {
                 is NormalizedFundingTransaction.Ambiguous -> {
                     log.warn(
@@ -774,11 +778,13 @@ class PortfolioAnalyzerImpl(
                 else -> Unit
             }
         }
+
         val cardContributions = cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerContribution>()
             .associateBy { it.representativeLedgerId }
         val cardWithdrawals = cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerWithdrawal>()
             .associateBy { it.representativeLedgerId }
-        val cardActualFlows = cardNormalizations.mapNotNull { norm ->
+
+        val undecidedActualFlows = cardNormalizations.mapNotNull { norm ->
             when (norm) {
                 is NormalizedFundingTransaction.OwnerContribution -> CardActualFlow(
                     representativeLedgerId = norm.representativeLedgerId,
@@ -799,13 +805,32 @@ class PortfolioAnalyzerImpl(
                 else -> null
             }
         }
-        val allCardSourceIds = cardNormalizations.flatMap { norm ->
-            when (norm) {
-                is NormalizedFundingTransaction.OwnerContribution -> norm.sourceLedgerIds
-                is NormalizedFundingTransaction.OwnerWithdrawal -> norm.sourceLedgerIds
-                else -> emptyList()
+
+        // 2. Actual-balance context extraction: for already-decided historical groups.
+        // Uses raw netBalanceDelta() directly from ledger rows; does NOT re-price historical fees.
+        val decidedGroups = candidateGroups.filterKeys { it !in relevantRefids }
+        val decidedActualFlows = mutableListOf<CardActualFlow>()
+        for ((refid, group) in decidedGroups) {
+            val parsed = CardFundingNormalizer.parseCardFundingGroup(
+                refid = refid,
+                group = group,
+                provenanceResolver = scanned.preparedProvenanceResolver,
+            )
+            if (parsed is CardFundingNormalizer.ParsedGroup.Valid) {
+                decidedActualFlows.add(
+                    CardActualFlow(
+                        representativeLedgerId = parsed.representative.ledgerId,
+                        eventTime = parsed.representative.time,
+                        sourceLedgerIds = parsed.sourceLedgerIds,
+                        sourceTimes = allRetained.filter { it.ledgerId in parsed.sourceLedgerIds }.map { it.time },
+                        actualPortfolioDeltas = parsed.actualPortfolioDeltas,
+                    ),
+                )
             }
-        }.toSet()
+        }
+
+        val cardActualFlows = undecidedActualFlows + decidedActualFlows
+        val allCardSourceIds = cardActualFlows.flatMap { it.sourceLedgerIds }.toSet()
         val allCardPlumbingIds = allCardSourceIds - cardActualFlows.map { it.representativeLedgerId }.toSet()
 
         val skippedDecided = mutableListOf<AppliedAthFlow>()
@@ -1041,19 +1066,17 @@ class PortfolioAnalyzerImpl(
         }
 
         // The current group is about to be applied as a synthetic owner-capital
-        // flow, and prior card representatives are replayed through their
-        // actual asset deltas below. Exclude both from the historical card
-        // context so neither group is replayed twice.
-        val priorFlowRepresentativeIds = priorFlows.mapTo(mutableSetOf()) { it.first.ledgerId }
-        val excludedCardRepresentativeIds = currentFlowRepresentativeIds + priorFlowRepresentativeIds
-        val excludedCardSourceIds = cardActualFlows
-            .filter { it.representativeLedgerId in excludedCardRepresentativeIds }
+        // flow, and eligible card flows are replayed through their actual per-leg
+        // timed deltas below.
+        val currentFlowCardSourceIds = cardActualFlows
+            .filter { it.representativeLedgerId in currentFlowRepresentativeIds }
             .flatMapTo(mutableSetOf()) { it.sourceLedgerIds }
-        val replayableCardFlows = cardActualFlows.filter {
-            it.representativeLedgerId !in excludedCardRepresentativeIds
+        val eligibleCardFlows = cardActualFlows.filter {
+            it.representativeLedgerId !in currentFlowRepresentativeIds
         }
-        val replayableCardObservationEvents = cardObservationEvents.filter {
-            it.ledgerId !in excludedCardSourceIds
+        val eligibleCardSourceIds = eligibleCardFlows.flatMapTo(mutableSetOf()) { it.sourceLedgerIds }
+        val eligibleCardObservationEvents = cardObservationEvents.filter {
+            it.ledgerId !in currentFlowCardSourceIds
         }
 
         // A persisted timestamp does not establish whether a trade or a
@@ -1064,8 +1087,10 @@ class PortfolioAnalyzerImpl(
         // boundary is available.
         if (externalBalances.any { isNearEventTime(it.time, eventTime) } ||
             trades.any { isNearEventTime(it.timestamp, eventTime) } ||
-            replayableCardFlows.any { flow ->
-                flow.sourceTimes.ifEmpty { listOf(flow.eventTime) }.any { isNearEventTime(it, eventTime) }
+            eligibleCardFlows.any { flow ->
+                val times = flow.actualPortfolioDeltas.map { it.timestamp }
+                    .ifEmpty { flow.sourceTimes.ifEmpty { listOf(flow.eventTime) } }
+                times.any { isNearEventTime(it, eventTime) }
             }
         ) {
             throw AthTrustFailureException(
@@ -1095,18 +1120,8 @@ class PortfolioAnalyzerImpl(
 
         // Replay intervening trades between predecessor snapshot and flow time
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
-        val cardActualByRepresentative = cardActualFlows.associateBy { it.representativeLedgerId }
-        fun replayActualCardDeltas(cardFlow: CardActualFlow) {
-            for (delta in cardFlow.actualPortfolioDeltas) {
-                val asset = Asset.normalizeLedgerAsset(delta.asset).uppercase()
-                if (isInAthUniverse(asset, universe)) {
-                    reconstructedHoldings[asset] =
-                        (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(delta.amount)
-                }
-            }
-        }
         val uniqueInterveningLedgerEvents =
-            (replayableCardObservationEvents + externalBalances + priorFlows.map { it.first })
+            (eligibleCardObservationEvents + externalBalances + priorFlows.map { it.first })
                 .filter { ledger ->
                     isInAthUniverse(Asset.normalizeLedgerAsset(ledger.asset).uppercase(), universe) &&
                         !ledger.time.isAfter(eventTime)
@@ -1176,39 +1191,33 @@ class PortfolioAnalyzerImpl(
             }
         }
 
-        // Replay intervening prior flows between predecessor snapshot and flow time
+        // Replay intervening non-card prior flows between predecessor snapshot and flow time
         for ((event, _) in priorFlows) {
+            if (event.ledgerId in eligibleCardSourceIds) continue
             val replayAfterSnapshot = event.time.isAfter(predecessor.timestamp) && !event.time.isAfter(eventTime)
             val replayAfterObservation = event.ledgerId !in embeddedLedgerIds &&
                 event.time.isAfter(predecessorObservationBoundary) &&
                 !event.time.isAfter(predecessor.timestamp) &&
                 !event.time.isAfter(eventTime)
             if (replayAfterSnapshot || replayAfterObservation) {
-                val cardFlow = cardActualByRepresentative[event.ledgerId]
-                if (cardFlow != null) {
-                    replayActualCardDeltas(cardFlow)
-                } else {
-                    val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
-                    if (isInAthUniverse(asset, universe)) {
-                        reconstructedHoldings[asset] =
-                            (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(event.netBalanceDelta())
-                    }
+                val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
+                if (isInAthUniverse(asset, universe)) {
+                    reconstructedHoldings[asset] =
+                        (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(event.netBalanceDelta())
                 }
             }
         }
 
-        // Replay completed card groups through their actual per-leg effects,
+        // Replay completed card groups through their actual per-leg timed effects,
         // never through the representative USD deposit. This preserves the
         // bought asset and each fee exactly once when a later owner flow needs
-        // a pre-flow basis.
-        for (cardFlow in replayableCardFlows) {
+        // a pre-flow basis, while preventing temporal look-ahead of future legs.
+        for (cardFlow in eligibleCardFlows) {
             val sourceTimes = cardFlow.sourceTimes.ifEmpty { listOf(cardFlow.eventTime) }
             val allBeforeOrAtSnapshot = sourceTimes.all { !it.isAfter(predecessor.timestamp) }
             val allAfterSnapshot = sourceTimes.all { it.isAfter(predecessor.timestamp) }
             val allBeforeOrAtObservation = sourceTimes.all { !it.isAfter(predecessorObservationBoundary) }
             val allAfterObservation = sourceTimes.all { it.isAfter(predecessorObservationBoundary) }
-            val allBeforeOrAtFlow = sourceTimes.all { !it.isAfter(eventTime) }
-            if (!allBeforeOrAtFlow) continue
 
             // A predecessor saved in the middle of a multi-leg card group
             // cannot establish whether the snapshot already contains the
@@ -1229,12 +1238,21 @@ class PortfolioAnalyzerImpl(
                 )
             }
 
-            val replayAfterSnapshot = allAfterSnapshot
-            val replayAfterObservation = cardFlow.sourceLedgerIds.none { it in embeddedLedgerIds } &&
-                allAfterObservation &&
-                sourceTimes.all { !it.isAfter(predecessor.timestamp) }
-            if (replayAfterSnapshot || replayAfterObservation) {
-                replayActualCardDeltas(cardFlow)
+            for (delta in cardFlow.actualPortfolioDeltas) {
+                // Future deltas are never replayed into earlier pre-flow portfolio bases
+                if (delta.timestamp.isAfter(eventTime)) continue
+
+                val replayAfterSnapshot = delta.timestamp.isAfter(predecessor.timestamp)
+                val replayAfterObservation = delta.ledgerId !in embeddedLedgerIds &&
+                    delta.timestamp.isAfter(predecessorObservationBoundary) &&
+                    !delta.timestamp.isAfter(predecessor.timestamp)
+                if (replayAfterSnapshot || replayAfterObservation) {
+                    val asset = Asset.normalizeLedgerAsset(delta.asset).uppercase()
+                    if (isInAthUniverse(asset, universe)) {
+                        reconstructedHoldings[asset] =
+                            (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(delta.amount)
+                    }
+                }
             }
         }
 

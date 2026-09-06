@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.33] - 2026-09-05
+
+### Fixed
+
+- **Timed actual card portfolio effects (`TimedAssetDelta`)**: Card legs now carry
+  distinct ledger and timestamp identities (`TimedAssetDelta`). Pre-flow ATH basis
+  reconstruction evaluates card effects leg-by-leg against the target event time,
+  preventing future legs (such as a later BTC receive) from leaking into pre-flow
+  holdings when an intervening owner flow or balance observation occurs.
+- **Single-pass lifetime benchmark normalization**: Buy & Hold comparison normalizes
+  card funding once across the entire queried lifetime ledger set prior to benchmark
+  event construction, ensuring user-selected display windows (24h, 7d, 30d, 90d, All)
+  never split multi-leg card transactions across window boundaries or trigger false
+  unavailable results.
+- **Decoupled historical card context**: Already-decided card groups contribute only
+  raw balance effects (`netBalanceDelta()`) during basis reconstruction and no longer
+  re-price historical crypto fees. Historical pricing gaps on decided transactions
+  cannot block new ordinary bank deposits, while unpriceable fees on undecided groups
+  continue to fail closed as `HISTORICAL_PRICE_UNAVAILABLE`.
+
+### Docs
+
+- Documented `TimedAssetDelta` temporal identity, single-pass lifetime benchmark
+  normalization across display-window partitions, and fee-repricing decoupling for
+  decided historical card groups in `docs/ALGORITHM.md`.
+
 ## [6.17.32] - 2026-09-05
 
 ### Fixed

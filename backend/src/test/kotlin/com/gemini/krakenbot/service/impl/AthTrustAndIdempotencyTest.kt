@@ -723,6 +723,321 @@ class AthTrustAndIdempotencyTest : StringSpec() {
             }
         }
 
+        "owner flow inside card transaction replays preceding card deltas and excludes future legs" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("30000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                tradeRepository.saveSnapshot(
+                    PortfolioSnapshot(
+                        timestamp = t60,
+                        totalValueUSD = BigDecimal("10000.00"),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal("0.10"),
+                                price = BigDecimal("50000.00"),
+                                valueUSD = BigDecimal("5000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                            "USD" to TestFixtures.assetSnapshot(
+                                symbol = "USD",
+                                balance = BigDecimal("5000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("5000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    ),
+                )
+                val cardRef = "CARD-TIMED-SPLIT"
+                val bankRef = "ACH-INSIDE-CARD"
+                val cardTime = t70
+                val bankTime = cardTime.plusSeconds(45)
+                val cardDeposit = LedgerEvent(
+                    ledgerId = "split-card-deposit",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("5000.00"),
+                )
+                val cardSpend = LedgerEvent(
+                    ledgerId = "split-card-spend",
+                    refid = cardRef,
+                    time = cardTime.plusSeconds(30),
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                val cardReceive = LedgerEvent(
+                    ledgerId = "split-card-receive",
+                    refid = cardRef,
+                    time = cardTime.plusSeconds(60),
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    asset = "BTC",
+                    amount = BigDecimal("0.0996"),
+                    fee = BigDecimal("0.0001"),
+                )
+                val bankDeposit = LedgerEvent(
+                    ledgerId = "inside-card-bank",
+                    refid = bankRef,
+                    time = bankTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                )
+                ledgerRepository.saveLedgers(listOf(cardDeposit, cardSpend, cardReceive, bankDeposit))
+                statsRepository.journalPresumedDecidedFlows(
+                    listOf(
+                        AppliedAthFlow(cardDeposit.ledgerId, cardDeposit.time.epochSecond),
+                        AppliedAthFlow(cardSpend.ledgerId, cardSpend.time.epochSecond),
+                        AppliedAthFlow(cardReceive.ledgerId, cardReceive.time.epochSecond),
+                    ),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    bankTime.epochSecond.toString(),
+                )
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    bankTime.minusSeconds(1800).epochSecond to BigDecimal("60000.00"),
+                )
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = cardRef,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            time = cardTime,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                        DepositStatusRecord(
+                            refid = bankRef,
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                            time = bankTime,
+                            status = "Success",
+                            method = "ACH",
+                        ),
+                    ),
+                )
+
+                val result = analyzer(bankTime, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = bankTime,
+                )
+
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                // Holdings immediately before bank deposit at t70+45s:
+                // Predecessor snapshot: 0.10 BTC at $50,000 ($5,000) + 5,000 USD = $10,000
+                // Card deposit (+5,000) and card spend (-5,000 net) = 0 net USD delta
+                // Future card receive (+0.0995 BTC at t70+60s) is strictly excluded!
+                // Pre-flow basis = 0.10 BTC * $50,000 + $5,000 USD = $10,000.
+                // Scaled ATH = 30,000 * 12,000 / 10,000 = 36,000.00.
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("36000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf(bankDeposit.ledgerId)) shouldBe setOf(bankDeposit.ledgerId)
+            }
+        }
+
+        "an old decided card group with unpriceable crypto fee does not block a new ordinary bank deposit" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("30000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                tradeRepository.saveSnapshot(
+                    PortfolioSnapshot(
+                        timestamp = t60,
+                        totalValueUSD = BigDecimal("10000.00"),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal("0.10"),
+                                price = BigDecimal("50000.00"),
+                                valueUSD = BigDecimal("5000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                            "USD" to TestFixtures.assetSnapshot(
+                                symbol = "USD",
+                                balance = BigDecimal("5000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("5000.00"),
+                                targetPercent = BigDecimal("50"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    ),
+                )
+                val cardRef = "CARD-UNPRICEABLE-DECIDED"
+                val bankRef = "ACH-NEW-AFTER-UNPRICEABLE"
+                val cardTime = t70
+                val bankTime = t0.plusSeconds(300)
+                val cardDeposit = LedgerEvent(
+                    ledgerId = "unpriceable-card-deposit",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("5000.00"),
+                )
+                val cardSpend = LedgerEvent(
+                    ledgerId = "unpriceable-card-spend",
+                    refid = cardRef,
+                    time = cardTime.plusMillis(100),
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                val cardReceive = LedgerEvent(
+                    ledgerId = "unpriceable-card-receive",
+                    refid = cardRef,
+                    time = cardTime.plusMillis(200),
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    asset = "BTC",
+                    amount = BigDecimal("0.0996"),
+                    fee = BigDecimal("0.0001"),
+                )
+                val bankDeposit = LedgerEvent(
+                    ledgerId = "after-unpriceable-bank",
+                    refid = bankRef,
+                    time = bankTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                )
+                ledgerRepository.saveLedgers(listOf(cardDeposit, cardSpend, cardReceive, bankDeposit))
+                statsRepository.journalPresumedDecidedFlows(
+                    listOf(
+                        AppliedAthFlow(cardDeposit.ledgerId, cardDeposit.time.epochSecond),
+                        AppliedAthFlow(cardSpend.ledgerId, cardSpend.time.epochSecond),
+                        AppliedAthFlow(cardReceive.ledgerId, cardReceive.time.epochSecond),
+                    ),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    bankTime.epochSecond.toString(),
+                )
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    bankTime.minusSeconds(1800).epochSecond to BigDecimal("60000.00"),
+                )
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = cardRef,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            time = cardTime,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                        DepositStatusRecord(
+                            refid = bankRef,
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                            time = bankTime,
+                            status = "Success",
+                            method = "ACH",
+                        ),
+                    ),
+                )
+
+                val result = analyzer(bankTime, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("17970.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = bankTime,
+                )
+
+                // Succeeds without fee repricing failure because decided groups only provide raw netBalanceDelta() deltas
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("31767.83"))
+            }
+        }
+
+        "an undecided card group with unpriceable crypto fee defers as HISTORICAL_PRICE_UNAVAILABLE" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("30000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t60, BigDecimal("10000.00")))
+                val cardRef = "CARD-UNDECIDED-UNPRICEABLE"
+                val cardTime = t70
+                val cardDeposit = LedgerEvent(
+                    ledgerId = "undecided-card-deposit",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("5000.00"),
+                )
+                val cardSpend = LedgerEvent(
+                    ledgerId = "undecided-card-spend",
+                    refid = cardRef,
+                    time = cardTime.plusMillis(100),
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                val cardReceive = LedgerEvent(
+                    ledgerId = "undecided-card-receive",
+                    refid = cardRef,
+                    time = cardTime.plusMillis(200),
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    asset = "BTC",
+                    amount = BigDecimal("0.0996"),
+                    fee = BigDecimal("0.0001"),
+                )
+                ledgerRepository.saveLedgers(listOf(cardDeposit, cardSpend, cardReceive))
+                // Not journaled: undecided
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    cardTime.plusSeconds(10).epochSecond.toString(),
+                )
+                // OHLC returns empty: fee cannot be priced
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = cardRef,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            time = cardTime,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                    ),
+                )
+
+                val result = analyzer(cardTime.plusSeconds(10), resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("15000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = cardTime.plusSeconds(10),
+                )
+
+                result.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
+                    AthTrustFailureReason.HISTORICAL_PRICE_UNAVAILABLE
+            }
+        }
+
         "a completed card asset outside the ATH universe is ignored during basis replay" {
             runTest {
                 statsRepository.save(PortfolioStats(BigDecimal("30000.00"), BigDecimal.ZERO))

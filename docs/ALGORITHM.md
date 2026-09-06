@@ -184,22 +184,25 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      (`event.netBalanceDelta() = amount - fee`) as `OWNER_CAPITAL`. ATH scales strictly on the net contributed
      funds, preventing fee drag from being misattributed as strategy loss or unproven plumbing.
    - **Prepared Card Funding Lifecycle**: ATH retains the full ledger batch for refid correlation, prepares
-     one immutable `FundingProvenanceResolver` snapshot, and passes that exact prepared instance to classification,
-     card normalization, and basis context. A confirmed card/consumer funding deposit is ambiguous until its
-     complete plumbing shape arrives (external deposit + USD `spend` + purchased-asset `receive` for a card buy);
-     incomplete rows defer ATH and remain unjournaled. Confirmed ordinary Wire/ACH funding without plumbing stays
-     `NotApplicable` to `CardFundingNormalizer` and is handled as ordinary owner capital. Every funding leg in a
-     normalized owner event must be `EXTERNAL`; unresolved siblings or external/internal mixtures are ambiguous,
-     all-internal groups are `NotApplicable`, and multiple external funding legs are unsupported unless a future
-     explicit shape is added. Only normalization groups intersecting the current undecided identity set can block
-     the current ATH; retained decided groups remain context, while a group split between decided and newly arrived
-     identities fails closed rather than applying only the new sibling.
+      one immutable `FundingProvenanceResolver` snapshot, and passes that exact prepared instance to classification,
+      card normalization, and basis context. A confirmed card/consumer funding deposit is ambiguous until its
+      complete plumbing shape arrives (external deposit + USD `spend` + purchased-asset `receive` for a card buy);
+      incomplete rows defer ATH and remain unjournaled. Confirmed ordinary Wire/ACH funding without plumbing stays
+      `NotApplicable` to `CardFundingNormalizer` and is handled as ordinary owner capital. Every funding leg in a
+      normalized owner event must be `EXTERNAL`; unresolved siblings or external/internal mixtures are ambiguous,
+      all-internal groups are `NotApplicable`, and multiple external funding legs are unsupported unless a future
+      explicit shape is added. Only normalization groups intersecting the current undecided identity set can block
+      the current ATH; retained decided groups remain context, while a group split between decided and newly arrived
+      identities fails closed rather than applying only the new sibling. Historical decided card groups contribute only
+      raw per-leg balance deltas without calling fee pricing providers, preventing historical pricing gaps on already-accounted
+      fees from blocking new ordinary bank deposits.
    - **Synthetic Capital vs Actual Effects**: `NormalizedFundingTransaction.OwnerContribution` and
-     `OwnerWithdrawal` carry both `netOwnerCapitalUsd` (the synthetic amount used for ATH scaling and Buy & Hold
-     inception-weight allocation) and exact per-leg `AssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
-     Buy & Hold consumes only the synthetic amount and never replays the conversion legs. ATH basis reconstruction
-     replays completed card actual deltas, including fees, exactly once and excludes both the representative funding
-     row and raw card plumbing rows from separate replay.
+      `OwnerWithdrawal` carry both `netOwnerCapitalUsd` (the synthetic amount used for ATH scaling and Buy & Hold
+      inception-weight allocation) and exact per-leg `TimedAssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
+      Each delta maintains its ledger ID and timestamp so that basis reconstruction at an arbitrary target time never
+      replays future card legs prematurely. Buy & Hold consumes only the synthetic amount and never replays the conversion legs.
+      ATH basis reconstruction replays completed card actual deltas, including fees, exactly once and excludes both the
+      representative funding row and raw card plumbing rows from separate replay.
    - **Ambiguous Funding Deferral & Fail-Closed Safety**: Unlike terminal neutral events (`INTERNAL_MOVE`,
      `TRADE_IGNORED`) or performance events (`EXTERNAL_BALANCE`) which are acknowledged in the decision journal,
      flows classified as `AMBIGUOUS` or `UNSUPPORTED` MUST NOT be journaled as decided or skipped. Instead, they
@@ -513,7 +516,10 @@ unavailable rather than imposing a lexical order.
 For card-funded Buy Crypto transactions, a centralized normalizer (`CardFundingNormalizer`)
 governs both ATH neutralization and Buy & Hold accounting, guaranteeing identical economic
 interpretation across the engine. Card funding legs must share a non-blank `refid` within a
-120-second proximity window (`MAX_CARD_TRANSACTION_SPAN_SECONDS = 120L`). The normalizer
+120-second proximity window (`MAX_CARD_TRANSACTION_SPAN_SECONDS = 120L`). Buy & Hold comparison
+normalizes card transactions once across the full queried lifetime ledger set before building benchmark
+events, ensuring user-selected display windows (e.g. 24h, 7d, 30d, 90d, All) never split multi-leg card
+transactions across window partitions or cause false unavailable states. The normalizer
 validates complete transaction shapes:
 
 1. *3-leg USD card buy crypto*: external funding (USD deposit), USD `spend`, and purchased-asset

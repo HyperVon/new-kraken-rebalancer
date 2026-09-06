@@ -7220,6 +7220,184 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[0].timestamp shouldBe tInception
             result.points[1].timestamp shouldBe tPost
         }
+
+        "display-window boundaries cannot split an economic card transaction across window partitions" {
+            val cardRef = "CARD-WINDOW-BOUNDARY-TEST"
+            val cardTime = now.plusSeconds(3600)
+            val inceptionSnap = snapshot(
+                timestamp = now,
+                totalValueUSD = "50000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                    "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                ),
+            )
+            val tEnd = now.plusSeconds(7200)
+            val endSnap = snapshot(
+                timestamp = tEnd,
+                totalValueUSD = "60976.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.5996", "60000.00", "35976.00"),
+                    "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                ),
+            )
+
+            // Economic transaction: deposit @ T-30s, spend @ T, receive @ T+20s
+            val cardDeposit = ledgerEvent(
+                timestamp = cardTime.minusSeconds(30),
+                asset = "USD",
+                amount = "5000.00",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                ledgerId = "boundary-card-deposit",
+                refid = cardRef,
+            )
+            val cardSpend = ledgerEvent(
+                timestamp = cardTime,
+                asset = "USD",
+                amount = "-4980.00",
+                fee = "20.00",
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                ledgerId = "boundary-card-spend",
+                refid = cardRef,
+            )
+            val cardReceive = ledgerEvent(
+                timestamp = cardTime.plusSeconds(20),
+                asset = "BTC",
+                amount = "0.0996",
+                type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                ledgerId = "boundary-card-receive",
+                refid = cardRef,
+            )
+            val allLedgers = listOf(cardDeposit, cardSpend, cardReceive)
+
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = cardRef,
+                        txid = "boundary-card-tx",
+                        asset = "USD",
+                        amount = BigDecimal("5000.00"),
+                        time = cardTime.minusSeconds(30),
+                        status = "Success",
+                        method = "Visa",
+                    ),
+                ),
+            )
+            val priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00")))
+
+            // 1. Full lifetime window (starts at inception)
+            val fullWindowSnaps = listOf(
+                inceptionSnap,
+                snapshot(
+                    timestamp = cardTime.plusSeconds(30),
+                    totalValueUSD = "54980.00",
+                    assets = mapOf(
+                        "BTC" to assetRow("0.5996", "50000.00", "29980.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                endSnap,
+            )
+            val fullResult = calculate(
+                snapshots = fullWindowSnaps,
+                rewards = allLedgers,
+                priceProvider = priceProvider,
+                provenanceResolver = provenance,
+            )
+            fullResult.availability shouldBe ComparisonAvailability.AVAILABLE
+            val expectedEndBuyAndHold = fullResult.points.last().buyAndHoldValueUSD
+
+            // 2. Window starting at T+1m (after card transaction completes, with inception snapshot passed)
+            val postTransactionWindowSnaps = listOf(
+                snapshot(
+                    timestamp = cardTime.plusSeconds(60),
+                    totalValueUSD = "54980.00",
+                    assets = mapOf(
+                        "BTC" to assetRow("0.5996", "50000.00", "29980.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                endSnap,
+            )
+            val postResult = calculate(
+                snapshots = postTransactionWindowSnaps,
+                rewards = allLedgers,
+                inceptionSnapshot = inceptionSnap,
+                priceProvider = priceProvider,
+                provenanceResolver = provenance,
+            )
+            postResult.availability shouldBe ComparisonAvailability.AVAILABLE
+            postResult.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo expectedEndBuyAndHold
+        }
+
+        "provenance preparation lifecycle executes prepare exactly once during comparison calculation" {
+            val cardRef = "CARD-PREPARE-ONCE"
+            val cardTime = now.plusSeconds(1800)
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                snapshot(
+                    cardTime.plusSeconds(1),
+                    "54980.00",
+                    mapOf(
+                        "BTC" to assetRow("0.5996", "50000.00", "29980.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "USD",
+                    amount = "5000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "USD",
+                    amount = "-4980.00",
+                    fee = "20.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    refid = cardRef,
+                ),
+                ledgerEvent(
+                    timestamp = cardTime,
+                    asset = "BTC",
+                    amount = "0.0996",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    refid = cardRef,
+                ),
+            )
+            var prepareCount = 0
+            val countingResolver = object : FundingProvenanceResolver {
+                override fun resolve(event: LedgerEvent): FundingEvidence =
+                    if (event.refid == cardRef) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+
+                override fun isCardFunding(event: LedgerEvent): Boolean = event.refid == cardRef
+
+                override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver {
+                    prepareCount++
+                    return this
+                }
+            }
+
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = ledgers,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = countingResolver,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            prepareCount shouldBe 1
+        }
     }
 
     private fun mixedCostSnapshots(knownObservation: Boolean): List<PortfolioSnapshot> =

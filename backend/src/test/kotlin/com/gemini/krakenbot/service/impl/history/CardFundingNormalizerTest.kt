@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.service.impl.history
 
-import com.gemini.krakenbot.model.AssetDelta
 import com.gemini.krakenbot.model.CardFeePriceProvider
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.FundingEvidence
@@ -10,6 +9,7 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.NormalizedFundingTransaction
 import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
+import com.gemini.krakenbot.model.TimedAssetDelta
 import com.gemini.krakenbot.model.WithdrawStatusRecord
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -238,9 +238,9 @@ class CardFundingNormalizerTest : StringSpec() {
             result.feeUsd shouldBeEqualComparingTo BigDecimal("20.00")
             result.netOwnerCapitalUsd shouldBeEqualComparingTo BigDecimal("4980.00")
             result.actualPortfolioDeltas shouldBe listOf(
-                AssetDelta("USD", BigDecimal("5000.00")),
-                AssetDelta("USD", BigDecimal("-5000.00")),
-                AssetDelta("BTC", BigDecimal("0.0996")),
+                TimedAssetDelta("1", baseTime.plusMillis(100), "USD", BigDecimal("5000.00")),
+                TimedAssetDelta("2", baseTime.plusMillis(350), "USD", BigDecimal("-5000.00")),
+                TimedAssetDelta("3", baseTime.plusMillis(600), "BTC", BigDecimal("0.0996")),
             )
             result.sourceLedgerIds shouldContainExactlyInAnyOrder listOf("1", "2", "3")
             result.representativeLedgerId shouldBe "1"
@@ -691,9 +691,9 @@ class CardFundingNormalizerTest : StringSpec() {
             result.feeUsd shouldBeEqualComparingTo BigDecimal("25.00")
             result.netOwnerCapitalUsd shouldBeEqualComparingTo BigDecimal("4975.00")
             result.actualPortfolioDeltas shouldBe listOf(
-                AssetDelta("USD", BigDecimal("5000.00")),
-                AssetDelta("USD", BigDecimal("-5000.00")),
-                AssetDelta("BTC", BigDecimal("0.0995")),
+                TimedAssetDelta("1", baseTime, "USD", BigDecimal("5000.00")),
+                TimedAssetDelta("2", baseTime, "USD", BigDecimal("-5000.00")),
+                TimedAssetDelta("3", baseTime, "BTC", BigDecimal("0.0995")),
             )
         }
 
@@ -1046,6 +1046,43 @@ class CardFundingNormalizerTest : StringSpec() {
             )
 
             result shouldBe NormalizedFundingTransaction.NotApplicable
+        }
+
+        "extractActualPortfolioEffects extracts TimedAssetDelta without requiring fee pricing" {
+            val legs = listOf(
+                event("1", "deposit", "5000.00", time = baseTime),
+                event("2", "spend", "-4980.00", fee = "20.00", time = baseTime.plusSeconds(5)),
+                event("3", "receive", "0.0996", asset = "BTC", fee = "0.0001", time = baseTime.plusSeconds(10)),
+            )
+
+            val effects = CardFundingNormalizer.extractActualPortfolioEffects(
+                "CARD-REF-1",
+                legs,
+                externalCardResolver,
+            )
+
+            effects.shouldBeInstanceOf<CardFundingNormalizer.CardActualPortfolioEffects>()
+            effects.refid shouldBe "CARD-REF-1"
+            effects.representativeLedgerId shouldBe "1"
+            effects.actualPortfolioDeltas shouldBe listOf(
+                TimedAssetDelta("1", baseTime, "USD", BigDecimal("5000.00")),
+                TimedAssetDelta("2", baseTime.plusSeconds(5), "USD", BigDecimal("-5000.00")),
+                TimedAssetDelta("3", baseTime.plusSeconds(10), "BTC", BigDecimal("0.0995")),
+            )
+        }
+
+        "extractActualPortfolioEffects returns null for invalid card shape" {
+            val incompleteLegs = listOf(
+                event("1", "deposit", "5000.00", time = baseTime),
+            )
+
+            val effects = CardFundingNormalizer.extractActualPortfolioEffects(
+                "CARD-REF-1",
+                incompleteLegs,
+                externalCardResolver,
+            )
+
+            effects shouldBe null
         }
     }
 }

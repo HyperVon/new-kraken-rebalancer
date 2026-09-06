@@ -1,18 +1,19 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.AssetDelta
 import com.gemini.krakenbot.model.CardFeePriceProvider
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.NormalizedFundingTransaction
+import com.gemini.krakenbot.model.TimedAssetDelta
 import com.gemini.krakenbot.util.PrecisionConstants
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Duration
+import java.time.Instant
 
 /**
  * Normalizes multi-leg card and consumer funding transactions (e.g. card-funded Buy Crypto)
@@ -36,6 +37,30 @@ object CardFundingNormalizer {
     /** Maximum allowed time span between legs sharing a refid before treating as ambiguous. */
     const val MAX_CARD_TRANSACTION_SPAN_SECONDS: Long = 120L
     val MAX_CARD_TRANSACTION_SPAN: Duration = Duration.ofSeconds(MAX_CARD_TRANSACTION_SPAN_SECONDS)
+
+    data class CardActualPortfolioEffects(
+        val refid: String,
+        val representativeLedgerId: String,
+        val eventTime: Instant,
+        val sourceLedgerIds: Set<String>,
+        val actualPortfolioDeltas: List<TimedAssetDelta>,
+    )
+
+    sealed interface ParsedGroup {
+        data object NotApplicable : ParsedGroup
+        data class Ambiguous(val refid: String, val unavailableAt: Instant, val reason: String) : ParsedGroup
+        data class Valid(
+            val refid: String,
+            val isDeposit: Boolean,
+            val isMixedAsset: Boolean,
+            val fundingLegs: List<LedgerEvent>,
+            val spendLegs: List<LedgerEvent>,
+            val receiveLegs: List<LedgerEvent>,
+            val representative: LedgerEvent,
+            val sourceLedgerIds: Set<String>,
+            val actualPortfolioDeltas: List<TimedAssetDelta>,
+        ) : ParsedGroup
+    }
 
     fun isFundingLeg(event: LedgerEvent): Boolean =
         event.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, ignoreCase = true) ||
@@ -92,14 +117,173 @@ object CardFundingNormalizer {
         provenanceResolver: FundingProvenanceResolver,
         priceProvider: CardFeePriceProvider,
     ): NormalizedFundingTransaction {
-        if (group.isEmpty()) return NormalizedFundingTransaction.NotApplicable
+        val parsed = parseCardFundingGroup(refid, group, provenanceResolver)
+        return when (parsed) {
+            is ParsedGroup.NotApplicable -> NormalizedFundingTransaction.NotApplicable
+
+            is ParsedGroup.Ambiguous -> NormalizedFundingTransaction.Ambiguous(
+                refid = parsed.refid,
+                unavailableAt = parsed.unavailableAt,
+                reason = parsed.reason,
+            )
+
+            is ParsedGroup.Valid -> {
+                val fundingLegs = parsed.fundingLegs
+                val representative = parsed.representative
+                val sourceIds = parsed.sourceLedgerIds.toList()
+                val minTime = group.minOf { it.time }
+
+                if (parsed.isMixedAsset) {
+                    // Currency-aware fee valuation across all legs
+                    var totalFeeUsd = BigDecimal.ZERO
+                    for (leg in group) {
+                        if (leg.fee > BigDecimal.ZERO) {
+                            val feeAsset = Asset.normalizeLedgerAsset(leg.asset).uppercase()
+                            val feeUsd = if (isUsd(feeAsset)) {
+                                leg.fee
+                            } else {
+                                val price = priceProvider.getPrice(feeAsset, leg.time)
+                                if (price == null || price <= BigDecimal.ZERO) {
+                                    log.warn(
+                                        "Cannot price fee asset {} at {} for card refid {}",
+                                        feeAsset,
+                                        leg.time,
+                                        refid,
+                                    )
+                                    return NormalizedFundingTransaction.UnpriceableFee(
+                                        refid = refid,
+                                        asset = feeAsset,
+                                        unavailableAt = leg.time,
+                                    )
+                                }
+                                leg.fee.multiply(price).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+                            }
+                            totalFeeUsd = totalFeeUsd.add(feeUsd)
+                        }
+                    }
+
+                    val grossFundingUsd = fundingLegs.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.amount) }
+
+                    if (parsed.isDeposit) {
+                        val netOwnerCapitalUsd = grossFundingUsd.subtract(totalFeeUsd)
+                        if (netOwnerCapitalUsd <= BigDecimal.ZERO) {
+                            return NormalizedFundingTransaction.Ambiguous(
+                                refid = refid,
+                                unavailableAt = minTime,
+                                reason = "Net capital after fees ($netOwnerCapitalUsd) is not positive for deposit",
+                            )
+                        }
+                        NormalizedFundingTransaction.OwnerContribution(
+                            refid = refid,
+                            eventTime = representative.time,
+                            grossFundingUsd = grossFundingUsd,
+                            feeUsd = totalFeeUsd,
+                            netOwnerCapitalUsd = netOwnerCapitalUsd,
+                            actualPortfolioDeltas = parsed.actualPortfolioDeltas,
+                            sourceLedgerIds = sourceIds,
+                            representativeLedgerId = representative.ledgerId,
+                        )
+                    } else {
+                        val netOwnerCapitalUsd = grossFundingUsd.add(totalFeeUsd)
+                        if (netOwnerCapitalUsd >= BigDecimal.ZERO) {
+                            return NormalizedFundingTransaction.Ambiguous(
+                                refid = refid,
+                                unavailableAt = minTime,
+                                reason = "Net capital after fees ($netOwnerCapitalUsd) is not negative for withdrawal",
+                            )
+                        }
+                        NormalizedFundingTransaction.OwnerWithdrawal(
+                            refid = refid,
+                            eventTime = representative.time,
+                            grossFundingUsd = grossFundingUsd,
+                            feeUsd = totalFeeUsd,
+                            netOwnerCapitalUsd = netOwnerCapitalUsd,
+                            actualPortfolioDeltas = parsed.actualPortfolioDeltas,
+                            sourceLedgerIds = sourceIds,
+                            representativeLedgerId = representative.ledgerId,
+                        )
+                    }
+                } else {
+                    // USD-only funding plumbing
+                    val totalFeesUsd = group.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.fee) }
+                    val grossFundingUsd = fundingLegs.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.amount) }
+                    if (parsed.isDeposit) {
+                        val totalSpendUsd = parsed.spendLegs.fold(BigDecimal.ZERO) { acc, leg ->
+                            acc.add(leg.amount.abs())
+                        }
+                        val net = grossFundingUsd.subtract(totalSpendUsd).subtract(totalFeesUsd)
+                        NormalizedFundingTransaction.OwnerContribution(
+                            refid = refid,
+                            eventTime = representative.time,
+                            grossFundingUsd = grossFundingUsd,
+                            feeUsd = totalFeesUsd,
+                            netOwnerCapitalUsd = net,
+                            actualPortfolioDeltas = parsed.actualPortfolioDeltas,
+                            sourceLedgerIds = sourceIds,
+                            representativeLedgerId = representative.ledgerId,
+                        )
+                    } else {
+                        val net = fundingLegs.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.netBalanceDelta()) }
+                            .add(
+                                parsed.receiveLegs.fold(BigDecimal.ZERO) { acc, leg ->
+                                    acc.add(leg.netBalanceDelta())
+                                },
+                            )
+                        NormalizedFundingTransaction.OwnerWithdrawal(
+                            refid = refid,
+                            eventTime = representative.time,
+                            grossFundingUsd = grossFundingUsd,
+                            feeUsd = totalFeesUsd,
+                            netOwnerCapitalUsd = net,
+                            actualPortfolioDeltas = parsed.actualPortfolioDeltas,
+                            sourceLedgerIds = sourceIds,
+                            representativeLedgerId = representative.ledgerId,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Extracts actual balance effects for an already-decided card group without
+     * computing synthetic USD owner-capital or repricing historical crypto fees.
+     */
+    fun extractActualPortfolioEffects(
+        refid: String,
+        group: List<LedgerEvent>,
+        provenanceResolver: FundingProvenanceResolver,
+    ): CardActualPortfolioEffects? {
+        val parsed = parseCardFundingGroup(refid, group, provenanceResolver)
+        return if (parsed is ParsedGroup.Valid) {
+            CardActualPortfolioEffects(
+                refid = parsed.refid,
+                representativeLedgerId = parsed.representative.ledgerId,
+                eventTime = parsed.representative.time,
+                sourceLedgerIds = parsed.sourceLedgerIds,
+                actualPortfolioDeltas = parsed.actualPortfolioDeltas,
+            )
+        } else {
+            null
+        }
+    }
+
+    /**
+     * Parses and structurally validates a candidate card funding group.
+     */
+    fun parseCardFundingGroup(
+        refid: String,
+        group: List<LedgerEvent>,
+        provenanceResolver: FundingProvenanceResolver,
+    ): ParsedGroup {
+        if (group.isEmpty()) return ParsedGroup.NotApplicable
 
         val hasFunding = group.any(::isFundingLeg)
         val hasPassthrough = group.any(::isPassthroughLeg)
 
         // Only groups containing funding or plumbing legs are relevant to card normalization
         if (!hasFunding && !hasPassthrough) {
-            return NormalizedFundingTransaction.NotApplicable
+            return ParsedGroup.NotApplicable
         }
 
         val minTime = group.minOf { it.time }
@@ -114,11 +298,10 @@ object CardFundingNormalizer {
                 span.seconds,
                 MAX_CARD_TRANSACTION_SPAN_SECONDS,
             )
-            return NormalizedFundingTransaction.Ambiguous(
+            return ParsedGroup.Ambiguous(
                 refid = refid,
                 unavailableAt = maxTime,
-                reason =
-                "Legs with refid $refid span ${span.seconds}s, " +
+                reason = "Legs with refid $refid span ${span.seconds}s, " +
                     "exceeding maximum allowed span of ${MAX_CARD_TRANSACTION_SPAN_SECONDS}s",
             )
         }
@@ -131,7 +314,7 @@ object CardFundingNormalizer {
                 refid,
                 unexpectedLeg.type,
             )
-            return NormalizedFundingTransaction.Ambiguous(
+            return ParsedGroup.Ambiguous(
                 refid = refid,
                 unavailableAt = unexpectedLeg.time,
                 reason = "Group contains unexpected leg type: ${unexpectedLeg.type}",
@@ -144,7 +327,7 @@ object CardFundingNormalizer {
 
         // Missing funding leg when passthrough exists: does not manufacture owner capital
         if (fundingLegs.isEmpty()) {
-            return NormalizedFundingTransaction.NotApplicable
+            return ParsedGroup.NotApplicable
         }
 
         // Verify every funding leg before deciding whether the group is card
@@ -157,7 +340,7 @@ object CardFundingNormalizer {
         val hasCardEvidence = fundingLegs.any(provenanceResolver::isCardFunding)
 
         if (externalFunding.isNotEmpty() && internalFunding.isNotEmpty()) {
-            return NormalizedFundingTransaction.Ambiguous(
+            return ParsedGroup.Ambiguous(
                 refid = refid,
                 unavailableAt = minTime,
                 reason = "Funding group mixes external and internal funding provenance",
@@ -168,7 +351,7 @@ object CardFundingNormalizer {
             (externalFunding.isNotEmpty() || internalFunding.isNotEmpty())
         ) {
             log.warn("Card funding group with refid {} has unresolved funding siblings; failing closed", refid)
-            return NormalizedFundingTransaction.Ambiguous(
+            return ParsedGroup.Ambiguous(
                 refid = refid,
                 unavailableAt = minTime,
                 reason = "Funding group contains unresolved funding provenance",
@@ -179,19 +362,19 @@ object CardFundingNormalizer {
         // plain funding row likewise remains outside this normalizer; the
         // classifier owns the separate decision to defer it.
         if (internalFunding.isNotEmpty()) {
-            return NormalizedFundingTransaction.NotApplicable
+            return ParsedGroup.NotApplicable
         }
 
         if (externalFunding.isEmpty()) {
             return if (hasPassthrough || hasCardEvidence) {
                 log.warn("Card funding group with refid {} has no proven external funding; failing closed", refid)
-                NormalizedFundingTransaction.Ambiguous(
+                ParsedGroup.Ambiguous(
                     refid = refid,
                     unavailableAt = minTime,
                     reason = "Funding legs in card group cannot be proven external",
                 )
             } else {
-                NormalizedFundingTransaction.NotApplicable
+                ParsedGroup.NotApplicable
             }
         }
 
@@ -203,7 +386,7 @@ object CardFundingNormalizer {
         }
 
         if (isDeposit && isWithdrawal) {
-            return NormalizedFundingTransaction.Ambiguous(
+            return ParsedGroup.Ambiguous(
                 refid = refid,
                 unavailableAt = minTime,
                 reason = "Group contains conflicting deposit and withdrawal funding legs",
@@ -211,7 +394,7 @@ object CardFundingNormalizer {
         }
 
         if (externalFunding.size > 1) {
-            return NormalizedFundingTransaction.Ambiguous(
+            return ParsedGroup.Ambiguous(
                 refid = refid,
                 unavailableAt = minTime,
                 reason = "Multiple external funding legs are unsupported for one normalized group",
@@ -225,22 +408,26 @@ object CardFundingNormalizer {
         // capital and are handled by LedgerFlowClassifier instead.
         if (spendLegs.isEmpty() && receiveLegs.isEmpty()) {
             return if (hasCardEvidence) {
-                NormalizedFundingTransaction.Ambiguous(
+                ParsedGroup.Ambiguous(
                     refid = refid,
                     unavailableAt = minTime,
                     reason = "Confirmed card funding is missing spend and receive plumbing legs",
                 )
             } else {
-                NormalizedFundingTransaction.NotApplicable
+                ParsedGroup.NotApplicable
             }
         }
+
+        val representative = fundingLegs.minWith(compareBy({ it.time }, { it.ledgerId }))
+        val sourceIds = group.map { it.ledgerId }.distinct().toSet()
+        val deltas = actualPortfolioDeltas(group)
 
         if (hasNonUsdLeg || hasCardEvidence) {
             // Mixed-asset card Buy Crypto or confirmed card-funded purchase
             if (isDeposit) {
                 if (spendLegs.isEmpty()) {
                     log.warn("Card deposit with refid {} missing USD spend plumbing leg; failing closed", refid)
-                    return NormalizedFundingTransaction.Ambiguous(
+                    return ParsedGroup.Ambiguous(
                         refid = refid,
                         unavailableAt = minTime,
                         reason = "Card deposit missing USD spend plumbing leg",
@@ -248,28 +435,28 @@ object CardFundingNormalizer {
                 }
                 if (receiveLegs.isEmpty()) {
                     log.warn("Card deposit with refid {} missing crypto receive plumbing leg; failing closed", refid)
-                    return NormalizedFundingTransaction.Ambiguous(
+                    return ParsedGroup.Ambiguous(
                         refid = refid,
                         unavailableAt = minTime,
                         reason = "Card deposit missing crypto receive plumbing leg",
                     )
                 }
                 if (fundingLegs.any { !isUsd(it.asset) }) {
-                    return NormalizedFundingTransaction.Ambiguous(
+                    return ParsedGroup.Ambiguous(
                         refid = refid,
                         unavailableAt = minTime,
                         reason = "Card deposit funding leg must be USD",
                     )
                 }
                 if (spendLegs.any { !isUsd(it.asset) }) {
-                    return NormalizedFundingTransaction.Ambiguous(
+                    return ParsedGroup.Ambiguous(
                         refid = refid,
                         unavailableAt = minTime,
                         reason = "Spend plumbing leg must be USD",
                     )
                 }
                 if (receiveLegs.any { isUsd(it.asset) }) {
-                    return NormalizedFundingTransaction.Ambiguous(
+                    return ParsedGroup.Ambiguous(
                         refid = refid,
                         unavailableAt = minTime,
                         reason = "Receive plumbing leg must be non-USD for Buy Crypto",
@@ -279,7 +466,7 @@ object CardFundingNormalizer {
                     spendLegs.any { it.netBalanceDelta() >= BigDecimal.ZERO } ||
                     receiveLegs.any { it.netBalanceDelta() <= BigDecimal.ZERO }
                 ) {
-                    return NormalizedFundingTransaction.Ambiguous(
+                    return ParsedGroup.Ambiguous(
                         refid = refid,
                         unavailableAt = minTime,
                         reason = "Conflicting directions in card funding legs",
@@ -287,14 +474,14 @@ object CardFundingNormalizer {
                 }
             } else {
                 if (receiveLegs.isEmpty()) {
-                    return NormalizedFundingTransaction.Ambiguous(
+                    return ParsedGroup.Ambiguous(
                         refid = refid,
                         unavailableAt = minTime,
                         reason = "Card withdrawal missing receive plumbing leg",
                     )
                 }
                 if (spendLegs.isEmpty()) {
-                    return NormalizedFundingTransaction.Ambiguous(
+                    return ParsedGroup.Ambiguous(
                         refid = refid,
                         unavailableAt = minTime,
                         reason = "Card withdrawal missing spend plumbing leg",
@@ -304,7 +491,7 @@ object CardFundingNormalizer {
                     receiveLegs.any { it.netBalanceDelta() <= BigDecimal.ZERO } ||
                     spendLegs.any { it.netBalanceDelta() >= BigDecimal.ZERO }
                 ) {
-                    return NormalizedFundingTransaction.Ambiguous(
+                    return ParsedGroup.Ambiguous(
                         refid = refid,
                         unavailableAt = minTime,
                         reason = "Conflicting directions in card withdrawal legs",
@@ -312,142 +499,82 @@ object CardFundingNormalizer {
                 }
             }
 
-            // Currency-aware fee valuation across all legs
-            var totalFeeUsd = BigDecimal.ZERO
-            for (leg in group) {
-                if (leg.fee > BigDecimal.ZERO) {
-                    val feeAsset = Asset.normalizeLedgerAsset(leg.asset).uppercase()
-                    val feeUsd = if (isUsd(feeAsset)) {
-                        leg.fee
-                    } else {
-                        val price = priceProvider.getPrice(feeAsset, leg.time)
-                        if (price == null || price <= BigDecimal.ZERO) {
-                            log.warn("Cannot price fee asset {} at {} for card refid {}", feeAsset, leg.time, refid)
-                            return NormalizedFundingTransaction.UnpriceableFee(
-                                refid = refid,
-                                asset = feeAsset,
-                                unavailableAt = leg.time,
-                            )
-                        }
-                        leg.fee.multiply(price).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
-                    }
-                    totalFeeUsd = totalFeeUsd.add(feeUsd)
-                }
-            }
-
-            val grossFundingUsd = fundingLegs.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.amount) }
-            val representative = fundingLegs.minWith(compareBy({ it.time }, { it.ledgerId }))
-            val sourceIds = group.map { it.ledgerId }.distinct()
-
-            return if (isDeposit) {
-                val netOwnerCapitalUsd = grossFundingUsd.subtract(totalFeeUsd)
-                if (netOwnerCapitalUsd <= BigDecimal.ZERO) {
-                    return NormalizedFundingTransaction.Ambiguous(
-                        refid = refid,
-                        unavailableAt = minTime,
-                        reason = "Net capital after fees ($netOwnerCapitalUsd) is not positive for deposit",
-                    )
-                }
-                NormalizedFundingTransaction.OwnerContribution(
-                    refid = refid,
-                    eventTime = representative.time,
-                    grossFundingUsd = grossFundingUsd,
-                    feeUsd = totalFeeUsd,
-                    netOwnerCapitalUsd = netOwnerCapitalUsd,
-                    actualPortfolioDeltas = actualPortfolioDeltas(group),
-                    sourceLedgerIds = sourceIds,
-                    representativeLedgerId = representative.ledgerId,
-                )
-            } else {
-                val netOwnerCapitalUsd = grossFundingUsd.add(totalFeeUsd)
-                if (netOwnerCapitalUsd >= BigDecimal.ZERO) {
-                    return NormalizedFundingTransaction.Ambiguous(
-                        refid = refid,
-                        unavailableAt = minTime,
-                        reason = "Net capital after fees ($netOwnerCapitalUsd) is not negative for withdrawal",
-                    )
-                }
-                NormalizedFundingTransaction.OwnerWithdrawal(
-                    refid = refid,
-                    eventTime = representative.time,
-                    grossFundingUsd = grossFundingUsd,
-                    feeUsd = totalFeeUsd,
-                    netOwnerCapitalUsd = netOwnerCapitalUsd,
-                    actualPortfolioDeltas = actualPortfolioDeltas(group),
-                    sourceLedgerIds = sourceIds,
-                    representativeLedgerId = representative.ledgerId,
-                )
-            }
+            return ParsedGroup.Valid(
+                refid = refid,
+                isDeposit = isDeposit,
+                isMixedAsset = true,
+                fundingLegs = fundingLegs,
+                spendLegs = spendLegs,
+                receiveLegs = receiveLegs,
+                representative = representative,
+                sourceLedgerIds = sourceIds,
+                actualPortfolioDeltas = deltas,
+            )
         }
 
         // USD-only funding plumbing
-        val representative = fundingLegs.minWith(compareBy({ it.time }, { it.ledgerId }))
-        val sourceIds = group.map { it.ledgerId }.distinct()
         val totalFeesUsd = group.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.fee) }
-
         return if (isDeposit) {
             val grossFundingUsd = fundingLegs.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.amount) }
             val totalSpendUsd = spendLegs.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.amount.abs()) }
             val net = grossFundingUsd.subtract(totalSpendUsd).subtract(totalFeesUsd)
             if (net.signum() == 0) {
                 log.warn("USD funding plumbing with refid {} nets to zero; cannot erase owner capital", refid)
-                NormalizedFundingTransaction.Ambiguous(
+                ParsedGroup.Ambiguous(
                     refid = refid,
                     unavailableAt = minTime,
                     reason = "USD funding plumbing nets to zero; cannot erase owner capital",
                 )
             } else if (net.signum() > 0) {
-                NormalizedFundingTransaction.OwnerContribution(
+                ParsedGroup.Valid(
                     refid = refid,
-                    eventTime = representative.time,
-                    grossFundingUsd = grossFundingUsd,
-                    feeUsd = totalFeesUsd,
-                    netOwnerCapitalUsd = net,
-                    actualPortfolioDeltas = actualPortfolioDeltas(group),
+                    isDeposit = true,
+                    isMixedAsset = false,
+                    fundingLegs = fundingLegs,
+                    spendLegs = spendLegs,
+                    receiveLegs = receiveLegs,
+                    representative = representative,
                     sourceLedgerIds = sourceIds,
-                    representativeLedgerId = representative.ledgerId,
+                    actualPortfolioDeltas = deltas,
                 )
             } else {
-                // Deposit with larger spend: keep the owner deposit and the
-                // balance-changing spend separately typed rather than
-                // inventing an owner withdrawal.
-                NormalizedFundingTransaction.NotApplicable
+                ParsedGroup.NotApplicable
             }
         } else {
             val net = fundingLegs.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.netBalanceDelta()) }
                 .add(receiveLegs.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.netBalanceDelta()) })
             if (net.signum() == 0) {
                 log.warn("USD withdrawal plumbing with refid {} nets to zero", refid)
-                NormalizedFundingTransaction.Ambiguous(
+                ParsedGroup.Ambiguous(
                     refid = refid,
                     unavailableAt = minTime,
                     reason = "USD withdrawal plumbing nets to zero",
                 )
             } else if (net.signum() < 0) {
-                val grossFundingUsd = fundingLegs.fold(BigDecimal.ZERO) { acc, leg -> acc.add(leg.amount) }
-                NormalizedFundingTransaction.OwnerWithdrawal(
+                ParsedGroup.Valid(
                     refid = refid,
-                    eventTime = representative.time,
-                    grossFundingUsd = grossFundingUsd,
-                    feeUsd = totalFeesUsd,
-                    netOwnerCapitalUsd = net,
-                    actualPortfolioDeltas = actualPortfolioDeltas(group),
+                    isDeposit = false,
+                    isMixedAsset = false,
+                    fundingLegs = fundingLegs,
+                    spendLegs = spendLegs,
+                    receiveLegs = receiveLegs,
+                    representative = representative,
                     sourceLedgerIds = sourceIds,
-                    representativeLedgerId = representative.ledgerId,
+                    actualPortfolioDeltas = deltas,
                 )
             } else {
-                // Withdrawal with larger receive: keep the owner withdrawal
-                // and the balance-changing receive separately typed rather
-                // than inventing an owner contribution.
-                NormalizedFundingTransaction.NotApplicable
+                ParsedGroup.NotApplicable
             }
         }
     }
 
-    private fun actualPortfolioDeltas(group: Collection<LedgerEvent>): List<AssetDelta> = group.map { event ->
-        AssetDelta(
-            asset = Asset.normalizeLedgerAsset(event.asset).uppercase(),
-            amount = event.netBalanceDelta(),
-        )
-    }
+    fun actualPortfolioDeltas(group: Collection<LedgerEvent>): List<TimedAssetDelta> =
+        group.sortedWith(compareBy({ it.time }, { it.ledgerId })).map { event ->
+            TimedAssetDelta(
+                ledgerId = event.ledgerId,
+                timestamp = event.time,
+                asset = Asset.normalizeLedgerAsset(event.asset).uppercase(),
+                amount = event.netBalanceDelta(),
+            )
+        }
 }
