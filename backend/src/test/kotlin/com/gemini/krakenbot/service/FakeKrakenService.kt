@@ -23,7 +23,10 @@ import java.math.BigDecimal
  * (type/time filtered, offset-paged at [KrakenApiConstants.LEDGER_PAGE_SIZE], matching total
  * via [getLastLedgerTotalCount]).
  */
-class FakeKrakenService : KrakenService {
+class FakeKrakenService :
+    KrakenService,
+    BoundedTradeHistoryService,
+    RecoveryTradeHistoryService {
     var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
     var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
     var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
@@ -48,7 +51,8 @@ class FakeKrakenService : KrakenService {
     var tradeHistoryTotalCountOverride = 0
     var getLedgersCallCount = 0
     var ledgerTotalCountOverride = 0
-    var ledgerRawPageSizeOverride = 0
+    var ledgerRawPageSizeOverride: Int? = null
+    private var lastRecordedLedgerRawPageSize = 0
     var getDepositStatusCallCount = 0
     var getWithdrawStatusCallCount = 0
     var getInternalTransfersCallCount = 0
@@ -82,6 +86,20 @@ class FakeKrakenService : KrakenService {
         return tradeHistorySupplier(startSec, offset)
     }
 
+    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
+        getTradeHistoryCallCount++
+        return tradeHistorySupplier(startSec, offset)
+    }
+
+    override suspend fun getRecoveryTradeHistoryUntil(
+        startSec: Long?,
+        offset: Int?,
+        endSec: Long?,
+    ): List<TradeRecord> {
+        getTradeHistoryCallCount++
+        return tradeHistorySupplier(startSec, offset)
+    }
+
     override fun getLastTradeHistoryTotalCount(): Int = tradeHistoryTotalCountOverride
 
     override suspend fun getLedgers(
@@ -91,12 +109,14 @@ class FakeKrakenService : KrakenService {
         types: Set<String>?,
     ): List<LedgerEvent> {
         getLedgersCallCount++
-        return ledgerSupplier(startSec, offset, endSec, types)
+        val entries = ledgerSupplier(startSec, offset, endSec, types)
+        lastRecordedLedgerRawPageSize = entries.size
+        return entries
     }
 
     override fun getLastLedgerTotalCount(): Int = ledgerTotalCountOverride
 
-    override fun getLastLedgerRawPageSize(): Int = ledgerRawPageSizeOverride
+    override fun getLastLedgerRawPageSize(): Int = ledgerRawPageSizeOverride ?: lastRecordedLedgerRawPageSize
 
     override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> {
         getDepositStatusCallCount++

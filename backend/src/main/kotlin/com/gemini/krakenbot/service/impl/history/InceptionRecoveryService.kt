@@ -22,7 +22,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.getTradeHistoryUntil
+import com.gemini.krakenbot.service.getRecoveryTradeHistoryUntil
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.TradeDeduplicator
@@ -71,9 +71,26 @@ class InceptionRecoveryService(
         // page; config publication is staged while an execution session is active.
         if (!recoveryMutex.tryLock()) return false
         return try {
+            val config = configService.getConfig()
+            val accountScope = try {
+                krakenService.getFundingEvidenceScope().trim()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ""
+            }
+            if (accountScope.isBlank() || accountScope == "scope-unavailable") {
+                return false
+            }
+            val scopeDigest = digestAccountScope(accountScope)
+            val storedScopeDigest = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
+            if (!storedScopeDigest.isNullOrBlank() && storedScopeDigest != scopeDigest) {
+                return false
+            }
             prepareForCurrentConfigurationLocked(
-                config = configService.getConfig(),
+                config = config,
                 inceptionDate = inceptionDate?.trim().orEmpty(),
+                accountScope = accountScope,
             )
         } finally {
             recoveryMutex.unlock()
@@ -83,10 +100,6 @@ class InceptionRecoveryService(
     /** Runs at most [MAX_PAGES_PER_RUN] private-history pages and returns durable state. */
     suspend fun recoverOneBoundedRun(): InceptionRecoveryStatus = recoveryMutex.withLock {
         val preflightConfig = configService.getConfig()
-        prepareForCurrentConfigurationLocked(
-            config = preflightConfig,
-            inceptionDate = preflightConfig.settings.inceptionDate?.trim().orEmpty(),
-        )
 
         if (!preflightConfig.settings.inceptionDate.isNullOrBlank()) {
             setOverallStatus(InceptionRecoveryStatus.MANUAL_OVERRIDE, "explicit inception date")
@@ -100,6 +113,38 @@ class InceptionRecoveryService(
             setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "credentials unavailable")
             return@withLock readStatus()
         }
+
+        val accountScope = try {
+            krakenService.getFundingEvidenceScope().trim()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Unable to read account scope for inception recovery", e)
+            ""
+        }
+        if (accountScope.isBlank() || accountScope == "scope-unavailable") {
+            setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "account scope unavailable")
+            return@withLock readStatus()
+        }
+
+        val scopeDigest = digestAccountScope(accountScope)
+        val storedScopeDigest = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
+        if (!storedScopeDigest.isNullOrBlank() && storedScopeDigest != scopeDigest) {
+            setOverallStatus(
+                InceptionRecoveryStatus.UNAVAILABLE,
+                "account scope changed; use correct DB or perform reset",
+            )
+            return@withLock readStatus()
+        }
+        if (storedScopeDigest.isNullOrBlank()) {
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
+        }
+
+        prepareForCurrentConfigurationLocked(
+            config = preflightConfig,
+            inceptionDate = preflightConfig.settings.inceptionDate?.trim().orEmpty(),
+            accountScope = accountScope,
+        )
 
         val currentStatus = readStatus()
         if (currentStatus.status == InceptionRecoveryStatus.CONFIRMED) return@withLock currentStatus
@@ -244,7 +289,7 @@ class InceptionRecoveryService(
 
     private suspend fun recoverTradePage(backend: KrakenService, horizon: Instant, offset: Int): PageResult {
         log.info("Fetching strategy inception trade-history page with offset={}", offset)
-        val page = backend.getTradeHistoryUntil(
+        val page = backend.getRecoveryTradeHistoryUntil(
             startSec = null,
             offset = offset,
             endSec = horizon.epochSecond,
@@ -304,19 +349,23 @@ class InceptionRecoveryService(
             endSec = horizon.epochSecond,
             types = null,
         )
-        val reportedTotal = maxOf(
-            backend.getLastLedgerTotalCount(),
-            backend.getLastLedgerRawPageSize(),
-        ).coerceAtLeast(0)
+        val rawPageSize = backend.getLastLedgerRawPageSize().coerceAtLeast(page.size)
+        val authoritativeTotal = backend.getLastLedgerTotalCount().coerceAtLeast(0)
         val priorTotal = ledgerRepository
             .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL)
             .orEmpty()
             .toIntOrNull()
             ?.coerceAtLeast(0)
             ?: 0
-        val total = maxOf(priorTotal, reportedTotal)
-        ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, total.toString())
-        val paginationShifted = priorTotal > 0 && reportedTotal > 0 && reportedTotal != priorTotal
+        val total = if (authoritativeTotal > 0) {
+            maxOf(priorTotal, authoritativeTotal)
+        } else {
+            priorTotal
+        }
+        if (total > 0) {
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, total.toString())
+        }
+        val paginationShifted = priorTotal > 0 && authoritativeTotal > 0 && authoritativeTotal != priorTotal
         ledgerRepository.saveLedgers(page)
 
         val nextOffset = if (paginationShifted && offset > 0) {
@@ -324,11 +373,10 @@ class InceptionRecoveryService(
         } else {
             offset + KrakenApiConstants.LEDGER_PAGE_SIZE
         }
-        val complete = !paginationShifted && if (total > 0) {
-            nextOffset >= total
-        } else {
-            page.size < KrakenApiConstants.LEDGER_PAGE_SIZE
-        }
+        val complete = !paginationShifted && (
+            rawPageSize < KrakenApiConstants.LEDGER_PAGE_SIZE ||
+                (total > 0 && nextOffset >= total)
+            )
         if (complete) {
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, COMPLETED)
             ledgerRepository.setSyncMetadata(
@@ -351,6 +399,24 @@ class InceptionRecoveryService(
         val allTrades = repository.getTradesInRange(Instant.EPOCH, upperBound)
             .filter { it.success && !it.dryRun }
             .sortedBy(TradeRecord::timestamp)
+
+        val expectedUniverse = config.allocations.map {
+            Asset.normalizeLedgerAsset(it.symbol.value).uppercase()
+        }.toSet()
+        val outsideUniverseTrade = allTrades.firstOrNull {
+            it.symbol.isNotBlank() &&
+                it.volume.signum() != 0 &&
+                Asset.normalizeLedgerAsset(it.symbol).uppercase() !in expectedUniverse
+        }
+        if (outsideUniverseTrade != null) {
+            clearCandidateEvidence()
+            setOverallStatus(
+                InceptionRecoveryStatus.AMBIGUOUS,
+                "trade outside configured universe",
+            )
+            return
+        }
+
         val candidateTrades = allTrades.filter { it.symbol.isNotBlank() && !Asset(it.symbol).isUsd }
         val orderTxids = candidateTrades.mapNotNull { it.orderTxid?.trim()?.takeIf(String::isNotBlank) }.toSet()
         val clientOrderIds = candidateTrades.mapNotNull { it.clientOrderId?.trim()?.takeIf(String::isNotBlank) }.toSet()
@@ -359,7 +425,7 @@ class InceptionRecoveryService(
             ?.orderTxids
             .orEmpty()
         val ownedTrades = candidateTrades.filter {
-            TradeOwnershipClassifier.classify(it, knownOrderTxids) == TradeOwnership.REBALANCER
+            classifyTradeForRecovery(it, knownOrderTxids) == TradeOwnership.REBALANCER
         }
         val candidate = ownedTrades.minWithOrNull(
             compareBy<TradeRecord> { it.timestamp }.thenBy {
@@ -371,7 +437,8 @@ class InceptionRecoveryService(
         if (candidate == null) {
             clearCandidateEvidence()
             val unknown = candidateTrades.firstOrNull {
-                TradeOwnershipClassifier.classify(it, knownOrderTxids) == TradeOwnership.UNKNOWN
+                it.source == TradeSource.LEGACY_UNKNOWN ||
+                    TradeOwnershipClassifier.classify(it, knownOrderTxids) == TradeOwnership.UNKNOWN
             }
             val status = if (unknown == null) {
                 InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
@@ -412,7 +479,7 @@ class InceptionRecoveryService(
         )
         val unknownBeforeCandidate = candidateTrades.firstOrNull {
             it.timestamp <= candidate.timestamp &&
-                TradeOwnershipClassifier.classify(it, knownOrderTxids) == TradeOwnership.UNKNOWN
+                classifyTradeForRecovery(it, knownOrderTxids) == TradeOwnership.UNKNOWN
         }
         if (unknownBeforeCandidate != null) {
             setOverallStatus(InceptionRecoveryStatus.AMBIGUOUS, "ownership before candidate is unresolved")
@@ -430,7 +497,7 @@ class InceptionRecoveryService(
             }
         }
 
-        when (val baseline = reconstructBaseline(config, backend, candidate.timestamp, horizon, allTrades)) {
+        when (val baseline = reconstructBaseline(config, backend, candidate, horizon, allTrades)) {
             is BaselineResult.Failure -> {
                 setOverallStatus(baseline.status, baseline.reason)
             }
@@ -476,7 +543,7 @@ class InceptionRecoveryService(
     private suspend fun reconstructBaseline(
         config: AppConfig,
         backend: KrakenService,
-        candidateTime: Instant,
+        candidate: TradeRecord,
         horizon: Instant,
         allTrades: List<TradeRecord>,
     ): BaselineResult {
@@ -491,9 +558,9 @@ class InceptionRecoveryService(
             )
         }
 
-        val baselineTime = candidateTime.minusMillis(1)
+        val baselineTime = candidate.timestamp.minusMillis(1)
         val anchorObservation = anchor.balancesObservedAt ?: anchor.timestamp
-        if (candidateTime.isAfter(anchorObservation)) {
+        if (candidate.timestamp.isAfter(anchorObservation)) {
             return BaselineResult.Failure(
                 InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
                 "candidate is newer than retained anchor",
@@ -614,6 +681,7 @@ class InceptionRecoveryService(
         val prices = resolveHistoricalPrices(
             allocations = allocations,
             baselineTime = baselineTime,
+            candidate = candidate,
             historicalTrades = allTrades,
             backend = backend,
         ) ?: return BaselineResult.Failure(
@@ -718,12 +786,14 @@ class InceptionRecoveryService(
     private suspend fun resolveHistoricalPrices(
         allocations: List<Allocation>,
         baselineTime: Instant,
+        candidate: TradeRecord,
         historicalTrades: List<TradeRecord>,
         backend: KrakenService,
     ): Map<String, BigDecimal>? {
-        val nearbySnapshots = repository.getSnapshotsInRange(
+        val candidateSymbol = Asset.normalizeLedgerAsset(candidate.symbol).uppercase()
+        val pastSnapshots = repository.getSnapshotsInRange(
             baselineTime.minusSeconds(HISTORICAL_PRICE_LOOKUP_SECONDS),
-            baselineTime.plusSeconds(HISTORICAL_PRICE_LOOKUP_SECONDS),
+            baselineTime,
         )
         val prices = mutableMapOf<String, BigDecimal>()
         for (allocation in allocations) {
@@ -732,29 +802,41 @@ class InceptionRecoveryService(
                 prices[symbol] = BigDecimal.ONE
                 continue
             }
-            val snapshotPrice = nearbySnapshots
+            val snapshotPrice = pastSnapshots
                 .asSequence()
+                .filter { snapshot ->
+                    val obs = snapshot.balancesObservedAt ?: snapshot.timestamp
+                    !obs.isAfter(baselineTime)
+                }
                 .mapNotNull { snapshot ->
                     val row = snapshot.assets.entries.firstOrNull {
                         Asset.normalizeLedgerAsset(it.key).uppercase() == symbol
                     } ?: return@mapNotNull null
                     row.value.price.takeIf { it.signum() > 0 }
-                        ?.let { snapshot.timestamp to it }
+                        ?.let { (snapshot.balancesObservedAt ?: snapshot.timestamp) to it }
                 }
-                .minByOrNull { (timestamp, _) ->
-                    kotlin.math.abs(timestamp.toEpochMilli() - baselineTime.toEpochMilli())
-                }
+                .maxByOrNull { (obs, _) -> obs.toEpochMilli() }
                 ?.second
             if (snapshotPrice != null) {
                 prices[symbol] = snapshotPrice
                 continue
             }
 
-            val tradePrice = historicalTrades
+            val preBaselineTradePrice = historicalTrades
                 .asSequence()
-                .filter { Asset.normalizeLedgerAsset(it.symbol).uppercase() == symbol && it.price.signum() > 0 }
-                .minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - baselineTime.toEpochMilli()) }
+                .filter {
+                    Asset.normalizeLedgerAsset(it.symbol).uppercase() == symbol &&
+                        it.price.signum() > 0 &&
+                        !it.timestamp.isAfter(baselineTime) &&
+                        it.timestamp >= baselineTime.minusSeconds(HISTORICAL_PRICE_LOOKUP_SECONDS)
+                }
+                .maxByOrNull { it.timestamp.toEpochMilli() }
                 ?.price
+
+            // Narrow exception for the actual first bot execution price (baseline is candidateTime - 1ms)
+            // when no pre-baseline trade exists for candidateSymbol.
+            val tradePrice = preBaselineTradePrice
+                ?: (if (symbol == candidateSymbol && candidate.price.signum() > 0) candidate.price else null)
             if (tradePrice != null) {
                 prices[symbol] = tradePrice
                 continue
@@ -764,13 +846,15 @@ class InceptionRecoveryService(
                 backend.getOHLC(
                     pair = Asset.tradingPair(symbol),
                     interval = 1440,
-                    since = baselineTime.minus(1, ChronoUnit.DAYS).epochSecond,
+                    since = baselineTime.minus(4, ChronoUnit.DAYS).epochSecond,
                 ).asSequence()
                     .filter { it.second.signum() > 0 }
-                    .minByOrNull { kotlin.math.abs(it.first * 1000L - baselineTime.toEpochMilli()) }
-                    ?.takeIf {
-                        kotlin.math.abs(it.first - baselineTime.epochSecond) <= MAX_HISTORICAL_PRICE_GAP_SECONDS
+                    .filter { candle ->
+                        val closeSec = candle.first + 1440L * 60L
+                        closeSec <= baselineTime.epochSecond &&
+                            baselineTime.epochSecond - candle.first <= MAX_HISTORICAL_PRICE_GAP_SECONDS
                     }
+                    .maxByOrNull { it.first }
                     ?.second
             } catch (e: CancellationException) {
                 throw e
@@ -784,8 +868,26 @@ class InceptionRecoveryService(
         return prices
     }
 
-    private suspend fun prepareForCurrentConfigurationLocked(config: AppConfig, inceptionDate: String): Boolean {
-        val fingerprint = configurationFingerprint(config, inceptionDate)
+    private fun classifyTradeForRecovery(trade: TradeRecord, knownRebalancerOrderTxids: Set<String>): TradeOwnership {
+        if (!trade.cycleId.isNullOrBlank() || !trade.clientOrderId.isNullOrBlank()) {
+            return TradeOwnership.REBALANCER
+        }
+        if (trade.source == TradeSource.LOCAL_ESTIMATE) {
+            return TradeOwnership.REBALANCER
+        }
+        val txid = trade.orderTxid?.takeIf(String::isNotBlank)
+        if (txid != null && txid in knownRebalancerOrderTxids) {
+            return TradeOwnership.REBALANCER
+        }
+        return TradeOwnership.UNKNOWN
+    }
+
+    private suspend fun prepareForCurrentConfigurationLocked(
+        config: AppConfig,
+        inceptionDate: String,
+        accountScope: String,
+    ): Boolean {
+        val fingerprint = configurationFingerprint(config, inceptionDate, accountScope)
         val storedFingerprint = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
         val version = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
         if (version == CURRENT_RECOVERY_VERSION && storedFingerprint == fingerprint) return false
@@ -827,15 +929,7 @@ class InceptionRecoveryService(
      * identity. Store only a digest so configuration details and credential material never enter
      * the metadata table or logs.
      */
-    private suspend fun configurationFingerprint(config: AppConfig, inceptionDate: String): String {
-        val accountScope = try {
-            krakenService.getFundingEvidenceScope()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Unable to read account scope for inception recovery fingerprint", e)
-            "scope-unavailable"
-        }
+    private fun configurationFingerprint(config: AppConfig, inceptionDate: String, accountScope: String): String {
         val allocationShape = config.allocations
             .map { allocation ->
                 "${Asset.canonicalSymbol(allocation.symbol.value)}=${allocation.targetPercent}"
@@ -849,6 +943,11 @@ class InceptionRecoveryService(
             accountScope,
         ).joinToString("\u0000")
         val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray(Charsets.UTF_8))
+        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    private fun digestAccountScope(accountScope: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(accountScope.toByteArray(Charsets.UTF_8))
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 

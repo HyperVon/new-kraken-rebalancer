@@ -201,6 +201,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 status.tradeOffset shouldBe "completed"
                 status.reason shouldBe "no positively owned bot fill"
                 krakenService.getTradeHistoryCallCount shouldBe 2
+                krakenService.getLedgersCallCount shouldBe 2
             }
         }
 
@@ -1153,16 +1154,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 val status = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
-                repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) shouldBe
-                    botTime.toEpochMilli().toString()
-                val baselineId = repository
-                    .getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
-                    ?.toInt() ?: error("missing baseline id")
-                repository.getSnapshotById(baselineId)?.assets?.getValue(Asset.BTC)?.balance
-                    ?.shouldBeEqualComparingTo(BigDecimal("0.10"))
-                repository.getSnapshotById(baselineId)?.assets?.getValue(Asset.USD)?.balance
-                    ?.shouldBeEqualComparingTo(BigDecimal("989.90"))
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldBe "ownership before candidate is unresolved"
             }
         }
 
@@ -1722,7 +1715,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "historical trade prices and local-estimate provenance can seed the baseline" {
+        "future trade one hour after inception cannot seed baseline price" {
             runTest {
                 config = appConfig(
                     listOf(
@@ -1761,9 +1754,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 val status = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
-                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_OWNERSHIP_EVIDENCE) shouldBe
-                    "local estimate"
+                status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                status.reason shouldBe "historical price unavailable"
             }
         }
 
@@ -1820,7 +1812,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 krakenService.ohlcSupplier = { pair, interval, _ ->
                     pair shouldBe Asset.ETH_USD_PAIR
                     interval shouldBe 1440
-                    listOf(botTime.epochSecond to BigDecimal("200.00"))
+                    listOf(botTime.minusSeconds(86400 + 3600).epochSecond to BigDecimal("200.00"))
                 }
 
                 val status = newService().recoverOneBoundedRun()
@@ -2022,15 +2014,15 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "account-scope lookup failure still produces a secret-free fingerprint" {
+        "account-scope lookup failure makes recovery unavailable" {
             runTest {
                 krakenService.fundingEvidenceScopeSupplier = { error("scope unavailable") }
 
-                newService().prepareForCurrentConfiguration(null) shouldBe true
+                newService().prepareForCurrentConfiguration(null) shouldBe false
 
-                val fingerprint = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
-                fingerprint?.length shouldBe 64
-                fingerprint?.all { it in "0123456789abcdef" } shouldBe true
+                val status = newService().recoverOneBoundedRun()
+                status.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
+                status.reason shouldBe "account scope unavailable"
             }
         }
 
@@ -2126,6 +2118,214 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS) shouldBe
                     InceptionRecoveryStatus.IN_PROGRESS
                 repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) shouldBe ""
+            }
+        }
+
+        "removed historical asset hidden from current allocation config blocks confirmation" {
+            runTest {
+                config = appConfig(
+                    listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.ETH, 30.0),
+                        Allocation(Asset.USD, 20.0),
+                    ),
+                )
+                val solTrade = apiTrade(
+                    id = "sol-trade",
+                    timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                    symbol = "SOL",
+                    volume = BigDecimal("5.0"),
+                    usdAmount = BigDecimal("50.00"),
+                )
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade(
+                    id = "btc-bot",
+                    timestamp = botTime,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(
+                            Asset.BTC to BigDecimal("0.5"),
+                            Asset.ETH to BigDecimal.ZERO,
+                            Asset.USD to BigDecimal("949.70"),
+                        ),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistorySupplier = { _, offset -> listOf(solTrade, bot).drop(offset ?: 0).take(50) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldBe "trade outside configured universe"
+            }
+        }
+
+        "future snapshot rejected as baseline price leaves baseline unavailable" {
+            runTest {
+                config = appConfig(
+                    listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.ETH, 30.0),
+                        Allocation(Asset.USD, 20.0),
+                    ),
+                )
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade(
+                    id = "bot",
+                    timestamp = botTime,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+                val futureSnapshot = anchorSnapshot(
+                    balances = mapOf(
+                        Asset.BTC to BigDecimal("0.5"),
+                        Asset.ETH to BigDecimal("0.1"),
+                        Asset.USD to BigDecimal("949.70"),
+                    ),
+                    prices = mapOf(
+                        Asset.BTC to BigDecimal("100.00"),
+                        Asset.ETH to BigDecimal("200.00"),
+                        Asset.USD to BigDecimal.ONE,
+                    ),
+                    timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                )
+                repository.saveSnapshot(futureSnapshot)
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                status.reason shouldBe "historical price unavailable"
+            }
+        }
+
+        "daily candle that begins before inception but closes after is rejected" {
+            runTest {
+                config = appConfig(
+                    listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.ETH, 30.0),
+                        Allocation(Asset.USD, 20.0),
+                    ),
+                )
+                val botTime = Instant.parse("2026-01-02T12:00:00Z")
+                val bot = apiTrade(
+                    id = "bot",
+                    timestamp = botTime,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(
+                            Asset.BTC to BigDecimal("0.5"),
+                            Asset.ETH to BigDecimal("0.1"),
+                            Asset.USD to BigDecimal("949.70"),
+                        ),
+                        prices = mapOf(
+                            Asset.BTC to BigDecimal("100.00"),
+                            Asset.ETH to BigDecimal.ZERO,
+                            Asset.USD to BigDecimal.ONE,
+                        ),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                val candleOpenSec = Instant.parse("2026-01-02T00:00:00Z").epochSecond
+                krakenService.ohlcSupplier = { pair, interval, _ ->
+                    pair shouldBe Asset.ETH_USD_PAIR
+                    interval shouldBe 1440
+                    listOf(candleOpenSec to BigDecimal("200.00"))
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                status.reason shouldBe "historical price unavailable"
+            }
+        }
+
+        "101-row ledger recovery with missing authoritative total fetches and persists all entries" {
+            runTest {
+                val ledgerHistory = (0 until 101).map { index ->
+                    LedgerEvent(
+                        ledgerId = "ledger-101-$index",
+                        time = Instant.parse("2026-04-01T00:00:00Z").minusSeconds(index.toLong()),
+                        type = "staking",
+                        asset = Asset.BTC,
+                        amount = BigDecimal.ZERO,
+                    )
+                }
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.ledgerTotalCountOverride = 0
+                krakenService.ledgerSupplier = { _, offset, _, _ -> ledgerHistory.drop(offset ?: 0).take(50) }
+
+                val status = newService().recoverOneBoundedRun()
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.ledgerOffset shouldBe "completed"
+                krakenService.getLedgersCallCount shouldBe 3
+                ledgerRepository.getLedgersInRange(Instant.EPOCH, now.plusSeconds(1)).size shouldBe 101
+            }
+        }
+
+        "switching Kraken account scope fails closed when historical data already exists" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, "account-A-digest")
+                repository.saveTrade(apiTrade("existing-trade", Instant.parse("2026-01-01T00:00:00Z")))
+
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                val service = newService()
+                service.prepareForCurrentConfiguration(null) shouldBe false
+
+                val status = service.recoverOneBoundedRun()
+                status.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
+                status.reason shouldBe "account scope changed; use correct DB or perform reset"
+            }
+        }
+
+        "crash during bounded recovery resumes idempotently without corrupting progress" {
+            runTest {
+                val history = (0 until 60).map { index ->
+                    apiTrade(
+                        id = "crash-trade-$index",
+                        timestamp = Instant.parse("2026-04-01T00:00:00Z").minusSeconds(index.toLong()),
+                    )
+                }
+                krakenService.tradeHistoryTotalCountOverride = 60
+                var failOnCall = 2
+                var callCount = 0
+                krakenService.tradeHistorySupplier = { _, offset ->
+                    callCount++
+                    if (callCount == failOnCall) {
+                        throw RuntimeException("simulated network crash during pagination")
+                    }
+                    history.drop(offset ?: 0).take(50)
+                }
+
+                val firstStatus = newService().recoverOneBoundedRun()
+                firstStatus.status shouldBe InceptionRecoveryStatus.FAILED
+                firstStatus.reason shouldBe "history request failed"
+
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                failOnCall = -1
+                val secondStatus = newService().recoverOneBoundedRun()
+                secondStatus.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                secondStatus.tradeOffset shouldBe "completed"
+                repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)).size shouldBe 60
             }
         }
     }

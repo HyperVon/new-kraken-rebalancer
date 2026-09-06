@@ -15,6 +15,7 @@ import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenCredentialsUnavailableException
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.RecoveryTradeHistoryService
 import com.gemini.krakenbot.service.SpendableBalanceService
 import com.gemini.krakenbot.util.PrecisionConstants
 import io.ktor.client.HttpClient
@@ -41,7 +42,8 @@ class KrakenServiceImpl(
     private val publicRateLimiter: PublicRateLimiter = PublicRateLimiter(),
 ) : KrakenService,
     SpendableBalanceService,
-    BoundedTradeHistoryService {
+    BoundedTradeHistoryService,
+    RecoveryTradeHistoryService {
     private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
 
     private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1_000_000L)
@@ -310,6 +312,37 @@ class KrakenServiceImpl(
 
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
         val (trades, count) = KrakenParsers.parseTradeHistory(result, allocations)
+        lastFetchedCount.set(count)
+        return trades
+    }
+
+    override suspend fun getRecoveryTradeHistoryUntil(
+        startSec: Long?,
+        offset: Int?,
+        endSec: Long?,
+    ): List<TradeRecord> {
+        lastFetchedCount.set(0)
+        if (!configService.getConfig().kraken.hasValidCredentials()) {
+            throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for trade history.")
+        }
+
+        val params = mutableMapOf<String, String>()
+        if (startSec != null) params[KrakenApiConstants.PARAM_START] = startSec.toString()
+        if (endSec != null) params[KrakenApiConstants.PARAM_END] = endSec.toString()
+        if (offset != null) params[KrakenApiConstants.PARAM_OFS] = offset.toString()
+
+        val result =
+            try {
+                queryPrivate(KrakenApiConstants.PATH_TRADES_HISTORY, params)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.error("Failed to query private TradesHistory endpoint for recovery", e)
+                throw e
+            }
+
+        val allocations = configService.getConfig().allocations.map { it.symbol.value }
+        val (trades, count) = KrakenParsers.parseTradeHistory(result, allocations, preserveUnmapped = true)
         lastFetchedCount.set(count)
         return trades
     }

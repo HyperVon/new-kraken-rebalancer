@@ -11,7 +11,9 @@ import com.gemini.krakenbot.model.WithdrawStatusRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.RecoveryTradeHistoryService
 import com.gemini.krakenbot.service.SpendableBalanceService
+import com.gemini.krakenbot.service.getRecoveryTradeHistoryUntil
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
@@ -26,6 +28,7 @@ class DynamicKrakenService(
     private val configService: ConfigService,
 ) : KrakenService,
     BoundedTradeHistoryService,
+    RecoveryTradeHistoryService,
     SpendableBalanceService {
     // `simulation` picks the backend; `dryRun` is enforced inside that backend's executeOrder, not here.
     private fun resolveFromConfig(): KrakenService = if (configService.getConfig().settings.simulation) {
@@ -97,6 +100,13 @@ class DynamicKrakenService(
     override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
         val backend = currentBackend()
         val trades = backend.getTradeHistoryUntil(startSec, offset, endSec)
+        lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
+        return trades
+    }
+
+    override suspend fun getRecoveryTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
+        val backend = currentBackend()
+        val trades = backend.getRecoveryTradeHistoryUntil(startSec, offset, endSec)
         lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
         return trades
     }
