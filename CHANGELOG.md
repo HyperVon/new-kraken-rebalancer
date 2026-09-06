@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.36] - 2026-09-06
+
+### Added
+
+- **Automatic strategy-inception recovery**: upgraded installations now recover bounded Kraken
+  TradesHistory and Ledgers pages with durable, versioned progress and configuration/account
+  fingerprinting. Recovery resumes with overlap, reuses the normal API-fill reconciler, preserves
+  local/order identities, and confirms inception only after positive bot ownership, complete
+  coverage, funding/card provenance, and a historical-price baseline pass. Ambiguous or incomplete
+  evidence keeps the lifetime comparison unavailable and is surfaced in the History sync banner.
+
+### Changed
+
+- **Inception wording and baseline safety**: retained-history wording no longer claims that early
+  records were deleted; recovered baselines use an exact candidate-minus-one-millisecond timestamp,
+  null balance-observation semantics, safe read-only trade deduplication, and atomic snapshot/evidence
+  persistence. Throttled cycles with stale ledger coverage continue to fail closed until the next
+  ledger refresh.
+
 ## [6.17.35] - 2026-09-06
 
 ### Fixed

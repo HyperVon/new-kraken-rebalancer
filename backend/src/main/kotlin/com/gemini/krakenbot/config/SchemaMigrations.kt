@@ -10,7 +10,7 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import java.time.Instant
 
-internal const val CURRENT_SCHEMA_VERSION = 9
+internal const val CURRENT_SCHEMA_VERSION = 10
 
 internal data class SchemaMigration(
     val version: Int,
@@ -38,6 +38,19 @@ internal val SCHEMA_MIGRATIONS = listOf(
     },
     SchemaMigration(8, "ath-applied-flow-semantics"),
     SchemaMigration(9, "ath-applied-flow-event-millisecond-precision"),
+    SchemaMigration(10, "ledger-provenance-flags") {
+        // These flags were previously inferred in memory and were lost after a restart. Preserve
+        // the safe legacy inference for existing rows; newly parsed rows write the authoritative
+        // values directly through LedgerTable.
+        exec(
+            """
+            UPDATE ledgers
+            SET has_authoritative_balance = CASE WHEN balance <> 0 THEN 1 ELSE 0 END,
+                has_authoritative_fee = CASE WHEN fee <> 0 THEN 1 ELSE 0 END,
+                has_valid_fee = 1
+            """.trimIndent(),
+        )
+    },
 )
 
 internal fun validateSchemaMigrations(migrations: List<SchemaMigration> = SCHEMA_MIGRATIONS) {

@@ -30,6 +30,7 @@ class SchemaMigrationsTest : StringSpec() {
                 "portfolio-stats-singleton",
                 "ath-applied-flow-semantics",
                 "ath-applied-flow-event-millisecond-precision",
+                "ledger-provenance-flags",
             )
         }
 
@@ -145,6 +146,7 @@ class SchemaMigrationsTest : StringSpec() {
                         7 to "portfolio-stats-singleton",
                         8 to "ath-applied-flow-semantics",
                         9 to "ath-applied-flow-event-millisecond-precision",
+                        10 to "ledger-provenance-flags",
                     )
                 }
             }
@@ -198,6 +200,7 @@ class SchemaMigrationsTest : StringSpec() {
                         7 to "portfolio-stats-singleton",
                         8 to "ath-applied-flow-semantics",
                         9 to "ath-applied-flow-event-millisecond-precision",
+                        10 to "ledger-provenance-flags",
                     )
                 }
             }

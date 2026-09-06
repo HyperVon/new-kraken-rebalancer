@@ -31,6 +31,7 @@ import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
+import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
@@ -100,6 +101,7 @@ val coreModule =
             InceptionDiscoveryService(
                 tradeRepository = get(),
                 configService = get(),
+                recoveryService = get(),
             )
         }
         single {
@@ -136,12 +138,24 @@ val coreModule =
                 reconstructionService = get(),
             )
         }
+        single {
+            InceptionRecoveryService(
+                repository = get(),
+                ledgerRepository = get(),
+                krakenService = get(),
+                configService = get(),
+                tradeHistorySyncService = get(),
+                orderIntentRepository = get(),
+                fundingProvenanceResolver = get(),
+            )
+        }
         single<TradeHistoryService> {
             TradeHistoryServiceImpl(
                 snapshotStore = get(),
                 queryService = get(),
                 syncService = get(),
                 ledgersSyncService = get(),
+                inceptionRecoveryService = get(),
             )
         }
         // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:
@@ -185,6 +199,7 @@ val coreModule =
                 orderExecutor = get(),
                 krakenService = get(),
                 inceptionDiscoveryService = get(),
+                inceptionRecoveryService = get(),
             )
         }
         single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {

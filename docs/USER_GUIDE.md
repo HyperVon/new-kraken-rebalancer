@@ -206,7 +206,7 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
 | **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Must be positive (any value > 0). |
 | **Drawdown Activation Threshold (%)** | Minimum drawdown before cash deployment begins (deadband). Drawdowns below this deploy 0% cash. Bounded **0–100**. |
-| **Inception Date (Optional)** | Anchor date for strategy performance comparison (`YYYY-MM-DD` or ISO-8601). If empty, auto-detects from the earliest successful multi-asset trade burst in your trade history. Required if the comparison reports truncated history on an upgraded install. |
+| **Inception Date (Optional)** | Manual strategy-start anchor (`YYYY-MM-DD` or ISO-8601). If empty, the app recovers bounded Kraken trade/ledger history and confirms inception only when coverage, bot ownership, funding provenance, and a historical-price baseline all agree. A misleading manual burst does not establish the start. |
 
 ### Safety modes
 
@@ -254,10 +254,13 @@ all six summary cards and the charts update together.
 
 ### Sync progress banner
 
-Immediately below the header, a banner appears while trade and ledger history is
-being synchronized: a spinner with **Synchronizing Kraken Trade History…** and an
-inline progress indicator (e.g. **0 / 0 (0%)**) plus a progress bar. It auto-
-dismisses once the sync session completes.
+Immediately below the header, a banner appears while ordinary trade/ledger history
+or strategy-inception recovery is active: a spinner with **Synchronizing Kraken
+account history…** and an inline progress indicator plus a progress bar. Recovery
+uses separate durable progress, resumes with overlap after interruption, and is
+bounded per run. If Kraken history is complete but ownership, funding provenance,
+or the baseline is ambiguous/unavailable, the banner explains that outcome while
+the rest of History remains usable.
 
 ### Views
 
@@ -378,7 +381,11 @@ The comparison cannot be computed when:
 | Unsupported ledger type | A ledger entry of a type outside Kraken's documented set blocks safe comparison. |
 | Ambiguous ledger type | A ledger entry cannot be classified as owner capital or an internal movement. |
 | Funding provenance unavailable | Deposit/withdrawal status evidence could not be retrieved; funding is not guessed. |
-| Inception history truncated | Early history was removed by a previous version; set the strategy inception date in Settings. |
+| Inception recovery incomplete | Bounded Kraken history recovery is still pending or a page failed; no lifetime number is produced. |
+| Ambiguous inception | Historical activity cannot be assigned uniquely to this strategy. |
+| No bot evidence | Recovered history contains no positively identified non-dry-run bot fill. |
+| Inception baseline unavailable | A retained balance anchor, historical price, or complete event replay is missing. |
+| Inception history truncated | Legacy retained history cannot prove the lifetime baseline; set the strategy inception date in Settings. |
 
 When an unavailability reason applies, the chart hides and a message explains why.
 There is no estimated numeric fallback for an unexplained tracked balance change:

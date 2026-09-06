@@ -11,6 +11,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import com.gemini.krakenbot.repository.table.TradeTable
@@ -36,6 +37,7 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
+import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -213,6 +215,31 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             .limit(1)
             .firstOrNull()
             ?.get(PortfolioSnapshotTable.id)
+    }
+
+    override suspend fun getSnapshotById(id: Int): PortfolioSnapshot? = database.readTransactionIO {
+        val row = PortfolioSnapshotTable
+            .selectAll()
+            .where { PortfolioSnapshotTable.id eq id }
+            .limit(1)
+            .toList()
+        buildSnapshotsFromRows(row).firstOrNull()
+    }
+
+    override suspend fun saveSnapshotWithMetadata(
+        snapshot: PortfolioSnapshot,
+        metadata: Map<String, String>,
+        snapshotIdMetadataKeys: Set<String>,
+    ): Int = database.safeTransactionIO(log, "Failed to persist inception baseline and evidence") {
+        val snapshotId = insertSnapshotWithChildren(snapshot)
+        val allMetadata = metadata + snapshotIdMetadataKeys.associateWith { snapshotId.toString() }
+        allMetadata.forEach { (key, value) ->
+            HistorySyncMetadataTable.upsert {
+                it[HistorySyncMetadataTable.key] = key
+                it[HistorySyncMetadataTable.value] = value
+            }
+        }
+        snapshotId
     }
 
     override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = database.readTransactionIO {

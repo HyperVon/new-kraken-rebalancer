@@ -131,6 +131,14 @@ fun parseSyncProgressResponse(raw: dynamic): SyncProgressResponse = SyncProgress
     seeded = dynamicBoolean(raw[SyncMetadataKeys.IS_SEEDED]),
     offset = dynamicString(raw[SyncMetadataKeys.OFFSET]).orEmpty(),
     total = dynamicString(raw[SyncMetadataKeys.TOTAL]).orEmpty(),
+    recoveryStatus = dynamicString(raw.recoveryStatus).orEmpty(),
+    recoveryTradeOffset = dynamicString(raw.recoveryTradeOffset).orEmpty(),
+    recoveryTradeTotal = dynamicString(raw.recoveryTradeTotal).orEmpty(),
+    recoveryLedgerOffset = dynamicString(raw.recoveryLedgerOffset).orEmpty(),
+    recoveryLedgerTotal = dynamicString(raw.recoveryLedgerTotal).orEmpty(),
+    recoveryCandidate = dynamicString(raw.recoveryCandidate),
+    recoveryReason = dynamicString(raw.recoveryReason),
+    recoveryHorizon = dynamicString(raw.recoveryHorizon),
 )
 
 fun parseRebalancerComparisonPoint(raw: dynamic): RebalancerComparisonPoint = RebalancerComparisonPoint(

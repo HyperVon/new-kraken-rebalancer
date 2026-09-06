@@ -486,6 +486,39 @@ class HistoryLoadingTest : StringSpec() {
                 document.body!!.appendChild(container)
             }
 
+            window.asDynamic().fetch = mockFetch {
+                json(
+                    "seeded" to true,
+                    "recoveryStatus" to "AMBIGUOUS",
+                    "recoveryTradeOffset" to "100",
+                    "recoveryTradeTotal" to "200",
+                    "recoveryLedgerOffset" to "50",
+                    "recoveryLedgerTotal" to "100",
+                    "recoveryReason" to "trade ownership is ambiguous",
+                )
+            }
+            try {
+                checkSyncProgress().await() shouldBe true
+                val banner = document.getElementById("sync-progress-banner") as HTMLElement
+                banner.classList.contains(CssClass.Utility.Hidden.value) shouldBe false
+                val bar = document.getElementById("sync-progress-bar") as HTMLElement
+                bar.style.width shouldBe "50%"
+                val text = document.getElementById("sync-progress-text") as HTMLElement
+                text.textContent shouldContain "trades 100 / 200; ledgers 50 / 100"
+                text.textContent shouldContain "trade ownership is ambiguous"
+            } finally {
+            }
+
+            window.asDynamic().fetch = mockFetch { json("seeded" to true, "recoveryStatus" to "FAILED") }
+            try {
+                document.getElementById("sync-progress-bar")?.remove()
+                document.getElementById("sync-progress-text")?.remove()
+                checkSyncProgress().await() shouldBe true
+            } finally {
+                container.innerHTML = TestDomBuilders.syncProgressDom()
+                document.body!!.appendChild(container)
+            }
+
             window.asDynamic().fetch = mockFetch { json("seeded" to false, "offset" to 0, "total" to 100) }
             try {
                 checkSyncProgress().await() shouldBe false
@@ -495,6 +528,14 @@ class HistoryLoadingTest : StringSpec() {
                 bar.style.width shouldBe "0%"
                 val text = document.getElementById("sync-progress-text") as HTMLElement
                 text.textContent shouldBe "0 / 100 (0%)"
+            } finally {
+            }
+
+            window.asDynamic().fetch = mockFetch { json("seeded" to false, "offset" to null, "total" to null) }
+            try {
+                checkSyncProgress().await() shouldBe false
+                val text = document.getElementById("sync-progress-text") as HTMLElement
+                text.textContent shouldBe "0 / 0 (0%)"
             } finally {
             }
 

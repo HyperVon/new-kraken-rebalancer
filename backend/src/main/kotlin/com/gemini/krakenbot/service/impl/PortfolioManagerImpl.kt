@@ -14,6 +14,7 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
+import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.RebalanceEventFormatter
 import com.gemini.krakenbot.view.util.ViewText
@@ -45,6 +46,7 @@ class PortfolioManagerImpl(
     private val orderExecutor: OrderExecutor,
     private val krakenService: KrakenService? = null,
     private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
+    private val inceptionRecoveryService: InceptionRecoveryService? = null,
 ) : PortfolioManager {
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
@@ -199,6 +201,7 @@ class PortfolioManagerImpl(
         // ledgers + trades sync first.
         synchronizeLedgers("on startup")
         synchronizeTrades("on startup")
+        recoverInception("on startup")
         resolveInception("on startup")
         synchronizeHistoricalSnapshots("on startup")
 
@@ -249,14 +252,15 @@ class PortfolioManagerImpl(
                         // The balance observation must precede the ledger
                         // sync: the sync watermark is stamped at sync start,
                         // and the ATH coverage gate requires coverage at or
-                        // after the observation. Observing first keeps the
-                        // gate passable every cycle instead of deferring
-                        // forever. The same observation drives the trade
-                        // valuation below, so total and observedAt stay a
-                        // consistent pair.
+                        // after the observation. On throttled cycles the
+                        // marker is intentionally older, so the analyzer
+                        // fails closed until the next ledger refresh. The
+                        // same observation drives the trade valuation below,
+                        // so total and observedAt stay a consistent pair.
                         val athObservation = observeBalancesForAth()
                         synchronizeLedgers("during cycle")
                         synchronizeTrades("during cycle")
+                        recoverInception("during cycle")
                         synchronizeHistoricalSnapshots("during cycle")
                         performRebalanceCycleForCycle(cycleId, athObservation)
                     }
@@ -337,6 +341,19 @@ class PortfolioManagerImpl(
             throw e
         } catch (e: Exception) {
             log.error("Failed to resolve portfolio inception {}", context, e)
+        }
+    }
+
+    private suspend fun recoverInception(context: String) {
+        try {
+            val status = inceptionRecoveryService?.recoverOneBoundedRun()
+            if (status != null) {
+                log.info("Strategy inception recovery status {} {}", context, status.status)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to recover strategy inception {}", context, e)
         }
     }
 

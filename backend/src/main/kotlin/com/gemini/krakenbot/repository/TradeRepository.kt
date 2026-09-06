@@ -37,6 +37,21 @@ interface TradeRepository {
     /** Loads the database ID for the snapshot matching [timestamp], or null if none exists. */
     suspend fun getSnapshotId(timestamp: Instant): Int?
 
+    /** Loads one snapshot by its durable database identity, or null when it is not retained. */
+    suspend fun getSnapshotById(id: Int): PortfolioSnapshot? = null
+
+    /** Persists a snapshot and related metadata in one transaction where supported. */
+    suspend fun saveSnapshotWithMetadata(
+        snapshot: PortfolioSnapshot,
+        metadata: Map<String, String>,
+        snapshotIdMetadataKeys: Set<String> = emptySet(),
+    ): Int {
+        val id = saveSnapshot(snapshot)
+        metadata.forEach { (key, value) -> setSyncMetadata(key, value) }
+        snapshotIdMetadataKeys.forEach { setSyncMetadata(it, id.toString()) }
+        return id
+    }
+
     suspend fun saveTrade(trade: TradeRecord): Int
 
     suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord)

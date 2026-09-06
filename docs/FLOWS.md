@@ -46,6 +46,7 @@ flowchart TB
         Store["TradeHistorySnapshotStore\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
         Sync["TradeHistorySyncService\n(300s throttle + pagination)"]
         LedgerSync["LedgersSyncService\n(300s throttle + pagination)"]
+        Recovery["InceptionRecoveryService\n(4 pages/run + durable resume)"]
     end
 
     subgraph External["🌐 External"]
@@ -67,6 +68,7 @@ flowchart TB
     PM -->|"startup syncs\n(each own session + backend pin)"| THS
     PM -->|"normal iteration"| Cycle
     Cycle -->|"in-cycle ledger/trade sync +\nhistorical reconstruction"| THS
+    Cycle -->|"bounded inception recovery\n(after ordinary sync)"| Recovery
     Cycle -->|"performRebalanceCycle()\n(nested pin reused)"| OE
     OE -->|"place buy/sell orders"| Kraken
     OE -->|"COLD poll after successful sell\n(not dry-run); best of 3 / early 95 pct"| Kraken
@@ -93,6 +95,9 @@ flowchart TB
     Kraken -->|"external ledger pages"| LedgerSync
     LedgerSync -->|"insert with identity dedupe"| Repo
 
+    Recovery -->|"private trades + ledgers\n(stable backend)"| Kraken
+    Recovery -->|"coverage/status/evidence\n+ reconstructed baseline"| Repo
+
     %% Dashboard initial load
     SSE -->|"SSE connect /api/status/stream"| DashCtrl
     DashCtrl -->|"getLatestSnapshot()"| Repo
@@ -104,6 +109,7 @@ flowchart TB
 
     class CS,Store hot
     class Sync cold
+    class Recovery cold
     class Kraken external
     class Repo,DB infra
 ```
@@ -481,6 +487,43 @@ events at USD scale 2 or crypto scale 8; the first unexplained mismatch returns
 
 ---
 
+## Flow 7 — Automatic Inception Recovery
+
+`PortfolioManagerImpl` invokes recovery after ordinary ledger/trade synchronization on startup and
+on later cycles. Recovery is bounded to four pages per invocation and throttled for five minutes;
+the UI observes durable state through `/api/history/sync-progress`, so neither startup nor a History
+request waits for an unbounded account-history scan.
+
+```mermaid
+sequenceDiagram
+    participant PM as PortfolioManagerImpl
+    participant Recovery as InceptionRecoveryService
+    participant Kraken as Kraken private API
+    participant THS as TradeHistorySyncService
+    participant DB as SQLite
+    participant History as History UI
+
+    PM->>Recovery: recoverOneBoundedRun()
+    Recovery->>DB: read version, fingerprint, offsets, horizon
+    Recovery->>Kraken: TradesHistory page (fixed end horizon)
+    Kraken-->>Recovery: fills + count
+    Recovery->>THS: importRecoveredApiTrades(page)
+    THS->>DB: reconcile API fill, preserve local/order identities
+    Recovery->>Kraken: Ledgers page (all types, fixed end horizon)
+    Kraken-->>Recovery: ledger rows + count
+    Recovery->>DB: insert by ledger identity and checkpoint offset
+    alt both streams complete
+        Recovery->>DB: validate ownership, provenance, anchor, prices
+        Recovery->>DB: atomically save candidate-1ms baseline + evidence
+    else page failure, cancellation, or incomplete coverage
+        Recovery->>DB: retain resumable progress, no inception confirmation
+    end
+    History->>DB: GET /api/history/sync-progress
+    DB-->>History: ordinary sync + recovery status/progress/reason
+```
+
+---
+
 ## Hot vs. Cold: Why Does It Matter?
 
 The choice between hot and cold flows in this application is deliberate and maps directly to the nature of each problem:
@@ -491,5 +534,6 @@ The choice between hot and cold flows in this application is deliberate and maps
 | Dashboard streaming | **Hot** | Snapshots are produced by the rebalancer loop independently of how many browsers are connected. Each connected browser should see the same live broadcast. |
 | Paginated API sync | **Cold** | Fetching is always triggered on-demand for a specific reason. The caller owns the full lifecycle. Backpressure is critical for memory safety with large histories. |
 | Paginated ledger sync | **Cold** | Ledger pages are fetched only during startup/cycle sync, with insert-only identity dedupe and durable seed progress. |
+| Inception recovery | **Cold + durable state** | Four-page bounded runs use a fixed horizon and overlap-on-resume offsets; incomplete or ambiguous evidence never becomes a lifetime baseline. |
 | USD settle (fill / balance) | **Cold** | One-shot after sells. Fill-confirm or balance poll only makes sense in that context; the caller only needs the final settled cash. |
 | Live-order journal | **Durable state** | A database row survives process failure and blocks ambiguous live retries until an operator verifies the exchange outcome. |
