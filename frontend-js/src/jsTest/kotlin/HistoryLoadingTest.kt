@@ -519,6 +519,21 @@ class HistoryLoadingTest : StringSpec() {
                 document.body!!.appendChild(container)
             }
 
+            window.asDynamic().fetch = mockFetch {
+                json(
+                    "seeded" to true,
+                    "recoveryStatus" to "IN_PROGRESS",
+                    "recoveryTradeOffset" to "25",
+                    "recoveryTradeTotal" to "100",
+                )
+            }
+            try {
+                checkSyncProgress().await() shouldBe false
+                val banner = document.getElementById("sync-progress-banner") as HTMLElement
+                banner.classList.contains(CssClass.Utility.Hidden.value) shouldBe false
+            } finally {
+            }
+
             window.asDynamic().fetch = mockFetch { json("seeded" to false, "offset" to 0, "total" to 100) }
             try {
                 checkSyncProgress().await() shouldBe false

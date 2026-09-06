@@ -182,7 +182,7 @@ internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTOR
             val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as? HTMLElement
             if (bar != null) bar.style.width = "${progress.second}%"
             if (text != null) text.textContent = progress.first
-            true
+            status.recoveryStatus != SyncProgressResponse.RECOVERY_IN_PROGRESS
         } else {
             banner.classList.add(CssClass.Utility.Hidden.value)
             true
@@ -201,7 +201,7 @@ private fun isInceptionRecoveryVisible(status: SyncProgressResponse): Boolean = 
     SyncProgressResponse.RECOVERY_UNAVAILABLE,
 )
 
-private fun recoveryProgress(status: com.gemini.krakenbot.api.SyncProgressResponse): Pair<String, Int> {
+private fun recoveryProgress(status: SyncProgressResponse): Pair<String, Int> {
     val streams = listOf(
         dynamicNumber(status.recoveryTradeOffset) to dynamicNumber(status.recoveryTradeTotal),
         dynamicNumber(status.recoveryLedgerOffset) to dynamicNumber(status.recoveryLedgerTotal),
