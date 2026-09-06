@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -22,12 +23,14 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
+import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
@@ -94,11 +97,19 @@ val coreModule =
             )
         }
         single {
+            InceptionDiscoveryService(
+                tradeRepository = get(),
+                configService = get(),
+            )
+        }
+        single {
             TradeHistoryQueryService(
                 repository = get(),
                 portfolioStatsRepository = get(),
                 ledgerRepository = get(),
                 orderIntentRepository = get(),
+                inceptionDiscoveryService = get(),
+                fundingProvenanceResolver = get(),
             )
         }
         single {
@@ -144,11 +155,17 @@ val coreModule =
                 configService = get(),
             )
         }
+        single<FundingProvenanceResolver> {
+            KrakenFundingProvenanceResolver(krakenService = get())
+        }
         single<PortfolioAnalyzer> {
             PortfolioAnalyzerImpl(
                 krakenService = get(),
                 configService = get(),
                 portfolioStatsRepository = get(),
+                ledgerRepository = get(),
+                tradeRepository = get(),
+                defaultProvenanceResolver = get(),
             )
         }
         single<OrderExecutor> {
@@ -167,6 +184,7 @@ val coreModule =
                 portfolioAnalyzer = get(),
                 orderExecutor = get(),
                 krakenService = get(),
+                inceptionDiscoveryService = get(),
             )
         }
         single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {

@@ -139,28 +139,213 @@ target state.
 
 Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
 
-1. **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in
+1. **ATH Tracking & Cash-Flow Adjustment**: The bot tracks the portfolio's All-Time High (ATH) value in
    the SQLite database. ATH is set on first run or updated whenever a new high
-   is reached. Missing or explicitly null stats represent an empty initial
-   state. A database read or legacy-file migration failure aborts the analysis
-   before ATH persistence or order planning, rather than treating the ATH as
-   zero. Any non-cancellation ATH persistence failure logs an error and aborts
-   the cycle (fail-closed) so the bot never plans orders against an unpersisted
-   All-Time High. Cancellation still propagates so a cancelled cycle cannot
-   continue.
+   is reached.
+   - **Cash-Flow Neutrality**: Monotonic ATH tracking without flow adjustment would cause external deposits
+     to artificially raise ATH and external withdrawals to plunge the bot into false drawdowns. To preserve true
+     strategy performance, owner capital flows adjust ATH proportionally:
+     `Adjusted ATH = Current ATH * (Pre-Flow Value + Net External Flow) / Pre-Flow Value`
+     This ensures an external deposit scales ATH without wiping out an existing drawdown percentage, and an external
+     withdrawal scales ATH down without triggering artificial drawdown or forced fiat deployment. Staking rewards,
+     dividends, and `earn/reward` are investment performance that improve portfolio value and reduce drawdown
+     without scaling ATH; Earn allocation mechanics remain internal.
+   - **Two-Layer Funding Provenance & Flow Classification**: Kraken reuses coarse ledger types for economically
+     distinct activity, so classification follows a strict two-layer architecture:
+     1. *Intrinsic classification (`LedgerFlowClassifier`)*: Evaluates intrinsic ledger metadata. Same-asset
+        `refid`-paired zero-net legs and known internal-subtype rows (spot/futures/staking wallet moves, earn
+        allocation, migration) classify as `INTERNAL_MOVE`. Trade rows defer to `TradesHistory` (`TRADE_IGNORED`),
+        margin-family rows (`margin`, `rollover`, `settled`, `credit`, `sale`) replay in-kind as `EXTERNAL_BALANCE`
+        without scaling ATH, and unrecognized ledger types fail closed. Modern `earn/reward` is
+        `EXTERNAL_BALANCE`; `earn/allocation`, `deallocation`, `autoallocate`, and `migration` are
+        `INTERNAL_MOVE`; another Earn subtype is ambiguous. For `transfer`, exact internal subtypes,
+        authoritative internal evidence, or an asset-aware same-asset zero-net pairing may prove
+        `INTERNAL_MOVE`; documented `reward` subtype is `EXTERNAL_BALANCE`; undocumented prose
+        descriptions (`airdrop`, `fork`, `distribution`) and bare transfers remain ambiguous without
+        affirmative external provenance. `refid` is used only to correlate
+        rows and never parsed for undocumented meaning. For deposits and withdrawals, the classifier
+        delegates external validation to an affirmative `FundingProvenanceResolver`.
+     2. *External provenance verification (`FundingProvenanceResolver`)*: In production,
+        `KrakenFundingProvenanceResolver` batches authenticated `/0/private/DepositStatus` and
+        `/0/private/WithdrawStatus` requests over the ledger range (with a bounded correlation margin),
+        paginates with Kraken's `cursor`/`limit` parameters, and caches the fetched families while they
+        cover the batch. It does not make one funding request per ledger row. A direct reference or fuzzy
+        candidate must agree on the ledger family, normalized asset, direction, gross/net amount, fee when
+        authoritative, timestamp, and terminal status; for withdrawals the account-debit alternative is
+        `amount + fee`, while deposit credit uses `amount - fee`. Fuzzy correlation accepts exactly one candidate only.
+        Zero, duplicate, or contradictory candidates remain unresolved. The legacy status endpoints are
+        active but deprecated in Kraken's API documentation; Spot REST does not provide a historical
+        Futures-transfer query, so a Spot/Futures leg that is not explicitly marked or represented by an
+        authoritative internal source remains unresolved. An indistinguishable status record cannot be
+        separated from external funding by the Spot API alone. Confirmed external deposits and withdrawals
+        classify as `OWNER_CAPITAL`.
+     Flows for assets outside the configured allocation universe are ignored.
+   - **Net Capital for Fee-Bearing Deposits**: Confirmed external deposits contribute their net capital
+     (`event.netBalanceDelta() = amount - fee`) as `OWNER_CAPITAL`. ATH scales strictly on the net contributed
+     funds, preventing fee drag from being misattributed as strategy loss or unproven plumbing.
+   - **Prepared Card Funding Lifecycle**: ATH retains the full ledger batch for refid correlation, prepares
+      one immutable `FundingProvenanceResolver` snapshot, and passes that exact prepared instance to classification,
+      card normalization, and basis context. A confirmed card/consumer funding deposit is ambiguous until its
+      complete plumbing shape arrives (external deposit + USD `spend` + purchased-asset `receive` for a card buy);
+      incomplete rows defer ATH and remain unjournaled. Confirmed ordinary Wire/ACH funding without plumbing stays
+      `NotApplicable` to `CardFundingNormalizer` and is handled as ordinary owner capital. Every funding leg in a
+      normalized owner event must be `EXTERNAL`; unresolved siblings or external/internal mixtures are ambiguous,
+      all-internal groups are `NotApplicable`, and multiple external funding legs are unsupported unless a future
+      explicit shape is added. Only normalization groups intersecting the current undecided identity set can block
+      the current ATH; retained decided groups remain context, while a group split between decided and newly arrived
+      identities fails closed rather than applying only the new sibling. Historical decided card groups contribute only
+      raw per-leg balance deltas without calling fee pricing providers, preventing historical pricing gaps on already-accounted
+      fees from blocking new ordinary bank deposits.
+   - **Synthetic Capital vs Actual Effects**: `NormalizedFundingTransaction.OwnerContribution` and
+       `OwnerWithdrawal` carry both `netOwnerCapitalUsd` (the synthetic amount used for ATH scaling and Buy & Hold
+       inception-weight allocation) and exact per-leg `TimedAssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
+       Each delta maintains its ledger ID and timestamp so that basis reconstruction at an arbitrary target time never
+       replays future card legs prematurely. Buy & Hold consumes only the synthetic amount and never replays the conversion legs.
+       ATH basis reconstruction replays completed card actual deltas, including fees, exactly once and excludes both the
+       representative funding row and raw card plumbing rows from separate replay.
+   - **Decision Journal vs Actual-Balance Context Separation**: The decision journal (`applied_ath_flows`) records
+      which economic owner-capital events have had their ATH scaling applied, preventing double-application on future
+      scans. Reconstructing pre-flow portfolio holdings for a target event time (`resolveEventTimeBasis`) operates on
+      actual account balances (`ActualOwnerFlowContext`). When a late-arriving backfilled flow is evaluated, all
+      intervening ordinary owner flows (`OWNER_CAPITAL`, e.g. ACH/wire deposits and withdrawals)—whether already
+      decided in earlier cycles or pending in the current batch—are replayed into holdings if they occurred within the
+      basis window `(predecessor actual-state boundary, target flow time]`. Multi-leg card transactions replay their
+      actual balance deltas exclusively via `TimedAssetDelta` entries; card representative deposits and plumbing rows
+      are strictly excluded from ordinary owner-flow replay to ensure exact-once balance attribution.
+      New durable semantic rows retain the original ledger event time as `event_time_millis`, so replay cannot move an
+      already-decided owner flow across a predecessor snapshot, balance-observation, or ordering boundary through
+      second-level timestamp truncation. A new semantic row must match the retained ledger timestamp exactly;
+      a mismatch defers with `PRE_FLOW_BASIS_UNCERTAIN`. Legacy identity-only rows keep a null semantic timestamp
+      and the existing conservative fallback. A pre-v9 semantic row with otherwise-valid meaning uses the retained
+      ledger row's exact time until it can be replaced by a newly journaled decision; no timestamp precision is invented.
+   - **Undecided Card Overlap Ordering Safety**: If another undecided owner-capital event falls strictly inside the
+      source-time span of an undecided multi-leg card transaction (`minCardTime < other.time < maxCardTime`),
+      micro-ordering between the external flow and the intermediate card conversion legs cannot be proven without
+      exchange execution sequence metadata. The system fails closed with `AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN`
+      and leaves both flows unjournaled so future cycles or operator review can resolve them cleanly.
+   - **Unusable Decided Card Funding Isolation**: Already-decided card groups that cannot be structurally reconstructed
+      (e.g., legacy ambiguous state) are preserved as explicit historical uncertainty (`UnusableDecidedFundingContext`).
+      To prevent historical anomalies outside the active reconstruction window from permanently blocking ATH tracking,
+      an unusable group triggers `PRE_FLOW_BASIS_UNCERTAIN` only if its source-time span intersects the active basis
+      reconstruction interval `(predecessor actual-state boundary, target flow time]`. Groups entirely preceding the
+      predecessor observation or following the target event are safely ignored.
+   - **Ambiguous Funding Deferral & Fail-Closed Safety**: Unlike terminal neutral events (`INTERNAL_MOVE`,
+     `TRADE_IGNORED`) or performance events (`EXTERNAL_BALANCE`) which are acknowledged in the decision journal,
+     flows classified as `AMBIGUOUS` or `UNSUPPORTED` MUST NOT be journaled as decided or skipped. Instead, they
+     fail closed by deferring the entire ATH update (`AthUpdateResult.Deferred`), preserving the last trusted
+     drawdown and forcing fiat deployment to zero. Every deferred result carries a structured
+     `AthTrustFailureReason`: `LEDGER_COVERAGE_STALE`, `LEDGER_COVERAGE_UNKNOWN`,
+     `FUNDING_PROVENANCE_UNAVAILABLE`, `AMBIGUOUS_FUNDING`, `UNSUPPORTED_LEDGER_EVENT`,
+     `HISTORICAL_PRICE_UNAVAILABLE`, `PRE_FLOW_BASIS_UNCERTAIN`, `BALANCE_OBSERVATION_UNCERTAIN`,
+     `EVENT_ORDERING_UNCERTAIN`, or `PERSISTENCE_FAILURE`. The reason is logged and exposed as
+     `lastAthDeferredReason` in backend health status; it is diagnostic only and every deferral still
+     forces fiat deployment to zero. They remain unjournaled so future sync cycles or operator
+     reconciliations can re-evaluate them with fresh metadata, and once resolved with affirmative evidence, they
+     apply exactly once.
+   - **Ledger Coverage Ceiling & Identity-Driven Reconciliation**: ATH flow processing is upper-bounded by
+     confirmed ledger synchronization coverage (`SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC`), ensuring events
+     cannot be skipped if a rebalance cycle runs before ledger polling catches up. The cycle takes its balance
+     observation before the ledger sync that stamps the coverage watermark, so coverage normally confirms the
+     whole observation; the reconciliation horizon is the earlier of the two, and rows between the observation
+     and a wider coverage wait for the next cycle because they are not in the observed total yet.
+     When balances were observed
+     after ledger coverage, the whole ATH update defers: the balance must neither establish a new ATH nor produce
+     a drawdown that drives fiat deployment, so the cycle preserves the last trusted drawdown and forces
+     deployment to zero. Unknown or missing ledger coverage with a dated observation defers the same way
+     (a total that may contain unseen owner capital must never ratchet ATH); a malformed flow watermark
+     also defers with no state advanced, leaving the key for the operator to repair. Which rows still need a
+     decision is determined by identity, not timestamp: every retained ledger row up to the reconciliation
+     horizon is rescanned and the applied-flow journal filters what was already decided, so late-arriving backfill
+     below an old watermark is reconciled exactly once.
+     *Performance & Storage Tradeoff*: Rescanning every retained row is linear in the retained ledger set, which
+     is naturally bounded by the 90-day retention horizon (typically a few thousand rows in active accounts).
+     This design choice prioritizes correctness and exact-once reconciliation over sliding-window heuristics,
+     as bounded overlap cursors can silently miss backfilled rows older than their window. Future optimization
+     paths include an indexed database status column or a hybrid bounded overlap cursor with periodic full sweeps.
+     *Post-Horizon Lookahead Is Context Only*: within the bounded card-transaction lookahead window
+     (`MAX_CARD_TRANSACTION_SPAN`, 120s), same-refid rows beyond the reconciliation horizon are read only to
+     recognize that a known card group is incomplete. They never enter provenance preparation, classification,
+     card normalization, owner-flow economics, initial-ATH absorption, or the applied-flow journal. A
+     transaction is treated as economically complete only when every source leg is at or before the confirmed
+     horizon; otherwise the cycle defers with `AMBIGUOUS_FUNDING` and journals nothing, so a pre-horizon card
+     deposit can never be journaled while its spend/receive legs are still beyond the horizon. A
+     lookahead-incomplete group blocks the cycle only while it still has an undecided pre-horizon leg; a fully
+     decided group also uses confirmed rows only. Incomplete historical context defers when it intersects
+     the active reconstruction interval. Missing-watermark bootstrap validates the same absorption rules;
+     legacy journal migration waits if its watermark exceeds the confirmed horizon.
+   - **Pre-Flow Basis Reconstruction with Intervening Balance Replay**: Flows apply sequentially oldest-first
+     (simultaneous flows net into one step), each against its event-time pre-flow basis. The basis reconstructs
+     exact portfolio holdings immediately before the flow:
+     `holdings_at_flow = predecessor_holdings + replayed_trades + replayed_external_balances + replayed_actual_card_deltas + replayed_historical_owner_flows`.
+     Successful non-dry-run trades adjust tracked crypto quantities and fiat outlays/proceeds (including fees),
+     off-universe trades adjust only the fiat leg, and intervening `EXTERNAL_BALANCE` events (such as staking
+     rewards, ledger adjustments, or dividends occurring between predecessor snapshot and the flow event time)
+     are replayed in-kind into holdings before valuation. Holdings are then revalued at event-time prices:
+     `Pre-flow basis = sum(holding_i * price_at_flow_i)`.
+     The predecessor's `balancesObservedAt` is the lower request-start boundary; legacy snapshots without it
+     fall back to their save timestamp. Ledger rows in the uncertain interval
+     `(balancesObservedAt, predecessor.timestamp]` are accepted only when authoritative post-event balances
+     prove one unique embedded prefix; ambiguous, missing-balance, or same-timestamp rows defer the update
+     instead of receiving a lexical order. If a modern snapshot is observed before the flow but saved after
+     it and no snapshot saved before the flow establishes the pre-flow state, the update also defers. Flow-time
+     prices are resolved strictly from event-time evidence:
+     first from a successful non-dry-run trade at or before the event within ±180s, then from the nearest
+     recorded snapshot at or before the event within ±180s, and finally from a completed 15-minute OHLC candle
+     whose `candleStart + 900s <= eventTime` (an exact candle end is valid). Future trades/snapshots and active
+     candles are excluded. Live exchange ticker prices are strictly decoupled from historical lookups: live
+     tickers are only permitted for near-real-time events within a tight 300-second window
+     (`MAX_NEAR_REALTIME_TICKER_WINDOW_SECONDS = 300L`). Historical flows older than 300s without verified
+     historical trade, snapshot, or completed OHLC pricing fail closed by deferring the update
+     (`AthUpdateResult.Deferred`).
+     If no predecessor snapshot exists at all, the legacy/initial-baseline case assumes the flow predates ATH
+     establishment and journals it as absorbed; a modern observation boundary that proves a later-saved snapshot
+     could have observed the flow instead fails closed as described above.
+   - **Crash-Idempotent Checkpoint & Migration Limitations**: The ATH value, applied per-ledger flow identities,
+     and the flow watermark persist in a single SQLite transaction. A crash before commit retries safely; after commit
+     nothing is double-applied — restarts skip recorded ledger IDs even inside a held watermark window.
+     The journal is a lifetime decision log: it is never pruned by the watermark. When the initial ATH is
+     established, undecided decision-bearing rows below the observation are journaled as absorbed.
+     *Durable Owner-Capital Semantics (schema v8; exact event time in schema v9)*: alongside each journaled identity, the
+     `ath_applied_flows` journal persists the decision category, asset, actual balance delta, optional
+     normalized group (card refid), decision version, and exact `event_time_millis` for new semantic rows in the same
+     checkpoint transaction. Already-decided
+     ordinary owner flows (ACH/wire deposits and withdrawals) replay from these persisted semantics, so a
+     late-arriving flow still reconstructs the correct pre-flow basis even when exchange provenance no longer
+     proves the historical event; current authoritative provenance remains mandatory only for rows that have
+     not been decided yet. New persisted semantic timestamps and raw ledger identity must agree at millisecond
+     precision; disagreement fails closed with `PRE_FLOW_BASIS_UNCERTAIN`. Pre-v9 semantic rows use the retained
+     ledger timestamp when their exact column is null. Legacy identity-only journal rows (pre-v8 or presumed by the migration below)
+     keep their prior behavior when current provenance still proves owner capital and fail closed instead of
+     silently omitting when it cannot, if the row intersects the active reconstruction interval.
+     *Migration Limitation*: Databases upgraded from older timestamp-window releases perform a one-time migration
+     (`SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED`): rows below the legacy watermark whose journal entries were
+     pruned under earlier versions are presumed decided, so historical flows are not double-counted. Forcing a
+     genuine re-scan requires restoring a pre-scaling database backup.
+   - **Safety & Persistence**: Missing or explicitly null stats represent an empty initial
+     state. A database read or legacy-file migration failure aborts the analysis
+     before ATH persistence or order planning, rather than treating the ATH as
+     zero. Any non-cancellation ATH persistence failure logs an error and aborts
+     the cycle (fail-closed) so the bot never plans orders against an unpersisted
+     All-Time High. Cancellation still propagates so a cancelled cycle cannot
+     continue.
 2. **Drawdown Calculation**:
    `Drawdown % = (ATH - Current Value) / ATH * 100`
    The numerator is multiplied by 100 before division so the result retains all
    four internal percentage decimal places.
 3. **Fiat Deployment Percentage**:
-   Based on the configured `fiatMaxDrawdown` (e.g., 30%) and `fiatDeploymentExponent` (e.g., 1.0):
-   `Deployment % = (Drawdown % / Max Drawdown %) ^ Exponent` (Capped at 100%)
+   Based on the configured `fiatMaxDrawdown` (e.g., 30%), `fiatDeploymentExponent` (e.g., 1.0), and optional
+   `fiatDeploymentThresholdPercent` (e.g., 2.0% deadband):
+   - If `Drawdown % < fiatDeploymentThresholdPercent`, `Deployment % = 0` (suppresses micro-drawdown deployment).
+   - If `Drawdown % >= fiatDeploymentThresholdPercent`:
+     `Effective Drawdown % = Drawdown % - fiatDeploymentThresholdPercent`
+     `Effective Max Drawdown % = max(fiatMaxDrawdown - fiatDeploymentThresholdPercent, 0.0001)`
+     `Deployment % = (Effective Drawdown % / Effective Max Drawdown %) ^ Exponent` (Capped at 100%)
 
    Fractional exponents use `Double.pow`, then the result is re-entered as
    `BigDecimal` at percent scale (`SCALE_PERCENT = 4`). When `fiatMaxDrawdown ≤ 0`
    or `fiatDeploymentExponent ≤ 0`, deployment is **disabled** (`Deploy% = 0`).
 
-   **Examples (Max Drawdown = 30%)**:
+   **Examples (Max Drawdown = 30%, Threshold = 0%)**:
 
    | Drawdown | Linear (1.0) | Aggressive (0.5) | Conservative (2.0) |
    | :--- | :--- | :--- | :--- |
@@ -174,7 +359,7 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    The target percentage for USD is reduced by the Deployment %:
    `Effective USD Target = Base USD Target * (1 - Deployment %)`
    The removed allocation is redistributed proportionally to crypto assets,
-   ensuring the total remains 100%. If there is no positive non-USD target to
+   ensuring the total remains 100%. If there is no positive non-usd target to
    receive that allocation, fiat deployment is a no-op and the configured USD
    target remains unchanged.
 
@@ -310,34 +495,96 @@ failure.
       dry-run returns before changing balances.
 5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
 
-### Ledger history and staking rewards
+### Ledger history and staking/Earn rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
-once every **300 seconds**, requesting the eight strategy-neutral response types
-(`staking`, `dividend`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
-`spend`, and `receive`) in pages of **50**. Kraken's API query filter uses
-`sale` for the consumer `spend`/`receive` rows; the live adapter filters those
-response types locally. The first and recovered initial syncs use a bounded
-**96-day** seed window and store durable progress metadata; later syncs use the
-latest stored ledger time (or watermark) with a **300-second overlap**. SQLite
-enforces the `(ledger id, timestamp, asset, type)` identity so overlapping pages
-and retries are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
+once every **300 seconds**, requesting the thirteen strategy-neutral response types
+(`staking`, `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
+`spend`, `receive`, `margin`, `rollover`, `settled`, and `credit`) in pages of **50**. Kraken's API query filter does not
+support `type=earn` (passing `type=earn` returns `EGeneral:Invalid arguments`);
+the service queries `type=all` when requesting `earn` and filters rows locally
+for `type == "earn"`. Similarly, the API query filter uses `type=sale` for the
+consumer `spend`/`receive` rows and filters locally. Pagination for filtered queries
+checks Kraken's authoritative total count (`nextOffset < totalCount`) and the
+raw response page size (`rawPageSize >= 50`) so intermediate pages containing
+zero target rows continue paginating until completion. A seeded installation
+whose coverage version predates version `5` performs a bounded **96-day** backfill
+with the same identity deduplication; ledgers remain retained for the lifetime
+of the account. The first and recovered initial syncs also use a bounded **96-day**
+seed window and store durable progress metadata; later syncs use the latest stored
+ledger time (or watermark) with a **300-second overlap**. SQLite enforces the
+`(ledger id, timestamp, asset, type)` identity so overlapping pages and retries
+are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
 and [ledger field guidance](https://support.kraken.com/articles/360001169383-how-to-interpret-ledger-history-fields).
 
-The History `/api/history/rewards` endpoint charts `staking` and `dividend`
-entries for tracked allocation assets. It aligns cumulative per-asset amounts to
+Funding provenance uses authenticated `DepositStatus` and `WithdrawStatus`
+lookups. Kraken documents `DepositStatus` with **Funds: Query** and
+`WithdrawStatus` with **Funds: Withdraw** or **Data: Query ledger entries**;
+the configured **Query Funds** and **Query Ledgers** permissions therefore
+cover the application's read-only use. Note: Kraken's REST documentation marks
+`DepositStatus` and `WithdrawStatus` as deprecated in favor of `List Funding Deposits`
+and `List Funding Withdrawals`. The endpoints will be migrated in a follow-up
+pass without changing the contract or fail-closed permission semantics. A permission
+denial is retained as `FUNDING_PROVENANCE_UNAVAILABLE` and logged with the required
+permission.
+
+The History `/api/history/rewards` endpoint charts `staking`, `dividend`, and
+`earn/reward` entries for tracked allocation assets. It aligns cumulative
+per-asset amounts to
 stored portfolio snapshot timestamps, values each asset using that snapshot's
 price, and returns total and per-asset USD series for the selected range.
-Dividend entries for untracked assets remain persisted but excluded as external
-inflows.
+Earn allocation mechanics are persisted for account reconstruction but are not
+performance rewards; unknown Earn subtypes remain fail-closed. Dividend entries
+for untracked assets remain persisted but excluded as external inflows.
 
-For benchmark and reconstruction accounting, all eight external ledger types are
-applied as `amount - fee`, preserving both legs of a consumer transaction. Kraken
+For ATH and benchmark accounting, all thirteen synchronized ledger types are
+classified before application and use `amount - fee` where replayed, preserving
+both legs of a consumer transaction. `earn/reward` is an in-kind performance
+event; Earn allocation mechanics are internal and ignored by ATH and Buy & Hold.
+Historical snapshot reconstruction replays the corresponding account-balance
+legs so reconstructed Spot balances remain faithful. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
 and not Trades history, so the comparison does not try to deduplicate these ledger
 rows against `TradesHistory`. The reconstruction marker is paired with the ledger
 coverage version it replayed, so a coverage migration cannot suppress the required
 rebuild.
+
+Benchmark events are built from the original classified ledger rows before any
+passthrough reduction. Safe same-source-timestamp USD funding plumbing (`OWNER_CAPITAL`
+deposit/withdrawal plus `spend`/`receive`) carries the original typed category
+and every source ledger ID; it is never represented by a synthetic row that is
+classified a second time. USD-only plumbing may collapse to its net economics,
+while mixed-asset card plumbing collapses confirmed card transactions into net owner capital via
+centralized normalization, as described below. Internal moves remain neutral and unresolved
+funding remains unavailable. A mixed-sign or overdrawn funding/plumbing group is
+left separate rather than being reclassified as the opposite owner-flow
+direction. Where a trade, owner flow, or non-plumbing balance movement shares a
+timestamp and the economic order cannot be proven, the comparison returns
+unavailable rather than imposing a lexical order.
+
+For card-funded Buy Crypto transactions, a centralized normalizer (`CardFundingNormalizer`)
+governs both ATH neutralization and Buy & Hold accounting, guaranteeing identical economic
+interpretation across the engine. Card funding legs must share a non-blank `refid` within a
+120-second proximity window (`MAX_CARD_TRANSACTION_SPAN_SECONDS = 120L`). Buy & Hold comparison
+normalizes card transactions once across the full queried lifetime ledger set before building benchmark
+events, ensuring user-selected display windows (e.g. 24h, 7d, 30d, 90d, All) never split multi-leg card
+transactions across window partitions or cause false unavailable states. The normalizer
+validates complete transaction shapes:
+
+1. *3-leg USD card buy crypto*: external funding (USD deposit), USD `spend`, and purchased-asset
+   `receive` with opposing USD directions. Non-USD direct-asset two-leg shapes are not currently
+   a supported normalization shape and remain unavailable rather than being guessed.
+
+Incomplete shapes (such as deposit plus spend without receive leg) or USD-only plumbing netting to zero
+fail closed as ambiguous (`AMBIGUOUS_FUNDING` for ATH, `AMBIGUOUS_LEDGER_TYPE` for B&H).
+Non-USD leg fees (such as BTC receive fees) are converted to USD at event-time historical prices
+before deducting from gross capital; unpriceable fees fail closed (`HISTORICAL_PRICE_UNAVAILABLE`
+for ATH, `MISSING_PRICE` for B&H). The confirmed transaction collapses into a single owner contribution
+net of all fees ($5,000 gross deposit - $20 spend fee = $4,980 net) and allocates it strictly by original
+inception weights; spend and receive legs are consumed as plumbing evidence and are not replayed
+into B&H. This preserves counterfactual neutrality between the rebalancer and B&H without double-counting
+assets, inventing conversion alpha, or treating transaction fees as performance drawdown.
+A provenance preparation failure is reported separately as `FUNDING_PROVENANCE_UNAVAILABLE`.
 
 Before rendering benchmark points, each interval replays every successful
 authoritative trade, supported external ledger event, and fee into the previous
@@ -352,7 +599,10 @@ balance-request start boundary, distinct from the snapshot creation/display
 timestamp. Events after this instant are not assumed to be reflected in the returned
 balances unless reconciliation proves they were. Rows written before this field existed
 retain a null observation boundary; their display timestamp is used only as a bounded
-search boundary, never treated as an exact request-start time. The comparison engine reasons about
+search boundary, never treated as an exact request-start time. For pre-flow replay,
+the predecessor snapshot's interval `(balancesObservedAt, snapshot.timestamp]` is
+uncertain: an authoritative post-event balance must identify one unique embedded
+prefix before those rows are excluded from replay. The comparison engine reasons about
 exchange events (trades and external ledgers) relative to these conservative balance
 observation boundaries. The request start is a lower bound, while snapshot creation
 is the conservative upper bound of the balance-request window. Candidate events
@@ -386,6 +636,35 @@ legacy rows used zero as the missing-balance sentinel. The accepted
 delta is reused for Buy & Hold replay, and the comparison remains fail-closed when
 the event sequence cannot be reconciled.
 
+### Strategy inception & Buy & Hold benchmark semantics
+
+The Buy & Hold benchmark answers whether the user would have more money today by
+running the rebalancer versus holding the original inception investment thesis with
+the same external capital over time:
+
+- **Inception resolution** (configured date → cached detection → trade-burst
+  detection → earliest snapshot) carries a confidence flag. Rather than relying on
+  fragile snapshot age checks against the 90-day retention horizon, inception confidence
+  relies on a durable install state marker (`SyncMetadataKeys.INCEPTION_INSTALL_TYPE`),
+  falling back to checking whether history was already seeded (`tradeRepository.isHistorySeeded()`).
+  On upgraded installs (where early history may have been pruned under a previous retention era),
+  the earliest snapshot is NOT adopted as inception: the comparison reports
+  `INCEPTION_HISTORY_TRUNCATED`, leaves the inception snapshot null without caching,
+  and the user must set `inceptionDate` manually. Fresh installs record `fresh` install state
+  and auto-detect inception with `InceptionConfidence.CONFIDENT`. A known inception whose anchor
+  snapshot is no longer retained likewise fails closed (`INCEPTION_SNAPSHOT_PRUNED`).
+- **Owner contributions after inception are invested by original inception value
+  weights** (existing synthetic holdings untouched); only the new money moves.
+  Confirmed card Buy Crypto transactions collapse into a single net owner contribution
+  allocated by inception weights; any USD funding plumbing netting to zero fails closed
+  as ambiguous. Contribution prices come only from recorded snapshots near the event —
+  never a live ticker for an old contribution — and missing prices fail closed.
+- **Owner withdrawals scale the whole synthetic portfolio proportionally by
+  market value**, so the cash event itself creates no artificial alpha either way.
+- Investment returns (staking, dividends, adjustments) replay in-kind;
+  internal moves are ignored; unrecognized or ambiguous ledger rows fail closed
+  (`UNSUPPORTED_LEDGER_TYPE`, `AMBIGUOUS_LEDGER_TYPE`).
+
 ### Trade economics & slippage lifecycle
 
 Each executed order creates a **local estimate** row at rebalance time:
@@ -417,9 +696,11 @@ The behavior is controlled by `rebalancer-config.json`:
 | `deviationTriggerPercent` | Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees). |
 | `minimumOrderSizeUSD` | Minimum significant USD deviation **and** minimum order notional. Assets below this USD deviation do not trigger; smaller orders are also skipped at execution. **Minimum `2` (enforced in `ConfigService` + UI `min="2"`).** |
 | `dryRun` | Suppresses order placement on the **active** backend. Server logs: `[DRY RUN]` live / `[EMULATOR DRY RUN]` simulation; activity log always `[DRY RUN]`. Orthogonal to `simulation`. |
-| `simulation` | If set to `true`, `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator). Empty DB pre-seeds ~**15 days** of snapshots at 6-hour steps. Snapshots/trades older than **90 days** are pruned on each `addSnapshot`. |
+| `simulation` | If set to `true`, `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator). Empty DB pre-seeds ~**15 days** of snapshots at 6-hour steps. Ledger entries are retained indefinitely; snapshots/trades prune only before `min(90-day cutoff, inception − 5s)` and never while inception is unresolved. |
 | `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
 | `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
+| `fiatDeploymentThresholdPercent` | Deadband threshold below which no fiat is deployed (0.0 to 100.0). Prevents micro-deployments during small drawdowns. |
+| `inceptionDate` | Strategy start date (ISO-8601 string or `YYYY-MM-DD`). When omitted or blank, auto-detected from an initial successful trade burst. Future-dated values are ignored. Required on upgraded installs whose early history was pruned (`INCEPTION_HISTORY_TRUNCATED`). |
 
 ## Precision
 

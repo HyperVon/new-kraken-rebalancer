@@ -2,16 +2,24 @@ package com.gemini.krakenbot.repository.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.repository.AppliedAthFlow
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.table.AthAppliedFlowTable
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
+import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
@@ -90,15 +98,115 @@ class SqlitePortfolioStatsRepositoryImpl(
 
     override suspend fun save(stats: PortfolioStats) {
         database.safeTransactionIO(log, "Failed to save portfolio stats") {
-            val updatedRows = PortfolioStatsTable.update({ PortfolioStatsTable.id eq 1 }) {
-                PortfolioStatsTable.applyTo(it, stats)
-            }
-            if (updatedRows == 0) {
-                PortfolioStatsTable.insert {
-                    it[id] = 1
-                    PortfolioStatsTable.applyTo(it, stats)
+            upsertStats(stats)
+        }
+    }
+
+    override suspend fun saveAthStateWithFlowCheckpoint(
+        stats: PortfolioStats,
+        appliedFlows: List<AppliedAthFlow>,
+        flowWatermarkSec: Long?,
+    ) {
+        database.safeTransactionIO(log, "Failed to save ATH state with flow checkpoint") {
+            upsertStats(stats)
+            insertJournalIdentities(appliedFlows)
+            if (flowWatermarkSec != null) {
+                // Observability watermark only: reconciliation is identity-driven
+                // (the journal), so journal rows are never pruned by watermark.
+                HistorySyncMetadataTable.upsert {
+                    it[key] = SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC
+                    it[value] = flowWatermarkSec.toString()
                 }
             }
         }
+    }
+
+    override suspend fun journalPresumedDecidedFlows(flows: List<AppliedAthFlow>) {
+        if (flows.isEmpty()) return
+        database.safeTransactionIO(log, "Failed to journal presumed-decided ATH flows") {
+            insertJournalIdentities(flows)
+        }
+    }
+
+    /**
+     * Insert-if-absent journaling, chunked to stay under SQLite host-variable
+     * limits: the identity scan now considers every retained ledger row, so
+     * decision batches can exceed the parameter cap of a single `inList`.
+     */
+    private fun JdbcTransaction.insertJournalIdentities(flows: List<AppliedAthFlow>) {
+        for (chunk in flows.distinctBy(AppliedAthFlow::ledgerId).chunked(JOURNAL_QUERY_CHUNK)) {
+            val knownIds = AthAppliedFlowTable
+                .selectAll()
+                .where { AthAppliedFlowTable.ledgerId inList chunk.map(AppliedAthFlow::ledgerId) }
+                .map { it[AthAppliedFlowTable.ledgerId] }
+                .toSet()
+            for (flow in chunk) {
+                if (flow.ledgerId !in knownIds) {
+                    AthAppliedFlowTable.insertIgnore {
+                        it[ledgerId] = flow.ledgerId
+                        it[eventTimeSec] = flow.eventTimeSec
+                        it[eventTimeMillis] = flow.eventTimeMillis
+                        it[decisionCategory] = flow.decisionCategory
+                        it[asset] = flow.asset
+                        it[actualBalanceDelta] = flow.actualBalanceDelta
+                        it[normalizedGroupId] = flow.normalizedGroupId
+                        it[decisionVersion] = flow.decisionVersion
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun getAppliedAthFlowIds(ledgerIds: List<String>): Set<String> {
+        if (ledgerIds.isEmpty()) return emptySet()
+        return database.readTransactionIO {
+            ledgerIds.chunked(JOURNAL_QUERY_CHUNK)
+                .flatMap { chunk ->
+                    AthAppliedFlowTable
+                        .selectAll()
+                        .where { AthAppliedFlowTable.ledgerId inList chunk }
+                        .map { it[AthAppliedFlowTable.ledgerId] }
+                }
+                .toSet()
+        }
+    }
+
+    override suspend fun getAppliedAthFlows(ledgerIds: List<String>): List<AppliedAthFlow> =
+        database.readTransactionIO {
+            ledgerIds.chunked(JOURNAL_QUERY_CHUNK)
+                .flatMap { chunk ->
+                    AthAppliedFlowTable
+                        .selectAll()
+                        .where { AthAppliedFlowTable.ledgerId inList chunk }
+                        .map { row ->
+                            AppliedAthFlow(
+                                ledgerId = row[AthAppliedFlowTable.ledgerId],
+                                eventTimeSec = row[AthAppliedFlowTable.eventTimeSec],
+                                eventTimeMillis = row[AthAppliedFlowTable.eventTimeMillis],
+                                decisionCategory = row[AthAppliedFlowTable.decisionCategory],
+                                asset = row[AthAppliedFlowTable.asset],
+                                actualBalanceDelta = row[AthAppliedFlowTable.actualBalanceDelta],
+                                normalizedGroupId = row[AthAppliedFlowTable.normalizedGroupId],
+                                decisionVersion = row[AthAppliedFlowTable.decisionVersion],
+                            )
+                        }
+                }
+        }
+
+    private fun JdbcTransaction.upsertStats(stats: PortfolioStats) {
+        val updatedRows = PortfolioStatsTable.update({ PortfolioStatsTable.id eq 1 }) {
+            PortfolioStatsTable.applyTo(it, stats)
+        }
+        if (updatedRows == 0) {
+            PortfolioStatsTable.insert {
+                it[id] = 1
+                PortfolioStatsTable.applyTo(it, stats)
+            }
+        }
+    }
+
+    private companion object {
+        /** Keeps journal `inList` batches under the SQLite host-variable cap. */
+        const val JOURNAL_QUERY_CHUNK = 1000
     }
 }

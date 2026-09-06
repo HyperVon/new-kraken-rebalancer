@@ -3,9 +3,12 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.InternalTransferRecord
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.WithdrawStatusRecord
 import java.math.BigDecimal
 
 /**
@@ -25,6 +28,10 @@ class FakeKrakenService : KrakenService {
     var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
     var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
     var ledgerSupplier: (Long?, Int?, Long?, Set<String>?) -> List<LedgerEvent> = { _, _, _, _ -> emptyList() }
+    var depositStatusSupplier: (Long?, Long?) -> List<DepositStatusRecord> = { _, _ -> emptyList() }
+    var withdrawStatusSupplier: (Long?, Long?) -> List<WithdrawStatusRecord> = { _, _ -> emptyList() }
+    var internalTransfersSupplier: (Long?, Long?) -> List<InternalTransferRecord> = { _, _ -> emptyList() }
+    var fundingEvidenceScopeSupplier: () -> String = { "fake-account" }
 
     /** Optional side effect after recording (e.g. throw to simulate placement failure). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
@@ -40,6 +47,10 @@ class FakeKrakenService : KrakenService {
     var tradeHistoryTotalCountOverride = 0
     var getLedgersCallCount = 0
     var ledgerTotalCountOverride = 0
+    var ledgerRawPageSizeOverride = 0
+    var getDepositStatusCallCount = 0
+    var getWithdrawStatusCallCount = 0
+    var getInternalTransfersCallCount = 0
 
     private var seededLedgerEntries: List<LedgerEvent> = emptyList()
 
@@ -82,6 +93,25 @@ class FakeKrakenService : KrakenService {
     }
 
     override fun getLastLedgerTotalCount(): Int = ledgerTotalCountOverride
+
+    override fun getLastLedgerRawPageSize(): Int = ledgerRawPageSizeOverride
+
+    override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> {
+        getDepositStatusCallCount++
+        return depositStatusSupplier(startSec, endSec)
+    }
+
+    override suspend fun getWithdrawStatus(startSec: Long?, endSec: Long?): List<WithdrawStatusRecord> {
+        getWithdrawStatusCallCount++
+        return withdrawStatusSupplier(startSec, endSec)
+    }
+
+    override suspend fun getInternalTransfers(startSec: Long?, endSec: Long?): List<InternalTransferRecord> {
+        getInternalTransfersCallCount++
+        return internalTransfersSupplier(startSec, endSec)
+    }
+
+    override suspend fun getFundingEvidenceScope(): String = fundingEvidenceScopeSupplier()
 
     /**
      * Pre-seeds ledger entries (e.g. staking rewards or consumer spend/receive legs) and serves them like the Kraken

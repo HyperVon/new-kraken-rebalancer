@@ -5,6 +5,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.service.impl.KrakenApiPermissionDeniedException
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -80,6 +81,112 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 dividend.aclass shouldBe "currency"
                 dividend.asset shouldBe "STRC"
                 service.getLastLedgerTotalCount() shouldBe 2
+            }
+        }
+
+        "getDepositStatus_UsesAuthenticatedFundingEndpointAndParsesRecord" {
+            runTest {
+                val responseJson = """
+                    {
+                      "error": [],
+                      "result": [
+                        {
+                          "method": "Wire",
+                          "asset": "ZUSD",
+                          "refid": "DEP-1",
+                          "txid": "wire-1",
+                          "amount": "100.00",
+                          "fee": "0.00",
+                          "time": 1700000000,
+                          "status": "Success"
+                        }
+                      ]
+                    }
+                """.trimIndent()
+                var capturedPath = ""
+                var capturedBody = ""
+                val service = createService(responseJson) { request ->
+                    capturedPath = request.url.encodedPath
+                    capturedBody = (request.body as TextContent).text
+                }
+
+                val records = service.getDepositStatus(startSec = 1700000000L, endSec = 1700003600L)
+
+                capturedPath shouldBe KrakenApiConstants.PATH_DEPOSIT_STATUS
+                capturedBody shouldContain "start=1700000000"
+                capturedBody shouldContain "end=1700003600"
+                capturedBody shouldContain "cursor=true"
+                capturedBody shouldContain "limit=25"
+                records.single().refid shouldBe "DEP-1"
+                records.single().asset shouldBe "USD"
+                records.single().hasAuthoritativeFee shouldBe true
+            }
+        }
+
+        "getWithdrawStatus_UsesAuthenticatedFundingEndpointAndParsesRecord" {
+            runTest {
+                val responseJson = """
+                    {
+                      "error": [],
+                      "result": [
+                        {
+                          "method": "Bitcoin",
+                          "asset": "XXBT",
+                          "refid": "W-1",
+                          "txid": "tx-1",
+                          "amount": "0.25",
+                          "fee": "0.0002",
+                          "time": 1700000000,
+                          "status": "Pending"
+                        }
+                      ]
+                    }
+                """.trimIndent()
+                var capturedPath = ""
+                val service = createService(responseJson) { request ->
+                    capturedPath = request.url.encodedPath
+                }
+
+                val records = service.getWithdrawStatus()
+
+                capturedPath shouldBe KrakenApiConstants.PATH_WITHDRAW_STATUS
+                records.single().asset shouldBe "BTC"
+                records.single().status shouldBe "Pending"
+            }
+        }
+
+        "funding status pagination fails closed on a repeated cursor" {
+            runTest {
+                val responseJson = """
+                    {
+                      "error": [],
+                      "result": {
+                        "deposit": [],
+                        "cursor": "true"
+                      }
+                    }
+                """.trimIndent()
+                val service = createService(responseJson)
+
+                shouldThrow<IllegalStateException> {
+                    service.getDepositStatus()
+                }
+            }
+        }
+
+        "funding status permission errors preserve the denied endpoint" {
+            runTest {
+                val service = createService("{\"error\":[\"EGeneral:Permission denied\"]}")
+
+                val depositError = shouldThrow<KrakenApiPermissionDeniedException> {
+                    service.getDepositStatus()
+                }
+                depositError.endpoint shouldBe KrakenApiConstants.PATH_DEPOSIT_STATUS
+
+                val withdrawalError = shouldThrow<KrakenApiPermissionDeniedException> {
+                    service.getWithdrawStatus()
+                }
+                withdrawalError.endpoint shouldBe KrakenApiConstants.PATH_WITHDRAW_STATUS
             }
         }
 
@@ -243,6 +350,62 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                     KrakenApiConstants.LEDGER_TYPE_RECEIVE,
                 )
                 service.getLastLedgerTotalCount() shouldBe 2
+            }
+        }
+
+        "getLedgers_QueriesAllForEarnLedgerTypeAndFiltersReturnedRows" {
+            runTest {
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "ledger": {
+                                "EARN-1": {
+                                    "refid": "REWARD-1",
+                                    "time": 1700000000.0000,
+                                    "type": "earn",
+                                    "subtype": "reward",
+                                    "asset": "DOT.HOLD",
+                                    "amount": "1.50000000",
+                                    "fee": "0.00000000",
+                                    "balance": "100.00000000"
+                                },
+                                "TRADE-1": {
+                                    "refid": "TRADE-1",
+                                    "time": 1700000000.0000,
+                                    "type": "trade",
+                                    "asset": "ZUSD",
+                                    "amount": "-10.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "4989.00000000"
+                                },
+                                "DEPOSIT-1": {
+                                    "refid": "DEP-1",
+                                    "time": 1700000000.0000,
+                                    "type": "deposit",
+                                    "asset": "ZUSD",
+                                    "amount": "100.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "5089.00000000"
+                                }
+                            },
+                            "count": 3
+                        }
+                    }
+                """.trimIndent()
+                var capturedBody = ""
+                val service = createService(responseJson) { request ->
+                    capturedBody = (request.body as TextContent).text
+                }
+
+                val entries = service.getLedgers(types = setOf(KrakenApiConstants.LEDGER_TYPE_EARN))
+
+                capturedBody shouldContain "type=${KrakenApiConstants.LEDGER_TYPE_ALL}"
+                entries.map { it.ledgerId } shouldBe listOf("EARN-1")
+                entries.single().type shouldBe KrakenApiConstants.LEDGER_TYPE_EARN
+                entries.single().subtype shouldBe "reward"
+                service.getLastLedgerTotalCount() shouldBe 3
+                service.getLastLedgerRawPageSize() shouldBe 3
             }
         }
 

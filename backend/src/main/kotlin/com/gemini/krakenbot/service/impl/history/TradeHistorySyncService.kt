@@ -100,10 +100,11 @@ class TradeHistorySyncService(
         val isSeeded = repository.isHistorySeeded()
         val effectiveLatest = calculateEffectiveLatestTime()
         // Bound every history pull to the seed lookback window instead of fetching full history
-        // since the account was created: filled trades older than HISTORICAL_DAYS_BACK are pruned
-        // and reconstruction only reaches ~95 days, so anything older would be immediately
-        // discarded. Incremental syncs still overlap the previous watermark by 5 minutes so fills
-        // near it are re-fetched and reconciled rather than double-inserted.
+        // since the account was created: snapshot/trade pruning honors the lifetime retention
+        // contract (never prune at or after inception) and reconstruction only reaches ~95 days,
+        // so anything older would be immediately discarded. Incremental syncs still overlap the
+        // previous watermark by 5 minutes so fills near it are re-fetched and reconciled rather
+        // than double-inserted.
         // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
         val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond ?: seedBound.epochSecond

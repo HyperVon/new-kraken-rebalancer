@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -22,6 +23,8 @@ class TradeHistoryQueryService(
     private val portfolioStatsRepository: PortfolioStatsRepository,
     private val ledgerRepository: LedgerRepository,
     private val orderIntentRepository: OrderIntentRepository? = null,
+    private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
+    private val fundingProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
 ) {
     suspend fun getHistory(): List<PortfolioSnapshot> = repository.load()
 
@@ -34,6 +37,16 @@ class TradeHistoryQueryService(
 
     suspend fun getLedgersInRange(from: Instant, to: Instant): List<LedgerEvent> =
         ledgerRepository.getLedgersInRange(from, to)
+
+    companion object {
+        /**
+         * Contribution-time prices must come from recorded snapshots near the
+         * event. Six hours matches the historical reconstruction grid, so an
+         * old contribution still finds its era's prices while a pruned era
+         * fails closed instead of borrowing a modern price.
+         */
+        const val CONTRIBUTION_PRICE_LOOKUP_SECONDS = 21600L
+    }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, Instant.now())
 
@@ -50,19 +63,65 @@ class TradeHistoryQueryService(
         val firstObservationTime = firstSnapshot.balancesObservedAt ?: firstTimestamp
         val lastObservationTime = lastSnapshot.balancesObservedAt ?: lastTimestamp
 
+        val inceptionResolution = inceptionDiscoveryService?.resolveInception()
+        if (inceptionResolution?.confidence == InceptionConfidence.TRUNCATED) {
+            // Migrated install whose early history was removed by a previous
+            // retention era: no window-anchored number may stand in for a
+            // lifetime baseline. The UI text tells the user to configure
+            // the inception date manually.
+            return RebalancerComparisonCalculator.calculate(
+                snapshots = orderedSnapshots,
+                trades = emptyList(),
+                rewards = emptyList(),
+                knownRebalancerOrderTxids = emptySet(),
+                anchorSnapshot = null,
+                inceptionSnapshot = null,
+                knownInceptionTime = inceptionResolution.inceptionTime,
+                historyTruncated = true,
+            )
+        }
+        val inceptionSnapshot = inceptionResolution?.inceptionSnapshot
+            ?: inceptionResolution?.inceptionTime?.let { time ->
+                // Bounded fallback: only accept a snapshot within the same
+                // +/-300s discovery window used by InceptionDiscoveryService.
+                // An unbounded getSnapshotBefore() here silently anchored the
+                // benchmark to an unrelated months-old snapshot when inception
+                // was known but its snapshot had been pruned.
+                val candidates =
+                    repository.getSnapshotsInRange(
+                        time.minusSeconds(300),
+                        time.plusSeconds(30),
+                    )
+                candidates.minByOrNull {
+                    kotlin.math.abs(
+                        it.timestamp.epochSecond - time.epochSecond,
+                    )
+                }
+            }
+
         val anchorSnapshot = repository.getSnapshotBefore(firstTimestamp)
-        val queryFrom = minOf(
-            anchorSnapshot?.balancesObservedAt ?: anchorSnapshot?.timestamp ?: firstObservationTime,
+        val eventQueryStart = listOfNotNull(
+            inceptionSnapshot?.balancesObservedAt ?: inceptionSnapshot?.timestamp,
+            anchorSnapshot?.balancesObservedAt ?: anchorSnapshot?.timestamp,
             firstObservationTime,
-        ).minusMillisIfLegacyObservation(anchorSnapshot, firstSnapshot)
+        ).minOrNull() ?: firstObservationTime
+
+        val queryFrom = eventQueryStart.minusMillisIfLegacyObservation(anchorSnapshot, firstSnapshot)
         val queryTo = maxOf(lastTimestamp, lastObservationTime)
             .plusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
         val trades = getTradesInRange(queryFrom, queryTo)
+        // Closed world: LedgersSyncService only fetches EXTERNAL_BALANCE_TYPES,
+        // so unknown types cannot arrive here. LedgerFlowClassifier inside
+        // RebalancerComparisonCalculator is the second layer: it replays the
+        // margin-family in-kind and fails closed on anything unrecognized.
         val ledgers =
             ledgerRepository
                 .getLedgersInRange(queryFrom, queryTo)
                 .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+        // The calculator prepares one immutable provenance snapshot for this
+        // complete history query and uses that same snapshot for classification
+        // and card normalization.
         val candidateTrades = trades.filter { it.success && !it.dryRun }
         val candidateOrderTxids = candidateTrades.mapNotNull {
             it.orderTxid?.trim()?.takeIf(String::isNotBlank)
@@ -74,12 +133,42 @@ class TradeHistoryQueryService(
             ?.getKnownRebalancerOrderIdentities(candidateOrderTxids, candidateClientOrderIds)
             ?.orderTxids
             .orEmpty()
+        // Contribution-time prices come only from recorded snapshots near the
+        // event (never a live ticker for an old contribution). Absent prices
+        // fail the comparison closed inside the calculator.
+        val priceProvider = HistoricalPriceProvider { symbol, time ->
+            if (Asset.normalizeLedgerAsset(symbol).uppercase() == Asset.USD) {
+                BigDecimal.ONE
+            } else {
+                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+                repository.getSnapshotsInRange(
+                    time.minusSeconds(CONTRIBUTION_PRICE_LOOKUP_SECONDS),
+                    time,
+                ).mapNotNull { snapshot ->
+                    val price = snapshot.assets.entries.firstOrNull { (asset, _) ->
+                        Asset.normalizeLedgerAsset(asset).uppercase() == normalizedSymbol
+                    }?.value?.price
+                    val observationTime = snapshot.balancesObservedAt ?: snapshot.timestamp
+                    if (price != null && price.signum() > 0 && !observationTime.isAfter(time)) {
+                        snapshot.timestamp to price
+                    } else {
+                        null
+                    }
+                }.minByOrNull { (timestamp, _) ->
+                    kotlin.math.abs(timestamp.toEpochMilli() - time.toEpochMilli())
+                }?.second
+            }
+        }
         return RebalancerComparisonCalculator.calculate(
             snapshots = orderedSnapshots,
             trades = trades,
             rewards = ledgers,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             anchorSnapshot = anchorSnapshot,
+            inceptionSnapshot = inceptionSnapshot,
+            knownInceptionTime = inceptionResolution?.inceptionTime,
+            priceProvider = priceProvider,
+            provenanceResolver = fundingProvenanceResolver,
         )
     }
 
@@ -99,7 +188,7 @@ class TradeHistoryQueryService(
         val rewardEvents =
             ledgerRepository
                 .getLedgersInRange(from, to)
-                .filter { it.type in LedgerEvent.REWARD_TYPES }
+                .filter(LedgerEvent::isRewardEvent)
                 .sortedBy { it.time }
         val cumulativeByAsset = mutableMapOf<String, BigDecimal>()
         var eventIndex = 0

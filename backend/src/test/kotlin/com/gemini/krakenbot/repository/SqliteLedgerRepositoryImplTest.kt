@@ -77,6 +77,40 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
             repository.getLedgersInRange(Instant.EPOCH, t2).map { it.ledgerId } shouldBe listOf("ref-2")
         }
 
+        "pruneLedgersOlderThan retains owner capital at or after inception while pruning routine entries" {
+            repository.setSyncMetadata(
+                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                t1.toEpochMilli().toString(),
+            )
+            val preInceptionDeposit = event(t0, "ref-0", type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT)
+            val postInceptionDeposit = event(t1, "ref-1", type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT)
+            val postInceptionStaking = event(t1, "ref-staking", type = KrakenApiConstants.LEDGER_TYPE_STAKING)
+            val recentEntry = event(t2, "ref-2", type = KrakenApiConstants.LEDGER_TYPE_STAKING)
+
+            repository.saveLedgers(listOf(preInceptionDeposit, postInceptionDeposit, postInceptionStaking, recentEntry))
+
+            // Cutoff is t2:
+            // ref-0 is before inception -> pruned!
+            // ref-staking is non-owner capital older than cutoff -> pruned!
+            // ref-1 is owner capital deposit at or after inception -> retained!
+            // ref-2 is at cutoff t2 -> retained!
+            val pruned = repository.pruneLedgersOlderThan(t2)
+            pruned shouldBe 2
+            repository.getLedgersInRange(Instant.EPOCH, t2).map { it.ledgerId } shouldBe listOf("ref-2", "ref-1")
+        }
+
+        "pruneLedgersOlderThan behaves deterministically when no inception metadata exists" {
+            val oldDeposit = event(t0, "ref-0", type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT)
+            val oldStaking = event(t1, "ref-1", type = KrakenApiConstants.LEDGER_TYPE_STAKING)
+            val recent = event(t2, "ref-2", type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT)
+
+            repository.saveLedgers(listOf(oldDeposit, oldStaking, recent))
+
+            val pruned = repository.pruneLedgersOlderThan(t2)
+            pruned shouldBe 2
+            repository.getLedgersInRange(Instant.EPOCH, t2).map { it.ledgerId } shouldBe listOf("ref-2")
+        }
+
         "sync metadata roundtrips through the shared history_sync_metadata table" {
             repository.setSyncMetadata(TestFixtures.SYNC_KEY, TestFixtures.SYNC_VAL)
             repository.getSyncMetadata(TestFixtures.SYNC_KEY) shouldBe TestFixtures.SYNC_VAL

@@ -28,7 +28,80 @@ class SchemaMigrationsTest : StringSpec() {
                 "ambiguous-legacy-client-order-id",
                 "order-intent-trade-foreign-key",
                 "portfolio-stats-singleton",
+                "ath-applied-flow-semantics",
+                "ath-applied-flow-event-millisecond-precision",
             )
+        }
+
+        "v7 identity journal gains nullable semantics without inventing old decisions" {
+            val url = "jdbc:sqlite:file:ath-v7-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(url)
+            DriverManager.getConnection(url).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP TABLE ath_applied_flows")
+                    statement.executeUpdate(
+                        "CREATE TABLE ath_applied_flows " +
+                            "(ledger_id VARCHAR(128) PRIMARY KEY, event_time_sec BIGINT NOT NULL)",
+                    )
+                    statement.executeUpdate("INSERT INTO ath_applied_flows VALUES ('old-ach', 1000)")
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 9")
+                    repeat(2) { DatabaseConfig.init(url) }
+                    statement.executeQuery("SELECT * FROM ath_applied_flows").use { rows ->
+                        rows.next() shouldBe true
+                        rows.getString("ledger_id") shouldBe "old-ach"
+                        rows.getLong("event_time_sec") shouldBe 1000
+                        for (column in listOf(
+                            "decision_category",
+                            "asset",
+                            "actual_balance_delta",
+                            "normalized_group_id",
+                            "decision_version",
+                            "event_time_millis",
+                        )) {
+                            rows.getObject(column) shouldBe null
+                        }
+                        rows.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "v8 semantic journal gains nullable exact time without fabricating milliseconds" {
+            val url = "jdbc:sqlite:file:ath-v8-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(url)
+            DriverManager.getConnection(url).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP TABLE ath_applied_flows")
+                    statement.executeUpdate(
+                        """
+                        CREATE TABLE ath_applied_flows (
+                            ledger_id VARCHAR(128) PRIMARY KEY,
+                            event_time_sec BIGINT NOT NULL,
+                            decision_category VARCHAR(32),
+                            asset VARCHAR(16),
+                            actual_balance_delta DECIMAL(24, 8),
+                            normalized_group_id VARCHAR(128),
+                            decision_version INTEGER
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate(
+                        "INSERT INTO ath_applied_flows " +
+                            "VALUES ('v8-ach', 1000, 'OWNER_CAPITAL', 'USD', 1000.00, NULL, 1)",
+                    )
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 9")
+                    DatabaseConfig.init(url)
+                    statement.executeQuery("SELECT * FROM ath_applied_flows").use { rows ->
+                        rows.next() shouldBe true
+                        rows.getString("ledger_id") shouldBe "v8-ach"
+                        rows.getLong("event_time_sec") shouldBe 1000
+                        rows.getObject("event_time_millis") shouldBe null
+                        rows.getString("decision_category") shouldBe "OWNER_CAPITAL"
+                        rows.getString("asset") shouldBe "USD"
+                        rows.next() shouldBe false
+                    }
+                }
+            }
         }
 
         "rejects duplicate, unordered, and incomplete migration definitions" {
@@ -70,6 +143,8 @@ class SchemaMigrationsTest : StringSpec() {
                         5 to "ambiguous-legacy-client-order-id",
                         6 to "order-intent-trade-foreign-key",
                         7 to "portfolio-stats-singleton",
+                        8 to "ath-applied-flow-semantics",
+                        9 to "ath-applied-flow-event-millisecond-precision",
                     )
                 }
             }
@@ -121,6 +196,8 @@ class SchemaMigrationsTest : StringSpec() {
                         5 to "ambiguous-legacy-client-order-id",
                         6 to "order-intent-trade-foreign-key",
                         7 to "portfolio-stats-singleton",
+                        8 to "ath-applied-flow-semantics",
+                        9 to "ath-applied-flow-event-millisecond-precision",
                     )
                 }
             }
@@ -392,6 +469,45 @@ class SchemaMigrationsTest : StringSpec() {
                         resultSet.getInt("id") shouldBe 1
                         resultSet.getBigDecimal("all_time_high")
                             .shouldBeEqualComparingTo(BigDecimal("250.00"))
+                        resultSet.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "portfolio stats migration carries the trusted drawdown of the surviving row" {
+            val databaseUrl = "jdbc:sqlite:file:test-migrations-stats-dd-" + UUID.randomUUID() +
+                "?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP TABLE portfolio_stats")
+                    statement.executeUpdate(
+                        "CREATE TABLE portfolio_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                            "all_time_high DECIMAL(18, 2), last_trusted_drawdown_pct DECIMAL(10, 4))",
+                    )
+                    statement.executeUpdate(
+                        "INSERT INTO portfolio_stats (all_time_high, last_trusted_drawdown_pct) " +
+                            "VALUES (100.00, 5.0000), (250.00, 12.5000)",
+                    )
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 7")
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT id, all_time_high, last_trusted_drawdown_pct FROM portfolio_stats",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getInt("id") shouldBe 1
+                        resultSet.getBigDecimal("all_time_high")
+                            .shouldBeEqualComparingTo(BigDecimal("250.00"))
+                        resultSet.getBigDecimal("last_trusted_drawdown_pct")
+                            .shouldBeEqualComparingTo(BigDecimal("12.5000"))
                         resultSet.next() shouldBe false
                     }
                 }

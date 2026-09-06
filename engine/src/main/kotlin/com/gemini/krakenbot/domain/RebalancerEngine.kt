@@ -81,18 +81,58 @@ object RebalancerEngine {
             BigDecimal.ZERO
         }
 
+    /**
+     * Proportionally adjusts the portfolio All-Time High when external capital flows (deposits or withdrawals) occur.
+     *
+     * In portfolio management (Modified Dietz / Time-Weighted High-Water Mark):
+     * A withdrawal must not artificially manufacture a market crash drawdown.
+     * A deposit must not artificially inflate the market-achieved high-water mark.
+     *
+     * ATH_new = ATH_current * (1 + netFlowUSD / preFlowValueUSD)
+     *
+     * If preFlowValueUSD <= 0 or currentAth <= 0, the ATH is not adjusted.
+     */
+    fun adjustAthForCashFlow(currentAth: BigDecimal, preFlowValueUSD: BigDecimal, netFlowUSD: BigDecimal): BigDecimal {
+        if (currentAth <= BigDecimal.ZERO || preFlowValueUSD <= BigDecimal.ZERO || netFlowUSD.signum() == 0) {
+            return currentAth
+        }
+        val postFlowValueUSD = preFlowValueUSD.add(netFlowUSD)
+        if (postFlowValueUSD <= BigDecimal.ZERO) {
+            return BigDecimal.ZERO
+        }
+        val factor = postFlowValueUSD.divide(
+            preFlowValueUSD,
+            PrecisionConstants.SCALE_PERCENT + 4,
+            RoundingMode.HALF_UP,
+        )
+        return currentAth.multiply(factor).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+    }
+
     fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal {
-        if (drawdownPct <= BigDecimal.ZERO || settings.fiatMaxDrawdown <= 0.0 ||
+        if (!settings.fiatDeploymentThresholdPercent.isFinite() ||
+            drawdownPct <= BigDecimal.ZERO ||
+            settings.fiatMaxDrawdown <= 0.0 ||
             settings.fiatDeploymentExponent <= 0.0
         ) {
             return BigDecimal.ZERO
         }
 
+        val threshold = BigDecimal.valueOf(settings.fiatDeploymentThresholdPercent.coerceAtLeast(0.0))
+        if (drawdownPct <= threshold) {
+            return BigDecimal.ZERO
+        }
+
         val maxDD = BigDecimal.valueOf(settings.fiatMaxDrawdown)
+        val effectiveDrawdown = drawdownPct.subtract(threshold)
+        val effectiveMaxDD = maxDD.subtract(threshold)
+        if (effectiveMaxDD <= BigDecimal.ZERO) {
+            return PrecisionConstants.HUNDRED
+        }
+
         var ratio =
-            drawdownPct.divide(
-                maxDD,
-                PrecisionConstants.SCALE_PERCENT,
+            effectiveDrawdown.divide(
+                effectiveMaxDD,
+                PrecisionConstants.SCALE_PERCENT + 4,
                 RoundingMode.HALF_UP,
             )
         ratio = ratio.coerceAtMost(BigDecimal.ONE)

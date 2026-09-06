@@ -659,7 +659,28 @@ class ConfigServiceTest : StringSpec() {
                     "fiatDeploymentExponent" to settings.copy(fiatDeploymentExponent = 0.0),
                     "fiatDeploymentExponent ceiling" to settings.copy(fiatDeploymentExponent = 101.0),
                     "deviationTriggerPercent ceiling" to settings.copy(deviationTriggerPercent = 101.0),
+                    "invalid inceptionDate" to settings.copy(inceptionDate = "not-a-valid-date"),
+                    "negative fiatDeploymentThresholdPercent" to settings.copy(fiatDeploymentThresholdPercent = -0.1),
+                    "fiatDeploymentThresholdPercent over 100" to settings.copy(fiatDeploymentThresholdPercent = 100.1),
                 )
+            }
+        }
+
+        "validateConfig_AcceptsValidInceptionDateAndThreshold" {
+            runTest {
+                val currentConfig = configService.getConfig()
+                val validSettings = currentConfig.settings.copy(
+                    inceptionDate = "2026-06-06",
+                    fiatDeploymentThresholdPercent = 5.0,
+                )
+                configService.updateConfig(currentConfig.copy(settings = validSettings))
+                configService.getConfig().settings.inceptionDate shouldBe "2026-06-06"
+                configService.getConfig().settings.fiatDeploymentThresholdPercent shouldBe 5.0
+
+                // Also accepts null or blank
+                val clearedSettings = validSettings.copy(inceptionDate = "   ")
+                configService.updateConfig(currentConfig.copy(settings = clearedSettings))
+                configService.getConfig().settings.inceptionDate shouldBe "   "
             }
         }
 

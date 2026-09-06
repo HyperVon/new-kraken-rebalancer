@@ -37,6 +37,8 @@ FormFields:
   SIMULATION: "simulation"
   FIAT_MAX_DRAWDOWN: "fiatMaxDrawdown"
   FIAT_DEPLOYMENT_EXPONENT: "fiatDeploymentExponent"
+  FIAT_DEPLOYMENT_THRESHOLD_PERCENT: "fiatDeploymentThresholdPercent"
+  INCEPTION_DATE: "inceptionDate"
   SYMBOLS: "symbols"
   TARGETS: "targets"
   COLORS: "colors"

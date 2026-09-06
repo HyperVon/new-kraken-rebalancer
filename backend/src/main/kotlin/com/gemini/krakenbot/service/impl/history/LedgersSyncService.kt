@@ -19,8 +19,9 @@ import java.time.temporal.ChronoUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Pulls Kraken's strategy-neutral ledger entries into the local database: staking, dividend,
- * deposit, withdrawal, transfer, adjustment, and consumer-transaction spend/receive rows.
+ * Pulls Kraken's strategy-neutral ledger entries into the local database: staking, dividend, earn,
+ * deposit, withdrawal, transfer, adjustment, consumer-transaction spend/receive rows, and the
+ * margin-family balance rows (margin, rollover, settled, and credit).
  * The live adapter maps the latter two response types to Kraken's documented `sale` query filter.
  *
  * Ledger entries are insert-only: identity is the unique (ledger id, timestamp, asset, type) tuple,
@@ -38,16 +39,21 @@ class LedgersSyncService(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     companion object {
-        const val CURRENT_LEDGER_COVERAGE_VERSION = "3"
+        const val CURRENT_LEDGER_COVERAGE_VERSION = "5"
         val SUPPORTED_LEDGER_TYPES = listOf(
             KrakenApiConstants.LEDGER_TYPE_STAKING,
             KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+            KrakenApiConstants.LEDGER_TYPE_EARN,
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
             KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
             KrakenApiConstants.LEDGER_TYPE_TRANSFER,
             KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
             KrakenApiConstants.LEDGER_TYPE_SPEND,
             KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+            KrakenApiConstants.LEDGER_TYPE_MARGIN,
+            KrakenApiConstants.LEDGER_TYPE_ROLLOVER,
+            KrakenApiConstants.LEDGER_TYPE_SETTLED,
+            KrakenApiConstants.LEDGER_TYPE_CREDIT,
         )
     }
 
@@ -124,8 +130,8 @@ class LedgersSyncService(
         val effectiveLatest = calculateEffectiveLatestTime()
         // Incremental sync overlaps by 5 minutes so entries near the previous watermark are
         // re-fetched and deduplicated rather than missed. Unseeded initial sync and recovery both
-        // bound to SEED_HISTORY_LOOKBACK_DAYS like TradeHistorySyncService to avoid fetching
-        // historical entries that would be immediately pruned.
+        // bound to SEED_HISTORY_LOOKBACK_DAYS like TradeHistorySyncService. Ledger entries are
+        // retained indefinitely (lifetime retention contract), so no prune follows the fetch.
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
         val paginationStartSec = if (isRecoveringInitialSync) {
@@ -215,23 +221,16 @@ class LedgersSyncService(
         lastSyncTime = nowProvider()
     }
 
-    /** Mirrors the snapshot/trade retention window (HISTORICAL_DAYS_BACK) for ledger entries. */
+    /**
+     * Ledger entries are retained indefinitely. Lifetime reconstruction
+     * (ATH owner-capital netting and Buy & Hold benchmark replay) needs the
+     * full ledger history from inception onward; pruning by
+     * HISTORICAL_DAYS_BACK would silently corrupt both. Storage cost is
+     * negligible (small rows, one exchange).
+     */
+    @Suppress("UnusedPrivateMember", "UnusedParameter")
     private suspend fun pruneOldEntries(reference: Instant) {
-        try {
-            val cutoff = reference.minus(PrecisionConstants.HISTORICAL_DAYS_BACK.toLong(), ChronoUnit.DAYS)
-            val pruned = repository.pruneLedgersOlderThan(cutoff)
-            if (pruned > 0) {
-                log.info(
-                    "Pruned {} ledger entries older than {} days.",
-                    pruned,
-                    PrecisionConstants.HISTORICAL_DAYS_BACK,
-                )
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.error("Failed to prune old ledger entries", e)
-        }
+        // Intentional no-op: see retention contract above.
     }
 
     private suspend fun readSyncWatermark(): Instant? =
@@ -276,16 +275,16 @@ class LedgersSyncService(
                     types = setOf(type),
                 )
                 val totalCount = krakenService.getLastLedgerTotalCount()
+                val rawPageSize = krakenService.getLastLedgerRawPageSize()
                 perTypeTotal[type] = totalCount
                 batches.add(page)
                 combinedBatchSize += page.size
                 val nextOffset = offset + KrakenApiConstants.LEDGER_PAGE_SIZE
-                val hasMoreForType = if (totalCount >
-                    0
-                ) {
+                val hasMoreForType = if (totalCount > 0) {
                     nextOffset < totalCount
                 } else {
-                    page.size >= KrakenApiConstants.LEDGER_PAGE_SIZE
+                    val pageSizeToCheck = if (rawPageSize > 0) rawPageSize else page.size
+                    pageSizeToCheck >= KrakenApiConstants.LEDGER_PAGE_SIZE
                 }
                 if (!hasMoreForType) perTypeDone[type] = true else perTypeOffset[type] = nextOffset
             }

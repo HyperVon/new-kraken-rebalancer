@@ -3,8 +3,11 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.InternalTransferRecord
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.WithdrawStatusRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -47,6 +50,7 @@ class DynamicKrakenService(
 
     /** Cached after [getLedgers] so sync progress metadata need not downcast the port. */
     private val lastLedgerTotalCount = AtomicInteger(0)
+    private val lastLedgerRawPageSize = AtomicInteger(0)
 
     /**
      * Pins the live vs simulation backend for [block] at entry. If a pin is already
@@ -111,10 +115,24 @@ class DynamicKrakenService(
         val backend = currentBackend()
         val ledgers = backend.getLedgers(startSec, offset, endSec, types)
         lastLedgerTotalCount.set(backend.getLastLedgerTotalCount())
+        lastLedgerRawPageSize.set(backend.getLastLedgerRawPageSize())
         return ledgers
     }
 
     override fun getLastLedgerTotalCount(): Int = lastLedgerTotalCount.get()
+
+    override fun getLastLedgerRawPageSize(): Int = lastLedgerRawPageSize.get()
+
+    override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> =
+        currentBackend().getDepositStatus(startSec, endSec)
+
+    override suspend fun getWithdrawStatus(startSec: Long?, endSec: Long?): List<WithdrawStatusRecord> =
+        currentBackend().getWithdrawStatus(startSec, endSec)
+
+    override suspend fun getInternalTransfers(startSec: Long?, endSec: Long?): List<InternalTransferRecord> =
+        currentBackend().getInternalTransfers(startSec, endSec)
+
+    override suspend fun getFundingEvidenceScope(): String = currentBackend().getFundingEvidenceScope()
 
     override suspend fun getApiCallCounter(): Double = currentBackend().getApiCallCounter()
 }

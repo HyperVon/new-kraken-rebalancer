@@ -7,8 +7,10 @@ import com.gemini.krakenbot.repository.table.LedgerTable
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.greaterEq
+import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
+import org.jetbrains.exposed.v1.core.not
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
@@ -64,8 +66,20 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
 
     override suspend fun pruneLedgersOlderThan(cutoff: Instant): Int =
         database.safeTransactionIO(log, "Failed to prune old ledger entries") {
+            val inceptionEpochMs = readSyncMetadataInTransaction(
+                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+            )?.toLongOrNull()
+            val cutoffMillis = cutoff.toEpochMilli()
             LedgerTable.deleteWhere {
-                timestamp less cutoff.toEpochMilli()
+                val condition = timestamp less cutoffMillis
+                if (inceptionEpochMs != null) {
+                    condition and not(
+                        (type inList LedgerEvent.OWNER_CAPITAL_TYPES) and
+                            (timestamp greaterEq (inceptionEpochMs - 5000L)),
+                    )
+                } else {
+                    condition
+                }
             }
         }
 }

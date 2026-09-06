@@ -4,6 +4,7 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import io.mockk.mockk
 
 /**
@@ -18,6 +19,7 @@ data class PortfolioManagerTestFixture(
     val portfolioAnalyzer: PortfolioAnalyzer,
     val orderExecutor: OrderExecutor,
     val portfolioManager: PortfolioManagerImpl,
+    val inceptionDiscoveryService: InceptionDiscoveryService,
 )
 
 fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
@@ -25,6 +27,7 @@ fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
     val configService = mockk<ConfigService>(relaxed = true)
     val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     val portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+    val inceptionDiscoveryService = mockk<InceptionDiscoveryService>(relaxed = true)
     val portfolioAnalyzer =
         PortfolioAnalyzerImpl(
             krakenService = krakenService,
@@ -39,6 +42,7 @@ fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
             portfolioAnalyzer = portfolioAnalyzer,
             orderExecutor = orderExecutor,
             krakenService = krakenService,
+            inceptionDiscoveryService = inceptionDiscoveryService,
         )
     return PortfolioManagerTestFixture(
         krakenService = krakenService,
@@ -48,5 +52,6 @@ fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
         portfolioAnalyzer = portfolioAnalyzer,
         orderExecutor = orderExecutor,
         portfolioManager = portfolioManager,
+        inceptionDiscoveryService = inceptionDiscoveryService,
     )
 }

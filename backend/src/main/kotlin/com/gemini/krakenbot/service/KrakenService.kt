@@ -3,8 +3,11 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.domain.OrderResult
 import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RawPrices
+import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.InternalTransferRecord
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.WithdrawStatusRecord
 import java.math.BigDecimal
 
 interface KrakenService {
@@ -51,8 +54,41 @@ interface KrakenService {
         types: Set<String>? = null,
     ): List<LedgerEvent> = emptyList()
 
+    /**
+     * Batch funding evidence from Kraken's authenticated DepositStatus
+     * endpoint. Backends without a funding-status surface return an empty
+     * list; callers must treat absence as unresolved provenance.
+     */
+    suspend fun getDepositStatus(startSec: Long? = null, endSec: Long? = null): List<DepositStatusRecord> = emptyList()
+
+    /**
+     * Batch funding evidence from Kraken's authenticated WithdrawStatus
+     * endpoint. Backends without a funding-status surface return an empty
+     * list; callers must treat absence as unresolved provenance.
+     */
+    suspend fun getWithdrawStatus(startSec: Long? = null, endSec: Long? = null): List<WithdrawStatusRecord> =
+        emptyList()
+
+    /**
+     * Optional authoritative wallet-transfer evidence. Kraken's Spot REST
+     * surface does not expose a historical Futures-transfer query, so the live
+     * adapter returns empty until such a source is available.
+     */
+    suspend fun getInternalTransfers(startSec: Long? = null, endSec: Long? = null): List<InternalTransferRecord> =
+        emptyList()
+
+    /**
+     * Stable account/configuration scope for cached funding evidence. The
+     * value must not contain credentials; it only prevents evidence fetched
+     * for one account or credential generation from being reused for another.
+     */
+    suspend fun getFundingEvidenceScope(): String = this::class.java.name
+
     /** Total ledger entry count from the last [getLedgers] response (Kraken `count`). */
     fun getLastLedgerTotalCount(): Int = 0
+
+    /** Number of raw entries returned in the last [getLedgers] page before local type filtering. */
+    fun getLastLedgerRawPageSize(): Int = 0
 
     /** Current private-API call-counter load; 0 for backends without a rate limiter. */
     suspend fun getApiCallCounter(): Double = 0.0

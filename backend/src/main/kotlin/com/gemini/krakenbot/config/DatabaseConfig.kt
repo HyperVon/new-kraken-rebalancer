@@ -2,6 +2,7 @@ package com.gemini.krakenbot.config
 
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
+import com.gemini.krakenbot.repository.table.AthAppliedFlowTable
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.LedgerTable
 import com.gemini.krakenbot.repository.table.OrderIntentTable
@@ -52,6 +53,7 @@ object DatabaseConfig {
             TradeTable,
             LedgerTable,
             PortfolioStatsTable,
+            AthAppliedFlowTable,
             ActionLogTable,
             HistorySyncMetadataTable,
         )

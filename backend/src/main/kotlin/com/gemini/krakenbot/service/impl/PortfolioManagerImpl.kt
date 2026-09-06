@@ -4,13 +4,16 @@ import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.toPercentScale
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.RebalanceEventFormatter
 import com.gemini.krakenbot.view.util.ViewText
@@ -41,6 +44,7 @@ class PortfolioManagerImpl(
     private val portfolioAnalyzer: PortfolioAnalyzer,
     private val orderExecutor: OrderExecutor,
     private val krakenService: KrakenService? = null,
+    private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
 ) : PortfolioManager {
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
@@ -189,8 +193,13 @@ class PortfolioManagerImpl(
     private suspend fun runLoopBody() {
         // Startup syncs establish their own session/backend pin; they are not grouped under the
         // cycle-wide execution session/backend pin.
+        // Inception resolves before snapshot reconstruction/pruning so
+        // prune logic can honor the lifetime retention contract (never
+        // prune at or after inception). Burst detection needs trades, so
+        // ledgers + trades sync first.
         synchronizeLedgers("on startup")
         synchronizeTrades("on startup")
+        resolveInception("on startup")
         synchronizeHistoricalSnapshots("on startup")
 
         try {
@@ -237,10 +246,19 @@ class PortfolioManagerImpl(
             if (ks != null) {
                 ks.withStableBackend {
                     withCycleMdc(cycleId) {
+                        // The balance observation must precede the ledger
+                        // sync: the sync watermark is stamped at sync start,
+                        // and the ATH coverage gate requires coverage at or
+                        // after the observation. Observing first keeps the
+                        // gate passable every cycle instead of deferring
+                        // forever. The same observation drives the trade
+                        // valuation below, so total and observedAt stay a
+                        // consistent pair.
+                        val athObservation = observeBalancesForAth()
                         synchronizeLedgers("during cycle")
                         synchronizeTrades("during cycle")
                         synchronizeHistoricalSnapshots("during cycle")
-                        performRebalanceCycleForCycle(cycleId)
+                        performRebalanceCycleForCycle(cycleId, athObservation)
                     }
                 }
             } else {
@@ -252,6 +270,19 @@ class PortfolioManagerImpl(
                 }
             }
         }
+    }
+
+    private suspend fun observeBalancesForAth(): ObservedBalances? = try {
+        portfolioAnalyzer.fetchObservedBalances()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn(
+            "Pre-sync balance observation failed; the rebalance phase will re-fetch " +
+                "(the ATH update may defer until the next cycle)",
+            e,
+        )
+        null
     }
 
     private suspend fun synchronizeLedgers(context: String) {
@@ -296,6 +327,19 @@ class PortfolioManagerImpl(
         }
     }
 
+    private suspend fun resolveInception(context: String) {
+        try {
+            val resolved = inceptionDiscoveryService?.resolveInception()
+            if (resolved != null) {
+                log.info("Resolved portfolio inception {} at {}", context, resolved.inceptionTime)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to resolve portfolio inception {}", context, e)
+        }
+    }
+
     internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
         currentCoroutineContext().ensureActive()
         clearCycleSyncWarning()
@@ -305,14 +349,18 @@ class PortfolioManagerImpl(
         }
     }
 
-    private suspend fun performRebalanceCycleForCycle(cycleId: String): PortfolioSnapshot? {
+    private suspend fun performRebalanceCycleForCycle(
+        cycleId: String,
+        athObservation: ObservedBalances? = null,
+    ): PortfolioSnapshot? {
         val startedAt = Instant.now()
         operationalStatus = operationalStatus.copy(
             lastCycleStartedAt = startedAt,
             lastCycleError = null,
+            lastAthDeferredReason = null,
         )
         try {
-            val snapshot = performRebalanceCyclePinned(cycleId)
+            val snapshot = performRebalanceCyclePinned(cycleId, athObservation)
             if (snapshot == null) {
                 operationalStatus = operationalStatus.copy(
                     lastCycleError = operationalStatus.lastCycleError ?: "Cycle produced no snapshot",
@@ -353,12 +401,15 @@ class PortfolioManagerImpl(
         )
     }
 
-    private suspend fun performRebalanceCyclePinned(cycleId: String): PortfolioSnapshot? {
+    private suspend fun performRebalanceCyclePinned(
+        cycleId: String,
+        athObservation: ObservedBalances?,
+    ): PortfolioSnapshot? {
         log.info("--- Starting Snapshot Phase ---")
         val config = configService.getConfig()
         val actionLog = mutableListOf<String>()
 
-        val (balances, preObservedAt) = portfolioAnalyzer.fetchObservedBalances()
+        val (balances, preObservedAt) = athObservation ?: portfolioAnalyzer.fetchObservedBalances()
         val prices = portfolioAnalyzer.fetchPrices()
         val calculationResult = portfolioAnalyzer.calculatePortfolioValues(balances, prices)
 
@@ -377,15 +428,41 @@ class PortfolioManagerImpl(
             }",
         )
 
+        var athDeferred = false
         val drawdownPct =
-            portfolioAnalyzer
-                .updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
+            when (
+                val athUpdate =
+                    portfolioAnalyzer
+                        .updateAthAndCalculateDrawdown(totalPortfolioValueUSD, BigDecimal.ZERO, preObservedAt)
+            ) {
+                is AthUpdateResult.Trusted -> athUpdate.drawdownPct
+
+                // Fail closed: the balance may contain owner capital the
+                // ledger window has not seen yet, so no drawdown derived from
+                // it may drive fiat deployment. Keep showing the last trusted
+                // drawdown and force deployment to zero below.
+                is AthUpdateResult.Deferred -> {
+                    athDeferred = true
+                    operationalStatus = operationalStatus.copy(lastAthDeferredReason = athUpdate.reason)
+                    log.warn(
+                        "ATH state deferred (reason={}); preserving last trusted drawdown {}",
+                        athUpdate.reason,
+                        athUpdate.lastTrustedDrawdownPct,
+                    )
+                    actionLog.add(
+                        "ATH update deferred (${athUpdate.reason}); fiat deployment disabled this cycle.",
+                    )
+                    athUpdate.lastTrustedDrawdownPct ?: BigDecimal.ZERO
+                }
+            }
         val hasDeployableCryptoTarget =
             config.allocations.any { allocation ->
                 !allocation.symbol.isUsd && allocation.targetPercent > 0.0
             }
         val fiatDeploymentPct =
-            if (hasDeployableCryptoTarget) {
+            if (athDeferred) {
+                BigDecimal.ZERO
+            } else if (hasDeployableCryptoTarget) {
                 portfolioAnalyzer.calculateFiatDeployment(drawdownPct, config.settings)
             } else {
                 BigDecimal.ZERO

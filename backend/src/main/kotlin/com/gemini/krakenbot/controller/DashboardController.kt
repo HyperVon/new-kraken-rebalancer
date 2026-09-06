@@ -18,6 +18,7 @@ import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.css.CssStyles
 import com.gemini.krakenbot.view.util.CssClass
@@ -241,6 +242,16 @@ class DashboardController(
         val fiatDeploymentExponent =
             params.requiredSingle(FormFields.FIAT_DEPLOYMENT_EXPONENT, ViewText.INVALID_FIAT_DEPLOYMENT_EXPONENT)
                 .requiredFiniteDouble(ViewText.INVALID_FIAT_DEPLOYMENT_EXPONENT)
+        val fiatDeploymentThresholdPercent =
+            params[FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT]?.trim()?.takeIf(String::isNotBlank)?.let {
+                it.toDoubleOrNull()?.takeIf { d -> d.isFinite() && d >= 0.0 && d <= 100.0 }
+                    ?: throw IllegalArgumentException(ViewText.INVALID_FIAT_DEPLOYMENT_THRESHOLD)
+            } ?: 0.0
+        val inceptionDate = params[FormFields.INCEPTION_DATE]?.trim()?.takeIf(String::isNotBlank)?.let { dateStr ->
+            InceptionDiscoveryService.parseInceptionDate(dateStr)
+                ?: throw IllegalArgumentException(ViewText.INVALID_INCEPTION_DATE)
+            dateStr
+        }
         val settings =
             Settings(
                 loopDelaySeconds = loopDelaySeconds,
@@ -250,6 +261,8 @@ class DashboardController(
                 simulation = params[FormFields.SIMULATION] != null,
                 fiatMaxDrawdown = fiatMaxDrawdown,
                 fiatDeploymentExponent = fiatDeploymentExponent,
+                fiatDeploymentThresholdPercent = fiatDeploymentThresholdPercent,
+                inceptionDate = inceptionDate,
             )
 
         val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
@@ -577,6 +590,8 @@ class DashboardController(
             HealthStatusKeys.LAST_CYCLE_COMPLETED_AT to (cycleStatus.lastCycleCompletedAt?.toString() ?: "N/A"),
             HealthStatusKeys.LAST_CYCLE_ERROR to (cycleStatus.lastCycleError ?: "N/A"),
             HealthStatusKeys.LAST_CYCLE_SYNC_WARNING to (cycleStatus.lastCycleSyncWarning ?: "N/A"),
+            HealthStatusKeys.LAST_ATH_DEFERRED_REASON to
+                (cycleStatus.lastAthDeferredReason?.name ?: "N/A"),
             HealthStatusKeys.LAST_TRADE_SYNC_TIME to syncTime,
             HealthStatusKeys.UNRESOLVED_ORDER_INTENTS to unresolvedOrderIntents,
             HealthStatusKeys.LEGACY_UNRESOLVED_SUBMISSIONS to legacyUnresolvedSubmissions,

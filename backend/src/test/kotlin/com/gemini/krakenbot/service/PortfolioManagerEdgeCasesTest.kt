@@ -10,6 +10,8 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.service.impl.history.InceptionResolution
 import com.gemini.krakenbot.toBigDecimalMap
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -25,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
+import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 
 class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
@@ -249,10 +252,12 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0
                         },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -471,10 +476,12 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                         )
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
-                    portfolioStatsRepository.save(
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0
                         },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -488,7 +495,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     BigDecimal("1000.0"),
                 )
                 coEvery {
-                    portfolioStatsRepository.save(any())
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any())
                 } throws IOException(
                     "Save failed",
                 )
@@ -497,8 +504,12 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("800.0"))
                 }
                 coVerify {
-                    portfolioStatsRepository.save(
-                        match { it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0 },
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0
+                        },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -509,14 +520,19 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
                     BigDecimal("1000.0"),
                 )
-                coEvery { portfolioStatsRepository.save(any()) } throws IOException("Save failed")
+                coEvery { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
+                    IOException("Save failed")
 
                 shouldThrow<IOException> {
                     portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
                 }
                 coVerify {
-                    portfolioStatsRepository.save(
-                        match { it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0 },
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0
+                        },
+                        any(),
+                        any(),
                     )
                 }
             }
@@ -525,11 +541,100 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
         "testUpdateAthAndCalculateDrawdown_SaveCancellationPropagates" {
             runTest {
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000.0"))
-                coEvery { portfolioStatsRepository.save(any()) } throws CancellationException("cancelled")
+                coEvery { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(any(), any(), any()) } throws
+                    CancellationException("cancelled")
 
                 shouldThrow<CancellationException> {
                     portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
                 }
+            }
+        }
+
+        "runLoop_resolvesInceptionOnStartup" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { emptyMap() }
+                coEvery { inceptionDiscoveryService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = Instant.now(),
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                )
+
+                portfolioManager.startRebalancingLoop()
+                val job = launch {
+                    portfolioManager.runLoop()
+                }
+                delay(10.milliseconds)
+
+                coVerify(exactly = 1) { inceptionDiscoveryService.resolveInception() }
+
+                portfolioManager.stopRebalancingLoop()
+                job.cancel()
+            }
+        }
+
+        "runLoop_inceptionResolutionFailureDoesNotHaltLoop" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { emptyMap() }
+                coEvery { inceptionDiscoveryService.resolveInception() } throws RuntimeException("DB discovery failed")
+
+                portfolioManager.startRebalancingLoop()
+                val job = launch {
+                    portfolioManager.runLoop()
+                }
+                delay(10.milliseconds)
+
+                krakenService.getBalancesCallCount shouldBe 1
+
+                portfolioManager.stopRebalancingLoop()
+                job.cancel()
+            }
+        }
+
+        "runLoop_inceptionResolutionCancellationPropagates" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                coEvery { inceptionDiscoveryService.resolveInception() } throws CancellationException("cancelled")
+
+                portfolioManager.startRebalancingLoop()
+                shouldThrow<CancellationException> {
+                    portfolioManager.runLoop()
+                }
+            }
+        }
+
+        "runLoop_handlesNullInceptionDiscoveryService" {
+            runTest {
+                val managerWithoutInception = PortfolioManagerImpl(
+                    configService = configService,
+                    tradeHistoryService = tradeHistoryService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor,
+                    krakenService = krakenService,
+                    inceptionDiscoveryService = null,
+                )
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { emptyMap() }
+
+                managerWithoutInception.startRebalancingLoop()
+                val job = launch {
+                    managerWithoutInception.runLoop()
+                }
+                delay(10.milliseconds)
+
+                krakenService.getBalancesCallCount shouldBe 1
+
+                managerWithoutInception.stopRebalancingLoop()
+                job.cancel()
             }
         }
     }

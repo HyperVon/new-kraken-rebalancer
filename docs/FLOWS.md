@@ -447,7 +447,7 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   **300 seconds**, with a captured end time for stable newest-first pagination.
 - Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
   so overlap and repeated pages are harmless. The sync requests `staking`,
-  `dividend`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `spend`, and
+  `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `spend`, and
   `receive` response types. The live Kraken adapter sends `type=sale` for the
   latter two because `sale` is the documented query filter, then filters returned
   rows by their actual response type.
@@ -455,12 +455,24 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   a real sync brackets all pages with the same `ConfigService` execution-session
   boundary used by trade synchronization. Simulation mode does not call Kraken.
 
-The History rewards query filters the persisted ledger range to `staking` and
-`dividend` rows for tracked assets, then aligns cumulative amounts to portfolio
-snapshots and values them with each snapshot's prices. The comparison and reverse
-snapshot reconstruction consume all eight external types with `amount - fee`;
+The History rewards query filters the persisted ledger range to `staking`,
+`dividend`, and `earn/reward` rows for tracked assets, then aligns cumulative
+amounts to portfolio snapshots and values them with each snapshot's prices. Earn
+allocation mechanics are internal and remain out of the rewards series. The
+comparison and reverse snapshot reconstruction consume all thirteen synchronized
+ledger types with `amount - fee` where applicable;
 consumer Buy Crypto `spend`/`receive` legs remain separate ledger events. Kraken
 documents those app transactions in Ledger history rather than Trades history.
+The ATH path prepares one immutable funding-provenance snapshot for the retained
+ledger batch and shares it across classification, card normalization, and basis
+replay. Confirmed card funding waits for its complete refid-linked shape; an
+incomplete card group defers ATH and is not journaled, while an ordinary
+confirmed Wire/ACH deposit remains an owner-capital event. Card normalization
+keeps synthetic net owner capital separate from exact per-leg asset deltas:
+Buy & Hold uses the synthetic amount, and later ATH basis reconstruction replays
+the actual deltas and fees once. Old decided ambiguous groups do not block an
+unrelated undecided bank flow, but a group split between decided and newly
+arrived rows fails closed rather than applying a partial sibling.
 Dividends for untracked assets remain excluded from the rewards series. It is a
 normal suspend query, not a background flow. Before the comparison renders, each
 tracked interval must reconcile against authoritative trades and supported ledger

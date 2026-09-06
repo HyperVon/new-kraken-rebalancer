@@ -5,9 +5,9 @@ import java.time.Instant
 
 /**
  * One entry from the Kraken private Ledgers endpoint (e.g. `staking` rewards, `dividend` payouts,
- * `deposit`, `withdrawal`, `transfer`, `adjustment`, and consumer-transaction `spend`/`receive`
- * entries). Amounts are signed (+ for credit, - for debit) and denominated in the ledger asset.
- * Fees are non-negative.
+ * modern `earn` activity, `deposit`, `withdrawal`, `transfer`, `adjustment`, and
+ * consumer-transaction `spend`/`receive` entries). Amounts are signed (+ for credit, - for debit)
+ * and denominated in the ledger asset. Fees are non-negative.
  *
  * [ledgerId] is the Kraken ledger entry id (the response map key), unique per entry;
  * [refid] is the reference id of the parent transaction that caused the entry and may
@@ -31,6 +31,10 @@ data class LedgerEvent(
     val balance: BigDecimal = BigDecimal.ZERO,
     /** True when [balance] came from Kraken or a persisted database row; false for synthetic events. */
     val hasAuthoritativeBalance: Boolean = false,
+    /** True when the fee was present and parsed at the exchange boundary. */
+    val hasAuthoritativeFee: Boolean = fee.signum() != 0,
+    /** False when the exchange fee field was malformed or had an impossible negative value. */
+    val hasValidFee: Boolean = true,
 ) {
     /**
      * Net balance delta contributed by this ledger event: `amount - fee`.
@@ -40,11 +44,25 @@ data class LedgerEvent(
     fun netBalanceDelta(): BigDecimal = amount.subtract(fee)
 
     companion object {
-        /** Ledger types displayed in the History Rewards chart (staking rewards and asset/cash dividends). */
+        /** Legacy ledger types displayed in the History Rewards chart. */
         val REWARD_TYPES: Set<String> =
             setOf(
                 KrakenApiConstants.LEDGER_TYPE_STAKING,
                 KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+            )
+
+        /** True for legacy reward families and the documented modern Earn reward subtype. */
+        fun isRewardEvent(event: LedgerEvent): Boolean = event.type.lowercase() in REWARD_TYPES ||
+            (
+                event.type.equals(KrakenApiConstants.LEDGER_TYPE_EARN, ignoreCase = true) &&
+                    event.subtype?.trim()?.lowercase() == "reward"
+                )
+
+        /** Genuine owner-capital ledger families; transfer is intentionally not included. */
+        val OWNER_CAPITAL_TYPES: Set<String> =
+            setOf(
+                KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
             )
 
         /** Strategy-neutral external balance ledger types that alter account balances without rebalancing trades. */
@@ -52,12 +70,18 @@ data class LedgerEvent(
             setOf(
                 KrakenApiConstants.LEDGER_TYPE_STAKING,
                 KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+                KrakenApiConstants.LEDGER_TYPE_EARN,
                 KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                 KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
                 KrakenApiConstants.LEDGER_TYPE_TRANSFER,
                 KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
                 KrakenApiConstants.LEDGER_TYPE_SPEND,
                 KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                KrakenApiConstants.LEDGER_TYPE_MARGIN,
+                KrakenApiConstants.LEDGER_TYPE_ROLLOVER,
+                KrakenApiConstants.LEDGER_TYPE_SETTLED,
+                KrakenApiConstants.LEDGER_TYPE_CREDIT,
+                KrakenApiConstants.LEDGER_TYPE_SALE,
             )
     }
 }

@@ -7,11 +7,18 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
+import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
+import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
@@ -151,9 +158,102 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 val captor = slot<PortfolioStats>()
-                coVerify { portfolioStatsRepository.save(capture(captor)) }
+                coVerify { portfolioStatsRepository.saveAthStateWithFlowCheckpoint(capture(captor), any(), any()) }
                 captor.captured.allTimeHigh.shouldNotBeNull()
                 captor.captured.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("1500.0"))
+            }
+        }
+
+        "normal PortfolioManager cycle uses the production funding resolver for ATH" {
+            runTest {
+                val now = java.time.Instant.parse("2026-08-01T12:00:00Z")
+                val observation = now.plusSeconds(80)
+                val database = DatabaseConfig.init(TestFixtures.MEMORY_)
+                val ledgerRepository = SqliteLedgerRepositoryImpl(database)
+                val tradeRepository = SqliteTradeRepositoryImpl(database)
+                val statsRepository = SqlitePortfolioStatsRepositoryImpl(database, jacksonObjectMapper())
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false, simulation = false, loopDelaySeconds = 60L),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                    kraken = KrakenCredentials("k", "s"),
+                )
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("1100.00")) }
+
+                statsRepository.save(PortfolioStats(BigDecimal("1000.00")))
+                tradeRepository.saveSnapshot(
+                    PortfolioSnapshot(
+                        timestamp = now.plusSeconds(60),
+                        totalValueUSD = BigDecimal("1000.00"),
+                        assets = mapOf(
+                            Asset.USD to TestFixtures.assetSnapshot(
+                                symbol = Asset.USD,
+                                balance = BigDecimal("1000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("1000.00"),
+                                targetPercent = BigDecimal("100.0"),
+                            ),
+                        ),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal("100.0"),
+                        balancesObservedAt = now.plusSeconds(60),
+                    ),
+                )
+                val deposit = LedgerEvent(
+                    ledgerId = "live-deposit",
+                    refid = "LIVE-DEP-1",
+                    time = now.plusSeconds(70),
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = Asset.USD,
+                    amount = BigDecimal("100.00"),
+                )
+                ledgerRepository.saveLedgers(listOf(deposit))
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    observation.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    now.plusSeconds(60).epochSecond.toString(),
+                )
+                krakenService.depositStatusSupplier = { _, _ ->
+                    listOf(
+                        DepositStatusRecord(
+                            refid = "LIVE-DEP-1",
+                            asset = Asset.USD,
+                            amount = BigDecimal("100.00"),
+                            time = deposit.time,
+                            status = "Success",
+                            method = "Wire",
+                        ),
+                    )
+                }
+
+                val productionResolver = KrakenFundingProvenanceResolver(krakenService)
+                val productionAnalyzer = PortfolioAnalyzerImpl(
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = statsRepository,
+                    nowProvider = { observation },
+                    ledgerRepository = ledgerRepository,
+                    tradeRepository = tradeRepository,
+                    defaultProvenanceResolver = productionResolver,
+                )
+                val productionManager = PortfolioManagerImpl(
+                    configService = configService,
+                    tradeHistoryService = tradeHistoryService,
+                    portfolioAnalyzer = productionAnalyzer,
+                    orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService),
+                    krakenService = krakenService,
+                )
+
+                productionManager.performRebalanceCycle().shouldNotBeNull()
+
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("1100.00"))
+                krakenService.getDepositStatusCallCount shouldBe 1
             }
         }
 

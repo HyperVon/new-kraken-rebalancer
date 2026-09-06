@@ -271,12 +271,15 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - Header loop control on Dashboard, History, and Settings showing RUNNING/PAUSED with neutral labeled **Pause** and **Resume** actions
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
-- **Staking Rewards History** — displays cumulative staking and dividend rewards in USD, split
-  by asset, from synchronized Kraken ledger entries. `dividend` entries for
-  untracked assets (e.g. DOT outside the tracked universe) remain external inflows
-  excluded from the chart, while dividends for tracked assets are treated like
-  staking; Earn-migration asset suffixes (`.S`/`.M`/`.F`/`.B`) and legacy `X`/`Z`
-  asset codes are normalized to the base symbol.
+- **Staking & Earn Rewards History** — displays cumulative `staking`, `dividend`,
+  and modern `earn/reward` returns in USD, split by asset, from synchronized
+  Kraken ledger entries. Earn allocation mechanics (`allocation`,
+  `deallocation`, `autoallocate`, and `migration`) are internal moves and do
+  not appear as rewards; unknown Earn subtypes fail closed. `dividend` entries
+  for untracked assets (e.g. DOT outside the tracked universe) remain external
+  inflows excluded from the chart, while dividends for tracked assets are
+  treated like staking. Earn-migration asset suffixes (`.S`/`.M`/`.F`/`.B`)
+  and legacy `X`/`Z` asset codes are normalized to the base symbol.
 - **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
   Kotlin/JS (`rebalancer.js`) for charts, History controls, and client behavior
 
@@ -302,10 +305,11 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Deduplicates overlapping records within a ~5 minute window via pair-alias normalization (e.g. `XBTUSD` vs `XXBTZUSD`), local-estimate vs API fill reconciliation, and fee-difference tolerance
 - Tracks synchronization state in `history_sync_metadata` to prevent redundant API queries
 
-### Ledger & Staking Rewards Synchronization
+### Ledger, Staking & Earn Rewards Synchronization
 
-- Synchronizes eight strategy-neutral entry types (`staking`, `dividend`, `deposit`,
-  `withdrawal`, `transfer`, `adjustment`, `spend`, and `receive`) from Kraken's private
+- Synchronizes thirteen strategy-neutral entry types (`staking`, `dividend`, `earn`, `deposit`,
+  `withdrawal`, `transfer`, `adjustment`, `spend`, `receive`, `margin`, `rollover`, `settled`,
+  and `credit`) from Kraken's private
   `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold Flow fetching.
   The live adapter queries the documented `sale` filter for consumer `spend`/`receive`
   rows, then filters the returned rows by their response type.
@@ -314,7 +318,7 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Stores durable seed progress and timestamps in `history_sync_metadata`, then
   uses a five-minute incremental overlap to avoid missing entries near a
   watermark
-- Serves `/api/history/rewards` with cumulative staking rewards aligned to
+- Serves `/api/history/rewards` with cumulative staking, dividend, and Earn rewards aligned to
   portfolio snapshots and valued using each snapshot's asset prices. Ledger
   assets are normalized to the tracked base symbol (Earn suffixes and legacy
   `X`/`Z` codes), and assets without a snapshot price in the range are excluded
@@ -324,11 +328,23 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   realistic cumulative history; `dividend` entries for tracked assets are now
   mirrored in the rewards chart, comparison math, and historical reconstruction
   (like staking), while dividends for untracked assets remain external inflows.
-- Rebalancer vs Buy & Hold and historical reconstruction replay every supported
-  external ledger type using `amount - fee`. Consumer Buy Crypto activity is
+- Modern `earn/reward` rows are mirrored as performance in the rewards chart,
+  ATH basis reconstruction, and Buy & Hold; `earn` allocation mechanics replay
+  only where needed to reconstruct account balances and remain neutral in
+  strategy accounting. Unknown Earn subtypes remain unavailable.
+- Rebalancer vs Buy & Hold replays every supported external ledger type using
+  `amount - fee`; ATH basis reconstruction separately replays the actual
+  event-time asset effects. Consumer Buy Crypto activity is
   represented by its ledger `spend`/`receive` legs; it is not inferred from
-  `TradesHistory`. The reconstruction marker records the ledger-coverage version
-  it replayed, so a coverage migration cannot be hidden by an older marker.
+  `TradesHistory`. A card-style external deposit plus USD `spend` and purchased
+  asset `receive` is retained as a weighted owner contribution plus one linked
+  conversion only when all legs share one non-blank refid and the complete
+  shape is present; a card deposit-only or partial group stays pending, while
+  confirmed ordinary Wire/ACH deposits remain ordinary owner capital. The
+  normalized event separates synthetic `netOwnerCapitalUsd` from exact actual
+  per-leg asset deltas: Buy & Hold uses the former, and ATH basis replay uses
+  the latter once. Otherwise comparison remains unavailable. The reconstruction marker records the ledger-coverage
+  version it replayed, so a coverage migration cannot be hidden by an older marker.
 
 ### Safety & Reliability
 
@@ -407,13 +423,13 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - Six summary stat cards including avg fee rate and avg slippage
 - Trade log columns for price, fee, slippage, and status
 - Cumulative net cash flow chart with gross and fee-adjusted (dashed) series
-- Staking Rewards chart with cumulative USD value and per-asset series from
+- Staking & Earn Rewards chart with cumulative USD value and per-asset series from
   synchronized ledger entries
 
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
 - **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
-- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the first stored snapshot in the selected range and shows the latest USD/percentage difference; bounded exchange/local timestamp skew and precise API-fill notional are reconciled before rendering, while any other tracked balance change that cannot be explained by authoritative trades or supported ledger activity makes the range unavailable
+- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the strategy-inception baseline across every view window and shows the latest USD/percentage difference; bounded exchange/local timestamp skew and precise API-fill notional are reconciled before rendering, while any other tracked balance change that cannot be explained by authoritative trades or supported ledger activity makes the range unavailable
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)
@@ -661,6 +677,12 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 - For **live** or **dry-run-against-Kraken** modes: a Kraken account with API
   keys (Permissions: **Query Funds**, **Query Closed Orders & Trades**,
   **Query Ledgers**, **Create & Modify Orders**)
+- **Funding-status permissions**: `DepositStatus` requires **Funds: Query**
+  (covered by **Query Funds**). `WithdrawStatus` accepts **Funds: Withdraw** or
+  **Data: Query ledger entries** (covered by **Query Ledgers**); the application
+  does not need withdrawal-placement permission. If either endpoint is denied,
+  the runtime reports the missing permission and keeps ATH/Buy & Hold funding
+  unresolved rather than guessing.
 - For **`simulation: true`**: no real keys required — template placeholders are
   enough; the emulator never calls Kraken
 
@@ -789,7 +811,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET` | `/api/history/trades` | Trade log for History page (JSON, `?range=`) |
 | `GET` | `/api/history/stats` | History summary-card aggregates (JSON, `?range=`) |
 | `GET` | `/api/history/comparison` | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`) |
-| `GET` | `/api/history/rewards` | Cumulative staking rewards by asset (JSON, `?range=`) |
+| `GET` | `/api/history/rewards` | Cumulative staking, dividend, and Earn rewards by asset (JSON, `?range=`) |
 | `GET` | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON) |
 | `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 

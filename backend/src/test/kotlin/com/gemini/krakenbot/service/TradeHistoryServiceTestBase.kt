@@ -63,6 +63,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
         val savedSnapshots = mutableListOf<PortfolioSnapshot>()
         coEvery { repository.saveSnapshot(any()) } answers {
             savedSnapshots.add(0, firstArg())
+            savedSnapshots.size
         }
         coEvery { repository.load() } answers { savedSnapshots.take(50) }
         coEvery { repository.getLatestSnapshot() } coAnswers { repository.load().firstOrNull() }

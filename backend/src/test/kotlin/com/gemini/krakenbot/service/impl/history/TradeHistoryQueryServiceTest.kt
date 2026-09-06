@@ -4,12 +4,22 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.RebalancerOrderIdentities
+import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.FakeKrakenService
+import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -30,7 +40,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
     private val repository = mockk<TradeRepository>(relaxed = true)
     private val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     private val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
-    private val orderIntentRepository = mockk<com.gemini.krakenbot.repository.OrderIntentRepository>(relaxed = true)
+    private val orderIntentRepository = mockk<OrderIntentRepository>(relaxed = true)
     private val service = TradeHistoryQueryService(repository, statsRepository, ledgerRepository, orderIntentRepository)
 
     private val now = Instant.parse("2026-07-01T12:00:00Z")
@@ -113,6 +123,25 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getRewardsOverTime_IncludesEarnRewardsButExcludesAllocationMechanics" {
+            runTest {
+                val snap = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                val earnReward = ledgerEvent("EARN-REWARD", now.minusSeconds(3600), "BTC", "0.1")
+                    .copy(type = KrakenApiConstants.LEDGER_TYPE_EARN, subtype = "reward")
+                val earnAllocation = ledgerEvent("EARN-ALLOCATION", now.minusSeconds(1800), "BTC", "-1.0")
+                    .copy(type = KrakenApiConstants.LEDGER_TYPE_EARN, subtype = "allocation")
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
+                    listOf(earnReward, earnAllocation)
+
+                val rewards = service.getRewardsOverTime(Instant.EPOCH, now)
+
+                rewards.points[0].perAssetUSD.getValue(Asset.BTC)
+                    .shouldBeEqualComparingTo(BigDecimal("5000.00"))
+                rewards.totalRewardsUSD.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+            }
+        }
+
         "getLedgersInRange_DelegatesToLedgerRepository" {
             runTest {
                 val expected = listOf(ledgerEvent("L1", now.minusSeconds(3600), "BTC", "0.1"))
@@ -142,13 +171,71 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getRebalancerComparison_UsesProductionFundingResolver" {
+            runTest {
+                val snap1 = snapshot(
+                    now,
+                    "1000.00",
+                    btc = "0.0" to "50000.00",
+                    usdBalance = "1000.00",
+                )
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "1100.00",
+                    btc = "0.0" to "50000.00",
+                    usdBalance = "1100.00",
+                )
+                val deposit = ledgerEvent(
+                    ledgerId = "LIVE-DEPOSIT",
+                    timestamp = now.plusSeconds(1800),
+                    asset = Asset.USD,
+                    amount = "100.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = "LIVE-DEPOSIT-REF",
+                )
+                val kraken = FakeKrakenService().apply {
+                    depositStatusSupplier = { _, _ ->
+                        listOf(
+                            DepositStatusRecord(
+                                refid = "LIVE-DEPOSIT-REF",
+                                asset = Asset.USD,
+                                amount = BigDecimal("100.00"),
+                                time = deposit.time,
+                                status = "Success",
+                                method = "Wire",
+                            ),
+                        )
+                    }
+                }
+                val productionBoundService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    fundingProvenanceResolver = KrakenFundingProvenanceResolver(kraken),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(deposit)
+
+                val comparison = productionBoundService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1100.00"))
+                kraken.getDepositStatusCallCount shouldBe 1
+                kraken.getWithdrawStatusCallCount shouldBe 0
+                kraken.getInternalTransfersCallCount shouldBe 1
+            }
+        }
+
         "getRebalancerComparison_DurableOrderTxidIntentProvesBotOwnership" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 val snap2 =
                     snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
-                val trade = com.gemini.krakenbot.model.TradeRecord(
+                val trade = TradeRecord(
                     id = 1,
                     pair = "BTCUSD",
                     symbol = "BTC",
@@ -160,7 +247,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal.ZERO,
-                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    source = TradeSource.API_FILL,
                     tradeId = "T1",
                     orderTxid = "BOT-ORDER-1",
                     cycleId = null,
@@ -169,7 +256,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
-                    com.gemini.krakenbot.model.RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-1"))
+                    RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-1"))
 
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
 
@@ -186,7 +273,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 val last = now.plusSeconds(3600)
                 val snap2 = snapshot(last, "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
-                val trade = com.gemini.krakenbot.model.TradeRecord(
+                val trade = TradeRecord(
                     id = 1,
                     pair = "BTCUSD",
                     symbol = "BTC",
@@ -198,7 +285,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal.ZERO,
-                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    source = TradeSource.API_FILL,
                     tradeId = "TERMINAL-LATE-FILL",
                     orderTxid = "TERMINAL-LATE-ORDER",
                     cycleId = null,
@@ -210,7 +297,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), capture(queriedTradesTo)) } returns listOf(trade)
                 coEvery { ledgerRepository.getLedgersInRange(any(), capture(queriedLedgersTo)) } returns emptyList()
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
-                    com.gemini.krakenbot.model.RebalancerOrderIdentities()
+                    RebalancerOrderIdentities()
 
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, last.plusSeconds(1))
 
@@ -231,7 +318,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
 
                 // Trade executed just after baseline observation time due to clock skew, but was in snap1 balances
-                val trade = com.gemini.krakenbot.model.TradeRecord(
+                val trade = TradeRecord(
                     id = 1,
                     pair = "BTCUSD",
                     symbol = "BTC",
@@ -243,7 +330,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal.ZERO,
-                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    source = TradeSource.API_FILL,
                     tradeId = "T-SKEW",
                     orderTxid = "O-SKEW",
                     cycleId = null,
@@ -257,7 +344,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(capture(queriedTradesFrom), any()) } returns listOf(trade)
                 coEvery { ledgerRepository.getLedgersInRange(capture(queriedLedgersFrom), any()) } returns emptyList()
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
-                    com.gemini.krakenbot.model.RebalancerOrderIdentities()
+                    RebalancerOrderIdentities()
 
                 val comparison = service.getRebalancerComparison(now, now.plusSeconds(3600))
 
@@ -322,7 +409,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
 
                 // Fill occurs at T+2s (after baseline), but intent was created at T-1s (before baseline)
-                val trade = com.gemini.krakenbot.model.TradeRecord(
+                val trade = TradeRecord(
                     id = 1,
                     pair = "BTCUSD",
                     symbol = "BTC",
@@ -334,7 +421,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal.ZERO,
-                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    source = TradeSource.API_FILL,
                     tradeId = "T1",
                     orderTxid = "BOT-ORDER-EARLY-INTENT",
                     cycleId = null,
@@ -350,7 +437,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                         capture(requestedClientOrderIds),
                     )
                 } returns
-                    com.gemini.krakenbot.model.RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-EARLY-INTENT"))
+                    RebalancerOrderIdentities(orderTxids = setOf("BOT-ORDER-EARLY-INTENT"))
 
                 val comparison = service.getRebalancerComparison(now, now.plusSeconds(3600))
 
@@ -369,7 +456,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap2 =
                     snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
-                val trade = com.gemini.krakenbot.model.TradeRecord(
+                val trade = TradeRecord(
                     id = 1,
                     pair = "BTCUSD",
                     symbol = "BTC",
@@ -381,7 +468,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal.ZERO,
-                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    source = TradeSource.API_FILL,
                     tradeId = "MANUAL-T1",
                     orderTxid = "MANUAL-O1",
                     cycleId = null,
@@ -390,7 +477,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(trade)
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
-                    com.gemini.krakenbot.model.RebalancerOrderIdentities(orderTxids = emptySet())
+                    RebalancerOrderIdentities(orderTxids = emptySet())
 
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
 
@@ -408,7 +495,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap2 =
                     snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
-                val trade = com.gemini.krakenbot.model.TradeRecord(
+                val trade = TradeRecord(
                     id = 1,
                     pair = "BTCUSD",
                     symbol = "BTC",
@@ -420,7 +507,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal.ZERO,
-                    source = com.gemini.krakenbot.model.TradeSource.LEGACY_UNKNOWN,
+                    source = TradeSource.LEGACY_UNKNOWN,
                     tradeId = null,
                     orderTxid = null,
                     cycleId = null,
@@ -433,7 +520,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe
-                    com.gemini.krakenbot.model.ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+                    ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
             }
         }
 
@@ -445,7 +532,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe
-                    com.gemini.krakenbot.model.ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+                    ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
             }
         }
 
@@ -459,7 +546,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
-                val tradeWithBlankIds = com.gemini.krakenbot.model.TradeRecord(
+                val tradeWithBlankIds = TradeRecord(
                     id = 1,
                     pair = "BTCUSD",
                     symbol = "BTC",
@@ -491,7 +578,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 val snap2 =
                     snapshot(now.plusSeconds(3600), "100000.00", btc = "1.2" to "50000.00", usdBalance = "40000.00")
-                val trade = com.gemini.krakenbot.model.TradeRecord(
+                val trade = TradeRecord(
                     id = 1,
                     pair = "BTCUSD",
                     symbol = "BTC",
@@ -503,7 +590,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal.ZERO,
-                    source = com.gemini.krakenbot.model.TradeSource.API_FILL,
+                    source = TradeSource.API_FILL,
                     tradeId = null,
                     orderTxid = null,
                     cycleId = null,
@@ -514,13 +601,345 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
                 coEvery {
                     orderIntentRepository.getKnownRebalancerOrderIdentities(any(), setOf("CLIENT-ORDER-99"))
-                } returns com.gemini.krakenbot.model.RebalancerOrderIdentities(
+                } returns RebalancerOrderIdentities(
                     orderTxids = setOf("BOT-ORDER-1"),
                 )
 
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+            }
+        }
+
+        "getRebalancerComparison_UsesInceptionDiscoveryServiceWhenProvided" {
+            runTest {
+                val inceptionTime = now.minusSeconds(86400 * 30)
+                val snapInception =
+                    snapshot(inceptionTime, "80000.00", btc = "1.0" to "40000.00", usdBalance = "40000.00")
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "110000.00", btc = "1.0" to "60000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = inceptionTime,
+                    inceptionSnapshot = snapInception,
+                    isAutoDetected = true,
+                )
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe inceptionTime
+                comparison.points.size shouldBe 2
+            }
+        }
+
+        "getRebalancerComparison_ResolvesSnapshotBeforeWhenInceptionSnapshotIsNull" {
+            runTest {
+                val inceptionTime = now.minusSeconds(86400 * 10)
+                val snapInception = snapshot(
+                    inceptionTime,
+                    "85000.00",
+                    btc = "1.0" to "45000.00",
+                    usdBalance = "40000.00",
+                    balancesObservedAt = null,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "110000.00", btc = "1.0" to "60000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = inceptionTime,
+                    inceptionSnapshot = null,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotBefore(any()) } returns snapInception
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                // Bounded inception fallback queries [inception-300s, inception+30s];
+                // answer with the true inception snapshot, not the window snapshots.
+                coEvery {
+                    repository.getSnapshotsInRange(
+                        inceptionTime.minusSeconds(300),
+                        inceptionTime.plusSeconds(30),
+                    )
+                } returns listOf(snapInception)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe inceptionTime
+                comparison.points.size shouldBe 2
+            }
+        }
+
+        "getRebalancerComparison_OwnerDeposit PricedFromRecordedSnapshots" {
+            runTest {
+                val t0 = now.minusSeconds(86400 * 30)
+                val tMid = now.plusSeconds(1800)
+                val snap0 = snapshot(
+                    t0,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = t0,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "110000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "60000.00",
+                )
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        ledgerEvent(
+                            ledgerId = "qs-deposit-1",
+                            timestamp = tMid,
+                            asset = "USD",
+                            amount = "10000.00",
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ),
+                    )
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                    fundingProvenanceResolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                refid = "FT-qs-deposit-1",
+                                asset = "USD",
+                                amount = BigDecimal("10000.00"),
+                                time = tMid,
+                                status = "Success",
+                                method = "Wire",
+                            ),
+                        ),
+                    ),
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                // $10k allocated by 50/50 inception weights at recorded 50k
+                // BTC: no artificial alpha at flat prices.
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
+            }
+        }
+
+        "getRebalancerComparison_OwnerCryptoDeposit_PricedFromRecordedSnapshots" {
+            runTest {
+                val t0 = now.minusSeconds(86400 * 30)
+                val tMid = now.plusSeconds(1800)
+                val snap0 = snapshot(
+                    t0,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = t0,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "125000.00",
+                    btc = "1.5" to "50000.00",
+                    usdBalance = "50000.00",
+                )
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        ledgerEvent(
+                            ledgerId = "qs-deposit-btc",
+                            timestamp = tMid,
+                            asset = "BTC",
+                            amount = "0.50000000",
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ),
+                    )
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                    fundingProvenanceResolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                refid = "tx-qs-deposit-btc",
+                                txid = "0xbtc123",
+                                asset = "BTC",
+                                amount = BigDecimal("0.50000000"),
+                                time = tMid,
+                                status = "Success",
+                                method = "Bitcoin",
+                            ),
+                        ),
+                    ),
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
+            }
+        }
+
+        "getRebalancerComparison_RejectsFutureObservedPriceCandidates" {
+            runTest {
+                val t0 = now.minusSeconds(86400 * 30)
+                val tMid = now.plusSeconds(1800)
+                val snap0 = snapshot(
+                    t0,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = t0,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "125000.00",
+                    btc = "1.5" to "50000.00",
+                    usdBalance = "50000.00",
+                )
+                val futureObserved = snap1.copy(
+                    timestamp = tMid.minusSeconds(60),
+                    balancesObservedAt = tMid.plusSeconds(1),
+                    assets = snap1.assets.mapValues { (symbol, asset) ->
+                        if (symbol == Asset.BTC) asset.copy(price = BigDecimal("99999.00")) else asset
+                    },
+                )
+                val missingAsset = snap1.copy(
+                    timestamp = tMid.minusSeconds(90),
+                    assets = snap1.assets - Asset.BTC,
+                )
+                val validPrice = snap1.copy(
+                    timestamp = tMid.minusSeconds(120),
+                    balancesObservedAt = tMid.minusSeconds(120),
+                )
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(
+                    ledgerEvent(
+                        ledgerId = "future-observation-deposit",
+                        timestamp = tMid,
+                        asset = Asset.BTC,
+                        amount = "0.50000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } answers {
+                    if (secondArg<Instant>() == tMid) {
+                        listOf(futureObserved, missingAsset, validPrice)
+                    } else {
+                        listOf(snap1, snap2)
+                    }
+                }
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                    fundingProvenanceResolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                refid = "tx-future-observation-deposit",
+                                txid = "0xfuture-observation",
+                                asset = Asset.BTC,
+                                amount = BigDecimal("0.50000000"),
+                                time = tMid,
+                                status = "Success",
+                                method = "Bitcoin",
+                            ),
+                        ),
+                    ),
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
+            }
+        }
+
+        "getRebalancerComparison_TruncatedHistoryReturnsInformativeUnavailable" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = now.minusSeconds(86400 * 100),
+                    inceptionSnapshot = null,
+                    isAutoDetected = true,
+                    confidence = InceptionConfidence.TRUNCATED,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_HISTORY_TRUNCATED
             }
         }
     }
@@ -569,12 +988,26 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         amount: String,
         type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
         fee: String = "0",
-    ): LedgerEvent = LedgerEvent(
-        ledgerId = ledgerId,
-        time = timestamp,
-        type = type,
-        asset = asset,
-        amount = BigDecimal(amount),
-        fee = BigDecimal(fee),
-    )
+        refid: String? = null,
+    ): LedgerEvent {
+        val resolvedRefid = refid ?: when (type) {
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> {
+                val norm = Asset.normalizeLedgerAsset(asset).uppercase()
+                if (norm == Asset.USD) "FT-$ledgerId" else "tx-$ledgerId"
+            }
+
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL -> "WIRE-$ledgerId"
+
+            else -> null
+        }
+        return LedgerEvent(
+            ledgerId = ledgerId,
+            refid = resolvedRefid,
+            time = timestamp,
+            type = type,
+            asset = asset,
+            amount = BigDecimal(amount),
+            fee = BigDecimal(fee),
+        )
+    }
 }
