@@ -183,6 +183,23 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    - **Net Capital for Fee-Bearing Deposits**: Confirmed external deposits contribute their net capital
      (`event.netBalanceDelta() = amount - fee`) as `OWNER_CAPITAL`. ATH scales strictly on the net contributed
      funds, preventing fee drag from being misattributed as strategy loss or unproven plumbing.
+   - **Prepared Card Funding Lifecycle**: ATH retains the full ledger batch for refid correlation, prepares
+     one immutable `FundingProvenanceResolver` snapshot, and passes that exact prepared instance to classification,
+     card normalization, and basis context. A confirmed card/consumer funding deposit is ambiguous until its
+     complete plumbing shape arrives (external deposit + USD `spend` + purchased-asset `receive` for a card buy);
+     incomplete rows defer ATH and remain unjournaled. Confirmed ordinary Wire/ACH funding without plumbing stays
+     `NotApplicable` to `CardFundingNormalizer` and is handled as ordinary owner capital. Every funding leg in a
+     normalized owner event must be `EXTERNAL`; unresolved siblings or external/internal mixtures are ambiguous,
+     all-internal groups are `NotApplicable`, and multiple external funding legs are unsupported unless a future
+     explicit shape is added. Only normalization groups intersecting the current undecided identity set can block
+     the current ATH; retained decided groups remain context, while a group split between decided and newly arrived
+     identities fails closed rather than applying only the new sibling.
+   - **Synthetic Capital vs Actual Effects**: `NormalizedFundingTransaction.OwnerContribution` and
+     `OwnerWithdrawal` carry both `netOwnerCapitalUsd` (the synthetic amount used for ATH scaling and Buy & Hold
+     inception-weight allocation) and exact per-leg `AssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
+     Buy & Hold consumes only the synthetic amount and never replays the conversion legs. ATH basis reconstruction
+     replays completed card actual deltas, including fees, exactly once and excludes both the representative funding
+     row and raw card plumbing rows from separate replay.
    - **Ambiguous Funding Deferral & Fail-Closed Safety**: Unlike terminal neutral events (`INTERNAL_MOVE`,
      `TRADE_IGNORED`) or performance events (`EXTERNAL_BALANCE`) which are acknowledged in the decision journal,
      flows classified as `AMBIGUOUS` or `UNSUPPORTED` MUST NOT be journaled as decided or skipped. Instead, they
@@ -219,7 +236,7 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    - **Pre-Flow Basis Reconstruction with Intervening Balance Replay**: Flows apply sequentially oldest-first
      (simultaneous flows net into one step), each against its event-time pre-flow basis. The basis reconstructs
      exact portfolio holdings immediately before the flow:
-     `holdings_at_flow = predecessor_holdings + replayed_trades + replayed_external_balances + replayed_crypto_flows`.
+     `holdings_at_flow = predecessor_holdings + replayed_trades + replayed_external_balances + replayed_actual_card_deltas + replayed_crypto_flows`.
      Successful non-dry-run trades adjust tracked crypto quantities and fiat outlays/proceeds (including fees),
      off-universe trades adjust only the fiat leg, and intervening `EXTERNAL_BALANCE` events (such as staking
      rewards, ledger adjustments, or dividends occurring between predecessor snapshot and the flow event time)
@@ -429,9 +446,9 @@ failure.
 ### Ledger history and staking/Earn rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
-once every **300 seconds**, requesting the nine strategy-neutral response types
+once every **300 seconds**, requesting the thirteen strategy-neutral response types
 (`staking`, `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
-`spend`, and `receive`) in pages of **50**. Kraken's API query filter does not
+`spend`, `receive`, `margin`, `rollover`, `settled`, and `credit`) in pages of **50**. Kraken's API query filter does not
 support `type=earn` (passing `type=earn` returns `EGeneral:Invalid arguments`);
 the service queries `type=all` when requesting `earn` and filters rows locally
 for `type == "earn"`. Similarly, the API query filter uses `type=sale` for the
@@ -439,7 +456,7 @@ consumer `spend`/`receive` rows and filters locally. Pagination for filtered que
 checks Kraken's authoritative total count (`nextOffset < totalCount`) and the
 raw response page size (`rawPageSize >= 50`) so intermediate pages containing
 zero target rows continue paginating until completion. A seeded installation
-whose coverage version predates version `4` performs a bounded **96-day** backfill
+whose coverage version predates version `5` performs a bounded **96-day** backfill
 with the same identity deduplication; ledgers remain retained for the lifetime
 of the account. The first and recovered initial syncs also use a bounded **96-day**
 seed window and store durable progress metadata; later syncs use the latest stored
@@ -468,7 +485,7 @@ Earn allocation mechanics are persisted for account reconstruction but are not
 performance rewards; unknown Earn subtypes remain fail-closed. Dividend entries
 for untracked assets remain persisted but excluded as external inflows.
 
-For ATH and benchmark accounting, all nine synchronized ledger types are
+For ATH and benchmark accounting, all thirteen synchronized ledger types are
 classified before application and use `amount - fee` where replayed, preserving
 both legs of a consumer transaction. `earn/reward` is an in-kind performance
 event; Earn allocation mechanics are internal and ignored by ATH and Buy & Hold.
@@ -500,9 +517,8 @@ interpretation across the engine. Card funding legs must share a non-blank `refi
 validates complete transaction shapes:
 
 1. *3-leg USD card buy crypto*: external funding (USD deposit), USD `spend`, and purchased-asset
-   `receive` with opposing USD directions.
-2. *2-leg direct asset plumbing*: external funding in a non-USD asset and opposite-signed plumbing
-   in the same asset.
+   `receive` with opposing USD directions. Non-USD direct-asset two-leg shapes are not currently
+   a supported normalization shape and remain unavailable rather than being guessed.
 
 Incomplete shapes (such as deposit plus spend without receive leg) or USD-only plumbing netting to zero
 fail closed as ambiguous (`AMBIGUOUS_FUNDING` for ATH, `AMBIGUOUS_LEDGER_TYPE` for B&H).
@@ -629,7 +645,7 @@ The behavior is controlled by `rebalancer-config.json`:
 | `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
 | `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
 | `fiatDeploymentThresholdPercent` | Deadband threshold below which no fiat is deployed (0.0 to 100.0). Prevents micro-deployments during small drawdowns. |
-| `inceptionDate` | Strategy start date (ISO-8601 string or `YYYY-MM-DD`). When omitted or blank, auto-detected from bot order prefixes or initial trade bursts. Future-dated values are ignored. Required on upgraded installs whose early history was pruned (`INCEPTION_HISTORY_TRUNCATED`). |
+| `inceptionDate` | Strategy start date (ISO-8601 string or `YYYY-MM-DD`). When omitted or blank, auto-detected from an initial successful trade burst. Future-dated values are ignored. Required on upgraded installs whose early history was pruned (`INCEPTION_HISTORY_TRUNCATED`). |
 
 ## Precision
 

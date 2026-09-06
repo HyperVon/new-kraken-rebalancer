@@ -4,6 +4,16 @@ import java.math.BigDecimal
 import java.time.Instant
 
 /**
+ * One actual balance effect from a normalized funding group.
+ *
+ * This is deliberately separate from owner capital: Buy & Hold and ATH scaling
+ * consume the synthetic USD owner-capital amount, while ATH basis replay uses
+ * these raw per-leg effects to preserve the portfolio's real asset conversion
+ * and fee drag exactly once.
+ */
+data class AssetDelta(val asset: String, val amount: BigDecimal)
+
+/**
  * Functional pricing interface for valuing transaction fees into USD.
  */
 fun interface CardFeePriceProvider {
@@ -26,6 +36,7 @@ sealed interface NormalizedFundingTransaction {
         val grossFundingUsd: BigDecimal,
         val feeUsd: BigDecimal,
         val netOwnerCapitalUsd: BigDecimal,
+        val actualPortfolioDeltas: List<AssetDelta>,
         val sourceLedgerIds: List<String>,
         val representativeLedgerId: String,
     ) : NormalizedFundingTransaction
@@ -39,6 +50,7 @@ sealed interface NormalizedFundingTransaction {
         val grossFundingUsd: BigDecimal,
         val feeUsd: BigDecimal,
         val netOwnerCapitalUsd: BigDecimal,
+        val actualPortfolioDeltas: List<AssetDelta>,
         val sourceLedgerIds: List<String>,
         val representativeLedgerId: String,
     ) : NormalizedFundingTransaction

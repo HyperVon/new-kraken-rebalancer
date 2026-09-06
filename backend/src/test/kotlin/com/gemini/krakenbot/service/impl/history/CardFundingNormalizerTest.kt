@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl.history
 
+import com.gemini.krakenbot.model.AssetDelta
 import com.gemini.krakenbot.model.CardFeePriceProvider
 import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.FundingEvidence
@@ -26,6 +27,14 @@ class CardFundingNormalizerTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val baseTime = Instant.parse("2026-07-01T12:30:00.000Z")
+
+    init {
+        "recognizes both USD ledger aliases" {
+            CardFundingNormalizer.isUsd("USD") shouldBe true
+            CardFundingNormalizer.isUsd("ZUSD") shouldBe true
+            CardFundingNormalizer.isUsd("BTC") shouldBe false
+        }
+    }
 
     private fun event(
         id: String,
@@ -228,6 +237,11 @@ class CardFundingNormalizerTest : StringSpec() {
             result.grossFundingUsd shouldBeEqualComparingTo BigDecimal("5000.00")
             result.feeUsd shouldBeEqualComparingTo BigDecimal("20.00")
             result.netOwnerCapitalUsd shouldBeEqualComparingTo BigDecimal("4980.00")
+            result.actualPortfolioDeltas shouldBe listOf(
+                AssetDelta("USD", BigDecimal("5000.00")),
+                AssetDelta("USD", BigDecimal("-5000.00")),
+                AssetDelta("BTC", BigDecimal("0.0996")),
+            )
             result.sourceLedgerIds shouldContainExactlyInAnyOrder listOf("1", "2", "3")
             result.representativeLedgerId shouldBe "1"
         }
@@ -364,7 +378,7 @@ class CardFundingNormalizerTest : StringSpec() {
             result.reason shouldContain "conflicting deposit and withdrawal"
         }
 
-        "plain funding without passthrough returns NotApplicable" {
+        "confirmed card deposit without passthrough remains pending" {
             val legs = listOf(
                 event("1", "deposit", "5000.00"),
             )
@@ -376,7 +390,136 @@ class CardFundingNormalizerTest : StringSpec() {
                 defaultPriceProvider,
             )
 
-            result shouldBe NormalizedFundingTransaction.NotApplicable
+            result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            result.reason shouldContain "missing spend and receive"
+        }
+
+        "confirmed Wire and ACH deposits without passthrough remain NotApplicable" {
+            for ((refid, method) in listOf("WIRE-REF-1" to "Wire", "ACH-REF-1" to "ACH")) {
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(depositRecord(refid, "5000.00", method = method)),
+                )
+                val result = CardFundingNormalizer.normalizeGroup(
+                    refid,
+                    listOf(event("$method-1", "deposit", "5000.00", refid = refid)),
+                    resolver,
+                    defaultPriceProvider,
+                )
+
+                result shouldBe NormalizedFundingTransaction.NotApplicable
+            }
+        }
+
+        "external funding with an unresolved sibling fails closed" {
+            val resolver = FundingProvenanceResolver { event ->
+                if (event.ledgerId == "external") FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+            }
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(
+                    event("external", "deposit", "5000.00"),
+                    event("unresolved", "deposit", "1.00"),
+                    event("spend", "spend", "-4980.00", fee = "20.00"),
+                    event("receive", "receive", "0.0996", asset = "BTC"),
+                ),
+                resolver,
+                defaultPriceProvider,
+            )
+
+            result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            result.reason shouldContain "unresolved funding provenance"
+        }
+
+        "external and internal funding provenance fails closed" {
+            val resolver = FundingProvenanceResolver { event ->
+                if (event.ledgerId == "external") FundingEvidence.EXTERNAL else FundingEvidence.INTERNAL
+            }
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(
+                    event("external", "deposit", "5000.00"),
+                    event("internal", "deposit", "1.00"),
+                    event("spend", "spend", "-4980.00", fee = "20.00"),
+                    event("receive", "receive", "0.0996", asset = "BTC"),
+                ),
+                resolver,
+                defaultPriceProvider,
+            )
+
+            result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            result.reason shouldContain "external and internal"
+        }
+
+        "unresolved and internal funding siblings fail closed" {
+            val resolver = FundingProvenanceResolver { event ->
+                if (event.ledgerId == "internal") FundingEvidence.INTERNAL else FundingEvidence.UNRESOLVED
+            }
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(
+                    event("internal", "deposit", "5000.00"),
+                    event("unresolved", "deposit", "1.00"),
+                    event("spend", "spend", "-4980.00", fee = "20.00"),
+                    event("receive", "receive", "0.0996", asset = "BTC"),
+                ),
+                resolver,
+                defaultPriceProvider,
+            )
+
+            result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            result.reason shouldContain "unresolved funding provenance"
+        }
+
+        "card evidence remains pending even when its funding row is unresolved" {
+            val resolver = object : FundingProvenanceResolver {
+                override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                override fun isCardFunding(event: LedgerEvent): Boolean = true
+            }
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(event("card", "deposit", "5000.00")),
+                resolver,
+                defaultPriceProvider,
+            )
+
+            result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            result.reason shouldContain "cannot be proven external"
+        }
+
+        "ZUSD is treated as USD for a complete card group" {
+            val resolver = FundingProvenanceResolver { FundingEvidence.EXTERNAL }
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(
+                    event("deposit", "deposit", "5000.00", asset = "ZUSD"),
+                    event("spend", "spend", "-4980.00", asset = "ZUSD", fee = "20.00"),
+                    event("receive", "receive", "0.0996", asset = "BTC"),
+                ),
+                resolver,
+                defaultPriceProvider,
+            )
+
+            result.shouldBeInstanceOf<NormalizedFundingTransaction.OwnerContribution>()
+            result.netOwnerCapitalUsd shouldBeEqualComparingTo BigDecimal("4980.00")
+        }
+
+        "multiple external funding legs are not collapsed into one owner event" {
+            val resolver = FundingProvenanceResolver { FundingEvidence.EXTERNAL }
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(
+                    event("1", "deposit", "5000.00"),
+                    event("2", "deposit", "1.00"),
+                    event("3", "spend", "-4980.00", fee = "20.00"),
+                    event("4", "receive", "0.0996", asset = "BTC"),
+                ),
+                resolver,
+                defaultPriceProvider,
+            )
+
+            result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            result.reason shouldContain "Multiple external funding legs"
         }
 
         "card deposit missing spend plumbing leg fails closed as Ambiguous" {
@@ -547,6 +690,11 @@ class CardFundingNormalizerTest : StringSpec() {
             result.grossFundingUsd shouldBeEqualComparingTo BigDecimal("5000.00")
             result.feeUsd shouldBeEqualComparingTo BigDecimal("25.00")
             result.netOwnerCapitalUsd shouldBeEqualComparingTo BigDecimal("4975.00")
+            result.actualPortfolioDeltas shouldBe listOf(
+                AssetDelta("USD", BigDecimal("5000.00")),
+                AssetDelta("USD", BigDecimal("-5000.00")),
+                AssetDelta("BTC", BigDecimal("0.0995")),
+            )
         }
 
         "unpriceable crypto fee returns UnpriceableFee" {
@@ -812,7 +960,7 @@ class CardFundingNormalizerTest : StringSpec() {
             result.netOwnerCapitalUsd shouldBeEqualComparingTo BigDecimal("90.00")
         }
 
-        "USD-only funding plumbing where spend exceeds deposit returns NotApplicable" {
+        "USD-only funding plumbing where spend exceeds deposit stays separately typed" {
             val resolver = SimpleFundingProvenanceResolver(
                 deposits = listOf(
                     depositRecord("WIRE-REF-1", "100.00", method = "Wire"),
@@ -879,7 +1027,7 @@ class CardFundingNormalizerTest : StringSpec() {
             result.netOwnerCapitalUsd shouldBeEqualComparingTo BigDecimal("-110.00")
         }
 
-        "USD-only withdrawal plumbing where receive exceeds withdrawal returns NotApplicable" {
+        "USD-only withdrawal plumbing where receive exceeds withdrawal stays separately typed" {
             val withdrawResolver = SimpleFundingProvenanceResolver(
                 withdrawals = listOf(
                     withdrawRecord("WIRE-W-1", "-100.00"),

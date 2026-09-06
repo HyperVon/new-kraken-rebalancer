@@ -15,6 +15,7 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.AthTrustFailureException
 import com.gemini.krakenbot.service.AthTrustFailureReason
 import com.gemini.krakenbot.service.AthUpdateResult
 import com.gemini.krakenbot.service.ConfigService
@@ -1851,6 +1852,376 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
+        "production ATH path uses the immutable prepared provenance resolver for classification and normalization" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                var prepareCalls = 0
+                val preparedResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+                    override fun isCardFunding(event: LedgerEvent): Boolean = true
+                }
+                val productionShapeResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                    override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver {
+                        prepareCalls++
+                        return preparedResolver
+                    }
+                }
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0),
+                    ),
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val cardRef = "CARD-PREPARED-RESOLVER"
+                val cardTime = fixedTime.minusSeconds(900)
+                val cardDeposit = LedgerEvent(
+                    ledgerId = "prepared-deposit",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("5000.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val cardSpend = LedgerEvent(
+                    ledgerId = "prepared-spend",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                val cardReceive = LedgerEvent(
+                    ledgerId = "prepared-receive",
+                    refid = cardRef,
+                    time = cardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    asset = "BTC",
+                    amount = BigDecimal("0.0996"),
+                    fee = BigDecimal.ZERO,
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns
+                    listOf(cardDeposit, cardSpend, cardReceive)
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(
+                    PortfolioSnapshot(
+                        timestamp = cardTime.minusSeconds(5),
+                        totalValueUSD = BigDecimal("10000.00"),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal("0.10"),
+                                price = BigDecimal("50000.00"),
+                                valueUSD = BigDecimal("5000.00"),
+                                targetPercent = BigDecimal("50.0"),
+                            ),
+                            "USD" to TestFixtures.assetSnapshot(
+                                symbol = "USD",
+                                balance = BigDecimal("5000.00"),
+                                price = BigDecimal.ONE,
+                                valueUSD = BigDecimal("5000.00"),
+                                targetPercent = BigDecimal("50.0"),
+                            ),
+                        ),
+                        actions = emptyList<String>(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    ),
+                )
+
+                val result = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("14980.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = fixedTime,
+                    provenanceResolver = productionShapeResolver,
+                )
+
+                result shouldBe AthUpdateResult.Trusted(BigDecimal.ZERO)
+                prepareCalls shouldBe 1
+            }
+        }
+
+        "priceOwnerCapitalFlow preserves passthrough fee direction and representative identity" {
+            runTest {
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = createAnalyzerWithRepos(tradeRepository = mockTrades)
+                val deposit = LedgerEvent(
+                    ledgerId = "passthrough-deposit",
+                    refid = "PASSTHROUGH-DEPOSIT",
+                    time = fixedTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("1000.00"),
+                )
+                val spend = LedgerEvent(
+                    ledgerId = "passthrough-spend",
+                    refid = deposit.refid,
+                    time = fixedTime.plusMillis(100),
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-990.00"),
+                    fee = BigDecimal("10.00"),
+                )
+                val depositGroup = listOf(deposit, spend)
+
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    deposit,
+                    balancesObservedAt = null,
+                    tradesRepo = mockTrades,
+                    allRetained = depositGroup,
+                ).shouldBeEqualComparingTo(BigDecimal("990.00"))
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    spend,
+                    balancesObservedAt = null,
+                    tradesRepo = mockTrades,
+                    allRetained = depositGroup,
+                ).shouldBeEqualComparingTo(BigDecimal("-1000.00"))
+
+                val withdrawal = LedgerEvent(
+                    ledgerId = "passthrough-withdrawal",
+                    refid = "PASSTHROUGH-WITHDRAWAL",
+                    time = fixedTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    asset = "USD",
+                    amount = BigDecimal("-1000.00"),
+                )
+                val receive = LedgerEvent(
+                    ledgerId = "passthrough-receive",
+                    refid = withdrawal.refid,
+                    time = fixedTime.plusMillis(100),
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    asset = "USD",
+                    amount = BigDecimal("990.00"),
+                    fee = BigDecimal("10.00"),
+                )
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    withdrawal,
+                    balancesObservedAt = null,
+                    tradesRepo = mockTrades,
+                    allRetained = listOf(withdrawal, receive),
+                ).shouldBeEqualComparingTo(BigDecimal("-990.00"))
+
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    deposit.copy(refid = null),
+                    balancesObservedAt = null,
+                    tradesRepo = mockTrades,
+                ).shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    deposit,
+                    balancesObservedAt = null,
+                    tradesRepo = mockTrades,
+                    allRetained = emptyList(),
+                ).shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    deposit.copy(refid = " "),
+                    balancesObservedAt = null,
+                    tradesRepo = mockTrades,
+                    allRetained = emptyList(),
+                ).shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    deposit,
+                    balancesObservedAt = null,
+                    tradesRepo = mockTrades,
+                    allRetained = listOf(deposit.copy(refid = "OTHER-REF")),
+                ).shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    deposit,
+                    balancesObservedAt = null,
+                    tradesRepo = mockTrades,
+                    allRetained = listOf(deposit.copy(refid = null)),
+                ).shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    spend,
+                    balancesObservedAt = null,
+                    tradesRepo = mockTrades,
+                    allRetained = listOf(spend),
+                ).shouldBeEqualComparingTo(BigDecimal("-1000.00"))
+            }
+        }
+
+        "isLinkedPassthroughLeg requires a linked funding refid" {
+            val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+            val analyzerWithRepos = createAnalyzerWithRepos()
+            val deposit = LedgerEvent(
+                ledgerId = "linked-deposit",
+                refid = "LINKED-REF",
+                time = fixedTime,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("1000.00"),
+            )
+            val spend = LedgerEvent(
+                ledgerId = "linked-spend",
+                refid = "LINKED-REF",
+                time = fixedTime.plusMillis(100),
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                asset = "USD",
+                amount = BigDecimal("-1000.00"),
+            )
+
+            analyzerWithRepos.isLinkedPassthroughLeg(spend, listOf(deposit, spend, spend.copy(refid = null))) shouldBe
+                true
+            analyzerWithRepos.isLinkedPassthroughLeg(spend, listOf(spend)) shouldBe false
+            analyzerWithRepos.isLinkedPassthroughLeg(spend.copy(refid = "  "), listOf(deposit, spend)) shouldBe false
+            analyzerWithRepos.isLinkedPassthroughLeg(deposit, listOf(deposit, spend)) shouldBe false
+        }
+
+        "crypto flow pricing filters invalid trades and snapshots before fallback" {
+            runTest {
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                )
+                val flow = LedgerEvent(
+                    ledgerId = "crypto-price-flow",
+                    time = fixedTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "BTC",
+                    amount = BigDecimal("0.10000000"),
+                )
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns listOf(
+                    TestFixtures.tradeRecord(
+                        timestamp = fixedTime.plusSeconds(1),
+                        pair = "XXBTZUSD",
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("5000.00"),
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = fixedTime.minusSeconds(30),
+                        pair = "XXBTZUSD",
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = BigDecimal.ZERO,
+                        usdAmount = BigDecimal("5000.00"),
+                        success = false,
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = fixedTime.minusSeconds(30),
+                        pair = "XXETHZUSD",
+                        side = "buy",
+                        symbol = "ETH",
+                        volume = BigDecimal("1.0"),
+                        usdAmount = BigDecimal("5000.00"),
+                        dryRun = true,
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = fixedTime.minusSeconds(181),
+                        pair = "XXBTZUSD",
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("5000.00"),
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = fixedTime.minusSeconds(10),
+                        pair = "XXBTZUSD",
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("5000.00"),
+                    ),
+                )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
+
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    flow,
+                    balancesObservedAt = fixedTime,
+                    tradesRepo = mockTrades,
+                ).shouldBeEqualComparingTo(BigDecimal("5000.00"))
+
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+                val invalidSnapshot = TestFixtures.emptySnapshot(fixedTime.minusSeconds(100), BigDecimal.ZERO)
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(
+                    invalidSnapshot.copy(balancesObservedAt = fixedTime.plusSeconds(1)),
+                    invalidSnapshot.copy(timestamp = fixedTime.plusSeconds(1)),
+                    invalidSnapshot.copy(
+                        timestamp = fixedTime.minusSeconds(90),
+                        balancesObservedAt = fixedTime.minusSeconds(90),
+                        totalValueUSD = BigDecimal("5000.00"),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal("0.10"),
+                                price = BigDecimal("50000.00"),
+                                valueUSD = BigDecimal("5000.00"),
+                                targetPercent = BigDecimal("100.0"),
+                            ),
+                        ),
+                    ),
+                )
+
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    flow,
+                    balancesObservedAt = fixedTime,
+                    tradesRepo = mockTrades,
+                ).shouldBeEqualComparingTo(BigDecimal("5000.00"))
+
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(
+                    invalidSnapshot.copy(timestamp = fixedTime.minusSeconds(70)),
+                    invalidSnapshot.copy(
+                        timestamp = fixedTime.minusSeconds(80),
+                        balancesObservedAt = fixedTime.minusSeconds(80),
+                        assets = mapOf(
+                            "BTC" to TestFixtures.assetSnapshot(
+                                symbol = "BTC",
+                                balance = BigDecimal("0.10"),
+                                price = BigDecimal.ZERO,
+                                valueUSD = BigDecimal.ZERO,
+                                targetPercent = BigDecimal("100.0"),
+                            ),
+                        ),
+                    ),
+                )
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    fixedTime.minusSeconds(900).epochSecond to BigDecimal("50000.00"),
+                )
+                analyzerWithRepos.priceOwnerCapitalFlow(
+                    flow,
+                    balancesObservedAt = fixedTime,
+                    tradesRepo = mockTrades,
+                ).shouldBeEqualComparingTo(BigDecimal("5000.00"))
+
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    fixedTime.minusSeconds(86401).epochSecond to BigDecimal("70000.00"),
+                    fixedTime.minusSeconds(60).epochSecond to BigDecimal("60000.00"),
+                    fixedTime.minusSeconds(900).epochSecond to BigDecimal.ZERO,
+                )
+                shouldThrow<AthTrustFailureException> {
+                    analyzerWithRepos.priceOwnerCapitalFlow(
+                        flow,
+                        balancesObservedAt = fixedTime,
+                        tradesRepo = mockTrades,
+                    )
+                }
+            }
+        }
+
         "updateAth scales ATH using net contribution for card buy crypto with offset and crypto fee" {
             runTest {
                 val mockLedgers = mockk<LedgerRepository>(relaxed = true)
@@ -1926,6 +2297,16 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     effectiveUsdTargetPercent = BigDecimal.ZERO,
                 )
                 coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                coEvery { mockTrades.getTradesInRange(any(), any()) } returns listOf(
+                    TestFixtures.tradeRecord(
+                        timestamp = cardTime.minusSeconds(4),
+                        pair = "USDUSD",
+                        side = TestFixtures.BUY,
+                        symbol = "USD",
+                        volume = BigDecimal.ZERO,
+                        usdAmount = BigDecimal.ZERO,
+                    ),
+                )
 
                 val provenance = SimpleFundingProvenanceResolver(
                     deposits = listOf(

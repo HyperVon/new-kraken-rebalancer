@@ -77,6 +77,11 @@ data class LedgerEvent(
                 KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
                 KrakenApiConstants.LEDGER_TYPE_SPEND,
                 KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                KrakenApiConstants.LEDGER_TYPE_MARGIN,
+                KrakenApiConstants.LEDGER_TYPE_ROLLOVER,
+                KrakenApiConstants.LEDGER_TYPE_SETTLED,
+                KrakenApiConstants.LEDGER_TYPE_CREDIT,
+                KrakenApiConstants.LEDGER_TYPE_SALE,
             )
     }
 }

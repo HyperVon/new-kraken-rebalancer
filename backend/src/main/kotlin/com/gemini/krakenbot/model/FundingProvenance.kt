@@ -183,11 +183,12 @@ class SimpleFundingProvenanceResolver(
     }
 
     override fun isCardFunding(event: LedgerEvent): Boolean {
+        if (!event.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, ignoreCase = true)) return false
         val refid = event.refid?.trim()?.takeIf(String::isNotEmpty)
-        val deposit = if (refid != null) {
-            allDeposits.firstOrNull { it.refid.trim() == refid }
+        val matchingDeposits = if (refid != null) {
+            allDeposits.filter { it.refid.trim() == refid }
         } else {
-            allDeposits.firstOrNull {
+            allDeposits.filter {
                 matchesFundingRecord(
                     event = event,
                     recordAsset = it.asset,
@@ -198,7 +199,10 @@ class SimpleFundingProvenanceResolver(
                     eventType = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                 )
             }
-        } ?: return false
+        }
+        if (matchingDeposits.size != 1) return false
+        val deposit = matchingDeposits.single()
+        if (compatibleCandidate(event, deposit)?.evidence != FundingEvidence.EXTERNAL) return false
         val method = deposit.method?.lowercase() ?: return false
         return CARD_METHOD_MARKERS.any(method::contains)
     }

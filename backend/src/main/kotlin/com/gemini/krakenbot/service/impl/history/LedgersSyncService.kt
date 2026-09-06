@@ -20,7 +20,8 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Pulls Kraken's strategy-neutral ledger entries into the local database: staking, dividend, earn,
- * deposit, withdrawal, transfer, adjustment, and consumer-transaction spend/receive rows.
+ * deposit, withdrawal, transfer, adjustment, consumer-transaction spend/receive rows, and the
+ * margin-family balance rows (margin, rollover, settled, and credit).
  * The live adapter maps the latter two response types to Kraken's documented `sale` query filter.
  *
  * Ledger entries are insert-only: identity is the unique (ledger id, timestamp, asset, type) tuple,
@@ -38,7 +39,7 @@ class LedgersSyncService(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     companion object {
-        const val CURRENT_LEDGER_COVERAGE_VERSION = "4"
+        const val CURRENT_LEDGER_COVERAGE_VERSION = "5"
         val SUPPORTED_LEDGER_TYPES = listOf(
             KrakenApiConstants.LEDGER_TYPE_STAKING,
             KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
@@ -49,6 +50,10 @@ class LedgersSyncService(
             KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
             KrakenApiConstants.LEDGER_TYPE_SPEND,
             KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+            KrakenApiConstants.LEDGER_TYPE_MARGIN,
+            KrakenApiConstants.LEDGER_TYPE_ROLLOVER,
+            KrakenApiConstants.LEDGER_TYPE_SETTLED,
+            KrakenApiConstants.LEDGER_TYPE_CREDIT,
         )
     }
 

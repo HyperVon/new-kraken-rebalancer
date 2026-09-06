@@ -15,10 +15,10 @@ import java.math.BigDecimal
  * - `refid` pairing: rows sharing a non-blank `refid` describe legs of one
  *   economic event. Legs denominated in the SAME normalized asset whose signed
  *   [LedgerEvent.netBalanceDelta] values sum to ~zero (within
- *   [ZERO_NET_TOLERANCE]) are an internal move only when the group contains no
- *   independently proven external/performance semantics. Raw quantities across
- *   different assets are never netted. A mixed-asset funding/plumbing group is
- *   handled as one typed event after its funding provenance is checked.
+ *   [ZERO_NET_TOLERANCE]) are an internal move only when every leg is
+ *   independently classified as internal. Raw quantities across different
+ *   assets are never netted. A mixed-asset funding/plumbing group is handled
+ *   as one typed event after its funding provenance is checked.
  * - Exact documented subtype semantics: Kraken marks internal wallet moves with
  *   subtypes such as `spotfromspot`, `spottofutures`, `spottostaking`,
  *   `allocation`, or `migration`. Opaque `refid` strings are never parsed for
@@ -306,15 +306,10 @@ object LedgerFlowClassifier {
         individualCategories: Map<String, FlowCategory>,
     ): Boolean {
         if (legs.any { isKnownTransferExternalSubtype(it.subtype) }) return false
-        if (individualCategories.values.any {
-                it == FlowCategory.OWNER_CAPITAL ||
-                    it == FlowCategory.EXTERNAL_BALANCE ||
-                    it == FlowCategory.TRADE_IGNORED ||
-                    it == FlowCategory.UNSUPPORTED
-            }
-        ) {
-            return false
-        }
+        // A zero net is only a conservation check. It is not affirmative
+        // provenance, so an unresolved deposit/withdrawal or transfer pair
+        // must remain ambiguous rather than being silently discarded.
+        if (individualCategories.values.any { it != FlowCategory.INTERNAL_MOVE }) return false
         return legs.all {
             isFundingType(it.type) ||
                 it.type.equals(KrakenApiConstants.LEDGER_TYPE_TRANSFER, ignoreCase = true) ||

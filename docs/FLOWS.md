@@ -459,10 +459,20 @@ The History rewards query filters the persisted ledger range to `staking`,
 `dividend`, and `earn/reward` rows for tracked assets, then aligns cumulative
 amounts to portfolio snapshots and values them with each snapshot's prices. Earn
 allocation mechanics are internal and remain out of the rewards series. The
-comparison and reverse snapshot reconstruction consume all nine synchronized
+comparison and reverse snapshot reconstruction consume all thirteen synchronized
 ledger types with `amount - fee` where applicable;
 consumer Buy Crypto `spend`/`receive` legs remain separate ledger events. Kraken
 documents those app transactions in Ledger history rather than Trades history.
+The ATH path prepares one immutable funding-provenance snapshot for the retained
+ledger batch and shares it across classification, card normalization, and basis
+replay. Confirmed card funding waits for its complete refid-linked shape; an
+incomplete card group defers ATH and is not journaled, while an ordinary
+confirmed Wire/ACH deposit remains an owner-capital event. Card normalization
+keeps synthetic net owner capital separate from exact per-leg asset deltas:
+Buy & Hold uses the synthetic amount, and later ATH basis reconstruction replays
+the actual deltas and fees once. Old decided ambiguous groups do not block an
+unrelated undecided bank flow, but a group split between decided and newly
+arrived rows fails closed rather than applying a partial sibling.
 Dividends for untracked assets remain excluded from the rewards series. It is a
 normal suspend query, not a background flow. Before the comparison renders, each
 tracked interval must reconcile against authoritative trades and supported ledger

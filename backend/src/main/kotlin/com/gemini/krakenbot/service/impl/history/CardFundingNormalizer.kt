@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.AssetDelta
 import com.gemini.krakenbot.model.CardFeePriceProvider
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceResolver
@@ -146,17 +147,44 @@ object CardFundingNormalizer {
             return NormalizedFundingTransaction.NotApplicable
         }
 
-        // Verify funding provenance
-        val externalFunding = fundingLegs.filter { provenanceResolver.resolve(it) == FundingEvidence.EXTERNAL }
-        val internalFunding = fundingLegs.filter { provenanceResolver.resolve(it) == FundingEvidence.INTERNAL }
+        // Verify every funding leg before deciding whether the group is card
+        // plumbing. A single unresolved sibling must never be silently dropped
+        // from an otherwise external owner-capital event.
+        val fundingEvidence = fundingLegs.associateWith(provenanceResolver::resolve)
+        val externalFunding = fundingLegs.filter { fundingEvidence.getValue(it) == FundingEvidence.EXTERNAL }
+        val internalFunding = fundingLegs.filter { fundingEvidence.getValue(it) == FundingEvidence.INTERNAL }
+        val unresolvedFunding = fundingLegs.filter { fundingEvidence.getValue(it) == FundingEvidence.UNRESOLVED }
+        val hasCardEvidence = fundingLegs.any(provenanceResolver::isCardFunding)
 
+        if (externalFunding.isNotEmpty() && internalFunding.isNotEmpty()) {
+            return NormalizedFundingTransaction.Ambiguous(
+                refid = refid,
+                unavailableAt = minTime,
+                reason = "Funding group mixes external and internal funding provenance",
+            )
+        }
+
+        if (unresolvedFunding.isNotEmpty() &&
+            (externalFunding.isNotEmpty() || internalFunding.isNotEmpty())
+        ) {
+            log.warn("Card funding group with refid {} has unresolved funding siblings; failing closed", refid)
+            return NormalizedFundingTransaction.Ambiguous(
+                refid = refid,
+                unavailableAt = minTime,
+                reason = "Funding group contains unresolved funding provenance",
+            )
+        }
+
+        // An all-internal group is not owner capital. An entirely unproven
+        // plain funding row likewise remains outside this normalizer; the
+        // classifier owns the separate decision to defer it.
         if (internalFunding.isNotEmpty()) {
             return NormalizedFundingTransaction.NotApplicable
         }
 
         if (externalFunding.isEmpty()) {
-            return if (hasPassthrough) {
-                log.warn("Card funding group with refid {} has unproven funding legs; failing closed", refid)
+            return if (hasPassthrough || hasCardEvidence) {
+                log.warn("Card funding group with refid {} has no proven external funding; failing closed", refid)
                 NormalizedFundingTransaction.Ambiguous(
                     refid = refid,
                     unavailableAt = minTime,
@@ -182,13 +210,30 @@ object CardFundingNormalizer {
             )
         }
 
-        // If no passthrough legs exist at all, this is a plain funding transaction, not card Buy Crypto plumbing
-        if (spendLegs.isEmpty() && receiveLegs.isEmpty()) {
-            return NormalizedFundingTransaction.NotApplicable
+        if (externalFunding.size > 1) {
+            return NormalizedFundingTransaction.Ambiguous(
+                refid = refid,
+                unavailableAt = minTime,
+                reason = "Multiple external funding legs are unsupported for one normalized group",
+            )
         }
 
         val hasNonUsdLeg = group.any { !isUsd(it.asset) }
-        val hasCardEvidence = externalFunding.any { provenanceResolver.isCardFunding(it) }
+
+        // Confirmed card/consumer funding must wait for its complete plumbing
+        // shape. Ordinary confirmed Wire/ACH deposits remain simple owner
+        // capital and are handled by LedgerFlowClassifier instead.
+        if (spendLegs.isEmpty() && receiveLegs.isEmpty()) {
+            return if (hasCardEvidence) {
+                NormalizedFundingTransaction.Ambiguous(
+                    refid = refid,
+                    unavailableAt = minTime,
+                    reason = "Confirmed card funding is missing spend and receive plumbing legs",
+                )
+            } else {
+                NormalizedFundingTransaction.NotApplicable
+            }
+        }
 
         if (hasNonUsdLeg || hasCardEvidence) {
             // Mixed-asset card Buy Crypto or confirmed card-funded purchase
@@ -309,6 +354,7 @@ object CardFundingNormalizer {
                     grossFundingUsd = grossFundingUsd,
                     feeUsd = totalFeeUsd,
                     netOwnerCapitalUsd = netOwnerCapitalUsd,
+                    actualPortfolioDeltas = actualPortfolioDeltas(group),
                     sourceLedgerIds = sourceIds,
                     representativeLedgerId = representative.ledgerId,
                 )
@@ -327,6 +373,7 @@ object CardFundingNormalizer {
                     grossFundingUsd = grossFundingUsd,
                     feeUsd = totalFeeUsd,
                     netOwnerCapitalUsd = netOwnerCapitalUsd,
+                    actualPortfolioDeltas = actualPortfolioDeltas(group),
                     sourceLedgerIds = sourceIds,
                     representativeLedgerId = representative.ledgerId,
                 )
@@ -356,11 +403,14 @@ object CardFundingNormalizer {
                     grossFundingUsd = grossFundingUsd,
                     feeUsd = totalFeesUsd,
                     netOwnerCapitalUsd = net,
+                    actualPortfolioDeltas = actualPortfolioDeltas(group),
                     sourceLedgerIds = sourceIds,
                     representativeLedgerId = representative.ledgerId,
                 )
             } else {
-                // Deposit with larger spend: do not turn into a withdrawal; keep separately typed
+                // Deposit with larger spend: keep the owner deposit and the
+                // balance-changing spend separately typed rather than
+                // inventing an owner withdrawal.
                 NormalizedFundingTransaction.NotApplicable
             }
         } else {
@@ -381,12 +431,23 @@ object CardFundingNormalizer {
                     grossFundingUsd = grossFundingUsd,
                     feeUsd = totalFeesUsd,
                     netOwnerCapitalUsd = net,
+                    actualPortfolioDeltas = actualPortfolioDeltas(group),
                     sourceLedgerIds = sourceIds,
                     representativeLedgerId = representative.ledgerId,
                 )
             } else {
+                // Withdrawal with larger receive: keep the owner withdrawal
+                // and the balance-changing receive separately typed rather
+                // than inventing an owner contribution.
                 NormalizedFundingTransaction.NotApplicable
             }
         }
+    }
+
+    private fun actualPortfolioDeltas(group: Collection<LedgerEvent>): List<AssetDelta> = group.map { event ->
+        AssetDelta(
+            asset = Asset.normalizeLedgerAsset(event.asset).uppercase(),
+            amount = event.netBalanceDelta(),
+        )
     }
 }

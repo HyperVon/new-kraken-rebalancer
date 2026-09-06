@@ -2655,6 +2655,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     asset = "USD",
                     amount = "10000.00",
                     type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = "ACH-SCENARIO-M",
                 ),
             )
 
@@ -2663,6 +2664,18 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 emptyList(),
                 ledgers,
                 priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = "ACH-SCENARIO-M",
+                            asset = "USD",
+                            amount = BigDecimal("10000.00"),
+                            time = now.plusSeconds(1800),
+                            status = "Success",
+                            method = "ACH",
+                        ),
+                    ),
+                ),
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -2670,6 +2683,54 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "comparison uses the immutable prepared provenance resolver" {
+            var prepareCalls = 0
+            val preparedResolver = object : FundingProvenanceResolver {
+                override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+            }
+            val productionShapeResolver = object : FundingProvenanceResolver {
+                override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver {
+                    prepareCalls++
+                    return preparedResolver
+                }
+            }
+            val deposit = ledgerEvent(
+                timestamp = now.plusSeconds(1800),
+                asset = Asset.USD,
+                amount = "100.00",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                refid = "PREPARED-COMPARISON-DEPOSIT",
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "1000.00",
+                        assets = mapOf(
+                            "BTC" to assetRow("0.0", "50000.00", "0.00"),
+                            "USD" to assetRow("1000.00", "1.00", "1000.00"),
+                        ),
+                    ),
+                    snapshot(
+                        now.plusSeconds(3600),
+                        "1100.00",
+                        assets = mapOf(
+                            "BTC" to assetRow("0.0", "50000.00", "0.00"),
+                            "USD" to assetRow("1100.00", "1.00", "1100.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(deposit),
+                provenanceResolver = productionShapeResolver,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1100.00"))
+            prepareCalls shouldBe 1
         }
 
         "Scenario N: External USD withdrawal with fee decreases both actual and Buy & Hold with zero divergence" {

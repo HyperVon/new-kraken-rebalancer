@@ -119,9 +119,9 @@ class TradeHistoryQueryService(
             ledgerRepository
                 .getLedgersInRange(queryFrom, queryTo)
                 .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
-        // The production resolver batches the funding-status lookups once for
-        // this complete history query; the calculator remains offline/pure.
-        val preparedProvenanceResolver = fundingProvenanceResolver.prepare(ledgers)
+        // The calculator prepares one immutable provenance snapshot for this
+        // complete history query and uses that same snapshot for classification
+        // and card normalization.
         val candidateTrades = trades.filter { it.success && !it.dryRun }
         val candidateOrderTxids = candidateTrades.mapNotNull {
             it.orderTxid?.trim()?.takeIf(String::isNotBlank)
@@ -168,7 +168,7 @@ class TradeHistoryQueryService(
             inceptionSnapshot = inceptionSnapshot,
             knownInceptionTime = inceptionResolution?.inceptionTime,
             priceProvider = priceProvider,
-            provenanceResolver = preparedProvenanceResolver,
+            provenanceResolver = fundingProvenanceResolver,
         )
     }
 

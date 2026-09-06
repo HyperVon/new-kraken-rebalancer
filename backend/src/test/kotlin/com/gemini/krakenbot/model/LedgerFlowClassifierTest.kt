@@ -517,9 +517,30 @@ class LedgerFlowClassifierTest : StringSpec() {
                 event("1", "transfer", "25.00", refid = "R1", asset = "BTC"),
                 event("2", "transfer", "-25.00", refid = "R1", asset = "BTC"),
             )
-            val result = LedgerFlowClassifier.classifyAll(legs)
+            val result = LedgerFlowClassifier.classifyAll(
+                legs,
+                FundingProvenanceResolver { FundingEvidence.INTERNAL },
+            )
             result["1"] shouldBe FlowCategory.INTERNAL_MOVE
             result["2"] shouldBe FlowCategory.INTERNAL_MOVE
+        }
+
+        "unproven zero-net funding and transfer pairs remain ambiguous" {
+            val fundingResult = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("deposit", "deposit", "25.00", refid = "R-UNPROVEN", asset = "USD"),
+                    event("withdrawal", "withdrawal", "-25.00", refid = "R-UNPROVEN", asset = "USD"),
+                ),
+            )
+            fundingResult.values.toSet() shouldBe setOf(FlowCategory.AMBIGUOUS)
+
+            val transferResult = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("transfer-in", "transfer", "25.00", refid = "R-UNPROVEN-TRANSFER", asset = "BTC"),
+                    event("transfer-out", "transfer", "-25.00", refid = "R-UNPROVEN-TRANSFER", asset = "BTC"),
+                ),
+            )
+            transferResult.values.toSet() shouldBe setOf(FlowCategory.AMBIGUOUS)
         }
 
         "refid-linked funding legs without zero net are ambiguous, not capital" {

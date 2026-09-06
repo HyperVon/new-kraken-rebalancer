@@ -206,7 +206,7 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
 | **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Must be positive (any value > 0). |
 | **Drawdown Activation Threshold (%)** | Minimum drawdown before cash deployment begins (deadband). Drawdowns below this deploy 0% cash. Bounded **0–100**. |
-| **Inception Date (Optional)** | Anchor date for strategy performance comparison (`YYYY-MM-DD` or ISO-8601). If empty, auto-detects from the earliest multi-asset rebalance burst in your trade history. Required if the comparison reports truncated history on an upgraded install. |
+| **Inception Date (Optional)** | Anchor date for strategy performance comparison (`YYYY-MM-DD` or ISO-8601). If empty, auto-detects from the earliest successful multi-asset trade burst in your trade history. Required if the comparison reports truncated history on an upgraded install. |
 
 ### Safety modes
 
@@ -314,8 +314,13 @@ achieved against a **synthetic buy-and-hold** strategy:
   When a documented card purchase links an external funding row, USD spend, and purchased-asset
   receive row with one shared refid (within a 120-second proximity window), the benchmark collapses
   them into a single net owner contribution allocated strictly by original inception weights; the conversion
-  legs are consumed as plumbing evidence and not replayed into Buy & Hold. Unproven or incomplete
-  relationships remain unavailable rather than guessed.
+  legs are consumed as plumbing evidence and not replayed into Buy & Hold. A confirmed card deposit that
+  arrives before its spend/receive legs remains pending: ATH defers with `AMBIGUOUS_FUNDING`, and no
+  ledger identity is journaled until the complete group arrives. Confirmed ordinary Wire/ACH deposits
+  without card plumbing continue through the ordinary owner-capital path. The normalized event keeps
+  synthetic `netOwnerCapitalUsd` separate from actual per-leg asset effects; only the synthetic amount
+  is allocated by Buy & Hold, while ATH basis reconstruction replays the actual effects and fees once.
+  Unproven or incomplete relationships remain unavailable rather than guessed.
   Kraken app/Buy Crypto activity is read from Ledger history, including both asset legs, rather
   than inferred from the trade-history feed.
 - Funding rows count as owner capital only when the production resolver finds one confirmed,

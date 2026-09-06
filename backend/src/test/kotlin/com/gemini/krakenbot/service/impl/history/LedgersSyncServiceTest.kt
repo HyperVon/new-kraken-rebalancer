@@ -78,9 +78,28 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
             service.syncLedgersFromKraken()
 
-            // Per-type cursors: 9 ledger types each fetch once per sync (offset 0), second sync throttled.
-            coVerify(exactly = 9) { krakenService.getLedgers(any(), any(), any(), any()) }
-            requestedTypes.toSet() shouldBe LedgersSyncService.SUPPORTED_LEDGER_TYPES.map { setOf(it) }.toSet()
+            // Per-type cursors fetch every supported response family once per sync (offset 0),
+            // while the second sync is throttled.
+            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+                krakenService.getLedgers(any(), any(), any(), any())
+            }
+            val expectedTypes = setOf(
+                setOf(KrakenApiConstants.LEDGER_TYPE_STAKING),
+                setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND),
+                setOf(KrakenApiConstants.LEDGER_TYPE_EARN),
+                setOf(KrakenApiConstants.LEDGER_TYPE_DEPOSIT),
+                setOf(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL),
+                setOf(KrakenApiConstants.LEDGER_TYPE_TRANSFER),
+                setOf(KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT),
+                setOf(KrakenApiConstants.LEDGER_TYPE_SPEND),
+                setOf(KrakenApiConstants.LEDGER_TYPE_RECEIVE),
+                setOf(KrakenApiConstants.LEDGER_TYPE_MARGIN),
+                setOf(KrakenApiConstants.LEDGER_TYPE_ROLLOVER),
+                setOf(KrakenApiConstants.LEDGER_TYPE_SETTLED),
+                setOf(KrakenApiConstants.LEDGER_TYPE_CREDIT),
+            )
+            requestedTypes.toSet() shouldBe expectedTypes
+            LedgersSyncService.SUPPORTED_LEDGER_TYPES.toSet() shouldBe expectedTypes.flatten().toSet()
             service.isLedgersSeeded() shouldBe true
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
@@ -123,9 +142,14 @@ class LedgersSyncServiceTest : StringSpec() {
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
                 fixedNow.epochSecond.toString()
-            // Per-type cursors: each offset is fetched for all 9 types (duplicates are deduped by unique index).
-            coVerify(exactly = 9) { krakenService.getLedgers(any(), 0, any(), any()) }
-            coVerify(exactly = 9) { krakenService.getLedgers(any(), 50, any(), any()) }
+            // Per-type cursors: each offset is fetched for every supported type
+            // (duplicates are deduped by unique index).
+            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+                krakenService.getLedgers(any(), 0, any(), any())
+            }
+            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+                krakenService.getLedgers(any(), 50, any(), any())
+            }
         }
 
         "deduplicates the newest-first offset overlap across pages" {
@@ -340,7 +364,7 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             val expectedInitialStart = baseTime.minusSeconds(300).epochSecond
-            coVerify(exactly = 9) {
+            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
                 krakenService.getLedgers(
                     startSec = expectedInitialStart,
                     offset = 0,
@@ -349,7 +373,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 )
             }
             val expectedIncrementalStart = fixedNow.minusSeconds(300).epochSecond
-            coVerify(exactly = 9) {
+            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
                 krakenService.getLedgers(
                     startSec = expectedIncrementalStart,
                     offset = 0,
@@ -395,8 +419,8 @@ class LedgersSyncServiceTest : StringSpec() {
             failureEnabled = false
             service.syncLedgersFromKraken()
             // The failed retry reaches the first per-type request before
-            // throwing: 1 failed call + 9 retry calls at the preserved watermark.
-            coVerify(exactly = 10) {
+            // throwing: 1 failed call + one retry call per supported type.
+            coVerify(exactly = 1 + LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
                 krakenService.getLedgers(
                     startSec = fixedNow.minusSeconds(300).epochSecond,
                     offset = 0,

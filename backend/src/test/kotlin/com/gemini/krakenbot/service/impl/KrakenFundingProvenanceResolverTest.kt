@@ -437,6 +437,11 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
 
                 val nonCardEvent = fundingEvent("wire-dep", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
                 prepared.isCardFunding(nonCardEvent) shouldBe false
+                prepared.isCardFunding(
+                    deposit.copy(type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL),
+                ) shouldBe false
+                prepared.isCardFunding(deposit.copy(amount = BigDecimal("101.00"))) shouldBe false
+                prepared.isCardFunding(deposit.copy(refid = null)) shouldBe true
             }
         }
     }

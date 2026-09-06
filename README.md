@@ -307,8 +307,9 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 
 ### Ledger, Staking & Earn Rewards Synchronization
 
-- Synchronizes nine strategy-neutral entry types (`staking`, `dividend`, `earn`, `deposit`,
-  `withdrawal`, `transfer`, `adjustment`, `spend`, and `receive`) from Kraken's private
+- Synchronizes thirteen strategy-neutral entry types (`staking`, `dividend`, `earn`, `deposit`,
+  `withdrawal`, `transfer`, `adjustment`, `spend`, `receive`, `margin`, `rollover`, `settled`,
+  and `credit`) from Kraken's private
   `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold Flow fetching.
   The live adapter queries the documented `sale` filter for consumer `spend`/`receive`
   rows, then filters the returned rows by their response type.
@@ -331,13 +332,18 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   ATH basis reconstruction, and Buy & Hold; `earn` allocation mechanics replay
   only where needed to reconstruct account balances and remain neutral in
   strategy accounting. Unknown Earn subtypes remain unavailable.
-- Rebalancer vs Buy & Hold and historical reconstruction replay every supported
-  external ledger type using `amount - fee`. Consumer Buy Crypto activity is
+- Rebalancer vs Buy & Hold replays every supported external ledger type using
+  `amount - fee`; ATH basis reconstruction separately replays the actual
+  event-time asset effects. Consumer Buy Crypto activity is
   represented by its ledger `spend`/`receive` legs; it is not inferred from
   `TradesHistory`. A card-style external deposit plus USD `spend` and purchased
   asset `receive` is retained as a weighted owner contribution plus one linked
-  conversion only when all legs share one non-blank refid; otherwise comparison
-  remains unavailable. The reconstruction marker records the ledger-coverage
+  conversion only when all legs share one non-blank refid and the complete
+  shape is present; a card deposit-only or partial group stays pending, while
+  confirmed ordinary Wire/ACH deposits remain ordinary owner capital. The
+  normalized event separates synthetic `netOwnerCapitalUsd` from exact actual
+  per-leg asset deltas: Buy & Hold uses the former, and ATH basis replay uses
+  the latter once. Otherwise comparison remains unavailable. The reconstruction marker records the ledger-coverage
   version it replayed, so a coverage migration cannot be hidden by an older marker.
 
 ### Safety & Reliability
@@ -423,7 +429,7 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
 - **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
-- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the first stored snapshot in the selected range and shows the latest USD/percentage difference; bounded exchange/local timestamp skew and precise API-fill notional are reconciled before rendering, while any other tracked balance change that cannot be explained by authoritative trades or supported ledger activity makes the range unavailable
+- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the strategy-inception baseline across every view window and shows the latest USD/percentage difference; bounded exchange/local timestamp skew and precise API-fill notional are reconciled before rendering, while any other tracked balance change that cannot be explained by authoritative trades or supported ledger activity makes the range unavailable
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)

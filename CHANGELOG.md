@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.32] - 2026-09-05
+
+### Fixed
+
+- **Prepared funding provenance lifecycle**: ATH scans now prepare one immutable
+  resolver snapshot and pass that exact instance to the classifier, card
+  normalizer, and basis-replay context. Initial-ATH absorption follows the
+  same gate, so incomplete card funding is deferred and never journaled.
+- **Late card-leg and provenance safety**: confirmed card/consumer deposits
+  remain ambiguous until their complete plumbing arrives; ordinary confirmed
+  Wire/ACH deposits remain simple owner-capital flows. Mixed external,
+  internal, or unresolved funding siblings and unsupported multiple external
+  funding legs fail closed. Old decided ambiguous groups no longer block
+  unrelated undecided bank flows, while groups straddling decided and newly
+  arrived identities defer instead of partially replaying.
+- **Actual card balance effects**: normalized owner events now retain both the
+  synthetic net owner-capital amount used by ATH/B&H neutralization and exact
+  per-leg asset deltas. ATH pre-flow basis reconstruction replays completed
+  card conversions and fees once, without replaying raw card rows or the
+  representative deposit a second time.
+- **Fail-closed flow and ledger coverage**: zero-net refid groups now require
+  affirmative internal evidence, and margin-family ledger rows are synchronized
+  and replayed under coverage version `5`.
+
+### Docs
+
+- Documented the prepared-resolver lifecycle, incomplete-card/ordinary-bank
+  behavior, decided-versus-undecided filtering, and the separation between
+  synthetic owner capital and actual portfolio deltas.
+
 ## [6.17.31] - 2026-09-05
 
 ### Added
@@ -59,7 +89,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Docs
 
-- Documented the nine ledger families, Earn subtype handling and `type=all` retrieval,
+- Documented the thirteen ledger families, Earn subtype handling and `type=all` retrieval,
   transfer/refid evidence rules, funding-status permissions and endpoint deprecation note,
   structured ATH deferral reasons, centralized card funding normalization with 120-second
   proximity window, cross-asset fee valuation, card Buy Crypto counterfactual economics,
