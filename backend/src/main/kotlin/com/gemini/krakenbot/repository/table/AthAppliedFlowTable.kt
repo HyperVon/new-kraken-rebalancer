@@ -16,6 +16,11 @@ import org.jetbrains.exposed.v1.core.Table
 object AthAppliedFlowTable : Table("ath_applied_flows") {
     val ledgerId = varchar("ledger_id", 128)
     val eventTimeSec = long("event_time_sec")
+    val decisionCategory = varchar("decision_category", 32).nullable()
+    val asset = varchar("asset", 16).nullable()
+    val actualBalanceDelta = decimal("actual_balance_delta", 24, 8).nullable()
+    val normalizedGroupId = varchar("normalized_group_id", 128).nullable()
+    val decisionVersion = integer("decision_version").nullable()
 
     override val primaryKey = PrimaryKey(ledgerId)
 }

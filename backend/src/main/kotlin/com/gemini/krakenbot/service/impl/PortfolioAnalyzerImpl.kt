@@ -276,10 +276,7 @@ class PortfolioAnalyzerImpl(
                     // identities are still consumed so they are not retried.
                     for (ledgerId in step.ledgerIds) {
                         appliedFlows.add(
-                            AppliedAthFlow(
-                                ledgerId = ledgerId,
-                                eventTimeSec = step.eventTime.epochSecond,
-                            ),
+                            flowCalc.appliedFlowSemantics.getValue(ledgerId),
                         )
                     }
                     continue
@@ -319,10 +316,7 @@ class PortfolioAnalyzerImpl(
                     )
                     for (ledgerId in step.ledgerIds) {
                         appliedFlows.add(
-                            AppliedAthFlow(
-                                ledgerId = ledgerId,
-                                eventTimeSec = step.eventTime.epochSecond,
-                            ),
+                            flowCalc.appliedFlowSemantics.getValue(ledgerId),
                         )
                     }
                     continue
@@ -340,10 +334,7 @@ class PortfolioAnalyzerImpl(
                 }
                 for (ledgerId in step.ledgerIds) {
                     appliedFlows.add(
-                        AppliedAthFlow(
-                            ledgerId = ledgerId,
-                            eventTimeSec = step.eventTime.epochSecond,
-                        ),
+                        flowCalc.appliedFlowSemantics.getValue(ledgerId),
                     )
                 }
             }
@@ -401,6 +392,7 @@ class PortfolioAnalyzerImpl(
         val coverageStale: Boolean = false,
         val coverageHorizon: Instant? = null,
         val skippedDecided: List<AppliedAthFlow> = emptyList(),
+        val appliedFlowSemantics: Map<String, AppliedAthFlow> = emptyMap(),
         val groupBasisResolver: GroupBasisResolver = noFlowsResolver(),
     )
 
@@ -457,13 +449,12 @@ class PortfolioAnalyzerImpl(
         }
         val preHorizonRows = allRows.filter { !it.time.isAfter(horizon) }
         val preHorizonRefids = preHorizonRows.mapNotNull { it.refid?.trim() }.filter { it.isNotEmpty() }.toSet()
-        val postHorizonLookaheadRows = if (preHorizonRefids.isEmpty()) {
-            emptyList()
-        } else {
+        val postHorizonLookaheadRows =
             allRows.filter { it.time.isAfter(horizon) && it.refid?.trim() in preHorizonRefids }
-        }
-        val rows = preHorizonRows + postHorizonLookaheadRows
-        // Resolve funding provenance once for the full retained batch. The
+        // Lookahead is context only. Future rows never enter provenance,
+        // classification, normalization, economics, or journal state.
+        val rows = preHorizonRows
+        // Resolve funding provenance once for the confirmed batch. The
         // classifier itself stays pure and never performs one request per row.
         val preparedResolver = try {
             provenanceResolver.prepare(rows)
@@ -484,9 +475,21 @@ class PortfolioAnalyzerImpl(
         }
         val decided = portfolioStatsRepository.getAppliedAthFlowIds(rows.map { it.ledgerId })
         val unapplied = preHorizonRows.filterNot { it.ledgerId in decided }
-        // Classify the full retained set: refid pairing must see decided
-        // partners, or a late backfill completing an internal move would
-        // classify its lone leg as owner capital and scale ATH again.
+        // Any undecided pre-horizon leg sharing a refid with a post-horizon
+        // sibling is held back. This includes passthrough-first arrival, where
+        // classifying spend/receive as a neutral balance change would otherwise
+        // journal it before the funding leg and break group atomicity.
+        val postHorizonRefids = CardFundingNormalizer.identifyCandidateGroups(postHorizonLookaheadRows).keys
+        val unappliedRefids = CardFundingNormalizer.identifyCandidateGroups(unapplied).keys
+        val incompleteLookaheadRefids = postHorizonRefids
+            .intersect(unappliedRefids)
+        if (incompleteLookaheadRefids.isNotEmpty()) {
+            throw AthTrustFailureException(
+                reason = AthTrustFailureReason.AMBIGUOUS_FUNDING,
+                message = "card funding group(s) extend beyond the confirmed horizon: " +
+                    incompleteLookaheadRefids.joinToString(),
+            )
+        }
         return ScannedLedgers(
             unapplied = unapplied,
             classifications = LedgerFlowClassifier.classifyAll(rows, preparedResolver),
@@ -569,8 +572,12 @@ class PortfolioAnalyzerImpl(
             }
         }
         val absorbed = mutableListOf<AppliedAthFlow>()
+        val cardGroupIdsByLedger = cardNormalizations
+            .filterIsInstance<NormalizedFundingTransaction.OwnerFlow>()
+            .flatMap { norm -> norm.sourceLedgerIds.map { it to norm.refid } }
+            .toMap()
         for (event in unapplied) {
-            val category = classifications[event.ledgerId]
+            val category = classifications.getValue(event.ledgerId)
             if (category == FlowCategory.AMBIGUOUS || category == FlowCategory.UNSUPPORTED) {
                 log.warn(
                     "Cannot establish initial ATH baseline: ledger history contains unresolved " +
@@ -591,7 +598,11 @@ class PortfolioAnalyzerImpl(
                 )
             }
             if (category != FlowCategory.INTERNAL_MOVE && category != FlowCategory.TRADE_IGNORED) {
-                absorbed.add(AppliedAthFlow(ledgerId = event.ledgerId, eventTimeSec = event.time.epochSecond))
+                absorbed.add(
+                    cardGroupIdsByLedger[event.ledgerId]
+                        ?.let { appliedFlowFor(event, FlowCategory.OWNER_CAPITAL, it) }
+                        ?: appliedFlowFor(event, category),
+                )
             }
         }
         if (absorbed.isNotEmpty()) {
@@ -651,7 +662,15 @@ class PortfolioAnalyzerImpl(
             // Bootstrap: first dated coverage establishes the observability
             // watermark; everything below it predates flow tracking entirely
             // and is folded into the initial ATH baseline like a fresh install.
-            return ExternalFlowCalculation(emptyList(), confirmedHorizon.epochSecond)
+            return ExternalFlowCalculation(
+                emptyList(),
+                confirmedHorizon.epochSecond,
+                skippedDecided = absorbUnappliedFlowsIntoInitialAth(
+                    confirmedHorizon,
+                    provenanceResolver,
+                    balancesObservedAt,
+                ),
+            )
         }
 
         val watermarkSec = watermarkStr.toLongOrNull()
@@ -665,7 +684,14 @@ class PortfolioAnalyzerImpl(
                 message = "malformed ATH flow watermark: $watermarkStr",
             )
 
+        var scanned = scanUndecidedLedgerEvents(confirmedHorizon, provenanceResolver)
         if (ledgersRepo.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED) == null) {
+            if (Instant.ofEpochSecond(watermarkSec).isAfter(confirmedHorizon)) {
+                throw AthTrustFailureException(
+                    reason = AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN,
+                    message = "legacy ATH watermark exceeds the confirmed horizon; journal migration deferred",
+                )
+            }
             // One-time upgrade from the timestamp-window semantics: rows below
             // the legacy watermark were already decided (applied or skipped)
             // and their journal entries were pruned by the old watermark
@@ -679,6 +705,11 @@ class PortfolioAnalyzerImpl(
                 legacyRows.map { AppliedAthFlow(ledgerId = it.ledgerId, eventTimeSec = it.time.epochSecond) },
             )
             ledgersRepo.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+            val legacyIds = legacyRows.mapTo(mutableSetOf()) { it.ledgerId }
+            scanned = scanned.copy(
+                unapplied = scanned.unapplied.filterNot { it.ledgerId in legacyIds },
+                decidedLedgerIds = scanned.decidedLedgerIds + legacyIds,
+            )
             if (legacyRows.isNotEmpty()) {
                 log.warn(
                     "ATH flow journal migration: presumed {} pre-watermark ledger row(s) already decided; " +
@@ -697,7 +728,6 @@ class PortfolioAnalyzerImpl(
         // decided exactly once because the decision journal (not the
         // watermark timestamp) filters what has already been through
         // classification.
-        val scanned = scanUndecidedLedgerEvents(confirmedHorizon, provenanceResolver)
         val unapplied = scanned.unapplied
         val classifications = scanned.classifications
         val allRetained = scanned.allRetained
@@ -861,7 +891,7 @@ class PortfolioAnalyzerImpl(
             if (event.ledgerId in allCardPlumbingIds) {
                 continue
             }
-            val category = classifications[event.ledgerId]
+            val category = classifications.getValue(event.ledgerId)
             if (category == FlowCategory.AMBIGUOUS || category == FlowCategory.UNSUPPORTED) {
                 log.warn(
                     "Deferring ATH update: unapplied ambiguous funding event {} (type={}, asset={}, amount={}) " +
@@ -894,10 +924,21 @@ class PortfolioAnalyzerImpl(
                     event.time,
                     category,
                 )
-                skippedDecided.add(AppliedAthFlow(ledgerId = event.ledgerId, eventTimeSec = event.time.epochSecond))
+                skippedDecided.add(appliedFlowFor(event, category))
             }
         }
         events.sortWith(compareBy({ it.time }, { it.ledgerId }))
+        val appliedFlowSemantics = buildMap {
+            for (event in events) {
+                put(event.ledgerId, appliedFlowFor(event, FlowCategory.OWNER_CAPITAL))
+            }
+            for (norm in cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerFlow>()) {
+                norm.sourceLedgerIds.forEach { ledgerId ->
+                    val event = allRetained.first { it.ledgerId == ledgerId }
+                    put(ledgerId, appliedFlowFor(event, FlowCategory.OWNER_CAPITAL, norm.refid))
+                }
+            }
+        }
         if (events.isEmpty()) {
             return ExternalFlowCalculation(
                 emptyList(),
@@ -951,21 +992,66 @@ class PortfolioAnalyzerImpl(
         // Distinguishes decision status (already applied/journaled to ATH) from whether
         // their actual balance effect is required to reconstruct historical holdings for
         // a later-discovered earlier-timestamp flow.
-        val decidedOrdinaryOwnerEvents = allRetained.filter { event ->
-            event.ledgerId in decidedIds &&
-                classifications[event.ledgerId] == FlowCategory.OWNER_CAPITAL &&
-                event.ledgerId !in allKnownCardSourceIds &&
-                isInAthUniverse(Asset.normalizeLedgerAsset(event.asset).uppercase(), universe)
-        }
-        val decidedOwnerFlowContexts = decidedOrdinaryOwnerEvents.map { event ->
-            ActualOwnerFlowContext(
-                ledgerId = event.ledgerId,
-                timestamp = event.time,
-                asset = Asset.normalizeLedgerAsset(event.asset).uppercase(),
-                actualBalanceDelta = event.netBalanceDelta(),
-                isCardRepresentative = false,
-                normalizedGroupId = null,
-            )
+        val decidedJournalFlows = portfolioStatsRepository.getAppliedAthFlows(allRetained.map { it.ledgerId })
+            .associateBy { it.ledgerId }
+        val decidedOrdinaryOwnerEvents = mutableListOf<LedgerEvent>()
+        val decidedOwnerFlowContexts = mutableListOf<ActualOwnerFlowContext>()
+        for (event in allRetained) {
+            if (event.ledgerId !in decidedIds || event.ledgerId in allKnownCardSourceIds) continue
+            val journal = decidedJournalFlows[event.ledgerId]
+            val currentCategory = classifications[event.ledgerId]
+            val journalCategory = journal?.decisionCategory
+            if (journalCategory == FlowCategory.OWNER_CAPITAL.name) {
+                val journalAsset = journal.asset
+                val journalDelta = journal.actualBalanceDelta
+                if (journal.decisionVersion != 1 || journal.normalizedGroupId != null ||
+                    journalAsset == null || journalDelta == null ||
+                    journal.eventTimeSec != event.time.epochSecond ||
+                    Asset.normalizeLedgerAsset(journalAsset).uppercase() !=
+                    Asset.normalizeLedgerAsset(event.asset).uppercase() ||
+                    journalDelta.compareTo(event.netBalanceDelta()) != 0
+                ) {
+                    unusableDecidedGroups.add(
+                        unusableDecidedFlow(event, "durable ATH flow semantics disagree with ledger", journal),
+                    )
+                    continue
+                }
+                if (isInAthUniverse(Asset.normalizeLedgerAsset(journalAsset).uppercase(), universe)) {
+                    decidedOrdinaryOwnerEvents.add(event)
+                    decidedOwnerFlowContexts.add(
+                        ActualOwnerFlowContext(
+                            ledgerId = event.ledgerId,
+                            timestamp = Instant.ofEpochSecond(journal.eventTimeSec),
+                            asset = Asset.normalizeLedgerAsset(journalAsset).uppercase(),
+                            actualBalanceDelta = journalDelta,
+                            isCardRepresentative = false,
+                            normalizedGroupId = journal.normalizedGroupId,
+                        ),
+                    )
+                }
+            } else if (currentCategory == FlowCategory.OWNER_CAPITAL && journalCategory == null) {
+                decidedOrdinaryOwnerEvents.add(event)
+                decidedOwnerFlowContexts.add(
+                    ActualOwnerFlowContext(
+                        ledgerId = event.ledgerId,
+                        timestamp = event.time,
+                        asset = Asset.normalizeLedgerAsset(event.asset).uppercase(),
+                        actualBalanceDelta = event.netBalanceDelta(),
+                        isCardRepresentative = false,
+                        normalizedGroupId = null,
+                    ),
+                )
+            } else if (journalCategory == null && currentCategory == FlowCategory.AMBIGUOUS) {
+                unusableDecidedGroups.add(unusableDecidedFlow(event, "missing durable owner-capital semantics"))
+            } else if (journalCategory != null && journalCategory !in setOf(
+                    FlowCategory.EXTERNAL_BALANCE.name,
+                    FlowCategory.INTERNAL_MOVE.name,
+                    FlowCategory.TRADE_IGNORED.name,
+                    FlowCategory.UNSUPPORTED.name,
+                )
+            ) {
+                unusableDecidedGroups.add(unusableDecidedFlow(event, "unknown durable category '$journalCategory'"))
+            }
         }
 
         // Sequential oldest-first adjustment: each flow scales the ATH that
@@ -1026,6 +1112,7 @@ class PortfolioAnalyzerImpl(
             sequentialFlows = steps,
             pendingWatermarkSec = confirmedHorizon.epochSecond,
             skippedDecided = skippedDecided,
+            appliedFlowSemantics = appliedFlowSemantics,
             groupBasisResolver = GroupBasisResolver(
                 resolve = { eventTime, priorFlows, snapHistory, snapTrades, currentFlowRepresentativeIds ->
                     resolveEventTimeBasis(
@@ -1222,14 +1309,14 @@ class PortfolioAnalyzerImpl(
         }
         val embeddedLedgerIds = resolveEmbeddedLedgerIds(uncertainLedgerEvents, predecessor)
 
-        // 1.5. Evaluate unusable decided card groups relative to the reconstruction interval:
+        // 1.5. Evaluate unusable decided funding context relative to the reconstruction interval:
         // (predecessor actual-state boundary, target owner-flow time]
         for (unusable in unusableDecidedGroups) {
             if (unusable.minTime.isAfter(eventTime)) continue
             if (!unusable.maxTime.isAfter(predecessorObservationBoundary)) continue
 
             log.warn(
-                "Unusable decided card funding group {} intersects reconstruction interval ({} to {}): {}",
+                "Unusable decided funding context {} intersects reconstruction interval ({} to {}): {}",
                 unusable.refid,
                 predecessorObservationBoundary,
                 eventTime,
@@ -1237,7 +1324,7 @@ class PortfolioAnalyzerImpl(
             )
             throw AthTrustFailureException(
                 reason = AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN,
-                message = "unusable decided card funding group ${unusable.refid} intersects " +
+                message = "unusable decided funding context ${unusable.refid} intersects " +
                     "reconstruction interval: ${unusable.reason}",
             )
         }
@@ -1472,6 +1559,35 @@ class PortfolioAnalyzerImpl(
 
     private fun isInAthUniverse(normalizedAsset: String, universe: Set<String>): Boolean =
         normalizedAsset == "USD" || normalizedAsset == "ZUSD" || isTrackedCrypto(normalizedAsset, universe)
+
+    private fun unusableDecidedFlow(
+        event: LedgerEvent,
+        reason: String,
+        journal: AppliedAthFlow? = null,
+    ): UnusableDecidedFundingContext {
+        val journalTime = journal?.let { Instant.ofEpochSecond(it.eventTimeSec) } ?: event.time
+        return UnusableDecidedFundingContext(
+            refid = event.refid ?: event.ledgerId,
+            sourceLedgerIds = setOf(event.ledgerId),
+            minTime = minOf(event.time, journalTime),
+            maxTime = maxOf(event.time, journalTime),
+            reason = reason,
+        )
+    }
+
+    private fun appliedFlowFor(
+        event: LedgerEvent,
+        category: FlowCategory,
+        normalizedGroupId: String? = null,
+    ): AppliedAthFlow = AppliedAthFlow(
+        ledgerId = event.ledgerId,
+        eventTimeSec = event.time.epochSecond,
+        decisionCategory = category.name,
+        asset = Asset.normalizeLedgerAsset(event.asset).uppercase(),
+        actualBalanceDelta = event.netBalanceDelta(),
+        normalizedGroupId = normalizedGroupId,
+        decisionVersion = 1,
+    )
 
     internal fun isLinkedPassthroughLeg(event: LedgerEvent, allRetained: List<LedgerEvent>): Boolean {
         if (!CardFundingNormalizer.isPassthroughLeg(event)) return false

@@ -10,7 +10,7 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import java.time.Instant
 
-internal const val CURRENT_SCHEMA_VERSION = 7
+internal const val CURRENT_SCHEMA_VERSION = 8
 
 internal data class SchemaMigration(
     val version: Int,
@@ -36,6 +36,7 @@ internal val SCHEMA_MIGRATIONS = listOf(
     SchemaMigration(7, "portfolio-stats-singleton") {
         migratePortfolioStatsToSingleton()
     },
+    SchemaMigration(8, "ath-applied-flow-semantics"),
 )
 
 internal fun validateSchemaMigrations(migrations: List<SchemaMigration> = SCHEMA_MIGRATIONS) {

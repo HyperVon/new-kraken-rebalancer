@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.35] - 2026-09-06
+
+### Fixed
+
+- **Confirmed-horizon economic boundary for card lookahead**: Ledger rows beyond the
+  reconciliation horizon (same-refid rows within the bounded card-transaction lookahead
+  window) are now context only. They never enter provenance preparation, classification,
+  card normalization, owner-flow economics, initial-ATH absorption, or the applied-flow
+  journal. A transaction is treated as economically complete only when every source leg
+  is at or before the confirmed horizon; otherwise the cycle defers with
+  `AMBIGUOUS_FUNDING` and writes nothing, preventing a pre-horizon card deposit from
+  being journaled while its spend/receive legs are still beyond the horizon. A
+  lookahead-incomplete group blocks the cycle only while it still has an undecided
+  pre-horizon leg. Decided groups also use confirmed rows only; incomplete historical
+  context defers when it intersects the active reconstruction interval.
+- **Durable owner-capital decision semantics (schema v8 `ath-applied-flow-semantics`)**:
+  `AppliedAthFlow` and the `ath_applied_flows` journal now persist the decision category,
+  asset, actual balance delta, optional normalized group (card refid), and a decision
+  version alongside each ledger identity, written in the same atomic checkpoint
+  transaction as the ATH value, flow identities, and watermark. Already-decided ordinary
+  owner flows (ACH/wire deposits and withdrawals) replay from these persisted semantics,
+  so a late-arriving flow still reconstructs the correct pre-flow basis even when
+  Kraken provenance no longer proves the historical event. Persisted semantics that
+  disagree with the raw ledger row fail closed with `PRE_FLOW_BASIS_UNCERTAIN`; legacy
+  identity-only journal rows keep their prior behavior when current provenance still
+  proves owner capital, and fail closed in the active reconstruction interval when it cannot.
+
 ## [6.17.34] - 2026-09-05
 
 ### Fixed

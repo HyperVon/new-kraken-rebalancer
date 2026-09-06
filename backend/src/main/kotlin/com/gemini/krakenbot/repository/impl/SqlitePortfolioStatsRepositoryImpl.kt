@@ -145,6 +145,11 @@ class SqlitePortfolioStatsRepositoryImpl(
                     AthAppliedFlowTable.insertIgnore {
                         it[ledgerId] = flow.ledgerId
                         it[eventTimeSec] = flow.eventTimeSec
+                        it[decisionCategory] = flow.decisionCategory
+                        it[asset] = flow.asset
+                        it[actualBalanceDelta] = flow.actualBalanceDelta
+                        it[normalizedGroupId] = flow.normalizedGroupId
+                        it[decisionVersion] = flow.decisionVersion
                     }
                 }
             }
@@ -164,6 +169,27 @@ class SqlitePortfolioStatsRepositoryImpl(
                 .toSet()
         }
     }
+
+    override suspend fun getAppliedAthFlows(ledgerIds: List<String>): List<AppliedAthFlow> =
+        database.readTransactionIO {
+            ledgerIds.chunked(JOURNAL_QUERY_CHUNK)
+                .flatMap { chunk ->
+                    AthAppliedFlowTable
+                        .selectAll()
+                        .where { AthAppliedFlowTable.ledgerId inList chunk }
+                        .map { row ->
+                            AppliedAthFlow(
+                                ledgerId = row[AthAppliedFlowTable.ledgerId],
+                                eventTimeSec = row[AthAppliedFlowTable.eventTimeSec],
+                                decisionCategory = row[AthAppliedFlowTable.decisionCategory],
+                                asset = row[AthAppliedFlowTable.asset],
+                                actualBalanceDelta = row[AthAppliedFlowTable.actualBalanceDelta],
+                                normalizedGroupId = row[AthAppliedFlowTable.normalizedGroupId],
+                                decisionVersion = row[AthAppliedFlowTable.decisionVersion],
+                            )
+                        }
+                }
+        }
 
     private fun JdbcTransaction.upsertStats(stats: PortfolioStats) {
         val updatedRows = PortfolioStatsTable.update({ PortfolioStatsTable.id eq 1 }) {

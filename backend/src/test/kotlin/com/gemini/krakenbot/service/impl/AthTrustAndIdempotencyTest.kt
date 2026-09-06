@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceFailure
 import com.gemini.krakenbot.model.FundingProvenanceFailureReason
@@ -945,7 +946,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                 )
                 ledgerRepository.setSyncMetadata(
                     SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
-                    bankTime.epochSecond.toString(),
+                    cardReceive.time.epochSecond.toString(),
                 )
                 coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
                     bankTime.minusSeconds(1800).epochSecond to BigDecimal("60000.00"),
@@ -971,10 +972,19 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     ),
                 )
 
-                val result = analyzer(bankTime, resolver).updateAthAndCalculateDrawdown(
+                val incomplete = analyzer(bankTime, resolver).updateAthAndCalculateDrawdown(
                     totalPortfolioValueUSD = BigDecimal("12000.00"),
                     netExternalFlowUSD = BigDecimal.ZERO,
                     balancesObservedAt = bankTime,
+                )
+                incomplete.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
+                    AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN
+                statsRepository.getAppliedAthFlowIds(listOf(bankDeposit.ledgerId)) shouldBe emptySet()
+
+                val result = analyzer(cardReceive.time, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = cardReceive.time,
                 )
 
                 result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
@@ -5081,6 +5091,607 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("16000.00"))
                 statsRepository.getAppliedAthFlowIds(listOf("card-dep-aft", "bank-after")) shouldBe
                     setOf("card-dep-aft", "bank-after")
+            }
+        }
+
+        "cross-horizon card defers until the confirmed horizon covers every leg" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("10000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t60, BigDecimal("10000.00")))
+                val cardRef = "CARD-CROSS-HORIZON"
+                val cardDeposit =
+                    LedgerEvent(
+                        ledgerId = "card-xh-deposit",
+                        refid = cardRef,
+                        time = t70,
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        asset = "USD",
+                        amount = BigDecimal("5000.00"),
+                    )
+                val cardSpend =
+                    LedgerEvent(
+                        ledgerId = "card-xh-spend",
+                        refid = cardRef,
+                        time = t70.plusSeconds(20),
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        asset = "USD",
+                        amount = BigDecimal("-4980.00"),
+                        fee = BigDecimal("20.00"),
+                    )
+                val cardReceive =
+                    LedgerEvent(
+                        ledgerId = "card-xh-receive",
+                        refid = cardRef,
+                        time = t70.plusSeconds(30),
+                        type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                        asset = "BTC",
+                        amount = BigDecimal("0.0996"),
+                    )
+                ledgerRepository.saveLedgers(listOf(cardDeposit, cardSpend, cardReceive))
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            cardRef,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            time = t70,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                    ),
+                )
+
+                // Ledger coverage is ahead of balances observed at t70 + 10s: the deposit is
+                // confirmed, but spend/receive are post-horizon lookahead. The
+                // group is incomplete, so the cycle defers with no writes.
+                val midHorizon = t70.plusSeconds(10)
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t120.epochSecond.toString(),
+                )
+                val first = analyzer(midHorizon, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("15000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = midHorizon,
+                )
+                val deferred = first.shouldBeInstanceOf<AthUpdateResult.Deferred>()
+                deferred.reason shouldBe AthTrustFailureReason.AMBIGUOUS_FUNDING
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+                statsRepository.getAppliedAthFlowIds(
+                    listOf("card-xh-deposit", "card-xh-spend", "card-xh-receive"),
+                ) shouldBe emptySet()
+
+                // Once the horizon advances past every leg, the complete group
+                // normalizes and all source IDs journal atomically.
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t120.epochSecond.toString(),
+                )
+                val second = analyzer(cardReceive.time, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("14980.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = cardReceive.time,
+                )
+                second shouldBe AthUpdateResult.Trusted(BigDecimal.ZERO)
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("14980.00"))
+                statsRepository.getAppliedAthFlowIds(
+                    listOf("card-xh-deposit", "card-xh-spend", "card-xh-receive"),
+                ) shouldBe setOf("card-xh-deposit", "card-xh-spend", "card-xh-receive")
+            }
+        }
+
+        for (watermark in listOf<Long?>(null, t120.epochSecond)) {
+            "bootstrap or legacy watermark $watermark cannot journal a future funding leg" {
+                runTest {
+                    statsRepository.save(PortfolioStats(BigDecimal("10000.00"), BigDecimal.ZERO))
+                    if (watermark != null) {
+                        tradeRepository.setSyncMetadata(
+                            SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                            watermark.toString(),
+                        )
+                    }
+                    val deposit = deposit("horizon-bootstrap", t70, "5000", "CARD-BOOTSTRAP")
+                    val spend = deposit.copy(
+                        ledgerId = "horizon-spend",
+                        time = t90,
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        amount = BigDecimal("-5000"),
+                    )
+                    val receive = deposit.copy(
+                        ledgerId = "horizon-receive",
+                        time = t95,
+                        type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                        asset = "BTC",
+                        amount = BigDecimal("0.1"),
+                    )
+                    ledgerRepository.saveLedgers(listOf(deposit, spend, receive))
+                    ledgerRepository.setSyncMetadata(
+                        SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                        t120.epochSecond.toString(),
+                    )
+                    val resolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                "CARD-BOOTSTRAP",
+                                asset = "USD",
+                                amount = BigDecimal("5000"),
+                                time = t70,
+                                status = "Success",
+                                method = "Visa",
+                            ),
+                        ),
+                    )
+                    val result = analyzer(t80, resolver).updateAthAndCalculateDrawdown(
+                        BigDecimal("15000"),
+                        BigDecimal.ZERO,
+                        t80,
+                    )
+                    result.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
+                        AthTrustFailureReason.AMBIGUOUS_FUNDING
+                    statsRepository.getAppliedAthFlowIds(
+                        listOf(deposit.ledgerId, spend.ledgerId, receive.ledgerId),
+                    ) shouldBe
+                        emptySet()
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC) shouldBe
+                        watermark?.toString()
+                    statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("10000"))
+                }
+            }
+        }
+
+        "legacy migration waits when its watermark is beyond confirmed balances" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal("10000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t120.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t120.epochSecond.toString(),
+                )
+                ledgerRepository.saveLedgers(listOf(deposit("future-legacy-ach", t90, "1000")))
+                val result = analyzer(t80).updateAthAndCalculateDrawdown(BigDecimal("10000"), BigDecimal.ZERO, t80)
+                result.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
+                    AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN
+                statsRepository.getAppliedAthFlowIds(listOf("future-legacy-ach")) shouldBe emptySet()
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED) shouldBe null
+            }
+        }
+
+        "fresh ATH does not partially absorb a cross-horizon card deposit" {
+            runTest {
+                statsRepository.save(PortfolioStats(BigDecimal.ZERO, BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    t60.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                val cardRef = "CARD-FRESH-CROSS-HORIZON"
+                val cardTime = t70
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "fresh-xh-deposit",
+                            refid = cardRef,
+                            time = cardTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                        ),
+                        LedgerEvent(
+                            ledgerId = "fresh-xh-spend",
+                            refid = cardRef,
+                            time = cardTime.plusSeconds(20),
+                            type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                            asset = "USD",
+                            amount = BigDecimal("-4980.00"),
+                            fee = BigDecimal("20.00"),
+                        ),
+                        LedgerEvent(
+                            ledgerId = "fresh-xh-receive",
+                            refid = cardRef,
+                            time = cardTime.plusSeconds(30),
+                            type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                            asset = "BTC",
+                            amount = BigDecimal("0.0996"),
+                        ),
+                    ),
+                )
+                val midHorizon = cardTime.plusSeconds(10)
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    midHorizon.epochSecond.toString(),
+                )
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = cardRef,
+                            asset = "USD",
+                            amount = BigDecimal("5000.00"),
+                            time = cardTime,
+                            status = "Success",
+                            method = "Visa",
+                        ),
+                    ),
+                )
+
+                val first = analyzer(midHorizon, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("15000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = midHorizon,
+                )
+                first.shouldBeInstanceOf<AthUpdateResult.Deferred>()
+                statsRepository.getAppliedAthFlowIds(
+                    listOf("fresh-xh-deposit", "fresh-xh-spend", "fresh-xh-receive"),
+                ) shouldBe emptySet()
+
+                // Once the horizon covers the whole group, the fresh baseline
+                // absorbs all legs atomically — no partial deposit absorption.
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    t120.epochSecond.toString(),
+                )
+                val second = analyzer(t120, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("14980.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = t120,
+                )
+                second shouldBe AthUpdateResult.Trusted(BigDecimal.ZERO)
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("14980.00"))
+                statsRepository.getAppliedAthFlowIds(
+                    listOf("fresh-xh-deposit", "fresh-xh-spend", "fresh-xh-receive"),
+                ) shouldBe setOf("fresh-xh-deposit", "fresh-xh-spend", "fresh-xh-receive")
+                val freshSemantics = statsRepository.getAppliedAthFlows(
+                    listOf("fresh-xh-deposit", "fresh-xh-spend", "fresh-xh-receive"),
+                ).associateBy { it.ledgerId }
+                freshSemantics.getValue("fresh-xh-deposit").normalizedGroupId shouldBe cardRef
+                freshSemantics.getValue("fresh-xh-spend").normalizedGroupId shouldBe cardRef
+                freshSemantics.getValue("fresh-xh-receive").normalizedGroupId shouldBe cardRef
+            }
+        }
+
+        for (fresh in listOf(false, true)) {
+            "${if (fresh) "fresh" else "existing"} ATH defers passthrough-first funding until every leg is confirmed" {
+                runTest {
+                    statsRepository.save(
+                        PortfolioStats(
+                            if (fresh) BigDecimal.ZERO else BigDecimal("10000.00"),
+                            BigDecimal.ZERO,
+                        ),
+                    )
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                        t60.epochSecond.toString(),
+                    )
+                    ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                    val cardRef = "CARD-PASSTHROUGH-FIRST-$fresh"
+                    val cardSpend = LedgerEvent(
+                        ledgerId = "passthrough-first-spend-$fresh",
+                        refid = cardRef,
+                        time = t70,
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        asset = "USD",
+                        amount = BigDecimal("-4980.00"),
+                        fee = BigDecimal("20.00"),
+                    )
+                    val cardReceive = LedgerEvent(
+                        ledgerId = "passthrough-first-receive-$fresh",
+                        refid = cardRef,
+                        time = t75,
+                        type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                        asset = "BTC",
+                        amount = BigDecimal("0.0996"),
+                    )
+                    val cardDeposit = LedgerEvent(
+                        ledgerId = "passthrough-first-deposit-$fresh",
+                        refid = cardRef,
+                        time = t90,
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        asset = "USD",
+                        amount = BigDecimal("5000.00"),
+                    )
+                    ledgerRepository.saveLedgers(listOf(cardSpend, cardReceive, cardDeposit))
+                    ledgerRepository.setSyncMetadata(
+                        SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                        t120.epochSecond.toString(),
+                    )
+                    val resolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                refid = cardRef,
+                                asset = "USD",
+                                amount = BigDecimal("5000.00"),
+                                time = t90,
+                                status = "Success",
+                                method = "Visa",
+                            ),
+                        ),
+                    )
+
+                    val midHorizon = t80
+                    val first = analyzer(midHorizon, resolver).updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("15000.00"),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                        balancesObservedAt = midHorizon,
+                    )
+                    first.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
+                        AthTrustFailureReason.AMBIGUOUS_FUNDING
+                    statsRepository.getAppliedAthFlowIds(
+                        listOf(cardSpend.ledgerId, cardReceive.ledgerId, cardDeposit.ledgerId),
+                    ) shouldBe emptySet()
+                    statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(
+                        if (fresh) BigDecimal.ZERO else BigDecimal("10000.00"),
+                    )
+
+                    val second = analyzer(t120, resolver).updateAthAndCalculateDrawdown(
+                        totalPortfolioValueUSD = BigDecimal("14980.00"),
+                        netExternalFlowUSD = BigDecimal.ZERO,
+                        balancesObservedAt = t120,
+                    )
+                    second shouldBe AthUpdateResult.Trusted(BigDecimal.ZERO)
+                    statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("14980.00"))
+                    statsRepository.getAppliedAthFlowIds(
+                        listOf(cardSpend.ledgerId, cardReceive.ledgerId, cardDeposit.ledgerId),
+                    ) shouldBe setOf(cardSpend.ledgerId, cardReceive.ledgerId, cardDeposit.ledgerId)
+                }
+            }
+        }
+
+        for ((label, amounts, expectedFirstAth, expectedFinalAth) in listOf(
+            listOf("ACH", "1000", "22000.00", "24000.00"),
+            listOf("multiple ACH", "1000,2000", "26000.00", "28000.00"),
+            listOf("withdrawal", "-3000", "14000.00", "16000.00"),
+        )) {
+            "$label decisions survive a second cycle with old provenance unavailable" {
+                runTest {
+                    statsRepository.save(PortfolioStats(BigDecimal("20000.00"), BigDecimal.ZERO))
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                        t0.epochSecond.toString(),
+                    )
+                    ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                    tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t0, BigDecimal("10000.00")))
+                    val oldFlows = amounts.split(",").mapIndexed { index, amount ->
+                        deposit("durable-$index", t0.plusSeconds(300L * (index + 1)), amount).let {
+                            if (it.amount.signum() <
+                                0
+                            ) {
+                                it.copy(type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL)
+                            } else {
+                                it
+                            }
+                        }
+                    }
+                    val firstObservation = t0.plusSeconds(1200)
+                    val late = deposit("late-ach", t0.plusSeconds(900), "1000")
+                    val firstTotal = BigDecimal("10000") + oldFlows.sumOf { it.amount }
+                    ledgerRepository.saveLedgers(oldFlows)
+                    ledgerRepository.setSyncMetadata(
+                        SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                        firstObservation.epochSecond.toString(),
+                    )
+                    val first = analyzer(firstObservation).updateAthAndCalculateDrawdown(
+                        firstTotal,
+                        BigDecimal.ZERO,
+                        firstObservation,
+                    )
+                    first.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                    statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal(expectedFirstAth))
+                    val committed = statsRepository.getAppliedAthFlows(oldFlows.map { it.ledgerId })
+                    committed.size shouldBe oldFlows.size
+                    for (flow in oldFlows) {
+                        val semantic = committed.single { it.ledgerId == flow.ledgerId }
+                        semantic.decisionCategory shouldBe "OWNER_CAPITAL"
+                        semantic.decisionVersion shouldBe 1
+                        semantic.actualBalanceDelta!!.shouldBeEqualComparingTo(flow.amount)
+                    }
+
+                    // Backfill B below the already-committed watermark; current funding history only proves B.
+                    ledgerRepository.saveLedgers(listOf(late))
+                    val resolver = FundingProvenanceResolver {
+                        if (it.ledgerId == late.ledgerId) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+                    }
+                    repeat(2) {
+                        val result = analyzer(firstObservation, resolver).updateAthAndCalculateDrawdown(
+                            firstTotal + BigDecimal("1000"),
+                            BigDecimal.ZERO,
+                            firstObservation,
+                        )
+                        result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                        // ATH remains above the current total: the high-water ratchet cannot mask bad replay.
+                        statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal(expectedFinalAth))
+                        statsRepository.getAppliedAthFlows(oldFlows.map { it.ledgerId }) shouldBe committed
+                        statsRepository.getAppliedAthFlowIds(listOf(late.ledgerId)) shouldBe setOf(late.ledgerId)
+                    }
+                }
+            }
+        }
+
+        "decided ACH with identity-only journal and missing provenance fails closed" {
+            runTest {
+                val tSnapshot = t0
+                val tAchA = tSnapshot.plusSeconds(600)
+                val tAchB = tSnapshot.plusSeconds(900)
+                val tObs = tSnapshot.plusSeconds(1200)
+
+                statsRepository.save(PortfolioStats(BigDecimal("11000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    tSnapshot.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(tSnapshot, BigDecimal("10000.00")))
+
+                val achA = deposit("legacy-ach-a", tAchA, "1000.00", "LEGACY-ACH-A")
+                val achB = deposit("legacy-ach-b", tAchB, "1000.00", "LEGACY-ACH-B")
+                ledgerRepository.saveLedgers(listOf(achA, achB))
+                statsRepository.journalPresumedDecidedFlows(
+                    listOf(AppliedAthFlow(achA.ledgerId, achA.time.epochSecond)),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    tObs.epochSecond.toString(),
+                )
+
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = "LEGACY-ACH-B",
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                            time = tAchB,
+                            status = "Success",
+                            method = "ACH",
+                        ),
+                    ),
+                )
+
+                val result = analyzer(tObs, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("12000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = tObs,
+                )
+                val deferred = result.shouldBeInstanceOf<AthUpdateResult.Deferred>()
+                deferred.reason shouldBe AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("11000.00"))
+                statsRepository.getAppliedAthFlowIds(listOf("legacy-ach-b")) shouldBe emptySet()
+            }
+        }
+
+        for (oldTime in listOf(t0.minusSeconds(60), t0.plusSeconds(300), t0.plusSeconds(900))) {
+            for (semanticKind in listOf("legacy", "durable", "conflict", "unknown-version")) {
+                "$semanticKind decided funding at $oldTime affects only its active reconstruction interval" {
+                    runTest {
+                        statsRepository.save(PortfolioStats(BigDecimal("20000.00"), BigDecimal.ZERO))
+                        tradeRepository.setSyncMetadata(
+                            SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                            t0.epochSecond.toString(),
+                        )
+                        ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                        tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(t0, BigDecimal("10000.00")))
+                        val old = deposit("old", oldTime, "1000")
+                        val late = deposit("late", t0.plusSeconds(600), "1000")
+                        ledgerRepository.saveLedgers(listOf(old, late))
+                        val journal = AppliedAthFlow(old.ledgerId, oldTime.epochSecond)
+                        statsRepository.journalPresumedDecidedFlows(
+                            listOf(
+                                if (semanticKind == "legacy") {
+                                    journal
+                                } else {
+                                    journal.copy(
+                                        decisionCategory = "OWNER_CAPITAL",
+                                        asset = "USD",
+                                        actualBalanceDelta =
+                                        BigDecimal(if (semanticKind == "conflict") "2000" else "1000"),
+                                        decisionVersion = if (semanticKind == "unknown-version") 2 else 1,
+                                    )
+                                },
+                            ),
+                        )
+                        val observation = t0.plusSeconds(1200)
+                        ledgerRepository.setSyncMetadata(
+                            SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                            observation.epochSecond.toString(),
+                        )
+                        val resolver = FundingProvenanceResolver {
+                            if (it.ledgerId == late.ledgerId) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+                        }
+                        val result = analyzer(observation, resolver).updateAthAndCalculateDrawdown(
+                            BigDecimal("12000.00"),
+                            BigDecimal.ZERO,
+                            observation,
+                        )
+                        val inInterval = oldTime.isAfter(t0) && oldTime.isBefore(late.time)
+                        if (inInterval && semanticKind != "durable") {
+                            result.shouldBeInstanceOf<AthUpdateResult.Deferred>().reason shouldBe
+                                AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN
+                            statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("20000.00"))
+                            statsRepository.getAppliedAthFlowIds(listOf(late.ledgerId)) shouldBe emptySet()
+                        } else {
+                            result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                            val expected = if (inInterval) "21818.18" else "22000.00"
+                            statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal(expected))
+                        }
+                    }
+                }
+            }
+        }
+
+        "decided withdrawal replays negative journal delta after provenance disappears" {
+            runTest {
+                val tSnapshot = t0
+                val tWithdraw = tSnapshot.plusSeconds(600)
+                val tLate = tSnapshot.plusSeconds(900)
+                val tObs = tSnapshot.plusSeconds(1200)
+
+                statsRepository.save(PortfolioStats(BigDecimal("20000.00"), BigDecimal.ZERO))
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC,
+                    tSnapshot.epochSecond.toString(),
+                )
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.ATH_FLOW_JOURNAL_MIGRATED, "true")
+                tradeRepository.saveSnapshot(TestFixtures.emptySnapshot(tSnapshot, BigDecimal("15000.00")))
+
+                val withdrawal =
+                    LedgerEvent(
+                        ledgerId = "sem-withdraw-a",
+                        refid = "SEM-WITHDRAW-A",
+                        time = tWithdraw,
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        asset = "USD",
+                        amount = BigDecimal("-3000.00"),
+                    )
+                val lateDeposit = deposit("sem-late-dep", tLate, "1000.00", "SEM-LATE-DEP")
+                ledgerRepository.saveLedgers(listOf(withdrawal, lateDeposit))
+                statsRepository.journalPresumedDecidedFlows(
+                    listOf(
+                        AppliedAthFlow(
+                            ledgerId = withdrawal.ledgerId,
+                            eventTimeSec = withdrawal.time.epochSecond,
+                            decisionCategory = FlowCategory.OWNER_CAPITAL.name,
+                            asset = "USD",
+                            actualBalanceDelta = BigDecimal("-3000.00"),
+                            decisionVersion = 1,
+                        ),
+                    ),
+                )
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                    tObs.epochSecond.toString(),
+                )
+
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = "SEM-LATE-DEP",
+                            asset = "USD",
+                            amount = BigDecimal("1000.00"),
+                            time = tLate,
+                            status = "Success",
+                            method = "ACH",
+                        ),
+                    ),
+                )
+
+                val result = analyzer(tObs, resolver).updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("13000.00"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                    balancesObservedAt = tObs,
+                )
+
+                // Pre-flow basis = 15,000 - 3,000 = 12,000, then +1,000:
+                // scaled ATH = 20,000 * 13,000 / 12,000 = 21,666.67. The total
+                // (13,000) stays below the scaled ATH, so the ratchet cannot
+                // mask the negative-delta replay.
+                result.shouldBeInstanceOf<AthUpdateResult.Trusted>()
+                statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("21666.67"))
+                statsRepository.getAppliedAthFlowIds(listOf("sem-late-dep")) shouldBe setOf("sem-late-dep")
             }
         }
 

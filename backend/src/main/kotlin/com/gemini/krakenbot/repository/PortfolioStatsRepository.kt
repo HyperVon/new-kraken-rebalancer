@@ -1,11 +1,20 @@
 package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.model.PortfolioStats
+import java.math.BigDecimal
 
 /**
  * A durably applied owner-capital flow identity for ATH crash idempotency.
  */
-data class AppliedAthFlow(val ledgerId: String, val eventTimeSec: Long)
+data class AppliedAthFlow(
+    val ledgerId: String,
+    val eventTimeSec: Long,
+    val decisionCategory: String? = null,
+    val asset: String? = null,
+    val actualBalanceDelta: BigDecimal? = null,
+    val normalizedGroupId: String? = null,
+    val decisionVersion: Int? = null,
+)
 
 interface PortfolioStatsRepository {
     suspend fun load(): PortfolioStats
@@ -38,4 +47,7 @@ interface PortfolioStatsRepository {
 
     /** Flow identities already decided (subset of [ledgerIds] that were recorded). */
     suspend fun getAppliedAthFlowIds(ledgerIds: List<String>): Set<String>
+
+    /** Full durable decision semantics for the requested flow identities. */
+    suspend fun getAppliedAthFlows(ledgerIds: List<String>): List<AppliedAthFlow>
 }

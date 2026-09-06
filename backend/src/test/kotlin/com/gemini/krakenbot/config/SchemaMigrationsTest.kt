@@ -28,7 +28,40 @@ class SchemaMigrationsTest : StringSpec() {
                 "ambiguous-legacy-client-order-id",
                 "order-intent-trade-foreign-key",
                 "portfolio-stats-singleton",
+                "ath-applied-flow-semantics",
             )
+        }
+
+        "v7 identity journal gains nullable semantics without inventing old decisions" {
+            val url = "jdbc:sqlite:file:ath-v7-${UUID.randomUUID()}?mode=memory&cache=shared"
+            DatabaseConfig.init(url)
+            DriverManager.getConnection(url).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate("DROP TABLE ath_applied_flows")
+                    statement.executeUpdate(
+                        "CREATE TABLE ath_applied_flows " +
+                            "(ledger_id VARCHAR(128) PRIMARY KEY, event_time_sec BIGINT NOT NULL)",
+                    )
+                    statement.executeUpdate("INSERT INTO ath_applied_flows VALUES ('old-ach', 1000)")
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 8")
+                    repeat(2) { DatabaseConfig.init(url) }
+                    statement.executeQuery("SELECT * FROM ath_applied_flows").use { rows ->
+                        rows.next() shouldBe true
+                        rows.getString("ledger_id") shouldBe "old-ach"
+                        rows.getLong("event_time_sec") shouldBe 1000
+                        for (column in listOf(
+                            "decision_category",
+                            "asset",
+                            "actual_balance_delta",
+                            "normalized_group_id",
+                            "decision_version",
+                        )) {
+                            rows.getObject(column) shouldBe null
+                        }
+                        rows.next() shouldBe false
+                    }
+                }
+            }
         }
 
         "rejects duplicate, unordered, and incomplete migration definitions" {
@@ -70,6 +103,7 @@ class SchemaMigrationsTest : StringSpec() {
                         5 to "ambiguous-legacy-client-order-id",
                         6 to "order-intent-trade-foreign-key",
                         7 to "portfolio-stats-singleton",
+                        8 to "ath-applied-flow-semantics",
                     )
                 }
             }
@@ -121,6 +155,7 @@ class SchemaMigrationsTest : StringSpec() {
                         5 to "ambiguous-legacy-client-order-id",
                         6 to "order-intent-trade-foreign-key",
                         7 to "portfolio-stats-singleton",
+                        8 to "ath-applied-flow-semantics",
                     )
                 }
             }
