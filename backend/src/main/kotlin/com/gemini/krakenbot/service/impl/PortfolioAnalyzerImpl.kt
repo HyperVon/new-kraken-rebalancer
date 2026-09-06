@@ -10,6 +10,7 @@ import com.gemini.krakenbot.domain.RawPrices
 import com.gemini.krakenbot.domain.RebalancePlan
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toUsdScale
+import com.gemini.krakenbot.model.ActualOwnerFlowContext
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.CardFeePriceProvider
 import com.gemini.krakenbot.model.FlowCategory
@@ -24,6 +25,7 @@ import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TimedAssetDelta
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.UnusableDecidedFundingContext
 import com.gemini.krakenbot.repository.AppliedAthFlow
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -441,9 +443,10 @@ class PortfolioAnalyzerImpl(
             decidedLedgerIds = emptySet(),
             preparedProvenanceResolver = provenanceResolver,
         )
-        val rows = ledgersRepo.getLedgersInRange(Instant.EPOCH, horizon)
+        val lookaheadHorizon = horizon.plus(CardFundingNormalizer.MAX_CARD_TRANSACTION_SPAN)
+        val allRows = ledgersRepo.getLedgersInRange(Instant.EPOCH, lookaheadHorizon)
             .sortedBy { it.time }
-        if (rows.isEmpty()) {
+        if (allRows.isEmpty()) {
             return ScannedLedgers(
                 unapplied = emptyList(),
                 classifications = emptyMap(),
@@ -452,6 +455,14 @@ class PortfolioAnalyzerImpl(
                 preparedProvenanceResolver = provenanceResolver,
             )
         }
+        val preHorizonRows = allRows.filter { !it.time.isAfter(horizon) }
+        val preHorizonRefids = preHorizonRows.mapNotNull { it.refid?.trim() }.filter { it.isNotEmpty() }.toSet()
+        val postHorizonLookaheadRows = if (preHorizonRefids.isEmpty()) {
+            emptyList()
+        } else {
+            allRows.filter { it.time.isAfter(horizon) && it.refid?.trim() in preHorizonRefids }
+        }
+        val rows = preHorizonRows + postHorizonLookaheadRows
         // Resolve funding provenance once for the full retained batch. The
         // classifier itself stays pure and never performs one request per row.
         val preparedResolver = try {
@@ -472,7 +483,7 @@ class PortfolioAnalyzerImpl(
             )
         }
         val decided = portfolioStatsRepository.getAppliedAthFlowIds(rows.map { it.ledgerId })
-        val unapplied = if (decided.isEmpty()) rows else rows.filterNot { it.ledgerId in decided }
+        val unapplied = preHorizonRows.filterNot { it.ledgerId in decided }
         // Classify the full retained set: refid pairing must see decided
         // partners, or a late backfill completing an internal move would
         // classify its lone leg as owner capital and scale ATH again.
@@ -539,8 +550,7 @@ class PortfolioAnalyzerImpl(
             val normRefid = when (norm) {
                 is NormalizedFundingTransaction.Ambiguous -> norm.refid
                 is NormalizedFundingTransaction.UnpriceableFee -> norm.refid
-                is NormalizedFundingTransaction.OwnerContribution -> norm.refid
-                is NormalizedFundingTransaction.OwnerWithdrawal -> norm.refid
+                is NormalizedFundingTransaction.OwnerFlow -> norm.refid
                 NormalizedFundingTransaction.NotApplicable -> null
             }
             if (normRefid !in relevantRefids) continue
@@ -779,58 +789,70 @@ class PortfolioAnalyzerImpl(
             }
         }
 
-        val cardContributions = cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerContribution>()
-            .associateBy { it.representativeLedgerId }
-        val cardWithdrawals = cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerWithdrawal>()
+        val cardOwnerFlows = cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerFlow>()
             .associateBy { it.representativeLedgerId }
 
-        val undecidedActualFlows = cardNormalizations.mapNotNull { norm ->
-            when (norm) {
-                is NormalizedFundingTransaction.OwnerContribution -> CardActualFlow(
+        val undecidedActualFlows = cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerFlow>()
+            .map { norm ->
+                CardActualFlow(
                     representativeLedgerId = norm.representativeLedgerId,
                     eventTime = norm.eventTime,
                     sourceLedgerIds = norm.sourceLedgerIds.toSet(),
                     sourceTimes = allRetained.filter { it.ledgerId in norm.sourceLedgerIds }.map { it.time },
                     actualPortfolioDeltas = norm.actualPortfolioDeltas,
                 )
-
-                is NormalizedFundingTransaction.OwnerWithdrawal -> CardActualFlow(
-                    representativeLedgerId = norm.representativeLedgerId,
-                    eventTime = norm.eventTime,
-                    sourceLedgerIds = norm.sourceLedgerIds.toSet(),
-                    sourceTimes = allRetained.filter { it.ledgerId in norm.sourceLedgerIds }.map { it.time },
-                    actualPortfolioDeltas = norm.actualPortfolioDeltas,
-                )
-
-                else -> null
             }
-        }
 
         // 2. Actual-balance context extraction: for already-decided historical groups.
         // Uses raw netBalanceDelta() directly from ledger rows; does NOT re-price historical fees.
         val decidedGroups = candidateGroups.filterKeys { it !in relevantRefids }
         val decidedActualFlows = mutableListOf<CardActualFlow>()
+        val unusableDecidedGroups = mutableListOf<UnusableDecidedFundingContext>()
         for ((refid, group) in decidedGroups) {
             val parsed = CardFundingNormalizer.parseCardFundingGroup(
                 refid = refid,
                 group = group,
                 provenanceResolver = scanned.preparedProvenanceResolver,
             )
-            if (parsed is CardFundingNormalizer.ParsedGroup.Valid) {
-                decidedActualFlows.add(
-                    CardActualFlow(
-                        representativeLedgerId = parsed.representative.ledgerId,
-                        eventTime = parsed.representative.time,
-                        sourceLedgerIds = parsed.sourceLedgerIds,
-                        sourceTimes = allRetained.filter { it.ledgerId in parsed.sourceLedgerIds }.map { it.time },
-                        actualPortfolioDeltas = parsed.actualPortfolioDeltas,
-                    ),
-                )
+            when (parsed) {
+                is CardFundingNormalizer.ParsedGroup.Valid -> {
+                    decidedActualFlows.add(
+                        CardActualFlow(
+                            representativeLedgerId = parsed.representative.ledgerId,
+                            eventTime = parsed.representative.time,
+                            sourceLedgerIds = parsed.sourceLedgerIds,
+                            sourceTimes = allRetained.filter { it.ledgerId in parsed.sourceLedgerIds }.map { it.time },
+                            actualPortfolioDeltas = parsed.actualPortfolioDeltas,
+                        ),
+                    )
+                }
+
+                is CardFundingNormalizer.ParsedGroup.Ambiguous -> {
+                    var minTime = group.first().time
+                    var maxTime = group.first().time
+                    for (item in group) {
+                        if (item.time < minTime) minTime = item.time
+                        if (item.time > maxTime) maxTime = item.time
+                    }
+                    unusableDecidedGroups.add(
+                        UnusableDecidedFundingContext(
+                            refid = refid,
+                            sourceLedgerIds = group.map { it.ledgerId }.toSet(),
+                            minTime = minTime,
+                            maxTime = maxTime,
+                            reason = parsed.reason,
+                        ),
+                    )
+                }
+
+                CardFundingNormalizer.ParsedGroup.NotApplicable -> Unit
             }
         }
 
         val cardActualFlows = undecidedActualFlows + decidedActualFlows
         val allCardSourceIds = cardActualFlows.flatMap { it.sourceLedgerIds }.toSet()
+        val unusableCardSourceIds = unusableDecidedGroups.flatMap { it.sourceLedgerIds }.toSet()
+        val allKnownCardSourceIds = allCardSourceIds + unusableCardSourceIds
         val allCardPlumbingIds = allCardSourceIds - cardActualFlows.map { it.representativeLedgerId }.toSet()
 
         val skippedDecided = mutableListOf<AppliedAthFlow>()
@@ -889,21 +911,71 @@ class PortfolioAnalyzerImpl(
                 it.ledgerId !in allCardSourceIds
         }
         val cardObservationEvents = allRetained.filter { it.ledgerId in allCardSourceIds }
-
         val candidateOwnerEvents = events.filter { it.ledgerId !in allCardPlumbingIds }
+
+        // 2.5. Conservative overlap check: if another currently-undecided owner-capital event
+        // falls strictly inside the source-time interval of an undecided card transaction:
+        // min(card source timestamp) < other owner flow time < max(card source timestamp),
+        // fail closed with EVENT_ORDERING_UNCERTAIN. Neither conflicting economic decision is journaled.
+        for (norm in cardNormalizations.filterIsInstance<NormalizedFundingTransaction.OwnerFlow>()) {
+            val cardTimes = allRetained.filter { it.ledgerId in norm.sourceLedgerIds }.map { it.time }
+            val minCardTime = cardTimes.minOrNull() ?: norm.eventTime
+            val maxCardTime = cardTimes.maxOrNull() ?: norm.eventTime
+            if (minCardTime < maxCardTime) {
+                val conflictingEvent = allRetained.firstOrNull { leg ->
+                    leg.ledgerId in unappliedIds &&
+                        classifications[leg.ledgerId] == FlowCategory.OWNER_CAPITAL &&
+                        leg.ledgerId !in norm.sourceLedgerIds &&
+                        leg.time > minCardTime &&
+                        leg.time < maxCardTime
+                }
+                if (conflictingEvent != null) {
+                    log.warn(
+                        "Undecided owner flow {} at {} falls strictly inside undecided card transaction {} source span ({} to {}); failing closed",
+                        conflictingEvent.ledgerId,
+                        conflictingEvent.time,
+                        norm.refid,
+                        minCardTime,
+                        maxCardTime,
+                    )
+                    throw AthTrustFailureException(
+                        reason = AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN,
+                        message = "undecided owner flow ${conflictingEvent.ledgerId} at ${conflictingEvent.time} " +
+                            "falls strictly inside undecided card transaction ${norm.refid} source span ($minCardTime to $maxCardTime)",
+                    )
+                }
+            }
+        }
+
+        // 3. Extract already-decided ordinary owner flows as actual-balance context.
+        // Distinguishes decision status (already applied/journaled to ATH) from whether
+        // their actual balance effect is required to reconstruct historical holdings for
+        // a later-discovered earlier-timestamp flow.
+        val decidedOrdinaryOwnerEvents = allRetained.filter { event ->
+            event.ledgerId in decidedIds &&
+                classifications[event.ledgerId] == FlowCategory.OWNER_CAPITAL &&
+                event.ledgerId !in allKnownCardSourceIds &&
+                isInAthUniverse(Asset.normalizeLedgerAsset(event.asset).uppercase(), universe)
+        }
+        val decidedOwnerFlowContexts = decidedOrdinaryOwnerEvents.map { event ->
+            ActualOwnerFlowContext(
+                ledgerId = event.ledgerId,
+                timestamp = event.time,
+                asset = Asset.normalizeLedgerAsset(event.asset).uppercase(),
+                actualBalanceDelta = event.netBalanceDelta(),
+                isCardRepresentative = false,
+                normalizedGroupId = null,
+            )
+        }
 
         // Sequential oldest-first adjustment: each flow scales the ATH that
         // was current just before it. Flows themselves are priced via
         // snapshots or the bounded ticker (fail-closed); each pre-flow basis
         // is reconstructed at event time (see resolveEventTimeBasis).
         val pricedFlows = candidateOwnerEvents.map { event ->
-            val cardContribution = cardContributions[event.ledgerId]
-            val cardWithdrawal = cardWithdrawals[event.ledgerId]
-            val pricedAmount = when {
-                cardContribution != null -> cardContribution.netOwnerCapitalUsd
-                cardWithdrawal != null -> cardWithdrawal.netOwnerCapitalUsd
-                else -> priceOwnerCapitalFlow(event, balancesObservedAt, tradesRepo)
-            }
+            val cardFlow = cardOwnerFlows[event.ledgerId]
+            val pricedAmount = cardFlow?.netOwnerCapitalUsd
+                ?: priceOwnerCapitalFlow(event, balancesObservedAt, tradesRepo)
             event to pricedAmount
         }
         val maxEventTime = pricedFlows.maxOf { (event, _) -> event.time }
@@ -941,8 +1013,7 @@ class PortfolioAnalyzerImpl(
             val groupNet = pricedFlows.subList(groupStart, groupEnd)
                 .fold(BigDecimal.ZERO) { acc, (_, usd) -> acc.add(usd) }
             val ledgerIds = pricedFlows.subList(groupStart, groupEnd).flatMap { (event, _) ->
-                cardContributions[event.ledgerId]?.sourceLedgerIds
-                    ?: cardWithdrawals[event.ledgerId]?.sourceLedgerIds
+                cardOwnerFlows[event.ledgerId]?.sourceLedgerIds
                     ?: listOf(event.ledgerId)
             }
             SequentialFlowStep(
@@ -960,6 +1031,9 @@ class PortfolioAnalyzerImpl(
                     resolveEventTimeBasis(
                         eventTime = eventTime,
                         priorFlows = priorFlows,
+                        decidedOwnerFlows = decidedOwnerFlowContexts,
+                        decidedOwnerLedgerEvents = decidedOrdinaryOwnerEvents,
+                        unusableDecidedGroups = unusableDecidedGroups,
                         history = snapHistory,
                         trades = snapTrades,
                         externalBalances = externalBalanceEvents,
@@ -1023,6 +1097,9 @@ class PortfolioAnalyzerImpl(
     private suspend fun resolveEventTimeBasis(
         eventTime: Instant,
         priorFlows: List<Pair<LedgerEvent, BigDecimal>>,
+        decidedOwnerFlows: List<ActualOwnerFlowContext>,
+        decidedOwnerLedgerEvents: List<LedgerEvent>,
+        unusableDecidedGroups: List<UnusableDecidedFundingContext>,
         history: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
         externalBalances: List<LedgerEvent>,
@@ -1091,11 +1168,13 @@ class PortfolioAnalyzerImpl(
                 val times = flow.actualPortfolioDeltas.map { it.timestamp }
                     .ifEmpty { flow.sourceTimes.ifEmpty { listOf(flow.eventTime) } }
                 times.any { isNearEventTime(it, eventTime) }
-            }
+            } ||
+            decidedOwnerFlows.any { isNearEventTime(it.timestamp, eventTime) }
         ) {
             throw AthTrustFailureException(
                 reason = AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN,
-                message = "cannot establish ordering of a near-instant performance event and owner flow at $eventTime",
+                message = "cannot establish ordering of a near-instant performance event or decided flow and " +
+                    "owner flow at $eventTime",
             )
         }
 
@@ -1121,7 +1200,7 @@ class PortfolioAnalyzerImpl(
         // Replay intervening trades between predecessor snapshot and flow time
         val universe = configService.getConfig().allocations.map { it.symbol.value.uppercase() }.toSet()
         val uniqueInterveningLedgerEvents =
-            (eligibleCardObservationEvents + externalBalances + priorFlows.map { it.first })
+            (eligibleCardObservationEvents + externalBalances + decidedOwnerLedgerEvents + priorFlows.map { it.first })
                 .filter { ledger ->
                     isInAthUniverse(Asset.normalizeLedgerAsset(ledger.asset).uppercase(), universe) &&
                         !ledger.time.isAfter(eventTime)
@@ -1142,6 +1221,27 @@ class PortfolioAnalyzerImpl(
                 !ledger.time.isAfter(predecessor.timestamp)
         }
         val embeddedLedgerIds = resolveEmbeddedLedgerIds(uncertainLedgerEvents, predecessor)
+
+        // 1.5. Evaluate unusable decided card groups relative to the reconstruction interval:
+        // (predecessor actual-state boundary, target owner-flow time]
+        for (unusable in unusableDecidedGroups) {
+            if (unusable.minTime.isAfter(eventTime)) continue
+            if (!unusable.maxTime.isAfter(predecessorObservationBoundary)) continue
+
+            log.warn(
+                "Unusable decided card funding group {} intersects reconstruction interval ({} to {}): {}",
+                unusable.refid,
+                predecessorObservationBoundary,
+                eventTime,
+                unusable.reason,
+            )
+            throw AthTrustFailureException(
+                reason = AthTrustFailureReason.PRE_FLOW_BASIS_UNCERTAIN,
+                message = "unusable decided card funding group ${unusable.refid} intersects " +
+                    "reconstruction interval: ${unusable.reason}",
+            )
+        }
+
         val uncertainTrades = trades.filter { trade ->
             trade.timestamp.isAfter(predecessorObservationBoundary) &&
                 !trade.timestamp.isAfter(predecessor.timestamp) &&
@@ -1191,19 +1291,33 @@ class PortfolioAnalyzerImpl(
             }
         }
 
-        // Replay intervening non-card prior flows between predecessor snapshot and flow time
-        for ((event, _) in priorFlows) {
-            if (event.ledgerId in eligibleCardSourceIds) continue
-            val replayAfterSnapshot = event.time.isAfter(predecessor.timestamp) && !event.time.isAfter(eventTime)
-            val replayAfterObservation = event.ledgerId !in embeddedLedgerIds &&
-                event.time.isAfter(predecessorObservationBoundary) &&
-                !event.time.isAfter(predecessor.timestamp) &&
-                !event.time.isAfter(eventTime)
+        // Replay intervening ordinary owner flows (both already-decided and current-batch prior flows).
+        // Card representatives and card plumbing are excluded here and replayed exclusively
+        // through their actual per-leg TimedAssetDelta list below.
+        val priorOwnerFlowContexts = priorFlows.map { (event, _) ->
+            val isCardRep = cardActualFlows.any { it.representativeLedgerId == event.ledgerId }
+            ActualOwnerFlowContext(
+                ledgerId = event.ledgerId,
+                timestamp = event.time,
+                asset = Asset.normalizeLedgerAsset(event.asset).uppercase(),
+                actualBalanceDelta = event.netBalanceDelta(),
+                isCardRepresentative = isCardRep,
+                normalizedGroupId = null,
+            )
+        }
+        val allHistoricalOwnerFlows = decidedOwnerFlows + priorOwnerFlowContexts
+        for (flow in allHistoricalOwnerFlows) {
+            if (flow.isCardRepresentative || flow.ledgerId in eligibleCardSourceIds) continue
+            val replayAfterSnapshot =
+                flow.timestamp.isAfter(predecessor.timestamp) && !flow.timestamp.isAfter(eventTime)
+            val replayAfterObservation = flow.ledgerId !in embeddedLedgerIds &&
+                flow.timestamp.isAfter(predecessorObservationBoundary) &&
+                !flow.timestamp.isAfter(predecessor.timestamp)
             if (replayAfterSnapshot || replayAfterObservation) {
-                val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
+                val asset = Asset.normalizeLedgerAsset(flow.asset).uppercase()
                 if (isInAthUniverse(asset, universe)) {
                     reconstructedHoldings[asset] =
-                        (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(event.netBalanceDelta())
+                        (reconstructedHoldings[asset] ?: BigDecimal.ZERO).add(flow.actualBalanceDelta)
                 }
             }
         }

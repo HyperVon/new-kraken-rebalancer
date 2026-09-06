@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.34] - 2026-09-05
+
+### Fixed
+
+- **Decided ordinary owner flow replay (`ActualOwnerFlowContext`)**: Historical pre-flow
+  basis reconstruction now replays already-decided ordinary owner flows (`OWNER_CAPITAL`,
+  e.g. ACH/wire deposits and withdrawals) that occurred between the predecessor snapshot
+  and a late-arriving target flow. Replay strictly separates ATH decision status from
+  actual balance attribution.
+- **Undecided card overlap ordering safety**: When an undecided ordinary owner-capital
+  event falls strictly inside the source-time span of an undecided card transaction
+  (`minCardTime < other.time < maxCardTime`), ATH scaling fails closed with
+  `EVENT_ORDERING_UNCERTAIN` and refuses to journal either flow until ordering is resolved.
+- **Unusable decided card funding isolation (`UnusableDecidedFundingContext`)**:
+  Already-decided card groups that cannot be structurally reconstructed are captured as
+  explicit historical uncertainty. They fail closed with `PRE_FLOW_BASIS_UNCERTAIN` only
+  if their source span intersects the active reconstruction interval `(predecessor, target]`,
+  preventing unrelated historical anomalies from permanently blocking ATH updates.
+- **Display-window-independent Buy & Hold benchmark**: Strengthened benchmark verification
+  across multiple window partition boundaries ($T - 60\text{s}$, $T$, $T + 10\text{s}$, $T + 60\text{s}$)
+  confirming identical normalized contributions, synthetic holdings, and final benchmark valuation.
+
+### Docs
+
+- Documented decision journal vs actual-balance context separation, undecided card overlap
+  fail-closed ordering, and unusable decided card group basis intersection safety in
+  `docs/ALGORITHM.md`.
+
 ## [6.17.33] - 2026-09-05
 
 ### Fixed

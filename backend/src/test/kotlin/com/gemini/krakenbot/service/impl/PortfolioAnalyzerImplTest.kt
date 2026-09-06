@@ -2961,7 +2961,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     fee = BigDecimal.ZERO,
                 )
                 coEvery {
-                    mockLedgers.getLedgersInRange(Instant.EPOCH, t0.plusSeconds(150))
+                    mockLedgers.getLedgersInRange(any(), any())
                 } returns listOf(depositAt70)
                 coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns
                     listOf(TestFixtures.emptySnapshot(t0.plusSeconds(60), BigDecimal("10000.00")))

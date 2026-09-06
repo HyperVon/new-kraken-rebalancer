@@ -7285,49 +7285,103 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00")))
 
-            // 1. Full lifetime window (starts at inception)
-            val fullWindowSnaps = listOf(
-                inceptionSnap,
-                snapshot(
-                    timestamp = cardTime.plusSeconds(30),
-                    totalValueUSD = "54980.00",
-                    assets = mapOf(
-                        "BTC" to assetRow("0.5996", "50000.00", "29980.00"),
-                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
-                    ),
-                ),
-                endSnap,
-            )
-            val fullResult = calculate(
-                snapshots = fullWindowSnaps,
-                rewards = allLedgers,
+            val builtEvents = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = allLedgers,
+                baseline = inceptionSnap,
+                inceptionWeights = mapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("0.5")),
                 priceProvider = priceProvider,
                 provenanceResolver = provenance,
             )
-            fullResult.availability shouldBe ComparisonAvailability.AVAILABLE
-            val expectedEndBuyAndHold = fullResult.points.last().buyAndHoldValueUSD
+            val contribution = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
+            contribution.contributionUsd shouldBeEqualComparingTo BigDecimal("4980.00")
+            val syntheticBtc = BigDecimal("0.50").add(contribution.allocations.getValue("BTC"))
+            val syntheticUsd = BigDecimal("25000.00").add(contribution.allocations.getValue("USD"))
+            syntheticBtc shouldBeEqualComparingTo BigDecimal("0.54980000")
+            syntheticUsd shouldBeEqualComparingTo BigDecimal("27490.00000000")
 
-            // 2. Window starting at T+1m (after card transaction completes, with inception snapshot passed)
-            val postTransactionWindowSnaps = listOf(
-                snapshot(
-                    timestamp = cardTime.plusSeconds(60),
-                    totalValueUSD = "54980.00",
-                    assets = mapOf(
-                        "BTC" to assetRow("0.5996", "50000.00", "29980.00"),
-                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
-                    ),
+            // Partition 1: Window starting at T-60s (before any card legs)
+            val snapTMinus60 = snapshot(
+                timestamp = cardTime.minusSeconds(60),
+                totalValueUSD = "50000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                    "USD" to assetRow("25000.00", "1.0", "25000.00"),
                 ),
-                endSnap,
             )
-            val postResult = calculate(
-                snapshots = postTransactionWindowSnaps,
+            val res1 = calculate(
+                snapshots = listOf(snapTMinus60, endSnap),
                 rewards = allLedgers,
                 inceptionSnapshot = inceptionSnap,
                 priceProvider = priceProvider,
                 provenanceResolver = provenance,
             )
-            postResult.availability shouldBe ComparisonAvailability.AVAILABLE
-            postResult.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo expectedEndBuyAndHold
+            res1.availability shouldBe ComparisonAvailability.AVAILABLE
+            res1.points.size shouldBe 2
+            res1.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("50000.00")
+            res1.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("60478.00")
+
+            // Partition 2: Window starting at T (at card spend, after card deposit)
+            val snapT = snapshot(
+                timestamp = cardTime,
+                totalValueUSD = "50000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                    "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                ),
+            )
+            val res2 = calculate(
+                snapshots = listOf(snapT, endSnap),
+                rewards = allLedgers,
+                inceptionSnapshot = inceptionSnap,
+                priceProvider = priceProvider,
+                provenanceResolver = provenance,
+            )
+            res2.availability shouldBe ComparisonAvailability.AVAILABLE
+            res2.points.size shouldBe 2
+            res2.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("54980.00")
+            res2.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("60478.00")
+
+            // Partition 3: Window starting at T+10s (between spend and receive)
+            val snapTPlus10 = snapshot(
+                timestamp = cardTime.plusSeconds(10),
+                totalValueUSD = "50000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                    "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                ),
+            )
+            val res3 = calculate(
+                snapshots = listOf(snapTPlus10, endSnap),
+                rewards = allLedgers,
+                inceptionSnapshot = inceptionSnap,
+                priceProvider = priceProvider,
+                provenanceResolver = provenance,
+            )
+            res3.availability shouldBe ComparisonAvailability.AVAILABLE
+            res3.points.size shouldBe 2
+            res3.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("54980.00")
+            res3.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("60478.00")
+
+            // Partition 4: Window starting at T+60s (after complete card transaction)
+            val snapTPlus60 = snapshot(
+                timestamp = cardTime.plusSeconds(60),
+                totalValueUSD = "54980.00",
+                assets = mapOf(
+                    "BTC" to assetRow("0.5996", "50000.00", "29980.00"),
+                    "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                ),
+            )
+            val res4 = calculate(
+                snapshots = listOf(snapTPlus60, endSnap),
+                rewards = allLedgers,
+                inceptionSnapshot = inceptionSnap,
+                priceProvider = priceProvider,
+                provenanceResolver = provenance,
+            )
+            res4.availability shouldBe ComparisonAvailability.AVAILABLE
+            res4.points.size shouldBe 2
+            res4.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("54980.00")
+            res4.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("60478.00")
         }
 
         "provenance preparation lifecycle executes prepare exactly once during comparison calculation" {

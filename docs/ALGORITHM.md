@@ -197,12 +197,32 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
       raw per-leg balance deltas without calling fee pricing providers, preventing historical pricing gaps on already-accounted
       fees from blocking new ordinary bank deposits.
    - **Synthetic Capital vs Actual Effects**: `NormalizedFundingTransaction.OwnerContribution` and
-      `OwnerWithdrawal` carry both `netOwnerCapitalUsd` (the synthetic amount used for ATH scaling and Buy & Hold
-      inception-weight allocation) and exact per-leg `TimedAssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
-      Each delta maintains its ledger ID and timestamp so that basis reconstruction at an arbitrary target time never
-      replays future card legs prematurely. Buy & Hold consumes only the synthetic amount and never replays the conversion legs.
-      ATH basis reconstruction replays completed card actual deltas, including fees, exactly once and excludes both the
-      representative funding row and raw card plumbing rows from separate replay.
+       `OwnerWithdrawal` carry both `netOwnerCapitalUsd` (the synthetic amount used for ATH scaling and Buy & Hold
+       inception-weight allocation) and exact per-leg `TimedAssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
+       Each delta maintains its ledger ID and timestamp so that basis reconstruction at an arbitrary target time never
+       replays future card legs prematurely. Buy & Hold consumes only the synthetic amount and never replays the conversion legs.
+       ATH basis reconstruction replays completed card actual deltas, including fees, exactly once and excludes both the
+       representative funding row and raw card plumbing rows from separate replay.
+   - **Decision Journal vs Actual-Balance Context Separation**: The decision journal (`applied_ath_flows`) records
+      which economic owner-capital events have had their ATH scaling applied, preventing double-application on future
+      scans. Reconstructing pre-flow portfolio holdings for a target event time (`resolveEventTimeBasis`) operates on
+      actual account balances (`ActualOwnerFlowContext`). When a late-arriving backfilled flow is evaluated, all
+      intervening ordinary owner flows (`OWNER_CAPITAL`, e.g. ACH/wire deposits and withdrawals)—whether already
+      decided in earlier cycles or pending in the current batch—are replayed into holdings if they occurred within the
+      basis window `(predecessor actual-state boundary, target flow time]`. Multi-leg card transactions replay their
+      actual balance deltas exclusively via `TimedAssetDelta` entries; card representative deposits and plumbing rows
+      are strictly excluded from ordinary owner-flow replay to ensure exact-once balance attribution.
+   - **Undecided Card Overlap Ordering Safety**: If another undecided owner-capital event falls strictly inside the
+      source-time span of an undecided multi-leg card transaction (`minCardTime < other.time < maxCardTime`),
+      micro-ordering between the external flow and the intermediate card conversion legs cannot be proven without
+      exchange execution sequence metadata. The system fails closed with `AthTrustFailureReason.EVENT_ORDERING_UNCERTAIN`
+      and leaves both flows unjournaled so future cycles or operator review can resolve them cleanly.
+   - **Unusable Decided Card Funding Isolation**: Already-decided card groups that cannot be structurally reconstructed
+      (e.g., legacy ambiguous state) are preserved as explicit historical uncertainty (`UnusableDecidedFundingContext`).
+      To prevent historical anomalies outside the active reconstruction window from permanently blocking ATH tracking,
+      an unusable group triggers `PRE_FLOW_BASIS_UNCERTAIN` only if its source-time span intersects the active basis
+      reconstruction interval `(predecessor actual-state boundary, target flow time]`. Groups entirely preceding the
+      predecessor observation or following the target event are safely ignored.
    - **Ambiguous Funding Deferral & Fail-Closed Safety**: Unlike terminal neutral events (`INTERNAL_MOVE`,
      `TRADE_IGNORED`) or performance events (`EXTERNAL_BALANCE`) which are acknowledged in the decision journal,
      flows classified as `AMBIGUOUS` or `UNSUPPORTED` MUST NOT be journaled as decided or skipped. Instead, they
@@ -239,7 +259,7 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    - **Pre-Flow Basis Reconstruction with Intervening Balance Replay**: Flows apply sequentially oldest-first
      (simultaneous flows net into one step), each against its event-time pre-flow basis. The basis reconstructs
      exact portfolio holdings immediately before the flow:
-     `holdings_at_flow = predecessor_holdings + replayed_trades + replayed_external_balances + replayed_actual_card_deltas + replayed_crypto_flows`.
+     `holdings_at_flow = predecessor_holdings + replayed_trades + replayed_external_balances + replayed_actual_card_deltas + replayed_historical_owner_flows`.
      Successful non-dry-run trades adjust tracked crypto quantities and fiat outlays/proceeds (including fees),
      off-universe trades adjust only the fiat leg, and intervening `EXTERNAL_BALANCE` events (such as staking
      rewards, ledger adjustments, or dividends occurring between predecessor snapshot and the flow event time)
