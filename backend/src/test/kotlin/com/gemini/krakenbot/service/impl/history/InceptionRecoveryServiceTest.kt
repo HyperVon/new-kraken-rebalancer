@@ -22,11 +22,13 @@ import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
+import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.coEvery
@@ -2510,6 +2512,153 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 secondStatus.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
                 secondStatus.tradeOffset shouldBe "completed"
                 repository.getTradesInRange(Instant.EPOCH, now.plusSeconds(1)).size shouldBe 60
+            }
+        }
+
+        "persists inference evidence with a behavioral candidate and independent first positive" {
+            runTest {
+                val batchStart = Instant.parse("2026-04-01T00:00:00Z")
+                val batch = listOf(
+                    apiTrade("b-sell-1", batchStart, symbol = "ASSET1").copy(side = OrderSide.SELL.apiValue),
+                    apiTrade("b-sell-2", batchStart.plusSeconds(1), symbol = "ASSET2").copy(
+                        side = OrderSide.SELL.apiValue,
+                    ),
+                    apiTrade("b-buy-3", batchStart.plusSeconds(2), symbol = "ASSET3"),
+                    apiTrade("b-buy-4", batchStart.plusSeconds(3), symbol = "ASSET4"),
+                )
+                val ownedTrade = localEstimate(
+                    batchStart.plusSeconds(600),
+                    apiTrade("owned", batchStart.plusSeconds(600), symbol = "SOL"),
+                )
+                krakenService.tradeHistorySupplier = { _, _ -> batch + ownedTrade }
+                krakenService.tradeHistoryTotalCountOverride = 0
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                    AccountHistoryScopeGuard.digestAccountScope("fake-account"),
+                )
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("fake-account")
+                val fingerprint = newService().inferenceFingerprint(config, scopeDigest)
+                val record = requireNotNull(repository.findInceptionInferenceEvidence(fingerprint))
+
+                record.inferredStart shouldBe batchStart
+                record.strongestObservedStart shouldBe batchStart
+                record.strength shouldBe "HIGH"
+                record.candidates.size shouldBe 1
+                record.candidates.first().orderCount shouldBe 4
+                record.candidates.first().timescalesSeconds shouldBe setOf(2L, 5L, 15L)
+                record.firstPositive shouldBe batchStart.plusSeconds(600)
+                record.coverageStart shouldBe batchStart
+                record.coverageEnd shouldBe batchStart.plusSeconds(600)
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION) shouldBe
+                    InceptionRecoveryService.CURRENT_INFERENCE_VERSION
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT) shouldBe fingerprint
+
+                val firstDigest = record.evidenceDigest
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                newService().recoverOneBoundedRun()
+                val reloaded = requireNotNull(repository.findInceptionInferenceEvidence(fingerprint))
+                reloaded.evidenceDigest shouldBe firstDigest
+                reloaded.inferredStart shouldBe batchStart
+                reloaded.candidates.size shouldBe 1
+            }
+        }
+
+        "persists first positive evidence without behavioral candidates" {
+            runTest {
+                val firstUnknown = Instant.parse("2026-04-01T00:00:00Z")
+                val trades = listOf(
+                    apiTrade("u-1", firstUnknown),
+                    apiTrade("u-2", firstUnknown.plusSeconds(3_600)),
+                    localEstimate(
+                        firstUnknown.plusSeconds(7_200),
+                        apiTrade("owned", firstUnknown.plusSeconds(7_200), symbol = "SOL"),
+                    ),
+                )
+                krakenService.tradeHistorySupplier = { _, _ -> trades }
+                krakenService.tradeHistoryTotalCountOverride = 0
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                    AccountHistoryScopeGuard.digestAccountScope("fake-account"),
+                )
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("fake-account")
+                val fingerprint = newService().inferenceFingerprint(config, scopeDigest)
+                val record = requireNotNull(repository.findInceptionInferenceEvidence(fingerprint))
+
+                record.candidates shouldBe emptyList()
+                record.inferredStart.shouldBeNull()
+                record.strength.shouldBeNull()
+                record.firstPositive shouldBe firstUnknown.plusSeconds(7_200)
+                record.coverageStart shouldBe firstUnknown
+                record.coverageEnd shouldBe firstUnknown.plusSeconds(7_200)
+            }
+        }
+
+        "allocation-only change keeps inference visible for the same account" {
+            runTest {
+                val batchStart = Instant.parse("2026-04-01T00:00:00Z")
+                val batch = listOf(
+                    apiTrade("b-sell-1", batchStart, symbol = "ASSET1").copy(side = OrderSide.SELL.apiValue),
+                    apiTrade("b-sell-2", batchStart.plusSeconds(1), symbol = "ASSET2").copy(
+                        side = OrderSide.SELL.apiValue,
+                    ),
+                    apiTrade("b-buy-3", batchStart.plusSeconds(2), symbol = "ASSET3"),
+                    apiTrade("b-buy-4", batchStart.plusSeconds(3), symbol = "ASSET4"),
+                )
+                krakenService.tradeHistorySupplier = { _, _ -> batch }
+                krakenService.tradeHistoryTotalCountOverride = 0
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                    AccountHistoryScopeGuard.digestAccountScope("fake-account"),
+                )
+                newService().recoverOneBoundedRun()
+
+                config = appConfig(listOf(Allocation(Asset.BTC, 45.0), Allocation(Asset.USD, 55.0)))
+                val info = newService().getLocalInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.UNAVAILABLE
+                info.inferredStartText shouldBe batchStart.toString()
+                info.inferredStrengthText shouldBe "HIGH"
+            }
+        }
+
+        "classifies known order-intent identities as positive ownership evidence" {
+            runTest {
+                val firstUnknown = Instant.parse("2026-04-01T00:00:00Z")
+                val unknownTrades = listOf(
+                    apiTrade("u-1", firstUnknown),
+                    apiTrade("u-2", firstUnknown.plusSeconds(3_600)),
+                )
+                val knownOrderTrade = apiTrade("known", firstUnknown.plusSeconds(7_200)).copy(
+                    orderTxid = "order-known",
+                )
+                val clientOnlyTrade = apiTrade("client-owned", firstUnknown.plusSeconds(7_201)).copy(
+                    clientOrderId = "client-known",
+                )
+                val orderIntentRepository = mockk<OrderIntentRepository>()
+                coEvery {
+                    orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any())
+                } returns RebalancerOrderIdentities(orderTxids = setOf("order-known"))
+                krakenService.tradeHistorySupplier =
+                    { _, _ -> unknownTrades + knownOrderTrade + clientOnlyTrade }
+                krakenService.tradeHistoryTotalCountOverride = 0
+                val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("fake-account")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
+
+                val status = newService(orderIntentRepository).recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                val fingerprint = newService(orderIntentRepository).inferenceFingerprint(config, scopeDigest)
+                val record = requireNotNull(repository.findInceptionInferenceEvidence(fingerprint))
+                record.firstPositive shouldBe firstUnknown.plusSeconds(7_200)
+                record.coverageEnd shouldBe firstUnknown.plusSeconds(7_201)
             }
         }
     }

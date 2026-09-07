@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.repository
 
+import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import java.math.BigDecimal
@@ -84,6 +85,21 @@ interface TradeRepository {
     suspend fun setSyncMetadataAtomically(metadata: Map<String, String>) {
         metadata.forEach { (key, value) -> setSyncMetadata(key, value) }
     }
+
+    /**
+     * Persists one inception-inference evidence record with its bounded candidate summaries and
+     * gate metadata in one transaction where supported. Implementations without evidence-table
+     * support persist only the [metadata].
+     */
+    suspend fun saveInceptionInferenceEvidence(
+        evidence: InceptionInferenceEvidence,
+        metadata: Map<String, String> = emptyMap(),
+    ) {
+        setSyncMetadataAtomically(metadata)
+    }
+
+    /** Loads the inference evidence stored for [fingerprint], or null when none is retained. */
+    suspend fun findInceptionInferenceEvidence(fingerprint: String): InceptionInferenceEvidence? = null
 
     suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int
 

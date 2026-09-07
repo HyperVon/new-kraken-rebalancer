@@ -232,6 +232,45 @@ class DashboardViewTest : StringSpec() {
             html shouldNotContain "id=\"detectedInception"
         }
 
+        "renderSettingsPage_inferredEvidence_rendersExplainableSummaryWithoutFormFields" {
+            val html = createHTML().html {
+                view.renderSettingsPage(
+                    baseConfig,
+                    null,
+                    testCsrfToken,
+                    inceptionDisplay = InceptionDisplayInfo(
+                        status = InceptionDisplayStatus.UNAVAILABLE,
+                        inferredStartText = "2025-12-22T02:08:00Z",
+                        inferredWindowStartText = "2025-12-22T02:08:00Z",
+                        inferredWindowEndText = "2025-12-22T02:34:00Z",
+                        firstPositiveText = "2026-08-06T11:45:49.984Z",
+                        inferredStrengthText = "MEDIUM",
+                        inferredReasonsText = "multi asset episode, redistribution sell then buy",
+                        inferredContradictionsText = "earlier activity in window",
+                        strongestEpisodeText = "2025-12-22T02:33:00Z",
+                        competingCandidatesText = "2",
+                        unsupportedMarketsText = "1 (ADAUSDT)",
+                        coverageText = "2025-12-01T00:00:00Z to 2025-12-22T02:34:00Z",
+                    ),
+                )
+            }
+            html shouldContain "Estimated strategy start: 2025-12-22T02:08:00Z"
+            html shouldContain "Evidence window: 2025-12-22T02:08:00Z to 2025-12-22T02:34:00Z."
+            html shouldContain "First positively owned fill: 2026-08-06T11:45:49.984Z."
+            html shouldContain "Evidence strength: MEDIUM"
+            html shouldContain "Supporting evidence: multi asset episode, redistribution sell then buy."
+            html shouldContain "Contradicting evidence: earlier activity in window."
+            html shouldContain "Strongest observed episode: 2025-12-22T02:33:00Z."
+            html shouldContain "Other plausible activity: 2."
+            html shouldContain "Out-of-universe markets: 1 (ADAUSDT)."
+            html shouldContain "History coverage: 2025-12-01T00:00:00Z to 2025-12-22T02:34:00Z."
+            html shouldNotContain "name=\"inferredStart"
+            html shouldNotContain "name=\"inferredWindow"
+            html shouldNotContain "name=\"firstPositive"
+            html shouldNotContain "name=\"inferredStrength"
+            html shouldNotContain "name=\"coverage"
+        }
+
         "renderSettingsPage_inProgressInception_rendersProgressMessage" {
             val html = createHTML().html {
                 view.renderSettingsPage(

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
 import com.gemini.krakenbot.service.impl.history.AccountScopeValidationResult
@@ -80,26 +81,54 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
             inceptionRecoveryService = recovery,
         )
 
-    private fun stubInferenceMetadata(recovery: InceptionRecoveryService, config: AppConfig, inferredStart: Instant) {
-        val windowEnd = inferredStart.plusSeconds(33)
+    private fun inferenceRecord(
+        fingerprint: String,
+        inferredStart: Instant? = null,
+        windowStart: Instant? = inferredStart,
+        windowEnd: Instant? = inferredStart?.plusSeconds(33),
+        firstPositive: Instant? = null,
+        strongestObserved: Instant? = null,
+        strength: String? = null,
+        reasons: List<String> = emptyList(),
+        contradictions: List<String> = emptyList(),
+        competingCandidateCount: Int = 0,
+        unsupportedMarketCount: Int = 0,
+        unsupportedMarketSamples: List<String> = emptyList(),
+        coverageStart: Instant? = null,
+        coverageEnd: Instant? = null,
+    ): InceptionInferenceEvidence = InceptionInferenceEvidence(
+        fingerprint = fingerprint,
+        evidenceDigest = "evidence-digest",
+        modelVersion = InceptionRecoveryService.CURRENT_INFERENCE_VERSION,
+        coverageStart = coverageStart,
+        coverageEnd = coverageEnd,
+        horizon = null,
+        firstPositive = firstPositive,
+        inferredStart = inferredStart,
+        inferredWindowStart = windowStart,
+        inferredWindowEnd = windowEnd,
+        strongestObservedStart = strongestObserved,
+        strength = strength,
+        reasons = reasons,
+        contradictions = contradictions,
+        unsupportedMarketCount = unsupportedMarketCount,
+        unsupportedMarketSamples = unsupportedMarketSamples,
+        competingCandidateCount = competingCandidateCount,
+    )
+
+    private fun stubInferenceRecord(
+        recovery: InceptionRecoveryService,
+        config: AppConfig,
+        record: InceptionInferenceEvidence,
+    ) {
+        val fingerprint = recovery.inferenceFingerprint(config, "scope-a")
         coEvery {
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
         } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
         coEvery {
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
-        } returns recovery.inferenceFingerprint(config, "scope-a")
-        coEvery {
-            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
-        } returns inferredStart.toEpochMilli().toString()
-        coEvery {
-            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
-        } returns inferredStart.toEpochMilli().toString()
-        coEvery {
-            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
-        } returns windowEnd.toEpochMilli().toString()
-        coEvery {
-            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
-        } returns ""
+        } returns fingerprint
+        coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns record
         coEvery {
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
         } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
@@ -297,31 +326,22 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 val service = createServiceWithRecovery(recovery)
                 val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
                 val windowEnd = inferredStart.plusSeconds(33)
-
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
-                } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
-                } returns recovery.inferenceFingerprint(config, "scope-a")
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
-                } returns inferredStart.toEpochMilli().toString()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
-                } returns inferredStart.toEpochMilli().toString()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
-                } returns windowEnd.toEpochMilli().toString()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
-                } returns ""
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
-                } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
-                } returns "stale-confirmed-fingerprint"
+                val coverageStart = Instant.parse("2025-12-01T00:00:00Z")
+                val record = inferenceRecord(
+                    fingerprint = recovery.inferenceFingerprint(config, "scope-a"),
+                    inferredStart = inferredStart,
+                    windowEnd = windowEnd,
+                    strongestObserved = inferredStart.plusSeconds(1500),
+                    strength = "MEDIUM",
+                    reasons = listOf("MULTI_ASSET_EPISODE", "REDISTRIBUTION_SELL_THEN_BUY"),
+                    contradictions = listOf("EARLIER_ACTIVITY_IN_WINDOW"),
+                    competingCandidateCount = 2,
+                    unsupportedMarketCount = 1,
+                    unsupportedMarketSamples = listOf("ADAUSDT"),
+                    coverageStart = coverageStart,
+                    coverageEnd = windowEnd,
+                )
+                stubInferenceRecord(recovery, config, record)
 
                 val info = service.getDetectedInceptionDisplayInfo()
 
@@ -331,6 +351,13 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 info.inferredWindowStartText shouldBe inferredStart.toString()
                 info.inferredWindowEndText shouldBe windowEnd.toString()
                 info.firstPositiveText.shouldBeNull()
+                info.inferredStrengthText shouldBe "MEDIUM"
+                info.inferredReasonsText shouldBe "multi asset episode, redistribution sell then buy"
+                info.inferredContradictionsText shouldBe "earlier activity in window"
+                info.strongestEpisodeText shouldBe inferredStart.plusSeconds(1500).toString()
+                info.competingCandidatesText shouldBe "2"
+                info.unsupportedMarketsText shouldBe "1 (ADAUSDT)"
+                info.coverageText shouldBe "$coverageStart to $windowEnd"
             }
         }
 
@@ -344,31 +371,22 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 val recovery = createRecovery(guard = guard, config = config)
                 val service = createServiceWithRecovery(recovery)
                 val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
-
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
-                } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
-                } returns recovery.inferenceFingerprint(config, "scope-a")
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
-                } returns inferredStart.toEpochMilli().toString()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
-                } returns inferredStart.plusSeconds(1).toEpochMilli().toString()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
-                } returns inferredStart.toEpochMilli().toString()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
-                } returns ""
+                val record = inferenceRecord(
+                    fingerprint = recovery.inferenceFingerprint(config, "scope-a"),
+                    inferredStart = inferredStart,
+                    windowStart = inferredStart.plusSeconds(1),
+                    windowEnd = inferredStart,
+                    strength = "HIGH",
+                )
+                stubInferenceRecord(recovery, config, record)
 
                 val info = service.getDetectedInceptionDisplayInfo()
 
                 info.inferredStartText.shouldBeNull()
                 info.inferredWindowStartText.shouldBeNull()
                 info.inferredWindowEndText.shouldBeNull()
+                info.strongestEpisodeText.shouldBeNull()
+                info.inferredStrengthText shouldBe "HIGH"
             }
         }
 
@@ -386,8 +404,12 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 )
                 val service = createServiceWithRecovery(recovery)
                 val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
-
-                stubInferenceMetadata(recovery, config, inferredStart)
+                val record = inferenceRecord(
+                    fingerprint = recovery.inferenceFingerprint(config, "scope-a"),
+                    inferredStart = inferredStart,
+                    firstPositive = inferredStart.minusSeconds(10),
+                )
+                stubInferenceRecord(recovery, config, record)
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
                 } returns recovery.inferenceFingerprint(config, "different-scope")
@@ -401,7 +423,7 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
             }
         }
 
-        "getDetectedInceptionDisplayInfo_impossibleInferredEpochs_areHidden" {
+        "getDetectedInceptionDisplayInfo_impossibleInferredInstants_areHidden" {
             runTest {
                 val config = testConfig()
                 val guard = mockk<AccountHistoryScopeGuard>()
@@ -414,22 +436,10 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     now = Instant.parse("2026-01-01T00:00:00Z"),
                 )
                 val service = createServiceWithRecovery(recovery)
-                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
-                stubInferenceMetadata(recovery, config, inferredStart)
+                val fingerprint = recovery.inferenceFingerprint(config, "scope-a")
 
-                suspend fun expectHidden(startValue: String?, windowEndValue: String) {
-                    coEvery {
-                        repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
-                    } returns startValue
-                    coEvery {
-                        repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
-                    } returns inferredStart.minusSeconds(10).toEpochMilli().toString()
-                    coEvery {
-                        repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
-                    } returns windowEndValue
-                    coEvery {
-                        repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
-                    } returns ""
+                suspend fun expectHidden(record: InceptionInferenceEvidence) {
+                    coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns record
 
                     val info = service.getDetectedInceptionDisplayInfo()
 
@@ -439,23 +449,154 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     info.firstPositiveText.shouldBeNull()
                 }
 
+                expectHidden(inferenceRecord(fingerprint, inferredStart = null))
+                expectHidden(inferenceRecord(fingerprint, inferredStart = Instant.EPOCH))
+                expectHidden(inferenceRecord(fingerprint, inferredStart = Instant.ofEpochMilli(Long.MIN_VALUE)))
                 expectHidden(
-                    inferredStart.toEpochMilli().toString(),
-                    inferredStart.minusSeconds(1).toEpochMilli().toString(),
+                    inferenceRecord(fingerprint, inferredStart = Instant.parse("2026-01-02T00:00:00Z")),
                 )
-                expectHidden(null, inferredStart.toEpochMilli().toString())
-                expectHidden("0", inferredStart.toEpochMilli().toString())
-                expectHidden("-1", inferredStart.toEpochMilli().toString())
-                expectHidden(Long.MIN_VALUE.toString(), inferredStart.toEpochMilli().toString())
                 expectHidden(
-                    Instant.parse("2026-01-02T00:00:00Z").toEpochMilli().toString(),
-                    Instant.parse("2026-01-02T00:00:00Z").toEpochMilli().toString(),
+                    inferenceRecord(
+                        fingerprint,
+                        inferredStart = Instant.parse("2025-12-22T02:08:00Z"),
+                        windowStart = Instant.parse("2025-12-22T02:08:01Z"),
+                        windowEnd = Instant.parse("2025-12-22T02:08:00Z"),
+                    ),
                 )
-                expectHidden("not-a-number", inferredStart.toEpochMilli().toString())
             }
         }
 
-        "getDetectedInceptionDisplayInfo_firstPositiveParsing_rules" {
+        "getDetectedInceptionDisplayInfo_firstPositive_isIndependentOfCandidateEvidence" {
+            runTest {
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                    now = Instant.parse("2026-01-01T00:00:00Z"),
+                )
+                val service = createServiceWithRecovery(recovery)
+                val fingerprint = recovery.inferenceFingerprint(config, "scope-a")
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+                val firstPositive = inferredStart.minusSeconds(10)
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
+                } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
+                } returns fingerprint
+
+                // Valid first positive alongside valid inference -> both shown.
+                coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns
+                    inferenceRecord(fingerprint, inferredStart = inferredStart, firstPositive = firstPositive)
+                var info = service.getDetectedInceptionDisplayInfo()
+                info.inferredStartText shouldBe inferredStart.toString()
+                info.inferredWindowEndText.shouldNotBeNull()
+                info.firstPositiveText shouldBe firstPositive.toString()
+
+                // No first positive recorded -> inference unaffected.
+                coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns
+                    inferenceRecord(fingerprint, inferredStart = inferredStart)
+                info = service.getDetectedInceptionDisplayInfo()
+                info.inferredStartText shouldBe inferredStart.toString()
+                info.firstPositiveText.shouldBeNull()
+
+                // Invalid (future) first positive hides only itself, not the candidate evidence.
+                coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns
+                    inferenceRecord(
+                        fingerprint,
+                        inferredStart = inferredStart,
+                        firstPositive = Instant.parse("2026-06-01T00:00:00Z"),
+                    )
+                info = service.getDetectedInceptionDisplayInfo()
+                info.inferredStartText shouldBe inferredStart.toString()
+                info.firstPositiveText.shouldBeNull()
+
+                // First positive alone (no behavioral candidates) is still displayed.
+                coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns
+                    inferenceRecord(fingerprint, firstPositive = firstPositive)
+                info = service.getDetectedInceptionDisplayInfo()
+                info.inferredStartText.shouldBeNull()
+                info.inferredWindowStartText.shouldBeNull()
+                info.inferredWindowEndText.shouldBeNull()
+                info.firstPositiveText shouldBe firstPositive.toString()
+            }
+        }
+
+        "getDetectedInceptionDisplayInfo_allocationOnlyChange_keepsInferenceVisible" {
+            runTest {
+                val allocations = listOf(
+                    Allocation(symbol = Asset("BTC"), targetPercent = 50.0),
+                    Allocation(symbol = Asset("USD"), targetPercent = 50.0),
+                )
+                val config = testConfig(allocations = allocations)
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                    now = Instant.parse("2026-01-01T00:00:00Z"),
+                )
+                val service = createServiceWithRecovery(recovery)
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+                val record = inferenceRecord(
+                    fingerprint = recovery.inferenceFingerprint(config, "scope-a"),
+                    inferredStart = inferredStart,
+                    strength = "MEDIUM",
+                )
+                stubInferenceRecord(recovery, config, record)
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.UNAVAILABLE
+                info.inferredStartText shouldBe inferredStart.toString()
+                info.inferredStrengthText shouldBe "MEDIUM"
+            }
+        }
+
+        "getDetectedInferenceRead_makesNoWritesAndNoNetworkCalls" {
+            runTest {
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+                coEvery { krakenService.getTradeHistory(any(), any()) } throws
+                    AssertionError("Network call forbidden on inference read path!")
+                coEvery { krakenService.getBalances() } throws
+                    AssertionError("Network call forbidden on inference read path!")
+
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                    now = Instant.parse("2026-01-01T00:00:00Z"),
+                )
+                val service = createServiceWithRecovery(recovery)
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+                val record = inferenceRecord(
+                    fingerprint = recovery.inferenceFingerprint(config, "scope-a"),
+                    inferredStart = inferredStart,
+                    strength = "LOW",
+                )
+                stubInferenceRecord(recovery, config, record)
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.inferredStartText shouldBe inferredStart.toString()
+                coVerify(exactly = 0) { repository.setSyncMetadata(any(), any()) }
+                coVerify(exactly = 0) { ledgerRepository.setSyncMetadata(any(), any()) }
+                coVerify(exactly = 0) { repository.setSyncMetadataAtomically(any()) }
+                coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
+                coVerify(exactly = 0) { krakenService.getBalances() }
+            }
+        }
+
+        "getDetectedInceptionDisplayInfo_invalidStrengthText_isHiddenButInferenceRemains" {
             runTest {
                 val config = testConfig()
                 val guard = mockk<AccountHistoryScopeGuard>()
@@ -469,32 +610,108 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 )
                 val service = createServiceWithRecovery(recovery)
                 val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
-                stubInferenceMetadata(recovery, config, inferredStart)
+                val record = inferenceRecord(
+                    fingerprint = recovery.inferenceFingerprint(config, "scope-a"),
+                    inferredStart = inferredStart,
+                    strength = "SECRET",
+                    competingCandidateCount = -1,
+                )
+                stubInferenceRecord(recovery, config, record)
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.inferredStrengthText.shouldBeNull()
+                info.competingCandidatesText.shouldBeNull()
+                info.inferredStartText shouldBe inferredStart.toString()
+            }
+        }
+
+        "getDetectedInceptionDisplayInfo_invalidWindowOrCoverageVariants_hideOnlyTheirGroups" {
+            runTest {
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                    now = Instant.parse("2026-01-01T00:00:00Z"),
+                )
+                val service = createServiceWithRecovery(recovery)
+                val fingerprint = recovery.inferenceFingerprint(config, "scope-a")
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+                val coverageStart = Instant.parse("2025-12-01T00:00:00Z")
 
                 coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
-                } returns inferredStart.minusSeconds(10).toEpochMilli().toString()
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
+                } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
+                } returns fingerprint
+
+                suspend fun assertHiddenGroups(record: InceptionInferenceEvidence) {
+                    coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns record
+                    val info = service.getDetectedInceptionDisplayInfo()
+                    info.inferredStartText.shouldBeNull()
+                    info.inferredWindowStartText.shouldBeNull()
+                    info.inferredWindowEndText.shouldBeNull()
+                }
+
+                assertHiddenGroups(
+                    inferenceRecord(
+                        fingerprint,
+                        inferredStart = inferredStart,
+                        windowStart = null,
+                        windowEnd = inferredStart.plusSeconds(33),
+                        strength = "LOW",
+                    ),
+                )
+                assertHiddenGroups(
+                    inferenceRecord(
+                        fingerprint,
+                        inferredStart = inferredStart,
+                        windowStart = inferredStart,
+                        windowEnd = null,
+                        strength = "LOW",
+                    ),
+                )
+
+                coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns
+                    inferenceRecord(
+                        fingerprint,
+                        inferredStart = inferredStart,
+                        strength = "LOW",
+                        coverageStart = coverageStart,
+                        coverageEnd = null,
+                    )
                 var info = service.getDetectedInceptionDisplayInfo()
-
                 info.inferredStartText shouldBe inferredStart.toString()
-                info.inferredWindowEndText.shouldNotBeNull()
-                info.firstPositiveText shouldBe inferredStart.minusSeconds(10).toString()
+                info.coverageText.shouldBeNull()
 
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
-                } returns "   "
+                coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns
+                    inferenceRecord(
+                        fingerprint,
+                        inferredStart = inferredStart,
+                        strength = "LOW",
+                        coverageStart = coverageStart.plusSeconds(3_600),
+                        coverageEnd = coverageStart,
+                    )
                 info = service.getDetectedInceptionDisplayInfo()
-
                 info.inferredStartText shouldBe inferredStart.toString()
-                info.firstPositiveText.shouldBeNull()
+                info.coverageText.shouldBeNull()
 
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
-                } returns "not-a-number"
+                coEvery { repository.findInceptionInferenceEvidence(fingerprint) } returns
+                    inferenceRecord(
+                        fingerprint,
+                        inferredStart = inferredStart,
+                        strength = "LOW",
+                        coverageStart = Instant.parse("2026-06-01T00:00:00Z"),
+                        coverageEnd = Instant.parse("2026-06-02T00:00:00Z"),
+                    )
                 info = service.getDetectedInceptionDisplayInfo()
-
-                info.inferredStartText.shouldBeNull()
-                info.firstPositiveText.shouldBeNull()
+                info.inferredStartText shouldBe inferredStart.toString()
+                info.coverageText.shouldBeNull()
             }
         }
 
@@ -997,24 +1214,19 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
 
                 // Step 1: Account A active and trusted
                 val inferredStart = Instant.ofEpochMilli(epochMs)
+                stubInferenceRecord(
+                    recovery,
+                    configA,
+                    inferenceRecord(
+                        recovery.inferenceFingerprint(configA, "scope-a"),
+                        inferredStart = inferredStart,
+                        windowStart = inferredStart,
+                        windowEnd = inferredStart,
+                    ),
+                )
                 coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
-                } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
-                } returns recovery.inferenceFingerprint(configA, "scope-a")
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
-                } returns epochMs.toString()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
-                } returns epochMs.toString()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
-                } returns epochMs.toString()
-                coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
-                } returns ""
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+                } returns expectedFingerprint
                 coEvery { guard.readLocalTrustState() } returns
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
                 every { configService.getConfig() } returns configA

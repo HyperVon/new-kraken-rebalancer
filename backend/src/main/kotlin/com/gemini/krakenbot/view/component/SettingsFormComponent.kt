@@ -205,6 +205,29 @@ class SettingsFormComponent {
                 +"${ViewText.INCEPTION_FIRST_POSITIVE_LABEL}: $firstPositive."
             }
         }
+        display.inferredStrengthText?.let { strength ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_INFERRED_STRENGTH_LABEL}: $strength" }
+        }
+        display.inferredReasonsText?.let { reasons ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_INFERRED_REASONS_LABEL}: $reasons." }
+        }
+        display.inferredContradictionsText?.let { contradictions ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_INFERRED_CONTRADICTIONS_LABEL}: $contradictions."
+            }
+        }
+        display.strongestEpisodeText?.let { strongest ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_STRONGEST_EPISODE_LABEL}: $strongest." }
+        }
+        display.competingCandidatesText?.let { count ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_COMPETING_CANDIDATES_LABEL}: $count." }
+        }
+        display.unsupportedMarketsText?.let { unsupported ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_UNSUPPORTED_MARKETS_LABEL}: $unsupported." }
+        }
+        display.coverageText?.let { coverage ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_COVERAGE_LABEL}: $coverage." }
+        }
     }
 
     private fun DIV.renderSafetyModesSection(config: AppConfig) {

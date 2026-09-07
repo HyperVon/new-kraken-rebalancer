@@ -53,6 +53,13 @@ ViewText:
   INCEPTION_INFERRED_MESSAGE: "Behavioral evidence is suggestive, not confirmed ownership; baseline readiness is separate."
   INCEPTION_INFERRED_WINDOW_LABEL: "Evidence window"
   INCEPTION_FIRST_POSITIVE_LABEL: "First positively owned fill"
+  INCEPTION_INFERRED_STRENGTH_LABEL: "Evidence strength"
+  INCEPTION_INFERRED_REASONS_LABEL: "Supporting evidence"
+  INCEPTION_INFERRED_CONTRADICTIONS_LABEL: "Contradicting evidence"
+  INCEPTION_STRONGEST_EPISODE_LABEL: "Strongest observed episode"
+  INCEPTION_COMPETING_CANDIDATES_LABEL: "Other plausible activity"
+  INCEPTION_UNSUPPORTED_MARKETS_LABEL: "Out-of-universe markets"
+  INCEPTION_COVERAGE_LABEL: "History coverage"
   # Safety and settings
   DRY_RUN_MODE_TITLE: "Dry Run Mode"
   SIMULATION_MODE_TITLE: "Simulation Mode"

@@ -43,6 +43,20 @@ data class InceptionDisplayInfo(
     val inferredWindowEndText: String? = null,
     /** First fill with positive local ownership evidence, not necessarily strategy inception. */
     val firstPositiveText: String? = null,
+    /** Qualitative evidence strength for the inferred window (HIGH / MEDIUM / LOW), or null. */
+    val inferredStrengthText: String? = null,
+    /** Concise supporting reason summary for the ranked top episode, humanized, or null. */
+    val inferredReasonsText: String? = null,
+    /** Concise contradiction summary for the ranked top episode, humanized, or null. */
+    val inferredContradictionsText: String? = null,
+    /** Start of the strongest observed episode when it differs from the inferred start. */
+    val strongestEpisodeText: String? = null,
+    /** Count of retained competing candidate explanations, when nonzero. */
+    val competingCandidatesText: String? = null,
+    /** Bounded summary of unsupported-market activity that did not veto discovery. */
+    val unsupportedMarketsText: String? = null,
+    /** Local history coverage span the inference was computed over, or null. */
+    val coverageText: String? = null,
 ) {
     /** True while the bounded recovery pass reports IN_PROGRESS. */
     val inProgress: Boolean get() = status == InceptionDisplayStatus.IN_PROGRESS

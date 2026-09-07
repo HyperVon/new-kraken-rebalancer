@@ -96,6 +96,7 @@ class DatabaseConfigTest : StringSpec() {
                         8 to "ath-applied-flow-semantics",
                         9 to "ath-applied-flow-event-millisecond-precision",
                         10 to "ledger-provenance-flags",
+                        11 to "inception-inference-evidence",
                     )
 
                     val expectedTables = setOf(
@@ -108,6 +109,8 @@ class DatabaseConfigTest : StringSpec() {
                         "action_logs",
                         "history_sync_metadata",
                         "order_intents",
+                        "inception_inference",
+                        "inception_inference_candidates",
                     )
                     val actualTables = buildSet {
                         statement.executeQuery(

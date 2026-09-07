@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.config
 
+import com.gemini.krakenbot.repository.table.InceptionInferenceCandidateTable
+import com.gemini.krakenbot.repository.table.InceptionInferenceTable
 import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.SchemaMigrationTable
 import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
@@ -10,7 +12,7 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import java.time.Instant
 
-internal const val CURRENT_SCHEMA_VERSION = 10
+internal const val CURRENT_SCHEMA_VERSION = 11
 
 internal data class SchemaMigration(
     val version: Int,
@@ -50,6 +52,15 @@ internal val SCHEMA_MIGRATIONS = listOf(
                 has_valid_fee = 1
             """.trimIndent(),
         )
+    },
+    SchemaMigration(11, "inception-inference-evidence") {
+        val tables = listOf(InceptionInferenceTable, InceptionInferenceCandidateTable)
+        val missing = tables.filterNot { it.exists() }
+        if (missing.isNotEmpty()) {
+            currentDialectMetadata.resetCaches()
+            SchemaUtils.createStatements(*missing.toTypedArray()).forEach { exec(it) }
+            currentDialectMetadata.resetCaches()
+        }
     },
 )
 

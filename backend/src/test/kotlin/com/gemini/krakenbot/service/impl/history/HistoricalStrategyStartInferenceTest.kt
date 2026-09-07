@@ -17,7 +17,7 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
     private val start = Instant.parse("2025-12-22T02:08:00Z")
 
     init {
-        "detects a multi-asset three-second batch across multiple timescales" {
+        "detects a dec-like multi-asset batch across multiple timescales as one repeated episode" {
             val trades = (0 until 12).map { index ->
                 trade(
                     id = "dec-$index",
@@ -37,19 +37,22 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             }
 
             val inference = HistoricalStrategyStartDetector.infer(trades.shuffled(random = kotlin.random.Random(7)))
-            val candidate = requireNotNull(inference.strongestCandidate)
+            val candidate = requireNotNull(inference.candidates.firstOrNull())
 
             candidate.observedStart shouldBe start
             candidate.orderCount shouldBe 12
             candidate.distinctAssets.size shouldBe 12
             candidate.timescalesSeconds shouldContainExactly setOf(5L, 15L)
             candidate.repeatedEvidenceCount shouldBe 2
+            candidate.reasons shouldContain "REDISTRIBUTION_SELL_THEN_BUY"
             candidate.reasons shouldContain "SELL_BEFORE_BUY"
             candidate.reasons shouldContain "REPEATED_EPISODE_EVIDENCE"
+            inference.inferredStart shouldBe start
+            inference.competingCandidateCount shouldBe 1
             inference.firstPositivelyOwnedTrade shouldBe null
         }
 
-        "collapses fills only when an authoritative order identity agrees" {
+        "collapses partial fills so one authoritative order counts once" {
             val trades = listOf(
                 trade("fill-1", start, "BTCUSD", "buy", orderTxid = "order-btc"),
                 trade("fill-2", start.plusSeconds(1), "BTCUSD", "buy", orderTxid = "order-btc"),
@@ -58,11 +61,11 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
 
             val inference = HistoricalStrategyStartDetector.infer(trades)
 
-            inference.strongestCandidate?.orderCount shouldBe 2
-            inference.strongestCandidate?.distinctAssets shouldContainExactly setOf("BTC", "ETH")
+            inference.candidates.first().orderCount shouldBe 2
+            inference.candidates.first().distinctAssets shouldContainExactly setOf("BTC", "ETH")
         }
 
-        "keeps unsupported historical markets as evidence without vetoing supported discovery" {
+        "keeps unsupported historical markets as explicit evidence without vetoing discovery" {
             val trades = listOf(
                 trade("ada", start.minusSeconds(30), "ADAUSDT", "buy"),
                 trade("btc", start, "BTCUSD", "buy", ownership = InferenceOwnership.POSITIVE),
@@ -74,7 +77,22 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             inference.candidates.shouldNotBeEmpty()
             inference.unsupportedMarkets shouldContain "ADAUSDT"
             inference.firstPositivelyOwnedTrade shouldBe start
-            requireNotNull(inference.strongestCandidate).reasons shouldContain "UNKNOWN_OWNERSHIP"
+            inference.coverageStart shouldBe start.minusSeconds(30)
+            inference.coverageEnd shouldBe start.plusSeconds(2)
+            inference.candidates.first().reasons shouldContain "UNKNOWN_OWNERSHIP"
+        }
+
+        "keeps first positive ownership evidence independent of behavioral candidates" {
+            val trades = listOf(
+                trade("solo-sell", start, "SOLUSD", "sell", ownership = InferenceOwnership.POSITIVE),
+            )
+
+            val inference = HistoricalStrategyStartDetector.infer(trades)
+
+            inference.candidates shouldBe emptyList()
+            inference.inferredStart shouldBe null
+            inference.firstPositivelyOwnedTrade shouldBe start
+            inference.coverageStart shouldBe start
         }
 
         "does not invent a strategy start for a single-asset or isolated activity" {
@@ -86,10 +104,11 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             val inference = HistoricalStrategyStartDetector.infer(trades)
 
             inference.candidates shouldBe emptyList()
+            inference.inferredStart shouldBe null
             inference.firstPositivelyOwnedTrade shouldBe null
         }
 
-        "retains competing fixed-purchase episodes and is input-order independent" {
+        "retains repeated fixed-purchase episodes as weak competing evidence with input-order independence" {
             val first = listOf(
                 trade("first-btc", start, "BTCUSD", "buy"),
                 trade("first-eth", start.plusSeconds(1), "ETHUSD", "buy"),
@@ -106,7 +125,16 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             ordered.candidates.map { it.observedStart } shouldContainExactly
                 listOf(start, start.plusSeconds(120))
             reversed.candidates shouldBe ordered.candidates
-            ordered.candidates.all { "PURCHASE_ONLY_EPISODE" in it.reasons } shouldBe true
+            ordered.candidates.forEach { candidate ->
+                candidate.strength shouldBe InferenceStrength.LOW
+                candidate.repeatedEvidenceCount shouldBe 2
+                candidate.reasons shouldContain "PURCHASE_ONLY_EPISODE"
+                candidate.reasons shouldContain "UNIFORM_QUOTE_AMOUNTS"
+                candidate.reasons shouldContain "REPEATED_EPISODE_EVIDENCE"
+            }
+            ordered.inferredStart shouldBe start
+            ordered.inferredWindowStart shouldBe start
+            ordered.inferredWindowEnd shouldBe start.plusSeconds(121)
         }
 
         "rejects invalid fills without hiding unsupported market evidence" {
@@ -121,11 +149,11 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             inference.candidates shouldBe emptyList()
             inference.firstPositivelyOwnedTrade shouldBe null
             inference.unsupportedMarkets shouldContain "ADAUSDT"
-            inference.coverageStart shouldBe null
-            inference.coverageEnd shouldBe null
+            inference.coverageStart shouldBe start
+            inference.coverageEnd shouldBe start
         }
 
-        "preserves prior activity contradictions and evidence strength tiers" {
+        "preserves prior activity contradictions and composition strength tiers" {
             val policy = HistoricalInferencePolicy(episodeGaps = listOf(Duration.ofSeconds(5)))
             val trades = listOf(
                 trade("low-sell", start, "BTCUSD", "sell"),
@@ -166,12 +194,13 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
                 HistoricalStrategyStartDetector.infer(
                     trades,
                     HistoricalInferencePolicy(episodeGaps = listOf(Duration.ofSeconds(5))),
-                ).strongestCandidate,
+                ).candidates.firstOrNull(),
             )
 
             candidate.distinctAssets.size shouldBe 4
             candidate.strength shouldBe InferenceStrength.LOW
-            candidate.reasons shouldNotContain "BUY_SELL_ADJUSTMENT"
+            candidate.reasons shouldContain "SELL_ONLY_EPISODE"
+            candidate.reasons shouldNotContain "REDISTRIBUTION_SELL_THEN_BUY"
             candidate.reasons shouldNotContain "PURCHASE_ONLY_EPISODE"
         }
 
@@ -201,7 +230,7 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             }
             candidates.map { "PURCHASE_ONLY_EPISODE" in it.reasons } shouldContainExactly
                 listOf(true, false, false)
-            candidates.map { "BUY_SELL_ADJUSTMENT" in it.reasons } shouldContainExactly
+            candidates.map { "MIXED_SIDE_EPISODE" in it.reasons } shouldContainExactly
                 listOf(false, false, true)
         }
 
@@ -211,24 +240,191 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
                 trade("ws-eth", start.plusSeconds(1), "ETHUSD", "buy", orderTxid = "   "),
             )
 
-            val candidate = requireNotNull(HistoricalStrategyStartDetector.infer(trades).strongestCandidate)
+            val candidate = requireNotNull(HistoricalStrategyStartDetector.infer(trades).candidates.firstOrNull())
 
             candidate.orderCount shouldBe 2
             candidate.distinctAssets shouldContainExactly setOf("BTC", "ETH")
         }
 
-        "matches one episode across multiple timescales without inventing repeated evidence" {
+        "keeps one episode across timescales as robustness evidence, not repeated episodes, and weak" {
             val trades = listOf(
                 trade("mt-btc", start, "BTCUSD", "buy"),
                 trade("mt-eth", start.plusSeconds(3), "ETHUSD", "buy"),
             )
 
-            val candidate = requireNotNull(HistoricalStrategyStartDetector.infer(trades).strongestCandidate)
+            val candidate = requireNotNull(HistoricalStrategyStartDetector.infer(trades).candidates.firstOrNull())
 
             candidate.timescalesSeconds shouldContainExactly setOf(5L, 15L)
             candidate.repeatedEvidenceCount shouldBe 1
-            candidate.strength shouldBe InferenceStrength.MEDIUM
+            candidate.strength shouldBe InferenceStrength.LOW
             candidate.reasons shouldNotContain "REPEATED_EPISODE_EVIDENCE"
+            candidate.reasons shouldContain "MULTI_TIMESCALE_MATCH"
+        }
+
+        "earlier medium correction keeps inception semantics when a later stronger episode appears" {
+            val policy = HistoricalInferencePolicy(episodeGaps = listOf(Duration.ofSeconds(5)))
+            val trades = listOf(
+                trade("early-sell", start, "BTCUSD", "sell"),
+                trade("early-buy-eth", start.plusSeconds(1), "ETHUSD", "buy"),
+                trade("early-buy-xrp", start.plusSeconds(2), "XRPUSD", "buy"),
+                trade("strong-sell", start.plusSeconds(120), "BTCUSD", "sell"),
+                trade("strong-buy-eth", start.plusSeconds(121), "ETHUSD", "buy"),
+                trade("strong-buy-xrp", start.plusSeconds(122), "XRPUSD", "buy"),
+                trade("strong-buy-dot", start.plusSeconds(123), "DOTUSD", "buy"),
+            )
+
+            val inference = HistoricalStrategyStartDetector.infer(trades, policy)
+
+            inference.candidates.map { it.strength } shouldContainExactly
+                listOf(InferenceStrength.HIGH, InferenceStrength.MEDIUM)
+            inference.inferredStart shouldBe start
+            inference.strongestObservedStart shouldBe start.plusSeconds(120)
+            inference.inferredWindowStart shouldBe start
+            inference.inferredWindowEnd shouldBe start.plusSeconds(123)
+            inference.competingCandidateCount shouldBe 1
+        }
+
+        "repeated redistribution outranks repeated fixed-purchase batches without promoting purchases" {
+            val purchaseEpisodes = listOf(
+                trade("p1-btc", start, "BTCUSD", "buy"),
+                trade("p1-eth", start.plusSeconds(1), "ETHUSD", "buy"),
+                trade("p2-btc", start.plusSeconds(120), "BTCUSD", "buy"),
+                trade("p2-eth", start.plusSeconds(121), "ETHUSD", "buy"),
+            )
+            val redistributionEpisodes = (0 until 4).map { index ->
+                trade(
+                    id = "r1-$index",
+                    timestamp = start.plusSeconds(600L + index),
+                    pair = "ASSET${index + 1}USD",
+                    side = if (index < 2) "sell" else "buy",
+                    orderTxid = "r1-order-$index",
+                )
+            } + (0 until 4).map { index ->
+                trade(
+                    id = "r2-$index",
+                    timestamp = start.plusSeconds(720L + index),
+                    pair = "ASSET${index + 1}USD",
+                    side = if (index < 2) "sell" else "buy",
+                    orderTxid = "r2-order-$index",
+                )
+            }
+            val policy = HistoricalInferencePolicy(episodeGaps = listOf(Duration.ofSeconds(5)))
+
+            val inference = HistoricalStrategyStartDetector.infer(purchaseEpisodes + redistributionEpisodes, policy)
+
+            inference.candidates.map { it.strength } shouldContainExactly listOf(
+                InferenceStrength.HIGH,
+                InferenceStrength.HIGH,
+                InferenceStrength.LOW,
+                InferenceStrength.LOW,
+            )
+            inference.candidates.take(2).forEach { candidate ->
+                candidate.reasons shouldContain "REDISTRIBUTION_SELL_THEN_BUY"
+            }
+            inference.candidates.drop(2).forEach { candidate ->
+                candidate.strength shouldBe InferenceStrength.LOW
+                candidate.reasons shouldContain "PURCHASE_ONLY_EPISODE"
+                candidate.reasons shouldContain "UNIFORM_QUOTE_AMOUNTS"
+                candidate.reasons shouldContain "REPEATED_EPISODE_EVIDENCE"
+            }
+            inference.inferredStart shouldBe start
+            inference.strongestObservedStart shouldBe start.plusSeconds(600)
+        }
+
+        "truncated history keeps the evidence window bounded by retained coverage" {
+            val trades = listOf(
+                trade("btc", start, "BTCUSD", "buy"),
+                trade("eth", start.plusSeconds(1), "ETHUSD", "buy"),
+            )
+
+            val inference = HistoricalStrategyStartDetector.infer(trades)
+
+            inference.coverageStart shouldBe start
+            inference.coverageEnd shouldBe start.plusSeconds(1)
+            inference.inferredStart shouldBe start
+            inference.inferredStart shouldBe inference.coverageStart
+        }
+
+        "reports no coverage span when every trade is structurally invalid" {
+            val inference = HistoricalStrategyStartDetector.infer(
+                listOf(
+                    trade("", start, "BTCUSD", "buy"),
+                    trade("zero", start, "ETHUSD", "buy").copy(volume = BigDecimal.ZERO),
+                    trade("negative", start, "XRPUSD", "buy").copy(quoteAmount = BigDecimal("0.00")),
+                ),
+            )
+
+            inference.candidates shouldBe emptyList()
+            inference.coverageStart shouldBe null
+            inference.coverageEnd shouldBe null
+            inference.unsupportedMarkets shouldBe emptyList()
+        }
+
+        "keeps mixed-side episodes below redistribution strength at four assets" {
+            val trades = listOf(
+                trade("m-sell-1", start, "ASSET1USD", "sell"),
+                trade("m-buy-2", start.plusSeconds(1), "ASSET2USD", "buy"),
+                trade("m-sell-3", start.plusSeconds(2), "ASSET3USD", "sell"),
+                trade("m-buy-4", start.plusSeconds(3), "ASSET4USD", "buy"),
+            )
+
+            val candidate = requireNotNull(
+                HistoricalStrategyStartDetector.infer(trades).candidates.firstOrNull(),
+            )
+
+            candidate.strength shouldBe InferenceStrength.MEDIUM
+            candidate.reasons shouldContain "MIXED_SIDE_EPISODE"
+            candidate.reasons shouldNotContain "REDISTRIBUTION_SELL_THEN_BUY"
+        }
+
+        "keeps distant episodes outside the inception window as separate competing evidence" {
+            val near = listOf(
+                trade("near-btc", start, "BTCUSD", "buy"),
+                trade("near-eth", start.plusSeconds(1), "ETHUSD", "buy"),
+            )
+            val distant = listOf(
+                trade("far-btc", start.plusSeconds(7_200), "BTCUSD", "buy"),
+                trade("far-eth", start.plusSeconds(7_201), "ETHUSD", "buy"),
+            )
+            val policy = HistoricalInferencePolicy(episodeGaps = listOf(Duration.ofSeconds(5)))
+
+            val inference = HistoricalStrategyStartDetector.infer(near + distant, policy)
+
+            inference.candidates.map { it.observedStart } shouldContainExactly
+                listOf(start, start.plusSeconds(7_200))
+            inference.inferredStart shouldBe start
+            inference.inferredWindowStart shouldBe start
+            inference.inferredWindowEnd shouldBe start.plusSeconds(1)
+            inference.competingCandidateCount shouldBe 1
+        }
+
+        "does not merge purchase episodes with differing quote-amount shapes" {
+            val uniform = listOf(
+                trade("u1-btc", start, "BTCUSD", "buy"),
+                trade("u1-eth", start.plusSeconds(1), "ETHUSD", "buy"),
+                trade("u2-btc", start.plusSeconds(120), "BTCUSD", "buy"),
+                trade("u2-eth", start.plusSeconds(121), "ETHUSD", "buy"),
+            )
+            val varied = listOf(
+                trade("v-btc", start.plusSeconds(240), "BTCUSD", "buy").copy(
+                    quoteAmount = BigDecimal("200.00"),
+                ),
+                trade("v-eth", start.plusSeconds(241), "ETHUSD", "buy"),
+            )
+            val policy = HistoricalInferencePolicy(episodeGaps = listOf(Duration.ofSeconds(5)))
+
+            val candidates = HistoricalStrategyStartDetector.infer(uniform + varied, policy).candidates
+
+            candidates.map { it.observedStart } shouldContainExactly
+                listOf(start, start.plusSeconds(120), start.plusSeconds(240))
+            candidates.map { it.repeatedEvidenceCount } shouldContainExactly listOf(2, 2, 1)
+            candidates.map { "UNIFORM_QUOTE_AMOUNTS" in it.reasons } shouldContainExactly
+                listOf(true, true, false)
+        }
+
+        "exposes the default policy deterministically" {
+            HistoricalStrategyStartDetector.defaultPolicy.maximumCandidates shouldBe 8
+            HistoricalStrategyStartDetector.defaultPolicy.cohesionWindow shouldBe Duration.ofHours(1)
         }
     }
 
