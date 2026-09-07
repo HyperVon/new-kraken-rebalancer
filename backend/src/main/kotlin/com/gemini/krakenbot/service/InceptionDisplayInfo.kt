@@ -21,11 +21,10 @@ enum class InceptionDisplayStatus {
 /**
  * Display-only read-model for the auto-detected strategy inception shown on the Settings page.
  *
- * This is a local-DB read snapshot only: it surfaces the durable
- * `DETECTED_INCEPTION_EPOCH_MS` / `DETECTED_INCEPTION_SOURCE` metadata gated by current account
- * trust and configuration fingerprint. It never triggers detection, never writes metadata, and
- * never copies into `Settings.inceptionDate` — the Settings input remains the sole write path for
- * the configured date.
+ * This is a local-DB read snapshot only: it surfaces durable confirmed and inferred inception
+ * metadata gated by current account trust and the applicable configuration fingerprint. It never
+ * triggers detection, never writes metadata, and never copies into `Settings.inceptionDate` — the
+ * Settings input remains the sole write path for the configured date.
  *
  * Only whitelisted automatic sources (`auto`, `auto-recovered`) qualify for [InceptionDisplayStatus.CONFIRMED].
  */
@@ -37,6 +36,13 @@ data class InceptionDisplayInfo(
     val source: String? = null,
     /** Informative user-facing status message, or null to use the default for [status]. */
     val message: String? = null,
+    /** Inferred behavioral start, independent of confirmation and baseline readiness. */
+    val inferredStartText: String? = null,
+    /** Bounds of the evidence window used for the inferred start, when available. */
+    val inferredWindowStartText: String? = null,
+    val inferredWindowEndText: String? = null,
+    /** First fill with positive local ownership evidence, not necessarily strategy inception. */
+    val firstPositiveText: String? = null,
 ) {
     /** True while the bounded recovery pass reports IN_PROGRESS. */
     val inProgress: Boolean get() = status == InceptionDisplayStatus.IN_PROGRESS

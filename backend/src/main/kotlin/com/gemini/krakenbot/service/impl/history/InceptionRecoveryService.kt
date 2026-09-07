@@ -114,6 +114,7 @@ class InceptionRecoveryService(
         }
 
         val currentScope = scopeResult.currentScopeDigest.orEmpty()
+        val inferred = readLocalInference(config, currentScope)
         val expectedFingerprint = configurationFingerprint(config, "", currentScope)
         val storedFingerprint = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
         val storedVersion = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
@@ -124,18 +125,18 @@ class InceptionRecoveryService(
                 return InceptionDisplayInfo(
                     status = InceptionDisplayStatus.IN_PROGRESS,
                     message = ViewText.INCEPTION_DETECTED_IN_PROGRESS,
-                )
+                ).withInference(inferred)
             }
             if (storedFingerprint.isNullOrBlank()) {
                 return InceptionDisplayInfo(
                     status = InceptionDisplayStatus.NOT_DETECTED,
                     message = ViewText.INCEPTION_DETECTED_NOT_STARTED,
-                )
+                ).withInference(inferred)
             }
             return InceptionDisplayInfo(
                 status = InceptionDisplayStatus.UNAVAILABLE,
                 message = ViewText.INCEPTION_DETECTED_CONFIG_CHANGED,
-            )
+            ).withInference(inferred)
         }
 
         val recoveryStatus = readStatus()
@@ -157,16 +158,64 @@ class InceptionRecoveryService(
                     dateText = dateText,
                     source = source,
                     message = ViewText.INCEPTION_DETECTED_LEAVE_BLANK,
-                )
+                ).withInference(inferred)
             }
             return InceptionDisplayInfo(
                 status = InceptionDisplayStatus.UNAVAILABLE,
                 message = ViewText.INCEPTION_DETECTED_UNAVAILABLE,
-            )
+            ).withInference(inferred)
         }
 
-        return displayFromRecoveryStatus(recoveryStatus)
+        return displayFromRecoveryStatus(recoveryStatus).withInference(inferred)
     }
+
+    private suspend fun readLocalInference(config: AppConfig, accountScope: String): InceptionDisplayInfo {
+        if (repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION) != CURRENT_INFERENCE_VERSION) {
+            return InceptionDisplayInfo()
+        }
+        if (repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT) !=
+            inferenceFingerprint(config, accountScope)
+        ) {
+            return InceptionDisplayInfo()
+        }
+        val now = nowProvider()
+        val start = readLocalEpoch(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS, now)
+        val windowStart = readLocalEpoch(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS, now)
+        val windowEnd = readLocalEpoch(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS, now)
+        if (start == null || windowStart == null || windowEnd == null ||
+            windowStart.isAfter(start) || start.isAfter(windowEnd)
+        ) {
+            return InceptionDisplayInfo()
+        }
+        val firstPositiveValue = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
+        val firstPositive = firstPositiveValue
+            ?.takeIf(String::isNotBlank)
+            ?.let { readLocalEpochValue(it, now) }
+            ?: if (firstPositiveValue.isNullOrBlank()) null else return InceptionDisplayInfo()
+        return InceptionDisplayInfo(
+            inferredStartText = start.toString(),
+            inferredWindowStartText = windowStart.toString(),
+            inferredWindowEndText = windowEnd.toString(),
+            firstPositiveText = firstPositive?.toString(),
+        )
+    }
+
+    private suspend fun readLocalEpoch(key: String, now: Instant): Instant? = repositoryMetadataValue(key)
+        ?.let { readLocalEpochValue(it, now) }
+
+    private fun readLocalEpochValue(value: String, now: Instant): Instant? = value.toLongOrNull()
+        ?.takeIf { it > 0L }
+        ?.let { epochMs -> runCatching { Instant.ofEpochMilli(epochMs) }.getOrNull() }
+        ?.takeIf { !it.isAfter(now) }
+
+    private suspend fun repositoryMetadataValue(key: String): String? = repository.getSyncMetadata(key)
+
+    private fun InceptionDisplayInfo.withInference(inference: InceptionDisplayInfo): InceptionDisplayInfo = copy(
+        inferredStartText = inference.inferredStartText,
+        inferredWindowStartText = inference.inferredWindowStartText,
+        inferredWindowEndText = inference.inferredWindowEndText,
+        firstPositiveText = inference.firstPositiveText,
+    )
 
     private fun displayFromRecoveryStatus(recoveryStatus: InceptionRecoveryStatus): InceptionDisplayInfo =
         when (recoveryStatus.status) {
@@ -575,23 +624,6 @@ class InceptionRecoveryService(
             .filter { it.success && !it.dryRun }
             .sortedBy(TradeRecord::timestamp)
 
-        val expectedUniverse = config.allocations.map {
-            Asset.normalizeLedgerAsset(it.symbol.value).uppercase()
-        }.toSet()
-        val outsideUniverseTrade = allTrades.firstOrNull {
-            it.symbol.isNotBlank() &&
-                it.volume.signum() != 0 &&
-                Asset.normalizeLedgerAsset(it.symbol).uppercase() !in expectedUniverse
-        }
-        if (outsideUniverseTrade != null) {
-            clearCandidateEvidence()
-            setOverallStatus(
-                InceptionRecoveryStatus.AMBIGUOUS,
-                "trade outside configured universe",
-            )
-            return
-        }
-
         val candidateTrades = allTrades.filter { it.symbol.isNotBlank() && !Asset(it.symbol).isUsd }
         val orderTxids = candidateTrades.mapNotNull { it.orderTxid?.trim()?.takeIf(String::isNotBlank) }.toSet()
         val clientOrderIds = candidateTrades.mapNotNull { it.clientOrderId?.trim()?.takeIf(String::isNotBlank) }.toSet()
@@ -599,6 +631,7 @@ class InceptionRecoveryService(
             ?.getKnownRebalancerOrderIdentities(orderTxids, clientOrderIds)
             ?.orderTxids
             .orEmpty()
+        persistHistoricalInference(config, allTrades, horizon, knownOrderTxids)
         val ownedTrades = candidateTrades.filter {
             classifyTradeForRecovery(it, knownOrderTxids) == TradeOwnership.REBALANCER
         }
@@ -1005,6 +1038,86 @@ class InceptionRecoveryService(
             else -> TradeOwnership.UNKNOWN
         }
 
+    private suspend fun persistHistoricalInference(
+        config: AppConfig,
+        trades: List<TradeRecord>,
+        horizon: Instant,
+        knownRebalancerOrderTxids: Set<String>,
+    ) {
+        val inference = HistoricalStrategyStartDetector.infer(
+            trades.map { trade ->
+                HistoricalInferenceTrade(
+                    id = trade.id?.toString() ?: "${trade.timestamp.toEpochMilli()}:${trade.pair}:${trade.side}",
+                    timestamp = trade.timestamp,
+                    pair = trade.pair,
+                    side = trade.side,
+                    symbol = trade.symbol,
+                    volume = trade.volume,
+                    quoteAmount = trade.usdAmount,
+                    orderTxid = trade.orderTxid,
+                    tradeId = trade.tradeId,
+                    ownership = if (classifyTradeForRecovery(trade, knownRebalancerOrderTxids) ==
+                        TradeOwnership.REBALANCER
+                    ) {
+                        InferenceOwnership.POSITIVE
+                    } else {
+                        InferenceOwnership.UNKNOWN
+                    },
+                )
+            },
+        )
+        val candidate = inference.strongestCandidate ?: run {
+            repository.setSyncMetadataAtomically(
+                mapOf(
+                    SyncMetadataKeys.INCEPTION_INFERENCE_VERSION to CURRENT_INFERENCE_VERSION,
+                    SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT to inferenceFingerprint(
+                        config,
+                        repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST).orEmpty(),
+                    ),
+                    SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS to "",
+                    SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS to "",
+                    SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS to "",
+                    SyncMetadataKeys.INCEPTION_INFERENCE_STRENGTH to "",
+                    SyncMetadataKeys.INCEPTION_INFERENCE_REASONS to "",
+                    SyncMetadataKeys.INCEPTION_INFERENCE_CONTRADICTIONS to "",
+                    SyncMetadataKeys.INCEPTION_INFERENCE_ALTERNATIVES to "",
+                    SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS to "",
+                    SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC to horizon.epochSecond.toString(),
+                ),
+            )
+            return
+        }
+        val metadata = mapOf(
+            SyncMetadataKeys.INCEPTION_INFERENCE_VERSION to CURRENT_INFERENCE_VERSION,
+            SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT to inferenceFingerprint(
+                config,
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST).orEmpty(),
+            ),
+            SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS to candidate.observedStart.toEpochMilli().toString(),
+            SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS to
+                candidate.windowStart.toEpochMilli().toString(),
+            SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS to candidate.windowEnd.toEpochMilli().toString(),
+            SyncMetadataKeys.INCEPTION_INFERENCE_STRENGTH to candidate.strength.name,
+            SyncMetadataKeys.INCEPTION_INFERENCE_REASONS to candidate.reasons.joinToString(",").take(MAX_REASON_LENGTH),
+            SyncMetadataKeys.INCEPTION_INFERENCE_CONTRADICTIONS to candidate.contradictions
+                .joinToString(",")
+                .take(MAX_REASON_LENGTH),
+            SyncMetadataKeys.INCEPTION_INFERENCE_ALTERNATIVES to inference.candidates.size.toString(),
+            SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS to
+                (inference.firstPositivelyOwnedTrade?.toEpochMilli()?.toString().orEmpty()),
+        )
+        repository.setSyncMetadataAtomically(
+            metadata +
+                mapOf(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC to horizon.epochSecond.toString()),
+        )
+    }
+
+    internal fun inferenceFingerprint(config: AppConfig, accountScope: String): String {
+        val material = listOf(config.settings.simulation.toString(), accountScope).joinToString("\u0000")
+        val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray(Charsets.UTF_8))
+        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
     private suspend fun prepareForCurrentConfigurationLocked(
         config: AppConfig,
         inceptionDate: String,
@@ -1184,6 +1297,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
+        const val CURRENT_INFERENCE_VERSION = "1"
         const val MAX_PAGES_PER_RUN = 4
         const val RETRY_INTERVAL_SECONDS = 300L
         const val INCEPTION_SOURCE_AUTO_RECOVERED = "auto-recovered"

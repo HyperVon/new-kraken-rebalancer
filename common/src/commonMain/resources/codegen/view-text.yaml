@@ -49,6 +49,10 @@ ViewText:
   INCEPTION_DETECTED_COMPLETE_NO_BOT_EVIDENCE: "Auto-detection unavailable — no trustworthy bot inception evidence was found."
   INCEPTION_DETECTED_FAILED: "Auto-detection temporarily unavailable — history recovery failed and will retry."
   INCEPTION_DETECTED_MANUAL_OVERRIDE: "Manual override active."
+  INCEPTION_INFERRED_LABEL: "Estimated strategy start"
+  INCEPTION_INFERRED_MESSAGE: "Behavioral evidence is suggestive, not confirmed ownership; baseline readiness is separate."
+  INCEPTION_INFERRED_WINDOW_LABEL: "Evidence window"
+  INCEPTION_FIRST_POSITIVE_LABEL: "First positively owned fill"
   # Safety and settings
   DRY_RUN_MODE_TITLE: "Dry Run Mode"
   SIMULATION_MODE_TITLE: "Simulation Mode"

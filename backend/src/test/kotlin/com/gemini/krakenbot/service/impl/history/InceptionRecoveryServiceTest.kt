@@ -2277,7 +2277,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "removed historical asset hidden from current allocation config blocks confirmation" {
+        "removed historical asset does not veto discovery before ownership validation" {
             runTest {
                 config = appConfig(
                     listOf(
@@ -2318,7 +2318,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "trade outside configured universe"
+                status.reason shouldBe "ownership before candidate is unresolved"
             }
         }
 

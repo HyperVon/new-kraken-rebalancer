@@ -792,5 +792,21 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.getSnapshotBefore(t2.plusSeconds(3600))?.timestamp shouldBe t2
             }
         }
+
+        "persists an inference metadata revision" {
+            runTest {
+                repository.setSyncMetadataAtomically(
+                    mapOf(
+                        "inference-version" to "1",
+                        "inference-start" to "1766378880000",
+                        "inference-window-end" to "1766378913000",
+                    ),
+                )
+
+                repository.getSyncMetadata("inference-version") shouldBe "1"
+                repository.getSyncMetadata("inference-start") shouldBe "1766378880000"
+                repository.getSyncMetadata("inference-window-end") shouldBe "1766378913000"
+            }
+        }
     }
 }

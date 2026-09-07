@@ -188,6 +188,23 @@ class SettingsFormComponent {
         // Display-only: plain text with no form field name so it is never submitted
         // and never copied into settings.inceptionDate.
         p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
+        display.inferredStartText?.let { inferredStart ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_INFERRED_LABEL}: $inferredStart"
+            }
+            p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_INFERRED_MESSAGE }
+            if (display.inferredWindowStartText != null && display.inferredWindowEndText != null) {
+                p(CssClass.Form.SectionSubtitle) {
+                    +"${ViewText.INCEPTION_INFERRED_WINDOW_LABEL}: ${display.inferredWindowStartText} "
+                    +"to ${display.inferredWindowEndText}."
+                }
+            }
+        }
+        display.firstPositiveText?.let { firstPositive ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_FIRST_POSITIVE_LABEL}: $firstPositive."
+            }
+        }
     }
 
     private fun DIV.renderSafetyModesSection(config: AppConfig) {

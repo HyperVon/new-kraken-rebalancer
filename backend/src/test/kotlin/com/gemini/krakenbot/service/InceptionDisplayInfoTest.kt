@@ -163,7 +163,6 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
                 } returns InceptionRecoveryStatus.CONFIRMED
-
                 val info = service.getDetectedInceptionDisplayInfo()
 
                 info.status shouldBe InceptionDisplayStatus.UNAVAILABLE
@@ -222,7 +221,10 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 coEvery { guard.readLocalTrustState() } returns
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
-                val recovery = createRecovery(guard = guard, config = config)
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                )
                 val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
                 val service = createServiceWithRecovery(recovery)
 
@@ -248,6 +250,96 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 info.toDisplayText() shouldBe
                     "Auto-detection unavailable — current account/history trust is unavailable."
                 info.dateText.shouldBeNull()
+            }
+        }
+
+        "getDetectedInceptionDisplayInfo_inferredEvidence_isIndependentOfConfirmedRecovery" {
+            runTest {
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                    now = Instant.parse("2026-01-01T00:00:00Z"),
+                )
+                val service = createServiceWithRecovery(recovery)
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+                val windowEnd = inferredStart.plusSeconds(33)
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
+                } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
+                } returns recovery.inferenceFingerprint(config, "scope-a")
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
+                } returns inferredStart.toEpochMilli().toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
+                } returns inferredStart.toEpochMilli().toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
+                } returns windowEnd.toEpochMilli().toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
+                } returns ""
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+                } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+                } returns "stale-confirmed-fingerprint"
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.UNAVAILABLE
+                info.dateText.shouldBeNull()
+                info.inferredStartText shouldBe inferredStart.toString()
+                info.inferredWindowStartText shouldBe inferredStart.toString()
+                info.inferredWindowEndText shouldBe windowEnd.toString()
+                info.firstPositiveText.shouldBeNull()
+            }
+        }
+
+        "getDetectedInceptionDisplayInfo_invalidInferredWindow_isNotDisplayed" {
+            runTest {
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(guard = guard, config = config)
+                val service = createServiceWithRecovery(recovery)
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
+                } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
+                } returns recovery.inferenceFingerprint(config, "scope-a")
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
+                } returns inferredStart.toEpochMilli().toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
+                } returns inferredStart.plusSeconds(1).toEpochMilli().toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
+                } returns inferredStart.toEpochMilli().toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
+                } returns ""
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.inferredStartText.shouldBeNull()
+                info.inferredWindowStartText.shouldBeNull()
+                info.inferredWindowEndText.shouldBeNull()
             }
         }
 
@@ -749,6 +841,25 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 } returns InceptionRecoveryStatus.CONFIRMED
 
                 // Step 1: Account A active and trusted
+                val inferredStart = Instant.ofEpochMilli(epochMs)
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
+                } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
+                } returns recovery.inferenceFingerprint(configA, "scope-a")
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
+                } returns ""
                 coEvery { guard.readLocalTrustState() } returns
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
                 every { configService.getConfig() } returns configA
@@ -756,6 +867,7 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 val infoA = service.getDetectedInceptionDisplayInfo()
                 infoA.status shouldBe InceptionDisplayStatus.CONFIRMED
                 infoA.dateText shouldBe "2024-03-15"
+                infoA.inferredStartText shouldBe inferredStart.toString()
 
                 // Step 2: Credentials switch to Account B -> mismatch
                 coEvery { guard.readLocalTrustState() } returns
@@ -765,6 +877,10 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 val infoB = service.getDetectedInceptionDisplayInfo()
                 infoB.status shouldBe InceptionDisplayStatus.UNAVAILABLE
                 infoB.dateText.shouldBeNull()
+                infoB.inferredStartText.shouldBeNull()
+                infoB.inferredWindowStartText.shouldBeNull()
+                infoB.inferredWindowEndText.shouldBeNull()
+                infoB.firstPositiveText.shouldBeNull()
 
                 // Step 3: Credentials switch back to Account A -> valid again
                 coEvery { guard.readLocalTrustState() } returns
@@ -774,6 +890,7 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 val infoA2 = service.getDetectedInceptionDisplayInfo()
                 infoA2.status shouldBe InceptionDisplayStatus.CONFIRMED
                 infoA2.dateText shouldBe "2024-03-15"
+                infoA2.inferredStartText shouldBe inferredStart.toString()
 
                 // Verify read path performed zero writes
                 coVerify(exactly = 0) { repository.setSyncMetadata(any(), any()) }

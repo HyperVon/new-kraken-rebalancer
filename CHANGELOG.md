@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.38] - 2026-09-07
+
+### Added
+
+- **Historical inception evidence**: Settings can now show a locally persisted, account-scoped
+  inferred strategy-start window and the first positively owned fill separately from confirmed
+  inception. The deterministic evidence pass groups authoritative orders, recognizes repeated
+  multi-asset episodes across multiple timing scales, preserves competing candidates, and keeps
+  unknown ownership and baseline/accounting uncertainty explicit.
+
+### Changed
+
+- Historical activity from assets outside the current allocation universe no longer globally vetoes
+  candidate discovery. Confirmation and baseline reconstruction remain fail-closed, and inferred
+  metadata is versioned, fingerprinted, atomically persisted on SQLite, and never copied into the
+  manual inception setting.
+
 ## [6.17.37] - 2026-09-07
 
 ### Added

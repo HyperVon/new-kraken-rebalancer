@@ -80,6 +80,11 @@ interface TradeRepository {
 
     suspend fun setSyncMetadata(key: String, value: String)
 
+    /** Persists a metadata revision; transactional implementations override this as one transaction. */
+    suspend fun setSyncMetadataAtomically(metadata: Map<String, String>) {
+        metadata.forEach { (key, value) -> setSyncMetadata(key, value) }
+    }
+
     suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int
 
     /** Deletes trades with timestamp strictly before [cutoff]. Returns rows deleted. */

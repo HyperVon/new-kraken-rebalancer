@@ -242,6 +242,18 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         snapshotId
     }
 
+    override suspend fun setSyncMetadataAtomically(metadata: Map<String, String>) {
+        if (metadata.isEmpty()) return
+        database.safeTransactionIO(log, "Failed to persist inception inference metadata") {
+            metadata.forEach { (key, value) ->
+                HistorySyncMetadataTable.upsert {
+                    it[HistorySyncMetadataTable.key] = key
+                    it[HistorySyncMetadataTable.value] = value
+                }
+            }
+        }
+    }
+
     override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = database.readTransactionIO {
         TradeTable
             .selectAll()
