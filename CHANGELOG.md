@@ -25,6 +25,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   persistence. Throttled cycles with stale ledger coverage continue to fail closed until the next
   ledger refresh.
 
+### Fixed
+
+- **Account-isolated inception recovery**: private trade, ledger, balance-observation, and
+  automatic-inception work now stops before persistence when the active Kraken account cannot be
+  validated against the database binding. Empty databases bind to a hashed scope; non-empty legacy
+  databases without a binding fail closed for explicit migration/reset, and temporarily unavailable
+  or mismatched scope never makes a durable `CONFIRMED` baseline currently usable.
+- **Strict inception evidence**: recovered prices share the event-time resolver's backward-only
+  trade/snapshot window and completed 15-minute OHLC policy, stale persisted pagination totals no
+  longer prove current unknown-total completion, and unmatched API fills remain `UNKNOWN` even when
+  no bot candidate exists.
+
 ## [6.17.35] - 2026-09-06
 
 ### Fixed

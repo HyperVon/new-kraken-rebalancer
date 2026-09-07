@@ -13,7 +13,6 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeOwnership
-import com.gemini.krakenbot.model.TradeOwnershipClassifier
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.LedgerRepository
@@ -53,6 +52,12 @@ class InceptionRecoveryService(
     private val tradeHistorySyncService: TradeHistorySyncService,
     private val orderIntentRepository: OrderIntentRepository? = null,
     private val fundingProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
+    private val accountHistoryScopeGuard: AccountHistoryScopeGuard = AccountHistoryScopeGuard(
+        krakenService = krakenService,
+        tradeRepository = repository,
+        ledgerRepository = ledgerRepository,
+        configService = configService,
+    ),
     private val nowProvider: () -> Instant = Instant::now,
 ) {
     private val log = LoggerFactory.getLogger(InceptionRecoveryService::class.java)
@@ -64,33 +69,31 @@ class InceptionRecoveryService(
     /**
      * Clears automatic evidence whenever the explicit inception setting changes. This is a
      * metadata-only operation and is also used by the discovery path before it reads a cache.
+     * Returns true if evidence was cleared or updated due to configuration change; false otherwise.
      */
-    suspend fun prepareForCurrentConfiguration(inceptionDate: String?): Boolean {
+    suspend fun prepareForCurrentConfiguration(inceptionDate: String?): Boolean =
+        prepareForCurrentConfigurationResult(inceptionDate).configurationChanged
+
+    suspend fun prepareForCurrentConfigurationResult(inceptionDate: String?): InceptionPreparationResult {
         // A History request must not wait behind the network-bound recovery run. The next
         // recovery invocation performs the same check under the mutex before it fetches another
         // page; config publication is staged while an execution session is active.
-        if (!recoveryMutex.tryLock()) return false
+        if (!recoveryMutex.tryLock()) return InceptionPreparationResult.busy()
         return try {
             val config = configService.getConfig()
-            val accountScope = try {
-                krakenService.getFundingEvidenceScope().trim()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                ""
+            if (config.settings.simulation) {
+                return InceptionPreparationResult.blocked(AccountScopeValidationStatus.SIMULATION)
             }
-            if (accountScope.isBlank() || accountScope == "scope-unavailable") {
-                return false
+            val scopeResult = accountHistoryScopeGuard.validateAccountScope()
+            if (!scopeResult.isValid) {
+                return InceptionPreparationResult.blocked(scopeResult.status)
             }
-            val scopeDigest = digestAccountScope(accountScope)
-            val storedScopeDigest = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
-            if (!storedScopeDigest.isNullOrBlank() && storedScopeDigest != scopeDigest) {
-                return false
-            }
-            prepareForCurrentConfigurationLocked(
-                config = config,
-                inceptionDate = inceptionDate?.trim().orEmpty(),
-                accountScope = accountScope,
+            InceptionPreparationResult.valid(
+                changed = prepareForCurrentConfigurationLocked(
+                    config = config,
+                    inceptionDate = inceptionDate?.trim().orEmpty(),
+                    accountScope = scopeResult.currentScopeDigest.orEmpty(),
+                ),
             )
         } finally {
             recoveryMutex.unlock()
@@ -105,45 +108,44 @@ class InceptionRecoveryService(
             setOverallStatus(InceptionRecoveryStatus.MANUAL_OVERRIDE, "explicit inception date")
             return@withLock readStatus()
         }
-        if (preflightConfig.settings.simulation) {
-            setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "simulation backend")
-            return@withLock readStatus()
-        }
-        if (!preflightConfig.kraken.hasValidCredentials()) {
-            setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "credentials unavailable")
-            return@withLock readStatus()
-        }
 
-        val accountScope = try {
-            krakenService.getFundingEvidenceScope().trim()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Unable to read account scope for inception recovery", e)
-            ""
-        }
-        if (accountScope.isBlank() || accountScope == "scope-unavailable") {
-            setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "account scope unavailable")
-            return@withLock readStatus()
-        }
+        val scopeResult = accountHistoryScopeGuard.validateAccountScope()
+        when (scopeResult.status) {
+            AccountScopeValidationStatus.SIMULATION -> {
+                setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "simulation backend")
+                return@withLock readStatus()
+            }
 
-        val scopeDigest = digestAccountScope(accountScope)
-        val storedScopeDigest = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
-        if (!storedScopeDigest.isNullOrBlank() && storedScopeDigest != scopeDigest) {
-            setOverallStatus(
-                InceptionRecoveryStatus.UNAVAILABLE,
-                "account scope changed; use correct DB or perform reset",
-            )
-            return@withLock readStatus()
-        }
-        if (storedScopeDigest.isNullOrBlank()) {
-            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
+            AccountScopeValidationStatus.SCOPE_UNAVAILABLE -> {
+                setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, scopeResult.reason ?: "account scope unavailable")
+                return@withLock readStatus()
+            }
+
+            AccountScopeValidationStatus.SCOPE_MISMATCH -> {
+                setOverallStatus(
+                    InceptionRecoveryStatus.UNAVAILABLE,
+                    scopeResult.reason ?: "account scope changed; use correct DB or perform reset",
+                )
+                return@withLock readStatus()
+            }
+
+            AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY -> {
+                setOverallStatus(
+                    InceptionRecoveryStatus.UNAVAILABLE,
+                    scopeResult.reason ?: "existing history cannot be verified for active credentials",
+                )
+                return@withLock readStatus()
+            }
+
+            AccountScopeValidationStatus.VALID -> {
+                // Verified valid scope
+            }
         }
 
         prepareForCurrentConfigurationLocked(
             config = preflightConfig,
             inceptionDate = preflightConfig.settings.inceptionDate?.trim().orEmpty(),
-            accountScope = accountScope,
+            accountScope = scopeResult.currentScopeDigest.orEmpty(),
         )
 
         val currentStatus = readStatus()
@@ -185,6 +187,19 @@ class InceptionRecoveryService(
                     return@withExecutionSession
                 }
                 krakenService.withStableBackend { backend ->
+                    val pinnedScope = accountHistoryScopeGuard.validateAccountScope()
+                    if (!pinnedScope.isValid) {
+                        setOverallStatus(
+                            InceptionRecoveryStatus.UNAVAILABLE,
+                            pinnedScope.reason ?: "account scope unavailable",
+                        )
+                        return@withStableBackend
+                    }
+                    prepareForCurrentConfigurationLocked(
+                        config = pinnedConfig,
+                        inceptionDate = pinnedConfig.settings.inceptionDate?.trim().orEmpty(),
+                        accountScope = pinnedScope.currentScopeDigest.orEmpty(),
+                    )
                     recoverPagesAndEvaluate(pinnedConfig, backend, horizon)
                 }
             }
@@ -301,8 +316,14 @@ class InceptionRecoveryService(
             .toIntOrNull()
             ?.coerceAtLeast(0)
             ?: 0
-        val total = maxOf(priorTotal, reportedTotal)
-        repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, total.toString())
+        val total = if (reportedTotal > 0) {
+            maxOf(priorTotal, reportedTotal)
+        } else {
+            priorTotal
+        }
+        if (total > 0) {
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, total.toString())
+        }
         val paginationShifted = priorTotal > 0 && reportedTotal > 0 && reportedTotal != priorTotal
 
         // The reconciler writes only API_FILL economics and never changes the ordinary cursor.
@@ -316,8 +337,8 @@ class InceptionRecoveryService(
         } else {
             offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
         }
-        val complete = !paginationShifted && if (total > 0) {
-            nextOffset >= total
+        val complete = !paginationShifted && if (reportedTotal > 0) {
+            nextOffset >= reportedTotal
         } else {
             page.size < KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
         }
@@ -375,7 +396,7 @@ class InceptionRecoveryService(
         }
         val complete = !paginationShifted && (
             rawPageSize < KrakenApiConstants.LEDGER_PAGE_SIZE ||
-                (total > 0 && nextOffset >= total)
+                (authoritativeTotal > 0 && nextOffset >= authoritativeTotal)
             )
         if (complete) {
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, COMPLETED)
@@ -438,7 +459,7 @@ class InceptionRecoveryService(
             clearCandidateEvidence()
             val unknown = candidateTrades.firstOrNull {
                 it.source == TradeSource.LEGACY_UNKNOWN ||
-                    TradeOwnershipClassifier.classify(it, knownOrderTxids) == TradeOwnership.UNKNOWN
+                    classifyTradeForRecovery(it, knownOrderTxids) == TradeOwnership.UNKNOWN
             }
             val status = if (unknown == null) {
                 InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
@@ -682,7 +703,7 @@ class InceptionRecoveryService(
             allocations = allocations,
             baselineTime = baselineTime,
             candidate = candidate,
-            historicalTrades = allTrades,
+            runningBalances = runningBalances,
             backend = backend,
         ) ?: return BaselineResult.Failure(
             InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
@@ -787,14 +808,10 @@ class InceptionRecoveryService(
         allocations: List<Allocation>,
         baselineTime: Instant,
         candidate: TradeRecord,
-        historicalTrades: List<TradeRecord>,
+        runningBalances: Map<String, BigDecimal>,
         backend: KrakenService,
     ): Map<String, BigDecimal>? {
         val candidateSymbol = Asset.normalizeLedgerAsset(candidate.symbol).uppercase()
-        val pastSnapshots = repository.getSnapshotsInRange(
-            baselineTime.minusSeconds(HISTORICAL_PRICE_LOOKUP_SECONDS),
-            baselineTime,
-        )
         val prices = mutableMapOf<String, BigDecimal>()
         for (allocation in allocations) {
             val symbol = Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase()
@@ -802,85 +819,37 @@ class InceptionRecoveryService(
                 prices[symbol] = BigDecimal.ONE
                 continue
             }
-            val snapshotPrice = pastSnapshots
-                .asSequence()
-                .filter { snapshot ->
-                    val obs = snapshot.balancesObservedAt ?: snapshot.timestamp
-                    !obs.isAfter(baselineTime)
-                }
-                .mapNotNull { snapshot ->
-                    val row = snapshot.assets.entries.firstOrNull {
-                        Asset.normalizeLedgerAsset(it.key).uppercase() == symbol
-                    } ?: return@mapNotNull null
-                    row.value.price.takeIf { it.signum() > 0 }
-                        ?.let { (snapshot.balancesObservedAt ?: snapshot.timestamp) to it }
-                }
-                .maxByOrNull { (obs, _) -> obs.toEpochMilli() }
-                ?.second
-            if (snapshotPrice != null) {
-                prices[symbol] = snapshotPrice
-                continue
-            }
-
-            val preBaselineTradePrice = historicalTrades
-                .asSequence()
-                .filter {
-                    Asset.normalizeLedgerAsset(it.symbol).uppercase() == symbol &&
-                        it.price.signum() > 0 &&
-                        !it.timestamp.isAfter(baselineTime) &&
-                        it.timestamp >= baselineTime.minusSeconds(HISTORICAL_PRICE_LOOKUP_SECONDS)
-                }
-                .maxByOrNull { it.timestamp.toEpochMilli() }
-                ?.price
-
-            // Narrow exception for the actual first bot execution price (baseline is candidateTime - 1ms)
-            // when no pre-baseline trade exists for candidateSymbol.
-            val tradePrice = preBaselineTradePrice
-                ?: (if (symbol == candidateSymbol && candidate.price.signum() > 0) candidate.price else null)
-            if (tradePrice != null) {
-                prices[symbol] = tradePrice
-                continue
-            }
-
-            val ohlcPrice = try {
-                backend.getOHLC(
-                    pair = Asset.tradingPair(symbol),
-                    interval = 1440,
-                    since = baselineTime.minus(4, ChronoUnit.DAYS).epochSecond,
-                ).asSequence()
-                    .filter { it.second.signum() > 0 }
-                    .filter { candle ->
-                        val closeSec = candle.first + 1440L * 60L
-                        closeSec <= baselineTime.epochSecond &&
-                            baselineTime.epochSecond - candle.first <= MAX_HISTORICAL_PRICE_GAP_SECONDS
-                    }
-                    .maxByOrNull { it.first }
-                    ?.second
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.warn("Unable to retrieve historical OHLC for inception baseline symbol {}", symbol, e)
+            val balance = runningBalances[symbol] ?: BigDecimal.ZERO
+            val candidateException = if (symbol == candidateSymbol && candidate.price.signum() > 0) {
+                candidate.price
+            } else {
                 null
             }
-            if (ohlcPrice == null) return null
-            prices[symbol] = ohlcPrice
+            val resolvedPrice = HistoricalPriceResolver.resolveHistoricalPrice(
+                asset = symbol,
+                eventTime = baselineTime,
+                tradesRepo = repository,
+                krakenService = backend,
+                candidatePriceException = candidateException,
+            )
+            if (resolvedPrice != null && resolvedPrice > BigDecimal.ZERO) {
+                prices[symbol] = resolvedPrice
+            } else if (balance <= BigDecimal.ZERO) {
+                prices[symbol] = BigDecimal.ZERO
+            } else {
+                return null
+            }
         }
         return prices
     }
 
-    private fun classifyTradeForRecovery(trade: TradeRecord, knownRebalancerOrderTxids: Set<String>): TradeOwnership {
-        if (!trade.cycleId.isNullOrBlank() || !trade.clientOrderId.isNullOrBlank()) {
-            return TradeOwnership.REBALANCER
+    private fun classifyTradeForRecovery(trade: TradeRecord, knownRebalancerOrderTxids: Set<String>): TradeOwnership =
+        when {
+            !trade.cycleId.isNullOrBlank() || !trade.clientOrderId.isNullOrBlank() -> TradeOwnership.REBALANCER
+            trade.source == TradeSource.LOCAL_ESTIMATE -> TradeOwnership.REBALANCER
+            trade.orderTxid?.takeIf(String::isNotBlank) in knownRebalancerOrderTxids -> TradeOwnership.REBALANCER
+            else -> TradeOwnership.UNKNOWN
         }
-        if (trade.source == TradeSource.LOCAL_ESTIMATE) {
-            return TradeOwnership.REBALANCER
-        }
-        val txid = trade.orderTxid?.takeIf(String::isNotBlank)
-        if (txid != null && txid in knownRebalancerOrderTxids) {
-            return TradeOwnership.REBALANCER
-        }
-        return TradeOwnership.UNKNOWN
-    }
 
     private suspend fun prepareForCurrentConfigurationLocked(
         config: AppConfig,
@@ -943,11 +912,6 @@ class InceptionRecoveryService(
             accountScope,
         ).joinToString("\u0000")
         val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray(Charsets.UTF_8))
-        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-    }
-
-    private fun digestAccountScope(accountScope: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(accountScope.toByteArray(Charsets.UTF_8))
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
@@ -1027,6 +991,28 @@ class InceptionRecoveryService(
 
     private data class PageResult(val nextOffset: Int, val complete: Boolean)
 
+    class InceptionPreparationResult private constructor(
+        val scopeStatus: AccountScopeValidationStatus?,
+        val configurationChanged: Boolean,
+        val canTrustRecoveredInception: Boolean,
+    ) {
+        companion object {
+            fun valid(changed: Boolean) = InceptionPreparationResult(
+                scopeStatus = AccountScopeValidationStatus.VALID,
+                configurationChanged = changed,
+                canTrustRecoveredInception = true,
+            )
+
+            fun blocked(status: AccountScopeValidationStatus?) = InceptionPreparationResult(
+                scopeStatus = status,
+                configurationChanged = false,
+                canTrustRecoveredInception = false,
+            )
+
+            fun busy() = blocked(null)
+        }
+    }
+
     private sealed interface BaselineResult {
         data class Success(val snapshot: PortfolioSnapshot) : BaselineResult
 
@@ -1047,8 +1033,6 @@ class InceptionRecoveryService(
         private val SUPPORTED_LEDGER_TYPES =
             setOf(TRADE_LEDGER_TYPE) + LedgerEvent.EXTERNAL_BALANCE_TYPES.map(String::lowercase)
         private const val MAX_REASON_LENGTH = 60
-        private const val HISTORICAL_PRICE_LOOKUP_SECONDS = 604800L
-        private const val MAX_HISTORICAL_PRICE_GAP_SECONDS = 172800L
         private val NEGATIVE_BALANCE_TOLERANCE = BigDecimal("0.00000001")
     }
 }

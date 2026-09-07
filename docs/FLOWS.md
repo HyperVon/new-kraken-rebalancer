@@ -65,9 +65,9 @@ flowchart TB
 
     %% Rebalance loop and session/backend ownership
     PM -->|"loop delay\nsettings.loopDelaySeconds"| PM
-    PM -->|"startup syncs\n(each own session + backend pin)"| THS
+    PM -->|"startup scope-validated syncs\n(each own session + backend pin)"| THS
     PM -->|"normal iteration"| Cycle
-    Cycle -->|"in-cycle ledger/trade sync +\nhistorical reconstruction"| THS
+    Cycle -->|"in-cycle scope-validated ledger/trade sync +\nhistorical reconstruction"| THS
     Cycle -->|"bounded inception recovery\n(after ordinary sync)"| Recovery
     Cycle -->|"performRebalanceCycle()\n(nested pin reused)"| OE
     OE -->|"place buy/sell orders"| Kraken
@@ -489,34 +489,43 @@ events at USD scale 2 or crypto scale 8; the first unexplained mismatch returns
 
 ## Flow 7 — Automatic Inception Recovery
 
-`PortfolioManagerImpl` invokes recovery after ordinary ledger/trade synchronization on startup and
-on later cycles. Recovery is bounded to four pages per invocation and throttled for five minutes;
-the UI observes durable state through `/api/history/sync-progress`, so neither startup nor a History
-request waits for an unbounded account-history scan.
+`PortfolioManagerImpl` validates the active account/database scope before ordinary ledger/trade
+synchronization, balance observation, or inception recovery on startup and later cycles. A scope
+mismatch, unavailable scope, or non-empty unbound legacy database aborts the private-history work
+before persistence; a durable recovered baseline is not trusted until the scope is validated again.
+Recovery is bounded to four pages per invocation and throttled for five minutes; the UI observes
+durable state through `/api/history/sync-progress`, so neither startup nor a History request waits
+for an unbounded account-history scan.
 
 ```mermaid
 sequenceDiagram
     participant PM as PortfolioManagerImpl
+    participant Scope as AccountHistoryScopeGuard
     participant Recovery as InceptionRecoveryService
     participant Kraken as Kraken private API
     participant THS as TradeHistorySyncService
     participant DB as SQLite
     participant History as History UI
 
-    PM->>Recovery: recoverOneBoundedRun()
-    Recovery->>DB: read version, fingerprint, offsets, horizon
-    Recovery->>Kraken: TradesHistory page (fixed end horizon)
-    Kraken-->>Recovery: fills + count
-    Recovery->>THS: importRecoveredApiTrades(page)
-    THS->>DB: reconcile API fill, preserve local/order identities
-    Recovery->>Kraken: Ledgers page (all types, fixed end horizon)
-    Kraken-->>Recovery: ledger rows + count
-    Recovery->>DB: insert by ledger identity and checkpoint offset
-    alt both streams complete
-        Recovery->>DB: validate ownership, provenance, anchor, prices
-        Recovery->>DB: atomically save candidate-1ms baseline + evidence
-    else page failure, cancellation, or incomplete coverage
-        Recovery->>DB: retain resumable progress, no inception confirmation
+    PM->>Scope: validate active account/database scope
+    alt scope valid
+        PM->>Recovery: recoverOneBoundedRun()
+        Recovery->>DB: read version, fingerprint, offsets, horizon
+        Recovery->>Kraken: TradesHistory page (fixed end horizon)
+        Kraken-->>Recovery: fills + count
+        Recovery->>THS: importRecoveredApiTrades(page)
+        THS->>DB: reconcile API fill, preserve local/order identities
+        Recovery->>Kraken: Ledgers page (all types, fixed end horizon)
+        Kraken-->>Recovery: ledger rows + count
+        Recovery->>DB: insert by ledger identity and checkpoint offset
+        alt both streams complete
+            Recovery->>DB: validate ownership, provenance, anchor, prices
+            Recovery->>DB: atomically save candidate-1ms baseline + evidence
+        else page failure, cancellation, or incomplete coverage
+            Recovery->>DB: retain resumable progress, no inception confirmation
+        end
+    else scope unavailable, mismatched, or unbound
+        Scope-->>History: unavailable/scope-mismatch; no private writes
     end
     History->>DB: GET /api/history/sync-progress
     DB-->>History: ordinary sync + recovery status/progress/reason

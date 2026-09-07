@@ -672,6 +672,8 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                     status = InceptionRecoveryStatus.CONFIRMED,
                     candidateTime = candidateInstant.toString(),
                 )
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
                 coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID) } returns "42"
                 val baselineSnapshot = dummySnapshot(candidateInstant.minusMillis(1))
                 coEvery { tradeRepository.getSnapshotById(42) } returns baselineSnapshot
@@ -682,6 +684,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 resolution.confidence shouldBe InceptionConfidence.CONFIDENT
                 resolution.inceptionTime shouldBe candidateInstant
                 resolution.inceptionSnapshot shouldBe baselineSnapshot
+                coVerify(exactly = 1) { recoveryService.prepareForCurrentConfigurationResult(any()) }
             }
         }
 
@@ -699,12 +702,39 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                     status = InceptionRecoveryStatus.CONFIRMED,
                     candidateTime = candidateInstant.toString(),
                 )
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
                 coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID) } returns "42"
                 coEvery { tradeRepository.getSnapshotById(42) } returns null
 
                 val resolution = serviceWithRecovery.resolveInception()
 
                 resolution.isAutoDetected shouldBe true
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.inceptionSnapshot shouldBe null
+            }
+        }
+
+        "confirmed recovered inception is not trusted while current account scope is unavailable" {
+            runTest {
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.blocked(
+                        AccountScopeValidationStatus.SCOPE_UNAVAILABLE,
+                    )
+                coEvery { recoveryService.getStatus() } returns InceptionRecoveryStatus(
+                    status = InceptionRecoveryStatus.CONFIRMED,
+                    candidateTime = Instant.parse("2026-02-01T00:00:00Z").toString(),
+                )
+
+                val resolution = serviceWithRecovery.resolveInception()
+
                 resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
                 resolution.inceptionSnapshot shouldBe null
             }

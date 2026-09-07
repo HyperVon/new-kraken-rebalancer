@@ -30,6 +30,7 @@ import com.gemini.krakenbot.service.impl.OrderIntentServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
@@ -115,10 +116,19 @@ val coreModule =
             )
         }
         single {
+            AccountHistoryScopeGuard(
+                krakenService = get(),
+                tradeRepository = get(),
+                ledgerRepository = get(),
+                configService = get(),
+            )
+        }
+        single {
             LedgersSyncService(
                 repository = get(),
                 krakenService = get(),
                 configService = get(),
+                accountHistoryScopeGuard = get(),
             )
         }
         single {
@@ -136,6 +146,7 @@ val coreModule =
                 krakenService = get(),
                 configService = get(),
                 reconstructionService = get(),
+                accountHistoryScopeGuard = get(),
             )
         }
         single {
@@ -147,6 +158,7 @@ val coreModule =
                 tradeHistorySyncService = get(),
                 orderIntentRepository = get(),
                 fundingProvenanceResolver = get(),
+                accountHistoryScopeGuard = get(),
             )
         }
         single<TradeHistoryService> {
@@ -200,6 +212,7 @@ val coreModule =
                 krakenService = get(),
                 inceptionDiscoveryService = get(),
                 inceptionRecoveryService = get(),
+                accountHistoryScopeGuard = get(),
             )
         }
         single<CoroutineScope>(qualifier = named(APPLICATION_SCOPE_QUALIFIER)) {

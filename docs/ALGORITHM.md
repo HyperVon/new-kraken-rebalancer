@@ -289,8 +289,8 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      instead of receiving a lexical order. If a modern snapshot is observed before the flow but saved after
      it and no snapshot saved before the flow establishes the pre-flow state, the update also defers. Flow-time
      prices are resolved strictly from event-time evidence:
-     first from a successful non-dry-run trade at or before the event within ±180s, then from the nearest
-     recorded snapshot at or before the event within ±180s, and finally from a completed 15-minute OHLC candle
+     first from a successful non-dry-run trade in the preceding 180s, then from the nearest
+     recorded snapshot in the preceding 180s, and finally from a completed 15-minute OHLC candle
      whose `candleStart + 900s <= eventTime` (an exact candle end is valid). Future trades/snapshots and active
      candles are excluded. Live exchange ticker prices are strictly decoupled from historical lookups: live
      tickers are only permitted for near-real-time events within a tight 300-second window
@@ -643,21 +643,26 @@ running the rebalancer versus holding the original inception investment thesis w
 the same external capital over time:
 
 - **Inception recovery is separate from ordinary sync.** On startup and during the normal loop,
-  `InceptionRecoveryService` runs at most four private-history pages per invocation, no more often
-  than once per five minutes. It uses the authenticated Kraken TradesHistory and Ledgers endpoints,
-  a fixed inclusive recovery horizon captured on the first run, and separate durable offsets,
-  totals, oldest-record markers, status, version, and configuration/account fingerprint. A resumed
-  incomplete stream re-reads one page of overlap before advancing its offset. The existing ordinary
+  the shared account-scope guard must validate the active Kraken scope before any private history,
+  balance observation, or recovery write. Empty databases may bind a hashed scope; non-empty legacy
+  databases without a binding, unavailable scopes, and mismatches fail closed without claiming the
+  existing history. `InceptionRecoveryService` then runs at most four private-history pages per
+  invocation, no more often than once per five minutes. It uses the authenticated Kraken
+  TradesHistory and Ledgers endpoints, a fixed inclusive recovery horizon captured on the first run,
+  and separate durable offsets, totals, oldest-record markers, status, version, and
+  configuration/account fingerprint. A resumed incomplete stream re-reads one page of overlap
+  before advancing its offset. When Kraken omits a current total, only a short raw page proves
+  completion; stale persisted totals cannot terminate the stream. The existing ordinary
   bounded seed/incremental cursor and `history_seeded` marker are not changed by recovery.
 - **The evidence contract is intentionally conservative.** Kraken exchange trade IDs and order IDs
   prove fill provenance and pagination coverage, but not which local strategy created a fill. A
   non-dry-run fill is positively bot-owned only when it retains local cycle/client-order metadata or
   matches a durable rebalancer order-intent identity. An authoritative API fill without that local
-  evidence is manual/external; legacy or incomplete provenance is unknown. The earliest positively
-  bot-owned non-USD fill is a candidate only after both recovered streams are complete. An unknown
-  successful trade at or before that candidate makes the result ambiguous; a misleading manual
-  multi-symbol burst cannot establish inception, and no bot evidence produces
-  `COMPLETE_NO_BOT_EVIDENCE`.
+  evidence remains `UNKNOWN` for recovery; it is never inferred to be manual/external merely because
+  no bot candidate exists. The earliest positively bot-owned non-USD fill is a candidate only after
+  both recovered streams are complete. An unknown successful trade at or before that candidate
+  makes the result ambiguous; a misleading manual multi-symbol burst cannot establish inception,
+  and no bot evidence produces `COMPLETE_NO_BOT_EVIDENCE`.
 - **Automatic confirmation requires a baseline as well as a candidate.** The service selects the
   latest retained balance anchor whose timestamp and `balancesObservedAt` are not after the fixed
   recovery horizon, verifies the exact configured asset universe, then reverse-replays complete
@@ -668,18 +673,21 @@ the same external capital over time:
   is persisted at exactly `candidate timestamp - 1 ms` with `balancesObservedAt = null`; its snapshot
   and evidence metadata are written atomically. Existing valid baseline identities are reused rather
   than overwritten.
-- **Historical prices only.** Baseline valuation uses a nearby retained snapshot, a nearby retained
-  trade price, or daily OHLC (interval 1440) within the bounded historical gap. It never asks the
-  current ticker for an old price. Missing historical prices, missing retained anchors, negative or
-  non-positive reconstructed balances, changed universes, or incomplete funding groups leave the
-  comparison unavailable.
+- **Historical prices only.** Baseline valuation uses a retained successful non-dry trade or balance
+  snapshot no more than 180 seconds before the baseline, or a completed 15-minute OHLC candle whose
+  close is before the baseline and no more than 15 minutes old. OHLC lookup is bounded to 24 hours;
+  the current ticker is never used for an old price. The candidate asset may use only its own
+  execution price at the candidate-minus-one-millisecond baseline. Missing historical prices,
+  missing retained anchors, negative reconstructed balances, a non-positive total baseline, changed
+  universes, or incomplete funding groups leave the comparison unavailable.
 - **Resolution and retention states are durable.** `IN_PROGRESS` and `FAILED` retain resumable
   coverage; `AMBIGUOUS`, `COMPLETE_NO_BOT_EVIDENCE`, and `BASELINE_UNAVAILABLE` explain why no
   lifetime baseline was confirmed; `CONFIRMED` records the candidate, source, baseline identity,
   configuration fingerprint, and reason; `MANUAL_OVERRIDE` honors an explicit `inceptionDate`.
   Changing the inception override, allocation shape, or account scope invalidates automatic
-  evidence. Snapshot/trade retention continues to skip pruning until a confirmed inception is
-  stored, and then keeps the five-second pre-inception boundary required by replay.
+  evidence. A durable `CONFIRMED` record is not currently trusted until the active account scope is
+  validated again. Snapshot/trade retention continues to skip pruning until a confirmed inception
+  is stored, and then keeps the five-second pre-inception boundary required by replay.
 - **Owner contributions after inception are invested by original inception value
   weights** (existing synthetic holdings untouched); only the new money moves.
   Confirmed card Buy Crypto transactions collapse into a single net owner contribution

@@ -260,7 +260,11 @@ account history…** and an inline progress indicator plus a progress bar. Recov
 uses separate durable progress, resumes with overlap after interruption, and is
 bounded per run. If Kraken history is complete but ownership, funding provenance,
 or the baseline is ambiguous/unavailable, the banner explains that outcome while
-the rest of History remains usable.
+the rest of History remains usable. If the active account scope is unavailable,
+mismatched with the database, or an upgraded non-empty database has no stored
+scope binding, private-history synchronization and automatic inception remain
+blocked until the correct account is restored or an explicit migration/reset is
+performed.
 
 ### Views
 
@@ -350,7 +354,7 @@ achieved against a **synthetic buy-and-hold** strategy:
   valid); a live ticker is allowed only within 300 seconds of the balance observation.
 - Same-source-timestamp USD-only funding plumbing is netted only after original classification and
   retains its source ledger IDs. A linked mixed-asset card purchase collapses via centralized normalization
-  into one owner capital contribution net of fees (with non-USD fees valued at event-time historical prices),
+into one owner capital contribution net of fees (with non-USD fees valued at event-time historical prices),
   allocated strictly by original inception weights (spend/receive legs are consumed as plumbing evidence without
   being replayed into Buy & Hold). Legs must share a refid within a 120-second proximity window; incomplete shapes
   or unpriceable fees keep the comparison unavailable. Mixed-sign or overdrawn groups are not reclassified

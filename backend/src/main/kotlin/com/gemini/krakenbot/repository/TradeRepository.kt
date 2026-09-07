@@ -67,6 +67,9 @@ interface TradeRepository {
 
     suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
 
+    /** Returns true when any trade row exists, including failed and dry-run history. */
+    suspend fun hasAnyTradeRows(): Boolean
+
     suspend fun getLatestTradeTime(): Instant?
 
     suspend fun isHistorySeeded(): Boolean

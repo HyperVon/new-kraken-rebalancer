@@ -13,6 +13,7 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
 import com.gemini.krakenbot.service.withExecutionSession
@@ -47,6 +48,7 @@ class PortfolioManagerImpl(
     private val krakenService: KrakenService? = null,
     private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
     private val inceptionRecoveryService: InceptionRecoveryService? = null,
+    private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
 ) : PortfolioManager {
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
@@ -193,17 +195,27 @@ class PortfolioManagerImpl(
     }
 
     private suspend fun runLoopBody() {
-        // Startup syncs establish their own session/backend pin; they are not grouped under the
-        // cycle-wide execution session/backend pin.
-        // Inception resolves before snapshot reconstruction/pruning so
-        // prune logic can honor the lifetime retention contract (never
-        // prune at or after inception). Burst detection needs trades, so
-        // ledgers + trades sync first.
-        synchronizeLedgers("on startup")
-        synchronizeTrades("on startup")
-        recoverInception("on startup")
-        resolveInception("on startup")
-        synchronizeHistoricalSnapshots("on startup")
+        // Scope verification must succeed before pulling private history into local database.
+        val scopeResult = accountHistoryScopeGuard?.validateAccountScope()
+        if (scopeResult != null && !scopeResult.isValid) {
+            log.warn(
+                "Account scope validation failed on startup ({}): {}. Skipping history sync and inception recovery.",
+                scopeResult.status,
+                scopeResult.reason,
+            )
+        } else {
+            // Startup syncs establish their own session/backend pin; they are not grouped under the
+            // cycle-wide execution session/backend pin.
+            // Inception resolves before snapshot reconstruction/pruning so
+            // prune logic can honor the lifetime retention contract (never
+            // prune at or after inception). Burst detection needs trades, so
+            // ledgers + trades sync first.
+            synchronizeLedgers("on startup")
+            synchronizeTrades("on startup")
+            recoverInception("on startup")
+            resolveInception("on startup")
+            synchronizeHistoricalSnapshots("on startup")
+        }
 
         try {
             // Hot SharedFlow + collectLatest: config changes restart an idle delay immediately.
@@ -248,6 +260,15 @@ class PortfolioManagerImpl(
             val ks = krakenService
             if (ks != null) {
                 ks.withStableBackend {
+                    val scopeResult = accountHistoryScopeGuard?.validateAccountScope()
+                    if (scopeResult != null && !scopeResult.isValid) {
+                        log.warn(
+                            "Account scope validation failed for cycle ({}): {}. Aborting cycle.",
+                            scopeResult.status,
+                            scopeResult.reason,
+                        )
+                        return@withStableBackend
+                    }
                     withCycleMdc(cycleId) {
                         // The balance observation must precede the ledger
                         // sync: the sync watermark is stamped at sync start,

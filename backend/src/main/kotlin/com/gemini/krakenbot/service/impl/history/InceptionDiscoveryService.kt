@@ -46,7 +46,7 @@ class InceptionDiscoveryService(
 
     suspend fun resolveInception(): InceptionResolution {
         val settings = configService.getConfig().settings
-        recoveryService?.prepareForCurrentConfiguration(settings.inceptionDate)
+        val preparation = recoveryService?.prepareForCurrentConfigurationResult(settings.inceptionDate)
         // 1. Check user-configured inception date.
         val parsedConfigured = parseInceptionDate(settings.inceptionDate)
         val configured = if (parsedConfigured != null && parsedConfigured.isAfter(nowProvider())) {
@@ -95,7 +95,9 @@ class InceptionDiscoveryService(
         // fixtures); the application graph always supplies it.
         if (recoveryService != null) {
             val recovery = recoveryService.getStatus()
-            if (recovery.status == InceptionRecoveryStatus.CONFIRMED) {
+            if (recovery.status == InceptionRecoveryStatus.CONFIRMED &&
+                preparation?.canTrustRecoveredInception == true
+            ) {
                 val candidateTime = recovery.candidateTime?.let(::parseInceptionDate)
                 val baselineId = tradeRepository
                     .getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)

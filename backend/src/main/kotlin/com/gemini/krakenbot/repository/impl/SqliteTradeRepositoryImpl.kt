@@ -419,6 +419,13 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             }
     }
 
+    override suspend fun hasAnyTradeRows(): Boolean = database.readTransactionIO {
+        TradeTable
+            .selectAll()
+            .limit(1)
+            .firstOrNull() != null
+    }
+
     override suspend fun isHistorySeeded(): Boolean = getSyncMetadata(SyncMetadataKeys.HISTORY_SEEDED) == "true"
 
     override suspend fun setHistorySeeded(seeded: Boolean) {

@@ -33,6 +33,7 @@ class TradeHistorySyncService(
     private val configService: ConfigService,
     private val reconstructionService: TradeHistoryReconstructionService,
     private val nowProvider: () -> Instant = Instant::now,
+    private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
 ) {
     private val log = LoggerFactory.getLogger(TradeHistorySyncService::class.java)
     private val syncMutex = Mutex()
@@ -47,7 +48,7 @@ class TradeHistorySyncService(
      * Recovery deliberately reuses the normal fill reconciler so a historical API fill can enrich
      * a retained local estimate/order-intent row instead of creating a second economic event.
      */
-    suspend fun importRecoveredApiTrades(apiTrades: List<TradeRecord>): Pair<Int, Int> = syncMutex.withLock {
+    internal suspend fun importRecoveredApiTrades(apiTrades: List<TradeRecord>): Pair<Int, Int> = syncMutex.withLock {
         if (apiTrades.isEmpty()) return@withLock 0 to 0
         val first = apiTrades.minOf { it.timestamp }
         val last = apiTrades.maxOf { it.timestamp }
@@ -112,6 +113,14 @@ class TradeHistorySyncService(
                 return
             }
             krakenService.withStableBackend { backend ->
+                val scopeResult = accountHistoryScopeGuard?.validateAccountScope()
+                if (scopeResult != null && !scopeResult.isValid) {
+                    log.warn(
+                        "Account scope validation failed: {}. Skipping trade history synchronization.",
+                        scopeResult.reason,
+                    )
+                    return@withStableBackend
+                }
                 syncTradesFromKrakenPinned(pinnedConfig, backend)
             }
         } finally {
