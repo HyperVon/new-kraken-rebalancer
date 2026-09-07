@@ -1458,5 +1458,221 @@ class AccountHistoryScopeGuardTest : StringSpec() {
                 hangingGuard.readLocalTrustState().status shouldBe AccountScopeValidationStatus.VALID
             }
         }
+
+        "v2 binding with same fingerprint and consistent history strong-revalidates to v3" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                seedVersionedBinding("account-A", "2")
+                listOf("v2-fill-old" to base, "v2-fill-new" to base.plusSeconds(100_000L)).forEach { (id, time) ->
+                    tradeRepository.saveTrade(apiFill(id, time))
+                }
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        apiFill("v2-fill-old", base),
+                        apiFill("v2-fill-new", base.plusSeconds(100_000L)),
+                    )
+                }
+
+                val result = guard.validateAccountScope()
+
+                // Must NOT fast-path on digest equality: the strong proof runs.
+                result.status shouldBe AccountScopeValidationStatus.VALID
+                krakenService.getTradeHistoryCallCount shouldBe 2
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe "3"
+            }
+        }
+
+        "v2 binding with same fingerprint and mixed history is never promoted" {
+            runTest {
+                seedVersionedBinding("account-A", "2")
+                tradeRepository.saveTrade(apiFill("account-A-old", Instant.parse("2026-01-01T00:00:00Z")))
+                tradeRepository.saveTrade(apiFill("foreign-new", Instant.parse("2026-03-01T00:00:00Z")))
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(apiFill("account-A-old", Instant.parse("2026-01-01T00:00:00Z")))
+                }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe AccountHistoryScopeGuard.digestAccountScope("account-A")
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe "2"
+            }
+        }
+
+        "v2 binding with changed fingerprint and consistent history binds current as v3" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                seedVersionedBinding("account-A", "2")
+                tradeRepository.saveTrade(apiFill("gen-B-old", base))
+                tradeRepository.saveTrade(apiFill("gen-B-new", base.plusSeconds(100_000L)))
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(apiFill("gen-B-old", base), apiFill("gen-B-new", base.plusSeconds(100_000L)))
+                }
+
+                // Strong legacy proof, not the lightweight rotation path.
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.VALID
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe AccountHistoryScopeGuard.digestAccountScope("account-B")
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe "3"
+            }
+        }
+
+        "v2 binding with changed fingerprint and mixed history stays at v2" {
+            runTest {
+                seedVersionedBinding("account-A", "2")
+                tradeRepository.saveTrade(apiFill("account-A-old", Instant.parse("2026-01-01T00:00:00Z")))
+                tradeRepository.saveTrade(apiFill("account-B-new", Instant.parse("2026-03-01T00:00:00Z")))
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(apiFill("account-B-new", Instant.parse("2026-03-01T00:00:00Z")))
+                }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe AccountHistoryScopeGuard.digestAccountScope("account-A")
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe "2"
+            }
+        }
+
+        "v2 binding with changed fingerprint and one marker is not promoted by rotation" {
+            runTest {
+                seedVersionedBinding("account-A", "2")
+                tradeRepository.saveTrade(apiFill("shared-fill", Instant.parse("2026-01-01T00:00:00Z")))
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(apiFill("shared-fill", Instant.parse("2026-01-01T00:00:00Z")))
+                }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe "2"
+            }
+        }
+
+        "v2 binding with incomplete legacy search preserves v2" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                seedVersionedBinding("account-A", "2")
+                tradeRepository.saveTrade(apiFill("v2-a", base))
+                tradeRepository.saveTrade(apiFill("v2-b", base.plusSeconds(100_000L)))
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    (0 until 50).map { apiFill("unrelated-$it", base) }
+                }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe AccountHistoryScopeGuard.digestAccountScope("account-A")
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe "2"
+            }
+        }
+
+        "v2 binding with Kraken outage preserves v2" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                seedVersionedBinding("account-A", "2")
+                tradeRepository.saveTrade(apiFill("v2-a", base))
+                tradeRepository.saveTrade(apiFill("v2-b", base.plusSeconds(100_000L)))
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ -> error("network") }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe "2"
+            }
+        }
+
+        "v2 empty binding upgrades to v3 after authentication" {
+            runTest {
+                seedVersionedBinding("account-A", "2")
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe "3"
+            }
+        }
+
+        "v3 binding with matching fingerprint is fast VALID without proof" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+
+                krakenService.tradeHistorySupplier = { _, _ -> error("must not be called") }
+                krakenService.ledgerSupplier = { _, _, _, _ -> error("must not be called") }
+                krakenService.balanceSupplier = { error("must not be called") }
+
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+            }
+        }
+
+        "v3 credential rotation still uses the lightweight one-hit proof" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+                tradeRepository.saveTrade(apiFill("rotated-fill", Instant.parse("2026-01-01T00:00:00Z")))
+
+                krakenService.fundingEvidenceScopeSupplier = { "account-A-rotated" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(apiFill("rotated-fill", Instant.parse("2026-01-01T00:00:00Z")))
+                }
+
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe "3"
+            }
+        }
     }
+
+    private suspend fun seedVersionedBinding(scope: String, version: String) {
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+            AccountHistoryScopeGuard.digestAccountScope(scope),
+        )
+        tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION, version)
+    }
+
+    private fun apiFill(id: String, timestamp: Instant) = TestFixtures.tradeRecord(
+        timestamp = timestamp,
+        pair = Asset.BTC_USD_PAIR,
+        side = "buy",
+        symbol = Asset.BTC,
+        volume = BigDecimal("0.01"),
+        usdAmount = BigDecimal("100.00"),
+        price = BigDecimal("10000.00"),
+        source = TradeSource.API_FILL,
+        tradeId = id,
+    )
 }

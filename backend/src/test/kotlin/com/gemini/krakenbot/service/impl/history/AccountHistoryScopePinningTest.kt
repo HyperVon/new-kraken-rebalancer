@@ -247,6 +247,107 @@ class AccountHistoryScopePinningTest : StringSpec() {
             }
         }
 
+        "live to simulation flip mid-proof cannot mix preflight with simulated proof" {
+            runTest {
+                val configs = newConfigService(KrakenCredentials(keyA, secretA))
+                val kraken = GenerationAwareFake(configs)
+                val guard = AccountHistoryScopeGuard(kraken, tradeRepository, ledgerRepository, configs)
+                saveLegacyPair()
+                kraken.seeOnly(keyA, "pin-old-fill", "pin-new-fill")
+
+                val enteredProof = CompletableDeferred<Unit>()
+                val releaseProof = CompletableDeferred<Unit>()
+                var firstCall = true
+                kraken.gate = {
+                    if (firstCall) {
+                        firstCall = false
+                        enteredProof.complete(Unit)
+                        releaseProof.await()
+                    }
+                }
+                val background = async { guard.validateAccountScope() }
+                runCurrent()
+                enteredProof.await()
+
+                // Flip to simulation while the proof is suspended: the session
+                // stages it, so preflight and proof stay on the live generation.
+                configs.updateConfig(
+                    configWith(
+                        keyA,
+                        secretA,
+                    ).copy(settings = TestFixtures.settings(loopDelaySeconds = 60L, simulation = true)),
+                )
+                releaseProof.complete(Unit)
+                val result = background.await()
+
+                kraken.observedGenerations.toSet() shouldBe setOf(keyA)
+                result.status shouldBe AccountScopeValidationStatus.VALID
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe AccountHistoryScopeGuard.digestAccountScope("scope-$keyA")
+                configs.getConfig().settings.simulation shouldBe true
+            }
+        }
+
+        "credential replacement mid-proof cannot change the proven generation" {
+            runTest {
+                val configs = newConfigService(KrakenCredentials(keyA, secretA))
+                val kraken = GenerationAwareFake(configs)
+                val guard = AccountHistoryScopeGuard(kraken, tradeRepository, ledgerRepository, configs)
+                saveLegacyPair()
+                kraken.seeOnly(keyA, "pin-old-fill", "pin-new-fill")
+
+                val enteredProof = CompletableDeferred<Unit>()
+                val releaseProof = CompletableDeferred<Unit>()
+                var firstCall = true
+                kraken.gate = {
+                    if (firstCall) {
+                        firstCall = false
+                        enteredProof.complete(Unit)
+                        releaseProof.await()
+                    }
+                }
+                val background = async { guard.validateAccountScope() }
+                runCurrent()
+                enteredProof.await()
+
+                // Validity was checked against A before the session; the proof
+                // must observe that same generation throughout.
+                configs.updateConfig(configWith(keyB, secretB))
+                releaseProof.complete(Unit)
+                val result = background.await()
+
+                kraken.observedGenerations.toSet() shouldBe setOf(keyA)
+                result.status shouldBe AccountScopeValidationStatus.VALID
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe AccountHistoryScopeGuard.digestAccountScope("scope-$keyA")
+            }
+        }
+
+        "simulation starting generation returns SIMULATION without proof" {
+            runTest {
+                val configs = newConfigService(KrakenCredentials(keyA, secretA))
+                configs.updateConfig(
+                    configWith(
+                        keyA,
+                        secretA,
+                    ).copy(settings = TestFixtures.settings(loopDelaySeconds = 60L, simulation = true)),
+                )
+                val kraken = GenerationAwareFake(configs)
+                val guard = AccountHistoryScopeGuard(kraken, tradeRepository, ledgerRepository, configs)
+                saveLegacyPair()
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SIMULATION
+                kraken.observedGenerations shouldBe emptyList()
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe null
+            }
+        }
+
         "cancellation during a pinned proof releases session and mutex without writing" {
             runTest {
                 val configs = newConfigService(KrakenCredentials(keyA, secretA))

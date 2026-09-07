@@ -503,8 +503,8 @@ definitive absence alongside a match is conflict, never a bind. Typed `tradeId`/
 equality is the proof and timestamps only locate the search. An unbound legacy
 database binds on the same proof, while an empty database binds only after a
 live credential check; a bound-but-empty database may adopt authenticated
-replacement credentials. Bindings carry a proof-contract version and older
-bindings are revalidated once rather than fast-pathed. A window that stays full
+replacement credentials. Bindings carry proof-contract version 3: v1, v2, or missing
+versions are revalidated once under the current strong policy rather than fast-pathed. A window that stays full
 at the page cap reports
 incomplete (fail closed, binding retained), never absent; ledger windows use raw
 page occupancy so filtered short parsed pages cannot fake completion. History
@@ -515,9 +515,10 @@ busy, or unknown binding. Proof windows run inside a config execution session
 plus a pinned backend so every scope read, probe, window query, recheck, and
 write observes one credential generation, and the proven fingerprint is
 re-derived before any binding write, so credentials changing mid-proof abort
-without writing. Old or missing binding versions are never fast-pathed and
+without writing. V1, v2, or missing binding versions are never fast-pathed and
 never take the lightweight rotation proof: they revalidate under the strong
-legacy consistency policy regardless of fingerprint equality.
+legacy consistency policy regardless of fingerprint equality. Only v3 lineage
+may use the fast path and the one-hit rotation proof.
 Recovery is bounded to four pages per invocation and throttled for five minutes; the UI observes
 durable state through `/api/history/sync-progress`, so neither startup nor a History request waits
 for an unbounded account-history scan.

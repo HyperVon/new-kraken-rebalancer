@@ -39,8 +39,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (up to five trades plus five ledgers) to match — a definitively absent marker alongside
   a match reports conflict and never binds, so binding is refused whenever sampled time-spread
   evidence reveals mixed-account history.
-  Bindings carry a proof-contract version: older pre-merge bindings are revalidated once
-  instead of fast-pathed forever, and a bound but financially empty database may adopt
+  Bindings carry proof-contract version 3: v1, v2, or missing versions are revalidated once
+  under the current strong legacy consistency policy before they can become trusted v3
+  lineage — an old version never takes the lightweight rotation proof even when the
+  fingerprint changed — and a bound but financially empty database may adopt
   authenticated replacement credentials. Dense windows paginate to a page cap and report
   incomplete rather than absent; different accounts, incomplete searches, and outages all
   fail closed with the previous binding retained.
