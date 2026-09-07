@@ -1,7 +1,7 @@
 [versions]
 kotlin = "2.4.20-RC"
 ksp = "2.3.11"
-spotless = "8.10.1"
+spotless = "8.10.2"
 snakeyaml = "2.7"
 ktor = "3.5.2"
 koin = "4.2.2"
