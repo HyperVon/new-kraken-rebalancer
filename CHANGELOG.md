@@ -29,9 +29,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Account-isolated inception recovery**: private trade, ledger, balance-observation, and
   automatic-inception work now stops before persistence when the active Kraken account cannot be
-  validated against the database binding. Empty databases bind to a hashed scope; non-empty legacy
-  databases without a binding fail closed for explicit migration/reset, and temporarily unavailable
-  or mismatched scope never makes a durable `CONFIRMED` baseline currently usable.
+  validated against the database binding. Empty databases bind to a hashed scope only after the
+  credentials verify live; a scope mismatch caused by rotated keys on the same account, or a
+  non-empty legacy database without a binding, rebinds only after bounded exchange pages prove
+  continuity with the stored fills. Temporarily unavailable scope, foreign history, and a manually
+  configured inception date never make a durable `CONFIRMED` baseline currently usable.
 - **Strict inception evidence**: recovered prices share the event-time resolver's backward-only
   trade/snapshot window and completed 15-minute OHLC policy, stale persisted pagination totals no
   longer prove current unknown-total completion, and unmatched API fills remain `UNKNOWN` even when

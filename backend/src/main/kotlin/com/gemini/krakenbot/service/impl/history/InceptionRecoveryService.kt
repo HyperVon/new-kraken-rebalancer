@@ -104,11 +104,9 @@ class InceptionRecoveryService(
     suspend fun recoverOneBoundedRun(): InceptionRecoveryStatus = recoveryMutex.withLock {
         val preflightConfig = configService.getConfig()
 
-        if (!preflightConfig.settings.inceptionDate.isNullOrBlank()) {
-            setOverallStatus(InceptionRecoveryStatus.MANUAL_OVERRIDE, "explicit inception date")
-            return@withLock readStatus()
-        }
-
+        // The scope gate runs before the manual-override short-circuit: a configured
+        // date is authoritative for *when* inception was, but it must not bless
+        // history the active credentials cannot be shown to own.
         val scopeResult = accountHistoryScopeGuard.validateAccountScope()
         when (scopeResult.status) {
             AccountScopeValidationStatus.SIMULATION -> {
@@ -140,6 +138,11 @@ class InceptionRecoveryService(
             AccountScopeValidationStatus.VALID -> {
                 // Verified valid scope
             }
+        }
+
+        if (!preflightConfig.settings.inceptionDate.isNullOrBlank()) {
+            setOverallStatus(InceptionRecoveryStatus.MANUAL_OVERRIDE, "explicit inception date")
+            return@withLock readStatus()
         }
 
         prepareForCurrentConfigurationLocked(

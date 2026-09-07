@@ -44,6 +44,16 @@ class InceptionDiscoveryService(
 ) {
     private val log = LoggerFactory.getLogger(InceptionDiscoveryService::class.java)
 
+    /**
+     * True when recovery preparation explicitly reports an untrusted,
+     * non-simulation scope. A transient busy preparation carries no scope
+     * verdict, so it does not withdraw trust from a manually configured date.
+     */
+    private fun isScopeBlockedForManual(preparation: InceptionRecoveryService.InceptionPreparationResult): Boolean {
+        val status = preparation.scopeStatus ?: return false
+        return status != AccountScopeValidationStatus.VALID && status != AccountScopeValidationStatus.SIMULATION
+    }
+
     suspend fun resolveInception(): InceptionResolution {
         val settings = configService.getConfig().settings
         val preparation = recoveryService?.prepareForCurrentConfigurationResult(settings.inceptionDate)
@@ -58,6 +68,20 @@ class InceptionDiscoveryService(
         // A configured date is authoritative: re-resolve from it on every call
         // so a stale cache can never override the user's explicit setting.
         if (configured != null) {
+            if (preparation != null && isScopeBlockedForManual(preparation)) {
+                // A configured date fixes *when* inception was, but it cannot bless
+                // history the active credentials are not shown to own: anchoring a
+                // baseline snapshot from foreign (or unverifiable) history would
+                // launder it as trusted. Simulation carries no such risk.
+                log.warn("Ignoring configured inception date while account scope is unverified: {}", configured)
+                return InceptionResolution(
+                    inceptionTime = configured,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
+                )
+            }
             val snapshot = findClosestSnapshot(configured)
             persistDetection(configured, snapshot, source = INCEPTION_SOURCE_CONFIGURED)
             if (snapshot == null) {

@@ -77,7 +77,9 @@ class KrakenServiceImpl(
 
     override suspend fun getFundingEvidenceScope(): String {
         val credentials = configService.getConfig().kraken
-        val material = "${credentials.apiKey.value}\u0000${credentials.privateKey.value}"
+        // Normalize incidental whitespace so a pasted secret with a trailing newline
+        // does not fork the scope digest away from the same material without it.
+        val material = "${credentials.apiKey.value.trim()}\u0000${credentials.privateKey.value.trim()}"
         val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray(Charsets.UTF_8))
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }

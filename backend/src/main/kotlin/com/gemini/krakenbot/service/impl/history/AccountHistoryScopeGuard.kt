@@ -51,6 +51,11 @@ class AccountHistoryScopeGuard(
     private val tradeRepository: TradeRepository,
     private val ledgerRepository: LedgerRepository,
     private val configService: ConfigService,
+    private val continuityVerifier: AccountHistoryContinuityVerifier = AccountHistoryContinuityVerifier(
+        krakenService,
+        tradeRepository,
+        ledgerRepository,
+    ),
 ) {
     private val log = LoggerFactory.getLogger(AccountHistoryScopeGuard::class.java)
     private val validationMutex = Mutex()
@@ -80,19 +85,45 @@ class AccountHistoryScopeGuard(
         val storedScopeDigest = tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
 
         if (!storedScopeDigest.isNullOrBlank()) {
-            return@withLock if (storedScopeDigest == scopeDigest) {
-                AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = scopeDigest)
-            } else {
-                AccountScopeValidationResult.scopeMismatch(scopeDigest)
+            if (storedScopeDigest == scopeDigest) {
+                return@withLock AccountScopeValidationResult(
+                    AccountScopeValidationStatus.VALID,
+                    currentScopeDigest = scopeDigest,
+                )
+            }
+            // The scope digest is credential-derived, so a key rotation on the same
+            // account also presents as a mismatch. Rebind only when the configured
+            // credentials can still see the stored fills; a different account whose
+            // history merely shares this database stays locked out.
+            return@withLock when (continuityVerifier.verifyContinuity()) {
+                AccountHistoryContinuityStatus.VERIFIED -> {
+                    tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
+                    log.info("Rebound database to rotated Kraken account scope digest {}", scopeDigest)
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = scopeDigest)
+                }
+
+                AccountHistoryContinuityStatus.NO_OVERLAP ->
+                    AccountScopeValidationResult.scopeMismatch(scopeDigest)
+
+                AccountHistoryContinuityStatus.UNAVAILABLE ->
+                    AccountScopeValidationResult.scopeUnavailable("unable to verify account continuity")
             }
         }
 
         // No stored digest: verify whether the financial history is empty.
         if (tradeRepository.hasAnyTradeRows()) {
-            return@withLock AccountScopeValidationResult.unboundExistingHistory()
+            return@withLock resolveUnboundDatabase(scopeDigest)
         }
         val hasHistory = isFinancialHistoryPresent()
         if (!hasHistory) {
+            // Bind an empty database only after the credentials prove live: an
+            // unauthenticated scope hash would otherwise bind (or poison) a fresh
+            // database on unvalidated secrets.
+            if (!verifyCredentialsActive()) {
+                return@withLock AccountScopeValidationResult.scopeUnavailable(
+                    "credentials could not be verified against Kraken",
+                )
+            }
             tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
             log.info("Bound empty database to initial Kraken account scope digest {}", scopeDigest)
             return@withLock AccountScopeValidationResult(
@@ -101,10 +132,43 @@ class AccountHistoryScopeGuard(
             )
         }
 
-        // Existing unscoped history predates the account binding contract. Do not let whichever
-        // credentials happen to be configured first claim it. The operator must migrate/reset it.
-        log.warn("Upgraded database has existing financial history but no account scope binding")
-        AccountScopeValidationResult.unboundExistingHistory()
+        return@withLock resolveUnboundDatabase(scopeDigest)
+    }
+
+    /**
+     * Existing unscoped history predates the account binding contract. Bind it only
+     * when continuity proof shows the active credentials own it; never let whichever
+     * credentials happen to be configured first claim foreign history. Exchange
+     * outages fail closed so a degraded network cannot launder a mismatch.
+     */
+    private suspend fun resolveUnboundDatabase(scopeDigest: String): AccountScopeValidationResult =
+        when (continuityVerifier.verifyContinuity()) {
+            AccountHistoryContinuityStatus.VERIFIED -> {
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
+                log.info(
+                    "Bound upgraded database to Kraken account scope digest {} after continuity proof",
+                    scopeDigest,
+                )
+                AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = scopeDigest)
+            }
+
+            AccountHistoryContinuityStatus.NO_OVERLAP -> {
+                log.warn("Upgraded database has existing financial history but no account scope binding")
+                AccountScopeValidationResult.unboundExistingHistory()
+            }
+
+            AccountHistoryContinuityStatus.UNAVAILABLE ->
+                AccountScopeValidationResult.scopeUnavailable("unable to verify account continuity")
+        }
+
+    private suspend fun verifyCredentialsActive(): Boolean = try {
+        krakenService.getBalances()
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn("Unable to verify Kraken credentials before binding empty database", e)
+        false
     }
 
     suspend fun isFinancialHistoryPresent(): Boolean {

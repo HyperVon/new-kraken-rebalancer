@@ -2391,6 +2391,31 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "manual override with mismatched account scope stays unavailable" {
+            runTest {
+                config = config.copy(settings = config.settings.copy(inceptionDate = "2026-01-01"))
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                realScopeService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.saveTrade(apiTrade("existing-trade", Instant.parse("2026-01-01T00:00:00Z")))
+
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                val status = realScopeService().recoverOneBoundedRun()
+                status.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
+                status.reason shouldBe "account scope changed; use correct DB or perform reset"
+            }
+        }
+
+        "unbound legacy history stays unavailable until continuity is proven" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                repository.saveTrade(apiTrade("legacy-trade", Instant.parse("2026-01-01T00:00:00Z")))
+
+                val status = realScopeService().recoverOneBoundedRun()
+                status.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
+                status.reason shouldBe "existing history cannot be verified for active credentials"
+            }
+        }
+
         "crash during bounded recovery resumes idempotently without corrupting progress" {
             runTest {
                 val history = (0 until 60).map { index ->

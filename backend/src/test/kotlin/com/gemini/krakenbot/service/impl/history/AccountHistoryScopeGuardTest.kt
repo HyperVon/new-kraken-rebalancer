@@ -56,6 +56,233 @@ class AccountHistoryScopeGuardTest : StringSpec() {
             }
         }
 
+        "empty database refuses to bind when credentials cannot be verified" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A-secret-scope" }
+                krakenService.balanceSupplier = { error("invalid key") }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldBe null
+            }
+        }
+
+        "credential rotation rebinds after continuity proof" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "rotated-account-fill",
+                        orderTxid = "rotated-account-order",
+                    ),
+                )
+
+                krakenService.fundingEvidenceScopeSupplier = { "account-A-rotated-keys" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = "rotated-account-fill",
+                            orderTxid = "rotated-account-order",
+                        ),
+                    )
+                }
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.VALID
+                result.isValid shouldBe true
+            }
+        }
+
+        "scope mismatch with disjoint exchange history stays locked" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+                val original = tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "account-a-fill",
+                    ),
+                )
+
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.parse("2026-02-01T00:00:00Z"),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.02"),
+                            usdAmount = BigDecimal("200.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = "account-b-fill",
+                        ),
+                    )
+                }
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_MISMATCH
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldBe original
+            }
+        }
+
+        "scope mismatch with an unreachable exchange fails closed without rebinding" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+                val original = tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "account-a-fill",
+                    ),
+                )
+
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ -> error("network") }
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldBe original
+            }
+        }
+
+        "legacy unbound database binds after continuity proof" {
+            runTest {
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "legacy-account-fill",
+                    ),
+                )
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = "legacy-account-fill",
+                        ),
+                    )
+                }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.VALID
+                result.isValid shouldBe true
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldHaveLength 64
+            }
+        }
+
+        "ledger-only legacy history binds on ledger continuity proof" {
+            runTest {
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "legacy-ledger",
+                            time = Instant.parse("2026-01-01T00:00:00Z"),
+                            type = "staking",
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        ),
+                    ),
+                )
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "legacy-ledger",
+                            time = Instant.parse("2026-01-01T00:00:00Z"),
+                            type = "staking",
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        ),
+                    )
+                }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.VALID
+                result.isValid shouldBe true
+            }
+        }
+
+        "unverifiable exchange history fails closed without binding" {
+            runTest {
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "legacy-account-fill",
+                    ),
+                )
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                krakenService.tradeHistorySupplier = { _, _ -> error("network") }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldBe null
+            }
+        }
+
         "non-empty upgraded database remains unbound without continuity proof" {
             runTest {
                 tradeRepository.saveTrade(

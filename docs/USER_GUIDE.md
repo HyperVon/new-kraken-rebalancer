@@ -264,7 +264,10 @@ the rest of History remains usable. If the active account scope is unavailable,
 mismatched with the database, or an upgraded non-empty database has no stored
 scope binding, private-history synchronization and automatic inception remain
 blocked until the correct account is restored or an explicit migration/reset is
-performed.
+performed. A scope mismatch caused by rotating API keys on the same account
+rebinds automatically once the exchange confirms it can still see the stored
+fills, and an unbound upgraded database binds on the same proof; an empty
+database binds only after the configured credentials verify live against Kraken.
 
 ### Views
 
