@@ -79,6 +79,11 @@ enum class AccountHistoryContinuityStatus {
  * [AccountHistoryContinuityStatus.NO_OVERLAP], so callers can fail closed
  * without conflating "checked and absent" with "stopped early". Exchange
  * errors resolve to [AccountHistoryContinuityStatus.UNAVAILABLE].
+ *
+ * Callers must pin one credential generation across the whole proof (the
+ * guard runs verification inside a config execution session plus a pinned
+ * backend): window queries are only comparable when they all observe the
+ * same generation.
  */
 class AccountHistoryContinuityVerifier(
     private val krakenService: KrakenService,

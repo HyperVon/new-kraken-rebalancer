@@ -39,7 +39,7 @@ class AccountHistoryScopeGuardTest : StringSpec() {
     private val tradeRepository = SqliteTradeRepositoryImpl(database)
     private val ledgerRepository = SqliteLedgerRepositoryImpl(database)
     private val krakenService = FakeKrakenService()
-    private val configService = mockk<ConfigService>()
+    private val configService = mockk<ConfigService>(relaxed = true)
     private val config = TestFixtures.DEFAULT_TEST_CONFIG.copy(
         kraken = KrakenCredentials(
             TestFixtures.TRADE_HISTORY_API_KEY,
@@ -817,6 +817,9 @@ class AccountHistoryScopeGuardTest : StringSpec() {
                 val tradeRepository = mockk<TradeRepository>(relaxed = true)
                 coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
                     "stale-digest"
+                coEvery { tradeRepository.hasAnyTradeRows() } returns false
+                coEvery { tradeRepository.getLatestTradeTime() } returns null
+                coEvery { tradeRepository.getLatestSnapshot() } returns null
                 coEvery { tradeRepository.getTradesInRange(any(), any()) } returns listOf(
                     TestFixtures.tradeRecord(
                         timestamp = Instant.parse("2026-01-01T00:00:00Z"),
@@ -989,6 +992,258 @@ class AccountHistoryScopeGuardTest : StringSpec() {
                 val result = guard.validateAccountScope()
 
                 result.status shouldBe AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe staleDigest
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe null
+            }
+        }
+
+        "old-version binding with changed fingerprint and consistent history revalidates to current" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                // Stored lineage predates the strengthened contract and names
+                // generation A, while the active credentials are generation B.
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                    AccountHistoryScopeGuard.digestAccountScope("account-A"),
+                )
+                listOf("gen-B-old" to base, "gen-B-new" to base.plusSeconds(100_000L)).forEach { (id, time) ->
+                    tradeRepository.saveTrade(
+                        TestFixtures.tradeRecord(
+                            timestamp = time,
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = id,
+                        ),
+                    )
+                }
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf("gen-B-old" to base, "gen-B-new" to base.plusSeconds(100_000L)).map { (id, time) ->
+                        TestFixtures.tradeRecord(
+                            timestamp = time,
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = id,
+                        )
+                    }
+                }
+
+                // The strong legacy proof must run despite the fingerprint
+                // change — never the lightweight rotation path.
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.VALID
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe AccountHistoryScopeGuard.digestAccountScope("account-B")
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe AccountHistoryScopeGuard.CURRENT_BINDING_VERSION
+            }
+        }
+
+        "old-version binding with changed fingerprint and mixed history is never promoted" {
+            runTest {
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "account-A-old-fill",
+                    ),
+                )
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-03-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "account-B-new-fill",
+                    ),
+                )
+                val staleDigest = AccountHistoryScopeGuard.digestAccountScope("account-A")
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, staleDigest)
+                // Generation B credentials see the B row: the old rotation path
+                // would bind on this single hit, laundering weak lineage.
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.parse("2026-03-01T00:00:00Z"),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = "account-B-new-fill",
+                        ),
+                    )
+                }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe staleDigest
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe null
+            }
+        }
+
+        "old-version binding with changed fingerprint and one marker stays untrusted" {
+            runTest {
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "shared-fill",
+                    ),
+                )
+                val staleDigest = AccountHistoryScopeGuard.digestAccountScope("account-A")
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, staleDigest)
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = "shared-fill",
+                        ),
+                    )
+                }
+
+                // One overlapping row must not promote weak lineage via the
+                // rotation shortcut: insufficient evidence stays unbound.
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe staleDigest
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe null
+            }
+        }
+
+        "old-version binding with changed fingerprint and incomplete search stays untrusted" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                listOf("old-a" to base, "old-b" to base.plusSeconds(100_000L)).forEach { (id, time) ->
+                    tradeRepository.saveTrade(
+                        TestFixtures.tradeRecord(
+                            timestamp = time,
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = id,
+                        ),
+                    )
+                }
+                val staleDigest = AccountHistoryScopeGuard.digestAccountScope("account-A")
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, staleDigest)
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    (0 until 50).map {
+                        TestFixtures.tradeRecord(
+                            timestamp = base,
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = "unrelated-fill-$it",
+                        )
+                    }
+                }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,
+                ) shouldBe staleDigest
+                tradeRepository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                ) shouldBe null
+            }
+        }
+
+        "old-version binding with changed fingerprint and outage stays untrusted" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                listOf("old-a" to base, "old-b" to base.plusSeconds(100_000L)).forEach { (id, time) ->
+                    tradeRepository.saveTrade(
+                        TestFixtures.tradeRecord(
+                            timestamp = time,
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = id,
+                        ),
+                    )
+                }
+                val staleDigest = AccountHistoryScopeGuard.digestAccountScope("account-A")
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, staleDigest)
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ -> error("network") }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
                 result.isValid shouldBe false
                 tradeRepository.getSyncMetadata(
                     SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST,

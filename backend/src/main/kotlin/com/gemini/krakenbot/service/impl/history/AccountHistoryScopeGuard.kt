@@ -5,6 +5,7 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.withExecutionSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -69,7 +70,32 @@ class AccountHistoryScopeGuard(
         if (!config.kraken.hasValidCredentials()) {
             return@withLock AccountScopeValidationResult.scopeUnavailable("credentials unavailable")
         }
+        // Lock ordering: validationMutex -> execution session (configLock, held
+        // only briefly for depth/staging bookkeeping) -> backend pin.
+        // updateConfig takes configLock but never validationMutex, so no lock
+        // cycle is possible. The session freezes getConfig() for the entire
+        // proof below: initial scope derivation, credential probes, every
+        // TradesHistory/Ledgers window, the pre-write recheck, and persistence
+        // all observe exactly one credential generation — which also closes
+        // A -> B -> A flips mid-proof. readLocalTrustState stays session-free
+        // and try-locked so History rendering never blocks on this path.
+        return@withLock configService.withExecutionSession {
+            krakenService.withStableBackend { validatePinned() }
+        }
+    }
 
+    /**
+     * Runs under one execution session plus one pinned backend: every
+     * credential observable here belongs to a single generation.
+     *
+     * Branching is deliberately version-first. An old/unversioned binding
+     * carries no trusted lineage, so it must never reach the lightweight
+     * rotation proof below — not even when the fingerprint changed (a
+     * same-generation-looking rotation on weak lineage proves nothing about
+     * the rest of the history). Only CURRENT-version lineage qualifies for
+     * the one-hit rotation path.
+     */
+    private suspend fun validatePinned(): AccountScopeValidationResult {
         val accountScope = try {
             krakenService.getFundingEvidenceScope().trim()
         } catch (e: CancellationException) {
@@ -79,7 +105,7 @@ class AccountHistoryScopeGuard(
             ""
         }
         if (accountScope.isBlank() || accountScope == "scope-unavailable") {
-            return@withLock AccountScopeValidationResult.scopeUnavailable("account scope unavailable")
+            return AccountScopeValidationResult.scopeUnavailable("account scope unavailable")
         }
 
         val scopeDigest = digestAccountScope(accountScope)
@@ -88,36 +114,35 @@ class AccountHistoryScopeGuard(
             SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
         )?.trim()
 
+        if (!storedScopeDigest.isNullOrBlank() && storedVersion != CURRENT_BINDING_VERSION) {
+            return revalidateOldBinding(scopeDigest)
+        }
+
         if (!storedScopeDigest.isNullOrBlank()) {
-            if (storedScopeDigest == scopeDigest && storedVersion == CURRENT_BINDING_VERSION) {
-                return@withLock AccountScopeValidationResult(
+            if (storedScopeDigest == scopeDigest) {
+                return AccountScopeValidationResult(
                     AccountScopeValidationStatus.VALID,
                     currentScopeDigest = scopeDigest,
                 )
-            }
-            if (storedScopeDigest == scopeDigest) {
-                // Same fingerprint but a pre-strengthening contract version: never
-                // fast-path it forever. Revalidate once under the current proof
-                // policy; the previous binding is retained until that succeeds.
-                return@withLock revalidateOldBinding(scopeDigest)
             }
             if (isDatabaseFinanciallyEmpty()) {
                 // Bound but financially empty: no history exists to protect, so
                 // authenticated current credentials may safely replace the stale
                 // binding instead of stranding the database in mismatch.
                 if (!verifyCredentialsActive()) {
-                    return@withLock AccountScopeValidationResult.scopeUnavailable(
+                    return AccountScopeValidationResult.scopeUnavailable(
                         "credentials could not be verified against Kraken",
                     )
                 }
-                return@withLock writeBinding(scopeDigest, "Rebound empty database to Kraken account scope digest {}")
+                return writeBinding(scopeDigest, "Rebound empty database to Kraken account scope digest {}")
             }
             // The scope digest is credential-derived, so a key rotation on the same
             // account also presents as a mismatch. This database already carries
-            // trusted lineage, so one exact authoritative identity visible through
-            // the new credentials re-establishes continuity; a different account
-            // whose history merely shares this database stays locked out.
-            return@withLock when (krakenService.withStableBackend { continuityVerifier.verifyContinuity() }) {
+            // trusted CURRENT-version lineage, so one exact authoritative identity
+            // visible through the new credentials re-establishes continuity; a
+            // different account whose history merely shares this database stays
+            // locked out.
+            return when (continuityVerifier.verifyContinuity()) {
                 AccountHistoryContinuityStatus.VERIFIED ->
                     writeBinding(scopeDigest, "Rebound database to rotated Kraken account scope digest {}")
 
@@ -143,21 +168,24 @@ class AccountHistoryScopeGuard(
             // unauthenticated scope hash would otherwise bind (or poison) a fresh
             // database on unvalidated secrets.
             if (!verifyCredentialsActive()) {
-                return@withLock AccountScopeValidationResult.scopeUnavailable(
+                return AccountScopeValidationResult.scopeUnavailable(
                     "credentials could not be verified against Kraken",
                 )
             }
-            return@withLock writeBinding(scopeDigest, "Bound empty database to initial Kraken account scope digest {}")
+            return writeBinding(scopeDigest, "Bound empty database to initial Kraken account scope digest {}")
         }
 
-        return@withLock resolveUnboundDatabase(scopeDigest)
+        return resolveUnboundDatabase(scopeDigest)
     }
 
     /**
-     * Revalidates a same-fingerprint binding written under an older proof
-     * contract. Empty bindings upgrade after authentication; non-empty history
-     * must pass the full legacy consistency proof again. Failure retains the
-     * old digest and version untouched.
+     * Revalidates a binding written under an older proof contract, regardless of
+     * whether the fingerprint matches. Same-generation equality proves nothing
+     * about lineage strength: the old proof may have bound on a single row of
+     * mixed history. Empty bindings upgrade after authentication; non-empty
+     * history must pass the full legacy consistency proof again, binding the
+     * CURRENT fingerprint only on success. Failure retains the old digest and
+     * version untouched.
      */
     private suspend fun revalidateOldBinding(scopeDigest: String): AccountScopeValidationResult {
         if (isDatabaseFinanciallyEmpty()) {
@@ -168,7 +196,7 @@ class AccountHistoryScopeGuard(
             }
             return writeBinding(scopeDigest, "Upgraded empty account binding to contract version {}")
         }
-        return when (krakenService.withStableBackend { continuityVerifier.verifyLegacyConsistency() }) {
+        return when (continuityVerifier.verifyLegacyConsistency()) {
             AccountHistoryContinuityStatus.VERIFIED ->
                 writeBinding(scopeDigest, "Revalidated account binding under contract version {}")
 
@@ -269,11 +297,11 @@ class AccountHistoryScopeGuard(
     /**
      * Binds an unscoped legacy database only when the full consistency proof
      * shows the active credentials own the sampled lifetime — never on a
-     * single overlapping row, which could launder mixed-account history.
+     * single overlapping row, which could otherwise bind over undetected mixed-account history.
      * Conflict, absence, outage, and incomplete searches all fail closed.
      */
     private suspend fun resolveUnboundDatabase(scopeDigest: String): AccountScopeValidationResult =
-        when (krakenService.withStableBackend { continuityVerifier.verifyLegacyConsistency() }) {
+        when (continuityVerifier.verifyLegacyConsistency()) {
             AccountHistoryContinuityStatus.VERIFIED ->
                 writeBinding(
                     scopeDigest,

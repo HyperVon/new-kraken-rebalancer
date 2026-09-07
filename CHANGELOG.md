@@ -37,7 +37,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Already-bound credential rotation needs one exact authoritative identity against trusted
   lineage, while unbound legacy first binding requires every sampled time-spread marker
   (up to five trades plus five ledgers) to match — a definitively absent marker alongside
-  a match reports conflict and never binds, so mixed-account history cannot be laundered.
+  a match reports conflict and never binds, so binding is refused whenever sampled time-spread
+  evidence reveals mixed-account history.
   Bindings carry a proof-contract version: older pre-merge bindings are revalidated once
   instead of fast-pathed forever, and a bound but financially empty database may adopt
   authenticated replacement credentials. Dense windows paginate to a page cap and report

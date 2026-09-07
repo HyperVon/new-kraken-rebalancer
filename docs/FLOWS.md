@@ -511,9 +511,13 @@ page occupancy so filtered short parsed pages cannot fake completion. History
 rendering
 reads a local fingerprint-vs-binding trust state with a try-lock instead of starting continuity
 proof, and a manually configured inception date never overrides a failed,
-busy, or unknown binding. Proof windows run under a pinned backend and the
-proven fingerprint is re-derived before any binding write, so credentials
-changing mid-proof abort without writing.
+busy, or unknown binding. Proof windows run inside a config execution session
+plus a pinned backend so every scope read, probe, window query, recheck, and
+write observes one credential generation, and the proven fingerprint is
+re-derived before any binding write, so credentials changing mid-proof abort
+without writing. Old or missing binding versions are never fast-pathed and
+never take the lightweight rotation proof: they revalidate under the strong
+legacy consistency policy regardless of fingerprint equality.
 Recovery is bounded to four pages per invocation and throttled for five minutes; the UI observes
 durable state through `/api/history/sync-progress`, so neither startup nor a History request waits
 for an unbounded account-history scan.
