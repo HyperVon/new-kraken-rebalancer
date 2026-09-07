@@ -102,7 +102,8 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
 
                 info.status shouldBe InceptionDisplayStatus.UNAVAILABLE
                 info.dateText.shouldBeNull()
-                info.toDisplayText() shouldContain "unavailable"
+                info.toDisplayText() shouldBe
+                    "Auto-detection unavailable — current account/history trust is unavailable."
                 info.toDisplayText() shouldNotContain "2024-03-15"
                 coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
                 coVerify(exactly = 0) { krakenService.getBalances() }
@@ -777,6 +778,279 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 // Verify read path performed zero writes
                 coVerify(exactly = 0) { repository.setSyncMetadata(any(), any()) }
                 coVerify(exactly = 0) { ledgerRepository.setSyncMetadata(any(), any()) }
+            }
+        }
+
+        // Durable CONFIRMED recovery status requirement tests (Scenarios 1-6 and 10)
+        // 1. auto-recovered date + IN_PROGRESS
+        "getDetectedInceptionDisplayInfo_autoRecoveredDateWithInProgressStatus_withholdsDate" {
+            runTest {
+                val epochMs = Instant.parse("2024-03-15T12:00:00Z").toEpochMilli()
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(guard = guard, config = config)
+                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val service = createServiceWithRecovery(recovery)
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+                } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+                } returns expectedFingerprint
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
+                } returns InceptionRecoveryService.INCEPTION_SOURCE_AUTO_RECOVERED
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
+                } returns InceptionRecoveryStatus.IN_PROGRESS
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.IN_PROGRESS
+                info.dateText.shouldBeNull()
+                info.toDisplayText() shouldBe "Auto-detection in progress — syncing Kraken history…"
+                info.toDisplayText() shouldNotContain "2024-03-15"
+            }
+        }
+
+        // 2. auto-recovered date + FAILED
+        "getDetectedInceptionDisplayInfo_autoRecoveredDateWithFailedStatus_withholdsDate" {
+            runTest {
+                val epochMs = Instant.parse("2024-03-15T12:00:00Z").toEpochMilli()
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(guard = guard, config = config)
+                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val service = createServiceWithRecovery(recovery)
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+                } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+                } returns expectedFingerprint
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
+                } returns InceptionRecoveryService.INCEPTION_SOURCE_AUTO_RECOVERED
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
+                } returns InceptionRecoveryStatus.FAILED
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.FAILED
+                info.dateText.shouldBeNull()
+                info.toDisplayText() shouldBe
+                    "Auto-detection temporarily unavailable — history recovery failed and will retry."
+                info.toDisplayText() shouldNotContain "2024-03-15"
+            }
+        }
+
+        // 3. auto-recovered date + AMBIGUOUS
+        "getDetectedInceptionDisplayInfo_autoRecoveredDateWithAmbiguousStatus_withholdsDate" {
+            runTest {
+                val epochMs = Instant.parse("2024-03-15T12:00:00Z").toEpochMilli()
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(guard = guard, config = config)
+                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val service = createServiceWithRecovery(recovery)
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+                } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+                } returns expectedFingerprint
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
+                } returns InceptionRecoveryService.INCEPTION_SOURCE_AUTO_RECOVERED
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
+                } returns InceptionRecoveryStatus.AMBIGUOUS
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.AMBIGUOUS
+                info.dateText.shouldBeNull()
+                info.toDisplayText() shouldBe "Auto-detection unavailable — recovered history is ambiguous."
+                info.toDisplayText() shouldNotContain "2024-03-15"
+            }
+        }
+
+        // 4. auto-recovered date + BASELINE_UNAVAILABLE
+        "getDetectedInceptionDisplayInfo_autoRecoveredDateWithBaselineUnavailableStatus_withholdsDate" {
+            runTest {
+                val epochMs = Instant.parse("2024-03-15T12:00:00Z").toEpochMilli()
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(guard = guard, config = config)
+                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val service = createServiceWithRecovery(recovery)
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+                } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+                } returns expectedFingerprint
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
+                } returns InceptionRecoveryService.INCEPTION_SOURCE_AUTO_RECOVERED
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
+                } returns InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.BASELINE_UNAVAILABLE
+                info.dateText.shouldBeNull()
+                info.toDisplayText() shouldBe
+                    "Auto-detection unavailable — a trustworthy historical baseline could not be established."
+                info.toDisplayText() shouldNotContain "2024-03-15"
+            }
+        }
+
+        // 5. auto-recovered date + UNAVAILABLE
+        "getDetectedInceptionDisplayInfo_autoRecoveredDateWithUnavailableStatus_withholdsDate" {
+            runTest {
+                val epochMs = Instant.parse("2024-03-15T12:00:00Z").toEpochMilli()
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(guard = guard, config = config)
+                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val service = createServiceWithRecovery(recovery)
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+                } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+                } returns expectedFingerprint
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
+                } returns InceptionRecoveryService.INCEPTION_SOURCE_AUTO_RECOVERED
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
+                } returns InceptionRecoveryStatus.UNAVAILABLE
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.UNAVAILABLE
+                info.dateText.shouldBeNull()
+                info.toDisplayText() shouldBe
+                    "Auto-detection unavailable — current account/history trust is unavailable."
+                info.toDisplayText() shouldNotContain "2024-03-15"
+            }
+        }
+
+        // 6. auto-recovered date + COMPLETE_NO_BOT_EVIDENCE
+        "getDetectedInceptionDisplayInfo_autoRecoveredDateWithCompleteNoBotEvidenceStatus_withholdsDate" {
+            runTest {
+                val epochMs = Instant.parse("2024-03-15T12:00:00Z").toEpochMilli()
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(guard = guard, config = config)
+                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val service = createServiceWithRecovery(recovery)
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+                } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+                } returns expectedFingerprint
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
+                } returns InceptionRecoveryService.INCEPTION_SOURCE_AUTO_RECOVERED
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
+                } returns InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.COMPLETE_NO_BOT_EVIDENCE
+                info.dateText.shouldBeNull()
+                info.toDisplayText() shouldBe
+                    "Auto-detection unavailable — no trustworthy bot inception evidence was found."
+                info.toDisplayText() shouldNotContain "2024-03-15"
+            }
+        }
+
+        // 10. Crash-like partial durable state: valid date/source and fingerprint, but status IN_PROGRESS
+        "getDetectedInceptionDisplayInfo_crashLikePartialDurableState_withholdsDateAndDoesNotShowConfirmed" {
+            runTest {
+                val epochMs = Instant.parse("2024-03-15T12:00:00Z").toEpochMilli()
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(guard = guard, config = config)
+                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val service = createServiceWithRecovery(recovery)
+
+                // Sequence where epoch and source were written, but status remains IN_PROGRESS
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+                } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+                } returns expectedFingerprint
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
+                } returns InceptionRecoveryService.INCEPTION_SOURCE_AUTO_RECOVERED
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
+                } returns InceptionRecoveryStatus.IN_PROGRESS
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.IN_PROGRESS
+                info.status shouldNotBe InceptionDisplayStatus.CONFIRMED
+                info.dateText.shouldBeNull()
+                info.toDisplayText() shouldNotContain "2024-03-15"
+                info.toDisplayText() shouldBe "Auto-detection in progress — syncing Kraken history…"
             }
         }
     }

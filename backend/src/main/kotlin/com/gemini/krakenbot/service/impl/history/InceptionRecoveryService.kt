@@ -138,27 +138,38 @@ class InceptionRecoveryService(
             )
         }
 
+        val recoveryStatus = readStatus()
         val epochMs = repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)?.toLongOrNull()
         val source = repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)?.trim()
         val nowMs = nowProvider().toEpochMilli()
 
-        if (epochMs != null && epochMs > 0 && epochMs <= nowMs &&
+        val isAutomaticDetectionValid = epochMs != null && epochMs > 0 && epochMs <= nowMs &&
             (
                 source == InceptionDiscoveryService.INCEPTION_SOURCE_AUTO ||
                     source == INCEPTION_SOURCE_AUTO_RECOVERED
                 )
-        ) {
-            val dateText = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate().toString()
+
+        if (recoveryStatus.status == InceptionRecoveryStatus.CONFIRMED) {
+            if (isAutomaticDetectionValid) {
+                val dateText = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate().toString()
+                return InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.CONFIRMED,
+                    dateText = dateText,
+                    source = source,
+                    message = ViewText.INCEPTION_DETECTED_LEAVE_BLANK,
+                )
+            }
             return InceptionDisplayInfo(
-                status = InceptionDisplayStatus.CONFIRMED,
-                dateText = dateText,
-                source = source,
-                message = ViewText.INCEPTION_DETECTED_LEAVE_BLANK,
+                status = InceptionDisplayStatus.UNAVAILABLE,
+                message = ViewText.INCEPTION_DETECTED_UNAVAILABLE,
             )
         }
 
-        val recoveryStatus = readStatus()
-        return when (recoveryStatus.status) {
+        return displayFromRecoveryStatus(recoveryStatus)
+    }
+
+    private fun displayFromRecoveryStatus(recoveryStatus: InceptionRecoveryStatus): InceptionDisplayInfo =
+        when (recoveryStatus.status) {
             InceptionRecoveryStatus.IN_PROGRESS -> InceptionDisplayInfo(
                 status = InceptionDisplayStatus.IN_PROGRESS,
                 message = ViewText.INCEPTION_DETECTED_IN_PROGRESS,
@@ -189,19 +200,11 @@ class InceptionRecoveryService(
                 message = ViewText.INCEPTION_DETECTED_UNAVAILABLE,
             )
 
-            InceptionRecoveryStatus.CONFIRMED -> {
-                InceptionDisplayInfo(
-                    status = InceptionDisplayStatus.UNAVAILABLE,
-                    message = ViewText.INCEPTION_DETECTED_UNAVAILABLE,
-                )
-            }
-
             else -> InceptionDisplayInfo(
                 status = InceptionDisplayStatus.NOT_DETECTED,
                 message = ViewText.INCEPTION_DETECTED_NOT_STARTED,
             )
         }
-    }
 
     /**
      * Clears automatic evidence whenever the explicit inception setting changes. This is a

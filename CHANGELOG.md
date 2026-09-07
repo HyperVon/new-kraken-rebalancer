@@ -14,8 +14,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the currently trusted automatic strategy inception as plain text under the Inception Date
   field. Display reads are strictly local and non-blocking: they check active account trust via
   `AccountHistoryScopeGuard.readLocalTrustState()`, verify the configuration fingerprint against
-  the tracked allocation universe, and strictly whitelist automatic sources (`auto`,
-  `auto-recovered`). Stale detection from another account or modified configuration is withheld,
+  the tracked allocation universe, strictly whitelist automatic sources (`auto`,
+  `auto-recovered`), and require durable recovery status `CONFIRMED`. Stale detection from another account,
+  modified configuration, unconfirmed recovery status, or invalid metadata is withheld,
   display reads never trigger Kraken recovery, and manual input remains independent and is never
   overwritten.
 
