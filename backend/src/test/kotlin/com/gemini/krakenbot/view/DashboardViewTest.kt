@@ -281,6 +281,33 @@ class DashboardViewTest : StringSpec() {
             html shouldNotContain "name=\"coverage"
         }
 
+        "renderSettingsPage_allAmbiguousEvidence_rendersNoEstimatedStart" {
+            val html = createHTML().html {
+                view.renderSettingsPage(
+                    baseConfig,
+                    null,
+                    testCsrfToken,
+                    inceptionDisplay = InceptionDisplayInfo(
+                        status = InceptionDisplayStatus.UNAVAILABLE,
+                        firstPositiveText = "2026-08-06T11:45:49.984Z",
+                        earliestAmbiguousText = "2025-12-05T12:03:16.926Z",
+                        earlierAmbiguousCountText = "345",
+                        competingCandidatesText = "405",
+                        coverageText = "2019-05-11T23:50:09.034Z to 2026-09-06T12:17:07.277Z",
+                    ),
+                )
+            }
+            html shouldNotContain "Estimated strategy start:"
+            html shouldNotContain "Evidence window:"
+            html shouldNotContain "Estimated-start evidence strength:"
+            html shouldNotContain
+                "Earlier ambiguous activity exists before the estimated strategy start."
+            html shouldContain "Earlier ambiguous activity: 345."
+            html shouldContain "Earliest ambiguous activity: 2025-12-05T12:03:16.926Z."
+            html shouldContain "First positively owned fill: 2026-08-06T11:45:49.984Z."
+            html shouldContain "Other plausible activity: 405."
+        }
+
         "renderSettingsPage_inProgressInception_rendersProgressMessage" {
             val html = createHTML().html {
                 view.renderSettingsPage(

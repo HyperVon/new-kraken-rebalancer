@@ -91,6 +91,9 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
         strength: String? = null,
         reasons: List<String> = emptyList(),
         contradictions: List<String> = emptyList(),
+        strongestStrength: String? = strength,
+        strongestReasons: List<String> = reasons,
+        strongestContradictions: List<String> = contradictions,
         competingCandidateCount: Int = 0,
         unsupportedMarketCount: Int = 0,
         unsupportedMarketSamples: List<String> = emptyList(),
@@ -113,9 +116,9 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
         inferredStartReasons = reasons,
         inferredStartContradictions = contradictions,
         strongestObservedStart = strongestObserved,
-        strongestEpisodeStrength = strength,
-        strongestEpisodeReasons = reasons,
-        strongestEpisodeContradictions = contradictions,
+        strongestEpisodeStrength = strongestStrength,
+        strongestEpisodeReasons = strongestReasons,
+        strongestEpisodeContradictions = strongestContradictions,
         earliestAmbiguousStart = earliestAmbiguousStart,
         earlierAmbiguousCandidateCount = earlierAmbiguousCandidateCount,
         unsupportedMarketCount = unsupportedMarketCount,
@@ -342,6 +345,9 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     strength = "MEDIUM",
                     reasons = listOf("MULTI_ASSET_EPISODE", "REDISTRIBUTION_SELL_THEN_BUY"),
                     contradictions = listOf("EARLIER_ACTIVITY_IN_WINDOW"),
+                    strongestStrength = "HIGH",
+                    strongestReasons = listOf("REDISTRIBUTION_SELL_THEN_BUY"),
+                    strongestContradictions = emptyList(),
                     competingCandidateCount = 2,
                     unsupportedMarketCount = 1,
                     unsupportedMarketSamples = listOf("ADAUSDT"),
@@ -362,6 +368,8 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 info.inferredStartReasonsText shouldBe "multi asset episode, redistribution sell then buy"
                 info.inferredStartContradictionsText shouldBe "earlier activity in window"
                 info.strongestEpisodeText shouldBe inferredStart.plusSeconds(1500).toString()
+                info.strongestEpisodeStrengthText shouldBe "HIGH"
+                info.strongestEpisodeReasonsText shouldBe "redistribution sell then buy"
                 info.competingCandidatesText shouldBe "2"
                 info.unsupportedMarketsText shouldBe "1 (ADAUSDT)"
                 info.coverageText shouldBe "$coverageStart to $windowEnd"

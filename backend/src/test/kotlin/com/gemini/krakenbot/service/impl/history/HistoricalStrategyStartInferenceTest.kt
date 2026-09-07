@@ -407,6 +407,20 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             inference.strongestObservedStart shouldBe start
         }
 
+        "keeps a three-asset mixed-side episode ambiguous and non-anchoring" {
+            val trades = listOf(
+                trade("m3-sell-1", start, "ASSET1USD", "sell"),
+                trade("m3-buy-2", start.plusSeconds(1), "ASSET2USD", "buy"),
+                trade("m3-sell-3", start.plusSeconds(2), "ASSET3USD", "sell"),
+            )
+
+            val inference = HistoricalStrategyStartDetector.infer(trades)
+
+            inference.candidates.first().strength shouldBe InferenceStrength.LOW
+            inference.inferredStart shouldBe null
+            inference.earliestAmbiguousStart shouldBe start
+        }
+
         "keeps distant purchase-only episodes outside the window as ambiguous competing evidence" {
             val near = listOf(
                 trade("near-btc", start, "BTCUSD", "buy"),

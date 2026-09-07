@@ -239,8 +239,17 @@ class SettingsFormComponent {
             }
         }
         display.earlierAmbiguousCountText?.let { count ->
-            val note = "${ViewText.INCEPTION_EARLIER_AMBIGUOUS_LABEL}: $count. " +
-                "${ViewText.INCEPTION_EARLIER_AMBIGUOUS_NOTE}"
+            val note = buildString {
+                append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_LABEL)
+                append(": ")
+                append(count)
+                append('.')
+                // The before-the-start note only makes sense once a start is displayed.
+                if (display.inferredStartText != null) {
+                    append(' ')
+                    append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_NOTE)
+                }
+            }
             p(CssClass.Form.SectionSubtitle) { +note }
         }
         display.competingCandidatesText?.let { count ->
