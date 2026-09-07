@@ -132,7 +132,7 @@ class TradeHistoryServiceImpl(
     override suspend fun getDetectedInceptionDisplayInfo(): InceptionDisplayInfo {
         val epochMs = getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)?.toLongOrNull()
         val source = getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
-        if (epochMs != null && epochMs > 0 && source != null &&
+        if (epochMs != null && epochMs > 0 && !source.isNullOrBlank() &&
             source != InceptionDiscoveryService.INCEPTION_SOURCE_CONFIGURED
         ) {
             if (epochMs <= System.currentTimeMillis()) {

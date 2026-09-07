@@ -90,6 +90,25 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "getDetectedInceptionDisplayInfo_blankSource_treatedAsAbsent" {
+            runTest {
+                val epochMs = Instant.parse("2024-03-15T12:00:00Z").toEpochMilli()
+                val service = createService()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
+                } returns epochMs.toString()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
+                } returns " "
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.dateText.shouldBeNull()
+                info.source.shouldBeNull()
+                info.inProgress shouldBe false
+            }
+        }
+
         "getDetectedInceptionDisplayInfo_inProgressNoCache_returnsInProgress" {
             runTest {
                 val sync = mockk<TradeHistorySyncService>()
