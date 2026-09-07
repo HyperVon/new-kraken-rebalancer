@@ -17,6 +17,7 @@ import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import com.gemini.krakenbot.service.impl.history.TradeHistorySnapshotStore
 import com.gemini.krakenbot.service.impl.history.TradeHistorySyncService
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
@@ -78,6 +79,34 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
             ledgersSyncService = mockk<LedgersSyncService>(relaxed = true),
             inceptionRecoveryService = recovery,
         )
+
+    private fun stubInferenceMetadata(recovery: InceptionRecoveryService, config: AppConfig, inferredStart: Instant) {
+        val windowEnd = inferredStart.plusSeconds(33)
+        coEvery {
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION)
+        } returns InceptionRecoveryService.CURRENT_INFERENCE_VERSION
+        coEvery {
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
+        } returns recovery.inferenceFingerprint(config, "scope-a")
+        coEvery {
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
+        } returns inferredStart.toEpochMilli().toString()
+        coEvery {
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
+        } returns inferredStart.toEpochMilli().toString()
+        coEvery {
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
+        } returns windowEnd.toEpochMilli().toString()
+        coEvery {
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
+        } returns ""
+        coEvery {
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+        } returns InceptionRecoveryService.CURRENT_RECOVERY_VERSION
+        coEvery {
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+        } returns "stale-confirmed-fingerprint"
+    }
 
     init {
         // Scenario A: Confirmed Account A -> credentials switched to Account B
@@ -340,6 +369,132 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 info.inferredStartText.shouldBeNull()
                 info.inferredWindowStartText.shouldBeNull()
                 info.inferredWindowEndText.shouldBeNull()
+            }
+        }
+
+        "getDetectedInceptionDisplayInfo_inferredFingerprintMismatch_hidesInference" {
+            runTest {
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                    now = Instant.parse("2026-01-01T00:00:00Z"),
+                )
+                val service = createServiceWithRecovery(recovery)
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+
+                stubInferenceMetadata(recovery, config, inferredStart)
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT)
+                } returns recovery.inferenceFingerprint(config, "different-scope")
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.inferredStartText.shouldBeNull()
+                info.inferredWindowStartText.shouldBeNull()
+                info.inferredWindowEndText.shouldBeNull()
+                info.firstPositiveText.shouldBeNull()
+            }
+        }
+
+        "getDetectedInceptionDisplayInfo_impossibleInferredEpochs_areHidden" {
+            runTest {
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                    now = Instant.parse("2026-01-01T00:00:00Z"),
+                )
+                val service = createServiceWithRecovery(recovery)
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+                stubInferenceMetadata(recovery, config, inferredStart)
+
+                suspend fun expectHidden(startValue: String?, windowEndValue: String) {
+                    coEvery {
+                        repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_START_EPOCH_MS)
+                    } returns startValue
+                    coEvery {
+                        repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_START_EPOCH_MS)
+                    } returns inferredStart.minusSeconds(10).toEpochMilli().toString()
+                    coEvery {
+                        repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERRED_WINDOW_END_EPOCH_MS)
+                    } returns windowEndValue
+                    coEvery {
+                        repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
+                    } returns ""
+
+                    val info = service.getDetectedInceptionDisplayInfo()
+
+                    info.inferredStartText.shouldBeNull()
+                    info.inferredWindowStartText.shouldBeNull()
+                    info.inferredWindowEndText.shouldBeNull()
+                    info.firstPositiveText.shouldBeNull()
+                }
+
+                expectHidden(
+                    inferredStart.toEpochMilli().toString(),
+                    inferredStart.minusSeconds(1).toEpochMilli().toString(),
+                )
+                expectHidden(null, inferredStart.toEpochMilli().toString())
+                expectHidden("0", inferredStart.toEpochMilli().toString())
+                expectHidden("-1", inferredStart.toEpochMilli().toString())
+                expectHidden(Long.MIN_VALUE.toString(), inferredStart.toEpochMilli().toString())
+                expectHidden(
+                    Instant.parse("2026-01-02T00:00:00Z").toEpochMilli().toString(),
+                    Instant.parse("2026-01-02T00:00:00Z").toEpochMilli().toString(),
+                )
+                expectHidden("not-a-number", inferredStart.toEpochMilli().toString())
+            }
+        }
+
+        "getDetectedInceptionDisplayInfo_firstPositiveParsing_rules" {
+            runTest {
+                val config = testConfig()
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                    now = Instant.parse("2026-01-01T00:00:00Z"),
+                )
+                val service = createServiceWithRecovery(recovery)
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+                stubInferenceMetadata(recovery, config, inferredStart)
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
+                } returns inferredStart.minusSeconds(10).toEpochMilli().toString()
+                var info = service.getDetectedInceptionDisplayInfo()
+
+                info.inferredStartText shouldBe inferredStart.toString()
+                info.inferredWindowEndText.shouldNotBeNull()
+                info.firstPositiveText shouldBe inferredStart.minusSeconds(10).toString()
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
+                } returns "   "
+                info = service.getDetectedInceptionDisplayInfo()
+
+                info.inferredStartText shouldBe inferredStart.toString()
+                info.firstPositiveText.shouldBeNull()
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_FIRST_POSITIVE_EPOCH_MS)
+                } returns "not-a-number"
+                info = service.getDetectedInceptionDisplayInfo()
+
+                info.inferredStartText.shouldBeNull()
+                info.firstPositiveText.shouldBeNull()
             }
         }
 

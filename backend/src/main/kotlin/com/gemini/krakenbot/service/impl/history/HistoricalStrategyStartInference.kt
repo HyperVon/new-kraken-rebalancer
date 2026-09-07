@@ -145,11 +145,11 @@ internal object HistoricalStrategyStartDetector {
         return HistoricalStrategyStartInference(
             candidates = ranked,
             firstPositivelyOwnedTrade = normalized
-                .filter { it.ownership == InferenceOwnership.POSITIVE }
-                .minOfOrNull { it.timestamp },
+                .firstOrNull { it.ownership == InferenceOwnership.POSITIVE }
+                ?.timestamp,
             unsupportedMarkets = unsupportedMarkets,
-            coverageStart = normalized.firstOrNull()?.timestamp,
-            coverageEnd = normalized.lastOrNull()?.timestamp,
+            coverageStart = normalized.first().timestamp,
+            coverageEnd = normalized.last().timestamp,
         )
     }
 
@@ -164,7 +164,7 @@ internal object HistoricalStrategyStartDetector {
                 current = mutableListOf(trade)
             }
         }
-        if (current.isNotEmpty()) episodes += current
+        episodes += current
         return episodes
     }
 

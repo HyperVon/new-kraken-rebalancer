@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -806,6 +807,14 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.getSyncMetadata("inference-version") shouldBe "1"
                 repository.getSyncMetadata("inference-start") shouldBe "1766378880000"
                 repository.getSyncMetadata("inference-window-end") shouldBe "1766378913000"
+            }
+        }
+
+        "atomic metadata write treats an empty batch as a no-op" {
+            runTest {
+                repository.setSyncMetadataAtomically(emptyMap())
+
+                repository.getSyncMetadata("inference-empty-batch-key").shouldBeNull()
             }
         }
     }
