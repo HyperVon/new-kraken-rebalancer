@@ -266,10 +266,15 @@ scope binding, private-history synchronization and automatic inception remain
 blocked until the correct account is restored or an explicit migration/reset is
 performed. A scope mismatch caused by rotating API keys on the same account
 rebinds automatically once bounded timestamp-windowed exchange queries still
-contain an exact retained fill or ledger identity, and an unbound upgraded
-database binds on the same proof; an empty database binds only after the
-configured credentials verify live against Kraken. History rendering itself
-never waits on that proof: it reads the local binding state, so a pending or
+contain an exact retained fill or ledger identity against the already-trusted
+binding, while an unbound upgraded database binds only when every sampled
+time-spread marker matches — a single overlapping row never suffices there, so
+mixed-account history reports conflict instead of binding. An empty database
+binds only after the configured credentials verify live against Kraken, and a
+bound-but-empty database may adopt authenticated replacement credentials.
+History rendering itself
+never waits on that proof: it reads the local binding state without blocking
+behind network validation, so a pending or
 incomplete verification shows as unavailable rather than stalling the page.
 A manually configured inception date fixes *when* inception was, but production
 withholds trust from the local snapshot while the account scope verdict is

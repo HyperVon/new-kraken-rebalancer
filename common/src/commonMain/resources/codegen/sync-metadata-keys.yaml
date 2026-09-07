@@ -41,3 +41,4 @@ SyncMetadataKeys:
   INCEPTION_RECOVERY_BASELINE_SNAPSHOT_ID: "inception_recovery_baseline_snapshot_id"
   INCEPTION_RECOVERY_REASON: "inception_recovery_reason"
   INCEPTION_ACCOUNT_SCOPE_DIGEST: "inception_account_scope_digest"
+  INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION: "inception_account_scope_binding_version"

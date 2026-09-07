@@ -34,8 +34,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   non-empty legacy database without a binding, rebinds only after bounded marker-timestamped
   exchange windows prove continuity with an exact retained fill or ledger identity (typed
   `tradeId`/`ledgerId` match; timestamps only locate the search, amounts never prove it).
-  Dense windows paginate to a page cap and report incomplete rather than absent; different
-  accounts, incomplete searches, and outages all fail closed with the previous binding retained.
+  Already-bound credential rotation needs one exact authoritative identity against trusted
+  lineage, while unbound legacy first binding requires every sampled time-spread marker
+  (up to five trades plus five ledgers) to match — a definitively absent marker alongside
+  a match reports conflict and never binds, so mixed-account history cannot be laundered.
+  Bindings carry a proof-contract version: older pre-merge bindings are revalidated once
+  instead of fast-pathed forever, and a bound but financially empty database may adopt
+  authenticated replacement credentials. Dense windows paginate to a page cap and report
+  incomplete rather than absent; different accounts, incomplete searches, and outages all
+  fail closed with the previous binding retained.
   History rendering reads a local fingerprint-vs-binding trust state and never starts network
   continuity proof. A manually configured inception date still fixes *when* inception was, but a
   busy/unknown scope verdict withholds trust from the local snapshot in production, so a durable

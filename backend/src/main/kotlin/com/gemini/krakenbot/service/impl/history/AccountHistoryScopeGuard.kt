@@ -84,21 +84,42 @@ class AccountHistoryScopeGuard(
 
         val scopeDigest = digestAccountScope(accountScope)
         val storedScopeDigest = tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
+        val storedVersion = tradeRepository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+        )?.trim()
 
         if (!storedScopeDigest.isNullOrBlank()) {
-            if (storedScopeDigest == scopeDigest) {
+            if (storedScopeDigest == scopeDigest && storedVersion == CURRENT_BINDING_VERSION) {
                 return@withLock AccountScopeValidationResult(
                     AccountScopeValidationStatus.VALID,
                     currentScopeDigest = scopeDigest,
                 )
             }
+            if (storedScopeDigest == scopeDigest) {
+                // Same fingerprint but a pre-strengthening contract version: never
+                // fast-path it forever. Revalidate once under the current proof
+                // policy; the previous binding is retained until that succeeds.
+                return@withLock revalidateOldBinding(scopeDigest)
+            }
+            if (isDatabaseFinanciallyEmpty()) {
+                // Bound but financially empty: no history exists to protect, so
+                // authenticated current credentials may safely replace the stale
+                // binding instead of stranding the database in mismatch.
+                if (!verifyCredentialsActive()) {
+                    return@withLock AccountScopeValidationResult.scopeUnavailable(
+                        "credentials could not be verified against Kraken",
+                    )
+                }
+                return@withLock writeBinding(scopeDigest, "Rebound empty database to Kraken account scope digest {}")
+            }
             // The scope digest is credential-derived, so a key rotation on the same
-            // account also presents as a mismatch. Rebind only when the configured
-            // credentials can still see the stored fills; a different account whose
-            // history merely shares this database stays locked out.
-            return@withLock when (continuityVerifier.verifyContinuity()) {
+            // account also presents as a mismatch. This database already carries
+            // trusted lineage, so one exact authoritative identity visible through
+            // the new credentials re-establishes continuity; a different account
+            // whose history merely shares this database stays locked out.
+            return@withLock when (krakenService.withStableBackend { continuityVerifier.verifyContinuity() }) {
                 AccountHistoryContinuityStatus.VERIFIED ->
-                    rebindScopeDigest(scopeDigest, "Rebound database to rotated Kraken account scope digest {}")
+                    writeBinding(scopeDigest, "Rebound database to rotated Kraken account scope digest {}")
 
                 AccountHistoryContinuityStatus.NO_OVERLAP ->
                     AccountScopeValidationResult.scopeMismatch(scopeDigest)
@@ -108,17 +129,16 @@ class AccountHistoryScopeGuard(
                 AccountHistoryContinuityStatus.INCOMPLETE ->
                     AccountScopeValidationResult.scopeUnavailable("account continuity search incomplete")
 
+                AccountHistoryContinuityStatus.CONFLICT ->
+                    AccountScopeValidationResult.scopeMismatch(scopeDigest)
+
                 AccountHistoryContinuityStatus.UNAVAILABLE ->
                     AccountScopeValidationResult.scopeUnavailable("unable to verify account continuity")
             }
         }
 
         // No stored digest: verify whether the financial history is empty.
-        if (tradeRepository.hasAnyTradeRows()) {
-            return@withLock resolveUnboundDatabase(scopeDigest)
-        }
-        val hasHistory = isFinancialHistoryPresent()
-        if (!hasHistory) {
+        if (isDatabaseFinanciallyEmpty()) {
             // Bind an empty database only after the credentials prove live: an
             // unauthenticated scope hash would otherwise bind (or poison) a fresh
             // database on unvalidated secrets.
@@ -127,84 +147,145 @@ class AccountHistoryScopeGuard(
                     "credentials could not be verified against Kraken",
                 )
             }
-            tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
-            log.info("Bound empty database to initial Kraken account scope digest {}", scopeDigest)
-            return@withLock AccountScopeValidationResult(
-                AccountScopeValidationStatus.VALID,
-                currentScopeDigest = scopeDigest,
-            )
+            return@withLock writeBinding(scopeDigest, "Bound empty database to initial Kraken account scope digest {}")
         }
 
         return@withLock resolveUnboundDatabase(scopeDigest)
     }
 
     /**
+     * Revalidates a same-fingerprint binding written under an older proof
+     * contract. Empty bindings upgrade after authentication; non-empty history
+     * must pass the full legacy consistency proof again. Failure retains the
+     * old digest and version untouched.
+     */
+    private suspend fun revalidateOldBinding(scopeDigest: String): AccountScopeValidationResult {
+        if (isDatabaseFinanciallyEmpty()) {
+            if (!verifyCredentialsActive()) {
+                return AccountScopeValidationResult.scopeUnavailable(
+                    "credentials could not be verified against Kraken",
+                )
+            }
+            return writeBinding(scopeDigest, "Upgraded empty account binding to contract version {}")
+        }
+        return when (krakenService.withStableBackend { continuityVerifier.verifyLegacyConsistency() }) {
+            AccountHistoryContinuityStatus.VERIFIED ->
+                writeBinding(scopeDigest, "Revalidated account binding under contract version {}")
+
+            AccountHistoryContinuityStatus.CONFLICT ->
+                AccountScopeValidationResult.unboundExistingHistory(
+                    "account history is inconsistent with the active account",
+                )
+
+            AccountHistoryContinuityStatus.NO_OVERLAP ->
+                AccountScopeValidationResult.unboundExistingHistory()
+
+            AccountHistoryContinuityStatus.INCOMPLETE ->
+                AccountScopeValidationResult.scopeUnavailable("account continuity search incomplete")
+
+            AccountHistoryContinuityStatus.UNAVAILABLE ->
+                AccountScopeValidationResult.scopeUnavailable("unable to verify account continuity")
+        }
+    }
+
+    /**
      * Synchronous local trust read for request-path callers (History rendering).
      * Compares the locally computed credential-generation fingerprint against the
      * durable binding without any Kraken history call: no continuity proof, no
-     * balance probe, no binding write. A matching fingerprint reuses the previous
-     * durable verdict; anything else fails closed as mismatch, unbound, or
-     * pending until background validation ([validateAccountScope]) proves it.
+     * balance probe, no binding write — and no waiting behind a network-bound
+     * validation either. If [validationMutex] is held by an in-flight proof,
+     * this returns [AccountScopeValidationStatus.VALIDATION_PENDING]
+     * immediately so the HTTP request fails closed instead of stalling.
+     * A matching current-contract fingerprint reuses the previous durable
+     * verdict; anything else fails closed as mismatch, unbound, or pending
+     * until background validation ([validateAccountScope]) proves it.
      * Equal fingerprints never require network; changed fingerprints are never
      * locally VALID, so there is no window where credentials B is trusted on a
      * database bound to A just because no verifier has run yet.
      */
-    suspend fun readLocalTrustState(): AccountScopeValidationResult = validationMutex.withLock {
-        val config = configService.getConfig()
-        if (config.settings.simulation) {
-            return@withLock AccountScopeValidationResult.SIMULATION
+    suspend fun readLocalTrustState(): AccountScopeValidationResult {
+        if (!validationMutex.tryLock()) {
+            return AccountScopeValidationResult(
+                AccountScopeValidationStatus.VALIDATION_PENDING,
+                "account validation in progress",
+            )
         }
-        if (!config.kraken.hasValidCredentials()) {
-            return@withLock AccountScopeValidationResult.scopeUnavailable("credentials unavailable")
-        }
-
-        val accountScope = try {
-            krakenService.getFundingEvidenceScope().trim()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Unable to read account scope", e)
-            ""
-        }
-        if (accountScope.isBlank() || accountScope == "scope-unavailable") {
-            return@withLock AccountScopeValidationResult.scopeUnavailable("account scope unavailable")
-        }
-
-        val scopeDigest = digestAccountScope(accountScope)
-        val storedScopeDigest = tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
-        if (!storedScopeDigest.isNullOrBlank()) {
-            return@withLock if (storedScopeDigest == scopeDigest) {
-                AccountScopeValidationResult(
-                    AccountScopeValidationStatus.VALID,
-                    currentScopeDigest = scopeDigest,
-                )
-            } else {
-                AccountScopeValidationResult.scopeMismatch(scopeDigest)
+        try {
+            val config = configService.getConfig()
+            if (config.settings.simulation) {
+                return AccountScopeValidationResult.SIMULATION
             }
+            if (!config.kraken.hasValidCredentials()) {
+                return AccountScopeValidationResult.scopeUnavailable("credentials unavailable")
+            }
+
+            val accountScope = try {
+                krakenService.getFundingEvidenceScope().trim()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Unable to read account scope", e)
+                ""
+            }
+            if (accountScope.isBlank() || accountScope == "scope-unavailable") {
+                return AccountScopeValidationResult.scopeUnavailable("account scope unavailable")
+            }
+
+            val scopeDigest = digestAccountScope(accountScope)
+            val storedScopeDigest =
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
+            val storedVersion = tradeRepository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+            )?.trim()
+            if (!storedScopeDigest.isNullOrBlank()) {
+                if (storedScopeDigest == scopeDigest && storedVersion == CURRENT_BINDING_VERSION) {
+                    return AccountScopeValidationResult(
+                        AccountScopeValidationStatus.VALID,
+                        currentScopeDigest = scopeDigest,
+                    )
+                }
+                if (storedScopeDigest == scopeDigest) {
+                    // Same fingerprint under an older contract: background
+                    // validation must revalidate once before trust resumes.
+                    return AccountScopeValidationResult(
+                        AccountScopeValidationStatus.VALIDATION_PENDING,
+                        "account binding revalidation pending",
+                    )
+                }
+                return AccountScopeValidationResult.scopeMismatch(scopeDigest)
+            }
+            if (!isDatabaseFinanciallyEmpty()) {
+                return AccountScopeValidationResult.unboundExistingHistory()
+            }
+            return AccountScopeValidationResult(
+                AccountScopeValidationStatus.VALIDATION_PENDING,
+                "account validation pending",
+            )
+        } finally {
+            validationMutex.unlock()
         }
-        if (tradeRepository.hasAnyTradeRows() || isFinancialHistoryPresent()) {
-            return@withLock AccountScopeValidationResult.unboundExistingHistory()
-        }
-        return@withLock AccountScopeValidationResult(
-            AccountScopeValidationStatus.VALIDATION_PENDING,
-            "account validation pending",
-        )
     }
 
     /**
-     * Existing unscoped history predates the account binding contract. Bind it only
-     * when continuity proof shows the active credentials own it; never let whichever
-     * credentials happen to be configured first claim foreign history. Exchange
-     * outages and incomplete searches fail closed so a degraded network cannot
-     * launder a mismatch.
+     * Binds an unscoped legacy database only when the full consistency proof
+     * shows the active credentials own the sampled lifetime — never on a
+     * single overlapping row, which could launder mixed-account history.
+     * Conflict, absence, outage, and incomplete searches all fail closed.
      */
     private suspend fun resolveUnboundDatabase(scopeDigest: String): AccountScopeValidationResult =
-        when (continuityVerifier.verifyContinuity()) {
+        when (krakenService.withStableBackend { continuityVerifier.verifyLegacyConsistency() }) {
             AccountHistoryContinuityStatus.VERIFIED ->
-                rebindScopeDigest(
+                writeBinding(
                     scopeDigest,
                     "Bound upgraded database to Kraken account scope digest {} after continuity proof",
                 )
+
+            AccountHistoryContinuityStatus.CONFLICT -> {
+                log.warn("Upgraded database history is inconsistent with the active account; refusing to bind")
+                AccountScopeValidationResult.unboundExistingHistory(
+                    "account history is inconsistent with the active account",
+                )
+            }
 
             AccountHistoryContinuityStatus.NO_OVERLAP -> {
                 log.warn("Upgraded database has existing financial history but no account scope binding")
@@ -221,17 +302,46 @@ class AccountHistoryScopeGuard(
     /**
      * Proof first, then the binding write: the new digest is claimed VALID only
      * when it is durably re-readable, so a failed write (or a crash during the
-     * proof) always retains the previous binding.
+     * proof) always retains the previous binding. The current fingerprint is
+     * re-derived immediately before writing: if the configured credentials
+     * changed while the proof was in flight, the proven digest no longer
+     * describes the active generation and nothing is written.
      */
-    private suspend fun rebindScopeDigest(scopeDigest: String, logMessage: String): AccountScopeValidationResult {
-        tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
+    private suspend fun writeBinding(provenDigest: String, logMessage: String): AccountScopeValidationResult {
+        val current = currentScopeDigest()
+        if (current == null || current != provenDigest) {
+            log.warn("Account credentials changed during continuity verification; retaining previous binding")
+            return AccountScopeValidationResult.scopeUnavailable("account scope changed during verification")
+        }
+        tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, provenDigest)
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+            CURRENT_BINDING_VERSION,
+        )
         val stored = tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
-        if (stored != scopeDigest) {
+        val storedVersion = tradeRepository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+        )?.trim()
+        if (stored != provenDigest || storedVersion != CURRENT_BINDING_VERSION) {
             log.warn("Account scope binding write unverified; retaining previous binding")
             return AccountScopeValidationResult.scopeUnavailable("account scope binding write unverified")
         }
-        log.info(logMessage, scopeDigest)
-        return AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = scopeDigest)
+        log.info(logMessage, provenDigest)
+        return AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = provenDigest)
+    }
+
+    /**
+     * Local credential-generation fingerprint, or null when it cannot be read.
+     * Pure configuration hash — no Kraken history call.
+     */
+    private suspend fun currentScopeDigest(): String? = try {
+        val scope = krakenService.getFundingEvidenceScope().trim()
+        if (scope.isBlank() || scope == "scope-unavailable") null else digestAccountScope(scope)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn("Unable to read account scope", e)
+        null
     }
 
     private suspend fun verifyCredentialsActive(): Boolean = try {
@@ -243,6 +353,15 @@ class AccountHistoryScopeGuard(
         log.warn("Unable to verify Kraken credentials before binding empty database", e)
         false
     }
+
+    /**
+     * True only when no financial history of any kind exists: no trade rows at
+     * all (including failed/dry-run attempts, which still occupy the database),
+     * no snapshots, no ledgers, and no meaningful sync metadata. Only a database
+     * this empty may take the authenticated empty-bind/rebind shortcut.
+     */
+    private suspend fun isDatabaseFinanciallyEmpty(): Boolean =
+        !tradeRepository.hasAnyTradeRows() && !isFinancialHistoryPresent()
 
     suspend fun isFinancialHistoryPresent(): Boolean {
         val durableRows = sequenceOf(
@@ -260,6 +379,14 @@ class AccountHistoryScopeGuard(
     }
 
     companion object {
+        /**
+         * Durable account-binding proof contract. Bindings written without this
+         * version (pre-strengthening pre-merge builds) are never fast-pathed:
+         * they are revalidated once under the current proof policy before
+         * trust resumes.
+         */
+        const val CURRENT_BINDING_VERSION = "2"
+
         private val FINANCIAL_METADATA_KEYS = listOf(
             SyncMetadataKeys.SYNC_OFFSET,
             SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,

@@ -312,6 +312,207 @@ class AccountHistoryContinuityVerifierTest : StringSpec() {
                 shouldThrow<CancellationException> { cancelling.verifyContinuity() }
             }
         }
+
+        "legacy consistency verifies when every sampled marker matches" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                val trades = (0 until 3).map {
+                    storedTrade(id = "legacy-trade-$it", timestamp = base.plusSeconds(it * 1_000L))
+                }
+                trades.forEach { tradeRepository.saveTrade(it) }
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        storedLedger(id = "legacy-ledger-0", time = base),
+                        storedLedger(id = "legacy-ledger-1", time = base.plusSeconds(2_000L)),
+                    ),
+                )
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    trades.map { exchangeTrade(id = it.tradeId, timestamp = it.timestamp) }
+                }
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    listOf(
+                        exchangeLedger(id = "legacy-ledger-0", time = base),
+                        exchangeLedger(id = "legacy-ledger-1", time = base.plusSeconds(2_000L)),
+                    )
+                }
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.VERIFIED
+            }
+        }
+
+        "legacy consistency reports conflict when the newest marker matches but the oldest is absent" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                tradeRepository.saveTrade(storedTrade(id = "account-A-old", timestamp = base))
+                tradeRepository.saveTrade(storedTrade(id = "account-B-new", timestamp = base.plusSeconds(2_000_000L)))
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(exchangeTrade(id = "account-B-new", timestamp = base.plusSeconds(2_000_000L)))
+                }
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.CONFLICT
+            }
+        }
+
+        "legacy consistency reports conflict when the oldest matches but the newest is absent" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                tradeRepository.saveTrade(storedTrade(id = "account-B-old", timestamp = base))
+                tradeRepository.saveTrade(storedTrade(id = "account-A-new", timestamp = base.plusSeconds(2_000_000L)))
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(exchangeTrade(id = "account-B-old", timestamp = base))
+                }
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.CONFLICT
+            }
+        }
+
+        "legacy consistency reports conflict when trades match but a sampled ledger is absent" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                tradeRepository.saveTrade(storedTrade(id = "shared-trade-0", timestamp = base))
+                tradeRepository.saveTrade(storedTrade(id = "shared-trade-1", timestamp = base.plusSeconds(1_000L)))
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        storedLedger(id = "foreign-ledger-0", time = base),
+                        storedLedger(id = "foreign-ledger-1", time = base.plusSeconds(1_000L)),
+                    ),
+                )
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        exchangeTrade(id = "shared-trade-0", timestamp = base),
+                        exchangeTrade(id = "shared-trade-1", timestamp = base.plusSeconds(1_000L)),
+                    )
+                }
+                krakenService.ledgerSupplier = { _, _, _, _ -> emptyList() }
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.CONFLICT
+            }
+        }
+
+        "legacy consistency reports conflict when ledgers match but a sampled trade is absent" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                tradeRepository.saveTrade(storedTrade(id = "foreign-trade-0", timestamp = base))
+                tradeRepository.saveTrade(storedTrade(id = "foreign-trade-1", timestamp = base.plusSeconds(1_000L)))
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        storedLedger(id = "shared-ledger-0", time = base),
+                        storedLedger(id = "shared-ledger-1", time = base.plusSeconds(1_000L)),
+                    ),
+                )
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    listOf(
+                        exchangeLedger(id = "shared-ledger-0", time = base),
+                        exchangeLedger(id = "shared-ledger-1", time = base.plusSeconds(1_000L)),
+                    )
+                }
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.CONFLICT
+            }
+        }
+
+        "legacy consistency reports no overlap when sampled markers are absent without any match" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                tradeRepository.saveTrade(storedTrade(id = "local-old", timestamp = base))
+                tradeRepository.saveTrade(storedTrade(id = "local-new", timestamp = base.plusSeconds(1_000L)))
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(exchangeTrade(id = "foreign-fill", timestamp = base))
+                }
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.NO_OVERLAP
+            }
+        }
+
+        "legacy consistency with a single retained identity is unproven" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                tradeRepository.saveTrade(storedTrade(id = "only-fill", timestamp = base))
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(exchangeTrade(id = "only-fill", timestamp = base))
+                }
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.NO_OVERLAP
+            }
+        }
+
+        "legacy consistency samples across the retained lifetime" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                (0 until 6).forEach { index ->
+                    tradeRepository.saveTrade(
+                        storedTrade(id = "fill-$index", timestamp = base.plusSeconds(index * 10_000L)),
+                    )
+                }
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.NO_OVERLAP
+                // Quantiles 0/25/50/75/100% of six markers: five bounded windows searched.
+                krakenService.getTradeHistoryCallCount shouldBe 5
+            }
+        }
+
+        "legacy consistency reports incomplete when a sampled window cannot finish" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                tradeRepository.saveTrade(storedTrade(id = "dense-old", timestamp = base))
+                tradeRepository.saveTrade(storedTrade(id = "dense-new", timestamp = base.plusSeconds(100_000L)))
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    (0 until 50).map { exchangeTrade(id = "cap-$it", timestamp = base) }
+                }
+                krakenService.tradeHistoryTotalCountOverride = 0
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.INCOMPLETE
+            }
+        }
+
+        "legacy consistency reports unavailable when a sampled window errors" {
+            runTest {
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                tradeRepository.saveTrade(storedTrade(id = "legacy-old", timestamp = base))
+                tradeRepository.saveTrade(storedTrade(id = "legacy-new", timestamp = base.plusSeconds(1_000L)))
+                krakenService.tradeHistorySupplier = { _, _ -> error("network") }
+
+                verifier.verifyLegacyConsistency() shouldBe AccountHistoryContinuityStatus.UNAVAILABLE
+            }
+        }
+
+        "legacy consistency propagates cancellation instead of reporting unavailable" {
+            runTest {
+                val tradeRepository = mockk<TradeRepository>()
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } throws CancellationException("cancelled")
+                val cancelling = AccountHistoryContinuityVerifier(
+                    krakenService,
+                    tradeRepository,
+                    ledgerRepository,
+                    nowProvider = { now },
+                )
+
+                shouldThrow<CancellationException> { cancelling.verifyLegacyConsistency() }
+            }
+        }
+
+        "ledger windows continue past filtered short pages using raw occupancy" {
+            runTest {
+                val markerTime = Instant.parse("2026-04-15T12:00:00Z")
+                ledgerRepository.saveLedgers(listOf(storedLedger(id = "deep-ledger", time = markerTime)))
+                // Kraken returns a full 50-row raw page both times, but parsing
+                // drops rows: the first parsed page alone must not complete the window.
+                krakenService.ledgerRawPageSizeOverride = 50
+                krakenService.ledgerTotalCountOverride = 0
+                krakenService.ledgerSupplier = { _, offset, _, _ ->
+                    if ((offset ?: 0) == 0) {
+                        (0 until 40).map { exchangeLedger(id = "parsed-$it", time = markerTime) }
+                    } else {
+                        listOf(exchangeLedger(id = "deep-ledger", time = markerTime))
+                    }
+                }
+
+                verifier.verifyContinuity() shouldBe AccountHistoryContinuityStatus.VERIFIED
+                krakenService.getLedgersCallCount shouldBe 2
+            }
+        }
     }
 
     private fun storedTrade(

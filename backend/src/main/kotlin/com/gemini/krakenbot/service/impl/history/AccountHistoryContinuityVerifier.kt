@@ -13,6 +13,7 @@ import java.time.Instant
 enum class AccountHistoryContinuityStatus {
     VERIFIED,
     NO_OVERLAP,
+    CONFLICT,
     INCOMPLETE,
     UNAVAILABLE,
 }
@@ -20,15 +21,27 @@ enum class AccountHistoryContinuityStatus {
 /**
  * Proves that stored financial history belongs to the currently configured Kraken
  * account by locating retained local continuity markers inside bounded,
- * marker-timestamped Kraken history windows and requiring an exact typed
- * exchange-identity match.
+ * marker-timestamped Kraken history windows and requiring exact typed
+ * exchange-identity matches.
  *
- * The account scope digest is credential-derived, so a key rotation on the same
- * account (or an upgraded database that predates the binding contract) presents
- * as a scope mismatch/unbound database. Rebinding on digest equality alone would
- * let any credential set claim foreign history; finding a retained exchange id
- * inside the live account's own history proves the configured credentials can
- * actually see the stored fills.
+ * Two trust problems share this proof with different thresholds:
+ *
+ * - Rotation ([verifyContinuity]): the database already carries a trusted
+ *   binding and only the credential generation changed. One exact authoritative
+ *   identity visible through the new credentials proves they see history
+ *   belonging to the previously trusted account. Lightweight by design.
+ *
+ * - Legacy first binding ([verifyLegacyConsistency]): the database predates
+ *   the binding contract, so nothing guarantees all rows came from one
+ *   account — it may have served account A in January and account B in
+ *   February. One hit only proves the current account contributed a row, so
+ *   binding requires consistency across a time-spread marker sample: every
+ *   sampled marker must match. A definitively absent marker alongside a match
+ *   is [AccountHistoryContinuityStatus.CONFLICT] (mixed history, never bind);
+ *   absence with no match at all is [AccountHistoryContinuityStatus.NO_OVERLAP].
+ *   Fewer than two distinct authoritative markers in the whole database is
+ *   insufficient evidence either way and reports
+ *   [AccountHistoryContinuityStatus.NO_OVERLAP] (unproven, fail closed).
  *
  * Proof is driven from local markers, never from global pagination rank: each
  * marker queries Kraken around its own timestamp, so a retained fill sitting at
@@ -51,19 +64,21 @@ enum class AccountHistoryContinuityStatus {
  * shared across fills/legs, so it is weaker than a fill or ledger identity.
  *
  * Evidence threshold: one exact `tradeId` or one exact `ledgerId` match
- * verifies. Kraken generates these fill/ledger identities per account, so a
- * cross-account collision is effectively impossible; timestamp/amount
- * similarity is explicitly not counted. Duplicate local rows or duplicate
- * Kraken rows cannot double-count because a single match decides immediately
- * and markers are de-duplicated by identity first.
+ * verifies a rotation because Kraken generates these fill/ledger identities
+ * per account, so a cross-account collision is effectively impossible;
+ * timestamp/amount similarity is explicitly not counted. Duplicate local rows
+ * or duplicate Kraken rows cannot double-count because markers are
+ * de-duplicated by identity first.
  *
- * Boundedness: at most [MAX_TRADE_MARKERS] trade markers (newest + oldest for
- * maximum window spread) and [MAX_LEDGER_MARKERS] ledger markers, each searched
- * in at most [MAX_PAGES_PER_WINDOW] pages. A window that is still full at the
- * page cap resolves to [AccountHistoryContinuityStatus.INCOMPLETE] (search
- * unproven), never [AccountHistoryContinuityStatus.NO_OVERLAP], so callers can
- * fail closed without conflating "checked and absent" with "stopped early".
- * Exchange errors resolve to [AccountHistoryContinuityStatus.UNAVAILABLE].
+ * Boundedness: rotation searches at most 2 trade markers (newest + oldest) and
+ * 2 ledger markers; legacy samples at most [LEGACY_MAX_TRADE_MARKERS] trade
+ * and [LEGACY_MAX_LEDGER_MARKERS] ledger markers at quantile spread. Each
+ * marker is searched in at most [MAX_PAGES_PER_WINDOW] pages. A window that is
+ * still full at the page cap resolves to
+ * [AccountHistoryContinuityStatus.INCOMPLETE] (search unproven), never
+ * [AccountHistoryContinuityStatus.NO_OVERLAP], so callers can fail closed
+ * without conflating "checked and absent" with "stopped early". Exchange
+ * errors resolve to [AccountHistoryContinuityStatus.UNAVAILABLE].
  */
 class AccountHistoryContinuityVerifier(
     private val krakenService: KrakenService,
@@ -73,49 +88,41 @@ class AccountHistoryContinuityVerifier(
 ) {
     private val log = LoggerFactory.getLogger(AccountHistoryContinuityVerifier::class.java)
 
-    private data class TradeMarker(val tradeId: String, val timestamp: Instant)
+    private sealed interface ContinuityMarker {
+        val timestamp: Instant
+    }
 
-    private data class LedgerMarker(val ledgerId: String, val timestamp: Instant)
+    private data class TradeMarker(val tradeId: String, override val timestamp: Instant) : ContinuityMarker
 
+    private data class LedgerMarker(val ledgerId: String, override val timestamp: Instant) : ContinuityMarker
+
+    private enum class WindowOutcome {
+        MATCH,
+        ABSENT,
+        INCOMPLETE,
+    }
+
+    /**
+     * Rotation proof for an already-bound database: the first exact identity
+     * hit verifies (see class contract for why one hit suffices here).
+     */
     suspend fun verifyContinuity(): AccountHistoryContinuityStatus {
         try {
-            val horizon = nowProvider()
-            val tradeMarkers = tradeRepository
-                .getTradesInRange(Instant.EPOCH, horizon)
-                .filter { it.success && !it.dryRun && it.source != TradeSource.LOCAL_ESTIMATE }
-                .mapNotNull { trade ->
-                    val id = trade.tradeId?.trim()?.takeIf(String::isNotBlank) ?: return@mapNotNull null
-                    TradeMarker(id, trade.timestamp)
-                }
-                .distinctBy { it.tradeId }
-                .sortedByDescending { it.timestamp }
-                .spread(MAX_TRADE_MARKERS)
-            val ledgerMarkers = ledgerRepository
-                .getLedgersInRange(Instant.EPOCH, horizon)
-                .mapNotNull { event ->
-                    val id = event.ledgerId.trim().takeIf(String::isNotBlank) ?: return@mapNotNull null
-                    LedgerMarker(id, event.time)
-                }
-                .distinctBy { it.ledgerId }
-                .sortedByDescending { it.timestamp }
-                .spread(MAX_LEDGER_MARKERS)
-            if (tradeMarkers.isEmpty() && ledgerMarkers.isEmpty()) {
-                return AccountHistoryContinuityStatus.NO_OVERLAP
-            }
-
+            val markers = loadMarkers()
+            if (markers.isEmpty) return AccountHistoryContinuityStatus.NO_OVERLAP
             var incomplete = false
-            for (marker in tradeMarkers) {
+            for (marker in markers.trades) {
                 when (searchTradeWindow(marker)) {
-                    AccountHistoryContinuityStatus.VERIFIED -> return AccountHistoryContinuityStatus.VERIFIED
-                    AccountHistoryContinuityStatus.INCOMPLETE -> incomplete = true
-                    else -> Unit
+                    WindowOutcome.MATCH -> return AccountHistoryContinuityStatus.VERIFIED
+                    WindowOutcome.INCOMPLETE -> incomplete = true
+                    WindowOutcome.ABSENT -> Unit
                 }
             }
-            for (marker in ledgerMarkers) {
+            for (marker in markers.ledgers) {
                 when (searchLedgerWindow(marker)) {
-                    AccountHistoryContinuityStatus.VERIFIED -> return AccountHistoryContinuityStatus.VERIFIED
-                    AccountHistoryContinuityStatus.INCOMPLETE -> incomplete = true
-                    else -> Unit
+                    WindowOutcome.MATCH -> return AccountHistoryContinuityStatus.VERIFIED
+                    WindowOutcome.INCOMPLETE -> incomplete = true
+                    WindowOutcome.ABSENT -> Unit
                 }
             }
             return if (incomplete) {
@@ -132,6 +139,78 @@ class AccountHistoryContinuityVerifier(
     }
 
     /**
+     * Legacy first-binding proof for an unbound database: every sampled marker
+     * must match. Any definitive absence alongside a match is [CONFLICT]
+     * (mixed-account history); absence with no match is [NO_OVERLAP].
+     * Exchange errors dominate as [UNAVAILABLE]; unfinished searches as
+     * [INCOMPLETE]. Fewer than two distinct markers database-wide is
+     * insufficient evidence and reports [NO_OVERLAP] (unproven, fail closed).
+     */
+    suspend fun verifyLegacyConsistency(): AccountHistoryContinuityStatus {
+        try {
+            val markers = loadMarkers(legacySample = true)
+            if (markers.distinctCount < 2) return AccountHistoryContinuityStatus.NO_OVERLAP
+            var matched = false
+            var absent = false
+            var incomplete = false
+            for (marker in markers.trades + markers.ledgers) {
+                val outcome = when (marker) {
+                    is TradeMarker -> searchTradeWindow(marker)
+                    is LedgerMarker -> searchLedgerWindow(marker)
+                }
+                when (outcome) {
+                    WindowOutcome.MATCH -> matched = true
+                    WindowOutcome.ABSENT -> absent = true
+                    WindowOutcome.INCOMPLETE -> incomplete = true
+                }
+            }
+            return when {
+                absent && matched -> AccountHistoryContinuityStatus.CONFLICT
+                absent -> AccountHistoryContinuityStatus.NO_OVERLAP
+                incomplete -> AccountHistoryContinuityStatus.INCOMPLETE
+                matched -> AccountHistoryContinuityStatus.VERIFIED
+                else -> AccountHistoryContinuityStatus.NO_OVERLAP
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Unable to verify legacy account history consistency", e)
+            return AccountHistoryContinuityStatus.UNAVAILABLE
+        }
+    }
+
+    private data class MarkerSet(val trades: List<TradeMarker>, val ledgers: List<LedgerMarker>) {
+        val isEmpty: Boolean get() = trades.isEmpty() && ledgers.isEmpty()
+        val distinctCount: Int get() = trades.size + ledgers.size
+    }
+
+    private suspend fun loadMarkers(legacySample: Boolean = false): MarkerSet {
+        val horizon = nowProvider()
+        val tradeIds = tradeRepository
+            .getTradesInRange(Instant.EPOCH, horizon)
+            .filter { it.success && !it.dryRun && it.source != TradeSource.LOCAL_ESTIMATE }
+            .mapNotNull { trade ->
+                val id = trade.tradeId?.trim()?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+                TradeMarker(id, trade.timestamp)
+            }
+            .distinctBy { it.tradeId }
+            .sortedByDescending { it.timestamp }
+        val ledgerIds = ledgerRepository
+            .getLedgersInRange(Instant.EPOCH, horizon)
+            .mapNotNull { event ->
+                val id = event.ledgerId.trim().takeIf(String::isNotBlank) ?: return@mapNotNull null
+                LedgerMarker(id, event.time)
+            }
+            .distinctBy { it.ledgerId }
+            .sortedByDescending { it.timestamp }
+        return if (legacySample) {
+            MarkerSet(tradeIds.quantiles(LEGACY_MAX_TRADE_MARKERS), ledgerIds.quantiles(LEGACY_MAX_LEDGER_MARKERS))
+        } else {
+            MarkerSet(tradeIds.spread(MAX_TRADE_MARKERS), ledgerIds.spread(MAX_LEDGER_MARKERS))
+        }
+    }
+
+    /**
      * Newest plus oldest markers for maximum time spread with a bounded marker
      * budget; a single marker (or none) passes through unchanged.
      */
@@ -141,17 +220,27 @@ class AccountHistoryContinuityVerifier(
     }
 
     /**
+     * Deterministic quantile sample (0%, 25%, 50%, 75%, 100% up to [limit]
+     * markers) so legacy proof spans the retained lifetime instead of proving
+     * one endpoint.
+     */
+    private fun <T> List<T>.quantiles(limit: Int): List<T> {
+        if (size <= limit) return this
+        return (0 until limit).map { this[it * (size - 1) / (limit - 1)] }.distinct()
+    }
+
+    /**
      * Searches one marker window newest-first. The window is located by the
      * marker timestamp; only an exact typed identity match proves continuity.
      */
-    private suspend fun searchTradeWindow(marker: TradeMarker): AccountHistoryContinuityStatus {
+    private suspend fun searchTradeWindow(marker: TradeMarker): WindowOutcome {
         val startSec = marker.timestamp.epochSecond - WINDOW_TOLERANCE_SEC
         val endSec = marker.timestamp.epochSecond + WINDOW_TOLERANCE_SEC
         var offset = 0
         repeat(MAX_PAGES_PER_WINDOW) {
             val page = krakenService.getRecoveryTradeHistoryUntil(startSec, offset, endSec)
             if (page.any { it.tradeId?.trim() == marker.tradeId }) {
-                return AccountHistoryContinuityStatus.VERIFIED
+                return WindowOutcome.MATCH
             }
             if (windowCovered(
                     offset,
@@ -160,34 +249,39 @@ class AccountHistoryContinuityVerifier(
                     KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE,
                 )
             ) {
-                return AccountHistoryContinuityStatus.NO_OVERLAP
+                return WindowOutcome.ABSENT
             }
             offset += KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
         }
-        return AccountHistoryContinuityStatus.INCOMPLETE
+        return WindowOutcome.INCOMPLETE
     }
 
-    private suspend fun searchLedgerWindow(marker: LedgerMarker): AccountHistoryContinuityStatus {
+    private suspend fun searchLedgerWindow(marker: LedgerMarker): WindowOutcome {
         val startSec = marker.timestamp.epochSecond - WINDOW_TOLERANCE_SEC
         val endSec = marker.timestamp.epochSecond + WINDOW_TOLERANCE_SEC
         var offset = 0
         repeat(MAX_PAGES_PER_WINDOW) {
             val page = krakenService.getLedgers(startSec, offset, endSec, null)
             if (page.any { it.ledgerId.trim() == marker.ledgerId }) {
-                return AccountHistoryContinuityStatus.VERIFIED
+                return WindowOutcome.MATCH
             }
+            // Parsed rows may be fewer than the raw Kraken page when the
+            // parser drops rows: occupancy must reflect the raw page, or a
+            // full raw page could be mistaken for a short (complete) one and a
+            // dense-window marker falsely reported absent.
+            val occupancy = maxOf(krakenService.getLastLedgerRawPageSize(), page.size)
             if (windowCovered(
                     offset,
-                    page.size,
+                    occupancy,
                     krakenService.getLastLedgerTotalCount(),
                     KrakenApiConstants.LEDGER_PAGE_SIZE,
                 )
             ) {
-                return AccountHistoryContinuityStatus.NO_OVERLAP
+                return WindowOutcome.ABSENT
             }
             offset += KrakenApiConstants.LEDGER_PAGE_SIZE
         }
-        return AccountHistoryContinuityStatus.INCOMPLETE
+        return WindowOutcome.INCOMPLETE
     }
 
     /**
@@ -195,7 +289,7 @@ class AccountHistoryContinuityVerifier(
      * follows in the window regardless of any reported total) or — when the
      * backend reports a usable authoritative total — once the fetched range
      * reaches it. Anything else means the search stopped early and must not
-     * claim [AccountHistoryContinuityStatus.NO_OVERLAP].
+     * claim absence.
      */
     private fun windowCovered(offset: Int, pageSize: Int, authoritativeTotal: Int, fullPageSize: Int): Boolean {
         if (pageSize < fullPageSize) return true
@@ -212,11 +306,13 @@ class AccountHistoryContinuityVerifier(
         private const val WINDOW_TOLERANCE_SEC = 300L
         private const val MAX_TRADE_MARKERS = 2
         private const val MAX_LEDGER_MARKERS = 2
+        private const val LEGACY_MAX_TRADE_MARKERS = 5
+        private const val LEGACY_MAX_LEDGER_MARKERS = 5
 
         /**
          * Page cap per marker window: 4 x 50-row pages (200 rows) covers dense
          * windows such as a 101-row marker neighborhood with margin, while the
-         * overall proof stays bounded to 16 exchange calls worst case.
+         * overall proof stays bounded.
          */
         private const val MAX_PAGES_PER_WINDOW = 4
     }

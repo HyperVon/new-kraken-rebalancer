@@ -495,14 +495,25 @@ mismatch, unavailable scope, or non-empty unbound legacy database aborts the pri
 before persistence; a durable recovered baseline is not trusted until the scope is validated again.
 A mismatch caused by rotated keys rebinds when bounded marker-timestamped windows
 (newest + oldest retained fill/ledger, ±5 minutes, paginated to a 4-page cap per
-window) still contain the exact retained identity; typed `tradeId`/`ledgerId`
+window) still contain one exact retained identity against the trusted lineage,
+while unbound legacy first binding samples up to five trades plus five ledgers
+across the retained lifetime and requires every sampled marker to match — any
+definitive absence alongside a match is conflict, never a bind. Typed `tradeId`/
+`ledgerId`
 equality is the proof and timestamps only locate the search. An unbound legacy
 database binds on the same proof, while an empty database binds only after a
-live credential check. A window that stays full at the page cap reports
-incomplete (fail closed, binding retained), never absent. History rendering
-reads a local fingerprint-vs-binding trust state instead of starting continuity
+live credential check; a bound-but-empty database may adopt authenticated
+replacement credentials. Bindings carry a proof-contract version and older
+bindings are revalidated once rather than fast-pathed. A window that stays full
+at the page cap reports
+incomplete (fail closed, binding retained), never absent; ledger windows use raw
+page occupancy so filtered short parsed pages cannot fake completion. History
+rendering
+reads a local fingerprint-vs-binding trust state with a try-lock instead of starting continuity
 proof, and a manually configured inception date never overrides a failed,
-busy, or unknown binding.
+busy, or unknown binding. Proof windows run under a pinned backend and the
+proven fingerprint is re-derived before any binding write, so credentials
+changing mid-proof abort without writing.
 Recovery is bounded to four pages per invocation and throttled for five minutes; the UI observes
 durable state through `/api/history/sync-progress`, so neither startup nor a History request waits
 for an unbounded account-history scan.
