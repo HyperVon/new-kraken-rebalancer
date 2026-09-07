@@ -74,7 +74,6 @@ internal data class HistoricalInferencePolicy(
     val minimumOrders: Int = 2,
     val minimumAssets: Int = 2,
     val maximumCandidates: Int = 8,
-    val maximumUnsupportedMarketSamples: Int = 5,
     val cohesionWindow: Duration = Duration.ofHours(1),
 )
 

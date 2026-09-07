@@ -978,5 +978,55 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.findInceptionInferenceEvidence("missing-fingerprint").shouldBeNull()
             }
         }
+
+        "strips commas from persisted list entries so the delimiter roundtrip stays lossless" {
+            runTest {
+                val start = Instant.parse("2025-12-22T02:08:00Z")
+                val evidence = InceptionInferenceEvidence(
+                    fingerprint = "fingerprint-commas",
+                    evidenceDigest = "digest-commas",
+                    modelVersion = "1",
+                    coverageStart = null,
+                    coverageEnd = null,
+                    horizon = null,
+                    firstPositive = null,
+                    inferredStart = start,
+                    inferredWindowStart = start,
+                    inferredWindowEnd = start.plusSeconds(10),
+                    strongestObservedStart = null,
+                    strength = "LOW",
+                    reasons = listOf("PURCHASE,ONLY", "EPISODE"),
+                    contradictions = listOf("EARLIER,ACTIVITY"),
+                    unsupportedMarketCount = 1,
+                    unsupportedMarketSamples = listOf("ADA,USDT"),
+                    competingCandidateCount = 0,
+                    candidates = listOf(
+                        InceptionCandidateEvidence(
+                            observedStart = start,
+                            observedEnd = start.plusSeconds(10),
+                            windowStart = start,
+                            windowEnd = start.plusSeconds(10),
+                            strength = "LOW",
+                            reasons = listOf("REASON,WITH,COMMAS"),
+                            contradictions = emptyList(),
+                            assetCount = 2,
+                            assetSymbols = listOf("AS,SET1", "ASSET2"),
+                            orderCount = 2,
+                            repeatedEvidenceCount = 1,
+                            timescalesSeconds = setOf(5L),
+                        ),
+                    ),
+                )
+                repository.saveInceptionInferenceEvidence(evidence)
+
+                val reloaded = repository.findInceptionInferenceEvidence("fingerprint-commas")
+                requireNotNull(reloaded)
+                reloaded.reasons shouldBe listOf("PURCHASEONLY", "EPISODE")
+                reloaded.contradictions shouldBe listOf("EARLIERACTIVITY")
+                reloaded.unsupportedMarketSamples shouldBe listOf("ADAUSDT")
+                reloaded.candidates.first().reasons shouldBe listOf("REASONWITHCOMMAS")
+                reloaded.candidates.first().assetSymbols shouldBe listOf("ASSET1", "ASSET2")
+            }
+        }
     }
 }

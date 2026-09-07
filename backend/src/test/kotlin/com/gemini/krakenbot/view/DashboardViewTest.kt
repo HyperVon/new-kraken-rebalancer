@@ -245,7 +245,7 @@ class DashboardViewTest : StringSpec() {
                         inferredWindowEndText = "2025-12-22T02:34:00Z",
                         firstPositiveText = "2026-08-06T11:45:49.984Z",
                         inferredStrengthText = "MEDIUM",
-                        inferredReasonsText = "multi asset episode, redistribution sell then buy",
+                        inferredReasonsText = "multi asset episode <redistribution & sell>",
                         inferredContradictionsText = "earlier activity in window",
                         strongestEpisodeText = "2025-12-22T02:33:00Z",
                         competingCandidatesText = "2",
@@ -258,7 +258,7 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "Evidence window: 2025-12-22T02:08:00Z to 2025-12-22T02:34:00Z."
             html shouldContain "First positively owned fill: 2026-08-06T11:45:49.984Z."
             html shouldContain "Evidence strength: MEDIUM"
-            html shouldContain "Supporting evidence: multi asset episode, redistribution sell then buy."
+            html shouldContain "Supporting evidence: multi asset episode &lt;redistribution &amp; sell&gt;."
             html shouldContain "Contradicting evidence: earlier activity in window."
             html shouldContain "Strongest observed episode: 2025-12-22T02:33:00Z."
             html shouldContain "Other plausible activity: 2."

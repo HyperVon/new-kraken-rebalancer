@@ -197,15 +197,23 @@ class InceptionRecoveryService(
             inferredWindowStartText = if (candidateWindowValid) windowStart.toString() else null,
             inferredWindowEndText = if (candidateWindowValid) windowEnd.toString() else null,
             firstPositiveText = firstPositive?.toString(),
-            inferredStrengthText = strength,
-            inferredReasonsText = record.reasons
-                .takeIf { it.isNotEmpty() }
-                ?.joinToString(", ") { reasonCodeText(it) },
-            inferredContradictionsText = record.contradictions
-                .takeIf { it.isNotEmpty() }
-                ?.joinToString(", ") { reasonCodeText(it) },
+            inferredStrengthText = if (candidateWindowValid) strength else null,
+            inferredReasonsText = if (candidateWindowValid) {
+                record.reasons.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
+            } else {
+                null
+            },
+            inferredContradictionsText = if (candidateWindowValid) {
+                record.contradictions.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
+            } else {
+                null
+            },
             strongestEpisodeText = strongestObserved?.toString(),
-            competingCandidatesText = record.competingCandidateCount.takeIf { it > 0 }?.toString(),
+            competingCandidatesText = if (candidateWindowValid) {
+                record.competingCandidateCount.takeIf { it > 0 }?.toString()
+            } else {
+                null
+            },
             unsupportedMarketsText = record.unsupportedMarketCount
                 .takeIf { it > 0 }
                 ?.let { count -> "$count (${record.unsupportedMarketSamples.joinToString(", ")})" },
@@ -1128,7 +1136,7 @@ class InceptionRecoveryService(
             reasons = strongest?.reasons.orEmpty(),
             contradictions = strongest?.contradictions.orEmpty(),
             unsupportedMarketCount = inference.unsupportedMarkets.size,
-            unsupportedMarketSamples = inference.unsupportedMarkets.take(policy.maximumUnsupportedMarketSamples),
+            unsupportedMarketSamples = inference.unsupportedMarkets.take(MAX_UNSUPPORTED_MARKET_SAMPLES),
             competingCandidateCount = inference.competingCandidateCount,
             candidates = inference.candidates.map { candidate ->
                 InceptionCandidateEvidence(
@@ -1167,15 +1175,25 @@ class InceptionRecoveryService(
             append(accountScope).append('\u0000')
             append(horizon.toString()).append('\u0000')
             inferenceTrades
-                .sortedWith(compareBy({ it.timestamp }, { it.id }))
+                .sortedWith(
+                    compareBy(
+                        { it.timestamp },
+                        { it.pair },
+                        { it.side },
+                        { it.orderTxid.orEmpty() },
+                        { it.tradeId.orEmpty() },
+                        { it.volume.stripTrailingZeros() },
+                        { it.quoteAmount.stripTrailingZeros() },
+                    ),
+                )
                 .forEach { trade ->
-                    append(trade.id).append('|')
                     append(trade.timestamp).append('|')
                     append(trade.pair).append('|')
                     append(trade.side).append('|')
-                    append(trade.volume.stripTrailingZeros().toPlainString()).append('|')
-                    append(trade.quoteAmount.stripTrailingZeros().toPlainString()).append('|')
+                    append(trade.volume.digestScale()).append('|')
+                    append(trade.quoteAmount.digestScale()).append('|')
                     append(trade.orderTxid.orEmpty()).append('|')
+                    append(trade.tradeId.orEmpty()).append('|')
                     append(trade.ownership.name).append('\n')
                 }
             append('\u0000')
@@ -1183,6 +1201,11 @@ class InceptionRecoveryService(
         }
         return sha256Hex(material)
     }
+
+    // Zero has multiple BigDecimal representations (0E-8 vs 0); normalize so the
+    // digest is stable across data sources and the idempotent skip stays effective.
+    private fun BigDecimal.digestScale(): String =
+        (if (signum() == 0) BigDecimal.ZERO else this).stripTrailingZeros().toPlainString()
 
     private fun sha256Hex(material: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray(Charsets.UTF_8))
@@ -1382,6 +1405,7 @@ class InceptionRecoveryService(
             setOf(TRADE_LEDGER_TYPE) + LedgerEvent.EXTERNAL_BALANCE_TYPES.map(String::lowercase)
         private const val MAX_REASON_LENGTH = 60
         private val VALID_INFERENCE_STRENGTHS = setOf("HIGH", "MEDIUM", "LOW")
+        private const val MAX_UNSUPPORTED_MARKET_SAMPLES = 5
         private val NEGATIVE_BALANCE_TOLERANCE = BigDecimal("0.00000001")
     }
 }

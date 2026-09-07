@@ -386,7 +386,7 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 info.inferredWindowStartText.shouldBeNull()
                 info.inferredWindowEndText.shouldBeNull()
                 info.strongestEpisodeText.shouldBeNull()
-                info.inferredStrengthText shouldBe "HIGH"
+                info.inferredStrengthText.shouldBeNull()
             }
         }
 
@@ -656,6 +656,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     info.inferredStartText.shouldBeNull()
                     info.inferredWindowStartText.shouldBeNull()
                     info.inferredWindowEndText.shouldBeNull()
+                    info.inferredStrengthText.shouldBeNull()
+                    info.inferredReasonsText.shouldBeNull()
+                    info.inferredContradictionsText.shouldBeNull()
+                    info.strongestEpisodeText.shouldBeNull()
+                    info.competingCandidatesText.shouldBeNull()
                 }
 
                 assertHiddenGroups(

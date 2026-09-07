@@ -277,10 +277,13 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 it[inferredWindowEndEpochMs] = evidence.inferredWindowEnd?.toEpochMilli()
                 it[strongestObservedStartEpochMs] = evidence.strongestObservedStart?.toEpochMilli()
                 it[strength] = evidence.strength
-                it[reasons] = evidence.reasons.joinToString(DELIMITER)
-                it[contradictions] = evidence.contradictions.joinToString(DELIMITER)
+                // List entries are comma-free by contract; commas are stripped so the
+                // delimiter roundtrip below stays lossless for reason codes and symbols.
+                it[reasons] = evidence.reasons.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[contradictions] = evidence.contradictions.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
                 it[unsupportedMarketCount] = evidence.unsupportedMarketCount
-                it[unsupportedMarketSamples] = evidence.unsupportedMarketSamples.joinToString(DELIMITER)
+                it[unsupportedMarketSamples] =
+                    evidence.unsupportedMarketSamples.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
                 it[competingCandidateCount] = evidence.competingCandidateCount
             }
             InceptionInferenceCandidateTable.deleteWhere {
@@ -295,10 +298,12 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     it[windowStartEpochMs] = candidate.windowStart.toEpochMilli()
                     it[windowEndEpochMs] = candidate.windowEnd.toEpochMilli()
                     it[strength] = candidate.strength
-                    it[reasons] = candidate.reasons.joinToString(DELIMITER)
-                    it[contradictions] = candidate.contradictions.joinToString(DELIMITER)
+                    it[reasons] = candidate.reasons.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                    it[contradictions] =
+                        candidate.contradictions.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
                     it[assetCount] = candidate.assetCount
-                    it[assetSymbols] = candidate.assetSymbols.joinToString(DELIMITER)
+                    it[assetSymbols] =
+                        candidate.assetSymbols.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
                     it[orderCount] = candidate.orderCount
                     it[repeatedEvidenceCount] = candidate.repeatedEvidenceCount
                     it[timescalesSeconds] = candidate.timescalesSeconds.joinToString(DELIMITER)
