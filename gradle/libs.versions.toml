@@ -1,5 +1,5 @@
 [versions]
-kotlin = "2.4.20-RC"
+kotlin = "2.4.20-RC3"
 ksp = "2.3.11"
 spotless = "8.10.2"
 snakeyaml = "2.7"
