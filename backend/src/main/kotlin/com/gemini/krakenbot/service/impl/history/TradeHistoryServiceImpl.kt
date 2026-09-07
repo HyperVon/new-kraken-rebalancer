@@ -6,12 +6,14 @@ import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RewardsOverTime
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -35,6 +37,7 @@ class TradeHistoryServiceImpl(
         tradeHistoryFilePath: String = "trade-history.json",
         syncNowProvider: () -> Instant = Instant::now,
         orderIntentRepository: OrderIntentRepository? = null,
+        inceptionRecoveryService: InceptionRecoveryService? = null,
     ) : this(
         snapshotStore =
         TradeHistorySnapshotStore(
@@ -75,6 +78,7 @@ class TradeHistoryServiceImpl(
             configService = configService,
             nowProvider = syncNowProvider,
         ),
+        inceptionRecoveryService = inceptionRecoveryService,
     )
 
     override suspend fun init() = snapshotStore.init()
@@ -125,6 +129,9 @@ class TradeHistoryServiceImpl(
 
     override suspend fun getInceptionRecoveryStatus(): InceptionRecoveryStatus =
         inceptionRecoveryService?.getStatus() ?: InceptionRecoveryStatus()
+
+    override suspend fun getDetectedInceptionDisplayInfo(): InceptionDisplayInfo =
+        inceptionRecoveryService?.getLocalInceptionDisplayInfo() ?: InceptionDisplayInfo()
 
     override suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
         queryService.getRebalancerComparison(from, to)

@@ -8,6 +8,8 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.InceptionDisplayInfo
+import com.gemini.krakenbot.service.InceptionDisplayStatus
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -222,6 +224,28 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 val response = client.get(Routes.SETTINGS)
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "value=\"2026-06-06\""
+            }
+        }
+
+        "getSettings_DetectedInception_rendersDisplayOnlyWithoutCopyingIntoInput" {
+            every { configService.getConfig() } returns dashboardConfig()
+            coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.CONFIRMED,
+                    dateText = "2024-03-15",
+                    source = "auto",
+                )
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val body = client.get(Routes.SETTINGS).bodyAsText()
+                body shouldContain "Auto-detected inception"
+                body shouldContain "2024-03-15"
+                val inceptionInput =
+                    Regex("<input[^>]*name=\"inceptionDate\"[^>]*>").find(body)?.value
+                inceptionInput.shouldNotBeNull()
+                inceptionInput shouldNotContain "2024-03-15"
             }
         }
 

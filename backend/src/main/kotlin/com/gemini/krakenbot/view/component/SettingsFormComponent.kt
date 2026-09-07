@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
@@ -96,8 +97,14 @@ class SettingsFormComponent {
     )
 
     context(body: BODY)
-    fun render(config: AppConfig, errorMessage: String?, csrfToken: String, paused: Boolean = false) {
-        renderForm(body, config, errorMessage, csrfToken, paused)
+    fun render(
+        config: AppConfig,
+        errorMessage: String?,
+        csrfToken: String,
+        paused: Boolean = false,
+        inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
+    ) {
+        renderForm(body, config, errorMessage, csrfToken, paused, inceptionDisplay)
         renderSettingsScript()
     }
 
@@ -107,6 +114,7 @@ class SettingsFormComponent {
         errorMessage: String?,
         csrfToken: String,
         paused: Boolean = false,
+        inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
     ) {
         parent.div(CssClass.Layout.Container) {
             form {
@@ -142,7 +150,7 @@ class SettingsFormComponent {
                 }
 
                 div(CssClass.Layout.GlassPanel) {
-                    renderGlobalParametersSection(config)
+                    renderGlobalParametersSection(config, inceptionDisplay)
                     renderSafetyModesSection(config)
                     renderTargetAllocationsSection(config)
                 }
@@ -150,7 +158,7 @@ class SettingsFormComponent {
         }
     }
 
-    private fun DIV.renderGlobalParametersSection(config: AppConfig) {
+    private fun DIV.renderGlobalParametersSection(config: AppConfig, inceptionDisplay: InceptionDisplayInfo) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div(CssClass.Form.Grid2Col) {
                 numericFieldSpecs(config).forEach { field ->
@@ -170,9 +178,16 @@ class SettingsFormComponent {
                         value = config.settings.inceptionDate.orEmpty()
                         placeholder = ViewText.INCEPTION_DATE_HINT
                     }
+                    renderDetectedInception(inceptionDisplay)
                 }
             }
         }
+    }
+
+    private fun FlowContent.renderDetectedInception(display: InceptionDisplayInfo) {
+        // Display-only: plain text with no form field name so it is never submitted
+        // and never copied into settings.inceptionDate.
+        p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
     }
 
     private fun DIV.renderSafetyModesSection(config: AppConfig) {

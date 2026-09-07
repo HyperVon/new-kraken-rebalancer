@@ -206,7 +206,7 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
 | **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Must be positive (any value > 0). |
 | **Drawdown Activation Threshold (%)** | Minimum drawdown before cash deployment begins (deadband). Drawdowns below this deploy 0% cash. Bounded **0–100**. |
-| **Inception Date (Optional)** | Manual strategy-start anchor (`YYYY-MM-DD` or ISO-8601). If empty, the app recovers bounded Kraken trade/ledger history and confirms inception only when coverage, bot ownership, funding provenance, and a historical-price baseline all agree. A misleading manual burst does not establish the start. |
+| **Inception Date (Optional)** | Manual strategy-start anchor (`YYYY-MM-DD` or ISO-8601). If empty, the app recovers bounded Kraken trade/ledger history and confirms inception only when coverage, bot ownership, funding provenance, and a historical-price baseline all agree. A misleading manual burst does not establish the start. The page also displays the currently trusted automatic inception as display-only text; stale detection from another account or modified configuration is withheld, display reads never trigger Kraken recovery, and manual input remains independent and is never overwritten. |
 
 ### Safety modes
 

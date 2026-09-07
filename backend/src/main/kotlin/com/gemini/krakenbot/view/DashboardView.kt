@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
 import com.gemini.krakenbot.view.component.HistoryPageComponent
@@ -36,14 +37,20 @@ class DashboardView(
     }
 
     context(html: HTML)
-    fun renderSettingsPage(config: AppConfig, errorMessage: String?, csrfToken: String, paused: Boolean = false) {
+    fun renderSettingsPage(
+        config: AppConfig,
+        errorMessage: String?,
+        csrfToken: String,
+        paused: Boolean = false,
+        inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
+    ) {
         html.head {
             commonMetadataAndStyles()
             title("$SETTINGS_TITLE - $APP_TITLE")
             cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
         }
         html.body {
-            settingsFormComponent.render(config, errorMessage, csrfToken, paused)
+            settingsFormComponent.render(config, errorMessage, csrfToken, paused, inceptionDisplay)
         }
     }
 
@@ -53,8 +60,9 @@ class DashboardView(
         errorMessage: String?,
         csrfToken: String,
         paused: Boolean = false,
+        inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
     ) {
-        settingsFormComponent.renderForm(parent, config, errorMessage, csrfToken, paused)
+        settingsFormComponent.renderForm(parent, config, errorMessage, csrfToken, paused, inceptionDisplay)
     }
 
     context(html: HTML)

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.37] - 2026-09-07
+
+### Added
+
+- **Trust-gated auto-detected inception display on Settings**: the Settings page now displays
+  the currently trusted automatic strategy inception as plain text under the Inception Date
+  field. Display reads are strictly local and non-blocking: they check active account trust via
+  `AccountHistoryScopeGuard.readLocalTrustState()`, verify the configuration fingerprint against
+  the tracked allocation universe, strictly whitelist automatic sources (`auto`,
+  `auto-recovered`), and require durable recovery status `CONFIRMED`. Stale detection from another account,
+  modified configuration, unconfirmed recovery status, or invalid metadata is withheld,
+  display reads never trigger Kraken recovery, and manual input remains independent and is never
+  overwritten.
+
 ## [6.17.36] - 2026-09-06
 
 ### Added
