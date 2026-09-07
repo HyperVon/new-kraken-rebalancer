@@ -1184,6 +1184,7 @@ class InceptionRecoveryService(
                         { it.tradeId.orEmpty() },
                         { it.volume.stripTrailingZeros() },
                         { it.quoteAmount.stripTrailingZeros() },
+                        { it.ownership.name },
                     ),
                 )
                 .forEach { trade ->
