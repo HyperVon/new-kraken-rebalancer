@@ -52,5 +52,11 @@ interface TradeHistoryService {
     /** Current durable strategy-inception recovery state for the History status surface. */
     suspend fun getInceptionRecoveryStatus(): InceptionRecoveryStatus = InceptionRecoveryStatus()
 
+    /**
+     * Display-only auto-detected inception for the Settings page.
+     * Local metadata reads only; never triggers detection or writes.
+     */
+    suspend fun getDetectedInceptionDisplayInfo(): InceptionDisplayInfo = InceptionDisplayInfo()
+
     suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison
 }

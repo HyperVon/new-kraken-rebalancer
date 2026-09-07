@@ -6,17 +6,20 @@ import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RewardsOverTime
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
+import java.time.ZoneOffset
 
 class TradeHistoryServiceImpl(
     private val snapshotStore: TradeHistorySnapshotStore,
@@ -125,6 +128,23 @@ class TradeHistoryServiceImpl(
 
     override suspend fun getInceptionRecoveryStatus(): InceptionRecoveryStatus =
         inceptionRecoveryService?.getStatus() ?: InceptionRecoveryStatus()
+
+    override suspend fun getDetectedInceptionDisplayInfo(): InceptionDisplayInfo {
+        val epochMs = getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)?.toLongOrNull()
+        val source = getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)
+        if (epochMs != null && epochMs > 0 && source != null &&
+            source != InceptionDiscoveryService.INCEPTION_SOURCE_CONFIGURED
+        ) {
+            if (epochMs <= System.currentTimeMillis()) {
+                val dateText = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate().toString()
+                return InceptionDisplayInfo(dateText = dateText, source = source)
+            }
+        }
+        if (getInceptionRecoveryStatus().status == InceptionRecoveryStatus.IN_PROGRESS) {
+            return InceptionDisplayInfo(inProgress = true)
+        }
+        return InceptionDisplayInfo()
+    }
 
     override suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
         queryService.getRebalancerComparison(from, to)

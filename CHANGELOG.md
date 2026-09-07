@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.37] - 2026-09-07
+
+### Added
+
+- **Display-only auto-detected inception on Settings**: the Settings page now shows the
+  auto-detected strategy inception (UTC date plus `auto`/`auto-recovered` source, in-progress
+  and not-yet-detected states) as plain text under the Inception Date field. Detection reads
+  local sync metadata only, never triggers recovery, and is never copied into
+  `settings.inceptionDate`.
+
 ## [6.17.36] - 2026-09-06
 
 ### Added

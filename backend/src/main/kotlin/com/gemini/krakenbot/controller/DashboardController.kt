@@ -92,12 +92,14 @@ class DashboardController(
             get(Routes.SETTINGS) {
                 val config = configService.getConfig()
                 val csrfToken = CsrfProtection.issueToken(call)
+                val inceptionDisplay = tradeHistoryService.getDetectedInceptionDisplayInfo()
                 call.respondHtml(HttpStatusCode.OK) {
                     dashboardView.renderSettingsPage(
                         config = config,
                         errorMessage = null,
                         csrfToken = csrfToken,
                         paused = portfolioManager.isLoopPaused(),
+                        inceptionDisplay = inceptionDisplay,
                     )
                 }
             }
@@ -311,9 +313,10 @@ class DashboardController(
         paused: Boolean,
         status: HttpStatusCode,
     ) {
+        val inceptionDisplay = tradeHistoryService.getDetectedInceptionDisplayInfo()
         val errHtml =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderSettingsFormFragment(this, config, message, csrfToken, paused)
+                dashboardView.renderSettingsFormFragment(this, config, message, csrfToken, paused, inceptionDisplay)
             }
         call.respondText(errHtml, ContentType.Text.Html, status)
     }

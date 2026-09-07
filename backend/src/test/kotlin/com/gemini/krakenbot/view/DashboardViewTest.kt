@@ -10,6 +10,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -204,6 +205,45 @@ class DashboardViewTest : StringSpec() {
             }
             html shouldContain errMsg
             html shouldContain "error-banner"
+        }
+
+        "renderSettingsPage_detectedInception_rendersDisplayOnlyTextWithoutCopyingIntoInput" {
+            val html = createHTML().html {
+                view.renderSettingsPage(
+                    baseConfig,
+                    null,
+                    testCsrfToken,
+                    inceptionDisplay = InceptionDisplayInfo(dateText = "2024-03-15", source = "auto"),
+                )
+            }
+            html shouldContain "Auto-detected inception"
+            html shouldContain "2024-03-15"
+            html shouldContain "auto"
+            val inceptionInput =
+                Regex("<input[^>]*name=\"inceptionDate\"[^>]*>").find(html)?.value
+            inceptionInput.shouldNotBeNull()
+            inceptionInput shouldContain "value=\"\""
+            html shouldNotContain "name=\"detectedInception"
+            html shouldNotContain "id=\"detectedInception"
+        }
+
+        "renderSettingsPage_inProgressInception_rendersProgressMessage" {
+            val html = createHTML().html {
+                view.renderSettingsPage(
+                    baseConfig,
+                    null,
+                    testCsrfToken,
+                    inceptionDisplay = InceptionDisplayInfo(inProgress = true),
+                )
+            }
+            html shouldContain "Detection in progress"
+        }
+
+        "renderSettingsPage_noDetectedInception_rendersNoneMessage" {
+            val html = createHTML().html {
+                view.renderSettingsPage(baseConfig, null, testCsrfToken)
+            }
+            html shouldContain "Not yet detected"
         }
 
         "renderDashboardFragment_withLiveSnapshotAndHistory_rendersCorrectly" {

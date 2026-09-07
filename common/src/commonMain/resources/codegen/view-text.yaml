@@ -37,6 +37,9 @@ ViewText:
   FIAT_DEPLOYMENT_THRESHOLD: "Drawdown Activation Threshold (%)"
   INCEPTION_DATE: "Inception Date"
   INCEPTION_DATE_HINT: "Auto-detected after complete Kraken history and bot-ownership evidence, or specify YYYY-MM-DD"
+  INCEPTION_DETECTED_LABEL: "Auto-detected inception"
+  INCEPTION_DETECTED_NONE: "Not yet detected — complete Kraken history sync with bot-ownership evidence."
+  INCEPTION_DETECTED_IN_PROGRESS: "Detection in progress — syncing Kraken history…"
   # Safety and settings
   DRY_RUN_MODE_TITLE: "Dry Run Mode"
   SIMULATION_MODE_TITLE: "Simulation Mode"
