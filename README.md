@@ -429,7 +429,7 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
 - **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
-- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the strategy-inception baseline across every view window and shows the latest USD/percentage difference; bounded exchange/local timestamp skew and precise API-fill notional are reconciled before rendering, while any other tracked balance change that cannot be explained by authoritative trades or supported ledger activity makes the range unavailable
+- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the strategy-inception baseline across every view window and shows the latest USD/percentage difference; bounded inception recovery uses separate Kraken trade/ledger coverage with durable resume, positive local bot-ownership evidence, funding provenance, and historical prices before confirming a lifetime baseline, while any other tracked balance change that cannot be explained by authoritative trades or supported ledger activity makes the range unavailable
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)
@@ -812,7 +812,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET` | `/api/history/stats` | History summary-card aggregates (JSON, `?range=`) |
 | `GET` | `/api/history/comparison` | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`) |
 | `GET` | `/api/history/rewards` | Cumulative staking, dividend, and Earn rewards by asset (JSON, `?range=`) |
-| `GET` | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON) |
+| `GET` | `/api/history/sync-progress` | Polling endpoint for ordinary Kraken history sync and bounded inception-recovery progress/status (JSON) |
 | `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 
 ---

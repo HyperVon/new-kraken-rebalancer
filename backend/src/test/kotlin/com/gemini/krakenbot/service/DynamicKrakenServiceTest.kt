@@ -124,6 +124,23 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 1) { simulatedService.getTradeHistoryUntil(12345L, 10, 12399L) }
         }
 
+        "forwards recovery trade history to the selected backend" {
+            every { configService.getConfig() } returns appConfig(simulation = true)
+            val dynamicService = createService()
+
+            dynamicService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L)
+
+            coVerify(exactly = 1) { simulatedService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L) }
+            coVerify(exactly = 0) { realService.getRecoveryTradeHistoryUntil(any(), any(), any()) }
+
+            every { configService.getConfig() } returns appConfig(simulation = false)
+
+            dynamicService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L)
+
+            coVerify(exactly = 1) { realService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L) }
+            coVerify(exactly = 1) { simulatedService.getRecoveryTradeHistoryUntil(12345L, 10, 12399L) }
+        }
+
         "forwards clOrdId to the real backend when simulation is false" {
             every { configService.getConfig() } returns appConfig(simulation = false)
             val dynamicService = createService()

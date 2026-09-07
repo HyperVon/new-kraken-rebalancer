@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
@@ -7,6 +8,7 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Routes
+import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.withRange
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -150,10 +152,7 @@ internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTOR
     .then { rawStatus: dynamic ->
         val status = parseSyncProgressResponse(rawStatus)
         val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
-        banner == null || if (status.seeded) {
-            banner.classList.add(CssClass.Utility.Hidden.value)
-            true
-        } else {
+        banner == null || if (!status.seeded) {
             banner.classList.remove(CssClass.Utility.Hidden.value)
             val offset = dynamicNumber(status.offset) ?: 0.0
             val total = dynamicNumber(status.total) ?: 0.0
@@ -176,8 +175,47 @@ internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTOR
             }
 
             false
+        } else if (isInceptionRecoveryVisible(status)) {
+            banner.classList.remove(CssClass.Utility.Hidden.value)
+            val progress = recoveryProgress(status)
+            val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as? HTMLElement
+            val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as? HTMLElement
+            if (bar != null) bar.style.width = "${progress.second}%"
+            if (text != null) text.textContent = progress.first
+            status.recoveryStatus != SyncProgressResponse.RECOVERY_IN_PROGRESS
+        } else {
+            banner.classList.add(CssClass.Utility.Hidden.value)
+            true
         }
     }.`catch` { e ->
         console.error("Error checking sync progress", e)
         false
     }
+
+private fun isInceptionRecoveryVisible(status: SyncProgressResponse): Boolean = status.recoveryStatus in setOf(
+    SyncProgressResponse.RECOVERY_IN_PROGRESS,
+    SyncProgressResponse.RECOVERY_FAILED,
+    SyncProgressResponse.RECOVERY_AMBIGUOUS,
+    SyncProgressResponse.RECOVERY_NO_BOT_EVIDENCE,
+    SyncProgressResponse.RECOVERY_BASELINE_UNAVAILABLE,
+    SyncProgressResponse.RECOVERY_UNAVAILABLE,
+)
+
+private fun recoveryProgress(status: SyncProgressResponse): Pair<String, Int> {
+    val streams = listOf(
+        dynamicNumber(status.recoveryTradeOffset) to dynamicNumber(status.recoveryTradeTotal),
+        dynamicNumber(status.recoveryLedgerOffset) to dynamicNumber(status.recoveryLedgerTotal),
+    )
+    val known = streams.mapNotNull { (offset, total) ->
+        if (offset != null && total != null && total > 0.0) {
+            (offset / total).coerceIn(0.0, 1.0)
+        } else {
+            null
+        }
+    }
+    val pct = if (known.isEmpty()) 0 else (known.minOrNull()!! * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE).toInt()
+    val trade = "${status.recoveryTradeOffset.ifBlank { "0" }} / ${status.recoveryTradeTotal.ifBlank { "?" }}"
+    val ledger = "${status.recoveryLedgerOffset.ifBlank { "0" }} / ${status.recoveryLedgerTotal.ifBlank { "?" }}"
+    val reason = status.recoveryReason?.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()
+    return "${ViewText.INCEPTION_RECOVERY_PROGRESS_PREFIX}: trades $trade; ledgers $ledger$reason" to pct
+}

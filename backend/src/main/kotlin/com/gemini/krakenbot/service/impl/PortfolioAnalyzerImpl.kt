@@ -38,6 +38,7 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.history.CardFundingNormalizer
+import com.gemini.krakenbot.service.impl.history.HistoricalPriceResolver
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -1684,72 +1685,12 @@ class PortfolioAnalyzerImpl(
         asset: String,
         eventTime: Instant,
         tradesRepo: TradeRepository,
-    ): BigDecimal? {
-        // 1. If a trade occurred at or near flow time (within +/- 180 seconds), use the trade execution price
-        val recentTradeStart = eventTime.minusSeconds(180)
-        val recentTrade = tradesRepo.getTradesInRange(recentTradeStart, eventTime.plusSeconds(180))
-            .filter {
-                it.success &&
-                    !it.dryRun &&
-                    !it.timestamp.isBefore(recentTradeStart) &&
-                    !it.timestamp.isAfter(eventTime) &&
-                    Asset.normalizeLedgerAsset(it.symbol).equals(asset, ignoreCase = true)
-            }
-            .minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
-        if (recentTrade != null && recentTrade.volume > BigDecimal.ZERO && recentTrade.usdAmount > BigDecimal.ZERO) {
-            return recentTrade.usdAmount.divide(
-                recentTrade.volume,
-                PrecisionConstants.SCALE_CRYPTO,
-                RoundingMode.HALF_UP,
-            )
-        }
-
-        // 2. Look for closest recorded portfolio snapshot within +/- 180 seconds.
-        val recentSnapshotStart = eventTime.minusSeconds(180)
-        val nearestSnap = tradesRepo.getSnapshotsInRange(
-            recentSnapshotStart,
-            eventTime,
-        ).filter {
-            !it.timestamp.isBefore(recentSnapshotStart) &&
-                !it.timestamp.isAfter(eventTime) &&
-                !(it.balancesObservedAt ?: it.timestamp).isAfter(eventTime)
-        }.minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
-
-        val snapPrice = nearestSnap?.assets?.get(asset)?.price
-        if (snapPrice != null && snapPrice > BigDecimal.ZERO) {
-            return snapPrice
-        }
-
-        // 3. Use only a completed intraday candle. Selecting a daily candle
-        // whose start is before the event would otherwise use that candle's
-        // close, which includes price movement after the funding event.
-        try {
-            val pair = Asset(asset).tradingPair
-            val sinceSec = eventTime.minusSeconds(86400).epochSecond
-            val candles = krakenService.getOHLC(
-                pair,
-                interval = HISTORICAL_OHLC_INTERVAL_MINUTES,
-                since = sinceSec,
-            )
-            val candleDurationSeconds = HISTORICAL_OHLC_INTERVAL_MINUTES * 60L
-            val earliestCandleStart = eventTime.minusSeconds(86400)
-            val matched = candles.filter {
-                val candleStart = Instant.ofEpochSecond(it.first)
-                !candleStart.isBefore(earliestCandleStart) &&
-                    candleStart.plusSeconds(candleDurationSeconds) <= eventTime
-            }
-                .maxByOrNull { it.first }
-            if (matched != null && matched.second > BigDecimal.ZERO) {
-                return matched.second
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Failed to fetch OHLC price for asset {} at {}: {}", asset, eventTime, e.message)
-        }
-
-        return null
-    }
+    ): BigDecimal? = HistoricalPriceResolver.resolveHistoricalPrice(
+        asset = asset,
+        eventTime = eventTime,
+        tradesRepo = tradesRepo,
+        krakenService = krakenService,
+    )
 
     override fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal =
         RebalancerEngine.calculateFiatDeployment(drawdownPct, settings)

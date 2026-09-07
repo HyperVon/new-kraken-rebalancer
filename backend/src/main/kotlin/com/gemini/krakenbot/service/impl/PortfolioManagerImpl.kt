@@ -13,7 +13,9 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
+import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.RebalanceEventFormatter
 import com.gemini.krakenbot.view.util.ViewText
@@ -45,6 +47,8 @@ class PortfolioManagerImpl(
     private val orderExecutor: OrderExecutor,
     private val krakenService: KrakenService? = null,
     private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
+    private val inceptionRecoveryService: InceptionRecoveryService? = null,
+    private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
 ) : PortfolioManager {
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
@@ -191,16 +195,27 @@ class PortfolioManagerImpl(
     }
 
     private suspend fun runLoopBody() {
-        // Startup syncs establish their own session/backend pin; they are not grouped under the
-        // cycle-wide execution session/backend pin.
-        // Inception resolves before snapshot reconstruction/pruning so
-        // prune logic can honor the lifetime retention contract (never
-        // prune at or after inception). Burst detection needs trades, so
-        // ledgers + trades sync first.
-        synchronizeLedgers("on startup")
-        synchronizeTrades("on startup")
-        resolveInception("on startup")
-        synchronizeHistoricalSnapshots("on startup")
+        // Scope verification must succeed before pulling private history into local database.
+        val scopeResult = accountHistoryScopeGuard?.validateAccountScope()
+        if (scopeResult != null && !scopeResult.isValid) {
+            log.warn(
+                "Account scope validation failed on startup ({}): {}. Skipping history sync and inception recovery.",
+                scopeResult.status,
+                scopeResult.reason,
+            )
+        } else {
+            // Startup syncs establish their own session/backend pin; they are not grouped under the
+            // cycle-wide execution session/backend pin.
+            // Inception resolves before snapshot reconstruction/pruning so
+            // prune logic can honor the lifetime retention contract (never
+            // prune at or after inception). Burst detection needs trades, so
+            // ledgers + trades sync first.
+            synchronizeLedgers("on startup")
+            synchronizeTrades("on startup")
+            recoverInception("on startup")
+            resolveInception("on startup")
+            synchronizeHistoricalSnapshots("on startup")
+        }
 
         try {
             // Hot SharedFlow + collectLatest: config changes restart an idle delay immediately.
@@ -245,18 +260,28 @@ class PortfolioManagerImpl(
             val ks = krakenService
             if (ks != null) {
                 ks.withStableBackend {
+                    val scopeResult = accountHistoryScopeGuard?.validateAccountScope()
+                    if (scopeResult != null && !scopeResult.isValid) {
+                        log.warn(
+                            "Account scope validation failed for cycle ({}): {}. Aborting cycle.",
+                            scopeResult.status,
+                            scopeResult.reason,
+                        )
+                        return@withStableBackend
+                    }
                     withCycleMdc(cycleId) {
                         // The balance observation must precede the ledger
                         // sync: the sync watermark is stamped at sync start,
                         // and the ATH coverage gate requires coverage at or
-                        // after the observation. Observing first keeps the
-                        // gate passable every cycle instead of deferring
-                        // forever. The same observation drives the trade
-                        // valuation below, so total and observedAt stay a
-                        // consistent pair.
+                        // after the observation. On throttled cycles the
+                        // marker is intentionally older, so the analyzer
+                        // fails closed until the next ledger refresh. The
+                        // same observation drives the trade valuation below,
+                        // so total and observedAt stay a consistent pair.
                         val athObservation = observeBalancesForAth()
                         synchronizeLedgers("during cycle")
                         synchronizeTrades("during cycle")
+                        recoverInception("during cycle")
                         synchronizeHistoricalSnapshots("during cycle")
                         performRebalanceCycleForCycle(cycleId, athObservation)
                     }
@@ -337,6 +362,19 @@ class PortfolioManagerImpl(
             throw e
         } catch (e: Exception) {
             log.error("Failed to resolve portfolio inception {}", context, e)
+        }
+    }
+
+    private suspend fun recoverInception(context: String) {
+        try {
+            val status = inceptionRecoveryService?.recoverOneBoundedRun()
+            if (status != null) {
+                log.info("Strategy inception recovery status {} {}", context, status.status)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to recover strategy inception {}", context, e)
         }
     }
 

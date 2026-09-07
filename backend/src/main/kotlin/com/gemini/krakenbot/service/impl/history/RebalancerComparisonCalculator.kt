@@ -64,7 +64,15 @@ object RebalancerComparisonCalculator {
         historyTruncated: Boolean = false,
         priceProvider: HistoricalPriceProvider? = null,
         provenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
+        inceptionUnavailableReason: ComparisonUnavailableReason? = null,
     ): RebalancerComparison {
+        inceptionUnavailableReason?.let { reason ->
+            return unavailable(
+                reason = reason,
+                unavailableAt = snapshots.lastOrNull()?.timestamp,
+                baselineTimestamp = knownInceptionTime,
+            )
+        }
         if (historyTruncated) {
             // The local history cannot support a lifetime baseline (retention
             // removed pre-inception evidence on a migrated install). Any

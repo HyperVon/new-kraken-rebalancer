@@ -148,6 +148,16 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
             parsed.seeded shouldBe true
             parsed.offset shouldBe ""
             parsed.total shouldBe ""
+
+            val fromNull = parseSyncProgressResponse(null)
+            fromNull.seeded shouldBe false
+            fromNull.offset shouldBe ""
+            fromNull.total shouldBe ""
+
+            val fromUndefined = parseSyncProgressResponse(js("undefined"))
+            fromUndefined.seeded shouldBe false
+            fromUndefined.offset shouldBe ""
+            fromUndefined.total shouldBe ""
         }
 
         "parseTradeRecord and parsePortfolioSnapshot handle empty dynamic objects gracefully" {

@@ -53,7 +53,11 @@ object KrakenParsers {
             }
         }.toMap()
 
-    fun parseTradeHistory(result: JsonNode, allocations: List<String>): Pair<List<TradeRecord>, Int> {
+    fun parseTradeHistory(
+        result: JsonNode,
+        allocations: List<String>,
+        preserveUnmapped: Boolean = false,
+    ): Pair<List<TradeRecord>, Int> {
         val count = result.path(KrakenApiConstants.FIELD_COUNT).asInt(0)
         val tradesNode = result.path(KrakenApiConstants.FIELD_TRADES)
         if (!tradesNode.isObject) return emptyList<TradeRecord>() to count
@@ -75,7 +79,12 @@ object KrakenParsers {
                     orderTxidNode.asText().ifBlank { null }
                 }
 
-            val symbol = Asset.fromTradingPair(pair, allocations) ?: return@forEach
+            val symbol = Asset.fromTradingPair(pair, allocations)
+                ?: if (preserveUnmapped) {
+                    Asset.fromTradingPair(pair, emptyList()) ?: pair.trim().uppercase()
+                } else {
+                    return@forEach
+                }
 
             val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
             val side = type.uppercase()

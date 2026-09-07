@@ -1,9 +1,11 @@
 package com.gemini.krakenbot.service.impl.history
 
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.LocalDate
@@ -15,12 +17,15 @@ import kotlin.math.abs
  * Whether the local history can support [InceptionResolution] as a true
  * strategy start. [CONFIDENT] means full history from strategy start is
  * present (or the start is explicitly configured with an anchor);
- * [TRUNCATED] means older history was likely removed by a previous retention
- * era, so any lifetime baseline would be a plausible falsehood.
+ * [TRUNCATED] is the legacy isolated-install result where older history may
+ * have been removed by a previous retention era; [RECOVERY_INCOMPLETE] means
+ * the production recovery process has not yet proved both coverage and a
+ * trustworthy baseline, so any lifetime number would be a plausible falsehood.
  */
 enum class InceptionConfidence {
     CONFIDENT,
     TRUNCATED,
+    RECOVERY_INCOMPLETE,
 }
 
 data class InceptionResolution(
@@ -28,18 +33,35 @@ data class InceptionResolution(
     val inceptionSnapshot: PortfolioSnapshot?,
     val isAutoDetected: Boolean,
     val confidence: InceptionConfidence = InceptionConfidence.CONFIDENT,
+    val unavailableReason: ComparisonUnavailableReason? = null,
 )
 
 class InceptionDiscoveryService(
     private val tradeRepository: TradeRepository,
     private val configService: ConfigService,
     private val nowProvider: () -> Instant = Instant::now,
+    private val recoveryService: InceptionRecoveryService? = null,
 ) {
     private val log = LoggerFactory.getLogger(InceptionDiscoveryService::class.java)
 
+    /**
+     * True when a manually configured date may anchor a trusted local snapshot:
+     * preparation produced a current verdict and the scope is valid (or the
+     * backend is simulation, which carries no cross-account risk). BUSY carries
+     * no verdict at all — background recovery may be mid-verification while the
+     * credentials changed — so production callers must fail closed rather than
+     * assume the previously seen scope still holds.
+     */
+    private fun isScopeTrustedForManual(preparation: InceptionRecoveryService.InceptionPreparationResult): Boolean {
+        if (!preparation.scopeKnown) return false
+        val status = preparation.scopeStatus
+        return status == AccountScopeValidationStatus.VALID || status == AccountScopeValidationStatus.SIMULATION
+    }
+
     suspend fun resolveInception(): InceptionResolution {
         val settings = configService.getConfig().settings
-        // 1. Check user-configured inception date
+        val preparation = recoveryService?.prepareForCurrentConfigurationResult(settings.inceptionDate)
+        // 1. Check user-configured inception date.
         val parsedConfigured = parseInceptionDate(settings.inceptionDate)
         val configured = if (parsedConfigured != null && parsedConfigured.isAfter(nowProvider())) {
             log.warn("Ignoring configured inception date in the future: {}", parsedConfigured)
@@ -50,6 +72,21 @@ class InceptionDiscoveryService(
         // A configured date is authoritative: re-resolve from it on every call
         // so a stale cache can never override the user's explicit setting.
         if (configured != null) {
+            if (preparation != null && !isScopeTrustedForManual(preparation)) {
+                // A configured date fixes *when* inception was, but it cannot bless
+                // history the active credentials are not shown to own: anchoring a
+                // baseline snapshot from foreign (or unverifiable) history would
+                // launder it as trusted. Nothing durable is deleted or rewritten;
+                // this call only withholds trust until a verdict exists.
+                log.warn("Ignoring configured inception date while account scope is unverified: {}", configured)
+                return InceptionResolution(
+                    inceptionTime = configured,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
+                )
+            }
             val snapshot = findClosestSnapshot(configured)
             persistDetection(configured, snapshot, source = INCEPTION_SOURCE_CONFIGURED)
             if (snapshot == null) {
@@ -60,7 +97,18 @@ class InceptionDiscoveryService(
                     inceptionTime = configured,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
-                    confidence = InceptionConfidence.TRUNCATED,
+                    confidence = if (recoveryService == null) {
+                        // Preserve the legacy isolated-fixture contract; the application graph
+                        // reports a recovery-specific status instead of claiming history removal.
+                        InceptionConfidence.TRUNCATED
+                    } else {
+                        InceptionConfidence.RECOVERY_INCOMPLETE
+                    },
+                    unavailableReason = if (recoveryService == null) {
+                        null
+                    } else {
+                        ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED
+                    },
                 )
             }
             log.info("Using configured inception date: {}", configured)
@@ -68,6 +116,39 @@ class InceptionDiscoveryService(
                 inceptionTime = configured,
                 inceptionSnapshot = snapshot,
                 isAutoDetected = false,
+            )
+        }
+
+        // Production resolution is evidence-driven. The legacy fallback below remains available
+        // only for isolated callers that do not wire the recovery service (mostly old unit-test
+        // fixtures); the application graph always supplies it.
+        if (recoveryService != null) {
+            val recovery = recoveryService.getStatus()
+            if (recovery.status == InceptionRecoveryStatus.CONFIRMED &&
+                preparation?.canTrustRecoveredInception == true
+            ) {
+                val candidateTime = recovery.candidateTime?.let(::parseInceptionDate)
+                val baselineId = tradeRepository
+                    .getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                    ?.toIntOrNull()
+                val baseline = baselineId?.let { tradeRepository.getSnapshotById(it) }
+                if (candidateTime != null && baseline != null) {
+                    return InceptionResolution(
+                        inceptionTime = candidateTime,
+                        inceptionSnapshot = baseline,
+                        isAutoDetected = true,
+                    )
+                }
+                log.warn("Inception recovery is marked confirmed but its baseline identity is unavailable")
+            }
+            val candidateTime = recovery.candidateTime?.let(::parseInceptionDate)
+            val earliestSnapshot = tradeRepository.getSnapshotsInRange(Instant.EPOCH, nowProvider()).firstOrNull()
+            return InceptionResolution(
+                inceptionTime = candidateTime ?: earliestSnapshot?.timestamp ?: nowProvider(),
+                inceptionSnapshot = null,
+                isAutoDetected = true,
+                confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                unavailableReason = recoveryUnavailableReason(recovery.status),
             )
         }
 
@@ -212,6 +293,13 @@ class InceptionDiscoveryService(
         return null
     }
 
+    private fun recoveryUnavailableReason(status: String): ComparisonUnavailableReason = when (status) {
+        InceptionRecoveryStatus.AMBIGUOUS -> ComparisonUnavailableReason.INCEPTION_AMBIGUOUS
+        InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE -> ComparisonUnavailableReason.INCEPTION_NO_BOT_EVIDENCE
+        InceptionRecoveryStatus.BASELINE_UNAVAILABLE -> ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE
+        else -> ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
+    }
+
     private suspend fun persistDetection(time: Instant, snapshot: PortfolioSnapshot?, source: String) {
         tradeRepository.setSyncMetadata(
             SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
@@ -250,6 +338,7 @@ class InceptionDiscoveryService(
         const val MAX_ANCHOR_PROXIMITY_SECONDS = 300L
         const val INCEPTION_SOURCE_CONFIGURED = "configured"
         const val INCEPTION_SOURCE_AUTO = "auto"
+        const val INCEPTION_SOURCE_AUTO_RECOVERED = InceptionRecoveryService.INCEPTION_SOURCE_AUTO_RECOVERED
         const val INSTALL_TYPE_FRESH = "fresh"
         const val INSTALL_TYPE_UPGRADED = "upgraded"
 

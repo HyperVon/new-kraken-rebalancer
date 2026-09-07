@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.LedgerEvent
@@ -64,6 +65,16 @@ class TradeHistoryQueryService(
         val lastObservationTime = lastSnapshot.balancesObservedAt ?: lastTimestamp
 
         val inceptionResolution = inceptionDiscoveryService?.resolveInception()
+        if (inceptionResolution?.confidence == InceptionConfidence.RECOVERY_INCOMPLETE) {
+            return RebalancerComparisonCalculator.calculate(
+                snapshots = orderedSnapshots,
+                trades = emptyList(),
+                rewards = emptyList(),
+                knownInceptionTime = inceptionResolution.inceptionTime,
+                inceptionUnavailableReason = inceptionResolution.unavailableReason
+                    ?: ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
+            )
+        }
         if (inceptionResolution?.confidence == InceptionConfidence.TRUNCATED) {
             // Migrated install whose early history was removed by a previous
             // retention era: no window-anchored number may stand in for a

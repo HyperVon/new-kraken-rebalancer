@@ -12,6 +12,7 @@ import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +23,7 @@ class TradeHistoryServiceImpl(
     private val queryService: TradeHistoryQueryService,
     private val syncService: TradeHistorySyncService,
     private val ledgersSyncService: LedgersSyncService,
+    private val inceptionRecoveryService: InceptionRecoveryService? = null,
 ) : TradeHistoryService {
     constructor(
         repository: TradeRepository,
@@ -120,6 +122,9 @@ class TradeHistoryServiceImpl(
     override suspend fun setSyncMetadata(key: String, value: String) = syncService.setSyncMetadata(key, value)
 
     override suspend fun isHistorySeeded(): Boolean = syncService.isHistorySeeded()
+
+    override suspend fun getInceptionRecoveryStatus(): InceptionRecoveryStatus =
+        inceptionRecoveryService?.getStatus() ?: InceptionRecoveryStatus()
 
     override suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
         queryService.getRebalancerComparison(from, to)

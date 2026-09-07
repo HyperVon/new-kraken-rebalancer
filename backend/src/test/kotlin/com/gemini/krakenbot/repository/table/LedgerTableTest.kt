@@ -54,6 +54,8 @@ class LedgerTableTest : StringSpec() {
                 loaded.fee.shouldBeEqualComparingTo(original.fee)
                 loaded.balance.shouldBeEqualComparingTo(original.balance)
                 loaded.hasAuthoritativeBalance shouldBe true
+                loaded.hasAuthoritativeFee shouldBe true
+                loaded.hasValidFee shouldBe true
 
                 LedgerTable.insert {
                     LedgerTable.applyTo(
@@ -71,6 +73,24 @@ class LedgerTableTest : StringSpec() {
                 eightDpFee.fee.shouldBeEqualComparingTo(BigDecimal("0.01001234"))
                 eightDpFee.balance.shouldBeEqualComparingTo(BigDecimal("105.48998766"))
                 eightDpFee.hasAuthoritativeBalance shouldBe true
+                eightDpFee.hasAuthoritativeFee shouldBe true
+
+                LedgerTable.insert {
+                    LedgerTable.applyTo(
+                        it,
+                        original.copy(
+                            ledgerId = "ledger-invalid-fee",
+                            fee = BigDecimal("-0.01000000"),
+                            hasAuthoritativeFee = true,
+                            hasValidFee = false,
+                        ),
+                    )
+                }
+                val invalidFee = LedgerTable.selectAll()
+                    .single { it[LedgerTable.ledgerId] == "ledger-invalid-fee" }
+                    .let(LedgerTable::toModel)
+                invalidFee.hasAuthoritativeFee shouldBe true
+                invalidFee.hasValidFee shouldBe false
 
                 LedgerTable.insert {
                     LedgerTable.applyTo(
@@ -86,6 +106,8 @@ class LedgerTableTest : StringSpec() {
                     .single { it[LedgerTable.ledgerId] == "ledger-zero-balance" }
                     .let(LedgerTable::toModel)
                 zeroBalance.hasAuthoritativeBalance shouldBe false
+                zeroBalance.hasAuthoritativeFee shouldBe true
+                zeroBalance.hasValidFee shouldBe true
             }
         }
     }
