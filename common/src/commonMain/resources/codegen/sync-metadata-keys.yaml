@@ -42,3 +42,5 @@ SyncMetadataKeys:
   INCEPTION_RECOVERY_REASON: "inception_recovery_reason"
   INCEPTION_ACCOUNT_SCOPE_DIGEST: "inception_account_scope_digest"
   INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION: "inception_account_scope_binding_version"
+  INCEPTION_INFERENCE_VERSION: "inception_inference_version"
+  INCEPTION_INFERENCE_FINGERPRINT: "inception_inference_fingerprint"

@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.repository.impl
 
+import com.gemini.krakenbot.model.InceptionCandidateEvidence
+import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -12,6 +14,8 @@ import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
+import com.gemini.krakenbot.repository.table.InceptionInferenceCandidateTable
+import com.gemini.krakenbot.repository.table.InceptionInferenceTable
 import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import com.gemini.krakenbot.repository.table.TradeTable
@@ -47,6 +51,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     private companion object {
         const val MAX_SNAPSHOT_POINTS = 300
         const val SQLITE_IN_CHUNK_SIZE = 500
+        const val DELIMITER = ","
     }
 
     private val log =
@@ -241,6 +246,149 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
         snapshotId
     }
+
+    override suspend fun setSyncMetadataAtomically(metadata: Map<String, String>) {
+        if (metadata.isEmpty()) return
+        database.safeTransactionIO(log, "Failed to persist inception inference metadata") {
+            metadata.forEach { (key, value) ->
+                HistorySyncMetadataTable.upsert {
+                    it[HistorySyncMetadataTable.key] = key
+                    it[HistorySyncMetadataTable.value] = value
+                }
+            }
+        }
+    }
+
+    override suspend fun saveInceptionInferenceEvidence(
+        evidence: InceptionInferenceEvidence,
+        metadata: Map<String, String>,
+    ) {
+        database.safeTransactionIO(log, "Failed to persist inception inference evidence") {
+            InceptionInferenceTable.upsert {
+                it[fingerprint] = evidence.fingerprint
+                it[evidenceDigest] = evidence.evidenceDigest
+                it[modelVersion] = evidence.modelVersion
+                it[coverageStartEpochMs] = evidence.coverageStart?.toEpochMilli()
+                it[coverageEndEpochMs] = evidence.coverageEnd?.toEpochMilli()
+                it[horizonEpochSec] = evidence.horizon?.epochSecond
+                it[firstPositiveEpochMs] = evidence.firstPositive?.toEpochMilli()
+                it[inferredStartEpochMs] = evidence.inferredStart?.toEpochMilli()
+                it[inferredWindowStartEpochMs] = evidence.inferredWindowStart?.toEpochMilli()
+                it[inferredWindowEndEpochMs] = evidence.inferredWindowEnd?.toEpochMilli()
+                it[strongestObservedStartEpochMs] = evidence.strongestObservedStart?.toEpochMilli()
+                it[inferredStartStrength] = evidence.inferredStartStrength
+                // List entries are comma-free by contract; commas are stripped so the
+                // delimiter roundtrip below stays lossless for reason codes and symbols.
+                it[inferredStartReasons] =
+                    evidence.inferredStartReasons.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[inferredStartContradictions] =
+                    evidence.inferredStartContradictions.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[strongestEpisodeStrength] = evidence.strongestEpisodeStrength
+                it[strongestEpisodeReasons] =
+                    evidence.strongestEpisodeReasons.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[strongestEpisodeContradictions] =
+                    evidence.strongestEpisodeContradictions.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[earliestAmbiguousStartEpochMs] = evidence.earliestAmbiguousStart?.toEpochMilli()
+                it[earlierAmbiguousCandidateCount] = evidence.earlierAmbiguousCandidateCount
+                it[unsupportedMarketCount] = evidence.unsupportedMarketCount
+                it[unsupportedMarketSamples] =
+                    evidence.unsupportedMarketSamples.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[competingCandidateCount] = evidence.competingCandidateCount
+            }
+            InceptionInferenceCandidateTable.deleteWhere {
+                InceptionInferenceCandidateTable.fingerprint eq evidence.fingerprint
+            }
+            evidence.candidates.forEachIndexed { position, candidate ->
+                InceptionInferenceCandidateTable.insert {
+                    it[fingerprint] = evidence.fingerprint
+                    it[this.position] = position
+                    it[observedStartEpochMs] = candidate.observedStart.toEpochMilli()
+                    it[observedEndEpochMs] = candidate.observedEnd.toEpochMilli()
+                    it[windowStartEpochMs] = candidate.windowStart.toEpochMilli()
+                    it[windowEndEpochMs] = candidate.windowEnd.toEpochMilli()
+                    it[strength] = candidate.strength
+                    it[reasons] = candidate.reasons.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                    it[contradictions] =
+                        candidate.contradictions.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                    it[assetCount] = candidate.assetCount
+                    it[assetSymbols] =
+                        candidate.assetSymbols.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                    it[orderCount] = candidate.orderCount
+                    it[repeatedEvidenceCount] = candidate.repeatedEvidenceCount
+                    it[timescalesSeconds] = candidate.timescalesSeconds.joinToString(DELIMITER)
+                }
+            }
+            metadata.forEach { (key, value) ->
+                HistorySyncMetadataTable.upsert {
+                    it[HistorySyncMetadataTable.key] = key
+                    it[HistorySyncMetadataTable.value] = value
+                }
+            }
+        }
+    }
+
+    override suspend fun findInceptionInferenceEvidence(fingerprint: String): InceptionInferenceEvidence? =
+        database.readTransactionIO {
+            val record = InceptionInferenceTable
+                .selectAll()
+                .where { InceptionInferenceTable.fingerprint eq fingerprint }
+                .singleOrNull() ?: return@readTransactionIO null
+            val candidates = InceptionInferenceCandidateTable
+                .selectAll()
+                .where { InceptionInferenceCandidateTable.fingerprint eq fingerprint }
+                .orderBy(InceptionInferenceCandidateTable.position, SortOrder.ASC)
+                .map(::toCandidateEvidence)
+            toInferenceEvidence(record, candidates)
+        }
+
+    private fun toCandidateEvidence(row: ResultRow): InceptionCandidateEvidence = InceptionCandidateEvidence(
+        observedStart = Instant.ofEpochMilli(row[InceptionInferenceCandidateTable.observedStartEpochMs]),
+        observedEnd = Instant.ofEpochMilli(row[InceptionInferenceCandidateTable.observedEndEpochMs]),
+        windowStart = Instant.ofEpochMilli(row[InceptionInferenceCandidateTable.windowStartEpochMs]),
+        windowEnd = Instant.ofEpochMilli(row[InceptionInferenceCandidateTable.windowEndEpochMs]),
+        strength = row[InceptionInferenceCandidateTable.strength],
+        reasons = splitList(row[InceptionInferenceCandidateTable.reasons]),
+        contradictions = splitList(row[InceptionInferenceCandidateTable.contradictions]),
+        assetCount = row[InceptionInferenceCandidateTable.assetCount],
+        assetSymbols = splitList(row[InceptionInferenceCandidateTable.assetSymbols]),
+        orderCount = row[InceptionInferenceCandidateTable.orderCount],
+        repeatedEvidenceCount = row[InceptionInferenceCandidateTable.repeatedEvidenceCount],
+        timescalesSeconds = splitList(row[InceptionInferenceCandidateTable.timescalesSeconds])
+            .mapNotNull(String::toLongOrNull).toSet(),
+    )
+
+    private fun toInferenceEvidence(
+        row: ResultRow,
+        candidates: List<InceptionCandidateEvidence>,
+    ): InceptionInferenceEvidence = InceptionInferenceEvidence(
+        fingerprint = row[InceptionInferenceTable.fingerprint],
+        evidenceDigest = row[InceptionInferenceTable.evidenceDigest],
+        modelVersion = row[InceptionInferenceTable.modelVersion],
+        coverageStart = row[InceptionInferenceTable.coverageStartEpochMs]?.let(Instant::ofEpochMilli),
+        coverageEnd = row[InceptionInferenceTable.coverageEndEpochMs]?.let(Instant::ofEpochMilli),
+        horizon = row[InceptionInferenceTable.horizonEpochSec]?.let(Instant::ofEpochSecond),
+        firstPositive = row[InceptionInferenceTable.firstPositiveEpochMs]?.let(Instant::ofEpochMilli),
+        inferredStart = row[InceptionInferenceTable.inferredStartEpochMs]?.let(Instant::ofEpochMilli),
+        inferredWindowStart = row[InceptionInferenceTable.inferredWindowStartEpochMs]?.let(Instant::ofEpochMilli),
+        inferredWindowEnd = row[InceptionInferenceTable.inferredWindowEndEpochMs]?.let(Instant::ofEpochMilli),
+        strongestObservedStart = row[InceptionInferenceTable.strongestObservedStartEpochMs]?.let(Instant::ofEpochMilli),
+        inferredStartStrength = row[InceptionInferenceTable.inferredStartStrength],
+        inferredStartReasons = splitList(row[InceptionInferenceTable.inferredStartReasons]),
+        inferredStartContradictions = splitList(row[InceptionInferenceTable.inferredStartContradictions]),
+        strongestEpisodeStrength = row[InceptionInferenceTable.strongestEpisodeStrength],
+        strongestEpisodeReasons = splitList(row[InceptionInferenceTable.strongestEpisodeReasons]),
+        strongestEpisodeContradictions = splitList(row[InceptionInferenceTable.strongestEpisodeContradictions]),
+        earliestAmbiguousStart =
+        row[InceptionInferenceTable.earliestAmbiguousStartEpochMs]?.let(Instant::ofEpochMilli),
+        earlierAmbiguousCandidateCount = row[InceptionInferenceTable.earlierAmbiguousCandidateCount],
+        unsupportedMarketCount = row[InceptionInferenceTable.unsupportedMarketCount],
+        unsupportedMarketSamples = splitList(row[InceptionInferenceTable.unsupportedMarketSamples]),
+        competingCandidateCount = row[InceptionInferenceTable.competingCandidateCount],
+        candidates = candidates,
+    )
+
+    private fun splitList(value: String?): List<String> =
+        value?.takeIf { it.isNotBlank() }?.split(DELIMITER)?.map(String::trim).orEmpty()
 
     override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = database.readTransactionIO {
         TradeTable

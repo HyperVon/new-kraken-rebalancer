@@ -4,6 +4,8 @@ import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
 import com.gemini.krakenbot.repository.table.AthAppliedFlowTable
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
+import com.gemini.krakenbot.repository.table.InceptionInferenceCandidateTable
+import com.gemini.krakenbot.repository.table.InceptionInferenceTable
 import com.gemini.krakenbot.repository.table.LedgerTable
 import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
@@ -58,7 +60,8 @@ object DatabaseConfig {
             HistorySyncMetadataTable,
         )
 
-    private val allTables = baseTables + OrderIntentTable
+    private val allTables =
+        baseTables + OrderIntentTable + InceptionInferenceTable + InceptionInferenceCandidateTable
 
     fun init(dbPath: String = System.getProperty("kraken.db.path", "kraken-rebalancer.db")): Database {
         rejectUnsupportedSchemaVersionBeforeMigration(dbPath)

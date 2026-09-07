@@ -188,6 +188,79 @@ class SettingsFormComponent {
         // Display-only: plain text with no form field name so it is never submitted
         // and never copied into settings.inceptionDate.
         p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
+        display.inferredStartText?.let { inferredStart ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_INFERRED_LABEL}: $inferredStart"
+            }
+            p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_INFERRED_MESSAGE }
+            if (display.inferredWindowStartText != null && display.inferredWindowEndText != null) {
+                p(CssClass.Form.SectionSubtitle) {
+                    +"${ViewText.INCEPTION_INFERRED_WINDOW_LABEL}: ${display.inferredWindowStartText} "
+                    +"to ${display.inferredWindowEndText}."
+                }
+            }
+        }
+        display.firstPositiveText?.let { firstPositive ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_FIRST_POSITIVE_LABEL}: $firstPositive."
+            }
+        }
+        display.inferredStartStrengthText?.let { strength ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_INFERRED_START_STRENGTH_LABEL}: $strength"
+            }
+        }
+        display.inferredStartReasonsText?.let { reasons ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_INFERRED_START_REASONS_LABEL}: $reasons."
+            }
+        }
+        display.inferredStartContradictionsText?.let { contradictions ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_INFERRED_START_CONTRADICTIONS_LABEL}: $contradictions."
+            }
+        }
+        display.strongestEpisodeText?.let { strongest ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_STRONGEST_EPISODE_LABEL}: $strongest." }
+        }
+        display.strongestEpisodeStrengthText?.let { strength ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_STRONGEST_EPISODE_STRENGTH_LABEL}: $strength"
+            }
+        }
+        display.strongestEpisodeReasonsText?.let { reasons ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_STRONGEST_EPISODE_REASONS_LABEL}: $reasons."
+            }
+        }
+        display.earliestAmbiguousText?.let { ambiguous ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_EARLIEST_AMBIGUOUS_LABEL}: $ambiguous."
+            }
+        }
+        display.earlierAmbiguousCountText?.let { count ->
+            val note = buildString {
+                append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_LABEL)
+                append(": ")
+                append(count)
+                append('.')
+                // The before-the-start note only makes sense once a start is displayed.
+                if (display.inferredStartText != null) {
+                    append(' ')
+                    append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_NOTE)
+                }
+            }
+            p(CssClass.Form.SectionSubtitle) { +note }
+        }
+        display.competingCandidatesText?.let { count ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_COMPETING_CANDIDATES_LABEL}: $count." }
+        }
+        display.unsupportedMarketsText?.let { unsupported ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_UNSUPPORTED_MARKETS_LABEL}: $unsupported." }
+        }
+        display.coverageText?.let { coverage ->
+            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_COVERAGE_LABEL}: $coverage." }
+        }
     }
 
     private fun DIV.renderSafetyModesSection(config: AppConfig) {

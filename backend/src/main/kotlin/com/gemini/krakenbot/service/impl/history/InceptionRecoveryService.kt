@@ -6,6 +6,8 @@ import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.FundingProvenanceResolver
+import com.gemini.krakenbot.model.InceptionCandidateEvidence
+import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.LedgerFlowClassifier
@@ -82,10 +84,19 @@ class InceptionRecoveryService(
     suspend fun getLocalInceptionDisplayInfo(): InceptionDisplayInfo {
         val config = configService.getConfig()
         if (!config.settings.inceptionDate.isNullOrBlank()) {
+            // A manual inception date stays authoritative: nothing is copied into or submitted
+            // from the manual field, but the historical evidence readout may still render
+            // underneath so the operator can compare it with the manual choice.
+            val scopeResult = accountHistoryScopeGuard.readLocalTrustState()
+            val inferred = if (scopeResult.status == AccountScopeValidationStatus.VALID) {
+                readLocalInference(config, scopeResult.currentScopeDigest.orEmpty())
+            } else {
+                InceptionDisplayInfo()
+            }
             return InceptionDisplayInfo(
                 status = InceptionDisplayStatus.MANUAL_OVERRIDE,
                 message = ViewText.INCEPTION_DETECTED_MANUAL_OVERRIDE,
-            )
+            ).withInference(inferred)
         }
 
         val scopeResult = accountHistoryScopeGuard.readLocalTrustState()
@@ -114,6 +125,7 @@ class InceptionRecoveryService(
         }
 
         val currentScope = scopeResult.currentScopeDigest.orEmpty()
+        val inferred = readLocalInference(config, currentScope)
         val expectedFingerprint = configurationFingerprint(config, "", currentScope)
         val storedFingerprint = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
         val storedVersion = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
@@ -124,18 +136,18 @@ class InceptionRecoveryService(
                 return InceptionDisplayInfo(
                     status = InceptionDisplayStatus.IN_PROGRESS,
                     message = ViewText.INCEPTION_DETECTED_IN_PROGRESS,
-                )
+                ).withInference(inferred)
             }
             if (storedFingerprint.isNullOrBlank()) {
                 return InceptionDisplayInfo(
                     status = InceptionDisplayStatus.NOT_DETECTED,
                     message = ViewText.INCEPTION_DETECTED_NOT_STARTED,
-                )
+                ).withInference(inferred)
             }
             return InceptionDisplayInfo(
                 status = InceptionDisplayStatus.UNAVAILABLE,
                 message = ViewText.INCEPTION_DETECTED_CONFIG_CHANGED,
-            )
+            ).withInference(inferred)
         }
 
         val recoveryStatus = readStatus()
@@ -157,16 +169,105 @@ class InceptionRecoveryService(
                     dateText = dateText,
                     source = source,
                     message = ViewText.INCEPTION_DETECTED_LEAVE_BLANK,
-                )
+                ).withInference(inferred)
             }
             return InceptionDisplayInfo(
                 status = InceptionDisplayStatus.UNAVAILABLE,
                 message = ViewText.INCEPTION_DETECTED_UNAVAILABLE,
-            )
+            ).withInference(inferred)
         }
 
-        return displayFromRecoveryStatus(recoveryStatus)
+        return displayFromRecoveryStatus(recoveryStatus).withInference(inferred)
     }
+
+    private suspend fun readLocalInference(config: AppConfig, accountScope: String): InceptionDisplayInfo {
+        if (repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_VERSION) != CURRENT_INFERENCE_VERSION) {
+            return InceptionDisplayInfo()
+        }
+        val fingerprint = inferenceFingerprint(config, accountScope)
+        if (repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT) != fingerprint) {
+            return InceptionDisplayInfo()
+        }
+        val record = repository.findInceptionInferenceEvidence(fingerprint) ?: return InceptionDisplayInfo()
+        val now = nowProvider()
+
+        val start = validInferenceInstant(record.inferredStart, now)
+        val windowStart = validInferenceInstant(record.inferredWindowStart, now)
+        val windowEnd = validInferenceInstant(record.inferredWindowEnd, now)
+        val candidateWindowValid = start != null && windowStart != null && windowEnd != null &&
+            !windowStart.isAfter(start) && !start.isAfter(windowEnd)
+        val firstPositive = validInferenceInstant(record.firstPositive, now)
+        val inferredStartStrength = record.inferredStartStrength?.takeIf { it in VALID_INFERENCE_STRENGTHS }
+        val strongestObserved = validInferenceInstant(record.strongestObservedStart, now)
+            ?.takeIf { start == null || it != start }
+        val strongestEpisodeStrength = record.strongestEpisodeStrength?.takeIf { it in VALID_INFERENCE_STRENGTHS }
+
+        return InceptionDisplayInfo(
+            inferredStartText = if (candidateWindowValid) start.toString() else null,
+            inferredWindowStartText = if (candidateWindowValid) windowStart.toString() else null,
+            inferredWindowEndText = if (candidateWindowValid) windowEnd.toString() else null,
+            firstPositiveText = firstPositive?.toString(),
+            inferredStartStrengthText = if (candidateWindowValid) inferredStartStrength else null,
+            inferredStartReasonsText = if (candidateWindowValid) {
+                record.inferredStartReasons.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
+            } else {
+                null
+            },
+            inferredStartContradictionsText = if (candidateWindowValid) {
+                record.inferredStartContradictions.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
+            } else {
+                null
+            },
+            strongestEpisodeText = strongestObserved?.toString(),
+            strongestEpisodeStrengthText = if (strongestObserved != null) strongestEpisodeStrength else null,
+            strongestEpisodeReasonsText = if (strongestObserved != null) {
+                record.strongestEpisodeReasons.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
+            } else {
+                null
+            },
+            earliestAmbiguousText = validInferenceInstant(record.earliestAmbiguousStart, now)?.toString(),
+            earlierAmbiguousCountText = record.earlierAmbiguousCandidateCount.takeIf { it > 0 }?.toString(),
+            competingCandidatesText = if (candidateWindowValid) {
+                record.competingCandidateCount.takeIf { it > 0 }?.toString()
+            } else {
+                null
+            },
+            unsupportedMarketsText = record.unsupportedMarketCount
+                .takeIf { it > 0 }
+                ?.let { count -> "$count (${record.unsupportedMarketSamples.joinToString(", ")})" },
+            coverageText = inferenceCoverageText(record, now),
+        )
+    }
+
+    private fun validInferenceInstant(value: Instant?, now: Instant): Instant? =
+        value?.takeIf { it.isAfter(Instant.EPOCH) && !it.isAfter(now) }
+
+    private fun reasonCodeText(code: String): String = code.replace('_', ' ').lowercase()
+
+    private fun inferenceCoverageText(record: InceptionInferenceEvidence, now: Instant): String? {
+        val coverageStart = validInferenceInstant(record.coverageStart, now) ?: return null
+        val coverageEnd = validInferenceInstant(record.coverageEnd, now) ?: return null
+        if (coverageStart.isAfter(coverageEnd)) return null
+        return "$coverageStart to $coverageEnd"
+    }
+
+    private fun InceptionDisplayInfo.withInference(inference: InceptionDisplayInfo): InceptionDisplayInfo = copy(
+        inferredStartText = inference.inferredStartText,
+        inferredWindowStartText = inference.inferredWindowStartText,
+        inferredWindowEndText = inference.inferredWindowEndText,
+        firstPositiveText = inference.firstPositiveText,
+        inferredStartStrengthText = inference.inferredStartStrengthText,
+        inferredStartReasonsText = inference.inferredStartReasonsText,
+        inferredStartContradictionsText = inference.inferredStartContradictionsText,
+        strongestEpisodeText = inference.strongestEpisodeText,
+        strongestEpisodeStrengthText = inference.strongestEpisodeStrengthText,
+        strongestEpisodeReasonsText = inference.strongestEpisodeReasonsText,
+        earliestAmbiguousText = inference.earliestAmbiguousText,
+        earlierAmbiguousCountText = inference.earlierAmbiguousCountText,
+        competingCandidatesText = inference.competingCandidatesText,
+        unsupportedMarketsText = inference.unsupportedMarketsText,
+        coverageText = inference.coverageText,
+    )
 
     private fun displayFromRecoveryStatus(recoveryStatus: InceptionRecoveryStatus): InceptionDisplayInfo =
         when (recoveryStatus.status) {
@@ -575,23 +676,6 @@ class InceptionRecoveryService(
             .filter { it.success && !it.dryRun }
             .sortedBy(TradeRecord::timestamp)
 
-        val expectedUniverse = config.allocations.map {
-            Asset.normalizeLedgerAsset(it.symbol.value).uppercase()
-        }.toSet()
-        val outsideUniverseTrade = allTrades.firstOrNull {
-            it.symbol.isNotBlank() &&
-                it.volume.signum() != 0 &&
-                Asset.normalizeLedgerAsset(it.symbol).uppercase() !in expectedUniverse
-        }
-        if (outsideUniverseTrade != null) {
-            clearCandidateEvidence()
-            setOverallStatus(
-                InceptionRecoveryStatus.AMBIGUOUS,
-                "trade outside configured universe",
-            )
-            return
-        }
-
         val candidateTrades = allTrades.filter { it.symbol.isNotBlank() && !Asset(it.symbol).isUsd }
         val orderTxids = candidateTrades.mapNotNull { it.orderTxid?.trim()?.takeIf(String::isNotBlank) }.toSet()
         val clientOrderIds = candidateTrades.mapNotNull { it.clientOrderId?.trim()?.takeIf(String::isNotBlank) }.toSet()
@@ -599,6 +683,7 @@ class InceptionRecoveryService(
             ?.getKnownRebalancerOrderIdentities(orderTxids, clientOrderIds)
             ?.orderTxids
             .orEmpty()
+        persistHistoricalInference(config, allTrades, horizon, knownOrderTxids)
         val ownedTrades = candidateTrades.filter {
             classifyTradeForRecovery(it, knownOrderTxids) == TradeOwnership.REBALANCER
         }
@@ -1005,6 +1090,155 @@ class InceptionRecoveryService(
             else -> TradeOwnership.UNKNOWN
         }
 
+    private suspend fun persistHistoricalInference(
+        config: AppConfig,
+        trades: List<TradeRecord>,
+        horizon: Instant,
+        knownRebalancerOrderTxids: Set<String>,
+    ) {
+        val accountScope = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST).orEmpty()
+        val fingerprint = inferenceFingerprint(config, accountScope)
+        val inferenceTrades = trades.map { trade ->
+            HistoricalInferenceTrade(
+                id = trade.id?.toString() ?: "${trade.timestamp.toEpochMilli()}:${trade.pair}:${trade.side}",
+                timestamp = trade.timestamp,
+                pair = trade.pair,
+                side = trade.side,
+                symbol = trade.symbol,
+                volume = trade.volume,
+                quoteAmount = trade.usdAmount,
+                orderTxid = trade.orderTxid,
+                tradeId = trade.tradeId,
+                ownership = if (classifyTradeForRecovery(trade, knownRebalancerOrderTxids) ==
+                    TradeOwnership.REBALANCER
+                ) {
+                    InferenceOwnership.POSITIVE
+                } else {
+                    InferenceOwnership.UNKNOWN
+                },
+            )
+        }
+        val policy = HistoricalInferencePolicy()
+        val inference = HistoricalStrategyStartDetector.infer(inferenceTrades, policy)
+        val evidenceDigest = evidenceFingerprint(
+            modelVersion = CURRENT_INFERENCE_VERSION,
+            config = config,
+            accountScope = accountScope,
+            horizon = horizon,
+            inferenceTrades = inferenceTrades,
+            unsupportedMarkets = inference.unsupportedMarkets,
+        )
+        val metadata = mapOf(
+            SyncMetadataKeys.INCEPTION_INFERENCE_VERSION to CURRENT_INFERENCE_VERSION,
+            SyncMetadataKeys.INCEPTION_INFERENCE_FINGERPRINT to fingerprint,
+            SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC to horizon.epochSecond.toString(),
+        )
+        val existing = repository.findInceptionInferenceEvidence(fingerprint)
+        if (existing != null &&
+            existing.modelVersion == CURRENT_INFERENCE_VERSION &&
+            existing.evidenceDigest == evidenceDigest
+        ) {
+            repository.setSyncMetadataAtomically(metadata)
+            return
+        }
+        val evidence = InceptionInferenceEvidence(
+            fingerprint = fingerprint,
+            evidenceDigest = evidenceDigest,
+            modelVersion = CURRENT_INFERENCE_VERSION,
+            coverageStart = inference.coverageStart,
+            coverageEnd = inference.coverageEnd,
+            horizon = horizon,
+            firstPositive = inference.firstPositivelyOwnedTrade,
+            inferredStart = inference.inferredStart,
+            inferredWindowStart = inference.inferredWindowStart,
+            inferredWindowEnd = inference.inferredWindowEnd,
+            inferredStartStrength = inference.inferredStartStrength?.name,
+            inferredStartReasons = inference.inferredStartReasons,
+            inferredStartContradictions = inference.inferredStartContradictions,
+            strongestObservedStart = inference.strongestObservedStart,
+            strongestEpisodeStrength = inference.strongestEpisodeStrength?.name,
+            strongestEpisodeReasons = inference.strongestEpisodeReasons,
+            strongestEpisodeContradictions = inference.strongestEpisodeContradictions,
+            earliestAmbiguousStart = inference.earliestAmbiguousStart,
+            earlierAmbiguousCandidateCount = inference.earlierAmbiguousCandidateCount,
+            unsupportedMarketCount = inference.unsupportedMarkets.size,
+            unsupportedMarketSamples = inference.unsupportedMarkets.take(MAX_UNSUPPORTED_MARKET_SAMPLES),
+            competingCandidateCount = inference.competingCandidateCount,
+            candidates = inference.candidates.map { candidate ->
+                InceptionCandidateEvidence(
+                    observedStart = candidate.observedStart,
+                    observedEnd = candidate.observedEnd,
+                    windowStart = candidate.windowStart,
+                    windowEnd = candidate.windowEnd,
+                    strength = candidate.strength.name,
+                    reasons = candidate.reasons,
+                    contradictions = candidate.contradictions,
+                    assetCount = candidate.distinctAssets.size,
+                    assetSymbols = candidate.distinctAssets.sorted(),
+                    orderCount = candidate.orderCount,
+                    repeatedEvidenceCount = candidate.repeatedEvidenceCount,
+                    timescalesSeconds = candidate.timescalesSeconds,
+                )
+            },
+        )
+        repository.saveInceptionInferenceEvidence(evidence, metadata)
+    }
+
+    internal fun inferenceFingerprint(config: AppConfig, accountScope: String): String =
+        sha256Hex(listOf(config.settings.simulation.toString(), accountScope).joinToString("\u0000"))
+
+    private fun evidenceFingerprint(
+        modelVersion: String,
+        config: AppConfig,
+        accountScope: String,
+        horizon: Instant,
+        inferenceTrades: List<HistoricalInferenceTrade>,
+        unsupportedMarkets: List<String>,
+    ): String {
+        val material = buildString {
+            append(modelVersion).append('\u0000')
+            append(config.settings.simulation.toString()).append('\u0000')
+            append(accountScope).append('\u0000')
+            append(horizon.toString()).append('\u0000')
+            inferenceTrades
+                .sortedWith(
+                    compareBy(
+                        { it.timestamp },
+                        { it.pair },
+                        { it.side },
+                        { it.orderTxid.orEmpty() },
+                        { it.tradeId.orEmpty() },
+                        { it.volume.stripTrailingZeros() },
+                        { it.quoteAmount.stripTrailingZeros() },
+                        { it.ownership.name },
+                    ),
+                )
+                .forEach { trade ->
+                    append(trade.timestamp).append('|')
+                    append(trade.pair).append('|')
+                    append(trade.side).append('|')
+                    append(trade.volume.digestScale()).append('|')
+                    append(trade.quoteAmount.digestScale()).append('|')
+                    append(trade.orderTxid.orEmpty()).append('|')
+                    append(trade.tradeId.orEmpty()).append('|')
+                    append(trade.ownership.name).append('\n')
+                }
+            append('\u0000')
+            unsupportedMarkets.forEach { append(it).append(',') }
+        }
+        return sha256Hex(material)
+    }
+
+    // Zero has multiple BigDecimal representations (0E-8 vs 0); normalize so the
+    // digest is stable across data sources and the idempotent skip stays effective.
+    private fun BigDecimal.digestScale(): String =
+        (if (signum() == 0) BigDecimal.ZERO else this).stripTrailingZeros().toPlainString()
+
+    private fun sha256Hex(material: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray(Charsets.UTF_8))
+        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
     private suspend fun prepareForCurrentConfigurationLocked(
         config: AppConfig,
         inceptionDate: String,
@@ -1184,6 +1418,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
+        const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val RETRY_INTERVAL_SECONDS = 300L
         const val INCEPTION_SOURCE_AUTO_RECOVERED = "auto-recovered"
@@ -1196,6 +1431,8 @@ class InceptionRecoveryService(
         private val SUPPORTED_LEDGER_TYPES =
             setOf(TRADE_LEDGER_TYPE) + LedgerEvent.EXTERNAL_BALANCE_TYPES.map(String::lowercase)
         private const val MAX_REASON_LENGTH = 60
+        private val VALID_INFERENCE_STRENGTHS = setOf("HIGH", "MEDIUM", "LOW")
+        private const val MAX_UNSUPPORTED_MARKET_SAMPLES = 5
         private val NEGATIVE_BALANCE_TOLERANCE = BigDecimal("0.00000001")
     }
 }

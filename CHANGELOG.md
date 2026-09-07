@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.38] - 2026-09-07
+
+### Added
+
+- **Historical inception evidence**: Settings can now show a locally persisted, account-scoped
+  inferred strategy-start window and the first positively owned fill separately from confirmed
+  inception. The deterministic evidence pass groups authoritative orders, recognizes repeated
+  multi-asset episodes across multiple timing scales, keeps unknown ownership and baseline/accounting
+  uncertainty explicit, and persists a bounded set of competing candidate summaries with an evidence
+  fingerprint, history-coverage bounds, and an inference model version. Only strategy-start-eligible
+  episodes (redistribution restructuring, or sufficiently strong mixed-side activity) anchor the
+  estimated start; purchase-only and sell-only episodes remain visible as ambiguous earlier activity
+  instead of claiming it. Inferred-start evidence and strongest-episode evidence are displayed and
+  persisted as separate concepts, and episode strength reflects economic composition only —
+  recurrence and multi-timescale matches never upgrade weak purchase-only batches. A manual inception
+  date stays authoritative while the historical evidence readout still renders underneath, and the
+  first positively owned fill no longer requires a historical quote valuation.
+
+### Changed
+
+- Historical activity from assets outside the current allocation universe no longer globally vetoes
+  candidate discovery. Confirmation and baseline reconstruction remain fail-closed, inferred
+  metadata is versioned, fingerprinted, atomically persisted on SQLite, and never copied into the
+  manual inception setting, and allocation-only changes no longer erase the strategy inference for
+  the same account scope.
+
 ## [6.17.37] - 2026-09-07
 
 ### Added

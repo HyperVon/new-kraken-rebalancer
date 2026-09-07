@@ -31,6 +31,7 @@ class SchemaMigrationsTest : StringSpec() {
                 "ath-applied-flow-semantics",
                 "ath-applied-flow-event-millisecond-precision",
                 "ledger-provenance-flags",
+                "inception-inference-evidence",
             )
         }
 
@@ -147,6 +148,7 @@ class SchemaMigrationsTest : StringSpec() {
                         8 to "ath-applied-flow-semantics",
                         9 to "ath-applied-flow-event-millisecond-precision",
                         10 to "ledger-provenance-flags",
+                        11 to "inception-inference-evidence",
                     )
                 }
             }
@@ -201,6 +203,7 @@ class SchemaMigrationsTest : StringSpec() {
                         8 to "ath-applied-flow-semantics",
                         9 to "ath-applied-flow-event-millisecond-precision",
                         10 to "ledger-provenance-flags",
+                        11 to "inception-inference-evidence",
                     )
                 }
             }

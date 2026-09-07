@@ -2,10 +2,13 @@ package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.InceptionCandidateEvidence
+import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -790,6 +793,259 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.getSnapshotBefore(t1)?.timestamp shouldBe t0
                 repository.getSnapshotBefore(t2)?.timestamp shouldBe t1
                 repository.getSnapshotBefore(t2.plusSeconds(3600))?.timestamp shouldBe t2
+            }
+        }
+
+        "persists an inference metadata revision" {
+            runTest {
+                repository.setSyncMetadataAtomically(
+                    mapOf(
+                        "inference-version" to "1",
+                        "inference-start" to "1766378880000",
+                        "inference-window-end" to "1766378913000",
+                    ),
+                )
+
+                repository.getSyncMetadata("inference-version") shouldBe "1"
+                repository.getSyncMetadata("inference-start") shouldBe "1766378880000"
+                repository.getSyncMetadata("inference-window-end") shouldBe "1766378913000"
+            }
+        }
+
+        "atomic metadata write treats an empty batch as a no-op" {
+            runTest {
+                repository.setSyncMetadataAtomically(emptyMap())
+
+                repository.getSyncMetadata("inference-empty-batch-key").shouldBeNull()
+            }
+        }
+
+        "persists and reloads inception inference evidence with candidates deterministically" {
+            runTest {
+                val observedStart = Instant.parse("2025-12-22T02:08:00Z")
+                val observedEnd = observedStart.plusSeconds(33)
+                val evidence = InceptionInferenceEvidence(
+                    fingerprint = "fingerprint-a",
+                    evidenceDigest = "digest-a",
+                    modelVersion = "1",
+                    coverageStart = observedStart.minusSeconds(3_600),
+                    coverageEnd = observedEnd,
+                    horizon = observedEnd.plusSeconds(60),
+                    firstPositive = observedEnd.plusSeconds(120),
+                    inferredStart = observedStart,
+                    inferredWindowStart = observedStart,
+                    inferredWindowEnd = observedEnd,
+                    strongestObservedStart = observedEnd,
+                    inferredStartStrength = "LOW",
+                    inferredStartReasons = listOf("PURCHASE_ONLY_EPISODE"),
+                    inferredStartContradictions = emptyList(),
+                    strongestEpisodeStrength = "HIGH",
+                    strongestEpisodeReasons = listOf("MULTI_ASSET_EPISODE", "REDISTRIBUTION_SELL_THEN_BUY"),
+                    strongestEpisodeContradictions = listOf("EARLIER_ACTIVITY_IN_WINDOW"),
+                    earliestAmbiguousStart = observedStart.minusSeconds(3_600),
+                    earlierAmbiguousCandidateCount = 2,
+                    unsupportedMarketCount = 2,
+                    unsupportedMarketSamples = listOf("ADAUSDT", "XYZUSDT"),
+                    competingCandidateCount = 1,
+                    candidates = listOf(
+                        InceptionCandidateEvidence(
+                            observedStart = observedStart,
+                            observedEnd = observedEnd,
+                            windowStart = observedStart,
+                            windowEnd = observedEnd,
+                            strength = "HIGH",
+                            reasons = listOf("REDISTRIBUTION_SELL_THEN_BUY"),
+                            contradictions = emptyList(),
+                            assetCount = 4,
+                            assetSymbols = listOf("ASSET1", "ASSET2"),
+                            orderCount = 12,
+                            repeatedEvidenceCount = 2,
+                            timescalesSeconds = setOf(5L, 15L),
+                        ),
+                        InceptionCandidateEvidence(
+                            observedStart = observedStart.plusSeconds(600),
+                            observedEnd = observedStart.plusSeconds(605),
+                            windowStart = observedStart,
+                            windowEnd = observedStart.plusSeconds(605),
+                            strength = "LOW",
+                            reasons = listOf("PURCHASE_ONLY_EPISODE"),
+                            contradictions = listOf("EARLIER_ACTIVITY_IN_WINDOW"),
+                            assetCount = 2,
+                            assetSymbols = listOf("BTC", "ETH"),
+                            orderCount = 2,
+                            repeatedEvidenceCount = 1,
+                            timescalesSeconds = setOf(5L),
+                        ),
+                    ),
+                )
+
+                repository.saveInceptionInferenceEvidence(evidence, mapOf("inception_inference_version" to "1"))
+
+                val reloaded = repository.findInceptionInferenceEvidence("fingerprint-a")
+                requireNotNull(reloaded)
+                reloaded shouldBe evidence
+                repository.getSyncMetadata("inception_inference_version") shouldBe "1"
+
+                val replaced = evidence.copy(
+                    evidenceDigest = "digest-b",
+                    competingCandidateCount = 3,
+                    candidates = evidence.candidates.take(1),
+                )
+                repository.saveInceptionInferenceEvidence(replaced)
+                val afterReplace = repository.findInceptionInferenceEvidence("fingerprint-a")
+                requireNotNull(afterReplace)
+                afterReplace.evidenceDigest shouldBe "digest-b"
+                afterReplace.competingCandidateCount shouldBe 3
+                afterReplace.candidates.size shouldBe 1
+                afterReplace.candidates.first().observedStart shouldBe observedStart
+            }
+        }
+
+        "persists first positive without candidates and candidates without first positive" {
+            runTest {
+                val start = Instant.parse("2025-12-22T02:08:00Z")
+                val firstPositiveOnly = InceptionInferenceEvidence(
+                    fingerprint = "fingerprint-solo",
+                    evidenceDigest = "digest-solo",
+                    modelVersion = "1",
+                    coverageStart = null,
+                    coverageEnd = null,
+                    horizon = null,
+                    firstPositive = start,
+                    inferredStart = null,
+                    inferredWindowStart = null,
+                    inferredWindowEnd = null,
+                    strongestObservedStart = null,
+                    inferredStartStrength = null,
+                    inferredStartReasons = emptyList(),
+                    inferredStartContradictions = emptyList(),
+                    strongestEpisodeStrength = null,
+                    strongestEpisodeReasons = emptyList(),
+                    strongestEpisodeContradictions = emptyList(),
+                    earliestAmbiguousStart = null,
+                    earlierAmbiguousCandidateCount = 0,
+                    unsupportedMarketCount = 0,
+                    unsupportedMarketSamples = emptyList(),
+                    competingCandidateCount = 0,
+                )
+                repository.saveInceptionInferenceEvidence(firstPositiveOnly)
+
+                val soloReloaded = repository.findInceptionInferenceEvidence("fingerprint-solo")
+                requireNotNull(soloReloaded)
+                soloReloaded.firstPositive shouldBe start
+                soloReloaded.inferredStart.shouldBeNull()
+                soloReloaded.inferredStartStrength.shouldBeNull()
+                soloReloaded.candidates shouldBe emptyList()
+                soloReloaded.coverageStart.shouldBeNull()
+
+                val candidatesOnly = InceptionInferenceEvidence(
+                    fingerprint = "fingerprint-candidates",
+                    evidenceDigest = "digest-candidates",
+                    modelVersion = "1",
+                    coverageStart = null,
+                    coverageEnd = null,
+                    horizon = null,
+                    firstPositive = null,
+                    inferredStart = start,
+                    inferredWindowStart = start,
+                    inferredWindowEnd = start.plusSeconds(10),
+                    inferredStartStrength = "LOW",
+                    inferredStartReasons = listOf("PURCHASE_ONLY_EPISODE"),
+                    inferredStartContradictions = emptyList(),
+                    strongestObservedStart = null,
+                    strongestEpisodeStrength = null,
+                    strongestEpisodeReasons = emptyList(),
+                    strongestEpisodeContradictions = emptyList(),
+                    earliestAmbiguousStart = null,
+                    earlierAmbiguousCandidateCount = 0,
+                    unsupportedMarketCount = 0,
+                    unsupportedMarketSamples = emptyList(),
+                    competingCandidateCount = 0,
+                    candidates = listOf(
+                        InceptionCandidateEvidence(
+                            observedStart = start,
+                            observedEnd = start.plusSeconds(10),
+                            windowStart = start,
+                            windowEnd = start.plusSeconds(10),
+                            strength = "LOW",
+                            reasons = listOf("PURCHASE_ONLY_EPISODE"),
+                            contradictions = emptyList(),
+                            assetCount = 2,
+                            assetSymbols = listOf("BTC", "ETH"),
+                            orderCount = 2,
+                            repeatedEvidenceCount = 1,
+                            timescalesSeconds = setOf(5L),
+                        ),
+                    ),
+                )
+                repository.saveInceptionInferenceEvidence(candidatesOnly)
+
+                val candidatesReloaded = repository.findInceptionInferenceEvidence("fingerprint-candidates")
+                requireNotNull(candidatesReloaded)
+                candidatesReloaded.firstPositive.shouldBeNull()
+                candidatesReloaded.inferredStart shouldBe start
+                candidatesReloaded.candidates.size shouldBe 1
+            }
+        }
+
+        "returns null inference evidence for an unknown fingerprint" {
+            runTest {
+                repository.findInceptionInferenceEvidence("missing-fingerprint").shouldBeNull()
+            }
+        }
+
+        "strips commas from persisted list entries so the delimiter roundtrip stays lossless" {
+            runTest {
+                val start = Instant.parse("2025-12-22T02:08:00Z")
+                val evidence = InceptionInferenceEvidence(
+                    fingerprint = "fingerprint-commas",
+                    evidenceDigest = "digest-commas",
+                    modelVersion = "1",
+                    coverageStart = null,
+                    coverageEnd = null,
+                    horizon = null,
+                    firstPositive = null,
+                    inferredStart = start,
+                    inferredWindowStart = start,
+                    inferredWindowEnd = start.plusSeconds(10),
+                    strongestObservedStart = null,
+                    inferredStartStrength = "LOW",
+                    inferredStartReasons = listOf("PURCHASE,ONLY", "EPISODE"),
+                    inferredStartContradictions = listOf("EARLIER,ACTIVITY"),
+                    strongestEpisodeStrength = null,
+                    strongestEpisodeReasons = emptyList(),
+                    strongestEpisodeContradictions = emptyList(),
+                    earliestAmbiguousStart = null,
+                    earlierAmbiguousCandidateCount = 0,
+                    unsupportedMarketCount = 1,
+                    unsupportedMarketSamples = listOf("ADA,USDT"),
+                    competingCandidateCount = 0,
+                    candidates = listOf(
+                        InceptionCandidateEvidence(
+                            observedStart = start,
+                            observedEnd = start.plusSeconds(10),
+                            windowStart = start,
+                            windowEnd = start.plusSeconds(10),
+                            strength = "LOW",
+                            reasons = listOf("REASON,WITH,COMMAS"),
+                            contradictions = emptyList(),
+                            assetCount = 2,
+                            assetSymbols = listOf("AS,SET1", "ASSET2"),
+                            orderCount = 2,
+                            repeatedEvidenceCount = 1,
+                            timescalesSeconds = setOf(5L),
+                        ),
+                    ),
+                )
+                repository.saveInceptionInferenceEvidence(evidence)
+
+                val reloaded = repository.findInceptionInferenceEvidence("fingerprint-commas")
+                requireNotNull(reloaded)
+                reloaded.inferredStartReasons shouldBe listOf("PURCHASEONLY", "EPISODE")
+                reloaded.inferredStartContradictions shouldBe listOf("EARLIERACTIVITY")
+                reloaded.unsupportedMarketSamples shouldBe listOf("ADAUSDT")
+                reloaded.candidates.first().reasons shouldBe listOf("REASONWITHCOMMAS")
+                reloaded.candidates.first().assetSymbols shouldBe listOf("ASSET1", "ASSET2")
             }
         }
     }
