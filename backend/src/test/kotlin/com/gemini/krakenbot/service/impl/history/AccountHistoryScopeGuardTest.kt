@@ -8,16 +8,20 @@ import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldHaveLength
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
@@ -220,7 +224,9 @@ class AccountHistoryScopeGuardTest : StringSpec() {
 
                 result.status shouldBe AccountScopeValidationStatus.VALID
                 result.isValid shouldBe true
-                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldHaveLength 64
+                // The rebound binding is durable: the local History-path read trusts
+                // the rotated credentials without another round of proof.
+                guard.readLocalTrustState().status shouldBe AccountScopeValidationStatus.VALID
             }
         }
 
@@ -446,6 +452,257 @@ class AccountHistoryScopeGuardTest : StringSpec() {
                 )
                 snapshotGuard.validateAccountScope().status shouldBe
                     AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY
+            }
+        }
+
+        "incomplete continuity search fails closed and retains the binding" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+                val original = tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "account-a-fill",
+                    ),
+                )
+
+                // Every window page stays full without ever showing the marker:
+                // the search is unproven, not absent.
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    (0 until 50).map {
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = "unrelated-fill-$it",
+                        )
+                    }
+                }
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldBe original
+            }
+        }
+
+        "local trust read answers from the durable binding without network calls" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+
+                val callsBefore = krakenService.getTradeHistoryCallCount + krakenService.getLedgersCallCount +
+                    krakenService.getBalancesCallCount
+                val trusted = guard.readLocalTrustState()
+
+                trusted.status shouldBe AccountScopeValidationStatus.VALID
+                trusted.isValid shouldBe true
+                krakenService.getTradeHistoryCallCount + krakenService.getLedgersCallCount +
+                    krakenService.getBalancesCallCount shouldBe callsBefore
+            }
+        }
+
+        "local trust read rejects a changed fingerprint without starting continuity proof" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                guard.validateAccountScope().status shouldBe AccountScopeValidationStatus.VALID
+
+                krakenService.fundingEvidenceScopeSupplier = { "account-B" }
+                val callsBefore = krakenService.getTradeHistoryCallCount + krakenService.getLedgersCallCount
+                val result = guard.readLocalTrustState()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_MISMATCH
+                result.isValid shouldBe false
+                krakenService.getTradeHistoryCallCount + krakenService.getLedgersCallCount shouldBe callsBefore
+            }
+        }
+
+        "local trust read reports pending on an empty database without verifying credentials" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                krakenService.balanceSupplier = { error("must not be called") }
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, " ")
+
+                val result = guard.readLocalTrustState()
+
+                result.status shouldBe AccountScopeValidationStatus.VALIDATION_PENDING
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldBe " "
+            }
+        }
+
+        "local trust read reports unbound history without network calls" {
+            runTest {
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "legacy-fill",
+                    ),
+                )
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                val callsBefore = krakenService.getTradeHistoryCallCount + krakenService.getLedgersCallCount
+                val result = guard.readLocalTrustState()
+
+                result.status shouldBe AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY
+                result.isValid shouldBe false
+                krakenService.getTradeHistoryCallCount + krakenService.getLedgersCallCount shouldBe callsBefore
+            }
+        }
+
+        "local trust read reports unbound metadata-only history" {
+            runTest {
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, "1")
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+
+                guard.readLocalTrustState().status shouldBe AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY
+            }
+        }
+
+        "local trust read answers simulation and credential failures locally" {
+            runTest {
+                every { configService.getConfig() } returns config.copy(
+                    settings = config.settings.copy(simulation = true),
+                )
+                guard.readLocalTrustState().status shouldBe AccountScopeValidationStatus.SIMULATION
+
+                every { configService.getConfig() } returns config.copy(
+                    kraken = KrakenCredentials("", ""),
+                )
+                guard.readLocalTrustState().status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+
+                every { configService.getConfig() } returns config
+                krakenService.fundingEvidenceScopeSupplier = { "scope-unavailable" }
+                guard.readLocalTrustState().status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+            }
+        }
+
+        "local trust read propagates cancellation" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { throw CancellationException("cancelled") }
+
+                shouldThrow<CancellationException> { guard.readLocalTrustState() }
+            }
+        }
+
+        "unbound incomplete search fails closed without binding" {
+            runTest {
+                tradeRepository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        source = TradeSource.API_FILL,
+                        tradeId = "legacy-fill",
+                    ),
+                )
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    (0 until 50).map {
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = "unrelated-fill-$it",
+                        )
+                    }
+                }
+
+                val result = guard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+                result.isValid shouldBe false
+                tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) shouldBe null
+            }
+        }
+
+        "unverified binding write is never claimed valid" {
+            runTest {
+                val tradeRepository = mockk<TradeRepository>(relaxed = true)
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                    "stale-digest"
+                coEvery { tradeRepository.getTradesInRange(any(), any()) } returns listOf(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "buy",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("100.00"),
+                        price = BigDecimal("10000.00"),
+                        success = true,
+                        dryRun = false,
+                        source = TradeSource.API_FILL,
+                        tradeId = "account-fill",
+                    ),
+                )
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "buy",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("10000.00"),
+                            source = TradeSource.API_FILL,
+                            tradeId = "account-fill",
+                        ),
+                    )
+                }
+                val writeBlindGuard = AccountHistoryScopeGuard(
+                    krakenService,
+                    tradeRepository,
+                    ledgerRepository,
+                    configService,
+                )
+
+                // Proof succeeds, but the binding write never lands: the previous
+                // binding must be retained and VALID must not be claimed.
+                val result = writeBlindGuard.validateAccountScope()
+
+                result.status shouldBe AccountScopeValidationStatus.SCOPE_UNAVAILABLE
+                result.isValid shouldBe false
+            }
+        }
+
+        "credential probe cancellation propagates instead of binding" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                krakenService.balanceSupplier = { throw CancellationException("cancelled") }
+
+                shouldThrow<CancellationException> { guard.validateAccountScope() }
             }
         }
     }

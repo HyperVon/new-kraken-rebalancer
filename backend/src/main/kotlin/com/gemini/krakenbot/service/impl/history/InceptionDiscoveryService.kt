@@ -45,13 +45,17 @@ class InceptionDiscoveryService(
     private val log = LoggerFactory.getLogger(InceptionDiscoveryService::class.java)
 
     /**
-     * True when recovery preparation explicitly reports an untrusted,
-     * non-simulation scope. A transient busy preparation carries no scope
-     * verdict, so it does not withdraw trust from a manually configured date.
+     * True when a manually configured date may anchor a trusted local snapshot:
+     * preparation produced a current verdict and the scope is valid (or the
+     * backend is simulation, which carries no cross-account risk). BUSY carries
+     * no verdict at all — background recovery may be mid-verification while the
+     * credentials changed — so production callers must fail closed rather than
+     * assume the previously seen scope still holds.
      */
-    private fun isScopeBlockedForManual(preparation: InceptionRecoveryService.InceptionPreparationResult): Boolean {
-        val status = preparation.scopeStatus ?: return false
-        return status != AccountScopeValidationStatus.VALID && status != AccountScopeValidationStatus.SIMULATION
+    private fun isScopeTrustedForManual(preparation: InceptionRecoveryService.InceptionPreparationResult): Boolean {
+        if (!preparation.scopeKnown) return false
+        val status = preparation.scopeStatus
+        return status == AccountScopeValidationStatus.VALID || status == AccountScopeValidationStatus.SIMULATION
     }
 
     suspend fun resolveInception(): InceptionResolution {
@@ -68,11 +72,12 @@ class InceptionDiscoveryService(
         // A configured date is authoritative: re-resolve from it on every call
         // so a stale cache can never override the user's explicit setting.
         if (configured != null) {
-            if (preparation != null && isScopeBlockedForManual(preparation)) {
+            if (preparation != null && !isScopeTrustedForManual(preparation)) {
                 // A configured date fixes *when* inception was, but it cannot bless
                 // history the active credentials are not shown to own: anchoring a
                 // baseline snapshot from foreign (or unverifiable) history would
-                // launder it as trusted. Simulation carries no such risk.
+                // launder it as trusted. Nothing durable is deleted or rewritten;
+                // this call only withholds trust until a verdict exists.
                 log.warn("Ignoring configured inception date while account scope is unverified: {}", configured)
                 return InceptionResolution(
                     inceptionTime = configured,

@@ -79,6 +79,20 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 )
             }
         }
+        coEvery { trustedScopeGuard.readLocalTrustState() } coAnswers {
+            when {
+                config.settings.simulation -> AccountScopeValidationResult.SIMULATION
+
+                !config.kraken.hasValidCredentials() -> AccountScopeValidationResult.scopeUnavailable(
+                    "credentials unavailable",
+                )
+
+                else -> AccountScopeValidationResult(
+                    status = AccountScopeValidationStatus.VALID,
+                    currentScopeDigest = AccountHistoryScopeGuard.digestAccountScope("fake-account"),
+                )
+            }
+        }
 
         "bounded recovery remains incomplete and resumes with an overlapping page" {
             runTest {
@@ -2082,6 +2096,54 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "history-path preparation never starts network continuity proof" {
+            runTest {
+                krakenService.fundingEvidenceScopeSupplier = { "account-A" }
+                repository.saveTrade(apiTrade("legacy-trade", Instant.parse("2026-01-01T00:00:00Z")))
+
+                val changed = realScopeService().prepareForCurrentConfiguration(null)
+
+                changed shouldBe false
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
+                krakenService.getBalancesCallCount shouldBe 0
+            }
+        }
+
+        "history-path preparation reports simulation without touching scope" {
+            runTest {
+                config = config.copy(settings = config.settings.copy(simulation = true))
+
+                newService().prepareForCurrentConfiguration(null) shouldBe false
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getLedgersCallCount shouldBe 0
+            }
+        }
+
+        "bounded recovery fails closed on pending or reasonless scope results" {
+            runTest {
+                coEvery { trustedScopeGuard.validateAccountScope() } returnsMany listOf(
+                    AccountScopeValidationResult(
+                        status = AccountScopeValidationStatus.VALIDATION_PENDING,
+                        reason = null,
+                    ),
+                    AccountScopeValidationResult(
+                        status = AccountScopeValidationStatus.SCOPE_MISMATCH,
+                        reason = null,
+                        currentScopeDigest = AccountHistoryScopeGuard.digestAccountScope("account-B"),
+                    ),
+                )
+
+                val pending = newService().recoverOneBoundedRun()
+                pending.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
+                pending.reason shouldBe "account validation pending"
+
+                val mismatch = newService().recoverOneBoundedRun()
+                mismatch.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
+                mismatch.reason shouldBe "account scope changed; use correct DB or perform reset"
+            }
+        }
+
         "account-scope lookup failure makes recovery unavailable" {
             runTest {
                 krakenService.fundingEvidenceScopeSupplier = { error("scope unavailable") }
@@ -2377,8 +2439,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
         "switching Kraken account scope fails closed when historical data already exists" {
             runTest {
                 krakenService.fundingEvidenceScopeSupplier = { "account-A" }
-                realScopeService().prepareForCurrentConfiguration(null) shouldBe true
-                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, "account-A-digest")
+                // The History-path prepare is a local trust read: it stays pending on an
+                // empty database and never binds. Background validation binds it.
+                realScopeService().prepareForCurrentConfiguration(null) shouldBe false
+                realScopeService().recoverOneBoundedRun()
                 repository.saveTrade(apiTrade("existing-trade", Instant.parse("2026-01-01T00:00:00Z")))
 
                 krakenService.fundingEvidenceScopeSupplier = { "account-B" }
@@ -2395,7 +2459,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
             runTest {
                 config = config.copy(settings = config.settings.copy(inceptionDate = "2026-01-01"))
                 krakenService.fundingEvidenceScopeSupplier = { "account-A" }
-                realScopeService().prepareForCurrentConfiguration(null) shouldBe true
+                realScopeService().prepareForCurrentConfiguration(null) shouldBe false
+                realScopeService().recoverOneBoundedRun()
                 repository.saveTrade(apiTrade("existing-trade", Instant.parse("2026-01-01T00:00:00Z")))
 
                 krakenService.fundingEvidenceScopeSupplier = { "account-B" }

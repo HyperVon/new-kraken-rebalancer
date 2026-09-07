@@ -75,16 +75,19 @@ class InceptionRecoveryService(
         prepareForCurrentConfigurationResult(inceptionDate).configurationChanged
 
     suspend fun prepareForCurrentConfigurationResult(inceptionDate: String?): InceptionPreparationResult {
-        // A History request must not wait behind the network-bound recovery run. The next
-        // recovery invocation performs the same check under the mutex before it fetches another
-        // page; config publication is staged while an execution session is active.
+        // A History request must not wait behind the network-bound recovery run, and
+        // must not start network-bound continuity proof itself: the trust verdict
+        // here is a local fingerprint-vs-binding read. Background validation owns
+        // the proof and the binding write; the next recovery invocation performs
+        // the same check under the mutex before it fetches another page, and config
+        // publication is staged while an execution session is active.
         if (!recoveryMutex.tryLock()) return InceptionPreparationResult.busy()
         return try {
             val config = configService.getConfig()
             if (config.settings.simulation) {
                 return InceptionPreparationResult.blocked(AccountScopeValidationStatus.SIMULATION)
             }
-            val scopeResult = accountHistoryScopeGuard.validateAccountScope()
+            val scopeResult = accountHistoryScopeGuard.readLocalTrustState()
             if (!scopeResult.isValid) {
                 return InceptionPreparationResult.blocked(scopeResult.status)
             }
@@ -131,6 +134,14 @@ class InceptionRecoveryService(
                 setOverallStatus(
                     InceptionRecoveryStatus.UNAVAILABLE,
                     scopeResult.reason ?: "existing history cannot be verified for active credentials",
+                )
+                return@withLock readStatus()
+            }
+
+            AccountScopeValidationStatus.VALIDATION_PENDING -> {
+                setOverallStatus(
+                    InceptionRecoveryStatus.UNAVAILABLE,
+                    scopeResult.reason ?: "account validation pending",
                 )
                 return@withLock readStatus()
             }
@@ -998,18 +1009,27 @@ class InceptionRecoveryService(
         val scopeStatus: AccountScopeValidationStatus?,
         val configurationChanged: Boolean,
         val canTrustRecoveredInception: Boolean,
+        /**
+         * True only when a current scope verdict was actually produced. `busy()`
+         * carries no verdict (`scopeStatus == null`), so `scopeKnown` — not
+         * nullness — separates "no problem" from "unknown because busy". Callers
+         * must fail closed whenever this is false in production.
+         */
+        val scopeKnown: Boolean,
     ) {
         companion object {
             fun valid(changed: Boolean) = InceptionPreparationResult(
                 scopeStatus = AccountScopeValidationStatus.VALID,
                 configurationChanged = changed,
                 canTrustRecoveredInception = true,
+                scopeKnown = true,
             )
 
             fun blocked(status: AccountScopeValidationStatus?) = InceptionPreparationResult(
                 scopeStatus = status,
                 configurationChanged = false,
                 canTrustRecoveredInception = false,
+                scopeKnown = status != null,
             )
 
             fun busy() = blocked(null)

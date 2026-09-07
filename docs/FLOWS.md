@@ -493,10 +493,16 @@ events at USD scale 2 or crypto scale 8; the first unexplained mismatch returns
 synchronization, balance observation, or inception recovery on startup and later cycles. A scope
 mismatch, unavailable scope, or non-empty unbound legacy database aborts the private-history work
 before persistence; a durable recovered baseline is not trusted until the scope is validated again.
-A mismatch caused by rotated keys rebinds when bounded exchange pages still contain the stored
-fill/ledger ids, and an unbound legacy database binds on the same continuity proof, while an empty
-database binds only after a live credential check. A manually configured inception date never
-overrides a failed binding.
+A mismatch caused by rotated keys rebinds when bounded marker-timestamped windows
+(newest + oldest retained fill/ledger, ±5 minutes, paginated to a 4-page cap per
+window) still contain the exact retained identity; typed `tradeId`/`ledgerId`
+equality is the proof and timestamps only locate the search. An unbound legacy
+database binds on the same proof, while an empty database binds only after a
+live credential check. A window that stays full at the page cap reports
+incomplete (fail closed, binding retained), never absent. History rendering
+reads a local fingerprint-vs-binding trust state instead of starting continuity
+proof, and a manually configured inception date never overrides a failed,
+busy, or unknown binding.
 Recovery is bounded to four pages per invocation and throttled for five minutes; the UI observes
 durable state through `/api/history/sync-progress`, so neither startup nor a History request waits
 for an unbounded account-history scan.

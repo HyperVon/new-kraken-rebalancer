@@ -31,9 +31,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   automatic-inception work now stops before persistence when the active Kraken account cannot be
   validated against the database binding. Empty databases bind to a hashed scope only after the
   credentials verify live; a scope mismatch caused by rotated keys on the same account, or a
-  non-empty legacy database without a binding, rebinds only after bounded exchange pages prove
-  continuity with the stored fills. Temporarily unavailable scope, foreign history, and a manually
-  configured inception date never make a durable `CONFIRMED` baseline currently usable.
+  non-empty legacy database without a binding, rebinds only after bounded marker-timestamped
+  exchange windows prove continuity with an exact retained fill or ledger identity (typed
+  `tradeId`/`ledgerId` match; timestamps only locate the search, amounts never prove it).
+  Dense windows paginate to a page cap and report incomplete rather than absent; different
+  accounts, incomplete searches, and outages all fail closed with the previous binding retained.
+  History rendering reads a local fingerprint-vs-binding trust state and never starts network
+  continuity proof. A manually configured inception date still fixes *when* inception was, but a
+  busy/unknown scope verdict withholds trust from the local snapshot in production, so a durable
+  `CONFIRMED` baseline is never currently usable without account ownership.
 - **Strict inception evidence**: recovered prices share the event-time resolver's backward-only
   trade/snapshot window and completed 15-minute OHLC policy, stale persisted pagination totals no
   longer prove current unknown-total completion, and unmatched API fills remain `UNKNOWN` even when

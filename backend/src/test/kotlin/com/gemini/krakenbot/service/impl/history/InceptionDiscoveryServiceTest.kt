@@ -880,7 +880,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
-        "when configured inception meets a busy preparation, the manual date is still honored" {
+        "when configured inception meets a busy preparation, production withholds trust without deleting anything" {
             runTest {
                 val configuredDate = "2026-05-01"
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = configuredDate)
@@ -898,10 +898,14 @@ class InceptionDiscoveryServiceTest : StringSpec() {
 
                 val resolution = serviceWithRecovery.resolveInception()
 
+                // BUSY carries no scope verdict: the configured date still fixes
+                // WHEN, but no local snapshot may be trusted yet.
                 resolution.isAutoDetected shouldBe false
                 resolution.inceptionTime shouldBe Instant.parse("2026-05-01T00:00:00Z")
-                resolution.inceptionSnapshot shouldBe snap
-                resolution.confidence shouldBe InceptionConfidence.CONFIDENT
+                resolution.inceptionSnapshot shouldBe null
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
+                coVerify(exactly = 0) { tradeRepository.setSyncMetadata(any(), any()) }
             }
         }
     }
