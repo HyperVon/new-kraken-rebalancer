@@ -62,6 +62,27 @@ class LedgersSyncServiceTest : StringSpec() {
     )
 
     init {
+        "scope mismatch blocks ledger API reads and persistence" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            val scopeGuard = mockk<AccountHistoryScopeGuard>()
+            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult.scopeMismatch(
+                current = "account-b-digest",
+            )
+            val service = LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            )
+
+            service.syncLedgersFromKraken()
+
+            coVerify(exactly = 0) { krakenService.getLedgers(any(), any(), any(), any()) }
+            repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 0
+        }
+
         "skips sync when run again within the 300s throttle window" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig

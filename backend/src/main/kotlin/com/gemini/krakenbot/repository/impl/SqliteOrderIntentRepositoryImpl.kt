@@ -33,6 +33,7 @@ import java.time.Instant
 class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderIntentRepository {
     private companion object {
         const val LEGACY_API_FILL_MATCH_WINDOW_MILLIS = 10_000L
+        const val SQLITE_IN_CHUNK_SIZE = 500
         val LEGACY_API_FILL_RELATIVE_TOLERANCE = BigDecimal("0.01")
     }
 
@@ -433,24 +434,28 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         }
 
         return database.safeTransactionIO(log, "Failed to load rebalancer order identities") {
-            val query = when {
-                candidateOrderTxids.isNotEmpty() && candidateClientOrderIds.isNotEmpty() ->
-                    OrderIntentTable.selectAll().where {
-                        (OrderIntentTable.orderTxid inList candidateOrderTxids) or
-                            (OrderIntentTable.clientOrderId inList candidateClientOrderIds)
-                    }
-
-                candidateOrderTxids.isNotEmpty() -> OrderIntentTable.selectAll().where {
-                    OrderIntentTable.orderTxid inList candidateOrderTxids
-                }
-
-                else -> OrderIntentTable.selectAll().where {
-                    OrderIntentTable.clientOrderId inList candidateClientOrderIds
-                }
-            }
             val knownOrderTxids = mutableSetOf<String>()
-            query.forEach { row ->
-                row[OrderIntentTable.orderTxid]?.trim()?.takeIf(String::isNotBlank)?.let(knownOrderTxids::add)
+            candidateOrderTxids.chunked(SQLITE_IN_CHUNK_SIZE).forEach { chunk ->
+                OrderIntentTable
+                    .selectAll()
+                    .where { OrderIntentTable.orderTxid inList chunk }
+                    .forEach { row ->
+                        row[OrderIntentTable.orderTxid]
+                            ?.trim()
+                            ?.takeIf(String::isNotBlank)
+                            ?.let(knownOrderTxids::add)
+                    }
+            }
+            candidateClientOrderIds.chunked(SQLITE_IN_CHUNK_SIZE).forEach { chunk ->
+                OrderIntentTable
+                    .selectAll()
+                    .where { OrderIntentTable.clientOrderId inList chunk }
+                    .forEach { row ->
+                        row[OrderIntentTable.orderTxid]
+                            ?.trim()
+                            ?.takeIf(String::isNotBlank)
+                            ?.let(knownOrderTxids::add)
+                    }
             }
             RebalancerOrderIdentities(orderTxids = knownOrderTxids)
         }

@@ -5,11 +5,13 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -653,6 +655,257 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 coEvery { tradeRepository.getTradesInRange(any(), any()) } returns trades
 
                 service.detectBurstInception() shouldBe null
+            }
+        }
+
+        "when recoveryService is confirmed with baseline, resolveInception returns autoDetected resolution" {
+            runTest {
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+                val candidateInstant = Instant.parse("2026-02-01T00:00:00Z")
+                coEvery { recoveryService.getStatus() } returns InceptionRecoveryStatus(
+                    status = InceptionRecoveryStatus.CONFIRMED,
+                    candidateTime = candidateInstant.toString(),
+                )
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID) } returns "42"
+                val baselineSnapshot = dummySnapshot(candidateInstant.minusMillis(1))
+                coEvery { tradeRepository.getSnapshotById(42) } returns baselineSnapshot
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                resolution.isAutoDetected shouldBe true
+                resolution.confidence shouldBe InceptionConfidence.CONFIDENT
+                resolution.inceptionTime shouldBe candidateInstant
+                resolution.inceptionSnapshot shouldBe baselineSnapshot
+                coVerify(exactly = 1) { recoveryService.prepareForCurrentConfigurationResult(any()) }
+            }
+        }
+
+        "when recoveryService is confirmed but baseline snapshot is missing, returns RECOVERY_INCOMPLETE" {
+            runTest {
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+                val candidateInstant = Instant.parse("2026-02-01T00:00:00Z")
+                coEvery { recoveryService.getStatus() } returns InceptionRecoveryStatus(
+                    status = InceptionRecoveryStatus.CONFIRMED,
+                    candidateTime = candidateInstant.toString(),
+                )
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID) } returns "42"
+                coEvery { tradeRepository.getSnapshotById(42) } returns null
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                resolution.isAutoDetected shouldBe true
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.inceptionSnapshot shouldBe null
+            }
+        }
+
+        "confirmed recovered inception is not trusted while current account scope is unavailable" {
+            runTest {
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.blocked(
+                        AccountScopeValidationStatus.SCOPE_UNAVAILABLE,
+                    )
+                coEvery { recoveryService.getStatus() } returns InceptionRecoveryStatus(
+                    status = InceptionRecoveryStatus.CONFIRMED,
+                    candidateTime = Instant.parse("2026-02-01T00:00:00Z").toString(),
+                )
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.inceptionSnapshot shouldBe null
+            }
+        }
+
+        "when recoveryService reports AMBIGUOUS, resolution has INCEPTION_AMBIGUOUS reason" {
+            runTest {
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+                coEvery { recoveryService.getStatus() } returns InceptionRecoveryStatus(
+                    status = InceptionRecoveryStatus.AMBIGUOUS,
+                )
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_AMBIGUOUS
+            }
+        }
+
+        "when recoveryService reports COMPLETE_NO_BOT_EVIDENCE, resolution has INCEPTION_NO_BOT_EVIDENCE reason" {
+            runTest {
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+                coEvery { recoveryService.getStatus() } returns InceptionRecoveryStatus(
+                    status = InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE,
+                )
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_NO_BOT_EVIDENCE
+            }
+        }
+
+        "when recoveryService reports BASELINE_UNAVAILABLE, resolution has INCEPTION_BASELINE_UNAVAILABLE reason" {
+            runTest {
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+                coEvery { recoveryService.getStatus() } returns InceptionRecoveryStatus(
+                    status = InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
+                )
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE
+            }
+        }
+
+        "when configured inception has no anchor snapshot and recovery is present, reports INCEPTION_SNAPSHOT_PRUNED" {
+            runTest {
+                val configuredDate = "2026-05-01"
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = configuredDate)
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { tradeRepository.getSnapshotBefore(any()) } returns null
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                resolution.isAutoDetected shouldBe false
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED
+            }
+        }
+
+        "when configured inception has a blocked account scope, reports RECOVERY_INCOMPLETE without persisting" {
+            runTest {
+                val configuredDate = "2026-05-01"
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = configuredDate)
+                val snap = dummySnapshot(Instant.parse("2026-05-01T00:00:05Z"))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.blocked(
+                        AccountScopeValidationStatus.SCOPE_MISMATCH,
+                    )
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                resolution.isAutoDetected shouldBe false
+                resolution.inceptionTime shouldBe Instant.parse("2026-05-01T00:00:00Z")
+                resolution.inceptionSnapshot shouldBe null
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
+                coVerify(exactly = 0) { tradeRepository.setSyncMetadata(any(), any()) }
+            }
+        }
+
+        "when configured inception has a simulation-blocked scope, the manual date is still honored" {
+            runTest {
+                val configuredDate = "2026-05-01"
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = configuredDate)
+                val snap = dummySnapshot(Instant.parse("2026-05-01T00:00:05Z"))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.blocked(
+                        AccountScopeValidationStatus.SIMULATION,
+                    )
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                resolution.isAutoDetected shouldBe false
+                resolution.inceptionTime shouldBe Instant.parse("2026-05-01T00:00:00Z")
+                resolution.inceptionSnapshot shouldBe snap
+                resolution.confidence shouldBe InceptionConfidence.CONFIDENT
+            }
+        }
+
+        "when configured inception meets a busy preparation, production withholds trust without deleting anything" {
+            runTest {
+                val configuredDate = "2026-05-01"
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = configuredDate)
+                val snap = dummySnapshot(Instant.parse("2026-05-01T00:00:05Z"))
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.busy()
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val resolution = serviceWithRecovery.resolveInception()
+
+                // BUSY carries no scope verdict: the configured date still fixes
+                // WHEN, but no local snapshot may be trusted yet.
+                resolution.isAutoDetected shouldBe false
+                resolution.inceptionTime shouldBe Instant.parse("2026-05-01T00:00:00Z")
+                resolution.inceptionSnapshot shouldBe null
+                resolution.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                resolution.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
+                coVerify(exactly = 0) { tradeRepository.setSyncMetadata(any(), any()) }
             }
         }
     }

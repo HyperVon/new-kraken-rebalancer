@@ -96,6 +96,28 @@ class TradeHistorySyncServiceTest : StringSpec() {
         )
 
     init {
+        "scope mismatch blocks trade API reads and persistence" {
+            stubStableBackend()
+            stubConfig()
+            val scopeGuard = mockk<AccountHistoryScopeGuard>()
+            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult.scopeMismatch(
+                current = "account-b-digest",
+            )
+            val sync = TradeHistorySyncService(
+                repository,
+                krakenService,
+                configService,
+                reconstructionService,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            )
+
+            sync.syncTradesFromKraken()
+
+            coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
+            repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 0
+        }
+
         "skips sync when run again within the 300s throttle window" {
             stubStableBackend()
             stubConfig()

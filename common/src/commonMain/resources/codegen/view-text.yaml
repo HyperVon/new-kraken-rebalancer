@@ -36,7 +36,7 @@ ViewText:
   FIAT_DEPLOYMENT_EXPONENT: "Fiat Deployment Exponent"
   FIAT_DEPLOYMENT_THRESHOLD: "Drawdown Activation Threshold (%)"
   INCEPTION_DATE: "Inception Date"
-  INCEPTION_DATE_HINT: "Auto-detected from earliest rebalance cycle, or specify YYYY-MM-DD"
+  INCEPTION_DATE_HINT: "Auto-detected after complete Kraken history and bot-ownership evidence, or specify YYYY-MM-DD"
   # Safety and settings
   DRY_RUN_MODE_TITLE: "Dry Run Mode"
   SIMULATION_MODE_TITLE: "Simulation Mode"
@@ -109,7 +109,8 @@ ViewText:
   HISTORY_AVG_SLIPPAGE: "Avg Slippage"
   HISTORY_NO_DATA: "No historical data available yet. Data will appear after the first rebalance cycle."
   SHOW_DRY_RUN_TRADES: "Show Dry Run Trades"
-  SYNCHRONIZING_TRADE_HISTORY: "Synchronizing Kraken Trade History..."
+  SYNCHRONIZING_TRADE_HISTORY: "Synchronizing Kraken account history..."
+  INCEPTION_RECOVERY_PROGRESS_PREFIX: "Recovering strategy inception evidence"
   INITIAL_SYNC_PROGRESS: "0 / 0 (0%)"
   LABEL_ALL: "All"
   # History views and zoom
@@ -208,7 +209,11 @@ ViewText:
   UNAVAILABLE_UNSUPPORTED_LEDGER_TYPE: "A ledger entry of an unsupported type blocks safe comparison."
   UNAVAILABLE_AMBIGUOUS_LEDGER_TYPE: "A ledger entry cannot be classified as owner capital or internal movement; the comparison cannot proceed safely."
   UNAVAILABLE_FUNDING_PROVENANCE_UNAVAILABLE: "Funding provenance could not be retrieved; the comparison cannot classify funding safely."
-  UNAVAILABLE_INCEPTION_HISTORY_TRUNCATED: "Early history was removed by a previous version; set the strategy inception date in Settings to enable the lifetime comparison."
+  UNAVAILABLE_INCEPTION_HISTORY_TRUNCATED: "A lifetime baseline cannot be proven from the retained history; set the strategy inception date in Settings to anchor the comparison."
+  UNAVAILABLE_INCEPTION_RECOVERY_INCOMPLETE: "Strategy inception is not confirmed yet; Kraken history recovery is incomplete or ownership evidence is ambiguous."
+  UNAVAILABLE_INCEPTION_AMBIGUOUS: "Strategy inception is ambiguous: some historical activity cannot be assigned to this strategy safely."
+  UNAVAILABLE_INCEPTION_NO_BOT_EVIDENCE: "Strategy inception could not be confirmed because no positively identified bot fill was found in the recovered history."
+  UNAVAILABLE_INCEPTION_BASELINE_UNAVAILABLE: "Strategy inception was found, but a retained balance anchor or historical price is missing."
   UNAVAILABLE_INVALID_RESPONSE: "Comparison data could not be validated."
   COMPARISON_CONFIDENCE_ESTIMATED: "Estimated (external balance changes may affect precision)"
   # Staking rewards

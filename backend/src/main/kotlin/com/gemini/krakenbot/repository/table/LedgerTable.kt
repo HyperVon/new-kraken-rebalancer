@@ -20,6 +20,9 @@ object LedgerTable : Table("ledgers") {
     // Ledger fees are denominated in the ledger asset, unlike trade fees which are USD-scale.
     val fee = decimal("fee", 24, 8)
     val balance = decimal("balance", 24, 8)
+    val hasAuthoritativeBalance = bool("has_authoritative_balance").default(false)
+    val hasAuthoritativeFee = bool("has_authoritative_fee").default(false)
+    val hasValidFee = bool("has_valid_fee").default(true)
 
     init {
         index("idx_ledgers_timestamp", false, timestamp)
@@ -40,8 +43,9 @@ object LedgerTable : Table("ledgers") {
         amount = row[amount],
         fee = row[fee],
         balance = row[balance],
-        // The legacy schema used zero as the in-memory sentinel for a missing/unparseable balance.
-        hasAuthoritativeBalance = row[balance].signum() != 0,
+        hasAuthoritativeBalance = row[hasAuthoritativeBalance],
+        hasAuthoritativeFee = row[hasAuthoritativeFee],
+        hasValidFee = row[hasValidFee],
     )
 
     fun applyTo(builder: UpdateBuilder<*>, event: LedgerEvent) {
@@ -55,5 +59,8 @@ object LedgerTable : Table("ledgers") {
         builder[amount] = event.amount
         builder[fee] = event.fee
         builder[balance] = event.balance
+        builder[hasAuthoritativeBalance] = event.hasAuthoritativeBalance
+        builder[hasAuthoritativeFee] = event.hasAuthoritativeFee
+        builder[hasValidFee] = event.hasValidFee
     }
 }

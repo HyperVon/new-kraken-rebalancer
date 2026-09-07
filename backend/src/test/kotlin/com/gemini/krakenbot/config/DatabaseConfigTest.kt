@@ -95,6 +95,7 @@ class DatabaseConfigTest : StringSpec() {
                         7 to "portfolio-stats-singleton",
                         8 to "ath-applied-flow-semantics",
                         9 to "ath-applied-flow-event-millisecond-precision",
+                        10 to "ledger-provenance-flags",
                     )
 
                     val expectedTables = setOf(
@@ -685,7 +686,7 @@ class DatabaseConfigTest : StringSpec() {
 
                 DriverManager.getConnection("jdbc:sqlite:$databaseUrl").use { connection ->
                     connection.createStatement().use { statement ->
-                        statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 9")
+                        statement.executeUpdate("DELETE FROM schema_migrations WHERE version = $CURRENT_SCHEMA_VERSION")
                     }
                 }
 

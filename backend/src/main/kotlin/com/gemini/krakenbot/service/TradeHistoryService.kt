@@ -49,5 +49,8 @@ interface TradeHistoryService {
 
     suspend fun isHistorySeeded(): Boolean
 
+    /** Current durable strategy-inception recovery state for the History status surface. */
+    suspend fun getInceptionRecoveryStatus(): InceptionRecoveryStatus = InceptionRecoveryStatus()
+
     suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison
 }

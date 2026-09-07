@@ -33,6 +33,7 @@ class TradeHistorySyncService(
     private val configService: ConfigService,
     private val reconstructionService: TradeHistoryReconstructionService,
     private val nowProvider: () -> Instant = Instant::now,
+    private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
 ) {
     private val log = LoggerFactory.getLogger(TradeHistorySyncService::class.java)
     private val syncMutex = Mutex()
@@ -40,6 +41,29 @@ class TradeHistorySyncService(
 
     suspend fun syncTradesFromKraken() = syncMutex.withLock {
         syncTradesFromKrakenLocked()
+    }
+
+    /**
+     * Imports one bounded recovery page without touching the ordinary sync cursor or seeded flag.
+     * Recovery deliberately reuses the normal fill reconciler so a historical API fill can enrich
+     * a retained local estimate/order-intent row instead of creating a second economic event.
+     */
+    internal suspend fun importRecoveredApiTrades(apiTrades: List<TradeRecord>): Pair<Int, Int> = syncMutex.withLock {
+        if (apiTrades.isEmpty()) return@withLock 0 to 0
+        val first = apiTrades.minOf { it.timestamp }
+        val last = apiTrades.maxOf { it.timestamp }
+        val originalLocalTrades = repository
+            .getTradesInRange(first.minusSeconds(600), last.plusSeconds(600))
+            .toMutableList()
+        val allocations = configService.getConfig().allocations.map { it.symbol.value }
+        val orderMetadataByTxid = buildOrderMetadata(originalLocalTrades)
+        processApiTradeBatch(
+            apiTrades = apiTrades,
+            originalLocalTrades = originalLocalTrades,
+            allocations = allocations,
+            orderMetadataByTxid = orderMetadataByTxid,
+            seenApiFillKeys = mutableSetOf(),
+        )
     }
 
     suspend fun rebuildHistoricalSnapshotsIfNeeded() {
@@ -89,6 +113,14 @@ class TradeHistorySyncService(
                 return
             }
             krakenService.withStableBackend { backend ->
+                val scopeResult = accountHistoryScopeGuard?.validateAccountScope()
+                if (scopeResult != null && !scopeResult.isValid) {
+                    log.warn(
+                        "Account scope validation failed: {}. Skipping trade history synchronization.",
+                        scopeResult.reason,
+                    )
+                    return@withStableBackend
+                }
                 syncTradesFromKrakenPinned(pinnedConfig, backend)
             }
         } finally {
@@ -165,48 +197,73 @@ class TradeHistorySyncService(
         var totalAdded = 0
         var totalReconciled = 0
         val seenApiFillKeys = mutableSetOf<String>()
-        val orderMetadataByTxid = mutableMapOf<String, LocalOrderMetadata>()
-
-        originalLocalTrades
-            .filter { it.isSettledApiFill() && !it.orderTxid.isNullOrBlank() && !it.cycleId.isNullOrBlank() }
-            .groupBy { it.orderTxid!!.trim() }
-            .forEach { (txid, fills) ->
-                val first = fills.first()
-                if (fills.all { it.symbol == first.symbol && it.side == first.side && it.pair == first.pair }) {
-                    orderMetadataByTxid[txid] = LocalOrderMetadata(
-                        localTradeId = first.id,
-                        orderTxid = txid,
-                        pair = first.pair,
-                        symbol = first.symbol,
-                        side = first.side,
-                        expectedPrice = first.expectedPrice,
-                        cycleId = first.cycleId,
-                        clientOrderId = first.clientOrderId,
-                    )
-                }
-            }
+        val orderMetadataByTxid = buildOrderMetadata(originalLocalTrades)
 
         getTradeHistoryPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
             .collect { apiTrades ->
-                for (apiTrade: TradeRecord in apiTrades) {
-                    if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
-
-                    val result = reconcileOrInsertApiTrade(
-                        apiTrade = apiTrade,
-                        originalLocalTrades = originalLocalTrades,
-                        allocations = allocations,
-                        orderMetadataByTxid = orderMetadataByTxid,
-                    )
-                    when (result) {
-                        TradeReconciliationResult.INSERTED -> totalAdded++
-                        TradeReconciliationResult.RECONCILED -> totalReconciled++
-                        TradeReconciliationResult.ALREADY_PERSISTED -> { /* no-op */ }
-                    }
-                }
+                val result = processApiTradeBatch(
+                    apiTrades = apiTrades,
+                    originalLocalTrades = originalLocalTrades,
+                    allocations = allocations,
+                    orderMetadataByTxid = orderMetadataByTxid,
+                    seenApiFillKeys = seenApiFillKeys,
+                )
+                totalAdded += result.first
+                totalReconciled += result.second
             }
 
         return totalAdded to totalReconciled
     }
+
+    private suspend fun processApiTradeBatch(
+        apiTrades: List<TradeRecord>,
+        originalLocalTrades: MutableList<TradeRecord>,
+        allocations: List<String>,
+        orderMetadataByTxid: MutableMap<String, LocalOrderMetadata>,
+        seenApiFillKeys: MutableSet<String>,
+    ): Pair<Int, Int> {
+        var totalAdded = 0
+        var totalReconciled = 0
+        for (apiTrade in apiTrades) {
+            if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
+
+            when (
+                reconcileOrInsertApiTrade(
+                    apiTrade = apiTrade,
+                    originalLocalTrades = originalLocalTrades,
+                    allocations = allocations,
+                    orderMetadataByTxid = orderMetadataByTxid,
+                )
+            ) {
+                TradeReconciliationResult.INSERTED -> totalAdded++
+                TradeReconciliationResult.RECONCILED -> totalReconciled++
+                TradeReconciliationResult.ALREADY_PERSISTED -> { /* no-op */ }
+            }
+        }
+        return totalAdded to totalReconciled
+    }
+
+    private fun buildOrderMetadata(originalLocalTrades: List<TradeRecord>): MutableMap<String, LocalOrderMetadata> =
+        mutableMapOf<String, LocalOrderMetadata>().also { result ->
+            originalLocalTrades
+                .filter { it.isSettledApiFill() && !it.orderTxid.isNullOrBlank() && !it.cycleId.isNullOrBlank() }
+                .groupBy { it.orderTxid!!.trim() }
+                .forEach { (txid, fills) ->
+                    val first = fills.first()
+                    if (fills.all { it.symbol == first.symbol && it.side == first.side && it.pair == first.pair }) {
+                        result[txid] = LocalOrderMetadata(
+                            localTradeId = first.id,
+                            orderTxid = txid,
+                            pair = first.pair,
+                            symbol = first.symbol,
+                            side = first.side,
+                            expectedPrice = first.expectedPrice,
+                            cycleId = first.cycleId,
+                            clientOrderId = first.clientOrderId,
+                        )
+                    }
+                }
+        }
 
     private suspend fun reconcileOrInsertApiTrade(
         apiTrade: TradeRecord,

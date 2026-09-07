@@ -16,6 +16,7 @@ import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.RecoveryTradeHistoryService
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -30,7 +31,8 @@ import java.util.concurrent.ThreadLocalRandom
 
 class SimulatedKrakenService(private val configService: ConfigService) :
     KrakenService,
-    BoundedTradeHistoryService {
+    BoundedTradeHistoryService,
+    RecoveryTradeHistoryService {
     private val log = LoggerFactory.getLogger(SimulatedKrakenService::class.java)
 
     private val balances = ConcurrentHashMap<String, BigDecimal>()
@@ -406,6 +408,9 @@ class SimulatedKrakenService(private val configService: ConfigService) :
                 .drop(offset?.coerceAtLeast(0) ?: 0)
                 .take(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
         }
+
+    override suspend fun getRecoveryTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> =
+        getTradeHistoryUntil(startSec, offset, endSec)
 
     override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount
 

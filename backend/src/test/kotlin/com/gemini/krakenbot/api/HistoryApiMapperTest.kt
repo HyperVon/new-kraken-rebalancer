@@ -10,6 +10,7 @@ import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RebalancerComparisonPoint
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize
@@ -192,6 +193,33 @@ class HistoryApiMapperTest : StringSpec() {
             response.seeded shouldBe false
             response.offset shouldBe ""
             response.total shouldBe ""
+        }
+
+        "buildSyncProgressResponse maps inception recovery progress" {
+            val response = buildSyncProgressResponse(
+                seeded = true,
+                offset = "100",
+                total = "500",
+                recovery = InceptionRecoveryStatus(
+                    status = InceptionRecoveryStatus.AMBIGUOUS,
+                    tradeOffset = "200",
+                    tradeTotal = "300",
+                    ledgerOffset = "100",
+                    ledgerTotal = "150",
+                    candidateTime = "2026-01-15T12:00:00Z",
+                    reason = "trade ownership is ambiguous",
+                    coverageHorizon = "2026-01-15T12:00:00Z",
+                ),
+            )
+
+            response.recoveryStatus shouldBe InceptionRecoveryStatus.AMBIGUOUS
+            response.recoveryTradeOffset shouldBe "200"
+            response.recoveryTradeTotal shouldBe "300"
+            response.recoveryLedgerOffset shouldBe "100"
+            response.recoveryLedgerTotal shouldBe "150"
+            response.recoveryCandidate shouldBe "2026-01-15T12:00:00Z"
+            response.recoveryReason shouldBe "trade ownership is ambiguous"
+            response.recoveryHorizon shouldBe "2026-01-15T12:00:00Z"
         }
 
         "toApiDto maps RebalancerComparison with points" {

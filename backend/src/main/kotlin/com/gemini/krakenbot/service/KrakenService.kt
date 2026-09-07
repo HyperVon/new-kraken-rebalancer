@@ -113,7 +113,20 @@ interface BoundedTradeHistoryService {
     suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord>
 }
 
+/** Optional capability for backends that retrieve trade history without allocation filtering (for inception recovery). */
+interface RecoveryTradeHistoryService {
+    suspend fun getRecoveryTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord>
+}
+
 /** Uses the stable-bound capability when available and preserves two-argument test fakes otherwise. */
 suspend fun KrakenService.getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> =
     (this as? BoundedTradeHistoryService)?.getTradeHistoryUntil(startSec, offset, endSec)
         ?: getTradeHistory(startSec, offset)
+
+/** Retrieves recovery trade history preserving unmapped pairs, falling back to bounded or basic history. */
+suspend fun KrakenService.getRecoveryTradeHistoryUntil(
+    startSec: Long?,
+    offset: Int?,
+    endSec: Long?,
+): List<TradeRecord> = (this as? RecoveryTradeHistoryService)?.getRecoveryTradeHistoryUntil(startSec, offset, endSec)
+    ?: getTradeHistoryUntil(startSec, offset, endSec)

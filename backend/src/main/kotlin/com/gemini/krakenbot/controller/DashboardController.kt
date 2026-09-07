@@ -411,7 +411,14 @@ class DashboardController(
         val offset = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET)
         val total = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
         val seeded = tradeHistoryService.isHistorySeeded()
-        respondJson(buildSyncProgressResponse(seeded, offset, total))
+        respondJson(
+            buildSyncProgressResponse(
+                seeded = seeded,
+                offset = offset,
+                total = total,
+                recovery = tradeHistoryService.getInceptionRecoveryStatus(),
+            ),
+        )
     }
 
     private suspend fun RoutingContext.handleGetHistoryComparison() {

@@ -23,11 +23,15 @@ import java.math.BigDecimal
  * (type/time filtered, offset-paged at [KrakenApiConstants.LEDGER_PAGE_SIZE], matching total
  * via [getLastLedgerTotalCount]).
  */
-class FakeKrakenService : KrakenService {
+class FakeKrakenService :
+    KrakenService,
+    BoundedTradeHistoryService,
+    RecoveryTradeHistoryService {
     var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
     var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
     var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
     var ledgerSupplier: (Long?, Int?, Long?, Set<String>?) -> List<LedgerEvent> = { _, _, _, _ -> emptyList() }
+    var ohlcSupplier: (String, Int, Long?) -> List<Pair<Long, BigDecimal>> = { _, _, _ -> emptyList() }
     var depositStatusSupplier: (Long?, Long?) -> List<DepositStatusRecord> = { _, _ -> emptyList() }
     var withdrawStatusSupplier: (Long?, Long?) -> List<WithdrawStatusRecord> = { _, _ -> emptyList() }
     var internalTransfersSupplier: (Long?, Long?) -> List<InternalTransferRecord> = { _, _ -> emptyList() }
@@ -47,10 +51,12 @@ class FakeKrakenService : KrakenService {
     var tradeHistoryTotalCountOverride = 0
     var getLedgersCallCount = 0
     var ledgerTotalCountOverride = 0
-    var ledgerRawPageSizeOverride = 0
+    var ledgerRawPageSizeOverride: Int? = null
+    private var lastRecordedLedgerRawPageSize = 0
     var getDepositStatusCallCount = 0
     var getWithdrawStatusCallCount = 0
     var getInternalTransfersCallCount = 0
+    var getOHLCCallCount = 0
 
     private var seededLedgerEntries: List<LedgerEvent> = emptyList()
 
@@ -80,6 +86,20 @@ class FakeKrakenService : KrakenService {
         return tradeHistorySupplier(startSec, offset)
     }
 
+    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
+        getTradeHistoryCallCount++
+        return tradeHistorySupplier(startSec, offset)
+    }
+
+    override suspend fun getRecoveryTradeHistoryUntil(
+        startSec: Long?,
+        offset: Int?,
+        endSec: Long?,
+    ): List<TradeRecord> {
+        getTradeHistoryCallCount++
+        return tradeHistorySupplier(startSec, offset)
+    }
+
     override fun getLastTradeHistoryTotalCount(): Int = tradeHistoryTotalCountOverride
 
     override suspend fun getLedgers(
@@ -89,12 +109,14 @@ class FakeKrakenService : KrakenService {
         types: Set<String>?,
     ): List<LedgerEvent> {
         getLedgersCallCount++
-        return ledgerSupplier(startSec, offset, endSec, types)
+        val entries = ledgerSupplier(startSec, offset, endSec, types)
+        lastRecordedLedgerRawPageSize = entries.size
+        return entries
     }
 
     override fun getLastLedgerTotalCount(): Int = ledgerTotalCountOverride
 
-    override fun getLastLedgerRawPageSize(): Int = ledgerRawPageSizeOverride
+    override fun getLastLedgerRawPageSize(): Int = ledgerRawPageSizeOverride ?: lastRecordedLedgerRawPageSize
 
     override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> {
         getDepositStatusCallCount++
@@ -153,7 +175,10 @@ class FakeKrakenService : KrakenService {
             )
     }
 
-    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
+    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
+        getOHLCCallCount++
+        return ohlcSupplier(pair, interval, since)
+    }
 }
 
 data class OrderCall(

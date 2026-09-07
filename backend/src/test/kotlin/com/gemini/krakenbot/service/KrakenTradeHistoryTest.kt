@@ -295,6 +295,94 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
             }
         }
 
+        "getRecoveryTradeHistoryUntil preserves unmapped pairs and forwards query params" {
+            runTest {
+                var capturedBody: String? = null
+                val mockEngine = MockEngine { request ->
+                    capturedBody = (request.body as TextContent).text
+                    respond(
+                        content = """
+                            {
+                                "error": [],
+                                "result": {
+                                    "trades": {
+                                        "T_UNMAPPED": {
+                                            "ordertxid": "O_UNMAPPED",
+                                            "pair": "SOLUSD",
+                                            "time": 1700000000.0,
+                                            "type": "buy",
+                                            "ordertype": "market",
+                                            "price": "100.0",
+                                            "cost": "100.0",
+                                            "fee": "0.1",
+                                            "vol": "1.0",
+                                            "margin": "0.0",
+                                            "misc": ""
+                                        }
+                                    },
+                                    "count": 1
+                                }
+                            }
+                        """.trimIndent(),
+                        status = HttpStatusCode.OK,
+                        headers = headersOf("Content-Type", "application/json"),
+                    )
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials(
+                    "api-key",
+                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
+                )
+                val config = AppConfig(
+                    kraken = credentials,
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                every { mockConfigService.getConfig() } returns config
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine),
+                )
+
+                val trades = service.getRecoveryTradeHistoryUntil(
+                    startSec = 1700000000L,
+                    offset = 50,
+                    endSec = 1700000100L,
+                )
+
+                trades.size shouldBe 1
+                trades[0].pair shouldBe "SOLUSD"
+                trades[0].symbol shouldBe "SOL"
+                capturedBody.shouldNotBeNull()
+                capturedBody.contains("start=1700000000") shouldBe true
+                capturedBody.contains("end=1700000100") shouldBe true
+                capturedBody.contains("ofs=50") shouldBe true
+            }
+        }
+
+        "getRecoveryTradeHistoryUntil throws when credentials are unavailable" {
+            runTest {
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val config = AppConfig(
+                    kraken = KrakenCredentials("", ""),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                every { mockConfigService.getConfig() } returns config
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(MockEngine { respondOk() }),
+                )
+
+                shouldThrow<KrakenCredentialsUnavailableException> {
+                    service.getRecoveryTradeHistoryUntil(null, null, null)
+                }
+            }
+        }
+
         "getTradeHistory_InvalidNumericValues" {
             runTest {
                 val responseJson = """

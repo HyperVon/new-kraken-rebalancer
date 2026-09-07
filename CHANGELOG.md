@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.36] - 2026-09-06
+
+### Added
+
+- **Automatic strategy-inception recovery**: upgraded installations now recover bounded Kraken
+  TradesHistory and Ledgers pages with durable, versioned progress and configuration/account
+  fingerprinting. Recovery resumes with overlap, reuses the normal API-fill reconciler, preserves
+  local/order identities, and confirms inception only after positive bot ownership, complete
+  coverage, funding/card provenance, and a historical-price baseline pass. Ambiguous or incomplete
+  evidence keeps the lifetime comparison unavailable and is surfaced in the History sync banner.
+
+### Changed
+
+- **Inception wording and baseline safety**: retained-history wording no longer claims that early
+  records were deleted; recovered baselines use an exact candidate-minus-one-millisecond timestamp,
+  null balance-observation semantics, safe read-only trade deduplication, and atomic snapshot/evidence
+  persistence. Throttled cycles with stale ledger coverage continue to fail closed until the next
+  ledger refresh.
+
+### Fixed
+
+- **Account-isolated inception recovery**: private trade, ledger, balance-observation, and
+  automatic-inception work now stops before persistence when the active Kraken account cannot be
+  validated against the database binding. Empty databases bind to a hashed scope only after the
+  credentials verify live; a scope mismatch caused by rotated keys on the same account, or a
+  non-empty legacy database without a binding, rebinds only after bounded marker-timestamped
+  exchange windows prove continuity with an exact retained fill or ledger identity (typed
+  `tradeId`/`ledgerId` match; timestamps only locate the search, amounts never prove it).
+  Already-bound credential rotation needs one exact authoritative identity against trusted
+  lineage, while unbound legacy first binding requires every sampled time-spread marker
+  (up to five trades plus five ledgers) to match — a definitively absent marker alongside
+  a match reports conflict and never binds, so binding is refused whenever sampled time-spread
+  evidence reveals mixed-account history.
+  Bindings carry proof-contract version 3: v1, v2, or missing versions are revalidated once
+  under the current strong legacy consistency policy before they can become trusted v3
+  lineage — an old version never takes the lightweight rotation proof even when the
+  fingerprint changed — and a bound but financially empty database may adopt
+  authenticated replacement credentials. Dense windows paginate to a page cap and report
+  incomplete rather than absent; different accounts, incomplete searches, and outages all
+  fail closed with the previous binding retained.
+  History rendering reads a local fingerprint-vs-binding trust state and never starts network
+  continuity proof. A manually configured inception date still fixes *when* inception was, but a
+  busy/unknown scope verdict withholds trust from the local snapshot in production, so a durable
+  `CONFIRMED` baseline is never currently usable without account ownership.
+- **Strict inception evidence**: recovered prices share the event-time resolver's backward-only
+  trade/snapshot window and completed 15-minute OHLC policy, stale persisted pagination totals no
+  longer prove current unknown-total completion, and unmatched API fills remain `UNKNOWN` even when
+  no bot candidate exists.
+
 ## [6.17.35] - 2026-09-06
 
 ### Fixed

@@ -33,6 +33,7 @@ class LedgersSyncService(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val nowProvider: () -> Instant = Instant::now,
+    private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
 ) {
     private val log = LoggerFactory.getLogger(LedgersSyncService::class.java)
     private val syncMutex = Mutex()
@@ -85,7 +86,17 @@ class LedgersSyncService(
                 )
                 return
             }
-            krakenService.withStableBackend { syncLedgersFromKrakenPinned(pinnedConfig) }
+            krakenService.withStableBackend {
+                val scopeResult = accountHistoryScopeGuard?.validateAccountScope()
+                if (scopeResult != null && !scopeResult.isValid) {
+                    log.warn(
+                        "Account scope validation failed: {}. Skipping ledger synchronization.",
+                        scopeResult.reason,
+                    )
+                    return@withStableBackend
+                }
+                syncLedgersFromKrakenPinned(pinnedConfig)
+            }
         } finally {
             configService.endExecutionSession()
         }
