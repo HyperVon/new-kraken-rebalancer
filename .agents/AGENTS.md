@@ -96,7 +96,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 ## 1. Technology stack (verify against build files)
 
-- **Language**: Kotlin **2.4.20-RC** (KMP: JVM + JS; security patch pending the 2.4.20 stable release)
+- **Language**: Kotlin **2.4.20-RC3** (KMP: JVM + JS; security patch pending the 2.4.20 stable release)
 - **JDK**: **25** (`java.toolchain`)
 - **Backend**: Ktor **3.5.2** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
 - **Database**: SQLite via JetBrains Exposed **1.5.0**
