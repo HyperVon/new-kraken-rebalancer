@@ -11,6 +11,7 @@ import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.InceptionDisplayInfo
+import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -213,12 +214,16 @@ class DashboardViewTest : StringSpec() {
                     baseConfig,
                     null,
                     testCsrfToken,
-                    inceptionDisplay = InceptionDisplayInfo(dateText = "2024-03-15", source = "auto"),
+                    inceptionDisplay = InceptionDisplayInfo(
+                        status = InceptionDisplayStatus.CONFIRMED,
+                        dateText = "2024-03-15",
+                        source = "auto",
+                    ),
                 )
             }
             html shouldContain "Auto-detected inception"
             html shouldContain "2024-03-15"
-            html shouldContain "auto"
+            html shouldContain "Leave this field blank to use the auto-detected date."
             val inceptionInput =
                 Regex("<input[^>]*name=\"inceptionDate\"[^>]*>").find(html)?.value
             inceptionInput.shouldNotBeNull()
@@ -233,10 +238,10 @@ class DashboardViewTest : StringSpec() {
                     baseConfig,
                     null,
                     testCsrfToken,
-                    inceptionDisplay = InceptionDisplayInfo(inProgress = true),
+                    inceptionDisplay = InceptionDisplayInfo(status = InceptionDisplayStatus.IN_PROGRESS),
                 )
             }
-            html shouldContain "Detection in progress"
+            html shouldContain "Auto-detection in progress"
         }
 
         "renderSettingsPage_noDetectedInception_rendersNoneMessage" {

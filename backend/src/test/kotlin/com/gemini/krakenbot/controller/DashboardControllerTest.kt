@@ -9,6 +9,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.InceptionDisplayInfo
+import com.gemini.krakenbot.service.InceptionDisplayStatus
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -229,7 +230,11 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         "getSettings_DetectedInception_rendersDisplayOnlyWithoutCopyingIntoInput" {
             every { configService.getConfig() } returns dashboardConfig()
             coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
-                InceptionDisplayInfo(dateText = "2024-03-15", source = "auto")
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.CONFIRMED,
+                    dateText = "2024-03-15",
+                    source = "auto",
+                )
             testApplication {
                 application {
                     configureTestEnv()

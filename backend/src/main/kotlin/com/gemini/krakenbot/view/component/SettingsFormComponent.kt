@@ -187,12 +187,7 @@ class SettingsFormComponent {
     private fun FlowContent.renderDetectedInception(display: InceptionDisplayInfo) {
         // Display-only: plain text with no form field name so it is never submitted
         // and never copied into settings.inceptionDate.
-        val text = when {
-            display.dateText != null -> "${ViewText.INCEPTION_DETECTED_LABEL}: ${display.dateText} (${display.source})"
-            display.inProgress -> ViewText.INCEPTION_DETECTED_IN_PROGRESS
-            else -> ViewText.INCEPTION_DETECTED_NONE
-        }
-        p(CssClass.Form.SectionSubtitle) { +text }
+        p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
     }
 
     private fun DIV.renderSafetyModesSection(config: AppConfig) {

@@ -10,11 +10,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Display-only auto-detected inception on Settings**: the Settings page now shows the
-  auto-detected strategy inception (UTC date plus `auto`/`auto-recovered` source, in-progress
-  and not-yet-detected states) as plain text under the Inception Date field. Detection reads
-  local sync metadata only, never triggers recovery, and is never copied into
-  `settings.inceptionDate`.
+- **Trust-gated auto-detected inception display on Settings**: the Settings page now displays
+  the currently trusted automatic strategy inception as plain text under the Inception Date
+  field. Display reads are strictly local and non-blocking: they check active account trust via
+  `AccountHistoryScopeGuard.readLocalTrustState()`, verify the configuration fingerprint against
+  the tracked allocation universe, and strictly whitelist automatic sources (`auto`,
+  `auto-recovered`). Stale detection from another account or modified configuration is withheld,
+  display reads never trigger Kraken recovery, and manual input remains independent and is never
+  overwritten.
 
 ## [6.17.36] - 2026-09-06
 

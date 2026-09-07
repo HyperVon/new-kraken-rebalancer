@@ -19,12 +19,15 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionDisplayInfo
+import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.getRecoveryTradeHistoryUntil
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.TradeDeduplicator
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -33,6 +36,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
 /**
@@ -65,6 +69,139 @@ class InceptionRecoveryService(
 
     /** Reads durable progress without waiting for an in-flight bounded network run. */
     suspend fun getStatus(): InceptionRecoveryStatus = readStatus()
+
+    /**
+     * Reads the display-only inception status for the Settings page.
+     *
+     * This read is strictly local and non-blocking: it checks the local account trust state via
+     * [AccountHistoryScopeGuard.readLocalTrustState], validates the recovery configuration
+     * fingerprint, and verifies that the durable auto-detected date matches a whitelisted source
+     * and valid epoch. It never triggers Kraken network calls, never waits behind ongoing background
+     * validation, never alters database state, and never overwrites user configuration.
+     */
+    suspend fun getLocalInceptionDisplayInfo(): InceptionDisplayInfo {
+        val config = configService.getConfig()
+        if (!config.settings.inceptionDate.isNullOrBlank()) {
+            return InceptionDisplayInfo(
+                status = InceptionDisplayStatus.MANUAL_OVERRIDE,
+                message = ViewText.INCEPTION_DETECTED_MANUAL_OVERRIDE,
+            )
+        }
+
+        val scopeResult = accountHistoryScopeGuard.readLocalTrustState()
+        when (scopeResult.status) {
+            AccountScopeValidationStatus.VALIDATION_PENDING -> {
+                return InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.VALIDATION_PENDING,
+                    message = ViewText.INCEPTION_DETECTED_VALIDATION_PENDING,
+                )
+            }
+
+            AccountScopeValidationStatus.SCOPE_MISMATCH,
+            AccountScopeValidationStatus.SCOPE_UNAVAILABLE,
+            AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY,
+            AccountScopeValidationStatus.SIMULATION,
+            -> {
+                return InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.UNAVAILABLE,
+                    message = ViewText.INCEPTION_DETECTED_UNAVAILABLE,
+                )
+            }
+
+            AccountScopeValidationStatus.VALID -> {
+                // Verified valid scope
+            }
+        }
+
+        val currentScope = scopeResult.currentScopeDigest.orEmpty()
+        val expectedFingerprint = configurationFingerprint(config, "", currentScope)
+        val storedFingerprint = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
+        val storedVersion = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION)
+
+        if (storedVersion != CURRENT_RECOVERY_VERSION || storedFingerprint != expectedFingerprint) {
+            val recoveryStatus = readStatus()
+            if (recoveryStatus.status == InceptionRecoveryStatus.IN_PROGRESS) {
+                return InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.IN_PROGRESS,
+                    message = ViewText.INCEPTION_DETECTED_IN_PROGRESS,
+                )
+            }
+            if (storedFingerprint.isNullOrBlank()) {
+                return InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.NOT_DETECTED,
+                    message = ViewText.INCEPTION_DETECTED_NOT_STARTED,
+                )
+            }
+            return InceptionDisplayInfo(
+                status = InceptionDisplayStatus.UNAVAILABLE,
+                message = ViewText.INCEPTION_DETECTED_CONFIG_CHANGED,
+            )
+        }
+
+        val epochMs = repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)?.toLongOrNull()
+        val source = repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE)?.trim()
+        val nowMs = nowProvider().toEpochMilli()
+
+        if (epochMs != null && epochMs > 0 && epochMs <= nowMs &&
+            (
+                source == InceptionDiscoveryService.INCEPTION_SOURCE_AUTO ||
+                    source == INCEPTION_SOURCE_AUTO_RECOVERED
+                )
+        ) {
+            val dateText = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate().toString()
+            return InceptionDisplayInfo(
+                status = InceptionDisplayStatus.CONFIRMED,
+                dateText = dateText,
+                source = source,
+                message = ViewText.INCEPTION_DETECTED_LEAVE_BLANK,
+            )
+        }
+
+        val recoveryStatus = readStatus()
+        return when (recoveryStatus.status) {
+            InceptionRecoveryStatus.IN_PROGRESS -> InceptionDisplayInfo(
+                status = InceptionDisplayStatus.IN_PROGRESS,
+                message = ViewText.INCEPTION_DETECTED_IN_PROGRESS,
+            )
+
+            InceptionRecoveryStatus.AMBIGUOUS -> InceptionDisplayInfo(
+                status = InceptionDisplayStatus.AMBIGUOUS,
+                message = ViewText.INCEPTION_DETECTED_AMBIGUOUS,
+            )
+
+            InceptionRecoveryStatus.BASELINE_UNAVAILABLE -> InceptionDisplayInfo(
+                status = InceptionDisplayStatus.BASELINE_UNAVAILABLE,
+                message = ViewText.INCEPTION_DETECTED_BASELINE_UNAVAILABLE,
+            )
+
+            InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE -> InceptionDisplayInfo(
+                status = InceptionDisplayStatus.COMPLETE_NO_BOT_EVIDENCE,
+                message = ViewText.INCEPTION_DETECTED_COMPLETE_NO_BOT_EVIDENCE,
+            )
+
+            InceptionRecoveryStatus.FAILED -> InceptionDisplayInfo(
+                status = InceptionDisplayStatus.FAILED,
+                message = ViewText.INCEPTION_DETECTED_FAILED,
+            )
+
+            InceptionRecoveryStatus.UNAVAILABLE -> InceptionDisplayInfo(
+                status = InceptionDisplayStatus.UNAVAILABLE,
+                message = ViewText.INCEPTION_DETECTED_UNAVAILABLE,
+            )
+
+            InceptionRecoveryStatus.CONFIRMED -> {
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.UNAVAILABLE,
+                    message = ViewText.INCEPTION_DETECTED_UNAVAILABLE,
+                )
+            }
+
+            else -> InceptionDisplayInfo(
+                status = InceptionDisplayStatus.NOT_DETECTED,
+                message = ViewText.INCEPTION_DETECTED_NOT_STARTED,
+            )
+        }
+    }
 
     /**
      * Clears automatic evidence whenever the explicit inception setting changes. This is a
@@ -912,7 +1049,7 @@ class InceptionRecoveryService(
      * identity. Store only a digest so configuration details and credential material never enter
      * the metadata table or logs.
      */
-    private fun configurationFingerprint(config: AppConfig, inceptionDate: String, accountScope: String): String {
+    internal fun configurationFingerprint(config: AppConfig, inceptionDate: String, accountScope: String): String {
         val allocationShape = config.allocations
             .map { allocation ->
                 "${Asset.canonicalSymbol(allocation.symbol.value)}=${allocation.targetPercent}"
