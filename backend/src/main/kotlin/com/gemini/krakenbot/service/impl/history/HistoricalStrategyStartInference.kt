@@ -45,18 +45,29 @@ internal data class HistoricalStrategyStartCandidate(
 )
 
 /**
- * Inception semantics are separate operations from candidate presentation ranking:
- * [inferredStart] is the earliest plausible candidate start, the inferred window expresses
- * uncertainty across plausible contemporaneous episodes, and [strongestObservedStart] keeps
- * the highest-strength episode visible even when it is not the earliest.
+ * Inception semantics are separate operations from candidate presentation ranking. The earliest
+ * strategy-start-eligible candidate anchors [inferredStart]; its evidence is carried separately in
+ * [inferredStartStrength], [inferredStartReasons], and [inferredStartContradictions]. The
+ * highest-ranked candidate stays visible as [strongestObservedStart] with its own
+ * [strongestEpisodeStrength], [strongestEpisodeReasons], and [strongestEpisodeContradictions], so
+ * a strong later episode is never mistaken for evidence about the estimated start. Candidates that
+ * are not strategy-start-eligible remain as ambiguous activity via [earliestAmbiguousStart] and
+ * [earlierAmbiguousCandidateCount] instead of silently claiming the start.
  */
 internal data class HistoricalStrategyStartInference(
     val candidates: List<HistoricalStrategyStartCandidate>,
     val inferredStart: Instant?,
     val inferredWindowStart: Instant?,
     val inferredWindowEnd: Instant?,
+    val inferredStartStrength: InferenceStrength?,
+    val inferredStartReasons: List<String>,
+    val inferredStartContradictions: List<String>,
     val strongestObservedStart: Instant?,
-    val strength: InferenceStrength?,
+    val strongestEpisodeStrength: InferenceStrength?,
+    val strongestEpisodeReasons: List<String>,
+    val strongestEpisodeContradictions: List<String>,
+    val earliestAmbiguousStart: Instant?,
+    val earlierAmbiguousCandidateCount: Int,
     val competingCandidateCount: Int,
     val firstPositivelyOwnedTrade: Instant?,
     val unsupportedMarkets: List<String>,
@@ -97,15 +108,16 @@ internal object HistoricalStrategyStartDetector {
         trades: List<HistoricalInferenceTrade>,
         policy: HistoricalInferencePolicy = defaultPolicy,
     ): HistoricalStrategyStartInference {
-        val validTrades = trades.filter(::isStructurallyValid)
-        val normalized = validTrades
+        val ownershipValidTrades = trades.filter(::isOwnershipValid)
+        val economicsValidTrades = ownershipValidTrades.filter(::isEconomicsValid)
+        val normalized = economicsValidTrades
             .mapNotNull(::normalize)
             .groupBy(NormalizedTrade::orderIdentity)
             .values
             .map(::collapseOrder)
             .sortedWith(compareBy<NormalizedTrade> { it.timestamp }.thenBy { it.orderIdentity })
 
-        val unsupportedMarkets = validTrades
+        val unsupportedMarkets = ownershipValidTrades
             .mapNotNull { trade ->
                 val pair = trade.pair.trim().uppercase()
                 pair.takeIf { it.isNotEmpty() && Asset.fromTradingPair(it, emptyList()) == null }
@@ -113,13 +125,13 @@ internal object HistoricalStrategyStartDetector {
             .distinct()
             .sorted()
 
-        val firstPositive = firstPositivelyOwnedTrade(validTrades)
+        val firstPositive = firstPositivelyOwnedTrade(ownershipValidTrades)
 
         if (normalized.isEmpty()) {
             return emptyInference(
                 firstPositive = firstPositive,
                 unsupportedMarkets = unsupportedMarkets,
-                coverage = validTrades.coverageSpan(),
+                coverage = ownershipValidTrades.coverageSpan(),
             )
         }
 
@@ -173,18 +185,30 @@ internal object HistoricalStrategyStartDetector {
             )
             .take(policy.maximumCandidates)
 
+        val ambiguous = deduped.filterNot(::isStrategyStartEligible)
         return HistoricalStrategyStartInference(
             candidates = ranked,
             inferredStart = inception.start,
             inferredWindowStart = inception.windowStart,
             inferredWindowEnd = inception.windowEnd,
+            inferredStartStrength = inception.anchorStrength,
+            inferredStartReasons = inception.anchorReasons,
+            inferredStartContradictions = inception.anchorContradictions,
             strongestObservedStart = ranked.firstOrNull()?.observedStart,
-            strength = ranked.firstOrNull()?.strength,
+            strongestEpisodeStrength = ranked.firstOrNull()?.strength,
+            strongestEpisodeReasons = ranked.firstOrNull()?.reasons.orEmpty(),
+            strongestEpisodeContradictions = ranked.firstOrNull()?.contradictions.orEmpty(),
+            earliestAmbiguousStart = ambiguous.minOfOrNull { it.observedStart },
+            earlierAmbiguousCandidateCount = if (inception.start != null) {
+                ambiguous.count { it.observedStart.isBefore(inception.start) }
+            } else {
+                ambiguous.size
+            },
             competingCandidateCount = (deduped.size - 1).coerceAtLeast(0),
             firstPositivelyOwnedTrade = firstPositive,
             unsupportedMarkets = unsupportedMarkets,
-            coverageStart = validTrades.minOfOrNull { it.timestamp },
-            coverageEnd = validTrades.maxOfOrNull { it.timestamp },
+            coverageStart = ownershipValidTrades.minOfOrNull { it.timestamp },
+            coverageEnd = ownershipValidTrades.maxOfOrNull { it.timestamp },
         )
     }
 
@@ -197,8 +221,15 @@ internal object HistoricalStrategyStartDetector {
         inferredStart = null,
         inferredWindowStart = null,
         inferredWindowEnd = null,
+        inferredStartStrength = null,
+        inferredStartReasons = emptyList(),
+        inferredStartContradictions = emptyList(),
         strongestObservedStart = null,
-        strength = null,
+        strongestEpisodeStrength = null,
+        strongestEpisodeReasons = emptyList(),
+        strongestEpisodeContradictions = emptyList(),
+        earliestAmbiguousStart = null,
+        earlierAmbiguousCandidateCount = 0,
         competingCandidateCount = 0,
         firstPositivelyOwnedTrade = firstPositive,
         unsupportedMarkets = unsupportedMarkets,
@@ -208,8 +239,8 @@ internal object HistoricalStrategyStartDetector {
 
     /**
      * First positive ownership stands on its own: unsupported or unparseable quote markets never
-     * erase positive-ownership evidence, so this is computed from structurally valid raw trades
-     * without requiring market normalization.
+     * erase positive-ownership evidence, so this is computed from the ownership-valid stream
+     * without requiring market normalization or historical quote valuation.
      */
     private fun firstPositivelyOwnedTrade(trades: List<HistoricalInferenceTrade>): Instant? = trades
         .filter { it.ownership == InferenceOwnership.POSITIVE }
@@ -219,8 +250,13 @@ internal object HistoricalStrategyStartDetector {
     private fun List<HistoricalInferenceTrade>.coverageSpan(): Pair<Instant?, Instant?> =
         if (isEmpty()) null to null else minOf { it.timestamp } to maxOf { it.timestamp }
 
-    private fun isStructurallyValid(trade: HistoricalInferenceTrade): Boolean =
-        trade.id.isNotBlank() && trade.volume.signum() > 0 && trade.quoteAmount.signum() > 0
+    /** Ownership validity needs an identity and executed volume, never a quote valuation. */
+    private fun isOwnershipValid(trade: HistoricalInferenceTrade): Boolean =
+        trade.id.isNotBlank() && trade.volume.signum() > 0
+
+    /** Behavioral episode analysis additionally requires a positive historical quote amount. */
+    private fun isEconomicsValid(trade: HistoricalInferenceTrade): Boolean =
+        isOwnershipValid(trade) && trade.quoteAmount.signum() > 0
 
     private fun buildEpisodes(trades: List<NormalizedTrade>, gap: Duration): List<List<NormalizedTrade>> {
         val episodes = mutableListOf<MutableList<NormalizedTrade>>()
@@ -298,26 +334,57 @@ internal object HistoricalStrategyStartDetector {
     }
 
     /**
-     * The inception window is derived from candidate chronology, not presentation ranking:
-     * the earliest plausible candidate opens the window, and plausible episodes within one
-     * cohesion window extend it. Distant candidates stay as separate competing evidence.
+     * Strategy-start eligibility is semantic, not a bare strength floor: a redistribution episode
+     * demonstrates the sell-then-buy restructuring the strategy performs and is eligible at any
+     * supported asset count, while a mixed-side episode needs enough assets (the tier that reaches
+     * MEDIUM composition strength) to be eligible. Purchase-only and sell-only accumulation is
+     * ambiguous-only and can never anchor the estimated start by itself. Note this is broader than
+     * a MEDIUM strength floor: a two-asset redistribution stays LOW yet remains eligible, so a LOW
+     * strength never silently hides a genuine restructuring episode.
+     */
+    private fun isStrategyStartEligible(candidate: HistoricalStrategyStartCandidate): Boolean =
+        when (compositionOf(candidate.reasons)) {
+            REASON_REDISTRIBUTION -> true
+            REASON_MIXED -> candidate.distinctAssets.size >= 4
+            else -> false
+        }
+
+    /**
+     * The inception window is derived from candidate chronology, not presentation ranking: the
+     * earliest strategy-start-eligible candidate anchors the estimated start, and plausible
+     * episodes within one cohesion window extend the window. Earlier ambiguous-only activity
+     * beyond the cohesion window stays as separate competing evidence instead of claiming the
+     * start, and with no eligible candidate the inferred start stays unset.
      */
     private fun deriveInceptionWindow(
         candidates: List<HistoricalStrategyStartCandidate>,
         policy: HistoricalInferencePolicy,
     ): DerivedWindow {
-        val earliest = candidates.minByOrNull { it.observedStart } ?: return DerivedWindow(null, null, null)
+        val anchor = candidates
+            .filter(::isStrategyStartEligible)
+            .minByOrNull { it.observedStart }
+            ?: return DerivedWindow(null, null, null, null, emptyList(), emptyList())
         val contemporaneous = candidates.filter {
-            !it.observedStart.isAfter(earliest.observedStart.plus(policy.cohesionWindow))
+            Duration.between(anchor.observedStart, it.observedStart).abs() <= policy.cohesionWindow
         }
         return DerivedWindow(
-            start = earliest.observedStart,
+            start = anchor.observedStart,
             windowStart = contemporaneous.minOf { it.windowStart },
             windowEnd = contemporaneous.maxOf { it.observedEnd },
+            anchorStrength = anchor.strength,
+            anchorReasons = anchor.reasons,
+            anchorContradictions = anchor.contradictions,
         )
     }
 
-    private data class DerivedWindow(val start: Instant?, val windowStart: Instant?, val windowEnd: Instant?)
+    private data class DerivedWindow(
+        val start: Instant?,
+        val windowStart: Instant?,
+        val windowEnd: Instant?,
+        val anchorStrength: InferenceStrength?,
+        val anchorReasons: List<String>,
+        val anchorContradictions: List<String>,
+    )
 
     private fun normalize(trade: HistoricalInferenceTrade): NormalizedTrade? {
         val pair = trade.pair.trim().uppercase()

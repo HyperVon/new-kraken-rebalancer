@@ -48,6 +48,9 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             candidate.reasons shouldContain "SELL_BEFORE_BUY"
             candidate.reasons shouldContain "REPEATED_EPISODE_EVIDENCE"
             inference.inferredStart shouldBe start
+            inference.inferredStartStrength shouldBe InferenceStrength.HIGH
+            inference.strongestObservedStart shouldBe start
+            inference.strongestEpisodeStrength shouldBe InferenceStrength.HIGH
             inference.competingCandidateCount shouldBe 1
             inference.firstPositivelyOwnedTrade shouldBe null
         }
@@ -132,9 +135,11 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
                 candidate.reasons shouldContain "UNIFORM_QUOTE_AMOUNTS"
                 candidate.reasons shouldContain "REPEATED_EPISODE_EVIDENCE"
             }
-            ordered.inferredStart shouldBe start
-            ordered.inferredWindowStart shouldBe start
-            ordered.inferredWindowEnd shouldBe start.plusSeconds(121)
+            ordered.inferredStart shouldBe null
+            ordered.inferredWindowStart shouldBe null
+            ordered.inferredWindowEnd shouldBe null
+            ordered.earliestAmbiguousStart shouldBe start
+            ordered.earlierAmbiguousCandidateCount shouldBe 2
         }
 
         "rejects invalid fills without hiding unsupported market evidence" {
@@ -278,10 +283,14 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             inference.candidates.map { it.strength } shouldContainExactly
                 listOf(InferenceStrength.HIGH, InferenceStrength.MEDIUM)
             inference.inferredStart shouldBe start
+            inference.inferredStartStrength shouldBe InferenceStrength.MEDIUM
             inference.strongestObservedStart shouldBe start.plusSeconds(120)
+            inference.strongestEpisodeStrength shouldBe InferenceStrength.HIGH
             inference.inferredWindowStart shouldBe start
             inference.inferredWindowEnd shouldBe start.plusSeconds(123)
             inference.competingCandidateCount shouldBe 1
+            inference.earliestAmbiguousStart shouldBe null
+            inference.earlierAmbiguousCandidateCount shouldBe 0
         }
 
         "repeated redistribution outranks repeated fixed-purchase batches without promoting purchases" {
@@ -327,11 +336,15 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
                 candidate.reasons shouldContain "UNIFORM_QUOTE_AMOUNTS"
                 candidate.reasons shouldContain "REPEATED_EPISODE_EVIDENCE"
             }
-            inference.inferredStart shouldBe start
+            inference.inferredStart shouldBe start.plusSeconds(600)
+            inference.inferredStartStrength shouldBe InferenceStrength.HIGH
             inference.strongestObservedStart shouldBe start.plusSeconds(600)
+            inference.strongestEpisodeStrength shouldBe InferenceStrength.HIGH
+            inference.earliestAmbiguousStart shouldBe start
+            inference.earlierAmbiguousCandidateCount shouldBe 2
         }
 
-        "truncated history keeps the evidence window bounded by retained coverage" {
+        "truncated purchase-only history stays ambiguous and bounded by retained coverage" {
             val trades = listOf(
                 trade("btc", start, "BTCUSD", "buy"),
                 trade("eth", start.plusSeconds(1), "ETHUSD", "buy"),
@@ -341,16 +354,17 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
 
             inference.coverageStart shouldBe start
             inference.coverageEnd shouldBe start.plusSeconds(1)
-            inference.inferredStart shouldBe start
-            inference.inferredStart shouldBe inference.coverageStart
+            inference.inferredStart shouldBe null
+            inference.earliestAmbiguousStart shouldBe start
+            inference.earlierAmbiguousCandidateCount shouldBe 1
         }
 
-        "reports no coverage span when every trade is structurally invalid" {
+        "reports no coverage span when every trade is ownership-invalid" {
             val inference = HistoricalStrategyStartDetector.infer(
                 listOf(
                     trade("", start, "BTCUSD", "buy"),
                     trade("zero", start, "ETHUSD", "buy").copy(volume = BigDecimal.ZERO),
-                    trade("negative", start, "XRPUSD", "buy").copy(quoteAmount = BigDecimal("0.00")),
+                    trade("negative", start, "XRPUSD", "buy").copy(volume = BigDecimal.ZERO),
                 ),
             )
 
@@ -358,6 +372,7 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             inference.coverageStart shouldBe null
             inference.coverageEnd shouldBe null
             inference.unsupportedMarkets shouldBe emptyList()
+            inference.firstPositivelyOwnedTrade shouldBe null
         }
 
         "keeps mixed-side episodes below redistribution strength at four assets" {
@@ -377,7 +392,22 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
             candidate.reasons shouldNotContain "REDISTRIBUTION_SELL_THEN_BUY"
         }
 
-        "keeps distant episodes outside the inception window as separate competing evidence" {
+        "anchors a sufficiently strong mixed-side episode as strategy-start eligible" {
+            val trades = listOf(
+                trade("m-sell-1", start, "ASSET1USD", "sell"),
+                trade("m-buy-2", start.plusSeconds(1), "ASSET2USD", "buy"),
+                trade("m-sell-3", start.plusSeconds(2), "ASSET3USD", "sell"),
+                trade("m-buy-4", start.plusSeconds(3), "ASSET4USD", "buy"),
+            )
+
+            val inference = HistoricalStrategyStartDetector.infer(trades)
+
+            inference.inferredStart shouldBe start
+            inference.inferredStartStrength shouldBe InferenceStrength.MEDIUM
+            inference.strongestObservedStart shouldBe start
+        }
+
+        "keeps distant purchase-only episodes outside the window as ambiguous competing evidence" {
             val near = listOf(
                 trade("near-btc", start, "BTCUSD", "buy"),
                 trade("near-eth", start.plusSeconds(1), "ETHUSD", "buy"),
@@ -392,9 +422,9 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
 
             inference.candidates.map { it.observedStart } shouldContainExactly
                 listOf(start, start.plusSeconds(7_200))
-            inference.inferredStart shouldBe start
-            inference.inferredWindowStart shouldBe start
-            inference.inferredWindowEnd shouldBe start.plusSeconds(1)
+            inference.inferredStart shouldBe null
+            inference.earliestAmbiguousStart shouldBe start
+            inference.earlierAmbiguousCandidateCount shouldBe 2
             inference.competingCandidateCount shouldBe 1
         }
 
@@ -425,6 +455,132 @@ class HistoricalStrategyStartInferenceTest : StringSpec() {
         "exposes the default policy deterministically" {
             HistoricalStrategyStartDetector.defaultPolicy.maximumCandidates shouldBe 8
             HistoricalStrategyStartDetector.defaultPolicy.cohesionWindow shouldBe Duration.ofHours(1)
+        }
+
+        "keeps inferred-start evidence separate from strongest-episode evidence" {
+            val earlyLow = listOf(
+                trade("low-sell", start, "BTCUSD", "sell"),
+                trade("low-buy", start.plusSeconds(1), "ETHUSD", "buy"),
+            )
+            val laterHigh = listOf(
+                trade("high-sell", start.plusSeconds(120), "BTCUSD", "sell"),
+                trade("high-buy-eth", start.plusSeconds(121), "ETHUSD", "buy"),
+                trade("high-buy-xrp", start.plusSeconds(122), "XRPUSD", "buy"),
+                trade("high-buy-dot", start.plusSeconds(123), "DOTUSD", "buy"),
+            )
+            val policy = HistoricalInferencePolicy(episodeGaps = listOf(Duration.ofSeconds(5)))
+
+            val inference = HistoricalStrategyStartDetector.infer(earlyLow + laterHigh, policy)
+
+            inference.inferredStart shouldBe start
+            inference.inferredStartStrength shouldBe InferenceStrength.LOW
+            inference.strongestObservedStart shouldBe start.plusSeconds(120)
+            inference.strongestEpisodeStrength shouldBe InferenceStrength.HIGH
+            inference.competingCandidateCount shouldBe 1
+        }
+
+        "records first positive ownership from a zero-quote fill without requiring candidates" {
+            val trades = listOf(
+                trade("solo-sell", start, "SOLUSD", "sell", ownership = InferenceOwnership.POSITIVE)
+                    .copy(quoteAmount = BigDecimal.ZERO),
+                trade("btc-1", start.plusSeconds(1), "BTCUSD", "buy"),
+                trade("eth-1", start.plusSeconds(2), "ETHUSD", "buy"),
+            )
+
+            val inference = HistoricalStrategyStartDetector.infer(trades)
+
+            inference.firstPositivelyOwnedTrade shouldBe start
+            inference.coverageStart shouldBe start
+            inference.inferredStart shouldBe null
+            inference.earliestAmbiguousStart shouldBe start.plusSeconds(1)
+        }
+
+        "keeps a positive unsupported-market fill visible as ownership evidence without a candidate" {
+            val trades = listOf(
+                trade("ada-positive", start, "ADAUSDT", "sell", ownership = InferenceOwnership.POSITIVE),
+                trade("ada-unknown", start.plusSeconds(1), "ADAUSDT", "sell"),
+                trade("ada-unknown-2", start.plusSeconds(2), "ADAUSDT", "buy"),
+            )
+
+            val inference = HistoricalStrategyStartDetector.infer(trades)
+
+            inference.firstPositivelyOwnedTrade shouldBe start
+            inference.unsupportedMarkets shouldContain "ADAUSDT"
+            inference.candidates shouldBe emptyList()
+            inference.inferredStart shouldBe null
+        }
+
+        "never promotes an unknown fill with zero quote amount to positive ownership" {
+            val inference = HistoricalStrategyStartDetector.infer(
+                listOf(
+                    trade("unknown-zero", start, "SOLUSD", "sell").copy(quoteAmount = BigDecimal.ZERO),
+                ),
+            )
+
+            inference.firstPositivelyOwnedTrade shouldBe null
+        }
+
+        "anchors the inferred start on the first eligible episode while ambiguous activity stays earlier" {
+            val ambiguousBuys = listOf(
+                trade("day1-btc", start, "BTCUSD", "buy"),
+                trade("day1-eth", start.plusSeconds(1), "ETHUSD", "buy"),
+            )
+            val redistribution = (0 until 4).map { index ->
+                trade(
+                    id = "redist-$index",
+                    timestamp = start.plusSeconds(15 * 24 * 3_600L + index),
+                    pair = "ASSET${index + 1}USD",
+                    side = if (index < 2) "sell" else "buy",
+                    orderTxid = "redist-order-$index",
+                )
+            }
+            val policy = HistoricalInferencePolicy(episodeGaps = listOf(Duration.ofSeconds(5)))
+
+            val inference = HistoricalStrategyStartDetector.infer(ambiguousBuys + redistribution, policy)
+            val anchor = start.plusSeconds(15 * 24 * 3_600L)
+
+            inference.inferredStart shouldBe anchor
+            inference.inferredStartStrength shouldBe InferenceStrength.HIGH
+            inference.strongestObservedStart shouldBe anchor
+            inference.earliestAmbiguousStart shouldBe start
+            inference.earlierAmbiguousCandidateCount shouldBe 1
+            inference.inferredWindowStart shouldBe anchor
+            inference.inferredWindowEnd shouldBe anchor.plusSeconds(3)
+        }
+
+        "keeps sell-only history ambiguous without an inferred start" {
+            val trades = (0 until 4).map { index ->
+                trade(
+                    id = "sell-only-$index",
+                    timestamp = start.plusSeconds(index * 3L),
+                    pair = "ASSET${index + 1}USD",
+                    side = "sell",
+                    orderTxid = "sell-order-$index",
+                )
+            }
+
+            val inference = HistoricalStrategyStartDetector.infer(trades)
+
+            inference.candidates.first().strength shouldBe InferenceStrength.LOW
+            inference.inferredStart shouldBe null
+            inference.earliestAmbiguousStart shouldBe start
+            inference.earlierAmbiguousCandidateCount shouldBe 1
+        }
+
+        "shows ambiguous evidence and first positive without an inferred start" {
+            val trades = listOf(
+                trade("p-btc-1", start, "BTCUSD", "buy"),
+                trade("p-eth-1", start.plusSeconds(1), "ETHUSD", "buy"),
+                trade("solo-sell", start.plusSeconds(600), "SOLUSD", "sell", ownership = InferenceOwnership.POSITIVE),
+            )
+
+            val inference = HistoricalStrategyStartDetector.infer(trades)
+
+            inference.inferredStart shouldBe null
+            inference.inferredStartStrength shouldBe null
+            inference.firstPositivelyOwnedTrade shouldBe start.plusSeconds(600)
+            inference.earliestAmbiguousStart shouldBe start
+            inference.earlierAmbiguousCandidateCount shouldBe 1
         }
     }
 

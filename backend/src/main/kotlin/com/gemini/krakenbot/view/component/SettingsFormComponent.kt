@@ -205,19 +205,43 @@ class SettingsFormComponent {
                 +"${ViewText.INCEPTION_FIRST_POSITIVE_LABEL}: $firstPositive."
             }
         }
-        display.inferredStrengthText?.let { strength ->
-            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_INFERRED_STRENGTH_LABEL}: $strength" }
-        }
-        display.inferredReasonsText?.let { reasons ->
-            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_INFERRED_REASONS_LABEL}: $reasons." }
-        }
-        display.inferredContradictionsText?.let { contradictions ->
+        display.inferredStartStrengthText?.let { strength ->
             p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_INFERRED_CONTRADICTIONS_LABEL}: $contradictions."
+                +"${ViewText.INCEPTION_INFERRED_START_STRENGTH_LABEL}: $strength"
+            }
+        }
+        display.inferredStartReasonsText?.let { reasons ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_INFERRED_START_REASONS_LABEL}: $reasons."
+            }
+        }
+        display.inferredStartContradictionsText?.let { contradictions ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_INFERRED_START_CONTRADICTIONS_LABEL}: $contradictions."
             }
         }
         display.strongestEpisodeText?.let { strongest ->
             p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_STRONGEST_EPISODE_LABEL}: $strongest." }
+        }
+        display.strongestEpisodeStrengthText?.let { strength ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_STRONGEST_EPISODE_STRENGTH_LABEL}: $strength"
+            }
+        }
+        display.strongestEpisodeReasonsText?.let { reasons ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_STRONGEST_EPISODE_REASONS_LABEL}: $reasons."
+            }
+        }
+        display.earliestAmbiguousText?.let { ambiguous ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_EARLIEST_AMBIGUOUS_LABEL}: $ambiguous."
+            }
+        }
+        display.earlierAmbiguousCountText?.let { count ->
+            val note = "${ViewText.INCEPTION_EARLIER_AMBIGUOUS_LABEL}: $count. " +
+                "${ViewText.INCEPTION_EARLIER_AMBIGUOUS_NOTE}"
+            p(CssClass.Form.SectionSubtitle) { +note }
         }
         display.competingCandidatesText?.let { count ->
             p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_COMPETING_CANDIDATES_LABEL}: $count." }

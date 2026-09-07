@@ -15,10 +15,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inception. The deterministic evidence pass groups authoritative orders, recognizes repeated
   multi-asset episodes across multiple timing scales, keeps unknown ownership and baseline/accounting
   uncertainty explicit, and persists a bounded set of competing candidate summaries with an evidence
-  fingerprint, history-coverage bounds, and an inference model version. The displayed start is the
-  earliest plausible candidate, the strongest observed episode is shown separately when it differs,
-  and episode strength reflects economic composition only — recurrence and multi-timescale matches
-  never upgrade weak purchase-only batches.
+  fingerprint, history-coverage bounds, and an inference model version. Only strategy-start-eligible
+  episodes (redistribution restructuring, or sufficiently strong mixed-side activity) anchor the
+  estimated start; purchase-only and sell-only episodes remain visible as ambiguous earlier activity
+  instead of claiming it. Inferred-start evidence and strongest-episode evidence are displayed and
+  persisted as separate concepts, and episode strength reflects economic composition only —
+  recurrence and multi-timescale matches never upgrade weak purchase-only batches. A manual inception
+  date stays authoritative while the historical evidence readout still renders underneath, and the
+  first positively owned fill no longer requires a historical quote valuation.
 
 ### Changed
 

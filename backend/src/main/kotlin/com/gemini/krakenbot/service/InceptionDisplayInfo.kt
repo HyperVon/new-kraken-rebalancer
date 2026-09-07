@@ -43,14 +43,22 @@ data class InceptionDisplayInfo(
     val inferredWindowEndText: String? = null,
     /** First fill with positive local ownership evidence, not necessarily strategy inception. */
     val firstPositiveText: String? = null,
-    /** Qualitative evidence strength for the inferred window (HIGH / MEDIUM / LOW), or null. */
-    val inferredStrengthText: String? = null,
-    /** Concise supporting reason summary for the ranked top episode, humanized, or null. */
-    val inferredReasonsText: String? = null,
-    /** Concise contradiction summary for the ranked top episode, humanized, or null. */
-    val inferredContradictionsText: String? = null,
+    /** Qualitative strength of the evidence anchoring the estimated start (HIGH/MEDIUM/LOW), or null. */
+    val inferredStartStrengthText: String? = null,
+    /** Concise supporting reasons for the estimated-start candidate, humanized, or null. */
+    val inferredStartReasonsText: String? = null,
+    /** Concise contradictions for the estimated-start candidate, humanized, or null. */
+    val inferredStartContradictionsText: String? = null,
     /** Start of the strongest observed episode when it differs from the inferred start. */
     val strongestEpisodeText: String? = null,
+    /** Qualitative strength of the strongest observed episode, or null. */
+    val strongestEpisodeStrengthText: String? = null,
+    /** Concise supporting reasons for the strongest observed episode, humanized, or null. */
+    val strongestEpisodeReasonsText: String? = null,
+    /** Earliest ambiguous (not strategy-start-eligible) activity timestamp, or null. */
+    val earliestAmbiguousText: String? = null,
+    /** Count of ambiguous candidates before the estimated start, when nonzero. */
+    val earlierAmbiguousCountText: String? = null,
     /** Count of retained competing candidate explanations, when nonzero. */
     val competingCandidatesText: String? = null,
     /** Bounded summary of unsupported-market activity that did not veto discovery. */

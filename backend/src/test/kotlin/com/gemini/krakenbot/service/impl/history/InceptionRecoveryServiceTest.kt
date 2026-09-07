@@ -2546,7 +2546,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 record.inferredStart shouldBe batchStart
                 record.strongestObservedStart shouldBe batchStart
-                record.strength shouldBe "HIGH"
+                record.inferredStartStrength shouldBe "HIGH"
+                record.strongestEpisodeStrength shouldBe "HIGH"
                 record.candidates.size shouldBe 1
                 record.candidates.first().orderCount shouldBe 4
                 record.candidates.first().timescalesSeconds shouldBe setOf(2L, 5L, 15L)
@@ -2594,7 +2595,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 record.candidates shouldBe emptyList()
                 record.inferredStart.shouldBeNull()
-                record.strength.shouldBeNull()
+                record.inferredStartStrength.shouldBeNull()
                 record.firstPositive shouldBe firstUnknown.plusSeconds(7_200)
                 record.coverageStart shouldBe firstUnknown
                 record.coverageEnd shouldBe firstUnknown.plusSeconds(7_200)
@@ -2625,7 +2626,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 info.status shouldBe InceptionDisplayStatus.UNAVAILABLE
                 info.inferredStartText shouldBe batchStart.toString()
-                info.inferredStrengthText shouldBe "HIGH"
+                info.inferredStartStrengthText shouldBe "HIGH"
             }
         }
 

@@ -96,6 +96,8 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
         unsupportedMarketSamples: List<String> = emptyList(),
         coverageStart: Instant? = null,
         coverageEnd: Instant? = null,
+        earliestAmbiguousStart: Instant? = null,
+        earlierAmbiguousCandidateCount: Int = 0,
     ): InceptionInferenceEvidence = InceptionInferenceEvidence(
         fingerprint = fingerprint,
         evidenceDigest = "evidence-digest",
@@ -107,10 +109,15 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
         inferredStart = inferredStart,
         inferredWindowStart = windowStart,
         inferredWindowEnd = windowEnd,
+        inferredStartStrength = strength,
+        inferredStartReasons = reasons,
+        inferredStartContradictions = contradictions,
         strongestObservedStart = strongestObserved,
-        strength = strength,
-        reasons = reasons,
-        contradictions = contradictions,
+        strongestEpisodeStrength = strength,
+        strongestEpisodeReasons = reasons,
+        strongestEpisodeContradictions = contradictions,
+        earliestAmbiguousStart = earliestAmbiguousStart,
+        earlierAmbiguousCandidateCount = earlierAmbiguousCandidateCount,
         unsupportedMarketCount = unsupportedMarketCount,
         unsupportedMarketSamples = unsupportedMarketSamples,
         competingCandidateCount = competingCandidateCount,
@@ -351,9 +358,9 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 info.inferredWindowStartText shouldBe inferredStart.toString()
                 info.inferredWindowEndText shouldBe windowEnd.toString()
                 info.firstPositiveText.shouldBeNull()
-                info.inferredStrengthText shouldBe "MEDIUM"
-                info.inferredReasonsText shouldBe "multi asset episode, redistribution sell then buy"
-                info.inferredContradictionsText shouldBe "earlier activity in window"
+                info.inferredStartStrengthText shouldBe "MEDIUM"
+                info.inferredStartReasonsText shouldBe "multi asset episode, redistribution sell then buy"
+                info.inferredStartContradictionsText shouldBe "earlier activity in window"
                 info.strongestEpisodeText shouldBe inferredStart.plusSeconds(1500).toString()
                 info.competingCandidatesText shouldBe "2"
                 info.unsupportedMarketsText shouldBe "1 (ADAUSDT)"
@@ -386,7 +393,7 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 info.inferredWindowStartText.shouldBeNull()
                 info.inferredWindowEndText.shouldBeNull()
                 info.strongestEpisodeText.shouldBeNull()
-                info.inferredStrengthText.shouldBeNull()
+                info.inferredStartStrengthText.shouldBeNull()
             }
         }
 
@@ -556,7 +563,7 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
 
                 info.status shouldBe InceptionDisplayStatus.UNAVAILABLE
                 info.inferredStartText shouldBe inferredStart.toString()
-                info.inferredStrengthText shouldBe "MEDIUM"
+                info.inferredStartStrengthText shouldBe "MEDIUM"
             }
         }
 
@@ -620,7 +627,7 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
 
                 val info = service.getDetectedInceptionDisplayInfo()
 
-                info.inferredStrengthText.shouldBeNull()
+                info.inferredStartStrengthText.shouldBeNull()
                 info.competingCandidatesText.shouldBeNull()
                 info.inferredStartText shouldBe inferredStart.toString()
             }
@@ -656,9 +663,9 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     info.inferredStartText.shouldBeNull()
                     info.inferredWindowStartText.shouldBeNull()
                     info.inferredWindowEndText.shouldBeNull()
-                    info.inferredStrengthText.shouldBeNull()
-                    info.inferredReasonsText.shouldBeNull()
-                    info.inferredContradictionsText.shouldBeNull()
+                    info.inferredStartStrengthText.shouldBeNull()
+                    info.inferredStartReasonsText.shouldBeNull()
+                    info.inferredStartContradictionsText.shouldBeNull()
                     info.strongestEpisodeText.shouldBeNull()
                     info.competingCandidatesText.shouldBeNull()
                 }
@@ -1043,7 +1050,10 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
         "getDetectedInceptionDisplayInfo_manualOverride_returnsManualOverrideStatus" {
             runTest {
                 val config = testConfig(inceptionDate = "2023-01-01")
-                val recovery = createRecovery(config = config)
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+                val recovery = createRecovery(guard = guard, config = config)
                 val service = createServiceWithRecovery(recovery)
 
                 val info = service.getDetectedInceptionDisplayInfo()
@@ -1051,6 +1061,40 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 info.status shouldBe InceptionDisplayStatus.MANUAL_OVERRIDE
                 info.dateText.shouldBeNull()
                 info.toDisplayText() shouldBe "Manual override active."
+            }
+        }
+
+        "getDetectedInceptionDisplayInfo_manualOverride_stillShowsHistoricalEvidence" {
+            runTest {
+                val config = testConfig(inceptionDate = "2023-01-01")
+                val guard = mockk<AccountHistoryScopeGuard>()
+                coEvery { guard.readLocalTrustState() } returns
+                    AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+
+                val recovery = createRecovery(
+                    guard = guard,
+                    config = config,
+                    now = Instant.parse("2026-01-01T00:00:00Z"),
+                )
+                val service = createServiceWithRecovery(recovery)
+                val inferredStart = Instant.parse("2025-12-22T02:08:00Z")
+                val record = inferenceRecord(
+                    fingerprint = recovery.inferenceFingerprint(config, "scope-a"),
+                    inferredStart = inferredStart,
+                    strength = "LOW",
+                    earliestAmbiguousStart = inferredStart.minusSeconds(3_600),
+                    earlierAmbiguousCandidateCount = 2,
+                )
+                stubInferenceRecord(recovery, config, record)
+
+                val info = service.getDetectedInceptionDisplayInfo()
+
+                info.status shouldBe InceptionDisplayStatus.MANUAL_OVERRIDE
+                info.inferredStartText shouldBe inferredStart.toString()
+                info.inferredStartStrengthText shouldBe "LOW"
+                info.earliestAmbiguousText shouldBe inferredStart.minusSeconds(3_600).toString()
+                info.earlierAmbiguousCountText shouldBe "2"
+                info.dateText.shouldBeNull()
             }
         }
 

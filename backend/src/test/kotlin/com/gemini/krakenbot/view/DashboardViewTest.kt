@@ -244,10 +244,14 @@ class DashboardViewTest : StringSpec() {
                         inferredWindowStartText = "2025-12-22T02:08:00Z",
                         inferredWindowEndText = "2025-12-22T02:34:00Z",
                         firstPositiveText = "2026-08-06T11:45:49.984Z",
-                        inferredStrengthText = "MEDIUM",
-                        inferredReasonsText = "multi asset episode <redistribution & sell>",
-                        inferredContradictionsText = "earlier activity in window",
+                        inferredStartStrengthText = "MEDIUM",
+                        inferredStartReasonsText = "multi asset episode <redistribution & sell>",
+                        inferredStartContradictionsText = "earlier activity in window",
                         strongestEpisodeText = "2025-12-22T02:33:00Z",
+                        strongestEpisodeStrengthText = "HIGH",
+                        strongestEpisodeReasonsText = "redistribution sell then buy",
+                        earliestAmbiguousText = "2025-12-05T12:03:16.926Z",
+                        earlierAmbiguousCountText = "2",
                         competingCandidatesText = "2",
                         unsupportedMarketsText = "1 (ADAUSDT)",
                         coverageText = "2025-12-01T00:00:00Z to 2025-12-22T02:34:00Z",
@@ -257,10 +261,16 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "Estimated strategy start: 2025-12-22T02:08:00Z"
             html shouldContain "Evidence window: 2025-12-22T02:08:00Z to 2025-12-22T02:34:00Z."
             html shouldContain "First positively owned fill: 2026-08-06T11:45:49.984Z."
-            html shouldContain "Evidence strength: MEDIUM"
-            html shouldContain "Supporting evidence: multi asset episode &lt;redistribution &amp; sell&gt;."
-            html shouldContain "Contradicting evidence: earlier activity in window."
+            html shouldContain "Estimated-start evidence strength: MEDIUM"
+            html shouldContain
+                "Estimated-start supporting evidence: multi asset episode &lt;redistribution &amp; sell&gt;."
+            html shouldContain "Estimated-start contradicting evidence: earlier activity in window."
             html shouldContain "Strongest observed episode: 2025-12-22T02:33:00Z."
+            html shouldContain "Strongest-episode evidence strength: HIGH"
+            html shouldContain "Strongest-episode supporting evidence: redistribution sell then buy."
+            html shouldContain "Earliest ambiguous activity: 2025-12-05T12:03:16.926Z."
+            html shouldContain
+                "Earlier ambiguous activity: 2. Earlier ambiguous activity exists before the estimated strategy start."
             html shouldContain "Other plausible activity: 2."
             html shouldContain "Out-of-universe markets: 1 (ADAUSDT)."
             html shouldContain "History coverage: 2025-12-01T00:00:00Z to 2025-12-22T02:34:00Z."

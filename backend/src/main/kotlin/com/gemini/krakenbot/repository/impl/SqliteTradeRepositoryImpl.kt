@@ -276,11 +276,20 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 it[inferredWindowStartEpochMs] = evidence.inferredWindowStart?.toEpochMilli()
                 it[inferredWindowEndEpochMs] = evidence.inferredWindowEnd?.toEpochMilli()
                 it[strongestObservedStartEpochMs] = evidence.strongestObservedStart?.toEpochMilli()
-                it[strength] = evidence.strength
+                it[inferredStartStrength] = evidence.inferredStartStrength
                 // List entries are comma-free by contract; commas are stripped so the
                 // delimiter roundtrip below stays lossless for reason codes and symbols.
-                it[reasons] = evidence.reasons.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
-                it[contradictions] = evidence.contradictions.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[inferredStartReasons] =
+                    evidence.inferredStartReasons.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[inferredStartContradictions] =
+                    evidence.inferredStartContradictions.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[strongestEpisodeStrength] = evidence.strongestEpisodeStrength
+                it[strongestEpisodeReasons] =
+                    evidence.strongestEpisodeReasons.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[strongestEpisodeContradictions] =
+                    evidence.strongestEpisodeContradictions.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
+                it[earliestAmbiguousStartEpochMs] = evidence.earliestAmbiguousStart?.toEpochMilli()
+                it[earlierAmbiguousCandidateCount] = evidence.earlierAmbiguousCandidateCount
                 it[unsupportedMarketCount] = evidence.unsupportedMarketCount
                 it[unsupportedMarketSamples] =
                     evidence.unsupportedMarketSamples.joinToString(DELIMITER) { entry -> entry.replace(",", "") }
@@ -363,9 +372,15 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         inferredWindowStart = row[InceptionInferenceTable.inferredWindowStartEpochMs]?.let(Instant::ofEpochMilli),
         inferredWindowEnd = row[InceptionInferenceTable.inferredWindowEndEpochMs]?.let(Instant::ofEpochMilli),
         strongestObservedStart = row[InceptionInferenceTable.strongestObservedStartEpochMs]?.let(Instant::ofEpochMilli),
-        strength = row[InceptionInferenceTable.strength],
-        reasons = splitList(row[InceptionInferenceTable.reasons]),
-        contradictions = splitList(row[InceptionInferenceTable.contradictions]),
+        inferredStartStrength = row[InceptionInferenceTable.inferredStartStrength],
+        inferredStartReasons = splitList(row[InceptionInferenceTable.inferredStartReasons]),
+        inferredStartContradictions = splitList(row[InceptionInferenceTable.inferredStartContradictions]),
+        strongestEpisodeStrength = row[InceptionInferenceTable.strongestEpisodeStrength],
+        strongestEpisodeReasons = splitList(row[InceptionInferenceTable.strongestEpisodeReasons]),
+        strongestEpisodeContradictions = splitList(row[InceptionInferenceTable.strongestEpisodeContradictions]),
+        earliestAmbiguousStart =
+        row[InceptionInferenceTable.earliestAmbiguousStartEpochMs]?.let(Instant::ofEpochMilli),
+        earlierAmbiguousCandidateCount = row[InceptionInferenceTable.earlierAmbiguousCandidateCount],
         unsupportedMarketCount = row[InceptionInferenceTable.unsupportedMarketCount],
         unsupportedMarketSamples = splitList(row[InceptionInferenceTable.unsupportedMarketSamples]),
         competingCandidateCount = row[InceptionInferenceTable.competingCandidateCount],

@@ -20,7 +20,10 @@ data class InceptionCandidateEvidence(
 
 /**
  * Display-only historical strategy-start inference evidence for one account scope.
- * Read models must never copy these values into manual inception inputs.
+ * Inferred-start evidence describes the candidate that anchors the estimated strategy start;
+ * strongest-episode evidence separately describes the highest-ranked observed episode, so the
+ * two never share an owner-ambiguous generic field. Read models must never copy these values
+ * into manual inception inputs.
  */
 data class InceptionInferenceEvidence(
     val fingerprint: String,
@@ -33,10 +36,15 @@ data class InceptionInferenceEvidence(
     val inferredStart: Instant?,
     val inferredWindowStart: Instant?,
     val inferredWindowEnd: Instant?,
+    val inferredStartStrength: String?,
+    val inferredStartReasons: List<String>,
+    val inferredStartContradictions: List<String>,
     val strongestObservedStart: Instant?,
-    val strength: String?,
-    val reasons: List<String>,
-    val contradictions: List<String>,
+    val strongestEpisodeStrength: String?,
+    val strongestEpisodeReasons: List<String>,
+    val strongestEpisodeContradictions: List<String>,
+    val earliestAmbiguousStart: Instant?,
+    val earlierAmbiguousCandidateCount: Int,
     val unsupportedMarketCount: Int,
     val unsupportedMarketSamples: List<String>,
     val competingCandidateCount: Int,

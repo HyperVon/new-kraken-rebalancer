@@ -84,10 +84,19 @@ class InceptionRecoveryService(
     suspend fun getLocalInceptionDisplayInfo(): InceptionDisplayInfo {
         val config = configService.getConfig()
         if (!config.settings.inceptionDate.isNullOrBlank()) {
+            // A manual inception date stays authoritative: nothing is copied into or submitted
+            // from the manual field, but the historical evidence readout may still render
+            // underneath so the operator can compare it with the manual choice.
+            val scopeResult = accountHistoryScopeGuard.readLocalTrustState()
+            val inferred = if (scopeResult.status == AccountScopeValidationStatus.VALID) {
+                readLocalInference(config, scopeResult.currentScopeDigest.orEmpty())
+            } else {
+                InceptionDisplayInfo()
+            }
             return InceptionDisplayInfo(
                 status = InceptionDisplayStatus.MANUAL_OVERRIDE,
                 message = ViewText.INCEPTION_DETECTED_MANUAL_OVERRIDE,
-            )
+            ).withInference(inferred)
         }
 
         val scopeResult = accountHistoryScopeGuard.readLocalTrustState()
@@ -188,27 +197,36 @@ class InceptionRecoveryService(
         val candidateWindowValid = start != null && windowStart != null && windowEnd != null &&
             !windowStart.isAfter(start) && !start.isAfter(windowEnd)
         val firstPositive = validInferenceInstant(record.firstPositive, now)
-        val strength = record.strength?.takeIf { it in VALID_INFERENCE_STRENGTHS }
+        val inferredStartStrength = record.inferredStartStrength?.takeIf { it in VALID_INFERENCE_STRENGTHS }
         val strongestObserved = validInferenceInstant(record.strongestObservedStart, now)
-            ?.takeIf { candidateWindowValid && it != start }
+            ?.takeIf { start == null || it != start }
+        val strongestEpisodeStrength = record.strongestEpisodeStrength?.takeIf { it in VALID_INFERENCE_STRENGTHS }
 
         return InceptionDisplayInfo(
             inferredStartText = if (candidateWindowValid) start.toString() else null,
             inferredWindowStartText = if (candidateWindowValid) windowStart.toString() else null,
             inferredWindowEndText = if (candidateWindowValid) windowEnd.toString() else null,
             firstPositiveText = firstPositive?.toString(),
-            inferredStrengthText = if (candidateWindowValid) strength else null,
-            inferredReasonsText = if (candidateWindowValid) {
-                record.reasons.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
+            inferredStartStrengthText = if (candidateWindowValid) inferredStartStrength else null,
+            inferredStartReasonsText = if (candidateWindowValid) {
+                record.inferredStartReasons.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
             } else {
                 null
             },
-            inferredContradictionsText = if (candidateWindowValid) {
-                record.contradictions.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
+            inferredStartContradictionsText = if (candidateWindowValid) {
+                record.inferredStartContradictions.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
             } else {
                 null
             },
             strongestEpisodeText = strongestObserved?.toString(),
+            strongestEpisodeStrengthText = if (strongestObserved != null) strongestEpisodeStrength else null,
+            strongestEpisodeReasonsText = if (strongestObserved != null) {
+                record.strongestEpisodeReasons.takeIf { it.isNotEmpty() }?.joinToString(", ") { reasonCodeText(it) }
+            } else {
+                null
+            },
+            earliestAmbiguousText = validInferenceInstant(record.earliestAmbiguousStart, now)?.toString(),
+            earlierAmbiguousCountText = record.earlierAmbiguousCandidateCount.takeIf { it > 0 }?.toString(),
             competingCandidatesText = if (candidateWindowValid) {
                 record.competingCandidateCount.takeIf { it > 0 }?.toString()
             } else {
@@ -238,10 +256,14 @@ class InceptionRecoveryService(
         inferredWindowStartText = inference.inferredWindowStartText,
         inferredWindowEndText = inference.inferredWindowEndText,
         firstPositiveText = inference.firstPositiveText,
-        inferredStrengthText = inference.inferredStrengthText,
-        inferredReasonsText = inference.inferredReasonsText,
-        inferredContradictionsText = inference.inferredContradictionsText,
+        inferredStartStrengthText = inference.inferredStartStrengthText,
+        inferredStartReasonsText = inference.inferredStartReasonsText,
+        inferredStartContradictionsText = inference.inferredStartContradictionsText,
         strongestEpisodeText = inference.strongestEpisodeText,
+        strongestEpisodeStrengthText = inference.strongestEpisodeStrengthText,
+        strongestEpisodeReasonsText = inference.strongestEpisodeReasonsText,
+        earliestAmbiguousText = inference.earliestAmbiguousText,
+        earlierAmbiguousCountText = inference.earlierAmbiguousCountText,
         competingCandidatesText = inference.competingCandidatesText,
         unsupportedMarketsText = inference.unsupportedMarketsText,
         coverageText = inference.coverageText,
@@ -1119,7 +1141,6 @@ class InceptionRecoveryService(
             repository.setSyncMetadataAtomically(metadata)
             return
         }
-        val strongest = inference.candidates.firstOrNull()
         val evidence = InceptionInferenceEvidence(
             fingerprint = fingerprint,
             evidenceDigest = evidenceDigest,
@@ -1131,10 +1152,15 @@ class InceptionRecoveryService(
             inferredStart = inference.inferredStart,
             inferredWindowStart = inference.inferredWindowStart,
             inferredWindowEnd = inference.inferredWindowEnd,
+            inferredStartStrength = inference.inferredStartStrength?.name,
+            inferredStartReasons = inference.inferredStartReasons,
+            inferredStartContradictions = inference.inferredStartContradictions,
             strongestObservedStart = inference.strongestObservedStart,
-            strength = inference.strength?.name,
-            reasons = strongest?.reasons.orEmpty(),
-            contradictions = strongest?.contradictions.orEmpty(),
+            strongestEpisodeStrength = inference.strongestEpisodeStrength?.name,
+            strongestEpisodeReasons = inference.strongestEpisodeReasons,
+            strongestEpisodeContradictions = inference.strongestEpisodeContradictions,
+            earliestAmbiguousStart = inference.earliestAmbiguousStart,
+            earlierAmbiguousCandidateCount = inference.earlierAmbiguousCandidateCount,
             unsupportedMarketCount = inference.unsupportedMarkets.size,
             unsupportedMarketSamples = inference.unsupportedMarkets.take(MAX_UNSUPPORTED_MARKET_SAMPLES),
             competingCandidateCount = inference.competingCandidateCount,
@@ -1392,7 +1418,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_INFERENCE_VERSION = "1"
+        const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val RETRY_INTERVAL_SECONDS = 300L
         const val INCEPTION_SOURCE_AUTO_RECOVERED = "auto-recovered"

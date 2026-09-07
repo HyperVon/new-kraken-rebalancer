@@ -836,9 +836,14 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                     inferredWindowStart = observedStart,
                     inferredWindowEnd = observedEnd,
                     strongestObservedStart = observedEnd,
-                    strength = "HIGH",
-                    reasons = listOf("MULTI_ASSET_EPISODE", "REDISTRIBUTION_SELL_THEN_BUY"),
-                    contradictions = listOf("EARLIER_ACTIVITY_IN_WINDOW"),
+                    inferredStartStrength = "LOW",
+                    inferredStartReasons = listOf("PURCHASE_ONLY_EPISODE"),
+                    inferredStartContradictions = emptyList(),
+                    strongestEpisodeStrength = "HIGH",
+                    strongestEpisodeReasons = listOf("MULTI_ASSET_EPISODE", "REDISTRIBUTION_SELL_THEN_BUY"),
+                    strongestEpisodeContradictions = listOf("EARLIER_ACTIVITY_IN_WINDOW"),
+                    earliestAmbiguousStart = observedStart.minusSeconds(3_600),
+                    earlierAmbiguousCandidateCount = 2,
                     unsupportedMarketCount = 2,
                     unsupportedMarketSamples = listOf("ADAUSDT", "XYZUSDT"),
                     competingCandidateCount = 1,
@@ -911,9 +916,14 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                     inferredWindowStart = null,
                     inferredWindowEnd = null,
                     strongestObservedStart = null,
-                    strength = null,
-                    reasons = emptyList(),
-                    contradictions = emptyList(),
+                    inferredStartStrength = null,
+                    inferredStartReasons = emptyList(),
+                    inferredStartContradictions = emptyList(),
+                    strongestEpisodeStrength = null,
+                    strongestEpisodeReasons = emptyList(),
+                    strongestEpisodeContradictions = emptyList(),
+                    earliestAmbiguousStart = null,
+                    earlierAmbiguousCandidateCount = 0,
                     unsupportedMarketCount = 0,
                     unsupportedMarketSamples = emptyList(),
                     competingCandidateCount = 0,
@@ -924,7 +934,7 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 requireNotNull(soloReloaded)
                 soloReloaded.firstPositive shouldBe start
                 soloReloaded.inferredStart.shouldBeNull()
-                soloReloaded.strength.shouldBeNull()
+                soloReloaded.inferredStartStrength.shouldBeNull()
                 soloReloaded.candidates shouldBe emptyList()
                 soloReloaded.coverageStart.shouldBeNull()
 
@@ -939,10 +949,15 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                     inferredStart = start,
                     inferredWindowStart = start,
                     inferredWindowEnd = start.plusSeconds(10),
+                    inferredStartStrength = "LOW",
+                    inferredStartReasons = listOf("PURCHASE_ONLY_EPISODE"),
+                    inferredStartContradictions = emptyList(),
                     strongestObservedStart = null,
-                    strength = "LOW",
-                    reasons = listOf("PURCHASE_ONLY_EPISODE"),
-                    contradictions = emptyList(),
+                    strongestEpisodeStrength = null,
+                    strongestEpisodeReasons = emptyList(),
+                    strongestEpisodeContradictions = emptyList(),
+                    earliestAmbiguousStart = null,
+                    earlierAmbiguousCandidateCount = 0,
                     unsupportedMarketCount = 0,
                     unsupportedMarketSamples = emptyList(),
                     competingCandidateCount = 0,
@@ -994,9 +1009,14 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                     inferredWindowStart = start,
                     inferredWindowEnd = start.plusSeconds(10),
                     strongestObservedStart = null,
-                    strength = "LOW",
-                    reasons = listOf("PURCHASE,ONLY", "EPISODE"),
-                    contradictions = listOf("EARLIER,ACTIVITY"),
+                    inferredStartStrength = "LOW",
+                    inferredStartReasons = listOf("PURCHASE,ONLY", "EPISODE"),
+                    inferredStartContradictions = listOf("EARLIER,ACTIVITY"),
+                    strongestEpisodeStrength = null,
+                    strongestEpisodeReasons = emptyList(),
+                    strongestEpisodeContradictions = emptyList(),
+                    earliestAmbiguousStart = null,
+                    earlierAmbiguousCandidateCount = 0,
                     unsupportedMarketCount = 1,
                     unsupportedMarketSamples = listOf("ADA,USDT"),
                     competingCandidateCount = 0,
@@ -1021,8 +1041,8 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
 
                 val reloaded = repository.findInceptionInferenceEvidence("fingerprint-commas")
                 requireNotNull(reloaded)
-                reloaded.reasons shouldBe listOf("PURCHASEONLY", "EPISODE")
-                reloaded.contradictions shouldBe listOf("EARLIERACTIVITY")
+                reloaded.inferredStartReasons shouldBe listOf("PURCHASEONLY", "EPISODE")
+                reloaded.inferredStartContradictions shouldBe listOf("EARLIERACTIVITY")
                 reloaded.unsupportedMarketSamples shouldBe listOf("ADAUSDT")
                 reloaded.candidates.first().reasons shouldBe listOf("REASONWITHCOMMAS")
                 reloaded.candidates.first().assetSymbols shouldBe listOf("ASSET1", "ASSET2")
