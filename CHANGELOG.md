@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.40] - 2026-09-08
+
+### Changed
+
+- **Inception evidence layout**: the Settings recommendation now keeps the approval action beside
+  the suggested timestamp, while the supporting evidence is collapsed behind a compact **Show
+  evidence** disclosure by default.
+
 ## [6.17.39] - 2026-09-08
 
 ### Added

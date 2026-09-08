@@ -260,8 +260,14 @@ class DashboardViewTest : StringSpec() {
                     ),
                 )
             }
-            html shouldContain "Estimated strategy start: 2025-12-22T02:08:00Z"
+            html shouldContain "Recommended strategy start"
+            html shouldContain "2025-12-22T02:08:00Z"
             html shouldContain "Use estimated start"
+            html shouldContain "<div class=\"inception-recommendation\">"
+            html shouldContain "<div class=\"inception-recommendation-header\">"
+            html shouldContain "<details class=\"inception-evidence\">"
+            html shouldContain "<summary class=\"inception-evidence-summary\">Show evidence</summary>"
+            html shouldNotContain "<details class=\"inception-evidence\" open"
             html shouldContain "value='2025-12-22T02:08:00Z'"
             html shouldContain "value='2025-12-22'"
             html shouldContain "this.form.requestSubmit()"

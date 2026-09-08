@@ -37,6 +37,8 @@ ViewText:
   FIAT_DEPLOYMENT_THRESHOLD: "Drawdown Activation Threshold (%)"
   INCEPTION_DATE: "Inception Date"
   INCEPTION_DATE_HINT: "Choose a UTC calendar date, or accept the exact estimated timestamp below."
+  INCEPTION_RECOMMENDATION_LABEL: "Recommended strategy start"
+  INCEPTION_SHOW_EVIDENCE: "Show evidence"
   INCEPTION_USE_ESTIMATED_START: "Use estimated start"
   INCEPTION_USE_ESTIMATED_START_TITLE: "Save the estimated timestamp as the manual strategy start"
   INCEPTION_DETECTED_LABEL: "Auto-detected inception"

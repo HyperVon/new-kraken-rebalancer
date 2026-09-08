@@ -24,6 +24,9 @@ import kotlinx.css.borderBottomWidth
 import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
 import kotlinx.css.borderStyle
+import kotlinx.css.borderTopColor
+import kotlinx.css.borderTopStyle
+import kotlinx.css.borderTopWidth
 import kotlinx.css.borderWidth
 import kotlinx.css.color
 import kotlinx.css.content
@@ -49,6 +52,7 @@ import kotlinx.css.overflow
 import kotlinx.css.padding
 import kotlinx.css.paddingBottom
 import kotlinx.css.paddingRight
+import kotlinx.css.paddingTop
 import kotlinx.css.pct
 import kotlinx.css.position
 import kotlinx.css.properties.TextDecoration
@@ -349,6 +353,85 @@ object FormStyles {
             marginBottom = 1.25.rem
             lineHeightRaw("1.45")
             maxWidth = 44.rem
+        }
+
+        ".${CssClass.Form.InceptionRecommendation.value}" {
+            marginTop = 0.25.rem
+            padding = Padding(0.875.rem)
+            borderRadius = CssTheme.radiusLg
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorBorderInput
+            background = CssTheme.colorGlassSurfaceFaint.value
+        }
+
+        ".${CssClass.Form.InceptionRecommendationHeader.value}" {
+            display = Display.flex
+            alignItems = Align.flexStart
+            justifyContentRaw("space-between")
+            gap = 1.rem
+            flexWrapRaw("wrap")
+        }
+
+        ".${CssClass.Form.InceptionRecommendationCopy.value}" {
+            minWidth = 0.px
+        }
+
+        ".${CssClass.Form.InceptionRecommendationLabel.value}" {
+            marginTop = 0.px
+            marginBottom = 0.px
+            color = CssTheme.colorTextSecondary
+            fontSize = 0.75.rem
+            fontWeight = FontWeight.w600
+            letterSpacingRaw("0.04em")
+            textTransformRaw("uppercase")
+        }
+
+        ".${CssClass.Form.InceptionRecommendationDate.value}" {
+            marginTop = 0.25.rem
+            marginBottom = 0.px
+            color = Color.white
+            fontFamily = "Roboto Mono, monospace"
+            fontSize = 0.875.rem
+            put("overflow-wrap", "anywhere")
+        }
+
+        ".${CssClass.Form.InceptionEvidence.value}" {
+            marginTop = 0.75.rem
+            paddingTop = 0.75.rem
+            borderTopWidth = 1.px
+            borderTopStyle = BorderStyle.solid
+            borderTopColor = CssTheme.colorBorderSubtle
+        }
+
+        ".${CssClass.Form.InceptionEvidenceSummary.value}" {
+            color = CssTheme.colorTextSecondary
+            cursor = Cursor.pointer
+            fontSize = 0.8125.rem
+            fontWeight = FontWeight.w600
+        }
+
+        ".${CssClass.Form.InceptionEvidenceSummary.value}:focus-visible" {
+            outlineRaw("none")
+            borderRadius = CssTheme.radiusXs
+            boxShadowRaw(CssTheme.focusRingSubtle)
+        }
+
+        ".${CssClass.Form.InceptionEvidenceBody.value}" {
+            marginTop = 0.625.rem
+            color = CssTheme.colorTextSecondary
+            fontSize = 0.8125.rem
+            lineHeightRaw("1.45")
+            maxWidth = 48.rem
+        }
+
+        ".${CssClass.Form.InceptionEvidenceBody.value} p" {
+            marginTop = 0.px
+            marginBottom = 0.px
+        }
+
+        ".${CssClass.Form.InceptionEvidenceBody.value} p + p" {
+            marginTop = 0.5.rem
         }
 
         ".${CssClass.Form.SafetyGroup}" {
