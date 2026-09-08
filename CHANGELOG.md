@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.39] - 2026-09-08
+
+### Added
+
+- **Inception recommendation approval**: Settings now provides a native UTC date picker for a manual
+  strategy start and a one-click **Use estimated start** action that saves the exact inferred timestamp.
+  The recommendation remains a manual override and does not relabel ambiguous evidence as confirmed
+  bot ownership.
+
 ## [6.17.38] - 2026-09-07
 
 ### Added

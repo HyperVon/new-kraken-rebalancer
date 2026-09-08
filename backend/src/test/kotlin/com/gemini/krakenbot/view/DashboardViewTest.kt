@@ -228,6 +228,8 @@ class DashboardViewTest : StringSpec() {
                 Regex("<input[^>]*name=\"inceptionDate\"[^>]*>").find(html)?.value
             inceptionInput.shouldNotBeNull()
             inceptionInput shouldContain "value=\"\""
+            html shouldContain "type=\"date\""
+            html shouldContain "id=\"inception-date-picker\""
             html shouldNotContain "name=\"detectedInception"
             html shouldNotContain "id=\"detectedInception"
         }
@@ -259,6 +261,10 @@ class DashboardViewTest : StringSpec() {
                 )
             }
             html shouldContain "Estimated strategy start: 2025-12-22T02:08:00Z"
+            html shouldContain "Use estimated start"
+            html shouldContain "value='2025-12-22T02:08:00Z'"
+            html shouldContain "value='2025-12-22'"
+            html shouldContain "this.form.requestSubmit()"
             html shouldContain "Evidence window: 2025-12-22T02:08:00Z to 2025-12-22T02:34:00Z."
             html shouldContain "First positively owned fill: 2026-08-06T11:45:49.984Z."
             html shouldContain "Estimated-start evidence strength: MEDIUM"
@@ -279,6 +285,25 @@ class DashboardViewTest : StringSpec() {
             html shouldNotContain "name=\"firstPositive"
             html shouldNotContain "name=\"inferredStrength"
             html shouldNotContain "name=\"coverage"
+        }
+
+        "renderSettingsPage_configuredInstant_preservesExactValueAndShowsUtcDateInPicker" {
+            val html = createHTML().html {
+                view.renderSettingsPage(
+                    baseConfig.copy(
+                        settings = baseConfig.settings.copy(inceptionDate = "2025-12-05T17:00:56.973Z"),
+                    ),
+                    null,
+                    testCsrfToken,
+                )
+            }
+
+            val configuredInput = Regex("<input[^>]*name=\"inceptionDate\"[^>]*>").find(html)?.value
+            configuredInput.shouldNotBeNull()
+            configuredInput shouldContain "value=\"2025-12-05T17:00:56.973Z\""
+            val pickerInput = Regex("<input[^>]*id=\"inception-date-picker\"[^>]*>").find(html)?.value
+            pickerInput.shouldNotBeNull()
+            pickerInput shouldContain "value=\"2025-12-05\""
         }
 
         "renderSettingsPage_allAmbiguousEvidence_rendersNoEstimatedStart" {

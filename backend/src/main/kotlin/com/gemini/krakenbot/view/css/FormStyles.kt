@@ -198,6 +198,12 @@ object FormStyles {
             boxShadowRaw(CssTheme.focusRingSubtle)
         }
 
+        "input[type=\"date\"].${CssClass.Form.InputGlass}::-webkit-calendar-picker-indicator" {
+            filterRaw("invert(1)")
+            opacity = 0.75
+            cursor = Cursor.pointer
+        }
+
         ".${CssClass.Form.CheckboxContainer}" {
             display = Display.flex
             alignItems = Align.center
