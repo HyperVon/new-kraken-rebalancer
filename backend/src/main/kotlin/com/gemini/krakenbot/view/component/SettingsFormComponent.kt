@@ -34,10 +34,12 @@ import kotlinx.html.ButtonType.submit
 import kotlinx.html.DIV
 import kotlinx.html.FlowContent
 import kotlinx.html.InputType.*
+import kotlinx.html.details
 import kotlinx.html.form
 import kotlinx.html.header
 import kotlinx.html.id
 import kotlinx.html.script
+import kotlinx.html.summary
 import kotlinx.html.unsafe
 import java.time.Instant
 import java.time.ZoneOffset
@@ -193,94 +195,117 @@ class SettingsFormComponent {
     }
 
     private fun FlowContent.renderDetectedInception(display: InceptionDisplayInfo) {
-        // The evidence summary is display-only; the explicit approval button below is the
-        // only path that copies its timestamp into the submitted manual setting.
         p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
-        display.inferredStartText?.let { inferredStart ->
+        if (display.inferredStartText != null) {
+            val inferredStart = display.inferredStartText
             val inferredInstant = runCatching { Instant.parse(inferredStart) }.getOrNull()
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_INFERRED_LABEL}: $inferredStart"
-            }
-            if (inferredInstant != null) {
-                button(CssClass.Button.Secondary, type = button) {
-                    attributes[HtmlAttrs.TITLE] = ViewText.INCEPTION_USE_ESTIMATED_START_TITLE
-                    attributes[HtmlAttrs.ONCLICK] =
-                        "document.getElementById('${FormFields.INCEPTION_DATE}').value='$inferredInstant';" +
-                        "document.getElementById('${HtmlIds.INCEPTION_DATE_PICKER}').value='" +
-                        "${inferredInstant.atZone(ZoneOffset.UTC).toLocalDate()}';this.form.requestSubmit()"
-                    +ViewText.INCEPTION_USE_ESTIMATED_START
+            div(CssClass.Form.InceptionRecommendation) {
+                div(CssClass.Form.InceptionRecommendationHeader) {
+                    div(CssClass.Form.InceptionRecommendationCopy) {
+                        p(CssClass.Form.InceptionRecommendationLabel) {
+                            +ViewText.INCEPTION_RECOMMENDATION_LABEL
+                        }
+                        p(CssClass.Form.InceptionRecommendationDate) { +inferredStart }
+                    }
+                    if (inferredInstant != null) {
+                        button(CssClass.Button.Secondary, type = button) {
+                            attributes[HtmlAttrs.TITLE] = ViewText.INCEPTION_USE_ESTIMATED_START_TITLE
+                            attributes[HtmlAttrs.ONCLICK] =
+                                "document.getElementById('${FormFields.INCEPTION_DATE}').value='$inferredInstant';" +
+                                "document.getElementById('${HtmlIds.INCEPTION_DATE_PICKER}').value='" +
+                                "${inferredInstant.atZone(ZoneOffset.UTC).toLocalDate()}';this.form.requestSubmit()"
+                            +ViewText.INCEPTION_USE_ESTIMATED_START
+                        }
+                    }
                 }
+                renderInceptionEvidenceDisclosure(display)
             }
-            p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_INFERRED_MESSAGE }
-            if (display.inferredWindowStartText != null && display.inferredWindowEndText != null) {
-                p(CssClass.Form.SectionSubtitle) {
-                    +"${ViewText.INCEPTION_INFERRED_WINDOW_LABEL}: ${display.inferredWindowStartText} "
-                    +"to ${display.inferredWindowEndText}."
-                }
-            }
-        }
-        display.firstPositiveText?.let { firstPositive ->
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_FIRST_POSITIVE_LABEL}: $firstPositive."
-            }
-        }
-        display.inferredStartStrengthText?.let { strength ->
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_INFERRED_START_STRENGTH_LABEL}: $strength"
-            }
-        }
-        display.inferredStartReasonsText?.let { reasons ->
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_INFERRED_START_REASONS_LABEL}: $reasons."
-            }
-        }
-        display.inferredStartContradictionsText?.let { contradictions ->
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_INFERRED_START_CONTRADICTIONS_LABEL}: $contradictions."
-            }
-        }
-        display.strongestEpisodeText?.let { strongest ->
-            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_STRONGEST_EPISODE_LABEL}: $strongest." }
-        }
-        display.strongestEpisodeStrengthText?.let { strength ->
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_STRONGEST_EPISODE_STRENGTH_LABEL}: $strength"
-            }
-        }
-        display.strongestEpisodeReasonsText?.let { reasons ->
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_STRONGEST_EPISODE_REASONS_LABEL}: $reasons."
-            }
-        }
-        display.earliestAmbiguousText?.let { ambiguous ->
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_EARLIEST_AMBIGUOUS_LABEL}: $ambiguous."
-            }
-        }
-        display.earlierAmbiguousCountText?.let { count ->
-            val note = buildString {
-                append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_LABEL)
-                append(": ")
-                append(count)
-                append('.')
-                // The before-the-start note only makes sense once a start is displayed.
-                if (display.inferredStartText != null) {
-                    append(' ')
-                    append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_NOTE)
-                }
-            }
-            p(CssClass.Form.SectionSubtitle) { +note }
-        }
-        display.competingCandidatesText?.let { count ->
-            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_COMPETING_CANDIDATES_LABEL}: $count." }
-        }
-        display.unsupportedMarketsText?.let { unsupported ->
-            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_UNSUPPORTED_MARKETS_LABEL}: $unsupported." }
-        }
-        display.coverageText?.let { coverage ->
-            p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_COVERAGE_LABEL}: $coverage." }
+        } else if (display.hasEvidenceDetails()) {
+            renderInceptionEvidenceDisclosure(display)
         }
     }
+
+    private fun FlowContent.renderInceptionEvidenceDisclosure(display: InceptionDisplayInfo) {
+        details(classes = CssClass.Form.InceptionEvidence.value) {
+            summary(classes = CssClass.Form.InceptionEvidenceSummary.value) {
+                +ViewText.INCEPTION_SHOW_EVIDENCE
+            }
+            div(CssClass.Form.InceptionEvidenceBody) {
+                display.inferredStartText?.let {
+                    p { +ViewText.INCEPTION_INFERRED_MESSAGE }
+                }
+                if (display.inferredWindowStartText != null && display.inferredWindowEndText != null) {
+                    p {
+                        +"${ViewText.INCEPTION_INFERRED_WINDOW_LABEL}: ${display.inferredWindowStartText} "
+                        +"to ${display.inferredWindowEndText}."
+                    }
+                }
+                display.firstPositiveText?.let { firstPositive ->
+                    p { +"${ViewText.INCEPTION_FIRST_POSITIVE_LABEL}: $firstPositive." }
+                }
+                display.inferredStartStrengthText?.let { strength ->
+                    p { +"${ViewText.INCEPTION_INFERRED_START_STRENGTH_LABEL}: $strength" }
+                }
+                display.inferredStartReasonsText?.let { reasons ->
+                    p { +"${ViewText.INCEPTION_INFERRED_START_REASONS_LABEL}: $reasons." }
+                }
+                display.inferredStartContradictionsText?.let { contradictions ->
+                    p { +"${ViewText.INCEPTION_INFERRED_START_CONTRADICTIONS_LABEL}: $contradictions." }
+                }
+                display.strongestEpisodeText?.let { strongest ->
+                    p { +"${ViewText.INCEPTION_STRONGEST_EPISODE_LABEL}: $strongest." }
+                }
+                display.strongestEpisodeStrengthText?.let { strength ->
+                    p { +"${ViewText.INCEPTION_STRONGEST_EPISODE_STRENGTH_LABEL}: $strength" }
+                }
+                display.strongestEpisodeReasonsText?.let { reasons ->
+                    p { +"${ViewText.INCEPTION_STRONGEST_EPISODE_REASONS_LABEL}: $reasons." }
+                }
+                display.earliestAmbiguousText?.let { ambiguous ->
+                    p { +"${ViewText.INCEPTION_EARLIEST_AMBIGUOUS_LABEL}: $ambiguous." }
+                }
+                display.earlierAmbiguousCountText?.let { count ->
+                    val note = buildString {
+                        append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_LABEL)
+                        append(": ")
+                        append(count)
+                        append('.')
+                        // The before-the-start note only makes sense once a start is displayed.
+                        if (display.inferredStartText != null) {
+                            append(' ')
+                            append(ViewText.INCEPTION_EARLIER_AMBIGUOUS_NOTE)
+                        }
+                    }
+                    p { +note }
+                }
+                display.competingCandidatesText?.let { count ->
+                    p { +"${ViewText.INCEPTION_COMPETING_CANDIDATES_LABEL}: $count." }
+                }
+                display.unsupportedMarketsText?.let { unsupported ->
+                    p { +"${ViewText.INCEPTION_UNSUPPORTED_MARKETS_LABEL}: $unsupported." }
+                }
+                display.coverageText?.let { coverage ->
+                    p { +"${ViewText.INCEPTION_COVERAGE_LABEL}: $coverage." }
+                }
+            }
+        }
+    }
+
+    private fun InceptionDisplayInfo.hasEvidenceDetails(): Boolean = inferredStartText != null ||
+        inferredWindowStartText != null ||
+        inferredWindowEndText != null ||
+        firstPositiveText != null ||
+        inferredStartStrengthText != null ||
+        inferredStartReasonsText != null ||
+        inferredStartContradictionsText != null ||
+        strongestEpisodeText != null ||
+        strongestEpisodeStrengthText != null ||
+        strongestEpisodeReasonsText != null ||
+        earliestAmbiguousText != null ||
+        earlierAmbiguousCountText != null ||
+        competingCandidatesText != null ||
+        unsupportedMarketsText != null ||
+        coverageText != null
 
     private fun utcDate(value: String?): String? = value?.takeIf(String::isNotBlank)?.let { raw ->
         runCatching {
