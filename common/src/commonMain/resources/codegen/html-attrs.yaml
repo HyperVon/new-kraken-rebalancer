@@ -1,5 +1,6 @@
 HtmlAttrs:
   ONCLICK: "onclick"
+  ONCHANGE: "onchange"
   ONKEYDOWN: "onkeydown"
   DATA_EPOCH: "data-epoch"
   DATA_RANGE: "data-range"
@@ -84,6 +85,7 @@ HtmlTags:
 HtmlIds:
   CSRF_TOKEN: "csrf-token"
   SAVE_BUTTON: "save-button"
+  INCEPTION_DATE_PICKER: "inception-date-picker"
   LOOP_CONTROL: "loop-control"
   TOTAL_ALLOCATED_DISPLAY: "total-allocated-display"
   ALLOCATIONS_CONTAINER: "allocations-container"

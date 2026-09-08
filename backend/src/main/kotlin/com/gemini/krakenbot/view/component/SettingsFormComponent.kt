@@ -39,6 +39,8 @@ import kotlinx.html.header
 import kotlinx.html.id
 import kotlinx.html.script
 import kotlinx.html.unsafe
+import java.time.Instant
+import java.time.ZoneOffset
 
 class SettingsFormComponent {
     private data class NumericFieldSpec(
@@ -172,12 +174,18 @@ class SettingsFormComponent {
                         }
                     }
                 }
-                formGroup(ViewText.INCEPTION_DATE, FormFields.INCEPTION_DATE) {
-                    input(CssClass.Form.InputGlass, type = text, name = FormFields.INCEPTION_DATE) {
+                formGroup(ViewText.INCEPTION_DATE, HtmlIds.INCEPTION_DATE_PICKER) {
+                    input(type = hidden, name = FormFields.INCEPTION_DATE) {
                         id = FormFields.INCEPTION_DATE
                         value = config.settings.inceptionDate.orEmpty()
-                        placeholder = ViewText.INCEPTION_DATE_HINT
                     }
+                    input(CssClass.Form.InputGlass, type = date) {
+                        id = HtmlIds.INCEPTION_DATE_PICKER
+                        value = utcDate(config.settings.inceptionDate).orEmpty()
+                        attributes[HtmlAttrs.ONCHANGE] =
+                            "document.getElementById('${FormFields.INCEPTION_DATE}').value=this.value"
+                    }
+                    p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_DATE_HINT }
                     renderDetectedInception(inceptionDisplay)
                 }
             }
@@ -185,12 +193,23 @@ class SettingsFormComponent {
     }
 
     private fun FlowContent.renderDetectedInception(display: InceptionDisplayInfo) {
-        // Display-only: plain text with no form field name so it is never submitted
-        // and never copied into settings.inceptionDate.
+        // The evidence summary is display-only; the explicit approval button below is the
+        // only path that copies its timestamp into the submitted manual setting.
         p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
         display.inferredStartText?.let { inferredStart ->
+            val inferredInstant = runCatching { Instant.parse(inferredStart) }.getOrNull()
             p(CssClass.Form.SectionSubtitle) {
                 +"${ViewText.INCEPTION_INFERRED_LABEL}: $inferredStart"
+            }
+            if (inferredInstant != null) {
+                button(CssClass.Button.Secondary, type = button) {
+                    attributes[HtmlAttrs.TITLE] = ViewText.INCEPTION_USE_ESTIMATED_START_TITLE
+                    attributes[HtmlAttrs.ONCLICK] =
+                        "document.getElementById('${FormFields.INCEPTION_DATE}').value='$inferredInstant';" +
+                        "document.getElementById('${HtmlIds.INCEPTION_DATE_PICKER}').value='" +
+                        "${inferredInstant.atZone(ZoneOffset.UTC).toLocalDate()}';this.form.requestSubmit()"
+                    +ViewText.INCEPTION_USE_ESTIMATED_START
+                }
             }
             p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_INFERRED_MESSAGE }
             if (display.inferredWindowStartText != null && display.inferredWindowEndText != null) {
@@ -260,6 +279,14 @@ class SettingsFormComponent {
         }
         display.coverageText?.let { coverage ->
             p(CssClass.Form.SectionSubtitle) { +"${ViewText.INCEPTION_COVERAGE_LABEL}: $coverage." }
+        }
+    }
+
+    private fun utcDate(value: String?): String? = value?.takeIf(String::isNotBlank)?.let { raw ->
+        runCatching {
+            Instant.parse(raw.trim()).atZone(ZoneOffset.UTC).toLocalDate().toString()
+        }.getOrElse {
+            raw.trim().takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }
         }
     }
 
