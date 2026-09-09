@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -138,6 +139,26 @@ class ApprovedStartComparisonIntegrationTest :
             repository.saveTrade(trade)
         }
 
+        fun seedUnknownTrade(timestamp: Instant) = runTest {
+            repository.saveTrade(
+                TestFixtures.tradeRecord(
+                    timestamp = timestamp,
+                    pair = Asset.tradingPair(Asset.BTC),
+                    side = OrderSide.BUY.apiValue,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("1.00"),
+                    price = BigDecimal("100.00"),
+                    fee = BigDecimal("0.01"),
+                    source = TradeSource.LEGACY_UNKNOWN,
+                    cycleId = null,
+                    orderTxid = null,
+                    tradeId = null,
+                    clientOrderId = null,
+                ),
+            )
+        }
+
         fun seedSnapshot(timestamp: Instant, btcPrice: String, btcBalance: String, usdBalance: String) = runTest {
             val price = BigDecimal(btcPrice)
             val btcBalanceValue = BigDecimal(btcBalance)
@@ -239,6 +260,51 @@ class ApprovedStartComparisonIntegrationTest :
 
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe baselineId
                 repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe snapshotsAfterFirstRun
+            }
+        }
+
+        "confirmed baseline still proposes and accepts a later start when later ownership is unknown" {
+            runTest {
+                seedTrade("t0", strategyStart.minusSeconds(60), owned = false)
+                seedTrade("t1", strategyStart.plusSeconds(60), owned = true)
+                val unknownTime = strategyStart.plusSeconds(3_600)
+                seedUnknownTrade(unknownTime)
+                seedSnapshot(unknownTime.plusSeconds(60), "100.00", "0.04", "998.00")
+                val verifiedStart = unknownTime.plusSeconds(120)
+                seedSnapshot(verifiedStart, "100.00", "0.04", "998.00")
+                seedSnapshot(unknownTime.plusSeconds(180), "100.00", "0.04", "998.00")
+                seedSnapshot(Instant.parse("2026-01-03T00:00:00Z"), "100.00", "0.04", "998.00")
+                krakenService.tradeHistoryTotalCountOverride = 2
+
+                val recovery = newRecoveryService()
+                recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val discovery = newDiscoveryService(recovery)
+                val query = newQueryService(discovery)
+
+                val blocked = query.getRebalancerComparison(strategyStart, comparisonEnd)
+
+                blocked.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                blocked.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+                blocked.proposedBaselineTimestamp shouldBe verifiedStart
+                blocked.proposalSearchStatus shouldBe ComparisonProposalStatus.VERIFIED
+                val settingsProposal = query.getComparisonStartProposal(strategyStart)
+                settingsProposal?.status shouldBe ComparisonProposalStatus.VERIFIED
+                settingsProposal?.timestamp shouldBe verifiedStart
+
+                config = config.copy(
+                    settings = config.settings.copy(comparisonStartDate = verifiedStart.toString()),
+                )
+                val acceptedDiscovery = newDiscoveryService(recovery)
+                acceptedDiscovery.resolveInception().inceptionTime shouldBe verifiedStart
+                recovery.getStatus().status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val accepted = newQueryService(acceptedDiscovery)
+                    .getRebalancerComparison(strategyStart, comparisonEnd)
+
+                accepted.availability shouldBe ComparisonAvailability.AVAILABLE
+                accepted.baselineTimestamp shouldBe verifiedStart
+                accepted.proposedBaselineTimestamp.shouldBeNull()
+                accepted.proposalSearchStatus.shouldBeNull()
+                config.settings.inceptionDate shouldBe strategyStart.toString()
             }
         }
 

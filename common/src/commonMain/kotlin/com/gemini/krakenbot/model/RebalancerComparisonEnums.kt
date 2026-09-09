@@ -12,6 +12,18 @@ enum class ComparisonConfidence {
     ESTIMATED,
 }
 
+/** Durable state of the bounded search for a later comparison start. */
+enum class ComparisonProposalStatus {
+    /** A candidate passed the complete reconciliation pipeline. */
+    VERIFIED,
+
+    /** The per-run budget ended while candidates remained to be checked. */
+    INCOMPLETE,
+
+    /** Every retained candidate was checked and none passed. */
+    EXHAUSTED,
+}
+
 enum class ComparisonUnavailableReason(val displayText: String) {
     INSUFFICIENT_SNAPSHOTS(ViewText.UNAVAILABLE_INSUFFICIENT_SNAPSHOTS),
     NON_POSITIVE_BASELINE(ViewText.UNAVAILABLE_NON_POSITIVE_BASELINE),

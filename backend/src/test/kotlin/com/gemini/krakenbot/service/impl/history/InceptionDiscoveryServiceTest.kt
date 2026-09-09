@@ -1075,6 +1075,65 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
+        "resolveInception uses the exact accepted snapshot identity when timestamps collide" {
+            runTest {
+                val acceptedAnchor = Instant.parse("2026-01-15T10:30:00Z")
+                val selected = dummySnapshot(acceptedAnchor).copy(totalValueUSD = BigDecimal("2000.00"))
+                coEvery { configService.getConfig() } returns testConfig(
+                    inceptionDate = "2025-12-05",
+                    comparisonStartDate = acceptedAnchor.toString(),
+                )
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+                } returns "22"
+                coEvery { tradeRepository.getSnapshotById(22) } returns selected
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val result = serviceWithRecovery.resolveInception()
+
+                result.inceptionTime shouldBe acceptedAnchor
+                result.inceptionSnapshot shouldBe selected
+                result.confidence shouldBe InceptionConfidence.CONFIDENT
+            }
+        }
+
+        "resolveInception refuses a nearby substitute for an accepted comparison anchor" {
+            runTest {
+                val acceptedAnchor = Instant.parse("2026-01-15T10:30:00Z")
+                coEvery { configService.getConfig() } returns testConfig(
+                    inceptionDate = "2025-12-05",
+                    comparisonStartDate = acceptedAnchor.toString(),
+                )
+                coEvery {
+                    tradeRepository.getSnapshotsInRange(any(), any())
+                } returns listOf(dummySnapshot(acceptedAnchor.minusSeconds(60)))
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val result = serviceWithRecovery.resolveInception()
+
+                result.inceptionTime shouldBe Instant.parse("2025-12-05T00:00:00Z")
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                result.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE
+            }
+        }
+
         "an auto-recovered confirmed baseline resolves with automatic detection" {
             runTest {
                 coEvery { configService.getConfig() } returns testConfig()

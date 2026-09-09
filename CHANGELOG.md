@@ -12,11 +12,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Approved-start baselines and verified comparison start**: approving a strategy start now rebuilds
   the Buy & Hold baseline from Kraken history instead of reporting a misleading "snapshot no longer
-  retained" error. When history at the approved instant cannot be verified, Settings shows the honest
-  unavailable reason and offers the earliest verified later comparison start with a one-click accept;
-  the History comparison anchors at the accepted timestamp. A new optional **Comparison Start** field
-  records the accepted anchor. Also fixes an open-ended snapshot-range lookup that could overflow and
-  fail the Settings page during recovery.
+  retained" error. A confirmed baseline no longer implies that the current comparison is available:
+  Settings and History use the same full reconciliation policy, and Settings offers the earliest
+  verified later comparison start when later ownership or accounting remains unresolved. Accepting
+  that exact timestamp anchors the comparison without changing the strategy start. Bounded later-start
+  verification resumes from durable progress and reports whether it is incomplete or exhausted.
+- **Recovery retry safety**: an approved-start recovery failure caused by temporary supporting evidence is
+  retried when relevant evidence changes, while unsupported failures remain terminal until the
+  configuration or account scope changes.
 
 ## [6.17.40] - 2026-09-08
 

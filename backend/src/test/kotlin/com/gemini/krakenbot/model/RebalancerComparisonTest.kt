@@ -106,5 +106,35 @@ class RebalancerComparisonTest : StringSpec() {
             shouldThrow<IllegalArgumentException> { unavailable(latestDifferencePercent = zero) }
             shouldThrow<IllegalArgumentException> { unavailable(reason = null) }
         }
+
+        "proposal status and timestamp must agree" {
+            shouldThrow<IllegalArgumentException> {
+                RebalancerComparison(
+                    availability = ComparisonAvailability.UNAVAILABLE,
+                    confidence = null,
+                    baselineTimestamp = null,
+                    points = emptyList(),
+                    latestDifferenceUSD = null,
+                    latestDifferencePercent = null,
+                    unavailableReason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
+                    unavailableAt = baseline,
+                    proposalSearchStatus = ComparisonProposalStatus.VERIFIED,
+                )
+            }
+            shouldThrow<IllegalArgumentException> {
+                RebalancerComparison(
+                    availability = ComparisonAvailability.UNAVAILABLE,
+                    confidence = null,
+                    baselineTimestamp = null,
+                    points = emptyList(),
+                    latestDifferenceUSD = null,
+                    latestDifferencePercent = null,
+                    unavailableReason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
+                    unavailableAt = baseline,
+                    proposedBaselineTimestamp = later,
+                    proposalSearchStatus = ComparisonProposalStatus.INCOMPLETE,
+                )
+            }
+        }
     }
 }

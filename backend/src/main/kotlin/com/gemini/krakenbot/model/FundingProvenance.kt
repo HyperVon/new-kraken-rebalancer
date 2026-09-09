@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.model
 
 import java.math.BigDecimal
+import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 
@@ -91,6 +92,10 @@ fun interface FundingProvenanceResolver {
     val preparationFailure: FundingProvenanceFailure?
         get() = null
 
+    /** Stable content revision for prepared authoritative evidence, when available. */
+    val evidenceFingerprint: String?
+        get() = null
+
     /**
      * Loads/caches all evidence needed for a batch of ledger rows before
      * [resolve] is called. The returned resolver is the immutable evidence
@@ -141,6 +146,15 @@ class SimpleFundingProvenanceResolver(
         addAll(allWithdrawals)
         addAll(allInternalTransfers)
     }
+
+    override val evidenceFingerprint: String = MessageDigest.getInstance("SHA-256")
+        .digest(
+            allRecords
+                .map(Any::toString)
+                .sorted()
+                .joinToString(separator = "\u0000")
+                .toByteArray(Charsets.UTF_8),
+        ).joinToString(separator = "") { byte -> "%02x".format(byte) }
 
     override fun resolve(event: LedgerEvent): FundingEvidence {
         if (event.type.lowercase() !in SUPPORTED_FUNDING_TYPES) {

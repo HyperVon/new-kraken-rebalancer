@@ -1367,6 +1367,16 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
                 status.reason shouldBe "ledger provenance unresolved: deposit"
                 repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) shouldBe ""
+
+                val tradeHistoryCalls = krakenService.getTradeHistoryCallCount
+                val ledgerCalls = krakenService.getLedgersCallCount
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                val retried = newService().recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                retried.reason shouldBe "ledger provenance unresolved: deposit"
+                krakenService.getTradeHistoryCallCount shouldBe tradeHistoryCalls
+                krakenService.getLedgersCallCount shouldBe ledgerCalls
             }
         }
 
@@ -1913,7 +1923,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "an OHLC request failure leaves missing historical prices unavailable" {
+        "an OHLC request failure retries without repaginating when price evidence becomes available" {
             runTest {
                 config = appConfig(
                     listOf(
@@ -1942,12 +1952,26 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
-                krakenService.ohlcSupplier = { _, _, _ -> error("OHLC unavailable") }
+                var ohlcAvailable = false
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    if (!ohlcAvailable) {
+                        error("OHLC unavailable")
+                    }
+                    listOf(botTime.minusSeconds(901).epochSecond to BigDecimal("200.00"))
+                }
 
-                val status = newService().recoverOneBoundedRun()
+                val first = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                first.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                first.reason shouldBe "historical price unavailable"
+                val tradeHistoryCalls = krakenService.getTradeHistoryCallCount
+
+                ohlcAvailable = true
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                val retried = newService().recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                krakenService.getTradeHistoryCallCount shouldBe tradeHistoryCalls
             }
         }
 
@@ -2202,6 +2226,42 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 status.status shouldBe InceptionRecoveryStatus.FAILED
                 status.reason shouldBe "history request failed"
                 krakenService.getTradeHistoryCallCount shouldBe 0
+            }
+        }
+
+        "approved-start evaluation failure retries with newly retained evidence" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("price", requestedStart))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
+                        timestamp = now.plusSeconds(60),
+                    ),
+                )
+                newService().prepareForCurrentConfiguration(config.settings) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                coEvery { configService.beginExecutionSession() } throws
+                    IllegalStateException("session unavailable")
+
+                val failed = newService().recoverOneBoundedRun()
+
+                failed.status shouldBe InceptionRecoveryStatus.FAILED
+                val initialHorizon = repository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
+                )
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                coEvery { configService.beginExecutionSession() } returns Unit
+
+                val retried = newService().recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC) shouldBe
+                    initialHorizon
             }
         }
 
@@ -2814,6 +2874,114 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 still.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
                 still.reason shouldBe "unsupported ledger type airdrop"
                 krakenService.getTradeHistoryCallCount shouldBe calls
+            }
+        }
+
+        "approved start failure retries when local evidence changes without changing the strategy start" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.tradeHistoryTotalCountOverride = 0
+                repository.saveTrade(apiTrade("price", requestedStart))
+
+                val failed = newService().recoverOneBoundedRun()
+
+                failed.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                failed.reason shouldBe "no retained balance anchor"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT)
+                    .orEmpty() shouldNotBe ""
+                val initialHorizon = repository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
+                )
+
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
+                        timestamp = now.plusSeconds(60),
+                    ),
+                )
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+
+                val retried = newService().recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                config.settings.inceptionDate shouldBe requestedStart.toString()
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT) shouldBe ""
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC) shouldBe
+                    initialHorizon
+            }
+        }
+
+        "approved start retries when funding provenance becomes available" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val requestedStart = botTime.minusSeconds(60)
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                val bot = apiTrade(
+                    "bot",
+                    botTime,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                    fee = BigDecimal("0.50"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "card-deposit-retry",
+                            refid = "card-retry-ref",
+                            time = botTime.plusSeconds(3600),
+                            type = "deposit",
+                            asset = Asset.USD,
+                            amount = BigDecimal("100.00"),
+                        ),
+                        LedgerEvent(
+                            ledgerId = "card-spend-retry",
+                            refid = "card-retry-ref",
+                            time = botTime.plusSeconds(3601),
+                            type = "spend",
+                            asset = Asset.USD,
+                            amount = BigDecimal("-100.00"),
+                        ),
+                        LedgerEvent(
+                            ledgerId = "card-receive-retry",
+                            refid = "card-retry-ref",
+                            time = botTime.plusSeconds(3602),
+                            type = "receive",
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.50"),
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("1.00"), Asset.USD to BigDecimal("949.50")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                var fundingAvailable = false
+                val cardResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence =
+                        if (fundingAvailable) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+
+                    override fun isCardFunding(event: LedgerEvent): Boolean = true
+                }
+
+                val failed = newService(fundingProvenanceResolver = cardResolver).recoverOneBoundedRun()
+
+                failed.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                failed.reason shouldBe "Funding legs in card group cannot be proven external"
+                val historyCalls = krakenService.getTradeHistoryCallCount
+                fundingAvailable = true
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+
+                val retried = newService(fundingProvenanceResolver = cardResolver).recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                krakenService.getTradeHistoryCallCount shouldBe historyCalls
             }
         }
 

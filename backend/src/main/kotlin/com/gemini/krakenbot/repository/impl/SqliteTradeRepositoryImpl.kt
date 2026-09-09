@@ -172,7 +172,9 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     .where {
                         (PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()) and
                             (PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli())
-                    }.orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    }
+                    .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
                     .map { it[PortfolioSnapshotTable.id] }
 
             if (allIds.isEmpty()) return@readTransactionIO emptyList()
@@ -197,9 +199,28 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     .selectAll()
                     .where { PortfolioSnapshotTable.id inList downsampledIds }
                     .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
                     .toList()
 
             buildSnapshotsFromRows(snapshotRows)
+        }
+
+    override suspend fun getAllSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
+        database.readTransactionIO {
+            val snapshotRows =
+                PortfolioSnapshotTable
+                    .selectAll()
+                    .where {
+                        (PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()) and
+                            (PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli())
+                    }
+                    .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
+                    .toList()
+
+            snapshotRows
+                .chunked(SQLITE_IN_CHUNK_SIZE)
+                .flatMap(::buildSnapshotsFromRows)
         }
 
     override suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot? = database.readTransactionIO {
@@ -208,17 +229,21 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 .selectAll()
                 .where { PortfolioSnapshotTable.timestamp less timestamp.toEpochMilli() }
                 .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
+                .orderBy(PortfolioSnapshotTable.id, SortOrder.DESC)
                 .limit(1)
                 .toList()
         buildSnapshotsFromRows(rows).firstOrNull()
     }
 
-    override suspend fun getSnapshotId(timestamp: Instant): Int? = database.readTransactionIO {
+    override suspend fun getSnapshotId(timestamp: Instant, ordinal: Int): Int? = database.readTransactionIO {
+        if (ordinal < 0) return@readTransactionIO null
         PortfolioSnapshotTable
             .select(PortfolioSnapshotTable.id)
             .where { PortfolioSnapshotTable.timestamp eq timestamp.toEpochMilli() }
-            .limit(1)
-            .firstOrNull()
+            .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
+            .limit(ordinal + 1)
+            .toList()
+            .lastOrNull()
             ?.get(PortfolioSnapshotTable.id)
     }
 

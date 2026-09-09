@@ -5,6 +5,8 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonProposalStatus
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
 import io.kotest.core.spec.IsolationMode
@@ -27,17 +29,20 @@ class SettingsFormComponentTest : StringSpec() {
         listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
     )
 
-    private fun render(settingsConfig: AppConfig, display: InceptionDisplayInfo, proposal: Instant? = null): String =
-        createHTML().div {
-            SettingsFormComponent().renderForm(
-                this,
-                settingsConfig,
-                null,
-                "csrf-token",
-                inceptionDisplay = display,
-                laterStartProposal = proposal,
-            )
-        }
+    private fun render(
+        settingsConfig: AppConfig,
+        display: InceptionDisplayInfo,
+        proposal: ComparisonStartProposal? = null,
+    ): String = createHTML().div {
+        SettingsFormComponent().renderForm(
+            this,
+            settingsConfig,
+            null,
+            "csrf-token",
+            inceptionDisplay = display,
+            laterStartProposal = proposal,
+        )
+    }
 
     init {
         "approved pending renders the recovery progress marker" {
@@ -63,16 +68,74 @@ class SettingsFormComponentTest : StringSpec() {
             html shouldNotContain "inception-baseline-pending"
         }
 
+        "approved ready with a blocked comparison renders the verified-start control" {
+            val html = render(
+                config(inceptionDate = "2026-01-01T00:00:00Z"),
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.APPROVED_READY,
+                    message = "Comparison baseline established at 2026-01-01T00:00:00Z",
+                ),
+                proposal = ComparisonStartProposal(
+                    ComparisonProposalStatus.VERIFIED,
+                    Instant.parse("2026-08-01T10:30:00Z"),
+                    snapshotId = 7,
+                ),
+            )
+
+            html shouldContain "approved baseline is ready"
+            html shouldContain "Use verified start"
+        }
+
         "approved unavailable with a proposal renders the verified-start control" {
             val html = render(
                 config(inceptionDate = "2026-01-01T00:00:00Z"),
                 InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_UNAVAILABLE),
-                proposal = Instant.parse("2026-08-01T10:30:00Z"),
+                proposal = ComparisonStartProposal(
+                    ComparisonProposalStatus.VERIFIED,
+                    Instant.parse("2026-08-01T10:30:00Z"),
+                    snapshotId = 7,
+                ),
             )
 
             html shouldContain "Earliest verified comparison start"
             html shouldContain "Use verified start"
             html shouldContain "value='2026-08-01T10:30:00Z'"
+        }
+
+        "verified proposal without a snapshot identity renders no acceptance control" {
+            val html = render(
+                config(inceptionDate = "2026-01-01T00:00:00Z"),
+                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_UNAVAILABLE),
+                proposal = ComparisonStartProposal(
+                    ComparisonProposalStatus.VERIFIED,
+                    Instant.parse("2026-08-01T10:30:00Z"),
+                ),
+            )
+
+            html shouldNotContain "Earliest verified comparison start"
+            html shouldNotContain "Use verified start"
+        }
+
+        "incomplete proposal renders progress without an accept control" {
+            val html = render(
+                config(inceptionDate = "2026-01-01T00:00:00Z"),
+                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_UNAVAILABLE),
+                proposal = ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE),
+            )
+
+            html shouldContain "Later-start verification is still in progress"
+            html shouldNotContain "Use verified start"
+        }
+
+        "exhausted proposal renders the retained-history outcome" {
+            val html = render(
+                config(inceptionDate = "2026-01-01T00:00:00Z"),
+                InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_UNAVAILABLE),
+                proposal = ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED),
+            )
+
+            html shouldContain "No retained later start passed complete reconciliation"
+            html shouldNotContain "Use verified start"
         }
 
         "approved unavailable without a proposal renders no verified-start control" {
@@ -107,6 +170,7 @@ class SettingsFormComponentTest : StringSpec() {
 
             markup shouldContain "csrf-token"
             markup shouldContain "name=\"comparisonStartDate\""
+            markup shouldContain "id=\"comparison-start-date-picker\""
         }
 
         "full inference evidence renders its groups and empty date input" {

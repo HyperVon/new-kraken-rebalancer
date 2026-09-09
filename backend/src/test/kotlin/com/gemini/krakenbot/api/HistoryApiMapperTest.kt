@@ -3,6 +3,7 @@ package com.gemini.krakenbot.api
 import com.gemini.krakenbot.TestFixtures.assetSnapshot
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -270,6 +271,7 @@ class HistoryApiMapperTest : StringSpec() {
             dto.latestDifferencePercent shouldBe "2.94"
             dto.unavailableReason.shouldBeNull()
             dto.unavailableAt.shouldBeNull()
+            dto.proposalSearchStatus.shouldBeNull()
         }
 
         "toApiDto maps RebalancerComparison with unavailable status" {
@@ -280,8 +282,9 @@ class HistoryApiMapperTest : StringSpec() {
                 points = emptyList(),
                 latestDifferenceUSD = null,
                 latestDifferencePercent = null,
-                unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableReason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
                 unavailableAt = Instant.parse("2026-01-15T10:00:00Z"),
+                proposalSearchStatus = ComparisonProposalStatus.INCOMPLETE,
             )
 
             val dto = comparison.toApiDto()
@@ -292,8 +295,30 @@ class HistoryApiMapperTest : StringSpec() {
             dto.points shouldHaveSize 0
             dto.latestDifferenceUSD.shouldBeNull()
             dto.latestDifferencePercent.shouldBeNull()
-            dto.unavailableReason shouldBe "INSUFFICIENT_SNAPSHOTS"
+            dto.unavailableReason shouldBe "AMBIGUOUS_TRADE_OWNERSHIP"
             dto.unavailableAt shouldBe "2026-01-15T10:00:00Z"
+            dto.proposalSearchStatus shouldBe "INCOMPLETE"
+        }
+
+        "toApiDto maps a verified later-start proposal timestamp" {
+            val proposal = Instant.parse("2026-01-16T10:00:00Z")
+            val comparison = RebalancerComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = Instant.parse("2026-01-15T10:00:00Z"),
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
+                unavailableAt = Instant.parse("2026-01-15T10:00:00Z"),
+                proposedBaselineTimestamp = proposal,
+                proposalSearchStatus = ComparisonProposalStatus.VERIFIED,
+            )
+
+            val dto = comparison.toApiDto()
+
+            dto.proposedBaselineTimestamp shouldBe proposal.toString()
+            dto.proposalSearchStatus shouldBe "VERIFIED"
         }
     }
 }

@@ -61,9 +61,18 @@ interface TradeHistoryService {
     /**
      * Earliest retained snapshot at/after [after] whose complete reconciliation
      * yields an available Buy &amp; Hold comparison, or null when no verified
-     * later start exists. Read-only evidence scan; never mutates state.
+     * later start exists. The scan does not change settings or financial rows; it may persist
+     * bounded search progress in sync metadata.
      */
     suspend fun findVerifiedLaterComparisonStart(after: Instant): Instant? = null
+
+    /**
+     * Returns the shared later-start proposal state when the complete retained comparison is
+     * unavailable for a reason that a later verified anchor can fix. The result is null when no
+     * proposal policy applies; a non-null result distinguishes a verified, incomplete, or
+     * exhausted bounded search.
+     */
+    suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? = null
 
     suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison
 }

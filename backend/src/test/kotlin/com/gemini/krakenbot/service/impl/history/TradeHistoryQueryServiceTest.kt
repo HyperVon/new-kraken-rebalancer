@@ -4,14 +4,20 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.FundingEvidence
+import com.gemini.krakenbot.model.FundingProvenanceFailure
+import com.gemini.krakenbot.model.FundingProvenanceFailureReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerOrderIdentities
 import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.LedgerRepository
@@ -23,6 +29,7 @@ import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
@@ -48,6 +55,10 @@ class TradeHistoryQueryServiceTest : StringSpec() {
     private val now = Instant.parse("2026-07-01T12:00:00Z")
 
     init {
+        coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
+            repository.getSnapshotsInRange(firstArg(), secondArg())
+        }
+
         "getRewardsOverTime_CumulativePerSnapshotTime" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
@@ -981,6 +992,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE
                 comparison.proposedBaselineTimestamp shouldBe t1
+                comparison.proposalSearchStatus shouldBe ComparisonProposalStatus.VERIFIED
             }
         }
 
@@ -1027,6 +1039,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.proposedBaselineTimestamp shouldBe t1
+                comparison.proposalSearchStatus shouldBe ComparisonProposalStatus.VERIFIED
             }
         }
 
@@ -1062,6 +1075,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
                 comparison.proposedBaselineTimestamp.shouldBeNull()
+                comparison.proposalSearchStatus.shouldBeNull()
             }
         }
 
@@ -1075,7 +1089,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap2 = snapshot(t2, "110000.00", btc = "1.0" to "60000.00")
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { repository.getSnapshotsInRange(t0, openEndedRangeEnd) } returns listOf(snap0, snap1, snap2)
+                coEvery { repository.getAllSnapshotsInRange(t0, openEndedRangeEnd) } returns
+                    listOf(snap0, snap1, snap2)
+                // Keep the sampled chart query empty so this regression proves that the proposal
+                // scanner uses the full-retention repository path.
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
                 coEvery { repository.getSnapshotBefore(any()) } returns snap0
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
@@ -1089,6 +1107,107 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t1
+                coVerify(exactly = 1) { repository.getAllSnapshotsInRange(t0, openEndedRangeEnd) }
+            }
+        }
+
+        "findVerifiedLaterComparisonStart advances past duplicate-millisecond candidates" {
+            runTest {
+                val duplicateTime = now.plusSeconds(3600)
+                val candidates = (1..9).map {
+                    snapshot(duplicateTime, "100000.00", btc = "1.0" to "50000.00")
+                }
+                val metadata = mutableMapOf<String, String>()
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
+                    metadata.putAll(firstArg())
+                }
+                coEvery { repository.getAllSnapshotsInRange(now, openEndedRangeEnd) } returns candidates
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(
+                    ledgerEvent(
+                        ledgerId = "blocking-deposit",
+                        timestamp = duplicateTime,
+                        asset = Asset.BTC,
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                )
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = null,
+                )
+
+                serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.INCOMPLETE.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe
+                    "${duplicateTime.toEpochMilli()}:8"
+
+                serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.EXHAUSTED.name
+            }
+        }
+
+        "findVerifiedLaterComparisonStart retries after transient provenance preparation failure" {
+            runTest {
+                val t0 = now
+                val t1 = now.plusSeconds(3600)
+                val t2 = now.plusSeconds(7200)
+                val baseline = snapshot(t0, "90000.00", btc = "1.0" to "40000.00")
+                val later = snapshot(t1, "100000.00", btc = "1.0" to "50000.00")
+                val final = snapshot(t2, "110000.00", btc = "1.0" to "60000.00")
+                val metadata = mutableMapOf<String, String>()
+                var provenanceAvailable = false
+                val provenanceResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                    override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver =
+                        if (provenanceAvailable) {
+                            SimpleFundingProvenanceResolver()
+                        } else {
+                            FundingProvenanceResolver.unavailable(
+                                FundingProvenanceFailure(
+                                    reason = FundingProvenanceFailureReason.REQUEST_FAILED,
+                                    message = "temporary funding evidence failure",
+                                ),
+                            )
+                        }
+                }
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
+                    metadata.putAll(firstArg())
+                }
+                coEvery { repository.getAllSnapshotsInRange(t0, openEndedRangeEnd) } returns listOf(later, final)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotBefore(any()) } returns baseline
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = null,
+                    fundingProvenanceResolver = provenanceResolver,
+                )
+
+                serviceWithInception.findVerifiedLaterComparisonStart(t0).shouldBeNull()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.INCOMPLETE.name
+
+                provenanceAvailable = true
+                serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t1
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.VERIFIED.name
             }
         }
 
@@ -1122,7 +1241,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
-        "findVerifiedLaterComparisonStart_SkipsPastUnavailableTrialToLaterAnchor" {
+        "findVerifiedLaterComparisonStart_DoesNotSkipPotentiallyValidEarlierAnchor" {
             runTest {
                 val t0 = now
                 val t1 = now.plusSeconds(3600)
@@ -1152,7 +1271,10 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     inceptionDiscoveryService = mockInceptionService,
                 )
 
-                serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t3
+                // The first trial may report an unavailableAt after more than one candidate, but
+                // that does not prove the intermediate anchor is invalid. Check every candidate
+                // in order so the earliest verified start remains trustworthy.
+                serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t2
             }
         }
 
@@ -1182,6 +1304,396 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
+            }
+        }
+
+        "findVerifiedLaterComparisonStart_ResumesAfterPerRunBudget" {
+            runTest {
+                val firstEight = (1..8).map { index ->
+                    snapshot(
+                        now.plusSeconds(3600L * index),
+                        "90000.00",
+                        btc = "1.$index" to "40000.00",
+                    )
+                }
+                val verifiedStart = now.plusSeconds(3600L * 9)
+                val verifiedContinuation = now.plusSeconds(3600L * 10)
+                val snaps = firstEight + listOf(
+                    snapshot(verifiedStart, "130000.00", btc = "2.0" to "40000.00"),
+                    snapshot(verifiedContinuation, "130000.00", btc = "2.0" to "40000.00"),
+                )
+                val metadata = mutableMapOf<String, String>()
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
+                    metadata.putAll(firstArg())
+                }
+                coEvery { repository.getSnapshotsInRange(now, openEndedRangeEnd) } returns snaps
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = null,
+                )
+
+                serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.INCOMPLETE.name
+                serviceWithInception.findVerifiedLaterComparisonStart(now) shouldBe verifiedStart
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.VERIFIED.name
+            }
+        }
+
+        "proposal search invalidates its cursor when configuration or account evidence changes" {
+            runTest {
+                val firstEight = (1..8).map { index ->
+                    snapshot(
+                        now.plusSeconds(3600L * index),
+                        "90000.00",
+                        btc = "1.$index" to "40000.00",
+                    )
+                }
+                val verifiedStart = now.plusSeconds(3600L * 9)
+                val verifiedContinuation = now.plusSeconds(3600L * 10)
+                var snapshots = firstEight + listOf(
+                    snapshot(verifiedStart, "130000.00", btc = "2.0" to "40000.00"),
+                    snapshot(verifiedContinuation, "130000.00", btc = "2.0" to "40000.00"),
+                )
+                val metadata = mutableMapOf<String, String>(
+                    SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT to "config-a",
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST to "account-a",
+                )
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
+                    metadata.putAll(firstArg())
+                }
+                coEvery { repository.getSnapshotsInRange(now, openEndedRangeEnd) } coAnswers { snapshots }
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = null,
+                )
+
+                serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.INCOMPLETE.name
+
+                metadata[SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT] = "config-b"
+                metadata[SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST] = "account-b"
+                serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.INCOMPLETE.name
+
+                serviceWithInception.findVerifiedLaterComparisonStart(now) shouldBe verifiedStart
+
+                snapshots = listOf(
+                    snapshots.first().copy(totalValueUSD = BigDecimal("90001.00")),
+                ) + snapshots.drop(1)
+                serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.INCOMPLETE.name
+            }
+        }
+
+        "getComparisonStartProposal_reportsExhaustedAfterCheckingEveryCandidate" {
+            runTest {
+                val t0 = now
+                val candidates = listOf(
+                    snapshot(now.plusSeconds(3600), "130000.00", btc = "2.0" to "40000.00"),
+                    snapshot(now.plusSeconds(7200), "170000.00", btc = "3.0" to "40000.00"),
+                    snapshot(now.plusSeconds(10800), "210000.00", btc = "4.0" to "40000.00"),
+                )
+                val metadata = mutableMapOf<String, String>()
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
+                    metadata.putAll(firstArg())
+                }
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
+                )
+                coEvery { repository.getSnapshotsInRange(t0, openEndedRangeEnd) } returns candidates
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val exhausted = serviceWithInception.getComparisonStartProposal(t0)
+
+                exhausted?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                exhausted?.timestamp.shouldBeNull()
+                serviceWithInception.getComparisonStartProposal(t0)?.status shouldBe
+                    ComparisonProposalStatus.EXHAUSTED
+            }
+        }
+
+        "terminal proposal state is rechecked when prepared funding evidence changes" {
+            runTest {
+                val t0 = now
+                val candidates = listOf(
+                    snapshot(now.plusSeconds(3600), "130000.00", btc = "2.0" to "40000.00"),
+                    snapshot(now.plusSeconds(7200), "170000.00", btc = "3.0" to "40000.00"),
+                    snapshot(now.plusSeconds(10800), "210000.00", btc = "4.0" to "40000.00"),
+                )
+                val metadata = mutableMapOf<String, String>()
+                var evidenceRevision = "revision-a"
+                var prepareCalls = 0
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
+                )
+                val provenanceResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                    override val evidenceFingerprint: String
+                        get() = evidenceRevision
+
+                    override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver {
+                        prepareCalls++
+                        return this
+                    }
+                }
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
+                    metadata.putAll(firstArg())
+                }
+                coEvery { repository.getAllSnapshotsInRange(t0, openEndedRangeEnd) } returns candidates
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                    fundingProvenanceResolver = provenanceResolver,
+                )
+
+                serviceWithInception.getComparisonStartProposal(t0)?.status shouldBe
+                    ComparisonProposalStatus.EXHAUSTED
+                serviceWithInception.getComparisonStartProposal(t0)?.status shouldBe
+                    ComparisonProposalStatus.EXHAUSTED
+                val callsBeforeRevisionChange = prepareCalls
+
+                evidenceRevision = "revision-b"
+                serviceWithInception.getComparisonStartProposal(t0)?.status shouldBe
+                    ComparisonProposalStatus.EXHAUSTED
+
+                prepareCalls shouldBeGreaterThan callsBeforeRevisionChange
+            }
+        }
+
+        "getComparisonStartProposal_returnsNullWhenThereIsNoEligibleUnavailableComparison" {
+            runTest {
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+
+                service.getComparisonStartProposal(now).shouldBeNull()
+            }
+        }
+
+        "getComparisonStartProposal_doesNotSearchWhenTheCurrentComparisonIsAvailable" {
+            runTest {
+                val first = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val second = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, second)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                service.getComparisonStartProposal(now).shouldBeNull()
+            }
+        }
+
+        "getComparisonStartProposal_doesNotSearchAnIneligibleRecoveryFailure" {
+            runTest {
+                val first = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val second = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = now,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = null,
+                )
+                coEvery { repository.getSnapshotsInRange(now, openEndedRangeEnd) } returns listOf(first, second)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                serviceWithInception.getComparisonStartProposal(now).shouldBeNull()
+            }
+        }
+
+        "getComparisonStartProposal_doesNotExposeAutoDetectedInception" {
+            runTest {
+                val first = snapshot(now, "90000.00", btc = "1.0" to "40000.00")
+                val second = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = now,
+                    inceptionSnapshot = first,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getAllSnapshotsInRange(now, openEndedRangeEnd) } returns listOf(first, second)
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                serviceWithInception.getComparisonStartProposal(now).shouldBeNull()
+                coVerify(exactly = 0) { repository.getAllSnapshotsInRange(any(), any()) }
+            }
+        }
+
+        "verified proposal state is reused and an invalid stored cursor restarts safely" {
+            runTest {
+                val first = snapshot(now, "90000.00", btc = "1.0" to "40000.00")
+                val verified = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                val last = snapshot(now.plusSeconds(7200), "110000.00", btc = "1.0" to "60000.00")
+                val metadata = mutableMapOf<String, String>()
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
+                    metadata.putAll(firstArg())
+                }
+                coEvery { repository.getSnapshotsInRange(now, openEndedRangeEnd) } returns
+                    listOf(first, verified, last)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = "invalid-cursor"
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = "${now.toEpochMilli()}:-1"
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] =
+                    "${now.toEpochMilli()}:not-an-ordinal"
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = "not-an-epoch:0"
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = "invalid:cursor:shape"
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] =
+                    ComparisonProposalStatus.INCOMPLETE.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] =
+                    now.plusSeconds(9999).toEpochMilli().toString()
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] =
+                    ComparisonProposalStatus.VERIFIED.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] =
+                    now.plusSeconds(9999).toEpochMilli().toString()
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] =
+                    "${verified.timestamp.toEpochMilli()}:0"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = "42"
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
+            }
+        }
+
+        "proposal evidence fingerprint includes retained trade ledger and order identity data" {
+            runTest {
+                val first = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val verified = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                )
+                val last = snapshot(now.plusSeconds(7200), "100000.00", btc = "1.0" to "50000.00")
+                val retainedTrade = TestFixtures.tradeRecord(
+                    timestamp = now.plusSeconds(5400),
+                    pair = Asset.BTC_USD_PAIR,
+                    side = OrderSide.BUY.apiValue,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("500.00"),
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal("0.50"),
+                    slippagePercent = BigDecimal("0.10"),
+                    expectedPrice = BigDecimal("49950.00"),
+                    source = TradeSource.API_FILL,
+                    id = 1,
+                    orderTxid = "proposal-order",
+                    tradeId = "proposal-trade",
+                    clientOrderId = "proposal-client",
+                )
+                val failedTrade = retainedTrade.copy(id = 2, success = false)
+                val dryRunTrade = retainedTrade.copy(id = 3, dryRun = true)
+                val unidentifiedFailedTrade = retainedTrade.copy(
+                    id = null,
+                    success = false,
+                    orderTxid = null,
+                    tradeId = null,
+                    clientOrderId = null,
+                )
+                val retainedLedger = ledgerEvent(
+                    ledgerId = "proposal-ledger",
+                    timestamp = now.plusSeconds(5401),
+                    asset = Asset.BTC,
+                    amount = "0",
+                )
+                coEvery { repository.getSnapshotsInRange(now, openEndedRangeEnd) } returns
+                    listOf(first, verified, last)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getTradesInRange(Instant.EPOCH, openEndedRangeEnd) } returns
+                    listOf(failedTrade, dryRunTrade, unidentifiedFailedTrade, retainedTrade)
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(Instant.EPOCH, openEndedRangeEnd) } returns
+                    listOf(retainedLedger)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    RebalancerOrderIdentities(orderTxids = setOf("proposal-order"))
+
+                service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
             }
         }
     }

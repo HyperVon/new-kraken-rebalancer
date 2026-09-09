@@ -7,7 +7,10 @@ import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -28,8 +31,10 @@ import io.ktor.http.parametersOf
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.slot
+import kotlinx.coroutines.CancellationException
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -241,8 +246,11 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     message = "No trustworthy baseline could be established for the approved start: " +
                         "historical price unavailable",
                 )
-            coEvery { tradeHistoryService.findVerifiedLaterComparisonStart(any()) } returns
-                Instant.parse("2026-06-07T00:00:00Z")
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                snapshotId = 42,
+            )
             testApplication {
                 application {
                     configureTestEnv()
@@ -262,14 +270,42 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     message = "No trustworthy baseline could be established for the approved start: " +
                         "historical price unavailable",
                 )
-            coEvery { tradeHistoryService.findVerifiedLaterComparisonStart(any()) } returns
-                Instant.parse("2026-08-01T10:30:00Z")
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-08-01T10:30:00Z"),
+                snapshotId = 7,
+            )
             testApplication {
                 application {
                     configureTestEnv()
                 }
                 val body = client.get(Routes.SETTINGS).bodyAsText()
                 body shouldContain "Earliest verified comparison start"
+                body shouldContain "Use verified start"
+            }
+        }
+
+        "getSettings_approvedBaselineReady_stillRendersProposalWhenComparisonIsBlocked" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings().copy(inceptionDate = "2026-06-06"),
+            )
+            coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.APPROVED_READY,
+                    message = "Comparison baseline established at 2026-06-06T00:00:00Z",
+                )
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-08-01T10:30:00Z"),
+                snapshotId = 7,
+            )
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val body = client.get(Routes.SETTINGS).bodyAsText()
+                body shouldContain "approved baseline is ready"
                 body shouldContain "Use verified start"
             }
         }
@@ -407,6 +443,11 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             val captured = slot<AppConfig>()
             every { configService.getConfig() } returns serverConfig
             coEvery { configService.updateConfig(capture(captured)) } returns Unit
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                snapshotId = 42,
+            )
 
             testApplication {
                 application {
@@ -449,6 +490,19 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             captured.captured.settings.fiatDeploymentThresholdPercent shouldBe 4.5
             captured.captured.allocations.single().color shouldBe "#94a3b8"
             coVerify { configService.updateConfig(any()) }
+            coVerify {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "42",
+                )
+            }
+            coVerifyOrder {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "42",
+                )
+                configService.updateConfig(any())
+            }
         }
 
         "postSettings rejects out-of-range fiat deployment threshold" {
@@ -488,6 +542,528 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     header(HttpHeaders.Cookie, csrf.cookie)
                 }
                 response.bodyAsText() shouldContain "drawdown activation threshold"
+            }
+        }
+
+        "postSettings rejects an unverified comparison-start proposal" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } returns Unit
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns
+                ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                            FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain "comparison start must be a valid ISO-8601"
+            }
+
+            coVerify(exactly = 0) { configService.updateConfig(any()) }
+        }
+
+        "postSettings clears the accepted snapshot identity when comparison start is removed" {
+            val serverConfig = dashboardConfig(
+                settings = TestFixtures.settings().copy(
+                    inceptionDate = "2026-06-06",
+                    comparisonStartDate = "2026-06-07",
+                ),
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.OK
+            }
+
+            coVerify {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "",
+                )
+            }
+        }
+
+        "postSettings restores the prior snapshot identity when config persistence fails" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } throws
+                InvalidConfigurationException("configuration write rejected")
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                snapshotId = 42,
+            )
+            coEvery {
+                tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+            } returns "17"
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                            FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+                response.bodyAsText() shouldContain "configuration write rejected"
+            }
+
+            coVerifyOrder {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "42",
+                )
+                configService.updateConfig(any())
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "17",
+                )
+            }
+        }
+
+        "postSettings restores an empty identity when clearing comparison start fails" {
+            val serverConfig = dashboardConfig(
+                settings = TestFixtures.settings().copy(
+                    inceptionDate = "2026-06-06",
+                    comparisonStartDate = "2026-06-07",
+                ),
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } throws
+                InvalidConfigurationException("configuration write rejected")
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
+            }
+
+            coVerifyOrder {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "",
+                )
+                configService.updateConfig(any())
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "",
+                )
+            }
+        }
+
+        "postSettings restores the prior identity when an unexpected config failure propagates" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } throws
+                IllegalStateException("configuration service unavailable")
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                snapshotId = 42,
+            )
+            coEvery {
+                tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+            } returns "17"
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                            FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.InternalServerError
+            }
+
+            coVerifyOrder {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "42",
+                )
+                configService.updateConfig(any())
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "17",
+                )
+            }
+        }
+
+        "postSettings fails closed when accepted identity restoration fails" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } throws
+                InvalidConfigurationException("configuration write rejected")
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                snapshotId = 42,
+            )
+            coEvery {
+                tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+            } returns "17"
+            coEvery {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "17",
+                )
+            } throws IllegalStateException("metadata store unavailable")
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                            FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.InternalServerError
+            }
+
+            coVerifyOrder {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "42",
+                )
+                configService.updateConfig(any())
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "17",
+                )
+            }
+        }
+
+        "postSettings restores the prior identity before rethrowing cancellation" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } throws
+                CancellationException("settings update cancelled")
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                snapshotId = 42,
+            )
+            coEvery {
+                tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+            } returns "17"
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                            FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.InternalServerError
+            }
+
+            coVerifyOrder {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "42",
+                )
+                configService.updateConfig(any())
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "17",
+                )
+            }
+        }
+
+        "postSettings surfaces cancellation rollback failure" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } throws
+                CancellationException("settings update cancelled")
+            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
+                status = ComparisonProposalStatus.VERIFIED,
+                timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                snapshotId = 42,
+            )
+            coEvery {
+                tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+            } returns "17"
+            coEvery {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "17",
+                )
+            } throws IllegalStateException("metadata store unavailable")
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                            FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.InternalServerError
+            }
+
+            coVerifyOrder {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "42",
+                )
+                configService.updateConfig(any())
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    "17",
+                )
+            }
+        }
+
+        "postSettings rethrows cancellation without rollback when comparison start is unchanged" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } throws
+                CancellationException("settings update cancelled")
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.InternalServerError
+            }
+
+            coVerify(exactly = 1) { configService.updateConfig(any()) }
+            coVerify(exactly = 0) {
+                tradeHistoryService.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID, any())
             }
         }
 

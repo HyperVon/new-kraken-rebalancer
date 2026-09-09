@@ -108,7 +108,13 @@ class InceptionDiscoveryService(
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
                 )
             }
-            val nearbySnapshot = findClosestSnapshot(effectiveStart)
+            val nearbySnapshot = if (comparisonStart != null) {
+                // An accepted proposal is an exact snapshot choice, not a request to substitute
+                // another nearby observation after retention or duplicate-timestamp changes.
+                findAcceptedComparisonSnapshot(effectiveStart)
+            } else {
+                findClosestSnapshot(effectiveStart)
+            }
             // A snapshot from a different allocation universe (e.g. a prior approval
             // before a configuration change) must not be adopted as the configured
             // anchor: the recovery service rejects the same snapshot and reports the
@@ -447,6 +453,25 @@ class InceptionDiscoveryService(
             return before
         }
         return null
+    }
+
+    private suspend fun findAcceptedComparisonSnapshot(targetTime: Instant): PortfolioSnapshot? {
+        val storedId = tradeRepository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        if (storedId != null) {
+            val id = storedId.toIntOrNull() ?: return null
+            return tradeRepository.getSnapshotById(id)?.takeIf { it.timestamp == targetTime }
+        }
+
+        // Legacy settings have no identity metadata. An exact timestamp is safe only when it
+        // identifies one retained row; duplicate timestamps remain unavailable rather than
+        // silently selecting a different candidate.
+        return tradeRepository
+            .getSnapshotsInRange(targetTime, targetTime)
+            .filter { it.timestamp == targetTime }
+            .singleOrNull()
     }
 
     companion object {

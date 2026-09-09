@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.HistoryStats
@@ -10,14 +11,19 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RewardsOverTime
 import com.gemini.krakenbot.model.RewardsOverTimePoint
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.util.PrecisionConstants
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.security.MessageDigest
 import java.time.Instant
 
 class TradeHistoryQueryService(
@@ -28,6 +34,33 @@ class TradeHistoryQueryService(
     private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
     private val fundingProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
 ) {
+    private val proposalSearchMutex = Mutex()
+
+    private data class ProposalCursor(val epochMillis: Long, val ordinal: Int) {
+        fun encode(): String = "$epochMillis:$ordinal"
+
+        companion object {
+            fun parse(raw: String): ProposalCursor? {
+                val parts = raw.split(':')
+                return when (parts.size) {
+                    1 -> parts[0].toLongOrNull()?.let { ProposalCursor(it, 0) }
+
+                    2 -> {
+                        val epochMillis = parts[0].toLongOrNull()
+                        val ordinal = parts[1].toIntOrNull()
+                        if (epochMillis != null && ordinal != null && ordinal >= 0) {
+                            ProposalCursor(epochMillis, ordinal)
+                        } else {
+                            null
+                        }
+                    }
+
+                    else -> null
+                }
+            }
+        }
+    }
+
     suspend fun getHistory(): List<PortfolioSnapshot> = repository.load()
 
     suspend fun getLatestSnapshot(): PortfolioSnapshot? = repository.getLatestSnapshot()
@@ -67,6 +100,9 @@ class TradeHistoryQueryService(
 
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
+        private const val PROPOSAL_SEARCH_VERSION = "2"
+        private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
+        private val OPEN_ENDED_RANGE_END = Instant.ofEpochMilli(Long.MAX_VALUE)
     }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, Instant.now())
@@ -79,24 +115,52 @@ class TradeHistoryQueryService(
         val orderedSnapshots = snapshots.sortedBy { it.timestamp }
         val inceptionResolution = inceptionDiscoveryService?.resolveInception()
         val result = calculateComparison(orderedSnapshots, inceptionResolution)
+        // A later comparison start is actionable only alongside an explicit strategy inception.
+        // Auto-detected inception is display-only until the operator supplies that anchor.
         if (result.availability == ComparisonAvailability.UNAVAILABLE &&
-            result.unavailableReason in PROPOSAL_ELIGIBLE_REASONS
+            result.unavailableReason in PROPOSAL_ELIGIBLE_REASONS &&
+            inceptionResolution?.isAutoDetected != true
         ) {
             // Window-independent: the proposal must not change when the user
             // zooms the History chart, so the scan reads the full retained
             // snapshot range instead of the display window.
-            val proposal =
-                findVerifiedLaterComparisonStart(
-                    inceptionResolution?.inceptionTime ?: Instant.EPOCH,
-                )
-            if (proposal != null) return result.copy(proposedBaselineTimestamp = proposal)
+            val proposal = findLaterComparisonStartProposal(
+                startAfter = inceptionResolution?.inceptionTime ?: Instant.EPOCH,
+                inceptionResolution = inceptionResolution,
+            )
+            return result.copy(
+                proposedBaselineTimestamp = proposal.timestamp,
+                proposalSearchStatus = proposal.status,
+            )
         }
         return result
+    }
+
+    /**
+     * Applies the same comparison-availability policy used by History before exposing a
+     * Settings proposal. Recovery status alone is not sufficient: a confirmed baseline can still
+     * be followed by an ownership or reconciliation failure in the retained history.
+     */
+    suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? {
+        val inceptionResolution = inceptionDiscoveryService?.resolveInception()
+        // An auto-detected inception is display-only until the operator supplies an explicit
+        // strategy start; Settings must not expose an approval action for it.
+        if (inceptionResolution?.isAutoDetected == true) return null
+        val snapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: Instant.EPOCH)
+        if (snapshots.size < 2) return null
+        val current = calculateComparison(snapshots, inceptionResolution)
+        if (current.availability != ComparisonAvailability.UNAVAILABLE ||
+            current.unavailableReason !in PROPOSAL_ELIGIBLE_REASONS
+        ) {
+            return null
+        }
+        return findLaterComparisonStartProposal(after, inceptionResolution)
     }
 
     private suspend fun calculateComparison(
         orderedSnapshots: List<PortfolioSnapshot>,
         inceptionResolution: InceptionResolution?,
+        preparedFundingProvenance: FundingProvenanceResolver? = null,
     ): RebalancerComparison {
         val firstSnapshot = orderedSnapshots.first()
         val lastSnapshot = orderedSnapshots.last()
@@ -197,51 +261,294 @@ class TradeHistoryQueryService(
             inceptionSnapshot = inceptionSnapshot,
             knownInceptionTime = inceptionResolution?.inceptionTime,
             priceProvider = priceProvider,
-            provenanceResolver = fundingProvenanceResolver,
+            provenanceResolver = preparedFundingProvenance ?: fundingProvenanceResolver,
         )
     }
 
     /**
      * Scans retained snapshots at/after [after] for the earliest anchor that
-     * yields a fully verified comparison. Read-only; see the list-based overload.
+     * yields a fully verified comparison. It may persist bounded search progress; see the
+     * list-based implementation below.
      */
-    suspend fun findVerifiedLaterComparisonStart(after: Instant): Instant? = findVerifiedLaterComparisonStart(
-        repository.getSnapshotsInRange(after, Instant.ofEpochMilli(Long.MAX_VALUE)).sortedBy { it.timestamp },
-        after,
-    )
+    suspend fun findVerifiedLaterComparisonStart(after: Instant): Instant? = findLaterComparisonStartProposal(
+        startAfter = after,
+        inceptionResolution = null,
+    ).timestamp
 
     /**
      * Scans retained snapshots after [startAfter] for the earliest anchor that
      * yields a fully verified comparison. Each trial re-runs the complete
-     * reconciliation pipeline (repository data only, no network), so a
-     * returned timestamp is evidence-backed rather than "the oldest snapshot
-     * we still have". Window-independent: trials cover all retained snapshots,
-     * never just the requested display range.
+     * reconciliation pipeline; one batched funding-provenance preparation may
+     * refresh authoritative evidence within its short cache window. A returned
+     * timestamp is evidence-backed rather than "the oldest snapshot we still
+     * have". Window-independent: trials cover all retained snapshots, never
+     * just the requested display range.
      */
-    private suspend fun findVerifiedLaterComparisonStart(
+    private suspend fun findLaterComparisonStartProposal(
+        startAfter: Instant,
+        inceptionResolution: InceptionResolution?,
+    ): ComparisonStartProposal {
+        return proposalSearchMutex.withLock {
+            // Reload all economic evidence after acquiring the mutex. A concurrent Settings and
+            // History request must not fingerprint a stale snapshot list and then overwrite newer
+            // durable progress with an older cursor.
+            val orderedSnapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: startAfter)
+            val candidates = orderedSnapshots.filter { it.timestamp > startAfter }
+            val predecessorSnapshot = candidates.firstOrNull()?.let { repository.getSnapshotBefore(it.timestamp) }
+            val fingerprint = proposalEvidenceFingerprint(
+                orderedSnapshots = orderedSnapshots,
+                startAfter = startAfter,
+                inceptionResolution = inceptionResolution,
+                predecessorSnapshot = predecessorSnapshot,
+            )
+            val storedFingerprint = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT,
+            )
+            val storedStatus = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS)
+            val storedCursor = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS,
+            )
+            val storedFundingEvidenceFingerprint = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT,
+            ).orEmpty()
+            val canResume = storedFingerprint == fingerprint
+            val preparedFundingProvenance = if (candidates.isNotEmpty()) {
+                // Pin one immutable provenance snapshot for the complete bounded scan. Passing
+                // it into every trial prevents a candidate loop from issuing one network-backed
+                // funding request per reconciliation attempt.
+                fundingProvenanceResolver.prepare(
+                    ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END),
+                )
+            } else {
+                null
+            }
+            val fundingEvidenceFingerprint = preparedFundingProvenance?.evidenceFingerprint
+            val fundingEvidenceChanged = fundingEvidenceFingerprint != null &&
+                fundingEvidenceFingerprint != storedFundingEvidenceFingerprint
+            if (preparedFundingProvenance?.preparationFailure != null) {
+                persistProposalSearchState(
+                    fingerprint = fingerprint,
+                    status = ComparisonProposalStatus.INCOMPLETE,
+                    cursor = candidates.proposalCursorAt(0).encode(),
+                    fundingEvidenceFingerprint = null,
+                )
+                return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+            }
+            if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name) {
+                storedCursor?.let(ProposalCursor::parse)?.let { cursor ->
+                    val verifiedIndex = candidates.indexOfProposalCursor(cursor)
+                    if (verifiedIndex >= 0) {
+                        return@withLock ComparisonStartProposal(
+                            status = ComparisonProposalStatus.VERIFIED,
+                            timestamp = candidates[verifiedIndex].timestamp,
+                            snapshotId = repository.getSyncMetadata(
+                                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
+                            )?.toIntOrNull(),
+                        )
+                    }
+                }
+            }
+            if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.EXHAUSTED.name) {
+                return@withLock ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED)
+            }
+
+            val resumeIndex = if (canResume && !fundingEvidenceChanged &&
+                storedStatus == ComparisonProposalStatus.INCOMPLETE.name
+            ) {
+                storedCursor?.let(ProposalCursor::parse)
+                    ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
+                    ?.takeIf { it >= 0 } ?: 0
+            } else {
+                0
+            }
+            var index = resumeIndex
+            var trials = 0
+            while (index < candidates.size && trials < PROPOSAL_MAX_TRIALS) {
+                val candidate = candidates[index]
+                val trial = calculateComparison(
+                    candidates.drop(index),
+                    InceptionResolution(
+                        inceptionTime = candidate.timestamp,
+                        inceptionSnapshot = candidate,
+                        isAutoDetected = false,
+                    ),
+                    preparedFundingProvenance = preparedFundingProvenance,
+                )
+                trials++
+                if (trial.availability == ComparisonAvailability.AVAILABLE) {
+                    val candidateCursor = candidates.proposalCursorAt(index)
+                    val candidateSnapshotId = repository.getSnapshotId(
+                        candidate.timestamp,
+                        candidateCursor.ordinal,
+                    )
+                    persistProposalSearchState(
+                        fingerprint = fingerprint,
+                        status = ComparisonProposalStatus.VERIFIED,
+                        cursor = candidateCursor.encode(),
+                        snapshotId = candidateSnapshotId,
+                        fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+                    )
+                    return@withLock ComparisonStartProposal(
+                        status = ComparisonProposalStatus.VERIFIED,
+                        timestamp = candidate.timestamp,
+                        snapshotId = candidateSnapshotId,
+                    )
+                }
+                // Advance exactly one candidate. A trial's unavailableAt is a failure point in
+                // that trial, not proof that every earlier retained candidate is invalid.
+                index++
+            }
+            val status = if (index < candidates.size) {
+                ComparisonProposalStatus.INCOMPLETE
+            } else {
+                ComparisonProposalStatus.EXHAUSTED
+            }
+            persistProposalSearchState(
+                fingerprint = fingerprint,
+                status = status,
+                cursor = if (status == ComparisonProposalStatus.INCOMPLETE) {
+                    candidates.proposalCursorAt(index).encode()
+                } else {
+                    PROPOSAL_CURSOR_EXHAUSTED
+                },
+                fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+            )
+            ComparisonStartProposal(status)
+        }
+    }
+
+    private suspend fun loadAllSnapshots(from: Instant): List<PortfolioSnapshot> =
+        repository.getAllSnapshotsInRange(from, OPEN_ENDED_RANGE_END).sortedBy { it.timestamp }
+
+    private fun List<PortfolioSnapshot>.proposalCursorAt(index: Int): ProposalCursor {
+        val timestamp = this[index].timestamp
+        val ordinal = subList(0, index).count { it.timestamp == timestamp }
+        return ProposalCursor(timestamp.toEpochMilli(), ordinal)
+    }
+
+    private fun List<PortfolioSnapshot>.indexOfProposalCursor(cursor: ProposalCursor): Int {
+        var ordinal = 0
+        for (index in indices) {
+            if (this[index].timestamp.toEpochMilli() != cursor.epochMillis) continue
+            if (ordinal == cursor.ordinal) return index
+            ordinal++
+        }
+        return -1
+    }
+
+    private suspend fun persistProposalSearchState(
+        fingerprint: String,
+        status: ComparisonProposalStatus,
+        cursor: String,
+        snapshotId: Int? = null,
+        fundingEvidenceFingerprint: String?,
+    ) {
+        repository.setSyncMetadataAtomically(
+            mapOf(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT to fingerprint,
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS to status.name,
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS to cursor,
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID to snapshotId?.toString().orEmpty(),
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT to
+                    fundingEvidenceFingerprint.orEmpty(),
+            ),
+        )
+    }
+
+    /**
+     * The cursor is valid only for this configuration, effective start, account scope, and
+     * evidence revision. The digest contains the complete retained rows rather than only the
+     * display window so zooming cannot skip or reuse a candidate incorrectly.
+     */
+    private suspend fun proposalEvidenceFingerprint(
         orderedSnapshots: List<PortfolioSnapshot>,
         startAfter: Instant,
-    ): Instant? {
-        val candidates = orderedSnapshots.filter { it.timestamp > startAfter }
-        var index = 0
-        var trials = 0
-        while (index < candidates.size && trials < PROPOSAL_MAX_TRIALS) {
-            val candidate = candidates[index]
-            val trial = calculateComparison(
-                candidates.drop(index),
-                InceptionResolution(
-                    inceptionTime = candidate.timestamp,
-                    inceptionSnapshot = candidate,
-                    isAutoDetected = false,
-                ),
+        inceptionResolution: InceptionResolution?,
+        predecessorSnapshot: PortfolioSnapshot?,
+    ): String {
+        val trades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
+        val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
+        val candidateTrades = trades.filter { it.success && !it.dryRun }
+        val knownOrderTxids = orderIntentRepository
+            ?.getKnownRebalancerOrderIdentities(
+                orderTxids = candidateTrades.mapNotNull { it.orderTxid?.takeIf(String::isNotBlank) }.toSet(),
+                clientOrderIds = candidateTrades.mapNotNull { it.clientOrderId?.takeIf(String::isNotBlank) }.toSet(),
             )
-            trials++
-            if (trial.availability == ComparisonAvailability.AVAILABLE) return candidate.timestamp
-            val unavailableAt = trial.unavailableAt ?: candidate.timestamp
-            val nextIndex = candidates.indexOfFirst { it.timestamp > unavailableAt }
-            index = if (nextIndex > index) nextIndex else index + 1
+            ?.orderTxids
+            .orEmpty()
+        val material = buildString {
+            append(PROPOSAL_SEARCH_VERSION).append('\u0000')
+            append(startAfter).append('\u0000')
+            append(inceptionResolution?.inceptionTime).append('\u0000')
+            append(repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT).orEmpty())
+                .append('\u0000')
+            append(repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST).orEmpty())
+                .append('\u0000')
+            append(repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS).orEmpty())
+                .append('\u0000')
+            append(repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_REASON).orEmpty())
+                .append('\u0000')
+            append(ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION).orEmpty())
+                .append('\u0000')
+            append(ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC).orEmpty())
+                .append('\u0000')
+            append(repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC).orEmpty())
+                .append('\u0000')
+            predecessorSnapshot?.let {
+                append("predecessor\n")
+                appendSnapshotDigest(it)
+            }
+            orderedSnapshots.forEach { appendSnapshotDigest(it) }
+            trades.sortedWith(compareBy({ it.timestamp }, { it.id ?: Int.MAX_VALUE }))
+                .forEach { appendTradeDigest(it) }
+            ledgers.sortedWith(compareBy({ it.time }, { it.ledgerId }))
+                .forEach { appendLedgerDigest(it) }
+            knownOrderTxids.sorted().forEach { append("order=$it\n") }
         }
-        return null
+        return sha256Hex(material)
+    }
+
+    private fun StringBuilder.appendSnapshotDigest(snapshot: PortfolioSnapshot) {
+        append("snapshot|").append(snapshot.timestamp).append('|')
+            .append(snapshot.balancesObservedAt).append('|')
+            .append(snapshot.totalValueUSD.digestValue()).append('\n')
+        snapshot.assets.toSortedMap().forEach { (key, asset) ->
+            append("asset|").append(key).append('|').append(asset.symbol.value).append('|')
+                .append(asset.balance.digestValue()).append('|').append(asset.price.digestValue()).append('|')
+                .append(asset.valueUSD.digestValue()).append('|').append(asset.targetPercent.digestValue()).append('|')
+                .append(asset.currentPercent.digestValue()).append('|')
+                .append(asset.deviationPercent.digestValue()).append('|')
+                .append(asset.deviationUSD.digestValue()).append('\n')
+        }
+    }
+
+    private fun StringBuilder.appendTradeDigest(trade: TradeRecord) {
+        append("trade|").append(trade.id).append('|').append(trade.timestamp).append('|')
+            .append(trade.pair).append('|').append(trade.side).append('|').append(trade.symbol).append('|')
+            .append(trade.volume.digestValue()).append('|').append(trade.usdAmount.digestValue()).append('|')
+            .append(trade.success).append('|').append(trade.dryRun).append('|')
+            .append(trade.errorMessage).append('|').append(trade.price.digestValue()).append('|')
+            .append(trade.fee.digestValue()).append('|').append(trade.slippagePercent?.digestValue()).append('|')
+            .append(trade.expectedPrice?.digestValue()).append('|').append(trade.source).append('|')
+            .append(trade.cycleId).append('|').append(trade.orderTxid).append('|').append(trade.tradeId).append('|')
+            .append(trade.clientOrderId).append('|').append(trade.submissionState).append('\n')
+    }
+
+    private fun StringBuilder.appendLedgerDigest(event: LedgerEvent) {
+        append("ledger|").append(event.ledgerId).append('|').append(event.refid).append('|')
+            .append(event.time).append('|').append(event.type).append('|').append(event.subtype).append('|')
+            .append(event.aclass).append('|').append(event.asset).append('|').append(event.amount.digestValue())
+            .append('|').append(event.fee.digestValue()).append('|').append(event.balance.digestValue()).append('|')
+            .append(event.hasAuthoritativeBalance).append('|').append(event.hasAuthoritativeFee).append('|')
+            .append(event.hasValidFee).append('\n')
+    }
+
+    private fun BigDecimal.digestValue(): String =
+        (if (signum() == 0) BigDecimal.ZERO else this).stripTrailingZeros().toPlainString()
+
+    private fun sha256Hex(material: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray(Charsets.UTF_8))
+        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
     private fun historicalPriceProvider() = HistoricalPriceProvider { symbol, time ->

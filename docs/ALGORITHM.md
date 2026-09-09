@@ -688,6 +688,12 @@ the same external capital over time:
   evidence. A durable `CONFIRMED` record is not currently trusted until the active account scope is
   validated again. Snapshot/trade retention continues to skip pruning until a confirmed inception
   is stored, and then keeps the five-second pre-inception boundary required by replay.
+- **Baseline readiness is not comparison availability.** After a confirmed or manually approved
+  inception baseline, the current comparison still runs the full ownership, ledger, balance, and
+  historical-price reconciliation policy. If later evidence blocks that calculation, a serialized
+  bounded search advances through retained snapshots and persists `VERIFIED`, `INCOMPLETE`, or
+  `EXHAUSTED` progress. A verified later timestamp is an optional comparison anchor only; accepting
+  it preserves the original strategy inception and makes the same anchor explicit in configuration.
 - **Owner contributions after inception are invested by original inception value
   weights** (existing synthetic holdings untouched); only the new money moves.
   Confirmed card Buy Crypto transactions collapse into a single net owner contribution

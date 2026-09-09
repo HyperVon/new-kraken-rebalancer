@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.model.ComparisonProposalStatus
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.view.util.ActiveNav
@@ -108,7 +110,7 @@ class SettingsFormComponent {
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
-        laterStartProposal: Instant? = null,
+        laterStartProposal: ComparisonStartProposal? = null,
     ) {
         renderForm(body, config, errorMessage, csrfToken, paused, inceptionDisplay, laterStartProposal)
         renderSettingsScript()
@@ -121,7 +123,7 @@ class SettingsFormComponent {
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
-        laterStartProposal: Instant? = null,
+        laterStartProposal: ComparisonStartProposal? = null,
     ) {
         parent.div(CssClass.Layout.Container) {
             form {
@@ -168,7 +170,7 @@ class SettingsFormComponent {
     private fun DIV.renderGlobalParametersSection(
         config: AppConfig,
         inceptionDisplay: InceptionDisplayInfo,
-        laterStartProposal: Instant?,
+        laterStartProposal: ComparisonStartProposal?,
     ) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div(CssClass.Form.Grid2Col) {
@@ -197,12 +199,13 @@ class SettingsFormComponent {
                     p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_DATE_HINT }
                     renderDetectedInception(inceptionDisplay)
                 }
-                formGroup(ViewText.INCEPTION_COMPARISON_START, FormFields.COMPARISON_START_DATE) {
+                formGroup(ViewText.INCEPTION_COMPARISON_START, HtmlIds.COMPARISON_START_DATE_PICKER) {
                     input(type = hidden, name = FormFields.COMPARISON_START_DATE) {
                         id = FormFields.COMPARISON_START_DATE
                         value = config.settings.comparisonStartDate.orEmpty()
                     }
                     input(CssClass.Form.InputGlass, type = date) {
+                        id = HtmlIds.COMPARISON_START_DATE_PICKER
                         value = utcDate(config.settings.comparisonStartDate).orEmpty()
                         attributes[HtmlAttrs.ONCHANGE] =
                             "document.getElementById('${FormFields.COMPARISON_START_DATE}').value=this.value"
@@ -248,7 +251,7 @@ class SettingsFormComponent {
     private fun FlowContent.renderApprovedBaseline(
         config: AppConfig,
         display: InceptionDisplayInfo,
-        laterStartProposal: Instant?,
+        laterStartProposal: ComparisonStartProposal?,
     ) {
         when (display.status) {
             InceptionDisplayStatus.APPROVED_PENDING ->
@@ -257,30 +260,17 @@ class SettingsFormComponent {
                     +display.toDisplayText()
                 }
 
-            InceptionDisplayStatus.APPROVED_READY ->
+            InceptionDisplayStatus.APPROVED_READY -> {
                 p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
+                if (laterStartProposal != null) {
+                    p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_APPROVED_BASELINE_COMPARISON_BLOCKED }
+                    renderLaterStartProposal(laterStartProposal)
+                }
+            }
 
             InceptionDisplayStatus.APPROVED_UNAVAILABLE -> {
                 p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
-                laterStartProposal?.let { proposal ->
-                    div(CssClass.Form.InceptionRecommendation) {
-                        div(CssClass.Form.InceptionRecommendationHeader) {
-                            div(CssClass.Form.InceptionRecommendationCopy) {
-                                p(CssClass.Form.InceptionRecommendationLabel) {
-                                    +ViewText.INCEPTION_PROPOSED_LATER_START_LABEL
-                                }
-                                p(CssClass.Form.InceptionRecommendationDate) { +proposal.toString() }
-                            }
-                            button(CssClass.Button.Secondary, type = button) {
-                                attributes[HtmlAttrs.TITLE] = ViewText.INCEPTION_USE_PROPOSED_START_TITLE
-                                attributes[HtmlAttrs.ONCLICK] =
-                                    "document.getElementById('${FormFields.COMPARISON_START_DATE}')" +
-                                    ".value='$proposal';this.form.requestSubmit()"
-                                +ViewText.INCEPTION_USE_PROPOSED_START
-                            }
-                        }
-                    }
-                }
+                renderLaterStartProposal(laterStartProposal)
             }
 
             else -> Unit
@@ -289,6 +279,44 @@ class SettingsFormComponent {
             p(CssClass.Form.SectionSubtitle) {
                 +"${ViewText.INCEPTION_COMPARISON_START}: $accepted"
             }
+        }
+    }
+
+    private fun FlowContent.renderLaterStartProposal(proposal: ComparisonStartProposal?) {
+        when (proposal?.status) {
+            null -> Unit
+
+            ComparisonProposalStatus.VERIFIED -> {
+                // Acceptance persists the exact retained snapshot identity. A legacy or
+                // partially-written cache without that identity is not actionable, so do not
+                // render a button that the POST endpoint must reject.
+                if (proposal.snapshotId == null) return
+                // ComparisonStartProposal enforces this invariant for VERIFIED values.
+                val timestamp = proposal.timestamp!!
+                div(CssClass.Form.InceptionRecommendation) {
+                    div(CssClass.Form.InceptionRecommendationHeader) {
+                        div(CssClass.Form.InceptionRecommendationCopy) {
+                            p(CssClass.Form.InceptionRecommendationLabel) {
+                                +ViewText.INCEPTION_PROPOSED_LATER_START_LABEL
+                            }
+                            p(CssClass.Form.InceptionRecommendationDate) { +timestamp.toString() }
+                        }
+                        button(CssClass.Button.Secondary, type = button) {
+                            attributes[HtmlAttrs.TITLE] = ViewText.INCEPTION_USE_PROPOSED_START_TITLE
+                            attributes[HtmlAttrs.ONCLICK] =
+                                "document.getElementById('${FormFields.COMPARISON_START_DATE}')" +
+                                ".value='$timestamp';this.form.requestSubmit()"
+                            +ViewText.INCEPTION_USE_PROPOSED_START
+                        }
+                    }
+                }
+            }
+
+            ComparisonProposalStatus.INCOMPLETE ->
+                p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_PROPOSAL_SEARCH_INCOMPLETE }
+
+            ComparisonProposalStatus.EXHAUSTED ->
+                p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_PROPOSAL_SEARCH_EXHAUSTED }
         }
     }
 

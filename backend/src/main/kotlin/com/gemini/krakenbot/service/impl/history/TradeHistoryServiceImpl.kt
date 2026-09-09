@@ -12,6 +12,7 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
@@ -135,6 +136,9 @@ class TradeHistoryServiceImpl(
 
     override suspend fun findVerifiedLaterComparisonStart(after: Instant): Instant? =
         queryService.findVerifiedLaterComparisonStart(after)
+
+    override suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? =
+        queryService.getComparisonStartProposal(after)
 
     override suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
         queryService.getRebalancerComparison(from, to)

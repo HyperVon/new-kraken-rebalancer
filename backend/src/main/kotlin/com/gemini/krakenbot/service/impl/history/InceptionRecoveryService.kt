@@ -336,10 +336,11 @@ class InceptionRecoveryService(
         }
 
     /**
-     * Clears automatic evidence whenever the explicit inception or comparison-start settings
-     * change. This is a metadata-only operation and is also used by the discovery path before it
-     * reads a cache. Returns true if evidence was cleared or updated due to configuration change;
-     * false otherwise.
+     * Clears automatic evidence whenever a recovery-scoped setting changes. This is a
+     * metadata-only operation and is also used by the discovery path before it reads a cache.
+     * Returns true if evidence was cleared or updated due to configuration change; false
+     * otherwise. The optional comparison anchor is query state and does not invalidate the
+     * approved strategy baseline.
      */
     suspend fun prepareForCurrentConfiguration(settings: Settings?): Boolean =
         prepareForCurrentConfigurationResult(settings).configurationChanged
@@ -433,14 +434,34 @@ class InceptionRecoveryService(
 
         val currentStatus = readStatus()
         if (currentStatus.status == InceptionRecoveryStatus.CONFIRMED) return@withLock currentStatus
-        if (requestedStart != null && recoveryStreamsComplete() && currentStatus.status in FINAL_BASELINE_FAILURES) {
-            // Established approved-start failures stay terminal until configuration changes;
-            // re-running the reconstruction would only repeat bounded network price lookups for
-            // the same fingerprint.
-            return@withLock currentStatus
+        val now = nowProvider()
+        val persistedHorizon = readHorizon()
+        var retryWithExpandedHorizon = false
+        if (requestedStart != null && recoveryStreamsComplete() &&
+            (currentStatus.status in FINAL_BASELINE_FAILURES || currentStatus.status == InceptionRecoveryStatus.FAILED)
+        ) {
+            // A failed approved-start reconstruction is reusable only while its local evidence
+            // is unchanged. The configuration fingerprint alone is insufficient: a later sync
+            // may add the missing anchor, ledger, trade identity, or price-bearing row without
+            // changing the operator's approved date. Keep the retry bounded by the normal
+            // interval below and retain all imported history. Include retained rows beyond the
+            // original recovery horizon so a later balance observation can become the retry
+            // anchor without repaginating already-complete private-history streams.
+            if (currentStatus.status in FINAL_BASELINE_FAILURES) {
+                val currentEvidence = approvedBaselineEvidenceFingerprint(
+                    InceptionDiscoveryService.parseInceptionDate(requestedStart) ?: Instant.EPOCH,
+                )
+                val failedEvidence = repository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT,
+                )
+                val evidenceUnchanged = !failedEvidence.isNullOrBlank() && failedEvidence == currentEvidence
+                if (evidenceUnchanged && !isTransientApprovedBaselineFailure(currentStatus.reason)) {
+                    return@withLock currentStatus
+                }
+            }
+            retryWithExpandedHorizon = true
         }
 
-        val now = nowProvider()
         val lastAttempt = repository
             .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC)
             ?.toLongOrNull()
@@ -448,11 +469,17 @@ class InceptionRecoveryService(
             return@withLock currentStatus
         }
 
-        val horizon = readHorizon() ?: now.also {
-            repository.setSyncMetadata(
-                SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
-                it.epochSecond.toString(),
-            )
+        val horizon = if (retryWithExpandedHorizon) {
+            // This is an evaluation-only expansion. Complete private-history streams were not
+            // repaginated, so the durable coverage horizon must remain the original bound.
+            maxOf(persistedHorizon ?: now, now)
+        } else {
+            persistedHorizon ?: now.also {
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
+                    it.epochSecond.toString(),
+                )
+            }
         }
         repository.setSyncMetadata(
             SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC,
@@ -639,12 +666,13 @@ class InceptionRecoveryService(
         val expectedUniverse = config.allocations
             .map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
             .toSet()
-        val nearbySnapshot = repository
-            .getSnapshotsInRange(
-                requestedStart.minusSeconds(InceptionDiscoveryService.MAX_ANCHOR_PROXIMITY_SECONDS),
-                requestedStart.plusSeconds(InceptionDiscoveryService.MAX_ANCHOR_PROXIMITY_SECONDS),
-            )
-            .minByOrNull { abs(it.timestamp.toEpochMilli() - requestedStart.toEpochMilli()) }
+        val nearbySnapshots = repository.getSnapshotsInRange(
+            requestedStart.minusSeconds(InceptionDiscoveryService.MAX_ANCHOR_PROXIMITY_SECONDS),
+            requestedStart.plusSeconds(InceptionDiscoveryService.MAX_ANCHOR_PROXIMITY_SECONDS),
+        )
+        val nearbySnapshot = nearbySnapshots.minByOrNull {
+            abs(it.timestamp.toEpochMilli() - requestedStart.toEpochMilli())
+        }
             // A snapshot from a different allocation universe (e.g. a prior approval before a
             // configuration change) must not be adopted as the anchor; reconstruction then reports
             // the specific universe failure instead.
@@ -652,7 +680,10 @@ class InceptionRecoveryService(
                 snapshot.assets.keys.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet() == expectedUniverse
             }
         if (nearbySnapshot != null) {
-            val nearbyId = repository.getSnapshotId(nearbySnapshot.timestamp)
+            val nearbyOrdinal = nearbySnapshots
+                .takeWhile { it !== nearbySnapshot }
+                .count { it.timestamp == nearbySnapshot.timestamp }
+            val nearbyId = repository.getSnapshotId(nearbySnapshot.timestamp, nearbyOrdinal)
             if (nearbyId != null) {
                 confirmApprovedBaseline(requestedStart, nearbyId)
                 return
@@ -673,6 +704,10 @@ class InceptionRecoveryService(
         ) {
             is BaselineResult.Failure -> {
                 clearApprovedBaselineEvidence()
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT,
+                    approvedBaselineEvidenceFingerprint(requestedStart),
+                )
                 setOverallStatus(baseline.status, baseline.reason)
             }
 
@@ -682,6 +717,7 @@ class InceptionRecoveryService(
                     SyncMetadataKeys.DETECTED_INCEPTION_SOURCE to INCEPTION_SOURCE_APPROVED,
                     SyncMetadataKeys.INCEPTION_RECOVERY_REASON to APPROVED_BASELINE_READY_REASON,
                     SyncMetadataKeys.INCEPTION_RECOVERY_STATUS to InceptionRecoveryStatus.CONFIRMED,
+                    SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT to "",
                 )
                 repository.saveSnapshotWithMetadata(
                     snapshot = baseline.snapshot,
@@ -704,6 +740,7 @@ class InceptionRecoveryService(
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, snapshotId.toString())
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, snapshotId.toString())
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_REASON, APPROVED_BASELINE_READY_REASON)
+        repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT, "")
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS, InceptionRecoveryStatus.CONFIRMED)
     }
 
@@ -1118,7 +1155,7 @@ class InceptionRecoveryService(
             backend = backend,
         ) ?: return BaselineResult.Failure(
             InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
-            "historical price unavailable",
+            HISTORICAL_PRICE_UNAVAILABLE_REASON,
         )
         val total = allocations.sumOf { allocation ->
             val symbol = Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase()
@@ -1443,6 +1480,7 @@ class InceptionRecoveryService(
             SyncMetadataKeys.INCEPTION_RECOVERY_BASELINE_SNAPSHOT_ID,
             SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID,
             SyncMetadataKeys.INCEPTION_RECOVERY_REASON,
+            SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT,
         ).forEach { repository.setSyncMetadata(it, "") }
         listOf(
             SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS,
@@ -1462,8 +1500,9 @@ class InceptionRecoveryService(
     }
 
     /**
-     * The recovery result depends on the approved inception/comparison anchors, tracked asset
-     * universe, and account identity. Store only a digest so configuration details and
+     * The recovery result depends on the approved inception, tracked asset universe, and account
+     * identity. The optional comparison anchor is evaluated by the comparison query and does not
+     * change the recovered strategy baseline. Store only a digest so configuration details and
      * credential material never enter the metadata table or logs.
      */
     internal fun configurationFingerprint(config: AppConfig, settings: Settings?, accountScope: String): String {
@@ -1475,13 +1514,64 @@ class InceptionRecoveryService(
             .joinToString(",")
         val material = listOf(
             settings?.inceptionDate?.trim().orEmpty(),
-            settings?.comparisonStartDate?.trim().orEmpty(),
             config.settings.simulation.toString(),
             allocationShape,
             accountScope,
         ).joinToString("\u0000")
         val digest = MessageDigest.getInstance("SHA-256").digest(material.toByteArray(Charsets.UTF_8))
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    /**
+     * Digests the local evidence that can change an approved-start reconstruction without a
+     * settings change. This is deliberately financial-row data only; credentials and raw account
+     * scope details remain represented by their existing digests.
+     */
+    private suspend fun approvedBaselineEvidenceFingerprint(requestedStart: Instant): String {
+        val upperBound = Instant.ofEpochMilli(Long.MAX_VALUE)
+        val trades = repository.getTradesInRange(Instant.EPOCH, upperBound)
+        val snapshots = repository.getAllSnapshotsInRange(Instant.EPOCH, upperBound)
+        val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, upperBound)
+        val material = buildString {
+            append(CURRENT_RECOVERY_VERSION).append('\u0000')
+            append("full-retained-approved-evidence-v2").append('\u0000')
+            append(requestedStart).append('\u0000')
+            append(repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT).orEmpty())
+                .append('\u0000')
+            append(repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST).orEmpty())
+                .append('\u0000')
+            snapshots.sortedBy { it.timestamp }.forEach { snapshot ->
+                append("snapshot|").append(snapshot.timestamp).append('|')
+                    .append(snapshot.balancesObservedAt).append('|')
+                    .append(snapshot.totalValueUSD.digestScale()).append('\n')
+                snapshot.assets.toSortedMap().forEach { (asset, row) ->
+                    append("asset|").append(asset).append('|').append(row.symbol.value).append('|')
+                        .append(row.balance.digestScale()).append('|').append(row.price.digestScale()).append('|')
+                        .append(row.valueUSD.digestScale()).append('|').append(row.targetPercent.digestScale())
+                        .append('|').append(row.currentPercent.digestScale()).append('|')
+                        .append(row.deviationPercent.digestScale()).append('|')
+                        .append(row.deviationUSD.digestScale()).append('\n')
+                }
+            }
+            trades.sortedWith(compareBy({ it.timestamp }, { it.id ?: Int.MAX_VALUE })).forEach { trade ->
+                append("trade|").append(trade.id).append('|').append(trade.timestamp).append('|')
+                    .append(trade.pair).append('|').append(trade.side).append('|').append(trade.symbol).append('|')
+                    .append(trade.volume.digestScale()).append('|').append(trade.usdAmount.digestScale())
+                    .append('|').append(trade.success).append('|').append(trade.dryRun).append('|')
+                    .append(trade.price.digestScale()).append('|').append(trade.fee.digestScale()).append('|')
+                    .append(trade.source).append('|').append(trade.cycleId).append('|').append(trade.orderTxid)
+                    .append('|').append(trade.tradeId).append('|').append(trade.clientOrderId).append('\n')
+            }
+            ledgers.sortedWith(compareBy({ it.time }, { it.ledgerId })).forEach { event ->
+                append("ledger|").append(event.ledgerId).append('|').append(event.refid).append('|')
+                    .append(event.time).append('|').append(event.type).append('|').append(event.subtype).append('|')
+                    .append(event.asset).append('|').append(event.amount.digestScale()).append('|')
+                    .append(event.fee.digestScale()).append('|').append(event.balance.digestScale()).append('|')
+                    .append(event.hasAuthoritativeBalance).append('|').append(event.hasAuthoritativeFee).append('|')
+                    .append(event.hasValidFee).append('\n')
+            }
+        }
+        return sha256Hex(material)
     }
 
     private suspend fun setOverallStatus(status: String, reason: String) {
@@ -1491,6 +1581,17 @@ class InceptionRecoveryService(
             reason.take(MAX_REASON_LENGTH),
         )
     }
+
+    /**
+     * These failures depend on evidence outside the local financial rows. Retry them on the
+     * normal bounded interval without re-paginating complete history; structural contradictions
+     * remain terminal until their local evidence or recovery scope changes.
+     */
+    private fun isTransientApprovedBaselineFailure(reason: String?): Boolean =
+        reason == HISTORICAL_PRICE_UNAVAILABLE_REASON ||
+            reason?.startsWith("ledger provenance unresolved:", ignoreCase = true) == true ||
+            reason?.contains("unresolved funding provenance", ignoreCase = true) == true ||
+            reason?.equals("Funding legs in card group cannot be proven external", ignoreCase = true) == true
 
     private suspend fun clearCandidateEvidence() {
         listOf(
@@ -1608,6 +1709,7 @@ class InceptionRecoveryService(
             InceptionRecoveryStatus.AMBIGUOUS,
             InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
         )
+        private const val HISTORICAL_PRICE_UNAVAILABLE_REASON = "historical price unavailable"
         private const val APPROVED_BASELINE_READY_REASON = "approved-start baseline ready"
 
         private const val STREAM_COMPLETE = "COMPLETE"

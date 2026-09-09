@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -23,7 +24,6 @@ import kotlinx.html.body
 import kotlinx.html.head
 import kotlinx.html.title
 import java.math.BigDecimal
-import java.time.Instant
 
 class DashboardView(
     private val shellComponent: DashboardShellComponent,
@@ -44,7 +44,7 @@ class DashboardView(
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
-        laterStartProposal: Instant? = null,
+        laterStartProposal: ComparisonStartProposal? = null,
     ) {
         html.head {
             commonMetadataAndStyles()
@@ -63,7 +63,7 @@ class DashboardView(
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
-        laterStartProposal: Instant? = null,
+        laterStartProposal: ComparisonStartProposal? = null,
     ) {
         settingsFormComponent.renderForm(
             parent,

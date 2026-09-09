@@ -177,13 +177,43 @@ class HistoryComparisonChartTest : StringSpec() {
             registerHistoryGlobals()
             try {
                 val comparison = mockUnavailableComparison("INCEPTION_BASELINE_UNAVAILABLE")
-                    .copy(proposedBaselineTimestamp = "2026-08-01T10:30:00Z")
+                    .copy(
+                        proposedBaselineTimestamp = "2026-08-01T10:30:00Z",
+                        proposalSearchStatus = "VERIFIED",
+                    )
 
                 buildRebalancerComparisonChart(comparison)
 
                 val unavailableDiv = document.getElementById("comparison-availability-message")
                 unavailableDiv?.textContent shouldContain
                     "Earliest verified comparison start: 2026-08-01 10:30 UTC"
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "buildRebalancerComparisonChart distinguishes incomplete and exhausted proposal scans" {
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.chartsDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            registerHistoryGlobals()
+            try {
+                val unavailableDiv = document.getElementById("comparison-availability-message")
+                buildRebalancerComparisonChart(
+                    mockUnavailableComparison("AMBIGUOUS_TRADE_OWNERSHIP")
+                        .copy(proposalSearchStatus = "INCOMPLETE"),
+                )
+                unavailableDiv?.textContent shouldContain
+                    "Later-start verification is still in progress"
+
+                buildRebalancerComparisonChart(
+                    mockUnavailableComparison("AMBIGUOUS_TRADE_OWNERSHIP")
+                        .copy(proposalSearchStatus = "EXHAUSTED"),
+                )
+                unavailableDiv?.textContent shouldContain
+                    "No retained later start passed complete reconciliation"
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()

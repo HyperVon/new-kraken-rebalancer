@@ -206,8 +206,8 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
 | **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Must be positive (any value > 0). |
 | **Drawdown Activation Threshold (%)** | Minimum drawdown before cash deployment begins (deadband). Drawdowns below this deploy 0% cash. Bounded **0–100**. |
-| **Inception Date (Optional)** | Manual strategy-start anchor. Use the UTC date picker and save, or review the compact **Recommended strategy start** row and select **Use estimated start** to approve the exact timestamp in one step. Select **Show evidence** when you want the supporting history details; they stay collapsed by default to keep the form compact. The estimate remains explicitly user-approved evidence, not automatic proof of bot ownership. If empty, the app recovers bounded Kraken trade/ledger history and confirms inception only when coverage, bot ownership, funding provenance, and a historical-price baseline all agree. Stale evidence from another account or simulation scope is withheld, display reads never trigger Kraken recovery, and allocation changes do not falsely claim a new strategy start. Approving a start also rebuilds the Buy & Hold baseline from Kraken history. When history at the approved instant cannot be verified, Settings shows the honest reason and offers the earliest verified later comparison start; accepting it anchors the comparison at that snapshot. |
-| **Comparison Start (Optional)** | UTC anchor for the Buy & Hold comparison. Set automatically when you accept a verified start proposal; accepts a full UTC timestamp pasted manually. Requires an inception date at or before it. |
+| **Inception Date (Optional)** | Manual strategy-start anchor. Use the UTC date picker and save, or review the compact **Recommended strategy start** row and select **Use estimated start** to approve the exact timestamp in one step. Select **Show evidence** when you want the supporting history details; they stay collapsed by default to keep the form compact. The estimate remains explicitly user-approved evidence, not automatic proof of bot ownership. If empty, the app recovers bounded Kraken trade/ledger history and confirms inception only when coverage, bot ownership, funding provenance, and a historical-price baseline all agree. Stale evidence from another account or simulation scope is withheld, display reads never trigger Kraken recovery, and allocation changes do not falsely claim a new strategy start. Approving a start also rebuilds the Buy & Hold baseline from Kraken history. A confirmed baseline can still have an unavailable comparison if later ownership or accounting cannot be reconciled; Settings then offers the earliest verified later comparison start when one is found. |
+| **Comparison Start (Optional)** | UTC anchor for the Buy & Hold comparison. Set automatically when you accept a verified start proposal. The form displays a UTC date, while an accepted proposal preserves its exact UTC timestamp. Requires an inception date at or before it. |
 
 ### Safety modes
 
@@ -327,10 +327,10 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 The first chart below the summary cards compares what the rebalancer actually
 achieved against a **synthetic buy-and-hold** strategy:
 
-- **Buy & Hold** starts from the strategy inception baseline snapshot across all view windows.
+- **Buy & Hold** starts from the effective comparison baseline snapshot across all view windows: the strategy inception baseline unless you explicitly accept a verified later comparison start.
   Strategy-neutral flows (legacy staking rewards, crypto dividends, modern `earn/reward`, USD cash
   dividends, adjustments, consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
-  identically to the actual portfolio. Genuine owner contributions after inception are instead
+  identically to the actual portfolio. Genuine owner contributions after the effective comparison baseline are instead
   invested by the original inception weights, and owner withdrawals shrink the whole synthetic
   portfolio proportionally — so the cash event itself never invents alpha for either side.
   When a documented card purchase links an external funding row, USD spend, and purchased-asset
@@ -382,7 +382,14 @@ into one owner capital contribution net of fees (with non-USD fees valued at eve
   outperformance or underperformance (e.g. `+$5,000.00 (+4.76%)`).
 
 A caption below the chart reads: *Based on stored snapshots and recorded trades.
-Starting quantities are anchored to the strategy inception baseline.*
+Starting quantities are anchored to the effective comparison baseline; the original strategy inception remains preserved separately.*
+
+The strategy inception and comparison start are separate. A confirmed strategy
+baseline can remain unavailable for comparison when later trade ownership or
+balance reconciliation is still uncertain. In that case, History may show the
+earliest verified later start, or report that the bounded search is still in
+progress or has exhausted the retained candidates. Refreshing continues an
+incomplete search; it does not move the strategy inception automatically.
 
 The comparison cannot be computed when:
 

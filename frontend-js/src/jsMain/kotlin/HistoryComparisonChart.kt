@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.api.RebalancerComparison
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
@@ -37,7 +38,16 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
                     ViewText.COMPARISON_PROPOSED_LATER_START.replace("<date>", formatUtcInstant(verified))
                 }
                 .orEmpty()
-            unavailableDiv.textContent = "${ViewText.COMPARISON_UNAVAILABLE_PREFIX}$message $proposalLine".trim()
+            val searchLine = when (comparison.proposalSearchStatus) {
+                ComparisonProposalStatus.INCOMPLETE.name -> ViewText.COMPARISON_PROPOSAL_SEARCH_INCOMPLETE
+                ComparisonProposalStatus.EXHAUSTED.name -> ViewText.COMPARISON_PROPOSAL_SEARCH_EXHAUSTED
+                else -> ""
+            }
+            unavailableDiv.textContent = listOf(
+                "${ViewText.COMPARISON_UNAVAILABLE_PREFIX}$message",
+                proposalLine,
+                searchLine,
+            ).filter(String::isNotBlank).joinToString(" ")
             unavailableDiv.classList.add(CssClass.Utility.Visible.value)
         }
         return
