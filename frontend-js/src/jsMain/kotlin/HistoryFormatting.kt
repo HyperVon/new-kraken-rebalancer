@@ -38,4 +38,10 @@ internal fun formatFullTradeTime(timestamp: String): String =
 
 internal fun formatIntegerCount(count: Double): String = count.asDynamic().toLocaleString(EN_US).toString()
 
+/** Formats an ISO instant as a UTC date-time string, e.g. "2025-12-22 02:33 UTC". */
+internal fun formatUtcInstant(timestamp: String): String {
+    val iso = kotlin.js.Date(kotlin.js.Date.parse(timestamp)).toISOString()
+    return iso.substring(0, 16).replace('T', ' ') + " UTC"
+}
+
 internal const val EN_US = "en-US"

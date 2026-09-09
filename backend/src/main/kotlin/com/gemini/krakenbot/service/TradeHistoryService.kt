@@ -58,5 +58,12 @@ interface TradeHistoryService {
      */
     suspend fun getDetectedInceptionDisplayInfo(): InceptionDisplayInfo = InceptionDisplayInfo()
 
+    /**
+     * Earliest retained snapshot at/after [after] whose complete reconciliation
+     * yields an available Buy &amp; Hold comparison, or null when no verified
+     * later start exists. Read-only evidence scan; never mutates state.
+     */
+    suspend fun findVerifiedLaterComparisonStart(after: Instant): Instant? = null
+
     suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison
 }

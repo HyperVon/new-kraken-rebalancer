@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.HistoryStats
@@ -47,6 +48,25 @@ class TradeHistoryQueryService(
          * fails closed instead of borrowing a modern price.
          */
         const val CONTRIBUTION_PRICE_LOOKUP_SECONDS = 21600L
+
+        /**
+         * Comparison-start reasons where an accepted later anchor can genuinely
+         * fix the failure: the baseline itself is unverifiable or an
+         * ownership/reconciliation conflict sits between the requested start
+         * and retained history. Pending recovery is deliberately excluded —
+         * no proposal while reconstruction is still making progress.
+         */
+        private val PROPOSAL_ELIGIBLE_REASONS =
+            setOf(
+                ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
+                ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
+                ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED,
+                ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
+                ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+            )
+
+        /** Bounded proposal scan: at most this many full reconciliation trials per query. */
+        private const val PROPOSAL_MAX_TRIALS = 8
     }
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, Instant.now())
@@ -57,6 +77,27 @@ class TradeHistoryQueryService(
             return RebalancerComparisonCalculator.calculate(snapshots, emptyList())
         }
         val orderedSnapshots = snapshots.sortedBy { it.timestamp }
+        val inceptionResolution = inceptionDiscoveryService?.resolveInception()
+        val result = calculateComparison(orderedSnapshots, inceptionResolution)
+        if (result.availability == ComparisonAvailability.UNAVAILABLE &&
+            result.unavailableReason in PROPOSAL_ELIGIBLE_REASONS
+        ) {
+            // Window-independent: the proposal must not change when the user
+            // zooms the History chart, so the scan reads the full retained
+            // snapshot range instead of the display window.
+            val proposal =
+                findVerifiedLaterComparisonStart(
+                    inceptionResolution?.inceptionTime ?: Instant.EPOCH,
+                )
+            if (proposal != null) return result.copy(proposedBaselineTimestamp = proposal)
+        }
+        return result
+    }
+
+    private suspend fun calculateComparison(
+        orderedSnapshots: List<PortfolioSnapshot>,
+        inceptionResolution: InceptionResolution?,
+    ): RebalancerComparison {
         val firstSnapshot = orderedSnapshots.first()
         val lastSnapshot = orderedSnapshots.last()
         val firstTimestamp = firstSnapshot.timestamp
@@ -64,7 +105,6 @@ class TradeHistoryQueryService(
         val firstObservationTime = firstSnapshot.balancesObservedAt ?: firstTimestamp
         val lastObservationTime = lastSnapshot.balancesObservedAt ?: lastTimestamp
 
-        val inceptionResolution = inceptionDiscoveryService?.resolveInception()
         if (inceptionResolution?.confidence == InceptionConfidence.RECOVERY_INCOMPLETE) {
             return RebalancerComparisonCalculator.calculate(
                 snapshots = orderedSnapshots,
@@ -147,29 +187,7 @@ class TradeHistoryQueryService(
         // Contribution-time prices come only from recorded snapshots near the
         // event (never a live ticker for an old contribution). Absent prices
         // fail the comparison closed inside the calculator.
-        val priceProvider = HistoricalPriceProvider { symbol, time ->
-            if (Asset.normalizeLedgerAsset(symbol).uppercase() == Asset.USD) {
-                BigDecimal.ONE
-            } else {
-                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
-                repository.getSnapshotsInRange(
-                    time.minusSeconds(CONTRIBUTION_PRICE_LOOKUP_SECONDS),
-                    time,
-                ).mapNotNull { snapshot ->
-                    val price = snapshot.assets.entries.firstOrNull { (asset, _) ->
-                        Asset.normalizeLedgerAsset(asset).uppercase() == normalizedSymbol
-                    }?.value?.price
-                    val observationTime = snapshot.balancesObservedAt ?: snapshot.timestamp
-                    if (price != null && price.signum() > 0 && !observationTime.isAfter(time)) {
-                        snapshot.timestamp to price
-                    } else {
-                        null
-                    }
-                }.minByOrNull { (timestamp, _) ->
-                    kotlin.math.abs(timestamp.toEpochMilli() - time.toEpochMilli())
-                }?.second
-            }
-        }
+        val priceProvider = historicalPriceProvider()
         return RebalancerComparisonCalculator.calculate(
             snapshots = orderedSnapshots,
             trades = trades,
@@ -183,10 +201,81 @@ class TradeHistoryQueryService(
         )
     }
 
+    /**
+     * Scans retained snapshots at/after [after] for the earliest anchor that
+     * yields a fully verified comparison. Read-only; see the list-based overload.
+     */
+    suspend fun findVerifiedLaterComparisonStart(after: Instant): Instant? = findVerifiedLaterComparisonStart(
+        repository.getSnapshotsInRange(after, Instant.ofEpochMilli(Long.MAX_VALUE)).sortedBy { it.timestamp },
+        after,
+    )
+
+    /**
+     * Scans retained snapshots after [startAfter] for the earliest anchor that
+     * yields a fully verified comparison. Each trial re-runs the complete
+     * reconciliation pipeline (repository data only, no network), so a
+     * returned timestamp is evidence-backed rather than "the oldest snapshot
+     * we still have". Window-independent: trials cover all retained snapshots,
+     * never just the requested display range.
+     */
+    private suspend fun findVerifiedLaterComparisonStart(
+        orderedSnapshots: List<PortfolioSnapshot>,
+        startAfter: Instant,
+    ): Instant? {
+        val candidates = orderedSnapshots.filter { it.timestamp > startAfter }
+        var index = 0
+        var trials = 0
+        while (index < candidates.size && trials < PROPOSAL_MAX_TRIALS) {
+            val candidate = candidates[index]
+            val trial = calculateComparison(
+                candidates.drop(index),
+                InceptionResolution(
+                    inceptionTime = candidate.timestamp,
+                    inceptionSnapshot = candidate,
+                    isAutoDetected = false,
+                ),
+            )
+            trials++
+            if (trial.availability == ComparisonAvailability.AVAILABLE) return candidate.timestamp
+            val unavailableAt = trial.unavailableAt ?: candidate.timestamp
+            val nextIndex = candidates.indexOfFirst { it.timestamp > unavailableAt }
+            index = if (nextIndex > index) nextIndex else index + 1
+        }
+        return null
+    }
+
+    private fun historicalPriceProvider() = HistoricalPriceProvider { symbol, time ->
+        if (Asset.normalizeLedgerAsset(symbol).uppercase() == Asset.USD) {
+            BigDecimal.ONE
+        } else {
+            val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+            repository.getSnapshotsInRange(
+                time.minusSeconds(CONTRIBUTION_PRICE_LOOKUP_SECONDS),
+                time,
+            ).mapNotNull { snapshot ->
+                val price = snapshot.assets.entries.firstOrNull { (asset, _) ->
+                    Asset.normalizeLedgerAsset(asset).uppercase() == normalizedSymbol
+                }?.value?.price
+                val observationTime = snapshot.balancesObservedAt ?: snapshot.timestamp
+                if (price != null && price.signum() > 0 && !observationTime.isAfter(time)) {
+                    snapshot.timestamp to price
+                } else {
+                    null
+                }
+            }.minByOrNull { (timestamp, _) ->
+                kotlin.math.abs(timestamp.toEpochMilli() - time.toEpochMilli())
+            }?.second
+        }
+    }
+
     private fun Instant.minusMillisIfLegacyObservation(
         anchorSnapshot: PortfolioSnapshot?,
         firstSnapshot: PortfolioSnapshot,
-    ): Instant = if ((anchorSnapshot != null && anchorSnapshot.balancesObservedAt == null) ||
+    ): Instant = if ((
+            anchorSnapshot !=
+                null &&
+                anchorSnapshot.balancesObservedAt == null
+            ) ||
         firstSnapshot.balancesObservedAt == null
     ) {
         minusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)

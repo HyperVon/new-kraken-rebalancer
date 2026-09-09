@@ -23,6 +23,7 @@ import kotlinx.html.body
 import kotlinx.html.head
 import kotlinx.html.title
 import java.math.BigDecimal
+import java.time.Instant
 
 class DashboardView(
     private val shellComponent: DashboardShellComponent,
@@ -43,6 +44,7 @@ class DashboardView(
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
+        laterStartProposal: Instant? = null,
     ) {
         html.head {
             commonMetadataAndStyles()
@@ -50,7 +52,7 @@ class DashboardView(
             cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
         }
         html.body {
-            settingsFormComponent.render(config, errorMessage, csrfToken, paused, inceptionDisplay)
+            settingsFormComponent.render(config, errorMessage, csrfToken, paused, inceptionDisplay, laterStartProposal)
         }
     }
 
@@ -61,8 +63,17 @@ class DashboardView(
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
+        laterStartProposal: Instant? = null,
     ) {
-        settingsFormComponent.renderForm(parent, config, errorMessage, csrfToken, paused, inceptionDisplay)
+        settingsFormComponent.renderForm(
+            parent,
+            config,
+            errorMessage,
+            csrfToken,
+            paused,
+            inceptionDisplay,
+            laterStartProposal,
+        )
     }
 
     context(html: HTML)

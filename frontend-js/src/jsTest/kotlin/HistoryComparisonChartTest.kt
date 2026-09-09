@@ -169,6 +169,27 @@ class HistoryComparisonChartTest : StringSpec() {
             }
         }
 
+        "buildRebalancerComparisonChart appends the verified later-start proposal when unavailable" {
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.chartsDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            registerHistoryGlobals()
+            try {
+                val comparison = mockUnavailableComparison("INCEPTION_BASELINE_UNAVAILABLE")
+                    .copy(proposedBaselineTimestamp = "2026-08-01T10:30:00Z")
+
+                buildRebalancerComparisonChart(comparison)
+
+                val unavailableDiv = document.getElementById("comparison-availability-message")
+                unavailableDiv?.textContent shouldContain
+                    "Earliest verified comparison start: 2026-08-01 10:30 UTC"
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
         "unavailableReasonText maps all reason strings to text" {
             unavailableReasonText("INSUFFICIENT_SNAPSHOTS") shouldBe
                 "Not enough history exists in this range to compare strategies."

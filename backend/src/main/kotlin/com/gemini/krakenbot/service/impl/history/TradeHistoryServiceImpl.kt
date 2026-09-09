@@ -133,6 +133,9 @@ class TradeHistoryServiceImpl(
     override suspend fun getDetectedInceptionDisplayInfo(): InceptionDisplayInfo =
         inceptionRecoveryService?.getLocalInceptionDisplayInfo() ?: InceptionDisplayInfo()
 
+    override suspend fun findVerifiedLaterComparisonStart(after: Instant): Instant? =
+        queryService.findVerifiedLaterComparisonStart(after)
+
     override suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
         queryService.getRebalancerComparison(from, to)
 }

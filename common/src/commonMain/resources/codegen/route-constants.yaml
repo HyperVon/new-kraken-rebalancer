@@ -39,6 +39,7 @@ FormFields:
   FIAT_DEPLOYMENT_EXPONENT: "fiatDeploymentExponent"
   FIAT_DEPLOYMENT_THRESHOLD_PERCENT: "fiatDeploymentThresholdPercent"
   INCEPTION_DATE: "inceptionDate"
+  COMPARISON_START_DATE: "comparisonStartDate"
   SYMBOLS: "symbols"
   TARGETS: "targets"
   COLORS: "colors"

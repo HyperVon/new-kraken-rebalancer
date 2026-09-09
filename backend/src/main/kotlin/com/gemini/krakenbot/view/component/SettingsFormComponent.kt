@@ -2,6 +2,7 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.service.InceptionDisplayInfo
+import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
@@ -107,8 +108,9 @@ class SettingsFormComponent {
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
+        laterStartProposal: Instant? = null,
     ) {
-        renderForm(body, config, errorMessage, csrfToken, paused, inceptionDisplay)
+        renderForm(body, config, errorMessage, csrfToken, paused, inceptionDisplay, laterStartProposal)
         renderSettingsScript()
     }
 
@@ -119,6 +121,7 @@ class SettingsFormComponent {
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
+        laterStartProposal: Instant? = null,
     ) {
         parent.div(CssClass.Layout.Container) {
             form {
@@ -154,7 +157,7 @@ class SettingsFormComponent {
                 }
 
                 div(CssClass.Layout.GlassPanel) {
-                    renderGlobalParametersSection(config, inceptionDisplay)
+                    renderGlobalParametersSection(config, inceptionDisplay, laterStartProposal)
                     renderSafetyModesSection(config)
                     renderTargetAllocationsSection(config)
                 }
@@ -162,7 +165,11 @@ class SettingsFormComponent {
         }
     }
 
-    private fun DIV.renderGlobalParametersSection(config: AppConfig, inceptionDisplay: InceptionDisplayInfo) {
+    private fun DIV.renderGlobalParametersSection(
+        config: AppConfig,
+        inceptionDisplay: InceptionDisplayInfo,
+        laterStartProposal: Instant?,
+    ) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div(CssClass.Form.Grid2Col) {
                 numericFieldSpecs(config).forEach { field ->
@@ -189,6 +196,19 @@ class SettingsFormComponent {
                     }
                     p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_DATE_HINT }
                     renderDetectedInception(inceptionDisplay)
+                }
+                formGroup(ViewText.INCEPTION_COMPARISON_START, FormFields.COMPARISON_START_DATE) {
+                    input(type = hidden, name = FormFields.COMPARISON_START_DATE) {
+                        id = FormFields.COMPARISON_START_DATE
+                        value = config.settings.comparisonStartDate.orEmpty()
+                    }
+                    input(CssClass.Form.InputGlass, type = date) {
+                        value = utcDate(config.settings.comparisonStartDate).orEmpty()
+                        attributes[HtmlAttrs.ONCHANGE] =
+                            "document.getElementById('${FormFields.COMPARISON_START_DATE}').value=this.value"
+                    }
+                    p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_COMPARISON_START_HINT }
+                    renderApprovedBaseline(config, inceptionDisplay, laterStartProposal)
                 }
             }
         }
@@ -222,6 +242,53 @@ class SettingsFormComponent {
             }
         } else if (display.hasEvidenceDetails()) {
             renderInceptionEvidenceDisclosure(display)
+        }
+    }
+
+    private fun FlowContent.renderApprovedBaseline(
+        config: AppConfig,
+        display: InceptionDisplayInfo,
+        laterStartProposal: Instant?,
+    ) {
+        when (display.status) {
+            InceptionDisplayStatus.APPROVED_PENDING ->
+                p(CssClass.Form.SectionSubtitle) {
+                    id = HtmlIds.INCEPTION_BASELINE_PENDING
+                    +display.toDisplayText()
+                }
+
+            InceptionDisplayStatus.APPROVED_READY ->
+                p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
+
+            InceptionDisplayStatus.APPROVED_UNAVAILABLE -> {
+                p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
+                laterStartProposal?.let { proposal ->
+                    div(CssClass.Form.InceptionRecommendation) {
+                        div(CssClass.Form.InceptionRecommendationHeader) {
+                            div(CssClass.Form.InceptionRecommendationCopy) {
+                                p(CssClass.Form.InceptionRecommendationLabel) {
+                                    +ViewText.INCEPTION_PROPOSED_LATER_START_LABEL
+                                }
+                                p(CssClass.Form.InceptionRecommendationDate) { +proposal.toString() }
+                            }
+                            button(CssClass.Button.Secondary, type = button) {
+                                attributes[HtmlAttrs.TITLE] = ViewText.INCEPTION_USE_PROPOSED_START_TITLE
+                                attributes[HtmlAttrs.ONCLICK] =
+                                    "document.getElementById('${FormFields.COMPARISON_START_DATE}')" +
+                                    ".value='$proposal';this.form.requestSubmit()"
+                                +ViewText.INCEPTION_USE_PROPOSED_START
+                            }
+                        }
+                    }
+                }
+            }
+
+            else -> Unit
+        }
+        config.settings.comparisonStartDate?.takeIf(String::isNotBlank)?.let { accepted ->
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.INCEPTION_COMPARISON_START}: $accepted"
+            }
         }
     }
 

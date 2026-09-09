@@ -23,6 +23,7 @@ import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -37,6 +38,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
+    private val openEndedRangeEnd = Instant.ofEpochMilli(Long.MAX_VALUE)
     private val repository = mockk<TradeRepository>(relaxed = true)
     private val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     private val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
@@ -940,6 +942,246 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_HISTORY_TRUNCATED
+            }
+        }
+
+        "getRebalancerComparison_UnavailableBaseline_ProposesEarliestVerifiedLaterStart" {
+            runTest {
+                val t0 = now
+                val t1 = now.plusSeconds(3600)
+                val t2 = now.plusSeconds(7200)
+                val snap0 = snapshot(t0, "90000.00", btc = "1.0" to "40000.00")
+                val snap1 = snapshot(t1, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(t2, "110000.00", btc = "1.0" to "60000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
+                )
+                coEvery { repository.getSnapshotsInRange(t0, t2) } returns listOf(snap0, snap1, snap2)
+                coEvery { repository.getSnapshotsInRange(t0, openEndedRangeEnd) } returns listOf(snap0, snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns snap0
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(t0, t2)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE
+                comparison.proposedBaselineTimestamp shouldBe t1
+            }
+        }
+
+        "getRebalancerComparison_Proposal_IsIndependentOfDisplayWindow" {
+            runTest {
+                val t0 = now
+                val t1 = now.plusSeconds(3600)
+                val t2 = now.plusSeconds(7200)
+                val snap0 = snapshot(t0, "90000.00", btc = "1.0" to "40000.00")
+                val snap1 = snapshot(t1, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(t2, "110000.00", btc = "1.0" to "60000.00")
+                val snap3 = snapshot(t2.plusSeconds(3600), "110000.00", btc = "1.0" to "60000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
+                )
+                coEvery {
+                    repository.getSnapshotsInRange(t2.minusSeconds(60), t2.plusSeconds(3600))
+                } returns listOf(snap2, snap3)
+                coEvery { repository.getSnapshotsInRange(t0, openEndedRangeEnd) } returns
+                    listOf(snap0, snap1, snap2, snap3)
+                coEvery { repository.getSnapshotBefore(any()) } returns snap0
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                // Display window excludes snap1 entirely, yet the verified
+                // proposal is still its timestamp: the scan reads the full
+                // retained snapshot range, not the displayed zoom range.
+                val comparison =
+                    serviceWithInception.getRebalancerComparison(t2.minusSeconds(60), t2.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.proposedBaselineTimestamp shouldBe t1
+            }
+        }
+
+        "getRebalancerComparison_PendingRecovery_ProposesNothing" {
+            runTest {
+                val t0 = now
+                val t1 = now.plusSeconds(3600)
+                val snap0 = snapshot(t0, "90000.00", btc = "1.0" to "40000.00")
+                val snap1 = snapshot(t1, "100000.00", btc = "1.0" to "50000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
+                )
+                coEvery { repository.getSnapshotsInRange(t0, t1) } returns listOf(snap0, snap1)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(t0, t1)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
+                comparison.proposedBaselineTimestamp.shouldBeNull()
+            }
+        }
+
+        "findVerifiedLaterComparisonStart_ReturnsEarliestPassingAnchorOverFullRange" {
+            runTest {
+                val t0 = now
+                val t1 = now.plusSeconds(3600)
+                val t2 = now.plusSeconds(7200)
+                val snap0 = snapshot(t0, "90000.00", btc = "1.0" to "40000.00")
+                val snap1 = snapshot(t1, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(t2, "110000.00", btc = "1.0" to "60000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { repository.getSnapshotsInRange(t0, openEndedRangeEnd) } returns listOf(snap0, snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns snap0
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t1
+            }
+        }
+
+        "getRebalancerComparison_ValuesStakingContributionThroughSnapshotPrices" {
+            runTest {
+                val t0 = now
+                val t1 = now.plusSeconds(3600)
+                val baseline = snapshot(t0, "100000.00", btc = "1.0" to "50000.00")
+                val later = snapshot(t1, "105000.00", btc = "1.1" to "50000.00")
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns
+                    InceptionResolution(t0, baseline, isAutoDetected = false)
+                coEvery { repository.getSnapshotsInRange(t0, t1) } returns listOf(baseline, later)
+                coEvery { repository.getSnapshotBefore(any()) } returns baseline
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
+                    listOf(ledgerEvent("L1", t1, "BTC", "0.1"))
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(t0, t1)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points.size shouldBe 2
+            }
+        }
+
+        "findVerifiedLaterComparisonStart_SkipsPastUnavailableTrialToLaterAnchor" {
+            runTest {
+                val t0 = now
+                val t1 = now.plusSeconds(3600)
+                val t2 = now.plusSeconds(7200)
+                val t3 = now.plusSeconds(10800)
+                val t4 = now.plusSeconds(14400)
+                val snap0 = snapshot(t0, "90000.00", btc = "1.0" to "40000.00")
+                val snap1 = snapshot(t1, "130000.00", btc = "2.0" to "40000.00")
+                val snap2 = snapshot(t2, "170000.00", btc = "3.0" to "40000.00")
+                val snap3 = snapshot(t3, "170000.00", btc = "3.0" to "40000.00")
+                val snap4 = snapshot(t4, "170000.00", btc = "3.0" to "40000.00")
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { repository.getSnapshotsInRange(t0, t4) } returns
+                    listOf(snap0, snap1, snap2, snap3, snap4)
+                coEvery { repository.getSnapshotsInRange(t0, openEndedRangeEnd) } returns
+                    listOf(snap0, snap1, snap2, snap3, snap4)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t3
+            }
+        }
+
+        "findVerifiedLaterComparisonStart_StopsAfterBoundedTrialBudget" {
+            runTest {
+                val balances = (1..10).map { index -> "1.$index" }
+                val snaps = balances.mapIndexed { index, balance ->
+                    val stamp = now.plusSeconds(3600L * (index + 1))
+                    snapshot(stamp, "90000.00", btc = balance to "40000.00")
+                }
+
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery {
+                    repository.getSnapshotsInRange(now, now.plusSeconds(36000))
+                } returns snaps
+                coEvery { repository.getSnapshotsInRange(now, openEndedRangeEnd) } returns snaps
+                coEvery { repository.getSnapshotBefore(any()) } returns snaps.first()
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
             }
         }
     }

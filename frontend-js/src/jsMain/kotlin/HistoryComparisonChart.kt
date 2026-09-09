@@ -31,7 +31,13 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
         }
         val message = unavailableReasonText(comparison.unavailableReason)
         if (unavailableDiv != null) {
-            unavailableDiv.textContent = "${ViewText.COMPARISON_UNAVAILABLE_PREFIX}$message"
+            val proposalLine = comparison.proposedBaselineTimestamp
+                ?.takeIf(String::isNotBlank)
+                ?.let { verified ->
+                    ViewText.COMPARISON_PROPOSED_LATER_START.replace("<date>", formatUtcInstant(verified))
+                }
+                .orEmpty()
+            unavailableDiv.textContent = "${ViewText.COMPARISON_UNAVAILABLE_PREFIX}$message $proposalLine".trim()
             unavailableDiv.classList.add(CssClass.Utility.Visible.value)
         }
         return
@@ -139,13 +145,14 @@ private fun RebalancerComparison.latestDifferenceValues(): Pair<Double, Double>?
 
 private fun RebalancerComparison.hasValidDifferenceValues(): Boolean = latestDifferenceValues() != null
 
-private fun RebalancerComparison.hasSortedTimestamps(): Boolean =
-    points.map { dynamicNumber(it.timestamp) }.let { timestamps ->
-        timestamps.filterNotNull().let { nonNullTimestamps ->
-            nonNullTimestamps.size == timestamps.size &&
-                nonNullTimestamps.zipWithNext().all { (previous, current) -> current >= previous }
-        }
+private fun RebalancerComparison.hasSortedTimestamps(): Boolean = points.map {
+    dynamicNumber(it.timestamp)
+}.let { timestamps ->
+    timestamps.filterNotNull().let { nonNullTimestamps ->
+        nonNullTimestamps.size == timestamps.size &&
+            nonNullTimestamps.zipWithNext().all { (previous, current) -> current >= previous }
     }
+}
 
 private fun RebalancerComparison.hasValidBaselinePoint(): Boolean = points.firstOrNull()?.let { first ->
     if (first.timestamp == baselineTimestamp) {

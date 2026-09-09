@@ -148,6 +148,95 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
     }
 
     init {
+        "inference evidence variants hide only their invalid groups" {
+            val guard = mockk<AccountHistoryScopeGuard>()
+            coEvery { guard.readLocalTrustState() } returns
+                AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+            val recovery = createRecovery(guard = guard)
+            val record = inferenceRecord(
+                fingerprint = "fp-partial",
+                inferredStart = null,
+                firstPositive = Instant.parse("2024-03-01T00:00:00Z"),
+                earliestAmbiguousStart = Instant.parse("2024-02-01T00:00:00Z"),
+                earlierAmbiguousCandidateCount = 1,
+            )
+            stubInferenceRecord(recovery, testConfig(), record)
+
+            val noStart = recovery.getLocalInceptionDisplayInfo()
+            noStart.inferredStartText shouldBe null
+            noStart.firstPositiveText shouldBe "2024-03-01T00:00:00Z"
+            noStart.earlierAmbiguousCountText shouldBe "1"
+            noStart.strongestEpisodeText shouldBe null
+
+            val badWindowRecord = inferenceRecord(
+                fingerprint = "fp-bad-window",
+                inferredStart = Instant.parse("2024-03-01T00:00:00Z"),
+                windowStart = Instant.parse("2024-03-02T00:00:00Z"),
+            )
+            stubInferenceRecord(recovery, testConfig(), badWindowRecord)
+            val badWindow = recovery.getLocalInceptionDisplayInfo()
+            badWindow.inferredStartText shouldBe null
+            badWindow.inferredWindowEndText shouldBe null
+
+            val sameEpisodeRecord = inferenceRecord(
+                fingerprint = "fp-same-episode",
+                inferredStart = Instant.parse("2024-03-01T00:00:00Z"),
+                windowEnd = Instant.parse("2024-03-01T00:00:33Z"),
+                strongestObserved = Instant.parse("2024-03-01T00:00:00Z"),
+                strongestStrength = "HIGH",
+                strongestReasons = listOf("bot burst"),
+            )
+            stubInferenceRecord(recovery, testConfig(), sameEpisodeRecord)
+            val sameEpisode = recovery.getLocalInceptionDisplayInfo()
+            sameEpisode.inferredStartText shouldBe "2024-03-01T00:00:00Z"
+            sameEpisode.strongestEpisodeText shouldBe null
+            sameEpisode.strongestEpisodeStrengthText shouldBe null
+            sameEpisode.strongestEpisodeReasonsText shouldBe null
+
+            val weakStrengthRecord = inferenceRecord(
+                fingerprint = "fp-weak",
+                inferredStart = Instant.parse("2024-03-01T00:00:00Z"),
+                strength = "WEAK",
+                reasons = listOf("bot burst"),
+                competingCandidateCount = 0,
+            )
+            stubInferenceRecord(recovery, testConfig(), weakStrengthRecord)
+            val weak = recovery.getLocalInceptionDisplayInfo()
+            weak.inferredStartText shouldBe "2024-03-01T00:00:00Z"
+            weak.inferredStartStrengthText shouldBe null
+            weak.inferredStartReasonsText shouldBe "bot burst"
+            weak.inferredStartContradictionsText shouldBe null
+        }
+
+        "inference evidence with quiet groups and coverage renders nulls for absent lists" {
+            val guard = mockk<AccountHistoryScopeGuard>()
+            coEvery { guard.readLocalTrustState() } returns
+                AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
+            val recovery = createRecovery(guard = guard)
+            val record = inferenceRecord(
+                fingerprint = "fp-quiet",
+                inferredStart = Instant.parse("2024-03-01T00:00:00Z"),
+                strength = "LOW",
+                contradictions = listOf("gap before start"),
+                coverageStart = Instant.parse("2024-01-01T00:00:00Z"),
+                coverageEnd = Instant.parse("2024-03-20T00:00:00Z"),
+                competingCandidateCount = 2,
+                unsupportedMarketCount = 1,
+                unsupportedMarketSamples = listOf("SOL"),
+            )
+            stubInferenceRecord(recovery, testConfig(), record)
+
+            val display = recovery.getLocalInceptionDisplayInfo()
+
+            display.inferredStartReasonsText shouldBe null
+            display.inferredStartContradictionsText shouldBe "gap before start"
+            display.earliestAmbiguousText shouldBe null
+            display.earlierAmbiguousCountText shouldBe null
+            display.competingCandidatesText.shouldNotBeNull()
+            display.unsupportedMarketsText.shouldNotBeNull()
+            display.coverageText.shouldNotBeNull()
+        }
+
         // Scenario A: Confirmed Account A -> credentials switched to Account B
         "getDetectedInceptionDisplayInfo_switchAccount_withholdsStaleDate" {
             runTest {
@@ -251,7 +340,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -293,7 +386,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     guard = guard,
                     config = config,
                 )
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -745,7 +842,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -782,7 +883,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -846,7 +951,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -883,7 +992,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -919,7 +1032,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -955,7 +1072,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -991,7 +1112,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1027,7 +1152,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1054,8 +1183,8 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
             }
         }
 
-        // Scenario N: Manual override
-        "getDetectedInceptionDisplayInfo_manualOverride_returnsManualOverrideStatus" {
+        // Scenario N: Approved start pending
+        "getDetectedInceptionDisplayInfo_approvedStart_returnsApprovedPendingStatus" {
             runTest {
                 val config = testConfig(inceptionDate = "2023-01-01")
                 val guard = mockk<AccountHistoryScopeGuard>()
@@ -1066,13 +1195,15 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
 
                 val info = service.getDetectedInceptionDisplayInfo()
 
-                info.status shouldBe InceptionDisplayStatus.MANUAL_OVERRIDE
+                info.status shouldBe InceptionDisplayStatus.APPROVED_PENDING
                 info.dateText.shouldBeNull()
-                info.toDisplayText() shouldBe "Manual override active."
+                info.toDisplayText() shouldBe
+                    "Approved start saved — establishing the historical baseline. " +
+                    "Kraken history recovery is in progress."
             }
         }
 
-        "getDetectedInceptionDisplayInfo_manualOverride_stillShowsHistoricalEvidence" {
+        "getDetectedInceptionDisplayInfo_approvedStart_stillShowsHistoricalEvidence" {
             runTest {
                 val config = testConfig(inceptionDate = "2023-01-01")
                 val guard = mockk<AccountHistoryScopeGuard>()
@@ -1097,7 +1228,7 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
 
                 val info = service.getDetectedInceptionDisplayInfo()
 
-                info.status shouldBe InceptionDisplayStatus.MANUAL_OVERRIDE
+                info.status shouldBe InceptionDisplayStatus.APPROVED_PENDING
                 info.inferredStartText shouldBe inferredStart.toString()
                 info.inferredStartStrengthText shouldBe "LOW"
                 info.earliestAmbiguousText shouldBe inferredStart.minusSeconds(3_600).toString()
@@ -1122,7 +1253,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AssertionError("Network call forbidden on display read path!")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1162,7 +1297,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config, now = now)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1200,7 +1339,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1250,7 +1393,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
 
                 val guard = mockk<AccountHistoryScopeGuard>()
                 val recovery = createRecovery(guard = guard, config = configA)
-                val expectedFingerprint = recovery.configurationFingerprint(configA, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    configA,
+                    configA.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1333,7 +1480,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1371,7 +1522,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1410,7 +1565,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1448,7 +1607,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1487,7 +1650,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1526,7 +1693,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 coEvery {
@@ -1565,7 +1736,11 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                     AccountScopeValidationResult(AccountScopeValidationStatus.VALID, currentScopeDigest = "scope-a")
 
                 val recovery = createRecovery(guard = guard, config = config)
-                val expectedFingerprint = recovery.configurationFingerprint(config, "", "scope-a")
+                val expectedFingerprint = recovery.configurationFingerprint(
+                    config,
+                    config.settings.copy(inceptionDate = "", comparisonStartDate = null),
+                    "scope-a",
+                )
                 val service = createServiceWithRecovery(recovery)
 
                 // Sequence where epoch and source were written, but status remains IN_PROGRESS

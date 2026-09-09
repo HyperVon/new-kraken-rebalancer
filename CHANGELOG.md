@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.41] - 2026-09-09
+
+### Changed
+
+- **Approved-start baselines and verified comparison start**: approving a strategy start now rebuilds
+  the Buy & Hold baseline from Kraken history instead of reporting a misleading "snapshot no longer
+  retained" error. When history at the approved instant cannot be verified, Settings shows the honest
+  unavailable reason and offers the earliest verified later comparison start with a one-click accept;
+  the History comparison anchors at the accepted timestamp. A new optional **Comparison Start** field
+  records the accepted anchor. Also fixes an open-ended snapshot-range lookup that could overflow and
+  fail the Settings page during recovery.
+
 ## [6.17.40] - 2026-09-08
 
 ### Changed

@@ -14,6 +14,8 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionDisplayInfo
+import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
@@ -93,6 +95,7 @@ class DashboardController(
                 val config = configService.getConfig()
                 val csrfToken = CsrfProtection.issueToken(call)
                 val inceptionDisplay = tradeHistoryService.getDetectedInceptionDisplayInfo()
+                val laterStartProposal = resolveLaterStartProposal(config.settings, inceptionDisplay)
                 call.respondHtml(HttpStatusCode.OK) {
                     dashboardView.renderSettingsPage(
                         config = config,
@@ -100,6 +103,7 @@ class DashboardController(
                         csrfToken = csrfToken,
                         paused = portfolioManager.isLoopPaused(),
                         inceptionDisplay = inceptionDisplay,
+                        laterStartProposal = laterStartProposal,
                     )
                 }
             }
@@ -218,8 +222,11 @@ class DashboardController(
             call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
             call.respond(HttpStatusCode.OK)
         } catch (e: InvalidConfigurationException) {
+            // updateConfig rejected the parsed settings: the error fragment must render the
+            // last server-saved state, not the rejected-but-parsed one, so any proposal
+            // affordance stays consistent with what the service actually holds.
             respondSettingsFormError(
-                config = updatedConfig,
+                config = currentConfig,
                 message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
                 csrfToken = CsrfProtection.currentToken(call),
                 paused = portfolioManager.isLoopPaused(),
@@ -254,6 +261,15 @@ class DashboardController(
                 ?: throw IllegalArgumentException(ViewText.INVALID_INCEPTION_DATE)
             dateStr
         }
+        val comparisonStartDate =
+            params[FormFields.COMPARISON_START_DATE]?.trim()?.takeIf(String::isNotBlank)?.let { dateStr ->
+                val parsed = InceptionDiscoveryService.parseInceptionDate(dateStr)
+                    ?: throw IllegalArgumentException(ViewText.INVALID_COMPARISON_START_DATE)
+                val strategyStart = inceptionDate?.let(InceptionDiscoveryService::parseInceptionDate)
+                require(strategyStart != null) { ViewText.INVALID_COMPARISON_START_DATE }
+                require(!parsed.isBefore(strategyStart)) { ViewText.INVALID_COMPARISON_START_DATE }
+                dateStr
+            }
         val settings =
             Settings(
                 loopDelaySeconds = loopDelaySeconds,
@@ -265,6 +281,7 @@ class DashboardController(
                 fiatDeploymentExponent = fiatDeploymentExponent,
                 fiatDeploymentThresholdPercent = fiatDeploymentThresholdPercent,
                 inceptionDate = inceptionDate,
+                comparisonStartDate = comparisonStartDate,
             )
 
         val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
@@ -314,11 +331,36 @@ class DashboardController(
         status: HttpStatusCode,
     ) {
         val inceptionDisplay = tradeHistoryService.getDetectedInceptionDisplayInfo()
+        val laterStartProposal = resolveLaterStartProposal(config.settings, inceptionDisplay)
         val errHtml =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderSettingsFormFragment(this, config, message, csrfToken, paused, inceptionDisplay)
+                dashboardView.renderSettingsFormFragment(
+                    this,
+                    config,
+                    message,
+                    csrfToken,
+                    paused,
+                    inceptionDisplay,
+                    laterStartProposal,
+                )
             }
         call.respondText(errHtml, ContentType.Text.Html, status)
+    }
+
+    /**
+     * Verified later comparison start for the Settings proposal affordance.
+     * Only offered while the approved-start baseline is unavailable; the scan
+     * is read-only evidence work, never a mutation of settings.
+     */
+    private suspend fun resolveLaterStartProposal(
+        settings: Settings,
+        inceptionDisplay: InceptionDisplayInfo,
+    ): Instant? {
+        if (inceptionDisplay.status != InceptionDisplayStatus.APPROVED_UNAVAILABLE) return null
+        val anchor = settings.comparisonStartDate?.takeIf(String::isNotBlank)
+            ?.let { InceptionDiscoveryService.parseInceptionDate(it) }
+            ?: InceptionDiscoveryService.parseInceptionDate(settings.inceptionDate)
+        return anchor?.let { tradeHistoryService.findVerifiedLaterComparisonStart(it) }
     }
 
     private suspend fun RoutingContext.handleGetDashboardFragment() {

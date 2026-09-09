@@ -56,6 +56,7 @@ private object FormFields {
     const val TARGETS = "targets"
     const val COLORS = "colors"
     const val INCEPTION_DATE = "inceptionDate"
+    const val COMPARISON_START_DATE = "comparisonStartDate"
     const val FIAT_DEPLOYMENT_THRESHOLD_PERCENT = "fiatDeploymentThresholdPercent"
 }
 
@@ -227,6 +228,52 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
+        "getSettings_approvedBaselineFailure_anchorsScanAtAcceptedComparisonStart" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings().copy(
+                    inceptionDate = "2026-06-06",
+                    comparisonStartDate = "2026-06-07",
+                ),
+            )
+            coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
+                    message = "No trustworthy baseline could be established for the approved start: " +
+                        "historical price unavailable",
+                )
+            coEvery { tradeHistoryService.findVerifiedLaterComparisonStart(any()) } returns
+                Instant.parse("2026-06-07T00:00:00Z")
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val body = client.get(Routes.SETTINGS).bodyAsText()
+                body shouldContain "Earliest verified comparison start"
+            }
+        }
+
+        "getSettings_approvedBaselineFailure_rendersVerifiedLaterStartProposal" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings().copy(inceptionDate = "2026-06-06"),
+            )
+            coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
+                    message = "No trustworthy baseline could be established for the approved start: " +
+                        "historical price unavailable",
+                )
+            coEvery { tradeHistoryService.findVerifiedLaterComparisonStart(any()) } returns
+                Instant.parse("2026-08-01T10:30:00Z")
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val body = client.get(Routes.SETTINGS).bodyAsText()
+                body shouldContain "Earliest verified comparison start"
+                body shouldContain "Use verified start"
+            }
+        }
+
         "getSettings_DetectedInception_rendersDisplayOnlyWithoutCopyingIntoInput" {
             every { configService.getConfig() } returns dashboardConfig()
             coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
@@ -382,6 +429,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94A3B8"),
                                 FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                                FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
                                 FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("4.5"),
                             ).formUrlEncode(),
                         )
@@ -397,9 +445,146 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
             captured.captured.settings.simulation shouldBe true
             captured.captured.settings.inceptionDate shouldBe "2026-06-06"
+            captured.captured.settings.comparisonStartDate shouldBe "2026-06-07"
             captured.captured.settings.fiatDeploymentThresholdPercent shouldBe 4.5
             captured.captured.allocations.single().color shouldBe "#94a3b8"
             coVerify { configService.updateConfig(any()) }
+        }
+
+        "postSettings rejects out-of-range fiat deployment threshold" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.FIAT_DEPLOYMENT_THRESHOLD_PERCENT to listOf("150"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.bodyAsText() shouldContain "drawdown activation threshold"
+            }
+        }
+
+        "postSettings rejects a comparison start without or before an inception date" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val orphanResponse =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("100.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.COMPARISON_START_DATE to listOf("2026-06-07"),
+                            ).formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                        header(HttpHeaders.Cookie, csrf.cookie)
+                    }
+                orphanResponse.bodyAsText() shouldContain
+                    "comparison start must be a valid ISO-8601"
+
+                val malformedResponse =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
+                                FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                                FormFields.COMPARISON_START_DATE to listOf("not-a-date"),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("100.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
+                            ).formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                        header(HttpHeaders.Cookie, csrf.cookie)
+                    }
+                malformedResponse.bodyAsText() shouldContain
+                    "comparison start must be a valid ISO-8601"
+
+                val beforeResponse =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("100.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.INCEPTION_DATE to listOf("2026-06-06"),
+                                FormFields.COMPARISON_START_DATE to listOf("2026-06-05"),
+                            ).formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                        header(HttpHeaders.Cookie, csrf.cookie)
+                    }
+                beforeResponse.bodyAsText() shouldContain
+                    "comparison start must be a valid ISO-8601"
+
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
+            }
         }
 
         "CQ-12-L1: post settings rejects unpaired allocation fields without updating config" {
