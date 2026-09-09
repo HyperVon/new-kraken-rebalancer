@@ -117,6 +117,7 @@ class ApprovedStartComparisonIntegrationTest :
             portfolioStatsRepository = statsRepository,
             ledgerRepository = ledgerRepository,
             inceptionDiscoveryService = discoveryService,
+            nowProvider = { now },
         )
 
         fun seedTrade(id: String, timestamp: Instant, owned: Boolean) = runTest {
@@ -305,6 +306,76 @@ class ApprovedStartComparisonIntegrationTest :
                 accepted.proposedBaselineTimestamp.shouldBeNull()
                 accepted.proposalSearchStatus.shouldBeNull()
                 config.settings.inceptionDate shouldBe strategyStart.toString()
+            }
+        }
+
+        "a legacy retention gap blocks a later proposal even when a later anchor reconciles" {
+            runTest {
+                val unknownTime = strategyStart.plusSeconds(3_600)
+                val firstSurvivingSnapshot = Instant.parse("2026-02-01T00:00:00Z")
+                val laterStart = firstSurvivingSnapshot.plusSeconds(86_400)
+                val comparisonEnd = laterStart.plusSeconds(86_400)
+
+                seedSnapshot(strategyStart, "100.00", "0.03", "999.00")
+                seedUnknownTrade(unknownTime)
+                seedSnapshot(firstSurvivingSnapshot, "100.00", "0.04", "998.00")
+                seedSnapshot(laterStart, "100.00", "0.04", "998.00")
+                seedSnapshot(comparisonEnd, "100.00", "0.04", "998.00")
+                krakenService.tradeHistoryTotalCountOverride = 0
+
+                val recovery = newRecoveryService()
+                recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val query = newQueryService(newDiscoveryService(recovery))
+
+                val blocked = query.getRebalancerComparison(strategyStart, comparisonEnd)
+
+                blocked.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                blocked.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
+                blocked.proposedBaselineTimestamp.shouldBeNull()
+                blocked.proposalSearchStatus.shouldBeNull()
+                query.getComparisonStartProposal(strategyStart).shouldBeNull()
+                query.findVerifiedLaterComparisonStart(strategyStart).shouldBeNull()
+
+                // The later candidate itself is reconcilable; the missing retained era is what
+                // makes it unsafe to claim that candidate is the earliest trustworthy start.
+                config = config.copy(
+                    settings = config.settings.copy(comparisonStartDate = laterStart.toString()),
+                )
+                val laterComparison = newQueryService(newDiscoveryService(recovery))
+                    .getRebalancerComparison(strategyStart, comparisonEnd)
+                laterComparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                laterComparison.baselineTimestamp shouldBe laterStart
+            }
+        }
+
+        "continuous snapshots across the retention boundary keep later-start proposals working" {
+            runTest {
+                seedSnapshot(strategyStart, "100.00", "0.03", "999.00")
+                val unknownTime = strategyStart.plusSeconds(2 * 86_400L + 3_600L)
+                seedUnknownTrade(unknownTime)
+                val days = ((now.epochSecond - strategyStart.epochSecond) / 86_400L).toInt()
+                for (day in 1..days) {
+                    seedSnapshot(
+                        strategyStart.plusSeconds(day * 86_400L),
+                        "100.00",
+                        "0.04",
+                        "998.00",
+                    )
+                }
+                krakenService.tradeHistoryTotalCountOverride = 0
+
+                val recovery = newRecoveryService()
+                recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val query = newQueryService(newDiscoveryService(recovery))
+                val comparison = query.getRebalancerComparison(strategyStart, now)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+                // The candidate immediately after the unknown event still has that event in
+                // its reconciliation window; the following retained observation is the first
+                // one that proves a clean comparison start.
+                comparison.proposedBaselineTimestamp shouldBe strategyStart.plusSeconds(4 * 86_400L)
+                comparison.proposalSearchStatus shouldBe ComparisonProposalStatus.VERIFIED
             }
         }
 

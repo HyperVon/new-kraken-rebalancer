@@ -826,6 +826,7 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.getSnapshotId(t1) shouldBe firstTimestampId
                 repository.getSnapshotId(t1, 1) shouldBe duplicateFirstId
                 repository.getSnapshotId(t1, 2) shouldBe duplicateSecondId
+                repository.getSnapshotId(t1, 3) shouldBe null
                 repository.getSnapshotId(t1, -1) shouldBe null
             }
         }

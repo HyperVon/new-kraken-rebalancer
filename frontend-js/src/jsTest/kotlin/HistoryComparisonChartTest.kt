@@ -235,6 +235,8 @@ class HistoryComparisonChartTest : StringSpec() {
                 "A recorded trade cannot be reconciled safely."
             unavailableReasonText("UNEXPLAINED_BALANCE_CHANGE") shouldBe
                 "A deposit, withdrawal, transfer, or incomplete trade history may exist."
+            unavailableReasonText("HISTORICAL_COVERAGE_GAP") shouldBe
+                "Historical snapshot coverage is incomplete for part of the strategy period, so the earliest trustworthy comparison start cannot be determined."
             unavailableReasonText("unknown_reason") shouldBe "Comparison data could not be validated."
             unavailableReasonText(null) shouldBe "Comparison data could not be validated."
         }

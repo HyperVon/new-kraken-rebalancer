@@ -412,6 +412,7 @@ The comparison cannot be computed when:
 | No bot evidence | Recovered history contains no positively identified non-dry-run bot fill. |
 | Inception baseline unavailable | A retained balance anchor, historical price, or complete event replay is missing. |
 | Inception history truncated | Legacy retained history cannot prove the lifetime baseline; set the strategy inception date in Settings. |
+| Historical coverage incomplete | Retention removed part of the strategy period, so the earliest trustworthy comparison start cannot be determined. |
 
 When an unavailability reason applies, the chart hides and a message explains why.
 There is no estimated numeric fallback for an unexplained tracked balance change:

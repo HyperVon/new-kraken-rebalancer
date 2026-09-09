@@ -252,6 +252,7 @@ ViewText:
   UNAVAILABLE_AMBIGUOUS_LEDGER_TYPE: "A ledger entry cannot be classified as owner capital or internal movement; the comparison cannot proceed safely."
   UNAVAILABLE_FUNDING_PROVENANCE_UNAVAILABLE: "Funding provenance could not be retrieved; the comparison cannot classify funding safely."
   UNAVAILABLE_INCEPTION_HISTORY_TRUNCATED: "A lifetime baseline cannot be proven from the retained history; set the strategy inception date in Settings to anchor the comparison."
+  UNAVAILABLE_HISTORICAL_COVERAGE_GAP: "Historical snapshot coverage is incomplete for part of the strategy period, so the earliest trustworthy comparison start cannot be determined."
   UNAVAILABLE_INCEPTION_RECOVERY_INCOMPLETE: "Strategy inception baseline is not established yet; Kraken history recovery is incomplete."
   UNAVAILABLE_INCEPTION_AMBIGUOUS: "Strategy inception is ambiguous: some historical activity cannot be assigned to this strategy safely."
   UNAVAILABLE_INCEPTION_NO_BOT_EVIDENCE: "Strategy inception could not be confirmed because no positively identified bot fill was found in the recovered history."

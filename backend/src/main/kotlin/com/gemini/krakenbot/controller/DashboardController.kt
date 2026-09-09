@@ -71,6 +71,7 @@ class DashboardController(
     private val dashboardView: DashboardView,
     private val portfolioManager: PortfolioManager,
     private val orderIntentService: OrderIntentService,
+    private val nowProvider: () -> Instant = Instant::now,
 ) {
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
 
@@ -232,12 +233,19 @@ class DashboardController(
         }
 
         val comparisonStartChanged = comparisonStartChanged(currentConfig, updatedConfig)
+        val inceptionChanged = inceptionDateChanged(currentConfig, updatedConfig)
         val previousAcceptedComparisonSnapshotId = if (comparisonStartChanged) {
             tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
         } else {
             null
         }
+        val previousRetentionFloor = if (inceptionChanged) {
+            tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS)
+        } else {
+            null
+        }
         var comparisonStartMetadataWriteStarted = false
+        var retentionFloorMetadataWriteStarted = false
         try {
             // Publish the exact identity before the config file. If config persistence fails, the
             // old config remains authoritative. The catch block restores the old metadata so a
@@ -249,27 +257,36 @@ class DashboardController(
                     acceptedComparisonSnapshotId?.toString().orEmpty(),
                 )
             }
+            if (inceptionChanged) {
+                retentionFloorMetadataWriteStarted = true
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    configuredRetentionFloorEpochMs(updatedConfig)?.toString().orEmpty(),
+                )
+            }
             configService.updateConfig(updatedConfig)
         } catch (cancelled: CancellationException) {
-            val restoreFailure = if (comparisonStartMetadataWriteStarted) {
-                restoreAcceptedComparisonSnapshotId(previousAcceptedComparisonSnapshotId)
-            } else {
-                null
-            }
+            val restoreFailure = restoreSettingsMetadata(
+                comparisonStartMetadataWriteStarted = comparisonStartMetadataWriteStarted,
+                previousAcceptedComparisonSnapshotId = previousAcceptedComparisonSnapshotId,
+                retentionFloorMetadataWriteStarted = retentionFloorMetadataWriteStarted,
+                previousRetentionFloor = previousRetentionFloor,
+            )
             if (restoreFailure != null) {
                 cancelled.addSuppressed(restoreFailure)
-                log.error("Failed to restore the previous accepted comparison snapshot identity", restoreFailure)
+                log.error("Failed to restore settings metadata after cancellation", restoreFailure)
             }
             throw cancelled
         } catch (e: Exception) {
-            val restoreFailure = if (comparisonStartMetadataWriteStarted) {
-                restoreAcceptedComparisonSnapshotId(previousAcceptedComparisonSnapshotId)
-            } else {
-                null
-            }
+            val restoreFailure = restoreSettingsMetadata(
+                comparisonStartMetadataWriteStarted = comparisonStartMetadataWriteStarted,
+                previousAcceptedComparisonSnapshotId = previousAcceptedComparisonSnapshotId,
+                retentionFloorMetadataWriteStarted = retentionFloorMetadataWriteStarted,
+                previousRetentionFloor = previousRetentionFloor,
+            )
             if (restoreFailure != null) {
                 e.addSuppressed(restoreFailure)
-                log.error("Failed to restore the previous accepted comparison snapshot identity", restoreFailure)
+                log.error("Failed to restore settings metadata after persistence failure", restoreFailure)
                 throw e
             }
             if (e is InvalidConfigurationException) {
@@ -297,6 +314,38 @@ class DashboardController(
             tradeHistoryService.setSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
                 previousSnapshotId.orEmpty(),
+            )
+        }
+        null
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (restoreFailure: Exception) {
+        restoreFailure
+    }
+
+    private suspend fun restoreSettingsMetadata(
+        comparisonStartMetadataWriteStarted: Boolean,
+        previousAcceptedComparisonSnapshotId: String?,
+        retentionFloorMetadataWriteStarted: Boolean,
+        previousRetentionFloor: String?,
+    ): Exception? {
+        val failures = mutableListOf<Exception>()
+        if (comparisonStartMetadataWriteStarted) {
+            restoreAcceptedComparisonSnapshotId(previousAcceptedComparisonSnapshotId)?.let(failures::add)
+        }
+        if (retentionFloorMetadataWriteStarted) {
+            restoreRetentionFloor(previousRetentionFloor)?.let(failures::add)
+        }
+        val firstFailure = failures.firstOrNull() ?: return null
+        failures.drop(1).forEach(firstFailure::addSuppressed)
+        return firstFailure
+    }
+
+    private suspend fun restoreRetentionFloor(previousFloor: String?): Exception? = try {
+        withContext(NonCancellable) {
+            tradeHistoryService.setSyncMetadata(
+                SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                previousFloor.orEmpty(),
             )
         }
         null
@@ -402,6 +451,17 @@ class DashboardController(
             ?.let(InceptionDiscoveryService::parseInceptionDate) !=
             updatedConfig.settings.comparisonStartDate
                 ?.let(InceptionDiscoveryService::parseInceptionDate)
+
+    private fun inceptionDateChanged(currentConfig: AppConfig, updatedConfig: AppConfig): Boolean =
+        currentConfig.settings.inceptionDate
+            ?.let(InceptionDiscoveryService::parseInceptionDate) !=
+            updatedConfig.settings.inceptionDate
+                ?.let(InceptionDiscoveryService::parseInceptionDate)
+
+    private fun configuredRetentionFloorEpochMs(config: AppConfig): Long? = config.settings.inceptionDate
+        ?.let(InceptionDiscoveryService::parseInceptionDate)
+        ?.takeIf { !it.isAfter(nowProvider()) }
+        ?.toEpochMilli()
 
     private fun Parameters.requiredSingle(name: String, message: String): String {
         val values = getAll(name)

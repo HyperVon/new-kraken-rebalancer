@@ -41,7 +41,6 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
-import kotlin.math.abs
 
 /**
  * Recovers account history needed to prove a strategy inception independently of the ordinary
@@ -651,41 +650,34 @@ class InceptionRecoveryService(
             return
         }
 
+        val expectedUniverse = config.allocations
+            .map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
+            .toSet()
         val approvedId = repository
             .getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
             ?.toIntOrNull()
         if (approvedId != null) {
             val existing = repository.getSnapshotById(approvedId)
-            if (existing != null && existing.timestamp == requestedStart) {
+            if (existing != null && isExactBaselineSnapshot(existing, requestedStart, expectedUniverse)) {
                 confirmApprovedBaseline(requestedStart, approvedId)
                 return
             }
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, "")
         }
 
-        val expectedUniverse = config.allocations
-            .map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
-            .toSet()
         val nearbySnapshots = repository.getSnapshotsInRange(
             requestedStart.minusSeconds(InceptionDiscoveryService.MAX_ANCHOR_PROXIMITY_SECONDS),
             requestedStart.plusSeconds(InceptionDiscoveryService.MAX_ANCHOR_PROXIMITY_SECONDS),
         )
-        val nearbySnapshot = nearbySnapshots.minByOrNull {
-            abs(it.timestamp.toEpochMilli() - requestedStart.toEpochMilli())
-        }
-            // A snapshot from a different allocation universe (e.g. a prior approval before a
-            // configuration change) must not be adopted as the anchor; reconstruction then reports
-            // the specific universe failure instead.
-            ?.takeIf { snapshot ->
-                snapshot.assets.keys.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet() == expectedUniverse
-            }
-        if (nearbySnapshot != null) {
-            val nearbyOrdinal = nearbySnapshots
-                .takeWhile { it !== nearbySnapshot }
-                .count { it.timestamp == nearbySnapshot.timestamp }
-            val nearbyId = repository.getSnapshotId(nearbySnapshot.timestamp, nearbyOrdinal)
-            if (nearbyId != null) {
-                confirmApprovedBaseline(requestedStart, nearbyId)
+        // A post-start observation is useful as a reverse-replay anchor, but it is not the
+        // requested baseline. Direct adoption is safe only for one exact, universe-matching row;
+        // otherwise reconstruct the state at T or fail closed.
+        val exactSnapshot = nearbySnapshots
+            .singleOrNull { isExactBaselineSnapshot(it, requestedStart, expectedUniverse) }
+        if (exactSnapshot != null) {
+            val exactId = repository.getSnapshotId(requestedStart)
+            if (exactId != null) {
+                confirmApprovedBaseline(requestedStart, exactId)
                 return
             }
         }
@@ -747,6 +739,14 @@ class InceptionRecoveryService(
     private suspend fun clearApprovedBaselineEvidence() {
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, "")
     }
+
+    private fun isExactBaselineSnapshot(
+        snapshot: PortfolioSnapshot,
+        requestedStart: Instant,
+        expectedUniverse: Set<String>,
+    ): Boolean = snapshot.timestamp == requestedStart &&
+        snapshot.balancesObservedAt?.let { it == requestedStart } != false &&
+        snapshot.assets.keys.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet() == expectedUniverse
 
     private suspend fun recoveryStreamsComplete(): Boolean =
         repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) == STREAM_COMPLETE &&

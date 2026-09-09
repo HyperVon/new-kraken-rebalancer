@@ -121,7 +121,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             runTest {
                 val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
-                val snap = dummySnapshot(configuredInstant.plusSeconds(5))
+                val snap = dummySnapshot(configuredInstant)
                 coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
                 coEvery { tradeRepository.getSnapshotId(snap.timestamp) } returns 101
 
@@ -394,7 +394,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 coEvery { tradeRepository.isHistorySeeded() } returns true
                 coEvery { tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE) } returns
                     InceptionDiscoveryService.INSTALL_TYPE_UPGRADED
-                val snap = dummySnapshot(configuredInstant.plusSeconds(5))
+                val snap = dummySnapshot(configuredInstant)
                 coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
                 coEvery { tradeRepository.getSnapshotId(snap.timestamp) } returns 301
 
@@ -430,11 +430,11 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
-        "resolveInception records a configured anchor without requiring a snapshot id" {
+        "resolveInception records an exact configured anchor without requiring a snapshot id" {
             runTest {
                 val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
-                val snap = dummySnapshot(configuredInstant.plusSeconds(5))
+                val snap = dummySnapshot(configuredInstant)
                 coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
                 coEvery { tradeRepository.getSnapshotId(snap.timestamp) } returns null
 
@@ -450,6 +450,38 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                         configuredInstant.toEpochMilli().toString(),
                     )
                 }
+            }
+        }
+
+        "resolveInception rejects a configured snapshot whose balance observation is not exact" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val snapshot = dummySnapshot(configuredInstant).copy(
+                    balancesObservedAt = configuredInstant.plusSeconds(1),
+                )
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snapshot)
+
+                val result = service.resolveInception()
+
+                result.inceptionTime shouldBe configuredInstant
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.TRUNCATED
+            }
+        }
+
+        "resolveInception accepts a legacy exact snapshot without an observation marker" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val snapshot = dummySnapshot(configuredInstant).copy(balancesObservedAt = null)
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snapshot)
+
+                val result = service.resolveInception()
+
+                result.inceptionTime shouldBe configuredInstant
+                result.inceptionSnapshot shouldBe snapshot
+                result.confidence shouldBe InceptionConfidence.CONFIDENT
             }
         }
 
@@ -944,7 +976,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             runTest {
                 val configuredDate = "2026-05-01"
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = configuredDate)
-                val snap = dummySnapshot(Instant.parse("2026-05-01T00:00:05Z"))
+                val snap = dummySnapshot(Instant.parse("2026-05-01T00:00:00Z"))
                 coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
                 val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
                 coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
@@ -1190,7 +1222,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
-        "a preceding retained snapshot anchors a configured start without a same-window snapshot" {
+        "a preceding retained snapshot cannot anchor a configured start without a same-window snapshot" {
             runTest {
                 val preceding = dummySnapshot(Instant.parse("2025-12-04T23:58:00Z"))
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2025-12-05")
@@ -1200,8 +1232,9 @@ class InceptionDiscoveryServiceTest : StringSpec() {
 
                 val resolution = service.resolveInception()
 
-                resolution.inceptionSnapshot shouldBe preceding
-                resolution.confidence shouldBe InceptionConfidence.CONFIDENT
+                resolution.inceptionTime shouldBe Instant.parse("2025-12-05T00:00:00Z")
+                resolution.inceptionSnapshot shouldBe null
+                resolution.confidence shouldBe InceptionConfidence.TRUNCATED
             }
         }
 

@@ -17,6 +17,7 @@ SyncMetadataKeys:
   INCEPTION_SNAPSHOT_ID: "inception_snapshot_id"
   DETECTED_INCEPTION_EPOCH_MS: "detected_inception_epoch_ms"
   DETECTED_INCEPTION_SOURCE: "detected_inception_source"
+  INCEPTION_RETENTION_FLOOR_EPOCH_MS: "inception_retention_floor_epoch_ms"
   ATH_FLOW_WATERMARK_EPOCH_SEC: "ath_flow_watermark_epoch_sec"
   ATH_FLOW_JOURNAL_MIGRATED: "ath_flow_journal_migrated"
   INCEPTION_INSTALL_TYPE: "inception_install_type"

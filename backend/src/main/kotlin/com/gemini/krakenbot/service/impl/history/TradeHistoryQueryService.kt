@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.withLock
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
+import java.time.Duration
 import java.time.Instant
 
 class TradeHistoryQueryService(
@@ -33,6 +34,7 @@ class TradeHistoryQueryService(
     private val orderIntentRepository: OrderIntentRepository? = null,
     private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
     private val fundingProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
+    private val nowProvider: () -> Instant = Instant::now,
 ) {
     private val proposalSearchMutex = Mutex()
 
@@ -100,8 +102,15 @@ class TradeHistoryQueryService(
 
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
-        private const val PROPOSAL_SEARCH_VERSION = "2"
+        private const val PROPOSAL_SEARCH_VERSION = "3"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
+
+        /**
+         * The normal snapshot loop is substantially more frequent than daily. A gap this large
+         * crossing the rolling-retention boundary is therefore evidence that retained history may
+         * have lost an entire earlier era; proposal search must not infer over it.
+         */
+        private const val MAX_COVERAGE_GAP_SECONDS = 86_400L
         private val OPEN_ENDED_RANGE_END = Instant.ofEpochMilli(Long.MAX_VALUE)
     }
 
@@ -121,6 +130,17 @@ class TradeHistoryQueryService(
             result.unavailableReason in PROPOSAL_ELIGIBLE_REASONS &&
             inceptionResolution?.isAutoDetected != true
         ) {
+            val strategyStart = inceptionResolution?.inceptionTime
+            if (strategyStart != null && historicalCoverageGapExists(strategyStart)) {
+                // A later retained snapshot may reconcile locally while an earlier retained era
+                // is missing. Without continuity across the retention boundary there is no proof
+                // that the proposed candidate is the earliest trustworthy start.
+                return result.copy(
+                    unavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+                    proposedBaselineTimestamp = null,
+                    proposalSearchStatus = null,
+                )
+            }
             // Window-independent: the proposal must not change when the user
             // zooms the History chart, so the scan reads the full retained
             // snapshot range instead of the display window.
@@ -151,6 +171,13 @@ class TradeHistoryQueryService(
         val current = calculateComparison(snapshots, inceptionResolution)
         if (current.availability != ComparisonAvailability.UNAVAILABLE ||
             current.unavailableReason !in PROPOSAL_ELIGIBLE_REASONS
+        ) {
+            return null
+        }
+        if (historicalCoverageGapExists(
+                snapshots = snapshots,
+                strategyStart = inceptionResolution?.inceptionTime ?: after,
+            )
         ) {
             return null
         }
@@ -293,6 +320,13 @@ class TradeHistoryQueryService(
             // History request must not fingerprint a stale snapshot list and then overwrite newer
             // durable progress with an older cursor.
             val orderedSnapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: startAfter)
+            if (historicalCoverageGapExists(
+                    snapshots = orderedSnapshots,
+                    strategyStart = inceptionResolution?.inceptionTime ?: startAfter,
+                )
+            ) {
+                return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+            }
             val candidates = orderedSnapshots.filter { it.timestamp > startAfter }
             val predecessorSnapshot = candidates.firstOrNull()?.let { repository.getSnapshotBefore(it.timestamp) }
             val fingerprint = proposalEvidenceFingerprint(
@@ -419,6 +453,29 @@ class TradeHistoryQueryService(
 
     private suspend fun loadAllSnapshots(from: Instant): List<PortfolioSnapshot> =
         repository.getAllSnapshotsInRange(from, OPEN_ENDED_RANGE_END).sortedBy { it.timestamp }
+
+    private suspend fun historicalCoverageGapExists(strategyStart: Instant): Boolean =
+        historicalCoverageGapExists(loadAllSnapshots(strategyStart), strategyStart)
+
+    private fun historicalCoverageGapExists(snapshots: List<PortfolioSnapshot>, strategyStart: Instant): Boolean {
+        val now = nowProvider()
+        if (strategyStart.isAfter(now)) return false
+        val retentionCutoff = now.minusSeconds(PrecisionConstants.HISTORICAL_DAYS_BACK.toLong() * 86_400L)
+        if (!strategyStart.isBefore(retentionCutoff)) return false
+
+        val retained = snapshots.filter {
+            !it.timestamp.isBefore(strategyStart) && !it.timestamp.isAfter(now)
+        }
+        val first = retained.firstOrNull() ?: return false
+        if (!first.timestamp.isBefore(retentionCutoff)) {
+            return true
+        }
+        return retained.zipWithNext().any { (previous, current) ->
+            previous.timestamp.isBefore(retentionCutoff) &&
+                !current.timestamp.isBefore(retentionCutoff) &&
+                Duration.between(previous.timestamp, current.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS
+        }
+    }
 
     private fun List<PortfolioSnapshot>.proposalCursorAt(index: Int): ProposalCursor {
         val timestamp = this[index].timestamp

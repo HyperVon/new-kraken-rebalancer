@@ -273,7 +273,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
             }
         }
 
-        "pruneSnapshotsOlderThan retains inception snapshot and prunes routine snapshots older than 90 days" {
+        "pruneSnapshotsOlderThan retains every snapshot from the inception floor" {
             runTest {
                 val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
                 val preInceptionOld = TestFixtures.emptySnapshot(
@@ -306,22 +306,22 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
 
                 // Cutoff is 90 days ago.
                 // preInceptionOld is 120 days ago -> pruned!
-                // postInceptionOld is 95 days ago (routine snapshot) -> pruned to prevent unbounded DB growth!
+                // postInceptionOld is 95 days ago but at/after inception -> retained for lifetime replay!
                 // inceptionOld is 100 days ago (exact INCEPTION_SNAPSHOT_ID) -> strictly retained!
                 // recent is 0 days ago (>= cutoff) -> retained!
                 val pruned = repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
-                pruned shouldBe 2
+                pruned shouldBe 1
 
                 val loaded = repository.load()
-                loaded.size shouldBe 2
+                loaded.size shouldBe 3
                 loaded.any { it.timestamp == preInceptionOld.timestamp } shouldBe false
                 loaded.any { it.timestamp == inceptionOld.timestamp } shouldBe true
-                loaded.any { it.timestamp == postInceptionOld.timestamp } shouldBe false
+                loaded.any { it.timestamp == postInceptionOld.timestamp } shouldBe true
                 loaded.any { it.timestamp == recent.timestamp } shouldBe true
             }
         }
 
-        "exact anchor snapshot ID survives pruning even if taken >5s before nominal inception" {
+        "the inception floor retains snapshots even when the anchor predates it slightly" {
             runTest {
                 val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
                 val nominalInception = baseTime.minus(100, ChronoUnit.DAYS)
@@ -350,13 +350,45 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 )
 
                 val pruned = repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
-                pruned shouldBe 1
+                pruned shouldBe 0
 
                 val loaded = repository.load()
-                loaded.size shouldBe 2
+                loaded.size shouldBe 3
                 loaded.any { it.timestamp == anchorSnap.timestamp } shouldBe true
-                loaded.any { it.timestamp == routineOld.timestamp } shouldBe false
+                loaded.any { it.timestamp == routineOld.timestamp } shouldBe true
                 loaded.any { it.timestamp == recent.timestamp } shouldBe true
+            }
+        }
+
+        "the durable inception retention floor protects snapshots and trades before recovery" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val retentionFloor = baseTime.minus(100, ChronoUnit.DAYS)
+                val oldSnapshot = TestFixtures.emptySnapshot(
+                    baseTime.minus(95, ChronoUnit.DAYS),
+                    BigDecimal("1600.00"),
+                )
+                val oldTrade = TestFixtures.tradeRecord(
+                    timestamp = baseTime.minus(95, ChronoUnit.DAYS),
+                    pair = Asset.BTC_USD_PAIR,
+                    side = OrderSide.BUY.name,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("1.00"),
+                )
+                repository.saveSnapshot(oldSnapshot)
+                repository.saveTrade(oldTrade)
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    retentionFloor.toEpochMilli().toString(),
+                )
+
+                repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS)) shouldBe 0
+                repository.pruneTradesOlderThan(baseTime.minus(90, ChronoUnit.DAYS)) shouldBe 0
+
+                repository.load().size shouldBe 1
+                repository.getTradesInRange(retentionFloor.minus(1, ChronoUnit.DAYS), baseTime)
+                    .single().timestamp shouldBe oldTrade.timestamp
             }
         }
 
@@ -381,7 +413,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
             }
         }
 
-        "pruneSnapshotsOlderThan falls back to timestamp match when INCEPTION_SNAPSHOT_ID is not set" {
+        "pruneSnapshotsOlderThan uses the detected inception as a lifetime floor without an id" {
             runTest {
                 val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
                 val nominalInception = baseTime.minus(100, ChronoUnit.DAYS)
@@ -400,12 +432,12 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 )
 
                 val pruned = repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
-                pruned shouldBe 1
+                pruned shouldBe 0
 
                 val loaded = repository.load()
-                loaded.size shouldBe 2
+                loaded.size shouldBe 3
                 loaded.any { it.timestamp == anchorSnap.timestamp } shouldBe true
-                loaded.any { it.timestamp == routineOld.timestamp } shouldBe false
+                loaded.any { it.timestamp == routineOld.timestamp } shouldBe true
                 loaded.any { it.timestamp == recent.timestamp } shouldBe true
             }
         }
@@ -472,7 +504,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
             }
         }
 
-        "pruneTradesOlderThan prunes routine bot trades older than 90 days" {
+        "pruneTradesOlderThan retains bot and manual trades from the inception floor" {
             runTest {
                 val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
                 val botTradeOld = TestFixtures.tradeRecord(
@@ -501,16 +533,17 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                     baseTime.minus(100, ChronoUnit.DAYS).toEpochMilli().toString(),
                 )
 
-                // Bot trade older than 90 days is pruned; manual trade at or after inception is retained
+                // Both trades are part of the configured strategy period and are retained.
                 val pruned = repository.pruneTradesOlderThan(baseTime.minus(90, ChronoUnit.DAYS))
-                pruned shouldBe 1
+                pruned shouldBe 0
 
                 val remaining = repository.getTradesInRange(
                     baseTime.minus(150, ChronoUnit.DAYS),
                     baseTime.plus(1, ChronoUnit.DAYS),
                 )
-                remaining.size shouldBe 1
-                remaining.single().clientOrderId shouldBe null
+                remaining.size shouldBe 2
+                remaining.any { it.clientOrderId == null } shouldBe true
+                remaining.any { it.clientOrderId == "cl-456" } shouldBe true
             }
         }
 

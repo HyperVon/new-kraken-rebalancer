@@ -48,6 +48,7 @@ class TradeHistoryServiceImpl(
             objectMapper = objectMapper,
             portfolioStatsRepository = portfolioStatsRepository,
             tradeHistoryFilePath = tradeHistoryFilePath,
+            nowProvider = syncNowProvider,
         ),
         queryService =
         TradeHistoryQueryService(
@@ -55,6 +56,7 @@ class TradeHistoryServiceImpl(
             portfolioStatsRepository = portfolioStatsRepository,
             ledgerRepository = ledgerRepository,
             orderIntentRepository = orderIntentRepository,
+            nowProvider = syncNowProvider,
         ),
         syncService =
         TradeHistorySyncService(

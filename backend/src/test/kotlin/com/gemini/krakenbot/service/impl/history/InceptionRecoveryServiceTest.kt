@@ -2732,10 +2732,12 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "approved start reuses a retained snapshot near the requested time" {
+        "approved start reverse-replays a nearby post-start snapshot to the requested time" {
             runTest {
                 val requestedStart = Instant.parse("2026-01-01T00:00:00Z")
                 config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("price", requestedStart))
+                repository.saveTrade(apiTrade("post-start", requestedStart.plusSeconds(120)))
                 repository.saveSnapshot(
                     anchorSnapshot(
                         balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
@@ -2755,8 +2757,11 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
                         ?.toIntOrNull(),
                 )
-                repository.getSnapshotById(approvedId)?.timestamp shouldBe requestedStart.plusSeconds(120)
-                repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 1
+                val baseline = requireNotNull(repository.getSnapshotById(approvedId))
+                baseline.timestamp shouldBe requestedStart
+                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.49")
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("501.01")
+                repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 2
             }
         }
 

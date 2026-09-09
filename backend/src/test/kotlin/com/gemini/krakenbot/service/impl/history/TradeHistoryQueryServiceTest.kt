@@ -1111,6 +1111,136 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "findVerifiedLaterComparisonStart_DoesNotTreatFutureStartAsCoverageGap" {
+            runTest {
+                val futureStart = now.plusSeconds(3600)
+                val serviceWithClock = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    nowProvider = { now },
+                )
+                coEvery { repository.getAllSnapshotsInRange(futureStart, openEndedRangeEnd) } returns emptyList()
+
+                serviceWithClock.findVerifiedLaterComparisonStart(futureStart).shouldBeNull()
+            }
+        }
+
+        "findVerifiedLaterComparisonStart_DoesNotFlagMissingSnapshotsWhenStartIsWithinRetention" {
+            runTest {
+                val recentStart = now.minusSeconds(3600)
+                val recentSnapshot = snapshot(recentStart, "90000.00", btc = "1.0" to "40000.00")
+                val latestSnapshot = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val serviceWithClock = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    nowProvider = { now },
+                )
+                coEvery { repository.getAllSnapshotsInRange(recentStart, openEndedRangeEnd) } returns
+                    listOf(recentSnapshot, latestSnapshot)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotBefore(any()) } returns recentSnapshot
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                serviceWithClock.findVerifiedLaterComparisonStart(recentStart).shouldBeNull()
+            }
+        }
+
+        "findVerifiedLaterComparisonStart_DoesNotFlagAnEmptyHistoricalRangeAsCoverageGap" {
+            runTest {
+                val historicalStart = now.minusSeconds(91 * 86_400L)
+                val serviceWithClock = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    nowProvider = { now },
+                )
+                coEvery { repository.getAllSnapshotsInRange(historicalStart, openEndedRangeEnd) } returns emptyList()
+
+                serviceWithClock.findVerifiedLaterComparisonStart(historicalStart).shouldBeNull()
+            }
+        }
+
+        "findVerifiedLaterComparisonStart_FailsClosedForAGapCrossingRetentionBoundary" {
+            runTest {
+                val historicalStart = now.minusSeconds(100 * 86_400L)
+                val retentionCutoff = now.minusSeconds(90 * 86_400L)
+                val beforeStrategyStart = snapshot(
+                    historicalStart.minusSeconds(3600),
+                    "80000.00",
+                    btc = "1.0" to "30000.00",
+                )
+                val oldSnapshot = snapshot(
+                    retentionCutoff.minusSeconds(3600),
+                    "90000.00",
+                    btc = "1.0" to "40000.00",
+                )
+                val retainedSnapshot = snapshot(
+                    retentionCutoff.plusSeconds(25 * 3600L),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                )
+                val afterNow = snapshot(
+                    now.plusSeconds(3600),
+                    "110000.00",
+                    btc = "1.0" to "60000.00",
+                )
+                val serviceWithClock = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    nowProvider = { now },
+                )
+                coEvery { repository.getAllSnapshotsInRange(historicalStart, openEndedRangeEnd) } returns listOf(
+                    beforeStrategyStart,
+                    historicalStart.let {
+                        snapshot(it, "85000.00", btc = "1.0" to "35000.00")
+                    },
+                    oldSnapshot,
+                    retainedSnapshot,
+                    afterNow,
+                )
+
+                serviceWithClock.findVerifiedLaterComparisonStart(historicalStart).shouldBeNull()
+            }
+        }
+
+        "findVerifiedLaterComparisonStart_FailsClosedWhenFirstRetainedSnapshotStartsAfterTheBoundary" {
+            runTest {
+                val historicalStart = now.minusSeconds(100 * 86_400L)
+                val retentionCutoff = now.minusSeconds(90 * 86_400L)
+                val firstRetainedSnapshot = snapshot(
+                    retentionCutoff.plusSeconds(25 * 3600L),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                )
+                val latestSnapshot = snapshot(
+                    now,
+                    "110000.00",
+                    btc = "1.0" to "60000.00",
+                )
+                val serviceWithClock = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    nowProvider = { now },
+                )
+                coEvery { repository.getAllSnapshotsInRange(historicalStart, openEndedRangeEnd) } returns listOf(
+                    firstRetainedSnapshot,
+                    latestSnapshot,
+                )
+
+                serviceWithClock.findVerifiedLaterComparisonStart(historicalStart).shouldBeNull()
+            }
+        }
+
         "findVerifiedLaterComparisonStart advances past duplicate-millisecond candidates" {
             runTest {
                 val duplicateTime = now.plusSeconds(3600)

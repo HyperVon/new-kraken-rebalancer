@@ -67,6 +67,16 @@ class InceptionDiscoveryService(
         return snapshot.assets.keys.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet() == expectedUniverse
     }
 
+    /**
+     * A legacy row has no separate observation marker, so its timestamp is the only available
+     * observation evidence. Newer rows must explicitly say that balances were observed at the
+     * requested instant; a row timestamp alone is not enough when the balance request completed
+     * before or after that instant.
+     */
+    private fun hasExactBaselineObservation(snapshot: PortfolioSnapshot, targetTime: Instant): Boolean =
+        snapshot.timestamp == targetTime &&
+            snapshot.balancesObservedAt?.let { it == targetTime } != false
+
     suspend fun resolveInception(): InceptionResolution {
         val config = configService.getConfig()
         val settings = config.settings
@@ -108,39 +118,21 @@ class InceptionDiscoveryService(
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
                 )
             }
-            val nearbySnapshot = if (comparisonStart != null) {
-                // An accepted proposal is an exact snapshot choice, not a request to substitute
-                // another nearby observation after retention or duplicate-timestamp changes.
-                findAcceptedComparisonSnapshot(effectiveStart)
-            } else {
-                findClosestSnapshot(effectiveStart)
-            }
-            // A snapshot from a different allocation universe (e.g. a prior approval
-            // before a configuration change) must not be adopted as the configured
-            // anchor: the recovery service rejects the same snapshot and reports the
-            // universe change, so trusting it here would launder foreign history and
-            // diverge from that verdict.
-            val snapshot = nearbySnapshot?.takeIf { matchesConfiguredUniverse(it, config) }
-            if (nearbySnapshot != null && snapshot == null) {
-                log.warn(
-                    "Ignoring snapshot near configured inception date {}: tracked asset universe changed",
-                    effectiveStart,
-                )
-            }
-            val approvedBaselineId: Int? =
-                if (snapshot != null && recoveryService != null && comparisonStart == null) {
-                    val candidateId = tradeRepository
-                        .getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
-                        ?.toIntOrNull()
-                    if (candidateId != null && tradeRepository.getSnapshotId(snapshot.timestamp) == candidateId) {
-                        candidateId
-                    } else {
-                        null
-                    }
+            val snapshot = (
+                if (comparisonStart != null) {
+                    // An accepted proposal is an exact snapshot choice, not a request to substitute
+                    // another nearby observation after retention or duplicate-timestamp changes.
+                    findAcceptedComparisonSnapshot(effectiveStart)
                 } else {
-                    null
+                    // A nearby post-start observation can be used by recovery for reverse replay, but
+                    // it cannot itself be blessed as the requested baseline. Discovery therefore uses
+                    // an exact timestamp only; the recovery service owns reconstruction when it is
+                    // absent.
+                    findExactConfiguredSnapshot(effectiveStart)
                 }
-            if (snapshot != null && approvedBaselineId == null) {
+                )
+                ?.takeIf { matchesConfiguredUniverse(it, config) }
+            if (snapshot != null) {
                 // Re-check approved state immediately before persisting: recovery confirms
                 // its baseline under its own mutex, so this re-read keeps a just-confirmed
                 // approved baseline from being re-labelled as configured detection.
@@ -150,14 +142,7 @@ class InceptionDiscoveryService(
                 if (approvedBaselineNow == null) {
                     persistDetection(configured, snapshot, source = INCEPTION_SOURCE_CONFIGURED)
                     log.info("Using configured inception date: {} (comparison anchor: {})", configured, effectiveStart)
-                    return InceptionResolution(
-                        inceptionTime = effectiveStart,
-                        inceptionSnapshot = snapshot,
-                        isAutoDetected = false,
-                    )
                 }
-            }
-            if (snapshot != null) {
                 // Either the nearby snapshot IS the approved baseline persisted by the
                 // recovery service, or approved state exists and this is an accepted later
                 // anchor; either way re-detecting would overwrite approved provenance
@@ -175,8 +160,12 @@ class InceptionDiscoveryService(
                 val approvedId = tradeRepository
                     .getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
                     ?.toIntOrNull()
-                val approved = approvedId?.let { tradeRepository.getSnapshotById(it) }
-                if (approved != null && approved.timestamp == configured) {
+                val approved = approvedId
+                    ?.let { tradeRepository.getSnapshotById(it) }
+                    ?.takeIf {
+                        hasExactBaselineObservation(it, configured) && matchesConfiguredUniverse(it, config)
+                    }
+                if (approved != null) {
                     log.info("Using approved-start baseline established at {}", configured)
                     return InceptionResolution(
                         inceptionTime = configured,
@@ -473,6 +462,11 @@ class InceptionDiscoveryService(
             .filter { it.timestamp == targetTime }
             .singleOrNull()
     }
+
+    private suspend fun findExactConfiguredSnapshot(targetTime: Instant): PortfolioSnapshot? = tradeRepository
+        .getSnapshotsInRange(targetTime, targetTime)
+        .filter { hasExactBaselineObservation(it, targetTime) }
+        .singleOrNull()
 
     companion object {
         const val BURST_WINDOW_MS = 5000L
