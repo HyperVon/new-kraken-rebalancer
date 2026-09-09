@@ -114,7 +114,7 @@ class TradeHistoryQueryService(
         private val OPEN_ENDED_RANGE_END = Instant.ofEpochMilli(Long.MAX_VALUE)
     }
 
-    suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, Instant.now())
+    suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
 
     suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison {
         val snapshots = getSnapshotsInRange(from, to)

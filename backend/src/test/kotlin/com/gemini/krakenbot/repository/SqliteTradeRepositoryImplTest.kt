@@ -870,6 +870,18 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
             }
         }
 
+        "retention floor metadata rejects invalid and future values without an existing floor" {
+            runTest {
+                val key = SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS
+
+                repository.setSyncMetadata(key, "not-a-floor")
+                repository.getSyncMetadata(key).shouldBeNull()
+
+                repository.setSyncMetadata(key, Instant.now().plusSeconds(86_400).toEpochMilli().toString())
+                repository.getSyncMetadata(key).shouldBeNull()
+            }
+        }
+
         "persists and reloads inception inference evidence with candidates deterministically" {
             runTest {
                 val observedStart = Instant.parse("2025-12-22T02:08:00Z")

@@ -612,13 +612,19 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             return
         }
         database.safeTransactionIO(log, "Failed to upsert inception retention floor") {
+            val now = Instant.now()
             val existingFloor = readSyncMetadataInTransaction(key)?.toLongOrNull()
                 ?.takeIf { it >= 0L }
+                ?.takeIf { !Instant.ofEpochMilli(it).isAfter(now) }
             val requestedFloor = value.toLongOrNull()?.takeIf { it >= 0L }
-            val persistedValue = listOfNotNull(existingFloor, requestedFloor).minOrNull()?.toString() ?: value
-            HistorySyncMetadataTable.upsert {
-                it[HistorySyncMetadataTable.key] = key
-                it[HistorySyncMetadataTable.value] = persistedValue
+                ?.takeIf { !Instant.ofEpochMilli(it).isAfter(now) }
+            if (requestedFloor != null) {
+                val persistedValue = existingFloor?.coerceAtMost(requestedFloor)?.toString()
+                    ?: requestedFloor.toString()
+                HistorySyncMetadataTable.upsert {
+                    it[HistorySyncMetadataTable.key] = key
+                    it[HistorySyncMetadataTable.value] = persistedValue
+                }
             }
         }
     }
