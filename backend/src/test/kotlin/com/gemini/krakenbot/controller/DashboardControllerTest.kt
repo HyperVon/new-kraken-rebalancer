@@ -642,6 +642,56 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
+        "postSettings_preservesDurableRetentionFloorWhenInceptionMovesToTheFuture" {
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
+            every { configService.getConfig() } returns serverConfig
+            coEvery { configService.updateConfig(any()) } returns Unit
+            coEvery {
+                tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS)
+            } returns "1760000000000"
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                            FormFields.INCEPTION_DATE to listOf("2099-01-01"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+                response.status shouldBe HttpStatusCode.OK
+            }
+
+            coVerify(exactly = 0) {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    any(),
+                )
+            }
+        }
+
         "postSettings restores the prior snapshot identity when config persistence fails" {
             val serverConfig = dashboardConfig(
                 credentials = KrakenCredentials(

@@ -258,11 +258,13 @@ class DashboardController(
                 )
             }
             if (inceptionChanged) {
-                retentionFloorMetadataWriteStarted = true
-                tradeHistoryService.setSyncMetadata(
-                    SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
-                    configuredRetentionFloorEpochMs(updatedConfig)?.toString().orEmpty(),
-                )
+                configuredRetentionFloorEpochMs(updatedConfig)?.toString()?.let { retentionFloor ->
+                    retentionFloorMetadataWriteStarted = true
+                    tradeHistoryService.setSyncMetadata(
+                        SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                        retentionFloor,
+                    )
+                }
             }
             configService.updateConfig(updatedConfig)
         } catch (cancelled: CancellationException) {

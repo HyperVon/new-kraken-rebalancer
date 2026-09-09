@@ -368,6 +368,7 @@ class TradeHistorySnapshotStore(
 
     suspend fun addSnapshot(snapshot: PortfolioSnapshot) {
         val now = nowProvider()
+        var retentionFloorDurable = true
         try {
             // Publish the configured floor before saving/pruning so a first snapshot after a
             // pending Settings update cannot race with rolling retention.
@@ -375,8 +376,9 @@ class TradeHistorySnapshotStore(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // The config itself remains an in-memory source of truth for this prune attempt; a
-            // metadata write failure must not drop the snapshot or widen deletion.
+            // A metadata write failure must not drop the snapshot or allow pruning against a
+            // floor that the repository cannot durably see.
+            retentionFloorDurable = false
             log.error("Failed to persist configured inception retention floor", e)
         }
         repository.saveSnapshot(snapshot)
@@ -384,6 +386,11 @@ class TradeHistorySnapshotStore(
             // Lifetime retention contract: never prune anything at or after
             // inception. Without a valid configured or resolved inception floor, skip pruning
             // entirely rather than destroying evidence future inception resolution depends on.
+            if (!retentionFloorDurable) {
+                log.debug("Skipping snapshot/trade prune: inception retention floor is not durable")
+                snapshotFlow.tryEmit(snapshot)
+                return
+            }
             val inceptionEpochMs = effectiveRetentionFloorEpochMs(now)
             if (inceptionEpochMs == null) {
                 log.debug("Skipping snapshot/trade prune: inception not yet resolved")

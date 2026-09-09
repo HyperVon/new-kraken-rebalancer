@@ -237,6 +237,33 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "addSnapshot_skipsPruneWhenConfiguredRetentionFloorCannotBePersisted" {
+            runTest {
+                val now = Instant.parse("2026-05-01T00:00:00Z")
+                val inception = now.minusSeconds(86400L * 100)
+                val tradeHistoryService = createService(
+                    syncNowProvider = { now },
+                    inceptionDate = inception.toString(),
+                )
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    )
+                } returns null
+                coEvery {
+                    repository.setSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                        inception.toEpochMilli().toString(),
+                    )
+                } throws IllegalStateException("metadata store unavailable")
+
+                tradeHistoryService.addSnapshot(TestFixtures.emptySnapshot(now, BigDecimal.ZERO))
+
+                coVerify(exactly = 0) { repository.pruneSnapshotsOlderThan(any()) }
+                coVerify(exactly = 0) { repository.pruneTradesOlderThan(any()) }
+            }
+        }
+
         "addSnapshot_doesNotRewriteAnAlreadyDurableConfiguredRetentionFloor" {
             runTest {
                 val now = Instant.parse("2026-05-01T00:00:00Z")
