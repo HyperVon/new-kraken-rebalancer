@@ -607,7 +607,20 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun getSyncMetadata(key: String): String? = database.readSyncMetadata(key)
 
     override suspend fun setSyncMetadata(key: String, value: String) {
-        database.writeSyncMetadata(key, value, log, "Failed to upsert sync metadata")
+        if (key != SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS) {
+            database.writeSyncMetadata(key, value, log, "Failed to upsert sync metadata")
+            return
+        }
+        database.safeTransactionIO(log, "Failed to upsert inception retention floor") {
+            val existingFloor = readSyncMetadataInTransaction(key)?.toLongOrNull()
+                ?.takeIf { it >= 0L }
+            val requestedFloor = value.toLongOrNull()?.takeIf { it >= 0L }
+            val persistedValue = listOfNotNull(existingFloor, requestedFloor).minOrNull()?.toString() ?: value
+            HistorySyncMetadataTable.upsert {
+                it[HistorySyncMetadataTable.key] = key
+                it[HistorySyncMetadataTable.value] = persistedValue
+            }
+        }
     }
 
     override suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int =

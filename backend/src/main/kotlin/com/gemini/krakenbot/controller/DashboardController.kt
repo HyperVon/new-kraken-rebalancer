@@ -344,11 +344,13 @@ class DashboardController(
     }
 
     private suspend fun restoreRetentionFloor(previousFloor: String?): Exception? = try {
-        withContext(NonCancellable) {
-            tradeHistoryService.setSyncMetadata(
-                SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
-                previousFloor.orEmpty(),
-            )
+        previousFloor?.takeIf(String::isNotBlank)?.let { floor ->
+            withContext(NonCancellable) {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    floor,
+                )
+            }
         }
         null
     } catch (cancelled: CancellationException) {

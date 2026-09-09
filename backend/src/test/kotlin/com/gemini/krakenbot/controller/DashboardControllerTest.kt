@@ -753,6 +753,12 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     "17",
                 )
             }
+            coVerify(exactly = 0) {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    "",
+                )
+            }
         }
 
         "postSettings restores an empty identity when clearing comparison start fails" {

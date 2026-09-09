@@ -2979,6 +2979,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 failed.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
                 failed.reason shouldBe "Funding legs in card group cannot be proven external"
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_REASON,
+                    "Funding legs in card group cannot be proven",
+                )
                 val historyCalls = krakenService.getTradeHistoryCallCount
                 fundingAvailable = true
                 now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
@@ -3202,6 +3206,29 @@ class InceptionRecoveryServiceTest : StringSpec() {
             val refreshed = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
             refreshed.shouldNotBeNull()
             refreshed shouldNotBe "999"
+        }
+
+        "approved start adopts the exact duplicate-timestamp row rather than the first row" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-01T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                val nonExact = anchorSnapshot(
+                    balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
+                    timestamp = requestedStart,
+                ).copy(balancesObservedAt = requestedStart.plusSeconds(1))
+                val exact = anchorSnapshot(
+                    balances = mapOf(Asset.BTC to BigDecimal("0.49"), Asset.USD to BigDecimal("501.01")),
+                    timestamp = requestedStart,
+                )
+                repository.saveSnapshot(nonExact)
+                val exactId = repository.saveSnapshot(exact)
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe
+                    exactId.toString()
+            }
         }
 
         "an approved baseline snapshot is re-adopted after a status reset" {

@@ -1334,7 +1334,34 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
                     ComparisonProposalStatus.INCOMPLETE.name
 
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] =
+                    ComparisonProposalStatus.VERIFIED.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = "77"
+                serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t1
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.VERIFIED.name
+
+                val verifiedCursor = requireNotNull(
+                    metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS],
+                )
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = "not-a-cursor"
+                serviceWithInception.findVerifiedLaterComparisonStart(t0).shouldBeNull()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.INCOMPLETE.name
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] =
+                    ComparisonProposalStatus.VERIFIED.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = verifiedCursor
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = "not-a-snapshot-id"
+                serviceWithInception.findVerifiedLaterComparisonStart(t0).shouldBeNull()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.INCOMPLETE.name
+
                 provenanceAvailable = true
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] =
+                    ComparisonProposalStatus.VERIFIED.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = verifiedCursor
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = "77"
                 serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t1
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
                     ComparisonProposalStatus.VERIFIED.name

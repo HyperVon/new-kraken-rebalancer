@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.InceptionCandidateEvidence
 import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
@@ -852,6 +853,20 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.setSyncMetadataAtomically(emptyMap())
 
                 repository.getSyncMetadata("inference-empty-batch-key").shouldBeNull()
+            }
+        }
+
+        "retention floor metadata never moves later or becomes invalid" {
+            runTest {
+                val key = SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS
+                repository.setSyncMetadata(key, "1000")
+                repository.setSyncMetadata(key, "2000")
+
+                repository.getSyncMetadata(key) shouldBe "1000"
+
+                repository.setSyncMetadata(key, "not-a-floor")
+
+                repository.getSyncMetadata(key) shouldBe "1000"
             }
         }
 

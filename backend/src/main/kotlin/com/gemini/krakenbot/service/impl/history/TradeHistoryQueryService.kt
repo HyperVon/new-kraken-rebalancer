@@ -360,6 +360,20 @@ class TradeHistoryQueryService(
             val fundingEvidenceChanged = fundingEvidenceFingerprint != null &&
                 fundingEvidenceFingerprint != storedFundingEvidenceFingerprint
             if (preparedFundingProvenance?.preparationFailure != null) {
+                if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name) {
+                    val verifiedIndex = storedCursor?.let(ProposalCursor::parse)
+                        ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
+                    val storedSnapshotId = repository.getSyncMetadata(
+                        SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
+                    )?.toIntOrNull()
+                    if (verifiedIndex != null && verifiedIndex >= 0 && storedSnapshotId != null) {
+                        return@withLock ComparisonStartProposal(
+                            status = ComparisonProposalStatus.VERIFIED,
+                            timestamp = candidates[verifiedIndex].timestamp,
+                            snapshotId = storedSnapshotId,
+                        )
+                    }
+                }
                 persistProposalSearchState(
                     fingerprint = fingerprint,
                     status = ComparisonProposalStatus.INCOMPLETE,

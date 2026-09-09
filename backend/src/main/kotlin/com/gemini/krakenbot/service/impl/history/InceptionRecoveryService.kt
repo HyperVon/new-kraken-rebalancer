@@ -675,7 +675,10 @@ class InceptionRecoveryService(
         val exactSnapshot = nearbySnapshots
             .singleOrNull { isExactBaselineSnapshot(it, requestedStart, expectedUniverse) }
         if (exactSnapshot != null) {
-            val exactId = repository.getSnapshotId(requestedStart)
+            val exactOrdinal = nearbySnapshots
+                .filter { it.timestamp == requestedStart }
+                .indexOf(exactSnapshot)
+            val exactId = repository.getSnapshotId(requestedStart, exactOrdinal)
             if (exactId != null) {
                 confirmApprovedBaseline(requestedStart, exactId)
                 return
@@ -1591,7 +1594,7 @@ class InceptionRecoveryService(
         reason == HISTORICAL_PRICE_UNAVAILABLE_REASON ||
             reason?.startsWith("ledger provenance unresolved:", ignoreCase = true) == true ||
             reason?.contains("unresolved funding provenance", ignoreCase = true) == true ||
-            reason?.equals("Funding legs in card group cannot be proven external", ignoreCase = true) == true
+            reason?.startsWith("Funding legs in card group cannot be proven", ignoreCase = true) == true
 
     private suspend fun clearCandidateEvidence() {
         listOf(
