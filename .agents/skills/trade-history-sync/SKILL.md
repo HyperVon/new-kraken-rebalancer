@@ -101,9 +101,11 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 - `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.
   `saveLedgers()` returns only newly inserted rows, so overlap and repeated pages
   cannot inflate counts.
-- `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking` and `dividend` entries,
-  accumulates amounts by asset at each portfolio snapshot, and values them with
-  that snapshot's prices.
+- `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking`, `dividend`,
+  top-level promotion `reward`, transfer `airdrop` credits, and `earn/reward`
+  entries for tracked assets, accumulates amounts by asset at each portfolio
+  snapshot, and values them with that snapshot's prices. Earn allocation
+  mechanics remain internal and are excluded from the rewards series.
 - `TradeHistoryQueryService.getRebalancerComparison()` passes all retained balance-affecting
   ledgers (`EXTERNAL_BALANCE_TYPES`, including complete conversion groups) to
   `RebalancerComparisonCalculator` so strategy-neutral flows (rewards, deposits, withdrawals,
