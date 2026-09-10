@@ -546,10 +546,19 @@ class LedgerFlowClassifierTest : StringSpec() {
                 validDestination.copy(amount = BigDecimal.ZERO, fee = BigDecimal.ZERO),
             ) shouldBe
                 setOf(FlowCategory.UNSUPPORTED)
+            conversionCategory(
+                validSource,
+                validDestination.copy(amount = BigDecimal("1.00"), fee = BigDecimal("1.00")),
+            ) shouldBe
+                setOf(FlowCategory.UNSUPPORTED)
             conversionCategory(validSource, validDestination.copy(asset = "BTC")) shouldBe
                 setOf(FlowCategory.UNSUPPORTED)
             conversionCategory(validSource.copy(amount = BigDecimal("1.00")), validDestination) shouldBe
                 setOf(FlowCategory.UNSUPPORTED)
+
+            LedgerFlowClassifier.classifyAll(
+                listOf(validSource.copy(refid = " "), validDestination.copy(refid = " ")),
+            ).values.toSet() shouldBe setOf(FlowCategory.UNSUPPORTED)
 
             LedgerFlowClassifier.classifyAll(
                 listOf(
@@ -581,6 +590,9 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.AMBIGUOUS
             LedgerFlowClassifier.classify(
                 event("earn-missing", KrakenApiConstants.LEDGER_TYPE_EARN, "1.00", asset = "ETH"),
+            ) shouldBe FlowCategory.AMBIGUOUS
+            LedgerFlowClassifier.classify(
+                event("deposit-blank-subtype", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "1.00", subtype = " "),
             ) shouldBe FlowCategory.AMBIGUOUS
         }
 
