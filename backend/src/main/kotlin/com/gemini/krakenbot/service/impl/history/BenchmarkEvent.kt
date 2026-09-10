@@ -30,6 +30,20 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
     ) : BenchmarkEvent()
 
     /**
+     * A complete refid-linked cross-asset conversion. This is a balance transformation, not an
+     * owner contribution: Buy & Hold applies the exact per-leg net deltas once, including any
+     * ledger fees, without creating a synthetic investment basis.
+     */
+    data class InternalConversion(
+        override val timestamp: Instant,
+        val legs: List<ConversionLeg>,
+        /** Original ledger identities represented by this economic event. */
+        val sourceLedgerIds: List<String> = legs.map { it.event.ledgerId },
+    ) : BenchmarkEvent()
+
+    data class ConversionLeg(val event: LedgerEvent, val netBalanceDelta: BigDecimal)
+
+    /**
      * Genuine owner contribution after inception, allocated by ORIGINAL
      * inception value weights (never added to the contributed asset alone:
      * that would leave new money in cash and invent Rebalancer alpha).

@@ -1335,6 +1335,35 @@ object RebalancerComparisonCalculator {
         val events = mutableListOf<BenchmarkEvent>()
         val consumedLedgerIds = mutableSetOf<String>()
 
+        // A complete top-level conversion is one linked economic event. Keep its legs together
+        // so Buy & Hold transforms the same holdings as the actual account without treating the
+        // destination credit as owner capital. A group straddling the baseline is not safely
+        // replayable from one side and therefore remains unavailable.
+        val conversionGroups = ledgers
+            .filter { isConversionLedger(it.ledger) }
+            .groupBy { it.ledger.refid?.trim().orEmpty() }
+        for ((refid, group) in conversionGroups) {
+            val postGroup = group.filter { postBaselineById.containsKey(it.ledger.ledgerId) }
+            if (postGroup.isEmpty()) continue
+            val conversionAt = postGroup.minOf { it.timestamp }
+            if (refid.isBlank() || postGroup.size != group.size ||
+                group.size != 2 || group.any { classifications[it.ledger.ledgerId] != FlowCategory.INTERNAL_MOVE }
+            ) {
+                return BuiltEvents(
+                    events = emptyList(),
+                    unpriceableAt = null,
+                    ambiguousAt = conversionAt,
+                )
+            }
+            events += BenchmarkEvent.InternalConversion(
+                timestamp = conversionAt,
+                legs = group
+                    .sortedWith(compareBy({ it.ledger.time }, { it.ledger.ledgerId }))
+                    .map { BenchmarkEvent.ConversionLeg(it.ledger, it.netBalanceDelta) },
+            )
+            consumedLedgerIds += group.map { it.ledger.ledgerId }
+        }
+
         for (norm in cardNormalizations) {
             val sourceIds = when (norm) {
                 is NormalizedFundingTransaction.OwnerContribution -> norm.sourceLedgerIds
@@ -1452,6 +1481,15 @@ object RebalancerComparisonCalculator {
                 continue
             }
             val ledger = reconciledLedger.ledger
+            if (isConversionLedger(ledger)) {
+                // Complete groups were emitted atomically above. Any remaining row is a
+                // defensive fail-closed path for an incomplete reconciliation result.
+                return BuiltEvents(
+                    events = emptyList(),
+                    unpriceableAt = null,
+                    ambiguousAt = reconciledLedger.timestamp,
+                )
+            }
             val category = classifications.getValue(ledger.ledgerId)
             if (category == FlowCategory.INTERNAL_MOVE ||
                 category == FlowCategory.TRADE_IGNORED
@@ -1513,6 +1551,9 @@ object RebalancerComparisonCalculator {
         return BuiltEvents(events, null)
     }
 
+    private fun isConversionLedger(ledger: LedgerEvent): Boolean =
+        ledger.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
+
     /**
      * Event timestamps alone do not establish whether a balance movement was
      * applied before or after a trade or owner flow. Additive movements in
@@ -1531,8 +1572,20 @@ object RebalancerComparisonCalculator {
         val trades = events.filterIsInstance<BenchmarkEvent.Trade>()
             .filter { it.ownership == TradeOwnership.MANUAL_OR_EXTERNAL }
         val externalBalances = events.filterIsInstance<BenchmarkEvent.ExternalBalance>()
+        val internalConversions = events.filterIsInstance<BenchmarkEvent.InternalConversion>()
+        val balanceMovements: List<BenchmarkEvent> = externalBalances + internalConversions
         val unallocatedTrades = trades.filter { trade ->
             Asset.normalizeLedgerAsset(trade.trade.symbol).uppercase() !in baselineAssetSymbols
+        }
+
+        fun movementAssets(event: BenchmarkEvent): Set<String> = when (event) {
+            is BenchmarkEvent.ExternalBalance -> setOf(Asset.normalizeLedgerAsset(event.asset).uppercase())
+
+            is BenchmarkEvent.InternalConversion -> event.legs.map {
+                Asset.normalizeLedgerAsset(it.event.asset).uppercase()
+            }.toSet()
+
+            else -> emptySet()
         }
 
         fun eventDistanceMillis(first: BenchmarkEvent, second: BenchmarkEvent): Long =
@@ -1551,7 +1604,7 @@ object RebalancerComparisonCalculator {
                 .minOrNull()
 
         val unorderedTimes = mutableListOf<Instant>()
-        earliestNearPairTimestamp(ownerWithdrawals, trades + externalBalances)?.let(unorderedTimes::add)
+        earliestNearPairTimestamp(ownerWithdrawals, trades + balanceMovements)?.let(unorderedTimes::add)
         // Baseline-asset trades were historically safe in the comparison
         // replay when the balance reconciliation established their placement.
         // New/unallocated assets are not safe because a contribution may be
@@ -1562,15 +1615,15 @@ object RebalancerComparisonCalculator {
         earliestNearPairTimestamp(ownerContributions, unallocatedTrades)?.let(unorderedTimes::add)
         earliestNearPairTimestamp(ownerContributions, ownerWithdrawals)?.let(unorderedTimes::add)
 
-        val newAssetExternalBalances = externalBalances.filter { external ->
-            Asset.normalizeLedgerAsset(external.asset).uppercase() !in baselineAssetSymbols
+        val newAssetBalanceMovements = balanceMovements.filter { movement ->
+            movementAssets(movement).any { it !in baselineAssetSymbols }
         }
         earliestNearPairTimestamp(
-            newAssetExternalBalances,
+            newAssetBalanceMovements,
             trades.filter { trade ->
                 val symbol = Asset.normalizeLedgerAsset(trade.trade.symbol).uppercase()
-                newAssetExternalBalances.any { external ->
-                    Asset.normalizeLedgerAsset(external.asset).uppercase() == symbol
+                newAssetBalanceMovements.any { movement ->
+                    symbol in movementAssets(movement)
                 }
             },
         )?.let(unorderedTimes::add)
@@ -1678,6 +1731,15 @@ object RebalancerComparisonCalculator {
                 // it because the baseline lacked the symbol understates Buy &
                 // Hold and creates phantom cash drag.
                 balances[symbol] = (balances[symbol] ?: BigDecimal.ZERO).add(event.netAmount)
+            }
+
+            is BenchmarkEvent.InternalConversion -> {
+                // Apply each leg exactly once. No raw amount netting is attempted across assets;
+                // the persisted per-leg net delta already includes that leg's authoritative fee.
+                for (leg in event.legs) {
+                    val symbol = Asset.normalizeLedgerAsset(leg.event.asset).uppercase()
+                    balances[symbol] = (balances[symbol] ?: BigDecimal.ZERO).add(leg.netBalanceDelta)
+                }
             }
 
             is BenchmarkEvent.OwnerContribution -> {

@@ -84,11 +84,13 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 ## Ledger synchronization
 
 - `LedgersSyncService` is a separate insert-only sync for Kraken
-  `/0/private/Ledgers`; it requests `staking`, `dividend`, `deposit`, `withdrawal`,
-  `transfer`, `adjustment`, `spend`, and `receive` response types. The live adapter
-  sends `type=sale` for `spend`/`receive` because `sale` is the API query filter,
-  then filters the returned response rows locally. Preserve each row's ledger ID
-  and `refid`; do not collapse the two economic legs.
+  `/0/private/Ledgers`; it requests `staking`, `dividend`, `earn`, `reward`, `deposit`,
+  `withdrawal`, `transfer`, `adjustment`, `conversion`, `spend`, `receive`, `margin`,
+  `rollover`, `settled`, and `credit` response types. The live adapter sends
+  `type=sale` for `spend`/`receive` because `sale` is the API query filter, sends
+  `type=all` for `earn`, `reward`, and `conversion`, then filters returned rows
+  locally. Preserve each row's ledger ID and `refid`; do not collapse the two
+  economic legs.
 - It uses the same **300s** throttle, coroutine `Mutex`, credential preflight,
   stable-backend selection, and execution-session boundary as trade sync.
 - The first and recovered initial passes are bounded to the last **96 days**.
@@ -102,10 +104,11 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 - `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking` and `dividend` entries,
   accumulates amounts by asset at each portfolio snapshot, and values them with
   that snapshot's prices.
-- `TradeHistoryQueryService.getRebalancerComparison()` passes all external balance ledgers
-  (`EXTERNAL_BALANCE_TYPES`) to `RebalancerComparisonCalculator` so strategy-neutral flows
-  (rewards, deposits, withdrawals, transfers, adjustments, consumer spend/receive legs, and
-  USD cash dividends) are mirrored in the synthetic Buy & Hold benchmark. Kraken documents
+- `TradeHistoryQueryService.getRebalancerComparison()` passes all retained balance-affecting
+  ledgers (`EXTERNAL_BALANCE_TYPES`, including complete conversion groups) to
+  `RebalancerComparisonCalculator` so strategy-neutral flows (rewards, deposits, withdrawals,
+  transfers, adjustments, consumer spend/receive legs, USD cash dividends, and complete
+  cross-asset conversions) are handled without silently dropping observed rows. Kraken documents
   Buy Crypto Widget and Kraken app activity as Ledger-only, so it is not deduplicated against
   `TradesHistory`.
 - The comparison validates each tracked interval after applying successful authoritative trades,
@@ -113,7 +116,8 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   `UNAVAILABLE` with `UNEXPLAINED_BALANCE_CHANGE` at the first bad snapshot; it never degrades
   an unexplained tracked mutation to estimated numeric alpha. Untracked assets remain outside
   this validation boundary.
-- `SnapshotHistoryCalculator` and `TradeHistoryReconstructionService` (version `5`) query
+- `SnapshotHistoryCalculator` and `TradeHistoryReconstructionService` (current reconstruction
+  version `7`) query
   `EXTERNAL_BALANCE_TYPES` and apply `event.netBalanceDelta()` (`amount - fee`) backwards
   from current balances.
 - Reconstruction writes the ledger-coverage version alongside its version marker only after

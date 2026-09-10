@@ -949,8 +949,14 @@ class PortfolioAnalyzerImpl(
         }
 
         val externalBalanceEvents = allRetained.filter {
-            classifications[it.ledgerId] == FlowCategory.EXTERNAL_BALANCE &&
-                it.ledgerId !in allCardSourceIds
+            it.ledgerId !in allCardSourceIds &&
+                (
+                    classifications[it.ledgerId] == FlowCategory.EXTERNAL_BALANCE ||
+                        (
+                            classifications[it.ledgerId] == FlowCategory.INTERNAL_MOVE &&
+                                it.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
+                            )
+                    )
         }
         val cardObservationEvents = allRetained.filter { it.ledgerId in allCardSourceIds }
         val candidateOwnerEvents = events.filter { it.ledgerId !in allCardPlumbingIds }
@@ -1365,7 +1371,9 @@ class PortfolioAnalyzerImpl(
             }
         }
 
-        // Replay intervening external balance events (staking, dividends, adjustments, spend/receive, etc.)
+        // Replay intervening balance events (staking, dividends, adjustments, spend/receive, and
+        // complete cross-asset conversions). Conversion legs remain strategy-neutral: they affect
+        // the reconstructed holdings but never enter the owner-capital scaling sequence.
         for (extBal in externalBalances) {
             val replayAfterSnapshot = extBal.time.isAfter(predecessor.timestamp) && !extBal.time.isAfter(eventTime)
             val replayAfterObservation = extBal.ledgerId !in embeddedLedgerIds &&

@@ -453,11 +453,11 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   **300 seconds**, with a captured end time for stable newest-first pagination.
 - Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
   so overlap and repeated pages are harmless. The sync requests `staking`,
-  `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `spend`, and
-  `receive`, and top-level `reward` response types. The live Kraken adapter sends
-  `type=sale` for the latter two because `sale` is the documented query filter,
-  and sends `type=all` for `earn` and `reward`; it filters returned rows by their
-  actual response type.
+  `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `conversion`,
+  `spend`, `receive`, `margin`, `rollover`, `settled`, `credit`, and top-level `reward`
+  response types. The live Kraken adapter sends `type=sale` for `spend` and `receive`
+  because `sale` is the documented query filter, and sends `type=all` for `earn`,
+  `reward`, and `conversion`; it filters returned rows by their actual response type.
 - Inception recovery separately requests unfiltered ledger pages. If Kraken
   returns an observed top-level `type=reward` row there, it is persisted and
   replayed as an in-kind external balance event. Ordinary synchronization uses
@@ -467,7 +467,7 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   boundary used by trade synchronization. Simulation mode does not call Kraken.
 
 The History rewards query filters the persisted ledger range to `staking`,
-`dividend`, top-level promotion `reward`, and `earn/reward` rows for tracked assets, then aligns cumulative
+`dividend`, top-level promotion `reward`, transfer `airdrop` credits, and `earn/reward` rows for tracked assets, then aligns cumulative
 amounts to portfolio snapshots and values them with each snapshot's prices. Earn
 allocation mechanics are internal and remain out of the rewards series. The
 comparison and reverse snapshot reconstruction consume all supported persisted
