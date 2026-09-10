@@ -86,6 +86,8 @@ HtmlIds:
   CSRF_TOKEN: "csrf-token"
   SAVE_BUTTON: "save-button"
   INCEPTION_DATE_PICKER: "inception-date-picker"
+  COMPARISON_START_DATE_PICKER: "comparison-start-date-picker"
+  INCEPTION_BASELINE_PENDING: "inception-baseline-pending"
   LOOP_CONTROL: "loop-control"
   TOTAL_ALLOCATED_DISPLAY: "total-allocated-display"
   ALLOCATIONS_CONTAINER: "allocations-container"

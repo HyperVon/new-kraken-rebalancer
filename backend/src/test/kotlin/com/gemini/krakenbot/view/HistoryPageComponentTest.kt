@@ -60,7 +60,7 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "comparison-availability-message"
             htmlString shouldContain "comparison-confidence-badge"
             htmlString shouldContain
-                "Based on stored snapshots and recorded trades. Starting quantities are anchored to the strategy inception baseline."
+                "Based on stored snapshots and recorded trades. Starting quantities are anchored to the effective comparison baseline; the original strategy inception remains preserved separately."
             Regex("\\sid=\"rebalancer-comparison-chart\"").findAll(htmlString).count() shouldBe 1
         }
 

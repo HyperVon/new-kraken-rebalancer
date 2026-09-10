@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -43,6 +44,7 @@ class DashboardView(
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
+        laterStartProposal: ComparisonStartProposal? = null,
     ) {
         html.head {
             commonMetadataAndStyles()
@@ -50,7 +52,7 @@ class DashboardView(
             cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
         }
         html.body {
-            settingsFormComponent.render(config, errorMessage, csrfToken, paused, inceptionDisplay)
+            settingsFormComponent.render(config, errorMessage, csrfToken, paused, inceptionDisplay, laterStartProposal)
         }
     }
 
@@ -61,8 +63,17 @@ class DashboardView(
         csrfToken: String,
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
+        laterStartProposal: ComparisonStartProposal? = null,
     ) {
-        settingsFormComponent.renderForm(parent, config, errorMessage, csrfToken, paused, inceptionDisplay)
+        settingsFormComponent.renderForm(
+            parent,
+            config,
+            errorMessage,
+            csrfToken,
+            paused,
+            inceptionDisplay,
+            laterStartProposal,
+        )
     }
 
     context(html: HTML)

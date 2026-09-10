@@ -39,6 +39,10 @@ class ComparisonUnavailableReasonTest {
             "Funding provenance could not be retrieved; the comparison cannot classify funding safely.",
             ComparisonUnavailableReason.FUNDING_PROVENANCE_UNAVAILABLE.displayText,
         )
+        assertEquals(
+            "Historical snapshot coverage is incomplete for part of the strategy period, so the earliest trustworthy comparison start cannot be determined.",
+            ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP.displayText,
+        )
     }
 
     @Test
@@ -74,6 +78,10 @@ class ComparisonUnavailableReasonTest {
         assertEquals(
             "Funding provenance could not be retrieved; the comparison cannot classify funding safely.",
             ComparisonUnavailableReason.displayTextFor("FUNDING_PROVENANCE_UNAVAILABLE"),
+        )
+        assertEquals(
+            "Historical snapshot coverage is incomplete for part of the strategy period, so the earliest trustworthy comparison start cannot be determined.",
+            ComparisonUnavailableReason.displayTextFor("HISTORICAL_COVERAGE_GAP"),
         )
     }
 

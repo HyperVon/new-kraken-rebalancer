@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.AllocationEditor
@@ -7,6 +8,7 @@ import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -18,7 +20,40 @@ import com.gemini.krakenbot.view.util.HtmlQueries.TARGET_INPUTS as TARGET_INPUTS
 fun initSettings() {
     registerSettingsGlobals()
     updateAllocationTotal()
+    startInceptionBaselinePolling()
 }
+
+/**
+ * The approved-start baseline is established by bounded background recovery
+ * runs. While the Settings panel shows the pending block, poll the existing
+ * sync-progress surface and reload once the outcome is terminal so the panel
+ * shows progress without a manual refresh.
+ */
+private fun startInceptionBaselinePolling() {
+    if (document.getElementById(HtmlIds.INCEPTION_BASELINE_PENDING) == null) return
+    window.setInterval({
+        window.fetch(Routes.API_HISTORY_SYNC_PROGRESS)
+            .then { response: dynamic -> response.json() }
+            .then { raw: dynamic ->
+                val status = parseSyncProgressResponse(raw)
+                if (status.recoveryStatus in INCEPTION_BASELINE_TERMINAL_STATUSES) {
+                    window.location.reload()
+                }
+            }
+            .`catch` { /* transient fetch failure; next tick retries */ }
+    }, INCEPTION_BASELINE_POLL_MS)
+}
+
+private val INCEPTION_BASELINE_TERMINAL_STATUSES = setOf(
+    "CONFIRMED",
+    SyncProgressResponse.RECOVERY_FAILED,
+    SyncProgressResponse.RECOVERY_AMBIGUOUS,
+    SyncProgressResponse.RECOVERY_NO_BOT_EVIDENCE,
+    SyncProgressResponse.RECOVERY_BASELINE_UNAVAILABLE,
+    SyncProgressResponse.RECOVERY_UNAVAILABLE,
+)
+
+private const val INCEPTION_BASELINE_POLL_MS = 5000
 
 fun registerSettingsGlobals() {
     window.asDynamic().updateAllocationTotal = { updateAllocationTotal() }

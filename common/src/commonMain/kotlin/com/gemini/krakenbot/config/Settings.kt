@@ -18,6 +18,12 @@ data class Settings(
      */
     val inceptionDate: String? = null,
     /**
+     * Accepted comparison anchor in ISO-8601. Anchors the Buy & Hold comparison at a
+     * verified later snapshot than [inceptionDate] while the strategy start itself is
+     * preserved. Requires [inceptionDate] to be set and must not precede it.
+     */
+    val comparisonStartDate: String? = null,
+    /**
      * Drawdown threshold percent deadband (0.0 to 100.0). No fiat is deployed until drawdown exceeds this value.
      */
     val fiatDeploymentThresholdPercent: Double = 0.0,

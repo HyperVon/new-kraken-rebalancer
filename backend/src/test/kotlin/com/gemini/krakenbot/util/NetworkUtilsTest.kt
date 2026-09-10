@@ -117,5 +117,25 @@ class NetworkUtilsTest : StringSpec() {
             isLocalOrPrivateOrigin("https://kraken.com", emptySet(), allowAll = true) shouldBe true
             isLocalOrPrivateOrigin("https://kraken.com", emptySet(), allowAll = false) shouldBe false
         }
+
+        "edge cases close the remaining origin-validation branches" {
+            isLocalOrPrivateOrigin("http://[00000::1]") shouldBe false
+            isLocalOrPrivateOrigin("http://[0:0:0:0:0:0:0:1::2]") shouldBe false
+            isLocalOrPrivateOrigin("http://[2001:0db8:0:0:0:0:0:1]") shouldBe false
+            isLocalOrPrivateOrigin("http://999999999999.1.1.1") shouldBe false
+            isLocalOrPrivateOrigin("http://224.0.0.1") shouldBe false
+            isLocalOrPrivateOrigin("http://a.local") shouldBe true
+            isLocalOrPrivateOrigin("http://app-.local") shouldBe false
+            isLocalOrPrivateOrigin("http://${"x".repeat(300)}.local") shouldBe false
+            isLocalOrPrivateOrigin("not a valid origin", setOf("https://x.example.com")) shouldBe false
+            isLocalOrPrivateOrigin("https://kraken.com", setOf("::bad")) shouldBe false
+            isLocalOrPrivateOrigin("https://kraken.com", setOf("https://other.com", "::bad")) shouldBe false
+            isLocalOrPrivateOrigin("https://kraken.com", setOf(" ")) shouldBe false
+            isLocalOrPrivateOrigin("http://", setOf("https://x.example.com")) shouldBe false
+            isLocalOrPrivateOrigin("http://0.10.0.1") shouldBe false
+            isLocalOrPrivateOrigin("http://[x:y]") shouldBe false
+            isLocalOrPrivateOrigin("http://[1::2::3]") shouldBe false
+            isLocalOrPrivateOrigin("HTTP://LOCALHOST:8080", emptySet(), allowAll = false) shouldBe true
+        }
     }
 }

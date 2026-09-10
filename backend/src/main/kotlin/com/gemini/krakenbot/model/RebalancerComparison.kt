@@ -25,6 +25,10 @@ data class RebalancerComparison(
     val latestDifferencePercent: BigDecimal?,
     val unavailableReason: ComparisonUnavailableReason?,
     val unavailableAt: Instant?,
+    /** Verified later comparison start proposed while the comparison is unavailable, or null. */
+    val proposedBaselineTimestamp: Instant? = null,
+    /** Durable state of the bounded later-start search, or null when no search was requested. */
+    val proposalSearchStatus: ComparisonProposalStatus? = null,
 ) {
     init {
         when (availability) {
@@ -36,6 +40,12 @@ data class RebalancerComparison(
                 require(latestDifferencePercent != null) { "Available comparison must have latestDifferencePercent" }
                 require(unavailableReason == null) { "Available comparison must not have unavailableReason" }
                 require(unavailableAt == null) { "Available comparison must not have unavailableAt" }
+                require(proposedBaselineTimestamp == null) {
+                    "Available comparison must not have proposedBaselineTimestamp"
+                }
+                require(proposalSearchStatus == null) {
+                    "Available comparison must not have proposalSearchStatus"
+                }
                 val first = points.first()
                 require(baselineTimestamp <= first.timestamp) {
                     "Baseline timestamp must not be after the first point"
@@ -66,6 +76,21 @@ data class RebalancerComparison(
                     "Unavailable comparison must not have latestDifferencePercent"
                 }
                 require(unavailableReason != null) { "Unavailable comparison must have unavailableReason" }
+                if (proposalSearchStatus == ComparisonProposalStatus.VERIFIED) {
+                    require(proposedBaselineTimestamp != null) {
+                        "Verified proposal status must have proposedBaselineTimestamp"
+                    }
+                }
+                if (proposedBaselineTimestamp != null) {
+                    require(proposalSearchStatus == ComparisonProposalStatus.VERIFIED) {
+                        "proposedBaselineTimestamp requires verified proposal status"
+                    }
+                }
+                if (proposedBaselineTimestamp != null) {
+                    require(baselineTimestamp == null || proposedBaselineTimestamp >= baselineTimestamp) {
+                        "Proposed baseline timestamp must not precede the known inception time"
+                    }
+                }
             }
         }
     }

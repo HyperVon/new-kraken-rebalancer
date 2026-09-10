@@ -45,6 +45,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
 
     protected fun createService(
         tradeHistoryFilePath: String = TestFixtures.TEST_TRADE_HISTORY_JSON,
+        inceptionDate: String? = null,
         syncNowProvider: () -> Instant = Instant::now,
     ): TradeHistoryServiceImpl {
         val appConfig = AppConfig(
@@ -55,7 +56,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
                 deviationTriggerPercent = 5.0,
                 minimumOrderSizeUSD = 5.0,
                 fiatMaxDrawdown = 30.0,
-            ),
+            ).copy(inceptionDate = inceptionDate),
             allocations = emptyList(),
         )
         every { configService.getConfig() } returns appConfig

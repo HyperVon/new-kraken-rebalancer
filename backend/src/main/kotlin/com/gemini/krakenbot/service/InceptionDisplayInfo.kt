@@ -16,6 +16,9 @@ enum class InceptionDisplayStatus {
     FAILED,
     VALIDATION_PENDING,
     MANUAL_OVERRIDE,
+    APPROVED_PENDING,
+    APPROVED_READY,
+    APPROVED_UNAVAILABLE,
 }
 
 /**
@@ -104,5 +107,14 @@ data class InceptionDisplayInfo(
 
         InceptionDisplayStatus.MANUAL_OVERRIDE ->
             message ?: ViewText.INCEPTION_DETECTED_MANUAL_OVERRIDE
+
+        InceptionDisplayStatus.APPROVED_PENDING ->
+            message ?: ViewText.INCEPTION_APPROVED_BASELINE_PENDING
+
+        InceptionDisplayStatus.APPROVED_READY ->
+            message ?: ViewText.INCEPTION_APPROVED_BASELINE_PENDING
+
+        InceptionDisplayStatus.APPROVED_UNAVAILABLE ->
+            message ?: ViewText.INCEPTION_APPROVED_BASELINE_FAILED_PREFIX
     }
 }

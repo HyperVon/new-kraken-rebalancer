@@ -139,6 +139,7 @@ class HistoryJsonParsingTest : StringSpec() {
                 "latestDifferencePercent" to "4.7619",
                 "unavailableReason" to null,
                 "unavailableAt" to null,
+                "proposalSearchStatus" to null,
             )
             val parsed = parseRebalancerComparison(raw)
             parsed.availability shouldBe "AVAILABLE"
@@ -147,6 +148,28 @@ class HistoryJsonParsingTest : StringSpec() {
             parsed.points.size shouldBe 1
             parsed.points[0].rebalancerValueUSD shouldBe "100000.00"
             parsed.latestDifferenceUSD shouldBe "5000.00"
+            parsed.proposedBaselineTimestamp shouldBe null
+            parsed.proposalSearchStatus shouldBe null
+        }
+
+        "parseRebalancerComparison preserves later-start proposal state" {
+            val parsed = parseRebalancerComparison(
+                json(
+                    "availability" to "UNAVAILABLE",
+                    "confidence" to null,
+                    "baselineTimestamp" to null,
+                    "points" to emptyArray<dynamic>(),
+                    "latestDifferenceUSD" to null,
+                    "latestDifferencePercent" to null,
+                    "unavailableReason" to "AMBIGUOUS_TRADE_OWNERSHIP",
+                    "unavailableAt" to "2026-07-01T12:00:00Z",
+                    "proposedBaselineTimestamp" to "2026-07-02T12:00:00Z",
+                    "proposalSearchStatus" to "INCOMPLETE",
+                ),
+            )
+
+            parsed.proposedBaselineTimestamp shouldBe "2026-07-02T12:00:00Z"
+            parsed.proposalSearchStatus shouldBe "INCOMPLETE"
         }
 
         "native JSON fixtures parse every history wire payload" {

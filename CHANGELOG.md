@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.42] - 2026-09-09
+
+### Fixed
+
+- **Historical comparison safety**: a retained-history boundary or missing coverage interval can no longer
+  be presented as the earliest verified Buy & Hold start. The comparison now fails closed until coverage is
+  trustworthy, while a valid configured inception date protects older snapshots and trades from pruning
+  before approved-start recovery finishes.
+- **Time-invariant coverage gap detection**: historical coverage gap evaluation now anchors to a monotonically
+  non-increasing continuous history start boundary in sync metadata instead of a rolling 90-day retention cutoff,
+  guaranteeing that advancing wall-clock time cannot convert legacy-pruned gaps into verified proposals.
+- **Exact approved baselines**: a nearby post-start snapshot is now used only as a reverse-replay anchor;
+  only an exact timestamp, observation, and allocation-universe match can be adopted directly.
+
+## [6.17.41] - 2026-09-09
+
+### Changed
+
+- **Approved-start baselines and verified comparison start**: approving a strategy start now rebuilds
+  the Buy & Hold baseline from Kraken history instead of reporting a misleading "snapshot no longer
+  retained" error. A confirmed baseline no longer implies that the current comparison is available:
+  Settings and History use the same full reconciliation policy, and Settings offers the earliest
+  verified later comparison start when later ownership or accounting remains unresolved. Accepting
+  that exact timestamp anchors the comparison without changing the strategy start. Bounded later-start
+  verification resumes from durable progress and reports whether it is incomplete or exhausted.
+- **Recovery retry safety**: an approved-start recovery failure caused by temporary supporting evidence is
+  retried when relevant evidence changes, while unsupported failures remain terminal until the
+  configuration or account scope changes.
+
 ## [6.17.40] - 2026-09-08
 
 ### Changed

@@ -521,7 +521,14 @@ legacy consistency policy regardless of fingerprint equality. Only v3 lineage
 may use the fast path and the one-hit rotation proof.
 Recovery is bounded to four pages per invocation and throttled for five minutes; the UI observes
 durable state through `/api/history/sync-progress`, so neither startup nor a History request waits
-for an unbounded account-history scan.
+for an unbounded account-history scan. A confirmed recovery baseline is separate from comparison
+readiness: History and Settings apply the same full reconciliation policy, and a later-start search
+uses a serialized durable cursor with `VERIFIED`, `INCOMPLETE`, or `EXHAUSTED` status. Accepting a
+verified later timestamp changes only the comparison anchor, never the strategy inception. The search
+fails closed with `HISTORICAL_COVERAGE_GAP` when retained snapshots cannot prove continuous coverage
+from strategy start (tracked monotonically via continuous history metadata), so pruning cannot masquerade
+as a verified comparison start. A valid configured inception date is persisted as a retention floor
+before recovery completes, preserving the history needed for later exact baseline reconstruction.
 
 ```mermaid
 sequenceDiagram

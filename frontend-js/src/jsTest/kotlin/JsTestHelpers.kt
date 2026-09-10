@@ -112,6 +112,7 @@ fun mockAvailableComparison(): RebalancerComparison = RebalancerComparison(
     latestDifferencePercent = "4.7619",
     unavailableReason = null,
     unavailableAt = null,
+    proposalSearchStatus = null,
 )
 
 fun mockUnavailableComparison(reason: String = "INSUFFICIENT_SNAPSHOTS"): RebalancerComparison = RebalancerComparison(
@@ -123,6 +124,7 @@ fun mockUnavailableComparison(reason: String = "INSUFFICIENT_SNAPSHOTS"): Rebala
     latestDifferencePercent = null,
     unavailableReason = reason,
     unavailableAt = "2026-07-01T12:00:00Z",
+    proposalSearchStatus = null,
 )
 
 internal fun rebalancerComparisonToDynamic(comparison: RebalancerComparison): dynamic = json(

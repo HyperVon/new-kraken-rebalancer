@@ -169,6 +169,57 @@ class HistoryComparisonChartTest : StringSpec() {
             }
         }
 
+        "buildRebalancerComparisonChart appends the verified later-start proposal when unavailable" {
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.chartsDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            registerHistoryGlobals()
+            try {
+                val comparison = mockUnavailableComparison("INCEPTION_BASELINE_UNAVAILABLE")
+                    .copy(
+                        proposedBaselineTimestamp = "2026-08-01T10:30:00Z",
+                        proposalSearchStatus = "VERIFIED",
+                    )
+
+                buildRebalancerComparisonChart(comparison)
+
+                val unavailableDiv = document.getElementById("comparison-availability-message")
+                unavailableDiv?.textContent shouldContain
+                    "Earliest verified comparison start: 2026-08-01 10:30 UTC"
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "buildRebalancerComparisonChart distinguishes incomplete and exhausted proposal scans" {
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.chartsDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            registerHistoryGlobals()
+            try {
+                val unavailableDiv = document.getElementById("comparison-availability-message")
+                buildRebalancerComparisonChart(
+                    mockUnavailableComparison("AMBIGUOUS_TRADE_OWNERSHIP")
+                        .copy(proposalSearchStatus = "INCOMPLETE"),
+                )
+                unavailableDiv?.textContent shouldContain
+                    "Later-start verification is still in progress"
+
+                buildRebalancerComparisonChart(
+                    mockUnavailableComparison("AMBIGUOUS_TRADE_OWNERSHIP")
+                        .copy(proposalSearchStatus = "EXHAUSTED"),
+                )
+                unavailableDiv?.textContent shouldContain
+                    "No retained later start passed complete reconciliation"
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
         "unavailableReasonText maps all reason strings to text" {
             unavailableReasonText("INSUFFICIENT_SNAPSHOTS") shouldBe
                 "Not enough history exists in this range to compare strategies."
@@ -184,6 +235,8 @@ class HistoryComparisonChartTest : StringSpec() {
                 "A recorded trade cannot be reconciled safely."
             unavailableReasonText("UNEXPLAINED_BALANCE_CHANGE") shouldBe
                 "A deposit, withdrawal, transfer, or incomplete trade history may exist."
+            unavailableReasonText("HISTORICAL_COVERAGE_GAP") shouldBe
+                "Historical snapshot coverage is incomplete for part of the strategy period, so the earliest trustworthy comparison start cannot be determined."
             unavailableReasonText("unknown_reason") shouldBe "Comparison data could not be validated."
             unavailableReasonText(null) shouldBe "Comparison data could not be validated."
         }

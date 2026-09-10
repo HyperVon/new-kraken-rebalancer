@@ -9,6 +9,8 @@ data class RebalancerComparison(
     val latestDifferencePercent: String?,
     val unavailableReason: String?,
     val unavailableAt: String?,
+    val proposedBaselineTimestamp: String? = null,
+    val proposalSearchStatus: String? = null,
 )
 
 data class RebalancerComparisonPoint(

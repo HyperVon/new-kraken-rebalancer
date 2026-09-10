@@ -203,6 +203,154 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "addSnapshot_usesConfiguredInceptionAsRetentionFloorBeforeRecovery" {
+            runTest {
+                val now = Instant.parse("2026-05-01T00:00:00Z")
+                val inception = now.minusSeconds(86400L * 100)
+                val tradeHistoryService = createService(
+                    syncNowProvider = { now },
+                    inceptionDate = inception.toString(),
+                )
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    )
+                } returns null
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    )
+                } returns null
+                coEvery { repository.pruneSnapshotsOlderThan(any()) } returns 0
+                coEvery { repository.pruneTradesOlderThan(any()) } returns 0
+
+                tradeHistoryService.addSnapshot(TestFixtures.emptySnapshot(now, BigDecimal.ZERO))
+
+                coVerify {
+                    repository.setSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                        inception.toEpochMilli().toString(),
+                    )
+                    repository.pruneSnapshotsOlderThan(inception.minusSeconds(5))
+                    repository.pruneTradesOlderThan(inception.minusSeconds(5))
+                }
+            }
+        }
+
+        "addSnapshot_skipsPruneWhenConfiguredRetentionFloorCannotBePersisted" {
+            runTest {
+                val now = Instant.parse("2026-05-01T00:00:00Z")
+                val inception = now.minusSeconds(86400L * 100)
+                val tradeHistoryService = createService(
+                    syncNowProvider = { now },
+                    inceptionDate = inception.toString(),
+                )
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    )
+                } returns null
+                coEvery {
+                    repository.setSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                        inception.toEpochMilli().toString(),
+                    )
+                } throws IllegalStateException("metadata store unavailable")
+
+                tradeHistoryService.addSnapshot(TestFixtures.emptySnapshot(now, BigDecimal.ZERO))
+
+                coVerify(exactly = 0) { repository.pruneSnapshotsOlderThan(any()) }
+                coVerify(exactly = 0) { repository.pruneTradesOlderThan(any()) }
+            }
+        }
+
+        "addSnapshot_doesNotRewriteAnAlreadyDurableConfiguredRetentionFloor" {
+            runTest {
+                val now = Instant.parse("2026-05-01T00:00:00Z")
+                val inception = now.minusSeconds(86400L * 100)
+                val floor = inception.toEpochMilli().toString()
+                val tradeHistoryService = createService(
+                    syncNowProvider = { now },
+                    inceptionDate = inception.toString(),
+                )
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    )
+                } returns floor
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    )
+                } returns null
+                coEvery { repository.pruneSnapshotsOlderThan(any()) } returns 0
+                coEvery { repository.pruneTradesOlderThan(any()) } returns 0
+
+                tradeHistoryService.addSnapshot(TestFixtures.emptySnapshot(now, BigDecimal.ZERO))
+
+                coVerify(exactly = 0) {
+                    repository.setSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                        any(),
+                    )
+                }
+                coVerify { repository.pruneSnapshotsOlderThan(inception.minusSeconds(5)) }
+            }
+        }
+
+        "addSnapshot_ignoresFutureConfiguredInceptionForRetention" {
+            runTest {
+                val now = Instant.parse("2026-05-01T00:00:00Z")
+                val tradeHistoryService = createService(
+                    syncNowProvider = { now },
+                    inceptionDate = now.plusSeconds(86400).toString(),
+                )
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    )
+                } returns null
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    )
+                } returns null
+
+                tradeHistoryService.addSnapshot(TestFixtures.emptySnapshot(now, BigDecimal.ZERO))
+
+                coVerify(exactly = 0) {
+                    repository.setSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                        any(),
+                    )
+                }
+                coVerify(exactly = 0) { repository.pruneSnapshotsOlderThan(any()) }
+                coVerify(exactly = 0) { repository.pruneTradesOlderThan(any()) }
+            }
+        }
+
+        "addSnapshot_ignoresMalformedRetentionMetadata" {
+            runTest {
+                val now = Instant.parse("2026-05-01T00:00:00Z")
+                val tradeHistoryService = createService(syncNowProvider = { now })
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    )
+                } returns "-1"
+                coEvery {
+                    repository.getSyncMetadata(
+                        com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    )
+                } returns "not-an-epoch"
+
+                tradeHistoryService.addSnapshot(TestFixtures.emptySnapshot(now, BigDecimal.ZERO))
+
+                coVerify(exactly = 0) { repository.pruneSnapshotsOlderThan(any()) }
+                coVerify(exactly = 0) { repository.pruneTradesOlderThan(any()) }
+            }
+        }
+
         "addSnapshot_SkipsPruneWhenInceptionEpochIsInTheFuture" {
             runTest {
                 val tradeHistoryService = createService()

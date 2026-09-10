@@ -219,6 +219,11 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
                 stats.latestSnapshotTime shouldBe latestTime
             }
         }
+        "getVerifiedLaterComparisonStart_delegatesToQueryService" {
+            val service = createService()
+
+            service.findVerifiedLaterComparisonStart(Instant.EPOCH) shouldBe null
+        }
 
         "getHistoryStats_NoArg_PrefersPeriodHighAboveStoredAth" {
             runTest {

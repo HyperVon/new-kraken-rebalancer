@@ -686,8 +686,21 @@ the same external capital over time:
   configuration fingerprint, and reason; `MANUAL_OVERRIDE` honors an explicit `inceptionDate`.
   Changing the inception override, allocation shape, or account scope invalidates automatic
   evidence. A durable `CONFIRMED` record is not currently trusted until the active account scope is
-  validated again. Snapshot/trade retention continues to skip pruning until a confirmed inception
-  is stored, and then keeps the five-second pre-inception boundary required by replay.
+  validated again. A valid, non-future configured inception date immediately becomes a durable retention
+  floor, even while approved-start recovery is pending; invalid or future dates do not widen retention.
+  Snapshot/trade pruning keeps the five-second pre-inception boundary required by replay and retains the
+  full comparison evidence from that floor onward.
+- **Baseline readiness is not comparison availability.** After a confirmed or manually approved
+  inception baseline, the current comparison still runs the full ownership, ledger, balance, and
+  historical-price reconciliation policy. If later evidence blocks that calculation, a serialized
+  bounded search advances through retained snapshots and persists `VERIFIED`, `INCOMPLETE`, or
+  `EXHAUSTED` progress. A verified later timestamp is an optional comparison anchor only; accepting
+  it preserves the original strategy inception and makes the same anchor explicit in configuration.
+- **Coverage gaps fail closed.** Later-start proposal search is allowed only when retained snapshots cover
+  the relevant strategy period continuously without missing historical eras. In upgraded installations with legacy
+  pruning, continuous history start is tracked monotonically in metadata; if older candidate coverage was destroyed
+  by pruning or contains a gap exceeding 24 hours, comparison availability reports `HISTORICAL_COVERAGE_GAP`
+  and no retained snapshot is presented as the earliest trustworthy start.
 - **Owner contributions after inception are invested by original inception value
   weights** (existing synthetic holdings untouched); only the new money moves.
   Confirmed card Buy Crypto transactions collapse into a single net owner contribution

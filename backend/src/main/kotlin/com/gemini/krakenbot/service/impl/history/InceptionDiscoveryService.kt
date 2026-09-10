@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -58,9 +60,27 @@ class InceptionDiscoveryService(
         return status == AccountScopeValidationStatus.VALID || status == AccountScopeValidationStatus.SIMULATION
     }
 
+    private fun matchesConfiguredUniverse(snapshot: PortfolioSnapshot, config: AppConfig): Boolean {
+        val expectedUniverse = config.allocations
+            .map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
+            .toSet()
+        return snapshot.assets.keys.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet() == expectedUniverse
+    }
+
+    /**
+     * A legacy row has no separate observation marker, so its timestamp is the only available
+     * observation evidence. Newer rows must explicitly say that balances were observed at the
+     * requested instant; a row timestamp alone is not enough when the balance request completed
+     * before or after that instant.
+     */
+    private fun hasExactBaselineObservation(snapshot: PortfolioSnapshot, targetTime: Instant): Boolean =
+        snapshot.timestamp == targetTime &&
+            snapshot.balancesObservedAt?.let { it == targetTime } != false
+
     suspend fun resolveInception(): InceptionResolution {
-        val settings = configService.getConfig().settings
-        val preparation = recoveryService?.prepareForCurrentConfigurationResult(settings.inceptionDate)
+        val config = configService.getConfig()
+        val settings = config.settings
+        val preparation = recoveryService?.prepareForCurrentConfigurationResult(settings)
         // 1. Check user-configured inception date.
         val parsedConfigured = parseInceptionDate(settings.inceptionDate)
         val configured = if (parsedConfigured != null && parsedConfigured.isAfter(nowProvider())) {
@@ -69,9 +89,20 @@ class InceptionDiscoveryService(
         } else {
             parsedConfigured
         }
+        val parsedComparison = parseInceptionDate(settings.comparisonStartDate)
+        val comparisonStart = if (parsedComparison != null && parsedComparison.isAfter(nowProvider())) {
+            log.warn("Ignoring configured comparison start in the future: {}", parsedComparison)
+            null
+        } else {
+            parsedComparison
+        }
         // A configured date is authoritative: re-resolve from it on every call
         // so a stale cache can never override the user's explicit setting.
         if (configured != null) {
+            // The comparison start is the effective anchor when the user accepted a
+            // verified later snapshot; the strategy start itself stays authoritative
+            // for detection metadata and retention.
+            val effectiveStart = comparisonStart ?: configured
             if (preparation != null && !isScopeTrustedForManual(preparation)) {
                 // A configured date fixes *when* inception was, but it cannot bless
                 // history the active credentials are not shown to own: anchoring a
@@ -87,35 +118,93 @@ class InceptionDiscoveryService(
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
                 )
             }
-            val snapshot = findClosestSnapshot(configured)
+            val snapshot = (
+                if (comparisonStart != null) {
+                    // An accepted proposal is an exact snapshot choice, not a request to substitute
+                    // another nearby observation after retention or duplicate-timestamp changes.
+                    findAcceptedComparisonSnapshot(effectiveStart)
+                } else {
+                    // A nearby post-start observation can be used by recovery for reverse replay, but
+                    // it cannot itself be blessed as the requested baseline. Discovery therefore uses
+                    // an exact timestamp only; the recovery service owns reconstruction when it is
+                    // absent.
+                    findExactConfiguredSnapshot(effectiveStart)
+                }
+                )
+                ?.takeIf { matchesConfiguredUniverse(it, config) }
+            if (snapshot != null) {
+                // Re-check approved state immediately before persisting: recovery confirms
+                // its baseline under its own mutex, so this re-read keeps a just-confirmed
+                // approved baseline from being re-labelled as configured detection.
+                val approvedBaselineNow = tradeRepository
+                    .getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                    ?.takeIf(String::isNotBlank)
+                if (approvedBaselineNow == null) {
+                    persistDetection(configured, snapshot, source = INCEPTION_SOURCE_CONFIGURED)
+                    log.info("Using configured inception date: {} (comparison anchor: {})", configured, effectiveStart)
+                }
+                // Either the nearby snapshot IS the approved baseline persisted by the
+                // recovery service, or approved state exists and this is an accepted later
+                // anchor; either way re-detecting would overwrite approved provenance
+                // with the configured source.
+                log.info("Using approved-start baseline established at {}", configured)
+                return InceptionResolution(
+                    inceptionTime = effectiveStart,
+                    inceptionSnapshot = snapshot,
+                    isAutoDetected = false,
+                )
+            }
+            if (recoveryService != null && comparisonStart == null) {
+                // The approved baseline was persisted by the recovery service with its own
+                // provenance; re-detecting here would overwrite it with the configured source.
+                val approvedId = tradeRepository
+                    .getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                    ?.toIntOrNull()
+                val approved = approvedId
+                    ?.let { tradeRepository.getSnapshotById(it) }
+                    ?.takeIf {
+                        hasExactBaselineObservation(it, configured) && matchesConfiguredUniverse(it, config)
+                    }
+                if (approved != null) {
+                    log.info("Using approved-start baseline established at {}", configured)
+                    return InceptionResolution(
+                        inceptionTime = configured,
+                        inceptionSnapshot = approved,
+                        isAutoDetected = false,
+                    )
+                }
+            }
             persistDetection(configured, snapshot, source = INCEPTION_SOURCE_CONFIGURED)
-            if (snapshot == null) {
-                // Configured but unanchorable: no retained snapshot near the
-                // date, so no baseline can be built from it.
+            if (recoveryService == null) {
+                // Preserve the legacy isolated-fixture contract; the application graph
+                // reports a recovery-specific status instead of claiming history removal.
                 log.warn("Configured inception date {} has no retained anchor snapshot", configured)
                 return InceptionResolution(
                     inceptionTime = configured,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
-                    confidence = if (recoveryService == null) {
-                        // Preserve the legacy isolated-fixture contract; the application graph
-                        // reports a recovery-specific status instead of claiming history removal.
-                        InceptionConfidence.TRUNCATED
-                    } else {
-                        InceptionConfidence.RECOVERY_INCOMPLETE
-                    },
-                    unavailableReason = if (recoveryService == null) {
-                        null
-                    } else {
-                        ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED
-                    },
+                    confidence = InceptionConfidence.TRUNCATED,
                 )
             }
-            log.info("Using configured inception date: {}", configured)
+            if (comparisonStart != null) {
+                // An accepted later anchor is retention-protected; losing it means the
+                // snapshot store no longer holds the verified anchor at all.
+                log.warn("Accepted comparison start {} has no retained anchor snapshot", comparisonStart)
+                return InceptionResolution(
+                    inceptionTime = configured,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
+                )
+            }
+            log.warn("Configured inception date {} has no retained anchor snapshot", configured)
             return InceptionResolution(
                 inceptionTime = configured,
-                inceptionSnapshot = snapshot,
+                inceptionSnapshot = null,
                 isAutoDetected = false,
+                confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                unavailableReason = recoveryUnavailableReason(recoveryService.getStatus().status),
             )
         }
 
@@ -167,7 +256,18 @@ class InceptionDiscoveryService(
             } else if (cachedSource == INCEPTION_SOURCE_CONFIGURED) {
                 log.info("Ignoring stale configured inception cache after configuration change: {}", cachedTime)
             } else {
-                val snapshot = findClosestSnapshot(cachedTime)
+                val nearbySnapshot = findClosestSnapshot(cachedTime)
+                // Same guard as the configured block: a snapshot from a prior asset
+                // universe (allocation change after auto-detection) must not be
+                // laundered as a trusted anchor while recovery reports the universe
+                // change instead.
+                val snapshot = nearbySnapshot?.takeIf { matchesConfiguredUniverse(it, config) }
+                if (nearbySnapshot != null && snapshot == null) {
+                    log.warn(
+                        "Ignoring cached inception snapshot {}: tracked asset universe changed",
+                        cachedTime,
+                    )
+                }
                 if (snapshot != null) {
                     tradeRepository.getSnapshotId(snapshot.timestamp)?.let { id ->
                         tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, id.toString())
@@ -213,7 +313,12 @@ class InceptionDiscoveryService(
         }
 
         // 5. Earliest retained snapshot on a fresh database
-        val earliestSnapshot = tradeRepository.getSnapshotsInRange(Instant.EPOCH, nowProvider()).firstOrNull()
+        // The same universe guard applies: a snapshot from a prior asset universe
+        // cannot represent "history starts from strategy start" under the current
+        // configuration, and recovery would reject the same history as ambiguous.
+        val earliestSnapshot = tradeRepository.getSnapshotsInRange(Instant.EPOCH, nowProvider())
+            .firstOrNull()
+            ?.takeIf { matchesConfiguredUniverse(it, config) }
         if (earliestSnapshot != null) {
             persistDetection(
                 earliestSnapshot.timestamp,
@@ -277,7 +382,14 @@ class InceptionDiscoveryService(
                 currentClusterSymbols.add(trade.symbol.uppercase())
                 if (currentClusterSymbols.size >= MIN_DISTINCT_SYMBOLS_FOR_BURST) {
                     val burstTime = clusterStart.timestamp
-                    val snapshot = findClosestSnapshot(burstTime)
+                    val nearbySnapshot = findClosestSnapshot(burstTime)
+                    // Same universe guard as the other adoption paths: the burst trades
+                    // are in-universe evidence, but a nearby snapshot from a prior asset
+                    // universe must not become the trusted anchor.
+                    val snapshot = nearbySnapshot?.takeIf { matchesConfiguredUniverse(it, config) }
+                    if (nearbySnapshot != null && snapshot == null) {
+                        log.warn("Ignoring burst-time snapshot {}: tracked asset universe changed", burstTime)
+                    }
                     return InceptionResolution(
                         inceptionTime = burstTime,
                         inceptionSnapshot = snapshot,
@@ -331,6 +443,30 @@ class InceptionDiscoveryService(
         }
         return null
     }
+
+    private suspend fun findAcceptedComparisonSnapshot(targetTime: Instant): PortfolioSnapshot? {
+        val storedId = tradeRepository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        if (storedId != null) {
+            val id = storedId.toIntOrNull() ?: return null
+            return tradeRepository.getSnapshotById(id)?.takeIf { it.timestamp == targetTime }
+        }
+
+        // Legacy settings have no identity metadata. An exact timestamp is safe only when it
+        // identifies one retained row; duplicate timestamps remain unavailable rather than
+        // silently selecting a different candidate.
+        return tradeRepository
+            .getSnapshotsInRange(targetTime, targetTime)
+            .filter { it.timestamp == targetTime }
+            .singleOrNull()
+    }
+
+    private suspend fun findExactConfiguredSnapshot(targetTime: Instant): PortfolioSnapshot? = tradeRepository
+        .getSnapshotsInRange(targetTime, targetTime)
+        .filter { hasExactBaselineObservation(it, targetTime) }
+        .singleOrNull()
 
     companion object {
         const val BURST_WINDOW_MS = 5000L

@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.InceptionCandidateEvidence
 import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
@@ -204,6 +205,30 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 val inRange = repository.getSnapshotsInRange(baseTime.minusSeconds(5), baseTime.plusSeconds(5))
                 inRange.size shouldBe 1
                 inRange.first().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("2000.00"))
+            }
+        }
+
+        "getAllSnapshotsInRange returns every retained snapshot beyond the chart limit" {
+            runTest {
+                val baseTime = Instant.parse("2033-06-01T00:00:00Z")
+                val snapshots = (0..500).map { index ->
+                    TestFixtures.emptySnapshot(
+                        timestamp = baseTime.plusSeconds(index.toLong()),
+                        totalValueUSD = BigDecimal(index + 1),
+                    ).copy(
+                        actions = if (index == 499 || index == 500) listOf("boundary-$index") else emptyList(),
+                    )
+                }
+                repository.save(snapshots)
+
+                repository.getSnapshotsInRange(baseTime, baseTime.plusSeconds(500)).size shouldBe 300
+                val all = repository.getAllSnapshotsInRange(baseTime, baseTime.plusSeconds(500))
+
+                all.size shouldBe snapshots.size
+                all.first().timestamp shouldBe baseTime
+                all.last().timestamp shouldBe baseTime.plusSeconds(500)
+                all[499].actions shouldBe listOf("boundary-499")
+                all[500].actions shouldBe listOf("boundary-500")
             }
         }
 
@@ -786,13 +811,24 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 val s2 = TestFixtures.emptySnapshot(t2, BigDecimal("1200.00"))
 
                 repository.saveSnapshot(s0)
-                repository.saveSnapshot(s1)
+                val firstTimestampId = repository.saveSnapshot(s1)
                 repository.saveSnapshot(s2)
+                val duplicateFirstId = repository.saveSnapshot(
+                    TestFixtures.emptySnapshot(t1, BigDecimal("1110.00")),
+                )
+                val duplicateSecondId = repository.saveSnapshot(
+                    TestFixtures.emptySnapshot(t1, BigDecimal("1120.00")),
+                )
 
                 repository.getSnapshotBefore(t0) shouldBe null
                 repository.getSnapshotBefore(t1)?.timestamp shouldBe t0
-                repository.getSnapshotBefore(t2)?.timestamp shouldBe t1
+                repository.getSnapshotBefore(t2)?.totalValueUSD shouldBe BigDecimal("1120.00")
                 repository.getSnapshotBefore(t2.plusSeconds(3600))?.timestamp shouldBe t2
+                repository.getSnapshotId(t1) shouldBe firstTimestampId
+                repository.getSnapshotId(t1, 1) shouldBe duplicateFirstId
+                repository.getSnapshotId(t1, 2) shouldBe duplicateSecondId
+                repository.getSnapshotId(t1, 3) shouldBe null
+                repository.getSnapshotId(t1, -1) shouldBe null
             }
         }
 
@@ -817,6 +853,61 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.setSyncMetadataAtomically(emptyMap())
 
                 repository.getSyncMetadata("inference-empty-batch-key").shouldBeNull()
+            }
+        }
+
+        "retention floor metadata never moves later or becomes invalid" {
+            runTest {
+                val key = SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS
+                repository.setSyncMetadata(key, "1000")
+                repository.setSyncMetadata(key, "2000")
+
+                repository.getSyncMetadata(key) shouldBe "1000"
+
+                repository.setSyncMetadata(key, "not-a-floor")
+
+                repository.getSyncMetadata(key) shouldBe "1000"
+            }
+        }
+
+        "retention floor metadata rejects invalid and future values without an existing floor" {
+            runTest {
+                val key = SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS
+
+                repository.setSyncMetadata(key, "not-a-floor")
+                repository.getSyncMetadata(key).shouldBeNull()
+
+                repository.setSyncMetadata(key, Instant.now().plusSeconds(86_400).toEpochMilli().toString())
+                repository.getSyncMetadata(key).shouldBeNull()
+            }
+        }
+
+        "continuous history start metadata never moves later or becomes invalid" {
+            runTest {
+                val key = SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS
+                repository.setSyncMetadata(key, "1000")
+                repository.setSyncMetadata(key, "2000")
+
+                repository.getSyncMetadata(key) shouldBe "1000"
+
+                repository.setSyncMetadata(key, "not-a-timestamp")
+
+                repository.getSyncMetadata(key) shouldBe "1000"
+            }
+        }
+
+        "continuous history start metadata rejects invalid and future values without an existing boundary" {
+            runTest {
+                val key = SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS
+
+                repository.setSyncMetadata(key, "not-a-timestamp")
+                repository.getSyncMetadata(key).shouldBeNull()
+
+                repository.setSyncMetadata(key, "-100")
+                repository.getSyncMetadata(key).shouldBeNull()
+
+                repository.setSyncMetadata(key, Instant.now().plusSeconds(86_400).toEpochMilli().toString())
+                repository.getSyncMetadata(key).shouldBeNull()
             }
         }
 

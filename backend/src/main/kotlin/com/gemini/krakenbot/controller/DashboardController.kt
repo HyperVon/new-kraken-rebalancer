@@ -8,11 +8,13 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.domain.PortfolioCalculations
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.AssetColorAssigner
+import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
@@ -49,6 +51,8 @@ import io.ktor.server.sse.ServerSSESession
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.html.div
 import kotlinx.html.h2
 import kotlinx.html.p
@@ -67,6 +71,7 @@ class DashboardController(
     private val dashboardView: DashboardView,
     private val portfolioManager: PortfolioManager,
     private val orderIntentService: OrderIntentService,
+    private val nowProvider: () -> Instant = Instant::now,
 ) {
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
 
@@ -93,6 +98,7 @@ class DashboardController(
                 val config = configService.getConfig()
                 val csrfToken = CsrfProtection.issueToken(call)
                 val inceptionDisplay = tradeHistoryService.getDetectedInceptionDisplayInfo()
+                val laterStartProposal = resolveLaterStartProposal(config.settings)
                 call.respondHtml(HttpStatusCode.OK) {
                     dashboardView.renderSettingsPage(
                         config = config,
@@ -100,6 +106,7 @@ class DashboardController(
                         csrfToken = csrfToken,
                         paused = portfolioManager.isLoopPaused(),
                         inceptionDisplay = inceptionDisplay,
+                        laterStartProposal = laterStartProposal,
                     )
                 }
             }
@@ -212,20 +219,144 @@ class DashboardController(
             )
             return
         }
-
-        try {
-            configService.updateConfig(updatedConfig)
-            call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
-            call.respond(HttpStatusCode.OK)
-        } catch (e: InvalidConfigurationException) {
+        val acceptedComparisonSnapshotId = try {
+            resolveAcceptedComparisonSnapshotId(currentConfig, updatedConfig)
+        } catch (e: IllegalArgumentException) {
             respondSettingsFormError(
-                config = updatedConfig,
+                config = currentConfig,
                 message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
                 csrfToken = CsrfProtection.currentToken(call),
                 paused = portfolioManager.isLoopPaused(),
                 status = HttpStatusCode.UnprocessableEntity,
             )
+            return
         }
+
+        val comparisonStartChanged = comparisonStartChanged(currentConfig, updatedConfig)
+        val inceptionChanged = inceptionDateChanged(currentConfig, updatedConfig)
+        val previousAcceptedComparisonSnapshotId = if (comparisonStartChanged) {
+            tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+        } else {
+            null
+        }
+        val previousRetentionFloor = if (inceptionChanged) {
+            tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS)
+        } else {
+            null
+        }
+        var comparisonStartMetadataWriteStarted = false
+        var retentionFloorMetadataWriteStarted = false
+        try {
+            // Publish the exact identity before the config file. If config persistence fails, the
+            // old config remains authoritative. The catch block restores the old metadata so a
+            // failed update cannot leave the stores describing different accepted anchors.
+            if (comparisonStartChanged) {
+                comparisonStartMetadataWriteStarted = true
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                    acceptedComparisonSnapshotId?.toString().orEmpty(),
+                )
+            }
+            if (inceptionChanged) {
+                configuredRetentionFloorEpochMs(updatedConfig)?.toString()?.let { retentionFloor ->
+                    retentionFloorMetadataWriteStarted = true
+                    tradeHistoryService.setSyncMetadata(
+                        SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                        retentionFloor,
+                    )
+                }
+            }
+            configService.updateConfig(updatedConfig)
+        } catch (cancelled: CancellationException) {
+            val restoreFailure = restoreSettingsMetadata(
+                comparisonStartMetadataWriteStarted = comparisonStartMetadataWriteStarted,
+                previousAcceptedComparisonSnapshotId = previousAcceptedComparisonSnapshotId,
+                retentionFloorMetadataWriteStarted = retentionFloorMetadataWriteStarted,
+                previousRetentionFloor = previousRetentionFloor,
+            )
+            if (restoreFailure != null) {
+                cancelled.addSuppressed(restoreFailure)
+                log.error("Failed to restore settings metadata after cancellation", restoreFailure)
+            }
+            throw cancelled
+        } catch (e: Exception) {
+            val restoreFailure = restoreSettingsMetadata(
+                comparisonStartMetadataWriteStarted = comparisonStartMetadataWriteStarted,
+                previousAcceptedComparisonSnapshotId = previousAcceptedComparisonSnapshotId,
+                retentionFloorMetadataWriteStarted = retentionFloorMetadataWriteStarted,
+                previousRetentionFloor = previousRetentionFloor,
+            )
+            if (restoreFailure != null) {
+                e.addSuppressed(restoreFailure)
+                log.error("Failed to restore settings metadata after persistence failure", restoreFailure)
+                throw e
+            }
+            if (e is InvalidConfigurationException) {
+                // updateConfig rejected the parsed settings: the error fragment must render the
+                // last server-saved state, not the rejected-but-parsed one, so any proposal
+                // affordance stays consistent with what the service actually holds.
+                respondSettingsFormError(
+                    config = currentConfig,
+                    message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
+                    csrfToken = CsrfProtection.currentToken(call),
+                    paused = portfolioManager.isLoopPaused(),
+                    status = HttpStatusCode.UnprocessableEntity,
+                )
+                return
+            } else {
+                throw e
+            }
+        }
+        call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
+        call.respond(HttpStatusCode.OK)
+    }
+
+    private suspend fun restoreAcceptedComparisonSnapshotId(previousSnapshotId: String?): Exception? = try {
+        withContext(NonCancellable) {
+            tradeHistoryService.setSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                previousSnapshotId.orEmpty(),
+            )
+        }
+        null
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (restoreFailure: Exception) {
+        restoreFailure
+    }
+
+    private suspend fun restoreSettingsMetadata(
+        comparisonStartMetadataWriteStarted: Boolean,
+        previousAcceptedComparisonSnapshotId: String?,
+        retentionFloorMetadataWriteStarted: Boolean,
+        previousRetentionFloor: String?,
+    ): Exception? {
+        val failures = mutableListOf<Exception>()
+        if (comparisonStartMetadataWriteStarted) {
+            restoreAcceptedComparisonSnapshotId(previousAcceptedComparisonSnapshotId)?.let(failures::add)
+        }
+        if (retentionFloorMetadataWriteStarted) {
+            restoreRetentionFloor(previousRetentionFloor)?.let(failures::add)
+        }
+        val firstFailure = failures.firstOrNull() ?: return null
+        failures.drop(1).forEach(firstFailure::addSuppressed)
+        return firstFailure
+    }
+
+    private suspend fun restoreRetentionFloor(previousFloor: String?): Exception? = try {
+        previousFloor?.takeIf(String::isNotBlank)?.let { floor ->
+            withContext(NonCancellable) {
+                tradeHistoryService.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                    floor,
+                )
+            }
+        }
+        null
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (restoreFailure: Exception) {
+        restoreFailure
     }
 
     private fun parseSettingsForm(params: Parameters, currentConfig: AppConfig): AppConfig {
@@ -254,6 +385,15 @@ class DashboardController(
                 ?: throw IllegalArgumentException(ViewText.INVALID_INCEPTION_DATE)
             dateStr
         }
+        val comparisonStartDate =
+            params[FormFields.COMPARISON_START_DATE]?.trim()?.takeIf(String::isNotBlank)?.let { dateStr ->
+                val parsed = InceptionDiscoveryService.parseInceptionDate(dateStr)
+                    ?: throw IllegalArgumentException(ViewText.INVALID_COMPARISON_START_DATE)
+                val strategyStart = inceptionDate?.let(InceptionDiscoveryService::parseInceptionDate)
+                require(strategyStart != null) { ViewText.INVALID_COMPARISON_START_DATE }
+                require(!parsed.isBefore(strategyStart)) { ViewText.INVALID_COMPARISON_START_DATE }
+                dateStr
+            }
         val settings =
             Settings(
                 loopDelaySeconds = loopDelaySeconds,
@@ -265,6 +405,7 @@ class DashboardController(
                 fiatDeploymentExponent = fiatDeploymentExponent,
                 fiatDeploymentThresholdPercent = fiatDeploymentThresholdPercent,
                 inceptionDate = inceptionDate,
+                comparisonStartDate = comparisonStartDate,
             )
 
         val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
@@ -292,6 +433,40 @@ class DashboardController(
         )
     }
 
+    private suspend fun resolveAcceptedComparisonSnapshotId(currentConfig: AppConfig, updatedConfig: AppConfig): Int? {
+        if (!comparisonStartChanged(currentConfig, updatedConfig)) return null
+        val acceptedStart = updatedConfig.settings.comparisonStartDate
+            ?.let(InceptionDiscoveryService::parseInceptionDate)
+            ?: return null
+        val strategyStart = updatedConfig.settings.inceptionDate
+            ?.let(InceptionDiscoveryService::parseInceptionDate)
+            ?: throw IllegalArgumentException(ViewText.INVALID_COMPARISON_START_DATE)
+        val proposal = tradeHistoryService.getComparisonStartProposal(strategyStart)
+        require(
+            proposal?.status == ComparisonProposalStatus.VERIFIED &&
+                proposal.timestamp == acceptedStart &&
+                proposal.snapshotId != null,
+        ) { ViewText.INVALID_COMPARISON_START_DATE }
+        return proposal.snapshotId
+    }
+
+    private fun comparisonStartChanged(currentConfig: AppConfig, updatedConfig: AppConfig): Boolean =
+        currentConfig.settings.comparisonStartDate
+            ?.let(InceptionDiscoveryService::parseInceptionDate) !=
+            updatedConfig.settings.comparisonStartDate
+                ?.let(InceptionDiscoveryService::parseInceptionDate)
+
+    private fun inceptionDateChanged(currentConfig: AppConfig, updatedConfig: AppConfig): Boolean =
+        currentConfig.settings.inceptionDate
+            ?.let(InceptionDiscoveryService::parseInceptionDate) !=
+            updatedConfig.settings.inceptionDate
+                ?.let(InceptionDiscoveryService::parseInceptionDate)
+
+    private fun configuredRetentionFloorEpochMs(config: AppConfig): Long? = config.settings.inceptionDate
+        ?.let(InceptionDiscoveryService::parseInceptionDate)
+        ?.takeIf { !it.isAfter(nowProvider()) }
+        ?.toEpochMilli()
+
     private fun Parameters.requiredSingle(name: String, message: String): String {
         val values = getAll(name)
         require(values?.size == 1) { message }
@@ -314,11 +489,32 @@ class DashboardController(
         status: HttpStatusCode,
     ) {
         val inceptionDisplay = tradeHistoryService.getDetectedInceptionDisplayInfo()
+        val laterStartProposal = resolveLaterStartProposal(config.settings)
         val errHtml =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderSettingsFormFragment(this, config, message, csrfToken, paused, inceptionDisplay)
+                dashboardView.renderSettingsFormFragment(
+                    this,
+                    config,
+                    message,
+                    csrfToken,
+                    paused,
+                    inceptionDisplay,
+                    laterStartProposal,
+                )
             }
         call.respondText(errHtml, ContentType.Text.Html, status)
+    }
+
+    /**
+     * Resolves the Settings affordance through the same comparison-availability policy as
+     * History. Approved baseline readiness is only one input; later ownership/reconciliation
+     * evidence can still make the comparison unavailable. The query is read-only.
+     */
+    private suspend fun resolveLaterStartProposal(settings: Settings): ComparisonStartProposal? {
+        val anchor = settings.comparisonStartDate?.takeIf(String::isNotBlank)
+            ?.let { InceptionDiscoveryService.parseInceptionDate(it) }
+            ?: InceptionDiscoveryService.parseInceptionDate(settings.inceptionDate)
+        return anchor?.let { tradeHistoryService.getComparisonStartProposal(it) }
     }
 
     private suspend fun RoutingContext.handleGetDashboardFragment() {

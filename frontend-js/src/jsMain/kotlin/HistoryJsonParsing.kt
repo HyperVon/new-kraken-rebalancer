@@ -169,6 +169,7 @@ fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
             latestDifferencePercent = null,
             unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS.name,
             unavailableAt = null,
+            proposalSearchStatus = null,
         )
     }
     val availability =
@@ -188,6 +189,8 @@ fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
         latestDifferencePercent = dynamicString(raw.latestDifferencePercent),
         unavailableReason = dynamicString(raw.unavailableReason),
         unavailableAt = dynamicString(raw.unavailableAt),
+        proposedBaselineTimestamp = dynamicString(raw.proposedBaselineTimestamp),
+        proposalSearchStatus = dynamicString(raw.proposalSearchStatus),
     )
 }
 

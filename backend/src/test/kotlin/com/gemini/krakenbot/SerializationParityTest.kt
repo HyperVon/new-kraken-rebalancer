@@ -8,6 +8,7 @@ import com.gemini.krakenbot.api.toApiDto
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -266,6 +267,7 @@ class SerializationParityTest : StringSpec() {
             json shouldContain "\"differencePercent\":\"4.7619\""
             json shouldContain "\"latestDifferenceUSD\":\"5000.00\""
             json shouldContain "\"unavailableReason\":null"
+            json shouldContain "\"proposalSearchStatus\":null"
 
             val roundTrip: ApiRebalancerComparison = mapper.readValue(json)
             roundTrip.points shouldHaveSize 2
@@ -280,18 +282,20 @@ class SerializationParityTest : StringSpec() {
                 points = emptyList(),
                 latestDifferenceUSD = null,
                 latestDifferencePercent = null,
-                unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
+                unavailableReason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
                 unavailableAt = Instant.parse("2026-07-01T12:00:00Z"),
+                proposalSearchStatus = ComparisonProposalStatus.EXHAUSTED,
             )
 
             val json = mapper.writeValueAsString(domain.toApiDto())
             json shouldContain "\"availability\":\"UNAVAILABLE\""
-            json shouldContain "\"unavailableReason\":\"MISSING_PRICE\""
+            json shouldContain "\"unavailableReason\":\"AMBIGUOUS_TRADE_OWNERSHIP\""
+            json shouldContain "\"proposalSearchStatus\":\"EXHAUSTED\""
             json shouldContain "\"points\":[]"
 
             val roundTrip: ApiRebalancerComparison = mapper.readValue(json)
             roundTrip.availability shouldBe "UNAVAILABLE"
-            roundTrip.unavailableReason shouldBe "MISSING_PRICE"
+            roundTrip.unavailableReason shouldBe "AMBIGUOUS_TRADE_OWNERSHIP"
             roundTrip.points shouldHaveSize 0
         }
     }

@@ -35,8 +35,8 @@ interface TradeRepository {
 
     suspend fun saveSnapshot(snapshot: PortfolioSnapshot): Int
 
-    /** Loads the database ID for the snapshot matching [timestamp], or null if none exists. */
-    suspend fun getSnapshotId(timestamp: Instant): Int?
+    /** Loads the database ID for the [ordinal]th snapshot at [timestamp], or null if none exists. */
+    suspend fun getSnapshotId(timestamp: Instant, ordinal: Int = 0): Int?
 
     /** Loads one snapshot by its durable database identity, or null when it is not retained. */
     suspend fun getSnapshotById(id: Int): PortfolioSnapshot? = null
@@ -62,6 +62,9 @@ interface TradeRepository {
     suspend fun hasPendingSubmissions(): Boolean
 
     suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
+
+    /** Loads every retained snapshot in the range without chart downsampling. */
+    suspend fun getAllSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
 
     /** Loads the newest snapshot strictly before [timestamp], or null if none exists. */
     suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot?

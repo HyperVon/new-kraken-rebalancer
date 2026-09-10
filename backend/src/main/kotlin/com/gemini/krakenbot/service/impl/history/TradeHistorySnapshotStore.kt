@@ -42,6 +42,7 @@ class TradeHistorySnapshotStore(
     private val objectMapper: ObjectMapper,
     private val portfolioStatsRepository: PortfolioStatsRepository? = null,
     private val tradeHistoryFilePath: String = "trade-history.json",
+    private val nowProvider: () -> Instant = Instant::now,
 ) {
     private val log = LoggerFactory.getLogger(TradeHistorySnapshotStore::class.java)
 
@@ -60,6 +61,13 @@ class TradeHistorySnapshotStore(
         )
 
     suspend fun init() {
+        try {
+            persistConfiguredRetentionFloor(nowProvider())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to persist configured inception retention floor", e)
+        }
         try {
             repository.cleanupDuplicateTrades()
         } catch (e: CancellationException) {
@@ -359,26 +367,37 @@ class TradeHistorySnapshotStore(
     }
 
     suspend fun addSnapshot(snapshot: PortfolioSnapshot) {
+        val now = nowProvider()
+        var retentionFloorDurable = true
+        try {
+            // Publish the configured floor before saving/pruning so a first snapshot after a
+            // pending Settings update cannot race with rolling retention.
+            persistConfiguredRetentionFloor(now)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A metadata write failure must not drop the snapshot or allow pruning against a
+            // floor that the repository cannot durably see.
+            retentionFloorDurable = false
+            log.error("Failed to persist configured inception retention floor", e)
+        }
         repository.saveSnapshot(snapshot)
         try {
             // Lifetime retention contract: never prune anything at or after
-            // inception. Without resolved inception metadata, skip pruning
-            // entirely rather than destroying evidence future inception
-            // resolution (burst detect / earliest snapshot) depends on.
-            val inceptionEpochMs = repository.getSyncMetadata(
-                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
-            )?.toLongOrNull()?.takeUnless {
-                // A stale future epoch (e.g. a future configured date stored
-                // by an older version) is not a resolved inception. Pruning
-                // against it would destroy burst/earliest discovery evidence.
-                Instant.ofEpochMilli(it).isAfter(Instant.now())
+            // inception. Without a valid configured or resolved inception floor, skip pruning
+            // entirely rather than destroying evidence future inception resolution depends on.
+            if (!retentionFloorDurable) {
+                log.debug("Skipping snapshot/trade prune: inception retention floor is not durable")
+                snapshotFlow.tryEmit(snapshot)
+                return
             }
+            val inceptionEpochMs = effectiveRetentionFloorEpochMs(now)
             if (inceptionEpochMs == null) {
                 log.debug("Skipping snapshot/trade prune: inception not yet resolved")
                 snapshotFlow.tryEmit(snapshot)
                 return
             }
-            val cutoff = Instant.now().minus(PrecisionConstants.HISTORICAL_DAYS_BACK.toLong(), ChronoUnit.DAYS)
+            val cutoff = now.minus(PrecisionConstants.HISTORICAL_DAYS_BACK.toLong(), ChronoUnit.DAYS)
             val inceptionBound = Instant.ofEpochMilli(inceptionEpochMs).minusSeconds(5)
             val effectiveCutoff = if (inceptionBound.isBefore(cutoff)) inceptionBound else cutoff
             val prunedSnapshots = repository.pruneSnapshotsOlderThan(effectiveCutoff)
@@ -404,6 +423,35 @@ class TradeHistorySnapshotStore(
         }
         snapshotFlow.tryEmit(snapshot)
     }
+
+    private fun configuredRetentionFloorEpochMs(now: Instant): Long? = configService.getConfig().settings.inceptionDate
+        ?.let(InceptionDiscoveryService::parseInceptionDate)
+        ?.takeIf { !it.isAfter(now) }
+        ?.toEpochMilli()
+
+    private fun validRetentionFloorEpochMs(raw: String?, now: Instant): Long? = raw?.toLongOrNull()
+        ?.takeIf { it >= 0L }
+        ?.takeIf { !Instant.ofEpochMilli(it).isAfter(now) }
+
+    private suspend fun persistConfiguredRetentionFloor(now: Instant) {
+        val configuredFloor = configuredRetentionFloorEpochMs(now) ?: return
+        val value = configuredFloor.toString()
+        if (repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS) != value) {
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS, value)
+        }
+    }
+
+    private suspend fun effectiveRetentionFloorEpochMs(now: Instant): Long? = listOf(
+        configuredRetentionFloorEpochMs(now),
+        validRetentionFloorEpochMs(
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS),
+            now,
+        ),
+        validRetentionFloorEpochMs(
+            repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS),
+            now,
+        ),
+    ).filterNotNull().minOrNull()
 
     suspend fun saveTrade(trade: TradeRecord): Int = repository.saveTrade(trade)
 

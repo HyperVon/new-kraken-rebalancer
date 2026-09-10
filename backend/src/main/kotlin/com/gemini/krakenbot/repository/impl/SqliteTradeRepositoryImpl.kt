@@ -8,7 +8,6 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
-import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.ActionLogTable
@@ -172,7 +171,9 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     .where {
                         (PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()) and
                             (PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli())
-                    }.orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    }
+                    .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
                     .map { it[PortfolioSnapshotTable.id] }
 
             if (allIds.isEmpty()) return@readTransactionIO emptyList()
@@ -197,9 +198,28 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     .selectAll()
                     .where { PortfolioSnapshotTable.id inList downsampledIds }
                     .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
                     .toList()
 
             buildSnapshotsFromRows(snapshotRows)
+        }
+
+    override suspend fun getAllSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
+        database.readTransactionIO {
+            val snapshotRows =
+                PortfolioSnapshotTable
+                    .selectAll()
+                    .where {
+                        (PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()) and
+                            (PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli())
+                    }
+                    .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
+                    .toList()
+
+            snapshotRows
+                .chunked(SQLITE_IN_CHUNK_SIZE)
+                .flatMap(::buildSnapshotsFromRows)
         }
 
     override suspend fun getSnapshotBefore(timestamp: Instant): PortfolioSnapshot? = database.readTransactionIO {
@@ -208,17 +228,21 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 .selectAll()
                 .where { PortfolioSnapshotTable.timestamp less timestamp.toEpochMilli() }
                 .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
+                .orderBy(PortfolioSnapshotTable.id, SortOrder.DESC)
                 .limit(1)
                 .toList()
         buildSnapshotsFromRows(rows).firstOrNull()
     }
 
-    override suspend fun getSnapshotId(timestamp: Instant): Int? = database.readTransactionIO {
+    override suspend fun getSnapshotId(timestamp: Instant, ordinal: Int): Int? = database.readTransactionIO {
+        if (ordinal < 0 || ordinal == Int.MAX_VALUE) return@readTransactionIO null
         PortfolioSnapshotTable
             .select(PortfolioSnapshotTable.id)
             .where { PortfolioSnapshotTable.timestamp eq timestamp.toEpochMilli() }
-            .limit(1)
-            .firstOrNull()
+            .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
+            .limit(ordinal + 1)
+            .toList()
+            .getOrNull(ordinal)
             ?.get(PortfolioSnapshotTable.id)
     }
 
@@ -583,7 +607,33 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun getSyncMetadata(key: String): String? = database.readSyncMetadata(key)
 
     override suspend fun setSyncMetadata(key: String, value: String) {
-        database.writeSyncMetadata(key, value, log, "Failed to upsert sync metadata")
+        if (key != SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS &&
+            key != SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS
+        ) {
+            database.writeSyncMetadata(key, value, log, "Failed to upsert sync metadata")
+            return
+        }
+        val failureMessage = if (key == SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS) {
+            "Failed to upsert continuous history start"
+        } else {
+            "Failed to upsert inception retention floor"
+        }
+        database.safeTransactionIO(log, failureMessage) {
+            val now = Instant.now()
+            val existingFloor = readSyncMetadataInTransaction(key)?.toLongOrNull()
+                ?.takeIf { it >= 0L }
+                ?.takeIf { !Instant.ofEpochMilli(it).isAfter(now) }
+            val requestedFloor = value.toLongOrNull()?.takeIf { it >= 0L }
+                ?.takeIf { !Instant.ofEpochMilli(it).isAfter(now) }
+            if (requestedFloor != null) {
+                val persistedValue = existingFloor?.coerceAtMost(requestedFloor)?.toString()
+                    ?: requestedFloor.toString()
+                HistorySyncMetadataTable.upsert {
+                    it[HistorySyncMetadataTable.key] = key
+                    it[HistorySyncMetadataTable.value] = persistedValue
+                }
+            }
+        }
     }
 
     override suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int =
@@ -592,9 +642,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             val inceptionSnapshotId = readSyncMetadataInTransaction(
                 SyncMetadataKeys.INCEPTION_SNAPSHOT_ID,
             )?.toIntOrNull()
-            val inceptionEpochMs = readSyncMetadataInTransaction(
-                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
-            )?.toLongOrNull()
+            val retentionFloorEpochMs = inceptionRetentionFloorEpochMs()
+            val retentionBound = retentionFloorEpochMs?.minus(5_000L)
             val idsToDelete =
                 PortfolioSnapshotTable
                     .select(PortfolioSnapshotTable.id, PortfolioSnapshotTable.timestamp)
@@ -603,7 +652,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                         val id = row[PortfolioSnapshotTable.id]
                         val ts = row[PortfolioSnapshotTable.timestamp]
                         id == inceptionSnapshotId ||
-                            (inceptionSnapshotId == null && inceptionEpochMs != null && ts == inceptionEpochMs)
+                            (retentionBound != null && ts >= retentionBound)
                     }
                     .map { it[PortfolioSnapshotTable.id] }
 
@@ -622,31 +671,36 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         database.safeTransactionIO(log, "Failed to prune old trades") {
             val cutoffMillis = cutoff.toEpochMilli()
             val protectedTradeIds = protectedTradeIds()
-            val inceptionEpochMs = readSyncMetadataInTransaction(
-                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
-            )?.toLongOrNull()
+            val retentionFloorEpochMs = inceptionRetentionFloorEpochMs()
+            val retentionBound = retentionFloorEpochMs?.minus(5_000L)
             val idsToDelete = TradeTable.select(
                 TradeTable.id,
                 TradeTable.timestamp,
-                TradeTable.clientOrderId,
-                TradeTable.cycleId,
-                TradeTable.tradeSource,
             ).where {
                 (TradeTable.timestamp less cutoffMillis) and
                     TradeTable.submissionState.isNull()
             }.filterNot { row ->
                 val id = row[TradeTable.id]
                 val ts = row[TradeTable.timestamp]
-                val isManualOrExternal = row[TradeTable.clientOrderId].isNullOrBlank() &&
-                    row[TradeTable.cycleId].isNullOrBlank() &&
-                    row[TradeTable.tradeSource] != TradeSource.LOCAL_ESTIMATE.name
                 protectedTradeIds.contains(id) ||
-                    (inceptionEpochMs != null && ts >= (inceptionEpochMs - 5000L) && isManualOrExternal)
+                    (retentionBound != null && ts >= retentionBound)
             }.map { it[TradeTable.id] }
             idsToDelete.chunked(SQLITE_IN_CHUNK_SIZE).sumOf { chunk ->
                 TradeTable.deleteWhere { TradeTable.id inList chunk }
             }
         }
+
+    private fun inceptionRetentionFloorEpochMs(): Long? {
+        val now = Instant.now()
+        return listOf(
+            readSyncMetadataInTransaction(SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS),
+            readSyncMetadataInTransaction(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS),
+        ).mapNotNull { raw ->
+            raw?.toLongOrNull()?.takeIf { it >= 0L }?.takeIf {
+                !Instant.ofEpochMilli(it).isAfter(now)
+            }
+        }.minOrNull()
+    }
 
     override suspend fun cleanupDuplicateTrades() {
         database.safeTransactionIO(log, "Failed to cleanup duplicate trades") {

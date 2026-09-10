@@ -24,13 +24,17 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.InceptionDisplayStatus
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -433,22 +437,25 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "recovery distinguishes manual override, simulation, credentials, and retry throttle" {
+        "recovery distinguishes approved start, simulation, credentials, and retry throttle" {
             runTest {
                 config = config.copy(settings = config.settings.copy(inceptionDate = "2026-01-01"))
-                newService().recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.MANUAL_OVERRIDE
-                krakenService.getTradeHistoryCallCount shouldBe 0
+                val approvedStatus = newService().recoverOneBoundedRun()
+                approvedStatus.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                approvedStatus.reason shouldBe "no retained balance anchor"
+                krakenService.getTradeHistoryCallCount shouldBeGreaterThan 0
+                val callsAfterApproved = krakenService.getTradeHistoryCallCount
 
                 config = config.copy(settings = config.settings.copy(inceptionDate = null, simulation = true))
                 newService().recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.UNAVAILABLE
-                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getTradeHistoryCallCount shouldBe callsAfterApproved
 
                 config = config.copy(
                     kraken = KrakenCredentials("", ""),
                     settings = config.settings.copy(simulation = false),
                 )
                 newService().recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.UNAVAILABLE
-                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getTradeHistoryCallCount shouldBe callsAfterApproved
 
                 config = appConfig(listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)))
                 krakenService.tradeHistoryTotalCountOverride = 0
@@ -548,7 +555,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "candidate is newer than retained anchor"
+                status.reason shouldBe "baseline is newer than retained anchor"
             }
         }
 
@@ -1360,6 +1367,16 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
                 status.reason shouldBe "ledger provenance unresolved: deposit"
                 repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) shouldBe ""
+
+                val tradeHistoryCalls = krakenService.getTradeHistoryCallCount
+                val ledgerCalls = krakenService.getLedgersCallCount
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                val retried = newService().recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                retried.reason shouldBe "ledger provenance unresolved: deposit"
+                krakenService.getTradeHistoryCallCount shouldBe tradeHistoryCalls
+                krakenService.getLedgersCallCount shouldBe ledgerCalls
             }
         }
 
@@ -1906,7 +1923,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "an OHLC request failure leaves missing historical prices unavailable" {
+        "an OHLC request failure retries without repaginating when price evidence becomes available" {
             runTest {
                 config = appConfig(
                     listOf(
@@ -1935,12 +1952,26 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 )
                 krakenService.tradeHistoryTotalCountOverride = 1
                 krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
-                krakenService.ohlcSupplier = { _, _, _ -> error("OHLC unavailable") }
+                var ohlcAvailable = false
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    if (!ohlcAvailable) {
+                        error("OHLC unavailable")
+                    }
+                    listOf(botTime.minusSeconds(901).epochSecond to BigDecimal("200.00"))
+                }
 
-                val status = newService().recoverOneBoundedRun()
+                val first = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                first.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                first.reason shouldBe "historical price unavailable"
+                val tradeHistoryCalls = krakenService.getTradeHistoryCallCount
+
+                ohlcAvailable = true
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                val retried = newService().recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                krakenService.getTradeHistoryCallCount shouldBe tradeHistoryCalls
             }
         }
 
@@ -2085,7 +2116,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     InceptionRecoveryService.CURRENT_RECOVERY_VERSION,
                 )
 
-                val changed = newService().prepareForCurrentConfiguration("new")
+                val changed = newService()
+                    .prepareForCurrentConfiguration(config.settings.copy(inceptionDate = "new"))
 
                 changed shouldBe true
                 repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) shouldBe ""
@@ -2094,7 +2126,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val fingerprint = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT)
                 fingerprint?.length shouldBe 64
                 fingerprint shouldNotBe "old"
-                newService().prepareForCurrentConfiguration("new") shouldBe false
+                newService()
+                    .prepareForCurrentConfiguration(config.settings.copy(inceptionDate = "new")) shouldBe false
             }
         }
 
@@ -2196,6 +2229,42 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "approved-start evaluation failure retries with newly retained evidence" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("price", requestedStart))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
+                        timestamp = now.plusSeconds(60),
+                    ),
+                )
+                newService().prepareForCurrentConfiguration(config.settings) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                coEvery { configService.beginExecutionSession() } throws
+                    IllegalStateException("session unavailable")
+
+                val failed = newService().recoverOneBoundedRun()
+
+                failed.status shouldBe InceptionRecoveryStatus.FAILED
+                val initialHorizon = repository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
+                )
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                coEvery { configService.beginExecutionSession() } returns Unit
+
+                val retried = newService().recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC) shouldBe
+                    initialHorizon
+            }
+        }
+
         "configuration preparation does not wait behind a network recovery run" {
             runTest {
                 val entered = CompletableDeferred<Unit>()
@@ -2215,16 +2284,16 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "recovery honors a manual override published after preflight" {
+        "recovery honors an approved start published after preflight" {
             runTest {
                 val manualConfig = config.copy(settings = config.settings.copy(inceptionDate = "2026-01-01"))
                 every { configService.getConfig() } returnsMany listOf(config, manualConfig)
 
                 val status = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.MANUAL_OVERRIDE
-                status.reason shouldBe "explicit inception date"
-                krakenService.getTradeHistoryCallCount shouldBe 0
+                status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                status.reason shouldBe "no retained balance anchor"
+                krakenService.getTradeHistoryCallCount shouldBeGreaterThan 0
             }
         }
 
@@ -2661,6 +2730,535 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 record.firstPositive shouldBe firstUnknown.plusSeconds(7_200)
                 record.coverageEnd shouldBe firstUnknown.plusSeconds(7_201)
             }
+        }
+
+        "approved start reverse-replays a nearby post-start snapshot to the requested time" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-01T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("price", requestedStart))
+                repository.saveTrade(apiTrade("post-start", requestedStart.plusSeconds(120)))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
+                        timestamp = requestedStart.plusSeconds(120),
+                    ),
+                )
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                status.reason shouldBe "approved-start baseline ready"
+                repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE) shouldBe
+                    InceptionRecoveryService.INCEPTION_SOURCE_APPROVED
+                repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS) shouldBe
+                    requestedStart.toEpochMilli().toString()
+                val approvedId = requireNotNull(
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                        ?.toIntOrNull(),
+                )
+                val baseline = requireNotNull(repository.getSnapshotById(approvedId))
+                baseline.timestamp shouldBe requestedStart
+                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.49")
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("501.01")
+                repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 2
+            }
+        }
+
+        "approved start reconstructs the baseline at the requested instant" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("price", requestedStart))
+                repository.saveTrade(apiTrade("bot", requestedStart.plusSeconds(60)))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.03"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.tradeHistoryTotalCountOverride = 2
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baseline = requireNotNull(
+                    repository.getSnapshotById(
+                        requireNotNull(
+                            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                                ?.toIntOrNull(),
+                        ),
+                    ),
+                )
+                baseline.timestamp shouldBe requestedStart
+                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.02")
+                baseline.assets.getValue(Asset.BTC).price shouldBeEqualComparingTo BigDecimal("100.00000000")
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("1000.01")
+                baseline.totalValueUSD shouldBeEqualComparingTo BigDecimal("1002.01")
+            }
+        }
+
+        "approved start stays pending until recovery streams complete" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("price", requestedStart))
+                val botTrades = (1..250L).map { offset ->
+                    apiTrade("bot-$offset", requestedStart.plusSeconds(offset))
+                }
+                botTrades.forEach { repository.saveTrade(it) }
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("2.53"), Asset.USD to BigDecimal("1000.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistorySupplier = { _, offset -> botTrades.drop(offset ?: 0).take(50) }
+                krakenService.tradeHistoryTotalCountOverride = botTrades.size + 1
+
+                val pending = newService().recoverOneBoundedRun()
+                pending.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID).orEmpty() shouldBe
+                    ""
+
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                val ready = newService().recoverOneBoundedRun()
+                ready.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baseline = requireNotNull(
+                    repository.getSnapshotById(
+                        requireNotNull(
+                            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                                ?.toIntOrNull(),
+                        ),
+                    ),
+                )
+                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.03")
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("1252.50")
+
+                val calls = krakenService.getTradeHistoryCallCount
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                newService().recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
+                krakenService.getTradeHistoryCallCount shouldBe calls
+            }
+        }
+
+        "approved start failure stays terminal until configuration changes" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("price", requestedStart))
+                repository.saveTrade(apiTrade("bot", requestedStart.plusSeconds(60)))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.03"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "airdrop-1",
+                            time = requestedStart.plusSeconds(60),
+                            type = "airdrop",
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.001"),
+                        ),
+                    ),
+                )
+
+                val failed = newService().recoverOneBoundedRun()
+                failed.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                failed.reason shouldBe "unsupported ledger type airdrop"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID).orEmpty() shouldBe
+                    ""
+
+                val calls = krakenService.getTradeHistoryCallCount
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                val still = newService().recoverOneBoundedRun()
+                still.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                still.reason shouldBe "unsupported ledger type airdrop"
+                krakenService.getTradeHistoryCallCount shouldBe calls
+            }
+        }
+
+        "approved start failure retries when local evidence changes without changing the strategy start" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.tradeHistoryTotalCountOverride = 0
+                repository.saveTrade(apiTrade("price", requestedStart))
+
+                val failed = newService().recoverOneBoundedRun()
+
+                failed.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                failed.reason shouldBe "no retained balance anchor"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT)
+                    .orEmpty() shouldNotBe ""
+                val initialHorizon = repository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
+                )
+
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
+                        timestamp = now.plusSeconds(60),
+                    ),
+                )
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+
+                val retried = newService().recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                config.settings.inceptionDate shouldBe requestedStart.toString()
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT) shouldBe ""
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC) shouldBe
+                    initialHorizon
+            }
+        }
+
+        "approved start retries when funding provenance becomes available" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val requestedStart = botTime.minusSeconds(60)
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                val bot = apiTrade(
+                    "bot",
+                    botTime,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                    fee = BigDecimal("0.50"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "card-deposit-retry",
+                            refid = "card-retry-ref",
+                            time = botTime.plusSeconds(3600),
+                            type = "deposit",
+                            asset = Asset.USD,
+                            amount = BigDecimal("100.00"),
+                        ),
+                        LedgerEvent(
+                            ledgerId = "card-spend-retry",
+                            refid = "card-retry-ref",
+                            time = botTime.plusSeconds(3601),
+                            type = "spend",
+                            asset = Asset.USD,
+                            amount = BigDecimal("-100.00"),
+                        ),
+                        LedgerEvent(
+                            ledgerId = "card-receive-retry",
+                            refid = "card-retry-ref",
+                            time = botTime.plusSeconds(3602),
+                            type = "receive",
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.50"),
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("1.00"), Asset.USD to BigDecimal("949.50")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                var fundingAvailable = false
+                val cardResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence =
+                        if (fundingAvailable) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED
+
+                    override fun isCardFunding(event: LedgerEvent): Boolean = true
+                }
+
+                val failed = newService(fundingProvenanceResolver = cardResolver).recoverOneBoundedRun()
+
+                failed.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                failed.reason shouldBe "Funding legs in card group cannot be proven external"
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_REASON,
+                    "Funding legs in card group cannot be proven",
+                )
+                val historyCalls = krakenService.getTradeHistoryCallCount
+                fundingAvailable = true
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+
+                val retried = newService(fundingProvenanceResolver = cardResolver).recoverOneBoundedRun()
+
+                retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                krakenService.getTradeHistoryCallCount shouldBe historyCalls
+            }
+        }
+
+        "approved start in the future is unavailable" {
+            runTest {
+                config = config.copy(settings = config.settings.copy(inceptionDate = "2026-05-02"))
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
+                status.reason shouldBe "approved start is in the future"
+            }
+        }
+
+        "invalid approved start date is unavailable" {
+            runTest {
+                config = config.copy(settings = config.settings.copy(inceptionDate = "not-a-date"))
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
+                status.reason shouldBe "invalid approved inception date"
+            }
+        }
+
+        "approved start keeps a boundary event at the requested instant out of the baseline" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("at-boundary", requestedStart))
+                repository.saveTrade(apiTrade("after-boundary", requestedStart.plusMillis(1)))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.03"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.tradeHistoryTotalCountOverride = 2
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baseline = requireNotNull(
+                    repository.getSnapshotById(
+                        requireNotNull(
+                            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                                ?.toIntOrNull(),
+                        ),
+                    ),
+                )
+                baseline.timestamp shouldBe requestedStart
+                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.02")
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("1000.01")
+            }
+        }
+
+        "allocation change clears an approved baseline and re-attempts reconstruction" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("price", requestedStart))
+                repository.saveTrade(apiTrade("bot", requestedStart.plusSeconds(60)))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.03"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.tradeHistoryTotalCountOverride = 2
+                newService().recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
+
+                config = config.copy(
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 40.0),
+                        Allocation(Asset.ETH, 30.0),
+                        Allocation(Asset.USD, 30.0),
+                    ),
+                )
+                val reattempt = newService().recoverOneBoundedRun()
+
+                reattempt.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                reattempt.reason shouldBe "configured asset universe changed"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID).orEmpty() shouldBe
+                    ""
+            }
+        }
+
+        "approved-start display maps confirmed, failed, and pending recovery states" {
+            runTest {
+                config = config.copy(settings = config.settings.copy(inceptionDate = "2026-01-01T00:00:00Z"))
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.CONFIRMED,
+                )
+                val confirmed = newService().getLocalInceptionDisplayInfo()
+                confirmed.status shouldBe InceptionDisplayStatus.APPROVED_READY
+                confirmed.message shouldContain ViewText.INCEPTION_APPROVED_BASELINE_READY_PREFIX
+
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.AMBIGUOUS,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_REASON,
+                    "unsupported ledger type staking",
+                )
+                val failed = newService().getLocalInceptionDisplayInfo()
+                failed.status shouldBe InceptionDisplayStatus.APPROVED_UNAVAILABLE
+                failed.message shouldContain "unsupported ledger type staking"
+
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.IN_PROGRESS,
+                )
+                val pending = newService().getLocalInceptionDisplayInfo()
+                pending.status shouldBe InceptionDisplayStatus.APPROVED_PENDING
+                pending.message shouldBe ViewText.INCEPTION_APPROVED_BASELINE_PENDING
+            }
+        }
+
+        "display reports an in-progress automatic recovery" {
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS, InceptionRecoveryStatus.IN_PROGRESS)
+
+            val display = newService().getLocalInceptionDisplayInfo()
+
+            display.status shouldBe InceptionDisplayStatus.IN_PROGRESS
+            display.dateText.shouldBeNull()
+        }
+
+        "a pinned scope change inside the execution session aborts the run" {
+            val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+            config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+            val scopeResults = listOf(
+                AccountScopeValidationResult(
+                    status = AccountScopeValidationStatus.VALID,
+                    currentScopeDigest = AccountHistoryScopeGuard.digestAccountScope("fake-account"),
+                ),
+                AccountScopeValidationResult.scopeUnavailable("credentials rotated mid-run"),
+            )
+            var call = 0
+            coEvery { trustedScopeGuard.validateAccountScope() } coAnswers { scopeResults[call++] }
+
+            val status = newService().recoverOneBoundedRun()
+
+            status.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
+            status.reason shouldBe "credentials rotated mid-run"
+        }
+
+        "manual display with an untrusted scope withholds inference evidence" {
+            config = config.copy(settings = config.settings.copy(inceptionDate = "2026-01-01T00:00:00Z"))
+            coEvery { trustedScopeGuard.readLocalTrustState() } returns
+                AccountScopeValidationResult.scopeMismatch("rotated-account-digest")
+
+            val display = newService().getLocalInceptionDisplayInfo()
+
+            display.inferredStartText.shouldBeNull()
+            display.status shouldBe InceptionDisplayStatus.APPROVED_PENDING
+        }
+
+        "default constructor arguments still drive a bounded recovery run" {
+            val defaultGuardService = InceptionRecoveryService(
+                repository = repository,
+                ledgerRepository = ledgerRepository,
+                krakenService = krakenService,
+                configService = configService,
+                tradeHistorySyncService = tradeHistorySyncService,
+                nowProvider = { now },
+            )
+
+            val status = defaultGuardService.recoverOneBoundedRun()
+
+            status.status.shouldNotBeNull()
+        }
+
+        "a failing trade history request marks the recovery failed and stays resumable" {
+            config = config.copy(settings = config.settings.copy(inceptionDate = ""))
+            krakenService.tradeHistorySupplier = { _, _ -> throw RuntimeException("kraken down") }
+
+            val failed = newService().recoverOneBoundedRun()
+
+            failed.status shouldBe InceptionRecoveryStatus.FAILED
+            failed.reason shouldBe "history request failed"
+
+            now = now.plusSeconds(301)
+            krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+            val retried = newService().recoverOneBoundedRun()
+            retried.status.shouldNotBeNull()
+        }
+
+        "an approved baseline id pointing at a vanished snapshot is refreshed" {
+            val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+            config = appConfig(listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)))
+            config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+            repository.saveTrade(apiTrade("price", requestedStart.minusSeconds(60)))
+            repository.saveTrade(apiTrade("bot", requestedStart.plusSeconds(60)))
+            repository.saveSnapshot(
+                anchorSnapshot(
+                    mapOf(Asset.BTC to BigDecimal("0.03"), Asset.USD to BigDecimal("999.00")),
+                    timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                ),
+            )
+            krakenService.tradeHistoryTotalCountOverride = 2
+            newService().recoverOneBoundedRun()
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS, "")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, "999")
+
+            now = now.plusSeconds(301)
+            val rerun = newService().recoverOneBoundedRun()
+
+            rerun.status shouldBe InceptionRecoveryStatus.CONFIRMED
+            val refreshed = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+            refreshed.shouldNotBeNull()
+            refreshed shouldNotBe "999"
+        }
+
+        "approved start adopts the exact duplicate-timestamp row rather than the first row" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-01T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                val nonExact = anchorSnapshot(
+                    balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
+                    timestamp = requestedStart,
+                ).copy(balancesObservedAt = requestedStart.plusSeconds(1))
+                val exact = anchorSnapshot(
+                    balances = mapOf(Asset.BTC to BigDecimal("0.49"), Asset.USD to BigDecimal("501.01")),
+                    timestamp = requestedStart,
+                )
+                repository.saveSnapshot(nonExact)
+                val exactId = repository.saveSnapshot(exact)
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe
+                    exactId.toString()
+            }
+        }
+
+        "an approved baseline snapshot is re-adopted after a status reset" {
+            val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+            config = appConfig(listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)))
+            config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+            repository.saveTrade(apiTrade("price", requestedStart.minusSeconds(60)))
+            repository.saveTrade(apiTrade("bot", requestedStart.plusSeconds(60)))
+            repository.saveTrade(apiTrade("bot2", requestedStart.plusSeconds(60)))
+            val anchor =
+                anchorSnapshot(
+                    mapOf(Asset.BTC to BigDecimal("0.03"), Asset.USD to BigDecimal("999.00")),
+                    timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                )
+            repository.saveSnapshot(anchor)
+            krakenService.tradeHistoryTotalCountOverride = 2
+
+            val firstRun = newService().recoverOneBoundedRun()
+            firstRun.status shouldBe InceptionRecoveryStatus.CONFIRMED
+            val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS, "")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_REASON, "")
+
+            now = now.plusSeconds(301)
+            val secondRun = newService().recoverOneBoundedRun()
+
+            secondRun.status shouldBe InceptionRecoveryStatus.CONFIRMED
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe baselineId
+            repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 2
         }
     }
 
