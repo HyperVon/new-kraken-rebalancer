@@ -353,7 +353,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
             }
         }
 
-        "getLedgers_QueriesAllForEarnLedgerTypeAndFiltersReturnedRows" {
+        "getLedgers_QueriesAllForEarnAndPromotionRewardTypesAndFiltersReturnedRows" {
             runTest {
                 val responseJson = """
                     {
@@ -369,6 +369,15 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                                     "amount": "1.50000000",
                                     "fee": "0.00000000",
                                     "balance": "100.00000000"
+                                },
+                                "PROMO-1": {
+                                    "refid": "PROMO-1",
+                                    "time": 1700000000.0000,
+                                    "type": "reward",
+                                    "asset": "XBT",
+                                    "amount": "0.01000000",
+                                    "fee": "0.00000000",
+                                    "balance": "100.01000000"
                                 },
                                 "TRADE-1": {
                                     "refid": "TRADE-1",
@@ -389,7 +398,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                                     "balance": "5089.00000000"
                                 }
                             },
-                            "count": 3
+                            "count": 4
                         }
                     }
                 """.trimIndent()
@@ -404,8 +413,16 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 entries.map { it.ledgerId } shouldBe listOf("EARN-1")
                 entries.single().type shouldBe KrakenApiConstants.LEDGER_TYPE_EARN
                 entries.single().subtype shouldBe "reward"
-                service.getLastLedgerTotalCount() shouldBe 3
-                service.getLastLedgerRawPageSize() shouldBe 3
+                service.getLastLedgerTotalCount() shouldBe 4
+                service.getLastLedgerRawPageSize() shouldBe 4
+
+                val promotionEntries = service.getLedgers(types = setOf(KrakenApiConstants.LEDGER_TYPE_REWARD))
+
+                capturedBody shouldContain "type=${KrakenApiConstants.LEDGER_TYPE_ALL}"
+                promotionEntries.map { it.ledgerId } shouldBe listOf("PROMO-1")
+                promotionEntries.single().type shouldBe KrakenApiConstants.LEDGER_TYPE_REWARD
+                service.getLastLedgerTotalCount() shouldBe 4
+                service.getLastLedgerRawPageSize() shouldBe 4
             }
         }
 

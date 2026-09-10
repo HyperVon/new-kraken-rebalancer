@@ -438,10 +438,10 @@ that cycle. Reasons include `LEDGER_COVERAGE_STALE`, `LEDGER_COVERAGE_UNKNOWN`,
 permission denial is reported as `FUNDING_PROVENANCE_UNAVAILABLE` with the
 required Kraken permission in the server log.
 
-### Staking & Earn Rewards
+### Staking, Promotion & Earn Rewards
 
 A dedicated chart below the comparison shows the cumulative USD value of
-`staking`, `dividend`, and `earn/reward` ledger entries for tracked assets in the selected
+`staking`, `dividend`, top-level promotion `reward`, and `earn/reward` ledger entries for tracked assets in the selected
 range, with one series per asset and a total shown beside the title. Values are
 aligned to portfolio snapshots and use each snapshot's asset price; the chart is
 empty until ledger data has been synchronized. Untracked asset cash dividends credited
@@ -449,7 +449,7 @@ in USD are accounted for in portfolio comparison but omitted from crypto staking
 Earn allocation mechanics are retained for account reconstruction but are not
 shown as rewards or treated as performance.
 A caption below the chart reads:
-*Cumulative staking, dividend, and Earn reward value accrued during the selected range.
+*Cumulative staking, dividend, promotion, and Earn reward value accrued during the selected range.
 Assets without a snapshot price in the range are excluded.*
 
 ### Portfolio Value & Asset Holdings

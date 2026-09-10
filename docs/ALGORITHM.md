@@ -500,17 +500,17 @@ failure.
 ### Ledger history and external rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
-once every **300 seconds**, requesting the thirteen strategy-neutral response types
-(`staking`, `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
+once every **300 seconds**, requesting the fourteen strategy-neutral response types
+(`staking`, `dividend`, `earn`, `reward`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
 `spend`, `receive`, `margin`, `rollover`, `settled`, and `credit`) in pages of **50**. Kraken's API query filter does not
 support `type=earn` (passing `type=earn` returns `EGeneral:Invalid arguments`);
-the service queries `type=all` when requesting `earn` and filters rows locally
-for `type == "earn"`. Similarly, the API query filter uses `type=sale` for the
+the service queries `type=all` when requesting `earn` or top-level `reward` and
+filters rows locally for the requested response type. Similarly, the API query filter uses `type=sale` for the
 consumer `spend`/`receive` rows and filters locally. Pagination for filtered queries
 checks Kraken's authoritative total count (`nextOffset < totalCount`) and the
 raw response page size (`rawPageSize >= 50`) so intermediate pages containing
 zero target rows continue paginating until completion. A seeded installation
-whose coverage version predates version `5` performs a bounded **96-day** backfill
+whose coverage version predates version `6` performs a bounded **96-day** backfill
 with the same identity deduplication; ledgers remain retained for the lifetime
 of the account. The first and recovered initial syncs also use a bounded **96-day**
 seed window and store durable progress metadata; later syncs use the latest stored
@@ -519,11 +519,13 @@ ledger time (or watermark) with a **300-second overlap**. SQLite enforces the
 are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
 and [ledger field guidance](https://support.kraken.com/articles/360001169383-how-to-interpret-ledger-history-fields).
 
-Inception recovery requests unfiltered ledger pages, so an observed top-level
-`type=reward` row is retained even though Kraken's current public query enum does
-not advertise `reward` as a filter value. The classifier treats that exact row as
-an in-kind `EXTERNAL_BALANCE`, never `OWNER_CAPITAL`; unknown top-level values
-remain unsupported and fail closed.
+The ordinary sync captures observed top-level `type=reward` rows by querying
+`type=all` and filtering the response locally because Kraken's current public
+query enum does not advertise `reward` as a filter value. Inception recovery
+also requests unfiltered ledger pages so unsupported or newly introduced rows
+cannot disappear behind an allow-list. The classifier treats the exact
+`reward` row as an in-kind `EXTERNAL_BALANCE`, never `OWNER_CAPITAL`; unknown
+top-level values remain unsupported and fail closed.
 
 Funding provenance uses authenticated `DepositStatus` and `WithdrawStatus`
 lookups. Kraken documents `DepositStatus` with **Funds: Query** and

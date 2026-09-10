@@ -11,10 +11,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Promotion reward ledger handling**: Observed top-level Kraken `reward` rows
-  are now treated as in-kind external balance changes during inception baseline
-  replay, ATH accounting, Buy & Hold reconciliation, and the rewards chart.
-  Unknown ledger types remain fail-closed, and complete recovered history is
-  reused without repagination.
+  are now treated as in-kind external balance changes during ordinary and
+  unfiltered inception history sync, baseline replay, ATH accounting, Buy & Hold
+  reconciliation, and the rewards chart. Existing confirmed baselines are
+  invalidated when replay semantics change without repaginating complete history;
+  unknown ledger types remain fail-closed.
 
 ## [6.17.44] - 2026-09-10
 

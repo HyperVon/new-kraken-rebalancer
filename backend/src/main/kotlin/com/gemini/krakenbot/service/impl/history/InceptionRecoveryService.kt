@@ -430,6 +430,7 @@ class InceptionRecoveryService(
             settings = preflightConfig.settings,
             accountScope = scopeResult.currentScopeDigest.orEmpty(),
         )
+        prepareForCurrentBaselineReplayVersionLocked()
 
         val currentStatus = readStatus()
         if (currentStatus.status == InceptionRecoveryStatus.CONFIRMED) return@withLock currentStatus
@@ -515,6 +516,7 @@ class InceptionRecoveryService(
                         settings = pinnedConfig.settings,
                         accountScope = pinnedScope.currentScopeDigest.orEmpty(),
                     )
+                    prepareForCurrentBaselineReplayVersionLocked()
                     recoverPagesAndEvaluate(
                         config = pinnedConfig,
                         backend = backend,
@@ -1526,6 +1528,40 @@ class InceptionRecoveryService(
     }
 
     /**
+     * Baseline replay semantics can change without changing the recovery stream contract. In that
+     * case invalidate only the derived inception result and preserve complete private-history
+     * coverage so the next evaluation does not silently reuse a financially stale baseline or
+     * repaginate already-complete streams.
+     */
+    private suspend fun prepareForCurrentBaselineReplayVersionLocked() {
+        if (repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION) ==
+            CURRENT_BASELINE_REPLAY_VERSION
+        ) {
+            return
+        }
+
+        repository.setSyncMetadataAtomically(
+            mapOf(
+                SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS to "",
+                SyncMetadataKeys.DETECTED_INCEPTION_SOURCE to "",
+                SyncMetadataKeys.INCEPTION_SNAPSHOT_ID to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_STATUS to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_CANDIDATE_EPOCH_MS to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_CANDIDATE_TRADE_ID to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_CANDIDATE_ORDER_TXID to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_CANDIDATE_DB_ID to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_OWNERSHIP_EVIDENCE to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_BASELINE_SNAPSHOT_ID to "",
+                SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_REASON to "",
+                SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT to "",
+                SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION to CURRENT_BASELINE_REPLAY_VERSION,
+            ),
+        )
+    }
+
+    /**
      * The recovery result depends on the approved inception, tracked asset universe, and account
      * identity. The optional comparison anchor is evaluated by the comparison query and does not
      * change the recovered strategy baseline. Store only a digest so configuration details and
@@ -1636,9 +1672,17 @@ class InceptionRecoveryService(
     }
 
     private suspend fun readStatus(): InceptionRecoveryStatus {
-        val status = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
+        val persistedStatus = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS)
             ?.takeIf(String::isNotBlank)
             ?: InceptionRecoveryStatus.NOT_STARTED
+        val status = if (persistedStatus == InceptionRecoveryStatus.CONFIRMED &&
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION) !=
+            CURRENT_BASELINE_REPLAY_VERSION
+        ) {
+            InceptionRecoveryStatus.IN_PROGRESS
+        } else {
+            persistedStatus
+        }
         val horizon = readHorizon()?.toString()
         return InceptionRecoveryStatus(
             status = status,

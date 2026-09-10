@@ -23,6 +23,7 @@ SyncMetadataKeys:
   INCEPTION_INSTALL_TYPE: "inception_install_type"
   INCEPTION_CONFIG_FINGERPRINT: "inception_config_fingerprint"
   INCEPTION_RECOVERY_VERSION: "inception_recovery_version"
+  INCEPTION_BASELINE_REPLAY_VERSION: "inception_baseline_replay_version"
   INCEPTION_RECOVERY_STATUS: "inception_recovery_status"
   INCEPTION_RECOVERY_HORIZON_EPOCH_SEC: "inception_recovery_horizon_epoch_sec"
   INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC: "inception_recovery_last_attempt_epoch_sec"

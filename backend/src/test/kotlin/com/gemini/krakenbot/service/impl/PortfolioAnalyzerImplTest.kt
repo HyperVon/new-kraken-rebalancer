@@ -4,6 +4,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.DepositStatusRecord
+import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
@@ -3028,7 +3029,11 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("100000.00")) == 0
                         },
-                        any(),
+                        match {
+                            it.size == 1 &&
+                                it.single().ledgerId == "S1" &&
+                                it.single().decisionCategory == FlowCategory.EXTERNAL_BALANCE.name
+                        },
                         any(),
                     )
                 }

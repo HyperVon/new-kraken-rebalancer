@@ -108,6 +108,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 setOf(KrakenApiConstants.LEDGER_TYPE_STAKING),
                 setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND),
                 setOf(KrakenApiConstants.LEDGER_TYPE_EARN),
+                setOf(KrakenApiConstants.LEDGER_TYPE_REWARD),
                 setOf(KrakenApiConstants.LEDGER_TYPE_DEPOSIT),
                 setOf(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL),
                 setOf(KrakenApiConstants.LEDGER_TYPE_TRANSFER),
@@ -524,7 +525,7 @@ class LedgersSyncServiceTest : StringSpec() {
             remaining.map { it.ledgerId }.toSet() shouldBe setOf("ledger-0", "ledger-1")
         }
 
-        "existing seeded v1/v2 database triggers bounded backfill across 96 days for newly supported types" {
+        "existing seeded stale-coverage database triggers bounded backfill across 96 days for newly supported types" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             repository.setLedgersSeeded(true)
@@ -551,6 +552,12 @@ class LedgersSyncServiceTest : StringSpec() {
                     asset = "ETH",
                     amount = BigDecimal("0.01000000"),
                 )
+            val promotionRewardEvent = event(8, time = fixedNow.minus(1, ChronoUnit.DAYS))
+                .copy(
+                    type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                    asset = "BTC",
+                    amount = BigDecimal("0.02000000"),
+                )
 
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
@@ -572,6 +579,8 @@ class LedgersSyncServiceTest : StringSpec() {
 
                     setOf(KrakenApiConstants.LEDGER_TYPE_EARN) -> listOf(earnRewardEvent)
 
+                    setOf(KrakenApiConstants.LEDGER_TYPE_REWARD) -> listOf(promotionRewardEvent)
+
                     // duplicate
                     else -> emptyList()
                 }
@@ -587,7 +596,17 @@ class LedgersSyncServiceTest : StringSpec() {
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
             val allEvents = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(300))
             allEvents.map { it.ledgerId }.toSet() shouldBe
-                setOf("ledger-0", "ledger-1", "ledger-2", "ledger-3", "ledger-4", "ledger-5", "ledger-6", "ledger-7")
+                setOf(
+                    "ledger-0",
+                    "ledger-1",
+                    "ledger-2",
+                    "ledger-3",
+                    "ledger-4",
+                    "ledger-5",
+                    "ledger-6",
+                    "ledger-7",
+                    "ledger-8",
+                )
 
             val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
             coVerify {

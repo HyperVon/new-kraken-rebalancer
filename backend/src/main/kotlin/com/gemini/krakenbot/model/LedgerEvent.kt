@@ -6,7 +6,8 @@ import java.time.Instant
 /**
  * One entry from the Kraken private Ledgers endpoint (e.g. `staking` rewards, `dividend` payouts,
  * observed top-level `reward` promotion credits, modern `earn` activity, `deposit`, `withdrawal`,
- * `transfer`, `adjustment`, and consumer-transaction `spend`/`receive` entries). Amounts are signed (+ for credit, - for debit)
+ * `transfer`, `adjustment`, and consumer-transaction `spend`/`receive` entries). Amounts are signed
+ * (+ for credit, - for debit)
  * and denominated in the ledger asset. Fees are non-negative.
  *
  * [ledgerId] is the Kraken ledger entry id (the response map key), unique per entry;
