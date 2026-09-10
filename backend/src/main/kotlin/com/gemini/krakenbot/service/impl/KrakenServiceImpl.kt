@@ -465,7 +465,9 @@ class KrakenServiceImpl(
         KrakenApiConstants.LEDGER_TYPE_RECEIVE,
         -> KrakenApiConstants.LEDGER_TYPE_SALE
 
-        KrakenApiConstants.LEDGER_TYPE_EARN -> KrakenApiConstants.LEDGER_TYPE_ALL
+        KrakenApiConstants.LEDGER_TYPE_EARN,
+        KrakenApiConstants.LEDGER_TYPE_REWARD,
+        -> KrakenApiConstants.LEDGER_TYPE_ALL
 
         else -> type
     }

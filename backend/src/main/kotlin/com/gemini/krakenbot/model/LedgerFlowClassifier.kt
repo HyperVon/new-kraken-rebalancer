@@ -206,6 +206,9 @@ object LedgerFlowClassifier {
 
             KrakenApiConstants.LEDGER_TYPE_STAKING,
             KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+            // Observed Kraken promotion/airdrop-style reward rows are in-kind balance changes,
+            // not owner funding or internal wallet moves.
+            KrakenApiConstants.LEDGER_TYPE_REWARD,
             KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
             KrakenApiConstants.LEDGER_TYPE_SPEND,
             KrakenApiConstants.LEDGER_TYPE_RECEIVE,

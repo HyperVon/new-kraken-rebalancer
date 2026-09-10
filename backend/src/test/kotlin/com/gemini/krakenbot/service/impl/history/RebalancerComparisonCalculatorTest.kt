@@ -1267,6 +1267,44 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
+        "top-level promotion reward remains available as an in-kind comparison event" {
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("99.00", "1", "99.00"),
+                        ),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "100.09",
+                        mapOf(
+                            "BTC" to assetRow("1.09000000", "1", "1.09"),
+                            "USD" to assetRow("99.00", "1", "99.00"),
+                        ),
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(5),
+                        asset = "BTC",
+                        amount = "0.10",
+                        type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                        fee = "0.01",
+                        balance = "1.09",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
         "authoritative ledger balance does not turn an embedded boundary event into a zero delta" {
             val t0 = now
             val result = calculate(

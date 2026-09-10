@@ -454,19 +454,25 @@ trade synchronization, but it has separate metadata and insert-only semantics:
 - Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
   so overlap and repeated pages are harmless. The sync requests `staking`,
   `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `spend`, and
-  `receive` response types. The live Kraken adapter sends `type=sale` for the
-  latter two because `sale` is the documented query filter, then filters returned
-  rows by their actual response type.
+  `receive`, and top-level `reward` response types. The live Kraken adapter sends
+  `type=sale` for the latter two because `sale` is the documented query filter,
+  and sends `type=all` for `earn` and `reward`; it filters returned rows by their
+  actual response type.
+- Inception recovery separately requests unfiltered ledger pages. If Kraken
+  returns an observed top-level `type=reward` row there, it is persisted and
+  replayed as an in-kind external balance event. Ordinary synchronization uses
+  the same local response-type filtering for future reward rows.
 - Invalid live credentials skip the sync without opening an execution session;
   a real sync brackets all pages with the same `ConfigService` execution-session
   boundary used by trade synchronization. Simulation mode does not call Kraken.
 
 The History rewards query filters the persisted ledger range to `staking`,
-`dividend`, and `earn/reward` rows for tracked assets, then aligns cumulative
+`dividend`, top-level promotion `reward`, and `earn/reward` rows for tracked assets, then aligns cumulative
 amounts to portfolio snapshots and values them with each snapshot's prices. Earn
 allocation mechanics are internal and remain out of the rewards series. The
-comparison and reverse snapshot reconstruction consume all thirteen synchronized
-ledger types with `amount - fee` where applicable;
+comparison and reverse snapshot reconstruction consume all supported persisted
+ledger types, including observed top-level promotion `reward` rows returned by
+unfiltered recovery, with `amount - fee` where applicable;
 consumer Buy Crypto `spend`/`receive` legs remain separate ledger events. Kraken
 documents those app transactions in Ledger history rather than Trades history.
 The ATH path prepares one immutable funding-provenance snapshot for the retained

@@ -1449,8 +1449,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.getSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE) shouldBe
                     InceptionRecoveryService.INCEPTION_SOURCE_AUTO_RECOVERED
                 val tradeCallsAfterConfirmation = krakenService.getTradeHistoryCallCount
+                val ledgerCallsAfterConfirmation = krakenService.getLedgersCallCount
                 newService().recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
                 krakenService.getTradeHistoryCallCount shouldBe tradeCallsAfterConfirmation
+                krakenService.getLedgersCallCount shouldBe ledgerCallsAfterConfirmation
                 val baselineId = repository
                     .getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
                     ?.toInt() ?: error("missing baseline id")
@@ -1463,6 +1465,13 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.getSnapshotById(baselineId)?.let { snapshot ->
                     repository.getSnapshotId(snapshot.timestamp) shouldBe baselineId
                 }
+
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION, "2")
+                newService().getStatus().status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                newService().recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
+                krakenService.getTradeHistoryCallCount shouldBe tradeCallsAfterConfirmation
+                krakenService.getLedgersCallCount shouldBe ledgerCallsAfterConfirmation
 
                 repository.setSyncMetadata(
                     SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
@@ -2777,6 +2786,18 @@ class InceptionRecoveryServiceTest : StringSpec() {
                         timestamp = Instant.parse("2026-01-03T00:00:00Z"),
                     ),
                 )
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "promotion-reward",
+                            time = requestedStart.plusSeconds(7200),
+                            type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.001"),
+                            fee = BigDecimal("0.0001"),
+                        ),
+                    ),
+                )
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
                 krakenService.tradeHistoryTotalCountOverride = 2
 
@@ -2792,10 +2813,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 baseline.timestamp shouldBe requestedStart
-                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.02")
+                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.0191")
                 baseline.assets.getValue(Asset.BTC).price shouldBeEqualComparingTo BigDecimal("100.00000000")
                 baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("1000.01")
-                baseline.totalValueUSD shouldBeEqualComparingTo BigDecimal("1002.01")
+                baseline.totalValueUSD shouldBeEqualComparingTo BigDecimal("1001.92")
             }
         }
 
@@ -2899,6 +2920,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val initialHorizon = repository.getSyncMetadata(
                     SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
                 )
+                val initialTradeCalls = krakenService.getTradeHistoryCallCount
+                val initialLedgerCalls = krakenService.getLedgersCallCount
 
                 repository.saveSnapshot(
                     anchorSnapshot(
@@ -2915,6 +2938,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT) shouldBe ""
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC) shouldBe
                     initialHorizon
+                krakenService.getTradeHistoryCallCount shouldBe initialTradeCalls
+                krakenService.getLedgersCallCount shouldBe initialLedgerCalls
             }
         }
 
@@ -3086,6 +3111,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.setSyncMetadata(
                     SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
                     InceptionRecoveryStatus.CONFIRMED,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION,
+                    InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION,
                 )
                 val confirmed = newService().getLocalInceptionDisplayInfo()
                 confirmed.status shouldBe InceptionDisplayStatus.APPROVED_READY
@@ -3259,6 +3288,41 @@ class InceptionRecoveryServiceTest : StringSpec() {
             secondRun.status shouldBe InceptionRecoveryStatus.CONFIRMED
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe baselineId
             repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 2
+        }
+
+        "confirmed baseline is invalidated when replay semantics change" {
+            val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+            config = appConfig(listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)))
+            config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+            repository.saveTrade(apiTrade("price", requestedStart.minusSeconds(60)))
+            repository.saveTrade(apiTrade("bot", requestedStart.plusSeconds(60)))
+            repository.saveSnapshot(
+                anchorSnapshot(
+                    mapOf(Asset.BTC to BigDecimal("0.03"), Asset.USD to BigDecimal("999.00")),
+                    timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                ),
+            )
+            krakenService.tradeHistoryTotalCountOverride = 2
+
+            val firstRun = newService().recoverOneBoundedRun()
+            firstRun.status shouldBe InceptionRecoveryStatus.CONFIRMED
+            val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+            val initialTradeCalls = krakenService.getTradeHistoryCallCount
+            val initialLedgerCalls = krakenService.getLedgersCallCount
+
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION, "2")
+            newService().getStatus().status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+            now = now.plusSeconds(301)
+
+            val rerun = newService().recoverOneBoundedRun()
+
+            rerun.status shouldBe InceptionRecoveryStatus.CONFIRMED
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION) shouldBe
+                InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe baselineId
+            repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 2
+            krakenService.getTradeHistoryCallCount shouldBe initialTradeCalls
+            krakenService.getLedgersCallCount shouldBe initialLedgerCalls
         }
 
         "healthy incomplete recovery uses short continuation interval" {

@@ -271,8 +271,8 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - Header loop control on Dashboard, History, and Settings showing RUNNING/PAUSED with neutral labeled **Pause** and **Resume** actions
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
-- **Staking & Earn Rewards History** — displays cumulative `staking`, `dividend`,
-  and modern `earn/reward` returns in USD, split by asset, from synchronized
+- **Staking, Promotion & Earn Rewards History** — displays cumulative `staking`, `dividend`,
+  top-level promotion `reward`, and modern `earn/reward` returns in USD, split by asset, from synchronized
   Kraken ledger entries. Earn allocation mechanics (`allocation`,
   `deallocation`, `autoallocate`, and `migration`) are internal moves and do
   not appear as rewards; unknown Earn subtypes fail closed. `dividend` entries
@@ -305,20 +305,21 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Deduplicates overlapping records within a ~5 minute window via pair-alias normalization (e.g. `XBTUSD` vs `XXBTZUSD`), local-estimate vs API fill reconciliation, and fee-difference tolerance
 - Tracks synchronization state in `history_sync_metadata` to prevent redundant API queries
 
-### Ledger, Staking & Earn Rewards Synchronization
+### Ledger, Staking, Promotion & Earn Rewards Synchronization
 
-- Synchronizes thirteen strategy-neutral entry types (`staking`, `dividend`, `earn`, `deposit`,
+- Synchronizes fourteen strategy-neutral entry types (`staking`, `dividend`, `earn`, `reward`, `deposit`,
   `withdrawal`, `transfer`, `adjustment`, `spend`, `receive`, `margin`, `rollover`, `settled`,
   and `credit`) from Kraken's private
   `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold Flow fetching.
   The live adapter queries the documented `sale` filter for consumer `spend`/`receive`
-  rows, then filters the returned rows by their response type.
+  rows, and queries `all` for `earn`/top-level `reward` rows before filtering the
+  returned rows by their response type.
 - Persists ledger entries in SQLite using the `(ledger id, timestamp, asset, type)`
   identity so overlapping pages and retries remain idempotent
 - Stores durable seed progress and timestamps in `history_sync_metadata`, then
   uses a five-minute incremental overlap to avoid missing entries near a
   watermark
-- Serves `/api/history/rewards` with cumulative staking, dividend, and Earn rewards aligned to
+- Serves `/api/history/rewards` with cumulative staking, dividend, top-level promotion, and Earn rewards aligned to
   portfolio snapshots and valued using each snapshot's asset prices. Ledger
   assets are normalized to the tracked base symbol (Earn suffixes and legacy
   `X`/`Z` codes), and assets without a snapshot price in the range are excluded
@@ -332,6 +333,10 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   ATH basis reconstruction, and Buy & Hold; `earn` allocation mechanics replay
   only where needed to reconstruct account balances and remain neutral in
   strategy accounting. Unknown Earn subtypes remain unavailable.
+- Observed top-level `reward` rows from Kraken promotions or contests are
+  retained by ordinary synchronization and unfiltered inception recovery, then
+  replayed as in-kind external balance changes; they never count as owner
+  capital. Unknown top-level ledger types remain fail-closed.
 - Rebalancer vs Buy & Hold replays every supported external ledger type using
   `amount - fee`; ATH basis reconstruction separately replays the actual
   event-time asset effects. Consumer Buy Crypto activity is
@@ -423,7 +428,7 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - Six summary stat cards including avg fee rate and avg slippage
 - Trade log columns for price, fee, slippage, and status
 - Cumulative net cash flow chart with gross and fee-adjusted (dashed) series
-- Staking & Earn Rewards chart with cumulative USD value and per-asset series from
+- Staking, Promotion & Earn Rewards chart with cumulative USD value and per-asset series from
   synchronized ledger entries
 
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
@@ -811,7 +816,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET` | `/api/history/trades` | Trade log for History page (JSON, `?range=`) |
 | `GET` | `/api/history/stats` | History summary-card aggregates (JSON, `?range=`) |
 | `GET` | `/api/history/comparison` | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`) |
-| `GET` | `/api/history/rewards` | Cumulative staking, dividend, and Earn rewards by asset (JSON, `?range=`) |
+| `GET` | `/api/history/rewards` | Cumulative staking, dividend, top-level promotion, and Earn rewards by asset (JSON, `?range=`) |
 | `GET` | `/api/history/sync-progress` | Polling endpoint for ordinary Kraken history sync and bounded inception-recovery progress/status (JSON) |
 | `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 

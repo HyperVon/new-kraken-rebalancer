@@ -61,6 +61,9 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
         now: Instant = Instant.parse("2024-03-20T12:00:00Z"),
     ): InceptionRecoveryService {
         every { configService.getConfig() } returns config
+        coEvery {
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION)
+        } returns InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION
         return InceptionRecoveryService(
             repository = repository,
             ledgerRepository = ledgerRepository,

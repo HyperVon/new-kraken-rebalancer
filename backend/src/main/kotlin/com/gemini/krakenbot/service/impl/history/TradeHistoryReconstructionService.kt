@@ -31,7 +31,7 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "5"
+        const val CURRENT_RECONSTRUCTION_VERSION = "6"
     }
 
     suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded() &&
