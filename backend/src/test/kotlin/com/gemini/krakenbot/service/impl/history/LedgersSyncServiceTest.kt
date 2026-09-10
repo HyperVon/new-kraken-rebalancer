@@ -113,6 +113,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 setOf(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL),
                 setOf(KrakenApiConstants.LEDGER_TYPE_TRANSFER),
                 setOf(KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT),
+                setOf(KrakenApiConstants.LEDGER_TYPE_CONVERSION),
                 setOf(KrakenApiConstants.LEDGER_TYPE_SPEND),
                 setOf(KrakenApiConstants.LEDGER_TYPE_RECEIVE),
                 setOf(KrakenApiConstants.LEDGER_TYPE_MARGIN),
@@ -558,6 +559,13 @@ class LedgersSyncServiceTest : StringSpec() {
                     asset = "BTC",
                     amount = BigDecimal("0.02000000"),
                 )
+            val conversionEvent = event(9, time = fixedNow.minus(1, ChronoUnit.HOURS))
+                .copy(
+                    type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                    refid = "CONVERSION-1",
+                    asset = "USDG",
+                    amount = BigDecimal("1000.00000000"),
+                )
 
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
@@ -580,6 +588,8 @@ class LedgersSyncServiceTest : StringSpec() {
                     setOf(KrakenApiConstants.LEDGER_TYPE_EARN) -> listOf(earnRewardEvent)
 
                     setOf(KrakenApiConstants.LEDGER_TYPE_REWARD) -> listOf(promotionRewardEvent)
+
+                    setOf(KrakenApiConstants.LEDGER_TYPE_CONVERSION) -> listOf(conversionEvent)
 
                     // duplicate
                     else -> emptyList()
@@ -606,6 +616,7 @@ class LedgersSyncServiceTest : StringSpec() {
                     "ledger-6",
                     "ledger-7",
                     "ledger-8",
+                    "ledger-9",
                 )
 
             val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond

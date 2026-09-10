@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.46] - 2026-09-10
+
+### Fixed
+
+- **Cross-asset conversion ledger handling**: Retained top-level `conversion` rows are now
+  fetched, grouped by a shared `refid`, and replayed as a strategy-neutral internal asset
+  transformation. Complete two-leg debit/credit groups preserve each leg's `amount - fee`
+  balance effect without becoming owner capital, rewards, ATH scaling, or a synthetic Buy & Hold
+  contribution. Incomplete or contradictory groups remain fail-closed, and the baseline replay
+  and ledger coverage versions invalidate only derived state so completed history streams are reused.
+- **Observed transfer airdrops**: Kraken `transfer/airdrop` rows are treated as documented
+  external balance credits; genuinely unknown types and unproven transfer semantics remain fail-closed.
+
 ## [6.17.45] - 2026-09-10
 
 ### Fixed

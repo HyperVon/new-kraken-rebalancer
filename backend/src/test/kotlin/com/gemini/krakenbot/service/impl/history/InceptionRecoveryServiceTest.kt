@@ -660,6 +660,74 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "recovery replays a complete cross-asset conversion without treating it as capital" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                config = appConfig(
+                    listOf(
+                        Allocation(Asset.BTC, 40.0),
+                        Allocation(Asset.ETH, 40.0),
+                        Allocation(Asset.USD, 20.0),
+                    ),
+                )
+                val bot = apiTrade("conversion-bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(
+                            Asset.BTC to BigDecimal("0.40"),
+                            Asset.ETH to BigDecimal("1.00"),
+                            Asset.USD to BigDecimal("999.00"),
+                        ),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    listOf(botTime.minusSeconds(901).epochSecond to BigDecimal("100.00"))
+                }
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "conversion-source",
+                            refid = "CONVERSION-RECOVERY",
+                            time = botTime.plusSeconds(3600),
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("-0.10"),
+                            fee = BigDecimal("0.01"),
+                            balance = BigDecimal("0.40"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "conversion-destination",
+                            refid = "CONVERSION-RECOVERY",
+                            time = botTime.plusSeconds(3600),
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                            asset = Asset.ETH,
+                            amount = BigDecimal("1.00"),
+                            fee = BigDecimal("0.02"),
+                            balance = BigDecimal("1.00"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                    ),
+                )
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                    ?.toInt() ?: error("missing baseline id")
+                val baseline = repository.getSnapshotById(baselineId) ?: error("missing baseline")
+                baseline.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal("0.50"))
+                baseline.assets.getValue(Asset.ETH).balance.shouldBeEqualComparingTo(BigDecimal("0.02"))
+                baseline.assets.getValue(Asset.USD).balance.shouldBeEqualComparingTo(BigDecimal("1000.01"))
+            }
+        }
+
         "recovery keeps malformed ledger fees ambiguous" {
             runTest {
                 val bot = apiTrade("bot", Instant.parse("2026-01-02T00:00:00Z"))
@@ -3309,6 +3377,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
             val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
             val initialTradeCalls = krakenService.getTradeHistoryCallCount
             val initialLedgerCalls = krakenService.getLedgersCallCount
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "COMPLETE"
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "completed"
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe "COMPLETE"
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe "completed"
 
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION, "2")
             newService().getStatus().status shouldBe InceptionRecoveryStatus.IN_PROGRESS
@@ -3323,6 +3395,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
             repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 2
             krakenService.getTradeHistoryCallCount shouldBe initialTradeCalls
             krakenService.getLedgersCallCount shouldBe initialLedgerCalls
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "COMPLETE"
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "completed"
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe "COMPLETE"
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe "completed"
         }
 
         "healthy incomplete recovery uses short continuation interval" {
