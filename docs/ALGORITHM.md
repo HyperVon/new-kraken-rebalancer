@@ -154,7 +154,9 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      distinct activity, so classification follows a strict two-layer architecture:
      1. *Intrinsic classification (`LedgerFlowClassifier`)*: Evaluates intrinsic ledger metadata. Same-asset
         `refid`-paired zero-net legs and known internal-subtype rows (spot/futures/staking wallet moves, earn
-        allocation, migration) classify as `INTERNAL_MOVE`. Trade rows defer to `TradesHistory` (`TRADE_IGNORED`),
+        allocation, migration) classify as `INTERNAL_MOVE`. Documented `transfer` wallet markers are
+        `INTERNAL_MOVE` only when a complete linked two-leg pair has one debit and one credit for the
+        same asset scope; lone markers and arbitrary cross-asset pairs are unsupported. Trade rows defer to `TradesHistory` (`TRADE_IGNORED`),
         margin-family rows (`margin`, `rollover`, `settled`, `credit`, `sale`) replay in-kind as `EXTERNAL_BALANCE`
         without scaling ATH, and unrecognized ledger types fail closed. Modern `earn/reward` is
         `EXTERNAL_BALANCE`; `earn/allocation`, `deallocation`, `autoallocate`, and `migration` are
@@ -164,7 +166,9 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
         `EXTERNAL_BALANCE`; observed top-level Kraken promotion rows with `type=reward` are also
         `EXTERNAL_BALANCE` and never owner capital; undocumented prose descriptions (`fork`,
         `distribution`) and bare transfers remain ambiguous without
-        affirmative external provenance. `refid` is used only to correlate
+        affirmative external provenance. Obvious credit/debit amount directions and parser amount
+        validity are checked before replay, so malformed decimals do not become zero flows.
+        `refid` is used only to correlate
         rows and never parsed for undocumented meaning. For deposits and withdrawals, the classifier
         delegates external validation to an affirmative `FundingProvenanceResolver`.
      2. *External provenance verification (`FundingProvenanceResolver`)*: In production,
@@ -527,21 +531,45 @@ cannot disappear behind an allow-list. The classifier treats the exact
 `reward` row as an in-kind `EXTERNAL_BALANCE`, never `OWNER_CAPITAL`; unknown
 top-level values remain unsupported and fail closed.
 
-The supplied forensic snapshot contained the following observed ledger inventory
-(counts are rows, not economic transactions):
+Before an approved-start baseline is replayed, `AuthoritativeLedgerBalanceValidator` checks the
+retained ledger sequence against Kraken's post-entry balances. It includes authoritative `trade`
+rows as continuity checkpoints for this validation, while `TradesHistory` remains the sole source
+for trade economics during replay. Rows for one normalized asset and timestamp are validated as a
+bounded unordered group rather than by lexically sorting ledger IDs. Documented Spot/staking,
+Spot/Futures, and Spot/Spot transfer markers use their mapped wallet scopes; staking rows that do
+not identify a scope are resolved against all compatible known scopes, or seed a new opaque scope
+only when their own balance matches their net delta within the applicable precision envelope.
+The observed Kraken `SOL03`/`SOL` staking-wallet pair is accepted as a same-asset compatibility
+alias; arbitrary cross-asset internal-transfer pairs remain invalid.
+Existing four-decimal ledger fees are accepted
+only within the precision envelope implied by that stored fee, not by a global tolerance.
+Parser amount validity is persisted through schema migration `12`; existing rows retain their
+legacy interpretation because SQLite does not retain the original amount text, while newly parsed
+malformed amounts remain explicitly invalid. Obvious credit/debit direction violations also fail
+closed. Non-authoritative rows are never treated as balance checkpoints;
+an ambiguous dust-sweep scope that changes aggregate balances, incomplete internal-transfer group,
+duplicate identity, malformed fee, unknown internal-transfer scope, or unresolved authoritative
+mismatch fails closed with a
+sanitized log diagnostic and a compact metadata reason. Baseline replay version `5` invalidates only
+the derived baseline result,
+so completed recovery trade/ledger streams and their offsets remain reusable.
+
+The supplied forensic snapshot contained 7,553 retained ledger rows; 7,411 rows fall within the
+approved reconstruction window, of which 7,402 have authoritative balances. The following observed
+inventory counts only approved-window rows, not economic transactions:
 
 | Type / subtype | Rows | Disposition |
 | --- | ---: | --- |
 | `conversion` / blank | 2 | Complete linked pair → strategy-neutral internal transformation |
-| `deposit` / blank | 35 | Funding provenance required; otherwise ambiguous |
+| `deposit` / blank | 32 | Funding provenance required; otherwise ambiguous |
 | `dividend` / `cashdividend` | 8 | External balance |
-| `receive` / blank, `dustsweeping` | 99 | External balance |
-| `reward` / `equityfpsl`, `welcomebonus` | 28 | External balance and reward reporting |
-| `spend` / blank, `dustsweeping` | 137 | External balance |
-| `staking` / blank | 282 | External balance |
-| `trade` / `tradeequities`, `tradespot` | 6,873 | `TradesHistory` is authoritative; ignored by ledger replay |
-| `transfer` / blank, `airdrop`, `spottostaking`, `stakingtospot` | 38 | Proven subtype disposition; bare transfer remains ambiguous |
-| `withdrawal` / blank | 8 | Funding provenance required; otherwise ambiguous |
+| `receive` / blank, `dustsweeping` | 98 | External balance |
+| `reward` / `equityfpsl`, `welcomebonus` | 27 | External balance and reward reporting |
+| `spend` / blank, `dustsweeping` | 134 | External balance |
+| `staking` / blank | 289 | External balance |
+| `trade` / `tradeequities`, `tradespot` | 6,777 | `TradesHistory` is authoritative; ignored by ledger replay |
+| `transfer` / `airdrop`, `spottostaking`, `stakingtospot` | 37 | Airdrops are external; documented wallet markers require a complete pair; bare transfers fail closed without scope proof |
+| `withdrawal` / blank | 7 | Funding provenance required; otherwise ambiguous |
 
 That snapshot's two `conversion` rows formed one same-timestamp, nonblank-refid
 cross-asset group: a sanitized `Unknown`-shaped refid linked a USD debit of

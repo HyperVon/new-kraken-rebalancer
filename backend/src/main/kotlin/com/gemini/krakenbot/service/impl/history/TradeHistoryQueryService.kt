@@ -658,7 +658,7 @@ class TradeHistoryQueryService(
             .append(event.aclass).append('|').append(event.asset).append('|').append(event.amount.digestValue())
             .append('|').append(event.fee.digestValue()).append('|').append(event.balance.digestValue()).append('|')
             .append(event.hasAuthoritativeBalance).append('|').append(event.hasAuthoritativeFee).append('|')
-            .append(event.hasValidFee).append('\n')
+            .append(event.hasValidFee).append('|').append(event.hasValidAmount).append('\n')
     }
 
     private fun BigDecimal.digestValue(): String =

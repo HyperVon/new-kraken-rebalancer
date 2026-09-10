@@ -12,7 +12,7 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import java.time.Instant
 
-internal const val CURRENT_SCHEMA_VERSION = 11
+internal const val CURRENT_SCHEMA_VERSION = 12
 
 internal data class SchemaMigration(
     val version: Int,
@@ -62,6 +62,9 @@ internal val SCHEMA_MIGRATIONS = listOf(
             currentDialectMetadata.resetCaches()
         }
     },
+    // The column's DEFAULT true preserves the legacy interpretation when it is added to an
+    // existing table; never overwrite an explicitly persisted invalid flag during replay.
+    SchemaMigration(12, "ledger-amount-validity"),
 )
 
 internal fun validateSchemaMigrations(migrations: List<SchemaMigration> = SCHEMA_MIGRATIONS) {

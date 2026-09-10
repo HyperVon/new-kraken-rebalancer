@@ -516,6 +516,15 @@ object RebalancerComparisonCalculator {
                 unavailableAt = invalidFeeLedger.time,
             )
         }
+        val invalidAmountLedger = ledgers.firstOrNull {
+            it.type in externalBalanceLedgerTypes && !LedgerFlowClassifier.hasValidAmountShape(it)
+        }
+        if (invalidAmountLedger != null) {
+            return TrackedBalanceValidation.Failed(
+                reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                unavailableAt = invalidAmountLedger.time,
+            )
+        }
         val startObservationTime = snapshots.first().balancesObservedAt
             ?: snapshots.first().timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
         val lastSnapshot = snapshots.last()

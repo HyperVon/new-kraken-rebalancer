@@ -32,6 +32,7 @@ class SchemaMigrationsTest : StringSpec() {
                 "ath-applied-flow-event-millisecond-precision",
                 "ledger-provenance-flags",
                 "inception-inference-evidence",
+                "ledger-amount-validity",
             )
         }
 
@@ -149,7 +150,40 @@ class SchemaMigrationsTest : StringSpec() {
                         9 to "ath-applied-flow-event-millisecond-precision",
                         10 to "ledger-provenance-flags",
                         11 to "inception-inference-evidence",
+                        12 to "ledger-amount-validity",
                     )
+                }
+            }
+        }
+
+        "amount validity migration does not overwrite an explicitly invalid flag" {
+            val databaseUrl = "jdbc:sqlite:file:test-migrations-amount-validity-${UUID.randomUUID()}" +
+                "?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        INSERT INTO ledgers (
+                            timestamp, ledger_id, type, asset, amount, fee, balance,
+                            has_authoritative_balance, has_authoritative_fee, has_valid_fee, has_valid_amount
+                        ) VALUES (1000, 'invalid-amount', 'receive', 'USD', 0, 0, 0, 1, 0, 1, 0)
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 12")
+                }
+            }
+
+            DatabaseConfig.init(databaseUrl)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery(
+                        "SELECT has_valid_amount FROM ledgers WHERE ledger_id = 'invalid-amount'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getBoolean(1) shouldBe false
+                    }
                 }
             }
         }
@@ -204,6 +238,7 @@ class SchemaMigrationsTest : StringSpec() {
                         9 to "ath-applied-flow-event-millisecond-precision",
                         10 to "ledger-provenance-flags",
                         11 to "inception-inference-evidence",
+                        12 to "ledger-amount-validity",
                     )
                 }
             }

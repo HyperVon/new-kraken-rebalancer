@@ -332,6 +332,32 @@ class KrakenParsersTest : StringSpec() {
             entries.single { it.ledgerId == "L2" }.hasAuthoritativeBalance shouldBe true
         }
 
+        "preserves malformed ledger amount validity instead of turning it into a zero flow" {
+            val response = objectMapper.readTree(
+                """
+                {
+                  "count": 1,
+                  "ledger": {
+                    "INVALID-AMOUNT": {
+                      "time": 1700000100.0000,
+                      "type": "receive",
+                      "asset": "USD",
+                      "amount": "not-a-number",
+                      "fee": "0.00000000",
+                      "balance": "0.00"
+                    }
+                  }
+                }
+                """.trimIndent(),
+            )
+
+            val (entries, count) = KrakenParsers.parseLedgerPage(response, null)
+
+            count shouldBe 1
+            entries.single().amount shouldBe BigDecimal.ZERO.setScale(8)
+            entries.single().hasValidAmount shouldBe false
+        }
+
         "parses deposit and withdrawal status pages with cursor and explicit zero fee" {
             val depositPage = KrakenParsers.parseDepositStatusPage(
                 objectMapper.readTree(

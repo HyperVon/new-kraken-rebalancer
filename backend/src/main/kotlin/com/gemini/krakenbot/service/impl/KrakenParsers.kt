@@ -127,6 +127,8 @@ object KrakenParsers {
 
             val time = entryNode.path(KrakenApiConstants.FIELD_TIME).asDouble()
             val amountStr = entryNode.path(KrakenApiConstants.FIELD_AMOUNT).asText()
+            val parsedAmount = runCatching { BigDecimal(amountStr) }.getOrNull()
+            val hasValidAmount = amountStr.isNotBlank() && parsedAmount != null
             val balanceStr = entryNode.path(KrakenApiConstants.FIELD_BALANCE).asText()
             val parsedBalance = runCatching { BigDecimal(balanceStr) }.getOrNull()
             val scaledBalance = safeParseBigDecimal(balanceStr, PrecisionConstants.SCALE_CRYPTO)
@@ -177,6 +179,7 @@ object KrakenParsers {
                     hasAuthoritativeBalance = parsedBalance != null,
                     hasAuthoritativeFee = hasValidFee && parsedFee != null,
                     hasValidFee = hasValidFee,
+                    hasValidAmount = hasValidAmount,
                 ),
             )
         }

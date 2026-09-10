@@ -97,6 +97,7 @@ class DatabaseConfigTest : StringSpec() {
                         9 to "ath-applied-flow-event-millisecond-precision",
                         10 to "ledger-provenance-flags",
                         11 to "inception-inference-evidence",
+                        12 to "ledger-amount-validity",
                     )
 
                     val expectedTables = setOf(

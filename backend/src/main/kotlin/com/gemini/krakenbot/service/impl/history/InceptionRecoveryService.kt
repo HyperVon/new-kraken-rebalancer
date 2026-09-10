@@ -1106,9 +1106,27 @@ class InceptionRecoveryService(
         if (historicalLedgers.any { !it.hasValidFee }) {
             return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "invalid ledger fee")
         }
-        if (!hasConsistentAuthoritativeLedgerBalances(historicalLedgers)) {
-            return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "inconsistent ledger balances")
+        val balanceValidation = AuthoritativeLedgerBalanceValidator.validate(historicalLedgers)
+        if (!balanceValidation.isValid) {
+            val failure = requireNotNull(balanceValidation.failure)
+            log.warn("Inception ledger balance validation failed: {}", failure.diagnostic)
+            return BaselineResult.Failure(
+                InceptionRecoveryStatus.AMBIGUOUS,
+                failure.reason.take(MAX_REASON_LENGTH),
+            )
         }
+        log.info(
+            "Validated inception ledger balances: checkpoints={}/{}, trades={}, grouped={}, " +
+                "sameTimestamp={}, flexible={}, nonAuthoritative={}, scopes={}",
+            balanceValidation.validatedCheckpointCount,
+            balanceValidation.authoritativeCheckpointCount,
+            balanceValidation.tradeCheckpointCount,
+            balanceValidation.groupedEventCheckpointCount,
+            balanceValidation.sameTimestampCheckpointCount,
+            balanceValidation.flexibleCheckpointCount,
+            balanceValidation.nonAuthoritativeEventCount,
+            balanceValidation.scopeCount,
+        )
 
         val cardGroups = CardFundingNormalizer.identifyCandidateGroups(ledgerContext)
         for ((refid, group) in cardGroups) {
@@ -1171,7 +1189,7 @@ class InceptionRecoveryService(
             }
         }
         for (event in historicalLedgers.sortedByDescending { it.time }) {
-            if (!reverseApplyLedger(event, runningBalances, expectedUniverse)) {
+            if (!reverseApplyLedger(event, runningBalances, expectedUniverse, flowCategories)) {
                 return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "ledger changed tracked universe")
             }
         }
@@ -1263,8 +1281,14 @@ class InceptionRecoveryService(
         event: LedgerEvent,
         balances: MutableMap<String, BigDecimal>,
         expectedUniverse: Set<String>,
+        flowCategories: Map<String, FlowCategory>,
     ): Boolean {
         if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) return true
+        if (flowCategories[event.ledgerId] == FlowCategory.INTERNAL_MOVE &&
+            !event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
+        ) {
+            return true
+        }
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         val delta = event.netBalanceDelta()
         if (symbol !in expectedUniverse) {
@@ -1272,29 +1296,11 @@ class InceptionRecoveryService(
             // universe (for example USD -> a stablecoin the strategy does not track). The linked
             // opposite leg proves this is an internal transformation; do not reinterpret it as
             // unexplained owner capital, but also do not invent a price for the untracked asset.
-            return delta.signum() == 0 || event.type.equals(
-                KrakenApiConstants.LEDGER_TYPE_CONVERSION,
-                ignoreCase = true,
-            )
+            return delta.signum() == 0 ||
+                event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
         }
         val balance = balances.getValue(symbol)
         balances[symbol] = balance.subtract(delta)
-        return true
-    }
-
-    private fun hasConsistentAuthoritativeLedgerBalances(events: List<LedgerEvent>): Boolean {
-        val previousByAsset = mutableMapOf<String, LedgerEvent>()
-        for (event in events.filterNot { it.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true) }
-            .sortedWith(compareBy<LedgerEvent> { it.time }.thenBy { it.ledgerId })) {
-            if (!event.hasAuthoritativeBalance) continue
-            val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
-            val previous = previousByAsset[asset]
-            if (previous != null) {
-                val expected = previous.balance.add(event.netBalanceDelta())
-                if (expected.subtract(event.balance).abs() > NEGATIVE_BALANCE_TOLERANCE) return false
-            }
-            previousByAsset[asset] = event
-        }
         return true
     }
 
@@ -1648,7 +1654,7 @@ class InceptionRecoveryService(
                     .append(event.asset).append('|').append(event.amount.digestScale()).append('|')
                     .append(event.fee.digestScale()).append('|').append(event.balance.digestScale()).append('|')
                     .append(event.hasAuthoritativeBalance).append('|').append(event.hasAuthoritativeFee).append('|')
-                    .append(event.hasValidFee).append('\n')
+                    .append(event.hasValidFee).append('|').append(event.hasValidAmount).append('\n')
             }
         }
         return sha256Hex(material)
@@ -1807,7 +1813,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "4"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "5"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

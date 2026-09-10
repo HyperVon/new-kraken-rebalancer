@@ -713,6 +713,28 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             hasAuthoritativeBalance = true,
                             hasAuthoritativeFee = true,
                         ),
+                        LedgerEvent(
+                            ledgerId = "untracked-conversion-source",
+                            refid = "UNTRACKED-CONVERSION-RECOVERY",
+                            time = botTime.plusSeconds(3600),
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                            asset = Asset.USDC,
+                            amount = BigDecimal("-1.00"),
+                            balance = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "untracked-conversion-destination",
+                            refid = "UNTRACKED-CONVERSION-RECOVERY",
+                            time = botTime.plusSeconds(3600),
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                            asset = "EUR",
+                            amount = BigDecimal("1.00"),
+                            balance = BigDecimal("1.00"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
                     ),
                 )
 
@@ -796,6 +818,16 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             type = "adjustment",
                             asset = Asset.ETH,
                             amount = BigDecimal.ZERO,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "internal-wallet-credit",
+                            time = botTime.plusSeconds(1800),
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            subtype = "spotfromfutures",
+                            asset = Asset.USD,
+                            amount = BigDecimal("100.00"),
+                            balance = BigDecimal("100.00"),
+                            hasAuthoritativeBalance = true,
                         ),
                     ),
                 )
@@ -1448,7 +1480,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "inconsistent authoritative ledger balances leave the baseline ambiguous" {
+        "inconsistent authoritative trade ledger balances leave the baseline ambiguous" {
             runTest {
                 val botTime = Instant.parse("2026-01-02T00:00:00Z")
                 val bot = apiTrade("bot", botTime, volume = BigDecimal("0.5"), usdAmount = BigDecimal("50.00"))
@@ -1465,11 +1497,20 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             hasAuthoritativeBalance = true,
                         ),
                         LedgerEvent(
-                            ledgerId = "reward-2",
+                            ledgerId = "trade-ledger-seed",
                             time = botTime.plusSeconds(7200),
-                            type = "staking",
+                            type = "trade",
                             asset = Asset.BTC,
-                            amount = BigDecimal("0.10"),
+                            amount = BigDecimal("0.50"),
+                            balance = BigDecimal("0.50"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "trade-ledger-invalid",
+                            time = botTime.plusSeconds(10800),
+                            type = "trade",
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
                             balance = BigDecimal("0.90"),
                             hasAuthoritativeBalance = true,
                         ),
@@ -1487,7 +1528,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "inconsistent ledger balances"
+                status.reason shouldContain "balance"
+                status.reason shouldContain "e="
+                status.reason shouldContain "o="
+                status.reason shouldContain "d="
             }
         }
 
@@ -1593,6 +1637,15 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             amount = BigDecimal.ZERO,
                         ),
                         LedgerEvent(
+                            ledgerId = "promotion-airdrop",
+                            refid = "promotion-airdrop-ref",
+                            time = botTime.plusSeconds(9000),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            subtype = "airdrop",
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.05"),
+                        ),
+                        LedgerEvent(
                             ledgerId = "withdrawal",
                             refid = "withdrawal-ref",
                             time = withdrawalTime,
@@ -1605,18 +1658,28 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             hasAuthoritativeFee = true,
                         ),
                         LedgerEvent(
-                            ledgerId = "trade-ledger",
+                            ledgerId = "trade-ledger-seed",
                             time = botTime.plusSeconds(14400),
                             type = "trade",
                             asset = Asset.BTC,
+                            amount = BigDecimal("0.50"),
+                            balance = BigDecimal("0.50"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "trade-ledger-checkpoint",
+                            time = botTime.plusSeconds(18000),
+                            type = "trade",
+                            asset = Asset.BTC,
                             amount = BigDecimal.ZERO,
-                            balance = BigDecimal.ZERO,
+                            balance = BigDecimal("0.50"),
+                            hasAuthoritativeBalance = true,
                         ),
                     ),
                 )
                 repository.saveSnapshot(
                     anchorSnapshot(
-                        balances = mapOf(Asset.BTC to BigDecimal("0.60"), Asset.USD to BigDecimal("1029.30")),
+                        balances = mapOf(Asset.BTC to BigDecimal("0.65"), Asset.USD to BigDecimal("1029.30")),
                         timestamp = Instant.parse("2026-01-03T00:00:00Z"),
                     ),
                 )
@@ -3371,12 +3434,40 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 ),
             )
             krakenService.tradeHistoryTotalCountOverride = 2
+            val recoveredLedgerTime = requestedStart.minusSeconds(30)
+            krakenService.seedLedgerEntries(
+                listOf(
+                    LedgerEvent(
+                        ledgerId = "zero-untracked",
+                        time = recoveredLedgerTime,
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        asset = Asset.ETH,
+                        amount = BigDecimal.ZERO,
+                        balance = BigDecimal.ZERO,
+                        hasAuthoritativeBalance = true,
+                    ),
+                ),
+            )
 
             val firstRun = newService().recoverOneBoundedRun()
             firstRun.status shouldBe InceptionRecoveryStatus.CONFIRMED
             val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
             val initialTradeCalls = krakenService.getTradeHistoryCallCount
             val initialLedgerCalls = krakenService.getLedgersCallCount
+            val completedTradeMetadata = listOf(
+                SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL,
+                SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS,
+            ).associateWith { key -> repository.getSyncMetadata(key) }
+            val completedLedgerMetadata = listOf(
+                SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL,
+                SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS,
+            ).associateWith { key -> ledgerRepository.getSyncMetadata(key) }
+            completedTradeMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL] shouldBe "2"
+            completedTradeMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS] shouldBe
+                requestedStart.minusSeconds(60).toEpochMilli().toString()
+            completedLedgerMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL] shouldBe "1"
+            completedLedgerMetadata[SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS] shouldBe
+                recoveredLedgerTime.toEpochMilli().toString()
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "COMPLETE"
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "completed"
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe "COMPLETE"
@@ -3399,6 +3490,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "completed"
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe "COMPLETE"
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe "completed"
+            completedTradeMetadata.forEach { (key, value) -> repository.getSyncMetadata(key) shouldBe value }
+            completedLedgerMetadata.forEach { (key, value) -> ledgerRepository.getSyncMetadata(key) shouldBe value }
         }
 
         "healthy incomplete recovery uses short continuation interval" {

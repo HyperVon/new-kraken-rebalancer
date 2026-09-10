@@ -23,6 +23,7 @@ object LedgerTable : Table("ledgers") {
     val hasAuthoritativeBalance = bool("has_authoritative_balance").default(false)
     val hasAuthoritativeFee = bool("has_authoritative_fee").default(false)
     val hasValidFee = bool("has_valid_fee").default(true)
+    val hasValidAmount = bool("has_valid_amount").default(true)
 
     init {
         index("idx_ledgers_timestamp", false, timestamp)
@@ -46,6 +47,7 @@ object LedgerTable : Table("ledgers") {
         hasAuthoritativeBalance = row[hasAuthoritativeBalance],
         hasAuthoritativeFee = row[hasAuthoritativeFee],
         hasValidFee = row[hasValidFee],
+        hasValidAmount = row[hasValidAmount],
     )
 
     fun applyTo(builder: UpdateBuilder<*>, event: LedgerEvent) {
@@ -62,5 +64,6 @@ object LedgerTable : Table("ledgers") {
         builder[hasAuthoritativeBalance] = event.hasAuthoritativeBalance
         builder[hasAuthoritativeFee] = event.hasAuthoritativeFee
         builder[hasValidFee] = event.hasValidFee
+        builder[hasValidAmount] = event.hasValidAmount
     }
 }

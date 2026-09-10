@@ -2543,11 +2543,21 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     listOf(
                         LedgerEvent(
                             ledgerId = "mv-1",
+                            refid = "internal-move",
                             time = t70,
                             type = "transfer",
                             subtype = "spotfromfutures",
                             asset = "USD",
                             amount = BigDecimal("10.00"),
+                        ),
+                        LedgerEvent(
+                            ledgerId = "mv-2",
+                            refid = "internal-move",
+                            time = t70,
+                            type = "transfer",
+                            subtype = "spotfromfutures",
+                            asset = "USD",
+                            amount = BigDecimal("-10.00"),
                         ),
                         LedgerEvent(
                             ledgerId = "tr-1",
@@ -2572,7 +2582,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                 statsRepository.load().allTimeHigh.shouldBeEqualComparingTo(BigDecimal("50000.00"))
                 // Internal moves and trade legs carry no owner capital and
                 // are re-derived cheaply, so nothing is journaled on fold.
-                statsRepository.getAppliedAthFlowIds(listOf("mv-1", "tr-1")) shouldBe emptySet()
+                statsRepository.getAppliedAthFlowIds(listOf("mv-1", "mv-2", "tr-1")) shouldBe emptySet()
             }
         }
 

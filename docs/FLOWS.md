@@ -571,6 +571,21 @@ sequenceDiagram
     DB-->>History: ordinary sync + recovery status/progress/reason
 ```
 
+When both bounded recovery streams are complete, the approved-start path validates the retained
+ledger evidence before constructing the baseline. The validator treats Kraken's authoritative
+post-entry balances as wallet-scoped checkpoints, includes trade ledger rows for continuity while
+leaving trade economics to `TradesHistory`, and solves same-timestamp rows as bounded groups
+without manufacturing an order from ledger IDs. The observed `SOL03`/`SOL` staking-wallet alias is
+accepted as one same-asset internal pair; arbitrary cross-asset internal pairs remain invalid. The shared
+classifier requires the same complete linked two-leg shape for internal transfer markers, so a lone
+marker cannot be silently skipped by ordinary comparison. Parser amount validity and obvious credit/debit
+direction violations are persisted/checked before replay. It preserves fail-closed behavior for ambiguous
+wallet scopes that change aggregate balances, incomplete internal-transfer groups, malformed fees,
+duplicate identities,
+unsupported transfer scopes, and unresolved balance differences. Changing this derived replay
+contract advances the baseline replay version
+and clears only derived baseline metadata; completed recovery offsets and stream status are kept.
+
 ---
 
 ## Hot vs. Cold: Why Does It Matter?

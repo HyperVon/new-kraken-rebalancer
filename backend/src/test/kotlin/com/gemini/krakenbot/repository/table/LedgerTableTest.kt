@@ -56,6 +56,7 @@ class LedgerTableTest : StringSpec() {
                 loaded.hasAuthoritativeBalance shouldBe true
                 loaded.hasAuthoritativeFee shouldBe true
                 loaded.hasValidFee shouldBe true
+                loaded.hasValidAmount shouldBe true
 
                 LedgerTable.insert {
                     LedgerTable.applyTo(
@@ -91,6 +92,20 @@ class LedgerTableTest : StringSpec() {
                     .let(LedgerTable::toModel)
                 invalidFee.hasAuthoritativeFee shouldBe true
                 invalidFee.hasValidFee shouldBe false
+
+                LedgerTable.insert {
+                    LedgerTable.applyTo(
+                        it,
+                        original.copy(
+                            ledgerId = "ledger-invalid-amount",
+                            hasValidAmount = false,
+                        ),
+                    )
+                }
+                val invalidAmount = LedgerTable.selectAll()
+                    .single { it[LedgerTable.ledgerId] == "ledger-invalid-amount" }
+                    .let(LedgerTable::toModel)
+                invalidAmount.hasValidAmount shouldBe false
 
                 LedgerTable.insert {
                     LedgerTable.applyTo(

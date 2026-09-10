@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.47] - 2026-09-10
+
+### Fixed
+
+- **Approved-start ledger balance validation**: Baseline recovery now validates authoritative
+  Kraken post-entry balances with wallet-scope-aware continuity. Trade ledger rows participate as
+  balance checkpoints for validation only, same-timestamp rows are solved without assuming
+  ledger-ID order, legacy four-decimal fees use a derived precision envelope, and staking/internal
+  transfer scopes are kept separate. Only complete linked two-leg internal transfer markers are
+  treated as wallet moves; lone or arbitrary cross-asset markers fail closed at the shared
+  classifier boundary. Ledger amount validity is preserved through parsing and SQLite migration,
+  and impossible credit/debit directions are rejected before replay. Ambiguous, incomplete
+  internal-transfer, malformed, duplicate, or unexplainable evidence remains fail-closed with
+  sanitized diagnostic context. Baseline replay version `5` invalidates only derived baseline
+  state, so completed recovery streams are reused without repagination.
+
 ## [6.17.46] - 2026-09-10
 
 ### Fixed
