@@ -903,6 +903,9 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.setSyncMetadata(key, "not-a-timestamp")
                 repository.getSyncMetadata(key).shouldBeNull()
 
+                repository.setSyncMetadata(key, "-100")
+                repository.getSyncMetadata(key).shouldBeNull()
+
                 repository.setSyncMetadata(key, Instant.now().plusSeconds(86_400).toEpochMilli().toString())
                 repository.getSyncMetadata(key).shouldBeNull()
             }

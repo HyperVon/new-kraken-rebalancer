@@ -526,9 +526,9 @@ readiness: History and Settings apply the same full reconciliation policy, and a
 uses a serialized durable cursor with `VERIFIED`, `INCOMPLETE`, or `EXHAUSTED` status. Accepting a
 verified later timestamp changes only the comparison anchor, never the strategy inception. The search
 fails closed with `HISTORICAL_COVERAGE_GAP` when retained snapshots cannot prove continuous coverage
-across the retention boundary, so pruning cannot masquerade as a verified comparison start. A valid
-configured inception date is persisted as a retention floor before recovery completes, preserving the
-history needed for later exact baseline reconstruction.
+from strategy start (tracked monotonically via continuous history metadata), so pruning cannot masquerade
+as a verified comparison start. A valid configured inception date is persisted as a retention floor
+before recovery completes, preserving the history needed for later exact baseline reconstruction.
 
 ```mermaid
 sequenceDiagram
