@@ -14,6 +14,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   be presented as the earliest verified Buy & Hold start. The comparison now fails closed until coverage is
   trustworthy, while a valid configured inception date protects older snapshots and trades from pruning
   before approved-start recovery finishes.
+- **Time-invariant coverage gap detection**: historical coverage gap evaluation now anchors to a monotonically
+  non-increasing continuous history start boundary in sync metadata instead of a rolling 90-day retention cutoff,
+  guaranteeing that advancing wall-clock time cannot convert legacy-pruned gaps into verified proposals.
 - **Exact approved baselines**: a nearby post-start snapshot is now used only as a reverse-replay anchor;
   only an exact timestamp, observation, and allocation-universe match can be adopted directly.
 

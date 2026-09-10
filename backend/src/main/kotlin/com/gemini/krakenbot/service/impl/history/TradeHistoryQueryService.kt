@@ -102,13 +102,13 @@ class TradeHistoryQueryService(
 
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
-        private const val PROPOSAL_SEARCH_VERSION = "3"
+        private const val PROPOSAL_SEARCH_VERSION = "4"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
         /**
          * The normal snapshot loop is substantially more frequent than daily. A gap this large
-         * crossing the rolling-retention boundary is therefore evidence that retained history may
-         * have lost an entire earlier era; proposal search must not infer over it.
+         * in historical coverage is evidence that retained history lost an interval or era;
+         * proposal search must not infer over it.
          */
         private const val MAX_COVERAGE_GAP_SECONDS = 86_400L
         private val OPEN_ENDED_RANGE_END = Instant.ofEpochMilli(Long.MAX_VALUE)
@@ -471,24 +471,70 @@ class TradeHistoryQueryService(
     private suspend fun historicalCoverageGapExists(strategyStart: Instant): Boolean =
         historicalCoverageGapExists(loadAllSnapshots(strategyStart), strategyStart)
 
-    private fun historicalCoverageGapExists(snapshots: List<PortfolioSnapshot>, strategyStart: Instant): Boolean {
+    private suspend fun historicalCoverageGapExists(
+        snapshots: List<PortfolioSnapshot>,
+        strategyStart: Instant,
+    ): Boolean {
         val now = nowProvider()
         if (strategyStart.isAfter(now)) return false
-        val retentionCutoff = now.minusSeconds(PrecisionConstants.HISTORICAL_DAYS_BACK.toLong() * 86_400L)
-        if (!strategyStart.isBefore(retentionCutoff)) return false
 
         val retained = snapshots.filter {
             !it.timestamp.isBefore(strategyStart) && !it.timestamp.isAfter(now)
-        }
-        val first = retained.firstOrNull() ?: return false
-        if (!first.timestamp.isBefore(retentionCutoff)) {
+        }.sortedBy { it.timestamp }
+        if (retained.isEmpty()) return false
+
+        val continuousStart = resolveContinuousHistoryStart(snapshots)
+        if (Duration.between(strategyStart, continuousStart).seconds > MAX_COVERAGE_GAP_SECONDS) {
+            // Strategy started before continuous history was established (e.g. lost under legacy retention).
             return true
         }
-        return retained.zipWithNext().any { (previous, current) ->
-            previous.timestamp.isBefore(retentionCutoff) &&
-                !current.timestamp.isBefore(retentionCutoff) &&
-                Duration.between(previous.timestamp, current.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS
+
+        val first = retained.first()
+        if (Duration.between(strategyStart, first.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS) {
+            return true
         }
+
+        return retained.zipWithNext().any { (previous, current) ->
+            Duration.between(previous.timestamp, current.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS
+        }
+    }
+
+    private suspend fun resolveContinuousHistoryStart(snapshots: List<PortfolioSnapshot>): Instant {
+        val stored = repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+            ?.toLongOrNull()
+            ?.takeIf { it >= 0L }
+        if (stored != null) {
+            return Instant.ofEpochMilli(stored)
+        }
+
+        val installType = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE)
+        val isFresh = installType == InceptionDiscoveryService.INSTALL_TYPE_FRESH && !repository.isHistorySeeded()
+
+        val determinedStart = if (isFresh) {
+            Instant.EPOCH
+        } else {
+            determineContinuousHistoryStart(snapshots)
+        }
+
+        val storedValue = if (isFresh) "0" else determinedStart.toEpochMilli().toString()
+        repository.setSyncMetadata(
+            SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+            storedValue,
+        )
+        return determinedStart
+    }
+
+    private fun determineContinuousHistoryStart(snapshots: List<PortfolioSnapshot>): Instant {
+        if (snapshots.isEmpty()) return Instant.EPOCH
+        val sorted = snapshots.sortedBy { it.timestamp }
+        for (i in sorted.lastIndex downTo 1) {
+            val previous = sorted[i - 1]
+            val current = sorted[i]
+            if (Duration.between(previous.timestamp, current.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS) {
+                return current.timestamp
+            }
+        }
+        return sorted.first().timestamp
     }
 
     private fun List<PortfolioSnapshot>.proposalCursorAt(index: Int): ProposalCursor {

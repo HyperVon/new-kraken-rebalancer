@@ -1853,6 +1853,95 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 service.findVerifiedLaterComparisonStart(now) shouldBe verified.timestamp
             }
         }
+
+        "resolveContinuousHistoryStart_ReturnsStoredMetadataWhenPresent" {
+            runTest {
+                val storedTime = now.minusSeconds(86400 * 10)
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+                } returns storedTime.toEpochMilli().toString()
+
+                val snap1 = snapshot(now.minusSeconds(86400 * 20), "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+
+                val proposal = service.getComparisonStartProposal(now.minusSeconds(86400 * 20))
+                proposal.shouldBeNull()
+            }
+        }
+
+        "resolveContinuousHistoryStart_SetsEpochForFreshInstall" {
+            runTest {
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+                } returns null
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE)
+                } returns InceptionDiscoveryService.INSTALL_TYPE_FRESH
+                coEvery { repository.isHistorySeeded() } returns false
+
+                val snap1 = snapshot(now.minusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+
+                val storedSlot = slot<String>()
+                coEvery {
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                        capture(storedSlot),
+                    )
+                } returns Unit
+
+                service.findVerifiedLaterComparisonStart(now.minusSeconds(3600))
+                storedSlot.captured shouldBe "0"
+            }
+        }
+
+        "resolveContinuousHistoryStart_FindsContinuousBoundaryAcrossGap" {
+            runTest {
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+                } returns null
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE)
+                } returns InceptionDiscoveryService.INSTALL_TYPE_UPGRADED
+                coEvery { repository.isHistorySeeded() } returns false
+
+                val oldSnap = snapshot(now.minusSeconds(86400 * 10), "100000.00", btc = "1.0" to "50000.00")
+                val continuousBoundary = now.minusSeconds(86400 * 2)
+                val snap1 = snapshot(continuousBoundary, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.minusSeconds(86400), "100000.00", btc = "1.0" to "50000.00")
+                val snap3 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(oldSnap, snap1, snap2, snap3)
+
+                val storedSlot = slot<String>()
+                coEvery {
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                        capture(storedSlot),
+                    )
+                } returns Unit
+
+                val result = service.findVerifiedLaterComparisonStart(oldSnap.timestamp)
+                result.shouldBeNull()
+                storedSlot.captured shouldBe continuousBoundary.toEpochMilli().toString()
+            }
+        }
+
+        "historicalCoverageGapExists_ConsecutiveGapInRetainedHistoryBlocksProposal" {
+            runTest {
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+                } returns "0"
+                val snap1 = snapshot(now.minusSeconds(86400 * 10), "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.minusSeconds(86400 * 5), "100000.00", btc = "1.0" to "50000.00")
+                val snap3 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2, snap3)
+
+                val proposal = service.findVerifiedLaterComparisonStart(snap1.timestamp)
+                proposal.shouldBeNull()
+            }
+        }
     }
 
     private fun snapshot(

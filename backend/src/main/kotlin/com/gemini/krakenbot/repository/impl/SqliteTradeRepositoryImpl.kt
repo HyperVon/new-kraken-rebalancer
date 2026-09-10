@@ -607,11 +607,18 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun getSyncMetadata(key: String): String? = database.readSyncMetadata(key)
 
     override suspend fun setSyncMetadata(key: String, value: String) {
-        if (key != SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS) {
+        if (key != SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS &&
+            key != SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS
+        ) {
             database.writeSyncMetadata(key, value, log, "Failed to upsert sync metadata")
             return
         }
-        database.safeTransactionIO(log, "Failed to upsert inception retention floor") {
+        val failureMessage = if (key == SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS) {
+            "Failed to upsert continuous history start"
+        } else {
+            "Failed to upsert inception retention floor"
+        }
+        database.safeTransactionIO(log, failureMessage) {
             val now = Instant.now()
             val existingFloor = readSyncMetadataInTransaction(key)?.toLongOrNull()
                 ?.takeIf { it >= 0L }

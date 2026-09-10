@@ -882,6 +882,32 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
             }
         }
 
+        "continuous history start metadata never moves later or becomes invalid" {
+            runTest {
+                val key = SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS
+                repository.setSyncMetadata(key, "1000")
+                repository.setSyncMetadata(key, "2000")
+
+                repository.getSyncMetadata(key) shouldBe "1000"
+
+                repository.setSyncMetadata(key, "not-a-timestamp")
+
+                repository.getSyncMetadata(key) shouldBe "1000"
+            }
+        }
+
+        "continuous history start metadata rejects invalid and future values without an existing boundary" {
+            runTest {
+                val key = SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS
+
+                repository.setSyncMetadata(key, "not-a-timestamp")
+                repository.getSyncMetadata(key).shouldBeNull()
+
+                repository.setSyncMetadata(key, Instant.now().plusSeconds(86_400).toEpochMilli().toString())
+                repository.getSyncMetadata(key).shouldBeNull()
+            }
+        }
+
         "persists and reloads inception inference evidence with candidates deterministically" {
             runTest {
                 val observedStart = Instant.parse("2025-12-22T02:08:00Z")

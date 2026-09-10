@@ -327,6 +327,7 @@ class ApprovedStartComparisonIntegrationTest :
                 recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
                 val query = newQueryService(newDiscoveryService(recovery))
 
+                // T0: Initial evaluation detects historical coverage gap
                 val blocked = query.getRebalancerComparison(strategyStart, comparisonEnd)
 
                 blocked.availability shouldBe ComparisonAvailability.UNAVAILABLE
@@ -335,6 +336,26 @@ class ApprovedStartComparisonIntegrationTest :
                 blocked.proposalSearchStatus.shouldBeNull()
                 query.getComparisonStartProposal(strategyStart).shouldBeNull()
                 query.findVerifiedLaterComparisonStart(strategyStart).shouldBeNull()
+
+                // T0 + 45 days: Wall-clock advance without database changes must preserve HISTORICAL_COVERAGE_GAP
+                now = now.plusSeconds(45 * 86_400L)
+                val blockedAfterTimeAdvance = query.getRebalancerComparison(strategyStart, comparisonEnd)
+                blockedAfterTimeAdvance.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                blockedAfterTimeAdvance.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
+                blockedAfterTimeAdvance.proposedBaselineTimestamp.shouldBeNull()
+                blockedAfterTimeAdvance.proposalSearchStatus.shouldBeNull()
+                query.getComparisonStartProposal(strategyStart).shouldBeNull()
+                query.findVerifiedLaterComparisonStart(strategyStart).shouldBeNull()
+
+                // Restart / reconstruction of query service preserves the gap
+                val reconstructedQuery = newQueryService(newDiscoveryService(recovery))
+                val blockedAfterRestart = reconstructedQuery.getRebalancerComparison(strategyStart, comparisonEnd)
+                blockedAfterRestart.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                blockedAfterRestart.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
+                blockedAfterRestart.proposedBaselineTimestamp.shouldBeNull()
+                blockedAfterRestart.proposalSearchStatus.shouldBeNull()
+                reconstructedQuery.getComparisonStartProposal(strategyStart).shouldBeNull()
+                reconstructedQuery.findVerifiedLaterComparisonStart(strategyStart).shouldBeNull()
 
                 // The later candidate itself is reconcilable; the missing retained era is what
                 // makes it unsafe to claim that candidate is the earliest trustworthy start.
@@ -345,6 +366,68 @@ class ApprovedStartComparisonIntegrationTest :
                     .getRebalancerComparison(strategyStart, comparisonEnd)
                 laterComparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 laterComparison.baselineTimestamp shouldBe laterStart
+            }
+        }
+
+        "a fresh installation with inception older than 90 days is not falsely flagged as a coverage gap" {
+            runTest {
+                val freshStart = now.minusSeconds(120 * 86_400L)
+                config = config.copy(
+                    settings = config.settings.copy(inceptionDate = freshStart.toString()),
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_INSTALL_TYPE,
+                    InceptionDiscoveryService.INSTALL_TYPE_FRESH,
+                )
+                for (day in 0..120) {
+                    seedSnapshot(
+                        freshStart.plusSeconds(day * 86_400L),
+                        "100.00",
+                        "0.03",
+                        "999.00",
+                    )
+                }
+                krakenService.tradeHistoryTotalCountOverride = 0
+
+                val recovery = newRecoveryService()
+                recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val query = newQueryService(newDiscoveryService(recovery))
+                val comparison = query.getRebalancerComparison(freshStart, now)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe freshStart
+            }
+        }
+
+        "reconstructed inception baseline with missing middle interval remains incomplete" {
+            runTest {
+                val middleGapEnd = strategyStart.plusSeconds(30 * 86_400L)
+                val evaluationEnd = middleGapEnd.plusSeconds(5 * 86_400L)
+
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_INSTALL_TYPE,
+                    InceptionDiscoveryService.INSTALL_TYPE_UPGRADED,
+                )
+                seedSnapshot(strategyStart, "100.00", "0.03", "999.00")
+                for (day in 0..5) {
+                    seedSnapshot(
+                        middleGapEnd.plusSeconds(day * 86_400L),
+                        "100.00",
+                        "0.04",
+                        "998.00",
+                    )
+                }
+                krakenService.tradeHistoryTotalCountOverride = 0
+
+                val recovery = newRecoveryService()
+                recovery.recoverOneBoundedRun().status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val query = newQueryService(newDiscoveryService(recovery))
+                val comparison = query.getRebalancerComparison(strategyStart, evaluationEnd)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
+                comparison.proposedBaselineTimestamp.shouldBeNull()
+                query.getComparisonStartProposal(strategyStart).shouldBeNull()
             }
         }
 

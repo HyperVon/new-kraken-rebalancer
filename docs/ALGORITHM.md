@@ -697,8 +697,9 @@ the same external capital over time:
   `EXHAUSTED` progress. A verified later timestamp is an optional comparison anchor only; accepting
   it preserves the original strategy inception and makes the same anchor explicit in configuration.
 - **Coverage gaps fail closed.** Later-start proposal search is allowed only when retained snapshots cover
-  the relevant strategy period without a gap crossing the rolling retention boundary. If older candidate
-  coverage may have been destroyed by pruning, comparison availability reports `HISTORICAL_COVERAGE_GAP`
+  the relevant strategy period continuously without missing historical eras. In upgraded installations with legacy
+  pruning, continuous history start is tracked monotonically in metadata; if older candidate coverage was destroyed
+  by pruning or contains a gap exceeding 24 hours, comparison availability reports `HISTORICAL_COVERAGE_GAP`
   and no retained snapshot is presented as the earliest trustworthy start.
 - **Owner contributions after inception are invested by original inception value
   weights** (existing synthetic holdings untouched); only the new money moves.
