@@ -231,7 +231,16 @@ val webModule =
         singleOf(::DashboardFragmentComponent)
         singleOf(::HistoryPageComponent)
         singleOf(::DashboardView)
-        singleOf(::DashboardController)
+        single {
+            DashboardController(
+                tradeHistoryService = get(),
+                configService = get(),
+                objectMapper = get(),
+                dashboardView = get(),
+                portfolioManager = get(),
+                orderIntentService = get(),
+            )
+        }
     }
 
 val appModule =
