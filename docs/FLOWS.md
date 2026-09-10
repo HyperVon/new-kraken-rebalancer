@@ -519,7 +519,8 @@ without writing. V1, v2, or missing binding versions are never fast-pathed and
 never take the lightweight rotation proof: they revalidate under the strong
 legacy consistency policy regardless of fingerprint equality. Only v3 lineage
 may use the fast path and the one-hit rotation proof.
-Recovery is bounded to four pages per invocation and throttled for five minutes; the UI observes
+Recovery is bounded to four pages per invocation, continuing healthy incomplete batches after ~30 seconds
+while retaining a conservative five-minute retry delay for failures and transient conditions; the UI observes
 durable state through `/api/history/sync-progress`, so neither startup nor a History request waits
 for an unbounded account-history scan. A confirmed recovery baseline is separate from comparison
 readiness: History and Settings apply the same full reconciliation policy, and a later-start search

@@ -461,10 +461,11 @@ class InceptionRecoveryService(
             retryWithExpandedHorizon = true
         }
 
+        val cadence = classifyRecoveryCadence(currentStatus)
         val lastAttempt = repository
             .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC)
             ?.toLongOrNull()
-        if (lastAttempt != null && now.epochSecond - lastAttempt in 0 until RETRY_INTERVAL_SECONDS) {
+        if (lastAttempt != null && now.epochSecond - lastAttempt in 0 until cadence.intervalSeconds) {
             return@withLock currentStatus
         }
 
@@ -528,7 +529,29 @@ class InceptionRecoveryService(
             log.warn("Strategy inception recovery failed; retaining resumable progress", e)
             setOverallStatus(InceptionRecoveryStatus.FAILED, "history request failed")
         }
-        readStatus()
+        val outcomeStatus = readStatus()
+        when {
+            outcomeStatus.status == InceptionRecoveryStatus.IN_PROGRESS &&
+                outcomeStatus.reason == RECOVERY_REASON_BOUNDED_CONTINUATION -> {
+                log.info(
+                    "Strategy inception recovery incomplete; next continuation eligible in {}s",
+                    SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS,
+                )
+            }
+
+            outcomeStatus.status == InceptionRecoveryStatus.FAILED ||
+                outcomeStatus.status == InceptionRecoveryStatus.UNAVAILABLE ||
+                (
+                    outcomeStatus.status in FINAL_BASELINE_FAILURES &&
+                        isTransientApprovedBaselineFailure(outcomeStatus.reason)
+                    ) -> {
+                log.warn(
+                    "Strategy inception recovery failed; retry eligible in {}s",
+                    FAILURE_RETRY_INTERVAL_SECONDS,
+                )
+            }
+        }
+        outcomeStatus
     }
 
     private suspend fun recoverPagesAndEvaluate(
@@ -619,7 +642,7 @@ class InceptionRecoveryService(
         val ledgersComplete =
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) == STREAM_COMPLETE
         if (!tradesComplete || !ledgersComplete) {
-            setOverallStatus(InceptionRecoveryStatus.IN_PROGRESS, "bounded recovery continues")
+            setOverallStatus(InceptionRecoveryStatus.IN_PROGRESS, RECOVERY_REASON_BOUNDED_CONTINUATION)
             return
         }
 
@@ -1701,11 +1724,33 @@ class InceptionRecoveryService(
         data class Failure(val status: String, val reason: String) : BaselineResult
     }
 
+    enum class RecoveryCadence(val intervalSeconds: Long) {
+        CONTINUATION(SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS),
+        RETRY(FAILURE_RETRY_INTERVAL_SECONDS),
+    }
+
+    internal suspend fun classifyRecoveryCadence(currentStatus: InceptionRecoveryStatus): RecoveryCadence {
+        val isHealthyIncomplete = currentStatus.status == InceptionRecoveryStatus.IN_PROGRESS &&
+            currentStatus.reason == RECOVERY_REASON_BOUNDED_CONTINUATION &&
+            !recoveryStreamsComplete() &&
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) != STREAM_FAILED &&
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) != STREAM_FAILED
+
+        return if (isHealthyIncomplete) {
+            RecoveryCadence.CONTINUATION
+        } else {
+            RecoveryCadence.RETRY
+        }
+    }
+
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
-        const val RETRY_INTERVAL_SECONDS = 300L
+        const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L
+        const val FAILURE_RETRY_INTERVAL_SECONDS = 300L
+        const val RETRY_INTERVAL_SECONDS = FAILURE_RETRY_INTERVAL_SECONDS
+        const val RECOVERY_REASON_BOUNDED_CONTINUATION = "bounded recovery continues"
         const val INCEPTION_SOURCE_AUTO_RECOVERED = "auto-recovered"
         const val INCEPTION_SOURCE_APPROVED = "approved"
         val FINAL_BASELINE_FAILURES = setOf(

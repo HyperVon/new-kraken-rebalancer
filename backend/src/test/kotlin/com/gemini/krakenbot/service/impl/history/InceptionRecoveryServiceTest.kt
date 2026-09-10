@@ -3260,6 +3260,274 @@ class InceptionRecoveryServiceTest : StringSpec() {
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe baselineId
             repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 2
         }
+
+        "healthy incomplete recovery uses short continuation interval" {
+            runTest {
+                val history = (0 until 500).map { index ->
+                    apiTrade(
+                        id = "history-$index",
+                        timestamp = Instant.parse("2026-04-01T00:00:00Z").minusSeconds(index.toLong()),
+                    )
+                }
+                krakenService.tradeHistoryTotalCountOverride = history.size
+                krakenService.tradeHistorySupplier = { _, offset ->
+                    history.drop(offset ?: 0).take(50)
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.reason shouldBe InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION
+                status.tradeOffset shouldBe "200"
+                krakenService.getTradeHistoryCallCount shouldBe 4
+
+                // Before short continuation interval expires (e.g. 15s): blocked, no new calls
+                now = now.plusSeconds(15)
+                val blocked = newService().recoverOneBoundedRun()
+                blocked.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                blocked.tradeOffset shouldBe "200"
+                krakenService.getTradeHistoryCallCount shouldBe 4
+
+                // At 29s (still < 30s): blocked
+                now = now.plusSeconds(14)
+                val stillBlocked = newService().recoverOneBoundedRun()
+                stillBlocked.tradeOffset shouldBe "200"
+                krakenService.getTradeHistoryCallCount shouldBe 4
+
+                // At 31s (> 30s but well before 300s failure retry): permitted to continue!
+                now = now.plusSeconds(2)
+                val continued = newService().recoverOneBoundedRun()
+                continued.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                continued.reason shouldBe InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION
+                continued.tradeOffset shouldBe "350"
+                krakenService.getTradeHistoryCallCount shouldBe 8
+            }
+        }
+
+        "failure retains conservative retry delay" {
+            runTest {
+                krakenService.tradeHistorySupplier = { _, _ -> throw IllegalStateException("transient failure") }
+
+                val failed = newService().recoverOneBoundedRun()
+
+                failed.status shouldBe InceptionRecoveryStatus.FAILED
+                failed.reason shouldBe "history request failed"
+                val initialCallCount = krakenService.getTradeHistoryCallCount
+
+                // Make service healthy now
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.tradeHistoryTotalCountOverride = 0
+
+                // At 31s (> short continuation interval 30s, but < failure retry 300s): must remain blocked!
+                now = now.plusSeconds(InceptionRecoveryService.SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS + 1)
+                val blockedAfter31s = newService().recoverOneBoundedRun()
+                blockedAfter31s.status shouldBe InceptionRecoveryStatus.FAILED
+                krakenService.getTradeHistoryCallCount shouldBe initialCallCount
+
+                // At 299s: still blocked
+                now = now.plusSeconds(268)
+                val blockedAt299s = newService().recoverOneBoundedRun()
+                blockedAt299s.status shouldBe InceptionRecoveryStatus.FAILED
+                krakenService.getTradeHistoryCallCount shouldBe initialCallCount
+
+                // At 301s (> failure retry interval 300s): retry is now permitted!
+                now = now.plusSeconds(2)
+                val retried = newService().recoverOneBoundedRun()
+                retried.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                krakenService.getTradeHistoryCallCount shouldBe initialCallCount + 1
+            }
+        }
+
+        "restart during incomplete recovery resumes with intentional one-page overlap" {
+            runTest {
+                // Simulate persisted progress: stored offset = 500, stream status = IN_PROGRESS, healthy incomplete
+                newService().prepareForCurrentConfiguration(config.settings) shouldBe true
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.IN_PROGRESS,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_REASON,
+                    InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION,
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "500")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "3455")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "100")
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC,
+                    now.minusSeconds(60).epochSecond.toString(),
+                )
+
+                var requestedOffset: Int? = null
+                krakenService.tradeHistoryTotalCountOverride = 3455
+                krakenService.tradeHistorySupplier = { _, ofs ->
+                    if (requestedOffset == null) requestedOffset = ofs
+                    (0 until 50).map { i ->
+                        apiTrade("t-$i", now.minusSeconds(i.toLong()))
+                    }
+                }
+
+                // Execute bounded run
+                val result = newService().recoverOneBoundedRun()
+
+                // Stored offset 500 minus page size 50 = resume offset 450
+                requestedOffset shouldBe 450
+                result.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                result.reason shouldBe InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION
+                krakenService.getTradeHistoryCallCount shouldBe 4
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "650"
+            }
+        }
+
+        "completed streams do not repaginate when continuation cadence elapses" {
+            runTest {
+                // Trades already complete, but ledgers incomplete (healthy continuation)
+                newService().prepareForCurrentConfiguration(config.settings) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "50")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "500")
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.IN_PROGRESS,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_REASON,
+                    InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC,
+                    now.epochSecond.toString(),
+                )
+
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    (0 until 50).map { i ->
+                        LedgerEvent(
+                            ledgerId = "l-$i",
+                            time = now.minusSeconds(i.toLong()),
+                            type = "staking",
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        )
+                    }
+                }
+
+                val initialTradeCalls = krakenService.getTradeHistoryCallCount
+                val initialLedgerCalls = krakenService.getLedgersCallCount
+
+                // Advance past short continuation interval (30s)
+                now = now.plusSeconds(InceptionRecoveryService.SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS + 1)
+                val status = newService().recoverOneBoundedRun()
+
+                // Healthy continuation ran: completed trade stream was skipped, incomplete ledger stream paginated
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                krakenService.getTradeHistoryCallCount shouldBe initialTradeCalls
+                krakenService.getLedgersCallCount shouldBe (initialLedgerCalls + 4)
+
+                // Once both streams are complete, even past failure retry interval, neither repaginates
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE,
+                )
+                now = now.plusSeconds(InceptionRecoveryService.FAILURE_RETRY_INTERVAL_SECONDS + 1)
+                val statusAfter300s = newService().recoverOneBoundedRun()
+                statusAfter300s.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                krakenService.getTradeHistoryCallCount shouldBe initialTradeCalls
+                krakenService.getLedgersCallCount shouldBe (initialLedgerCalls + 4)
+            }
+        }
+
+        "classifyRecoveryCadence returns CONTINUATION only for healthy incomplete recovery" {
+            runTest {
+                val service = newService()
+
+                // NOT_STARTED -> RETRY
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(status = InceptionRecoveryStatus.NOT_STARTED),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.RETRY
+
+                // FAILED -> RETRY
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(status = InceptionRecoveryStatus.FAILED),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.RETRY
+
+                // UNAVAILABLE -> RETRY
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(status = InceptionRecoveryStatus.UNAVAILABLE),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.RETRY
+
+                // IN_PROGRESS with blank reason (e.g. crash mid-run) -> RETRY
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(status = InceptionRecoveryStatus.IN_PROGRESS, reason = ""),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.RETRY
+
+                // IN_PROGRESS with "bounded recovery continues" and both streams IN_PROGRESS -> CONTINUATION
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(
+                        status = InceptionRecoveryStatus.IN_PROGRESS,
+                        reason = InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION,
+                    ),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.CONTINUATION
+
+                // Trade COMPLETE, ledger IN_PROGRESS -> CONTINUATION
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(
+                        status = InceptionRecoveryStatus.IN_PROGRESS,
+                        reason = InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION,
+                    ),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.CONTINUATION
+
+                // Trade IN_PROGRESS, ledger COMPLETE -> CONTINUATION
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(
+                        status = InceptionRecoveryStatus.IN_PROGRESS,
+                        reason = InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION,
+                    ),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.CONTINUATION
+
+                // If trade stream failed -> RETRY
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "FAILED")
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(
+                        status = InceptionRecoveryStatus.IN_PROGRESS,
+                        reason = InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION,
+                    ),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.RETRY
+
+                // Reset trade stream to IN_PROGRESS, but ledger stream failed -> RETRY
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "FAILED")
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(
+                        status = InceptionRecoveryStatus.IN_PROGRESS,
+                        reason = InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION,
+                    ),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.RETRY
+
+                // Both streams COMPLETE -> RETRY
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "COMPLETE")
+                service.classifyRecoveryCadence(
+                    InceptionRecoveryStatus(
+                        status = InceptionRecoveryStatus.IN_PROGRESS,
+                        reason = InceptionRecoveryService.RECOVERY_REASON_BOUNDED_CONTINUATION,
+                    ),
+                ) shouldBe InceptionRecoveryService.RecoveryCadence.RETRY
+            }
+        }
     }
 
     private fun newService(
