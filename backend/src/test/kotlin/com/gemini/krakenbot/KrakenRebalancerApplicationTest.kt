@@ -1,6 +1,7 @@
 package com.gemini.krakenbot
 
 import com.gemini.krakenbot.config.appModule
+import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
@@ -53,6 +54,8 @@ class KrakenRebalancerApplicationTest :
                 )
             }
 
+            val previousDbPath = System.getProperty("kraken.db.path")
+            System.setProperty("kraken.db.path", TestFixtures.MEMORY_)
             try {
                 // Koin's context is global: another spec may have left one running.
                 stopKoin()
@@ -76,8 +79,15 @@ class KrakenRebalancerApplicationTest :
                     .getDeclaredField("fundingProvenanceResolver")
                     .also { it.isAccessible = true }
                 queryField.get(query) shouldBe resolver
+                val controller: DashboardController by inject()
+                controller.shouldBeInstanceOf<DashboardController>()
             } finally {
                 stopKoin()
+                if (previousDbPath != null) {
+                    System.setProperty("kraken.db.path", previousDbPath)
+                } else {
+                    System.clearProperty("kraken.db.path")
+                }
                 if (!existed) {
                     configFile.delete()
                 }
