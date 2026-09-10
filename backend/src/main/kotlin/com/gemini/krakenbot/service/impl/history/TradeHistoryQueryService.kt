@@ -253,7 +253,8 @@ class TradeHistoryQueryService(
             .plusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
         val trades = getTradesInRange(queryFrom, queryTo)
-        // Closed world: LedgersSyncService only fetches EXTERNAL_BALANCE_TYPES,
+        // Closed world: LedgersSyncService only retains balance-affecting types,
+        // including conversion rows in EXTERNAL_BALANCE_TYPES,
         // so unknown types cannot arrive here. LedgerFlowClassifier inside
         // RebalancerComparisonCalculator is the second layer: it replays the
         // margin-family in-kind and fails closed on anything unrecognized.

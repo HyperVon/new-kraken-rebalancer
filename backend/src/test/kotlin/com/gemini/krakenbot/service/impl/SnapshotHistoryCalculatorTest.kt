@@ -203,6 +203,94 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("5013.00"))
         }
 
+        "calculateHistoricalSnapshots should reverse-apply both conversion legs and each fee once" {
+            val now = Instant.parse("2026-07-10T12:00:00Z")
+            val conversionTime = now.minus(2, ChronoUnit.DAYS)
+            val conversion = listOf(
+                LedgerEvent(
+                    ledgerId = "conversion-source",
+                    refid = "CONVERSION-SNAPSHOT",
+                    time = conversionTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                    asset = "BTC",
+                    amount = BigDecimal("-1.00"),
+                    fee = BigDecimal("0.01"),
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                ),
+                LedgerEvent(
+                    ledgerId = "conversion-destination",
+                    refid = "CONVERSION-SNAPSHOT",
+                    time = conversionTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                    asset = "ETH",
+                    amount = BigDecimal("2.00"),
+                    fee = BigDecimal("0.02"),
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                ),
+            )
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = emptyList(),
+                historicalRewards = conversion,
+                cutoffTime = now.minus(5, ChronoUnit.DAYS),
+                now = now,
+            )
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("0.50"),
+                "ETH" to BigDecimal("1.98"),
+                "USD" to BigDecimal("1000.00"),
+            )
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = listOf(
+                    Allocation(Asset.BTC, 40.0),
+                    Allocation(Asset.ETH, 40.0),
+                    Allocation(Asset.USD, 20.0),
+                ),
+                runningBalances = runningBalances,
+                currentPrices = mapOf(
+                    "BTC" to BigDecimal("50000.00"),
+                    "ETH" to BigDecimal("3000.00"),
+                    "USD" to BigDecimal.ONE,
+                ),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+
+            // Reverse replay returns the pre-conversion balances: BTC +1.01 and ETH -1.98.
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("1.51"))
+            runningBalances["ETH"]!!.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+        }
+
+        "buildTimelineEvents should reject an incomplete conversion before raw reverse replay" {
+            val now = Instant.parse("2026-07-10T12:00:00Z")
+            val conversionTime = now.minus(2, ChronoUnit.DAYS)
+            shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.buildTimelineEvents(
+                    historicalTrades = emptyList(),
+                    historicalRewards = listOf(
+                        LedgerEvent(
+                            ledgerId = "conversion-only",
+                            refid = "CONVERSION-INCOMPLETE-SNAPSHOT",
+                            time = conversionTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                            asset = "BTC",
+                            amount = BigDecimal("-1.00"),
+                            fee = BigDecimal("0.01"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                    ),
+                    cutoffTime = now.minus(5, ChronoUnit.DAYS),
+                    now = now,
+                )
+            }
+        }
+
         "calculateHistoricalSnapshots should use OHLC closest price over currentPrices" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)

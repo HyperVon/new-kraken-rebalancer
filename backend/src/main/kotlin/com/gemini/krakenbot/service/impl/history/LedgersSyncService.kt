@@ -19,11 +19,12 @@ import java.time.temporal.ChronoUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Pulls Kraken's strategy-neutral ledger entries into the local database: staking, dividend, earn,
- * promotion rewards, deposit, withdrawal, transfer, adjustment, consumer-transaction spend/receive
- * rows, and the margin-family balance rows (margin, rollover, settled, and credit). The live adapter
- * maps promotion rewards and Earn to Kraken's `all` query and filters response types locally; it
- * maps consumer rows to the documented `sale` query filter.
+ * Pulls Kraken's balance-affecting ledger entries into the local database: staking, dividend, earn,
+ * promotion rewards, deposit, withdrawal, transfer, adjustment, observed conversion rows,
+ * consumer-transaction spend/receive rows, and the margin-family balance rows (margin, rollover,
+ * settled, and credit). The live adapter maps promotion rewards, Earn, and conversion to Kraken's
+ * `all` query and filters response types locally; it maps consumer rows to the documented `sale`
+ * query filter.
  *
  * Ledger entries are insert-only: identity is the unique (ledger id, timestamp, asset, type) tuple,
  * so re-fetched pages (including the Kraken newest-first offset overlap) are deduplicated by the
@@ -41,7 +42,7 @@ class LedgersSyncService(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     companion object {
-        const val CURRENT_LEDGER_COVERAGE_VERSION = "6"
+        const val CURRENT_LEDGER_COVERAGE_VERSION = "7"
         val SUPPORTED_LEDGER_TYPES = listOf(
             KrakenApiConstants.LEDGER_TYPE_STAKING,
             KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
@@ -51,6 +52,7 @@ class LedgersSyncService(
             KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
             KrakenApiConstants.LEDGER_TYPE_TRANSFER,
             KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+            KrakenApiConstants.LEDGER_TYPE_CONVERSION,
             KrakenApiConstants.LEDGER_TYPE_SPEND,
             KrakenApiConstants.LEDGER_TYPE_RECEIVE,
             KrakenApiConstants.LEDGER_TYPE_MARGIN,

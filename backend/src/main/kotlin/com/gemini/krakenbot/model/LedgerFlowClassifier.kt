@@ -35,9 +35,9 @@ import java.math.BigDecimal
  *   or internal provenance fall back conservatively to [FlowCategory.AMBIGUOUS].
  * - Conservative transfer rule: known internal transfer evidence is
  *   [FlowCategory.INTERNAL_MOVE], documented reward semantics are
- *   [FlowCategory.EXTERNAL_BALANCE], and an unproven bare transfer (including
- *   prose-only descriptions like airdrop, fork, or distribution that Kraken does not
- *   formally document as API subtype values) is [FlowCategory.AMBIGUOUS].
+ *   [FlowCategory.EXTERNAL_BALANCE], observed/documented airdrop credits are
+ *   external, and an unproven bare transfer (including prose-only descriptions
+ *   like fork or distribution) is [FlowCategory.AMBIGUOUS].
  */
 enum class FlowCategory {
     /** Genuine funding entering/leaving the strategy; scales ATH and seeds B&H. */
@@ -89,6 +89,8 @@ object LedgerFlowClassifier {
 
     private val TRANSFER_EXTERNAL_SUBTYPES = setOf(
         "reward",
+        // Kraken documents transfer rows as the ledger representation for airdrop credits.
+        "airdrop",
     )
 
     private val ZERO_NET_TOLERANCE = BigDecimal("0.00000001")
@@ -114,6 +116,15 @@ object LedgerFlowClassifier {
         val byRefid = events.filter { !it.refid.isNullOrBlank() }.groupBy { it.refid!!.trim() }
         for ((_, legs) in byRefid) {
             if (legs.size < 2) continue
+            if (legs.any { isConversionType(it.type) }) {
+                val conversionCategory = if (isCompleteConversionGroup(legs)) {
+                    FlowCategory.INTERNAL_MOVE
+                } else {
+                    FlowCategory.UNSUPPORTED
+                }
+                legs.forEach { result[it.ledgerId] = conversionCategory }
+                continue
+            }
             val sameAsset = legs.map { normalizeAsset(it.asset) }.toSet().size == 1
             val individualCategories = legs.associate { it.ledgerId to classifySingle(it, provenanceResolver) }
             if (sameAsset && legs.none { isPassthroughType(it.type) }) {
@@ -204,6 +215,10 @@ object LedgerFlowClassifier {
                 else -> FlowCategory.AMBIGUOUS
             }
 
+            // A conversion is meaningful only as a complete refid-linked group. A lone row
+            // cannot prove which asset was exchanged or whether a fee/value loss was applied.
+            KrakenApiConstants.LEDGER_TYPE_CONVERSION -> FlowCategory.UNSUPPORTED
+
             KrakenApiConstants.LEDGER_TYPE_STAKING,
             KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
             // Observed Kraken promotion/airdrop-style reward rows are in-kind balance changes,
@@ -237,6 +252,32 @@ object LedgerFlowClassifier {
     private fun isPassthroughType(type: String): Boolean =
         type.equals(KrakenApiConstants.LEDGER_TYPE_SPEND, ignoreCase = true) ||
             type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)
+
+    private fun isConversionType(type: String): Boolean =
+        type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
+
+    /**
+     * Validates only the structural facts needed to replay a conversion without pricing or
+     * cross-asset quantity netting. Kraken's retained rows must provide one debit and one credit
+     * for two distinct assets, linked by one refid, with authoritative balances and fees.
+     */
+    private fun isCompleteConversionGroup(legs: List<LedgerEvent>): Boolean {
+        // The caller only invokes this helper for a non-blank refid group; single or
+        // unlinked conversion rows are rejected by classifySingle before reaching here.
+        if (legs.size != 2 || legs.any { !isConversionType(it.type) }) return false
+        if (legs.map(LedgerEvent::ledgerId).toSet().size != legs.size) return false
+        if (legs.map { normalizeAsset(it.asset) }.toSet().size != 2) return false
+        if (legs.any { !it.hasAuthoritativeBalance || !it.hasAuthoritativeFee || !it.hasValidFee }) return false
+        if (legs.any { it.fee.signum() < 0 || it.amount.signum() == 0 }) return false
+
+        val debitAmountCount = legs.count { it.amount.signum() < 0 }
+        val creditAmountCount = legs.count { it.amount.signum() > 0 }
+        val deltas = legs.map(LedgerEvent::netBalanceDelta)
+        val debitCount = deltas.count { it.signum() < 0 }
+        val creditCount = deltas.count { it.signum() > 0 }
+        return debitAmountCount == 1 && creditAmountCount == 1 &&
+            debitCount == 1 && creditCount == 1
+    }
 
     private fun classifyFunding(event: LedgerEvent, provenanceResolver: FundingProvenanceResolver): FlowCategory =
         classifySingle(event, provenanceResolver)

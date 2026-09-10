@@ -136,7 +136,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
-        "getRewardsOverTime_IncludesEarnRewardsButExcludesAllocationMechanics" {
+        "getRewardsOverTime_IncludesEarnAndAirdropRewardsButExcludesAllocationMechanics" {
             runTest {
                 val snap = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
@@ -144,14 +144,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     .copy(type = KrakenApiConstants.LEDGER_TYPE_EARN, subtype = "reward")
                 val earnAllocation = ledgerEvent("EARN-ALLOCATION", now.minusSeconds(1800), "BTC", "-1.0")
                     .copy(type = KrakenApiConstants.LEDGER_TYPE_EARN, subtype = "allocation")
+                val airdrop = ledgerEvent("AIRDROP", now.minusSeconds(900), "BTC", "0.05")
+                    .copy(type = KrakenApiConstants.LEDGER_TYPE_TRANSFER, subtype = "airdrop")
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
-                    listOf(earnReward, earnAllocation)
+                    listOf(earnReward, earnAllocation, airdrop)
 
                 val rewards = service.getRewardsOverTime(Instant.EPOCH, now)
 
                 rewards.points[0].perAssetUSD.getValue(Asset.BTC)
-                    .shouldBeEqualComparingTo(BigDecimal("5000.00"))
-                rewards.totalRewardsUSD.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+                    .shouldBeEqualComparingTo(BigDecimal("7500.00"))
+                rewards.totalRewardsUSD.shouldBeEqualComparingTo(BigDecimal("7500.00"))
             }
         }
 

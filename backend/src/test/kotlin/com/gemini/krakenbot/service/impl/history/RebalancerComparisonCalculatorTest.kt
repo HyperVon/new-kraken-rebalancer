@@ -7005,6 +7005,161 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[0].buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
         }
 
+        "complete top-level conversion transforms Buy & Hold once without owner contribution scaling" {
+            val conversionTime = now.plusSeconds(1800)
+            val inception = snapshot(
+                timestamp = now,
+                totalValueUSD = "100.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.00", "100.00", "100.00"),
+                    "ETH" to assetRow("0.00", "10.00", "0.00"),
+                    "USD" to assetRow("0.00", "1.00", "0.00"),
+                ),
+            )
+            val after = snapshot(
+                timestamp = now.plusSeconds(3600),
+                totalValueUSD = "98.80",
+                assets = mapOf(
+                    "BTC" to assetRow("0.49", "100.00", "49.00"),
+                    "ETH" to assetRow("4.98", "10.00", "49.80"),
+                    "USD" to assetRow("0.00", "1.00", "0.00"),
+                ),
+            )
+            val source = ledgerEvent(
+                timestamp = conversionTime,
+                asset = "BTC",
+                amount = "-0.50",
+                fee = "0.01",
+                balance = "0.49",
+                ledgerId = "conversion-source",
+                refid = "CONVERSION-BENCHMARK",
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                hasAuthoritativeFee = true,
+            )
+            val destination = ledgerEvent(
+                timestamp = conversionTime,
+                asset = "ETH",
+                amount = "5.00",
+                fee = "0.02",
+                balance = "4.98",
+                ledgerId = "conversion-destination",
+                refid = "CONVERSION-BENCHMARK",
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                hasAuthoritativeFee = true,
+            )
+            val ledgers = listOf(source, destination)
+
+            val built = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = ledgers,
+                baseline = inception,
+                inceptionWeights = mapOf("BTC" to BigDecimal.ONE),
+                priceProvider = null,
+                provenanceResolver = FundingProvenanceResolver.NONE,
+            )
+            built.filterIsInstance<BenchmarkEvent.ExternalBalance>() shouldBe emptyList()
+            built.filterIsInstance<BenchmarkEvent.OwnerContribution>() shouldBe emptyList()
+            val conversion = built.filterIsInstance<BenchmarkEvent.InternalConversion>().single()
+            conversion.sourceLedgerIds shouldContainExactlyInAnyOrder listOf(
+                "conversion-source",
+                "conversion-destination",
+            )
+            conversion.legs.map { it.netBalanceDelta }.toSet() shouldBe setOf(
+                BigDecimal("-0.51"),
+                BigDecimal("4.98"),
+            )
+
+            val result = calculate(
+                snapshots = listOf(inception, after),
+                rewards = ledgers,
+                inceptionSnapshot = inception,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("98.80")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "one-legged top-level conversion remains unavailable" {
+            val inception = snapshot(
+                timestamp = now,
+                totalValueUSD = "100.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.00", "100.00", "100.00"),
+                    "USD" to assetRow("0.00", "1.00", "0.00"),
+                ),
+            )
+            val result = calculate(
+                snapshots = listOf(inception, inception.copy(timestamp = now.plusSeconds(3600))),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1800),
+                        asset = "BTC",
+                        amount = "-0.50",
+                        balance = "0.50",
+                        ledgerId = "conversion-only",
+                        refid = "CONVERSION-INCOMPLETE",
+                        type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+                inceptionSnapshot = inception,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
+        }
+
+        "malformed conversion groups never become benchmark events" {
+            val baseline = snapshot(
+                timestamp = now,
+                totalValueUSD = "100.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.00", "100.00", "100.00"),
+                    "ETH" to assetRow("0.00", "10.00", "0.00"),
+                    "USD" to assetRow("0.00", "1.00", "0.00"),
+                ),
+            )
+            val conversionTime = now.plusSeconds(1800)
+            val source = ledgerEvent(
+                timestamp = conversionTime,
+                asset = "BTC",
+                amount = "-0.50",
+                fee = "0.01",
+                balance = "0.49",
+                ledgerId = "malformed-source",
+                refid = "MALFORMED-CONVERSION",
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                hasAuthoritativeFee = true,
+            )
+            val destination = ledgerEvent(
+                timestamp = conversionTime,
+                asset = "ETH",
+                amount = "5.00",
+                fee = "0.02",
+                balance = "4.98",
+                ledgerId = "malformed-destination",
+                refid = "MALFORMED-CONVERSION",
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                hasAuthoritativeFee = true,
+            )
+            val malformedGroups = listOf(
+                listOf(source.copy(refid = null), destination.copy(refid = null)),
+                listOf(source.copy(time = now.minusSeconds(1)), destination),
+                listOf(source.copy(hasAuthoritativeBalance = false), destination),
+                listOf(source.copy(time = now.minusSeconds(1)), destination.copy(time = now.minusSeconds(2))),
+            )
+
+            for (group in malformedGroups) {
+                RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                    ledgers = group,
+                    baseline = baseline,
+                    inceptionWeights = mapOf("BTC" to BigDecimal.ONE),
+                    priceProvider = null,
+                    provenanceResolver = FundingProvenanceResolver.NONE,
+                ) shouldBe emptyList()
+            }
+        }
+
         "calculate with inception snapshot whose asset universe differs returns ASSET_UNIVERSE_CHANGED" {
             val t0 = now.minusSeconds(86400 * 30)
             val t1 = now
@@ -7627,6 +7782,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         balance: String? = null,
         ledgerId: String? = null,
         refid: String? = null,
+        hasAuthoritativeFee: Boolean = fee != "0",
     ): LedgerEvent {
         val resolvedRefid = refid ?: when (type) {
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> {
@@ -7648,6 +7804,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             fee = BigDecimal(fee),
             balance = balance?.let(::BigDecimal) ?: BigDecimal.ZERO,
             hasAuthoritativeBalance = balance != null,
+            hasAuthoritativeFee = hasAuthoritativeFee,
         )
     }
 }

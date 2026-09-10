@@ -6,7 +6,10 @@ import com.gemini.krakenbot.domain.PortfolioCalculations
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.isNegative
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.FlowCategory
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
@@ -51,6 +54,7 @@ object SnapshotHistoryCalculator {
         cutoffTime: Instant,
         now: Instant = Instant.now(),
     ): List<TimelineEvent> {
+        requireCompleteConversions(historicalRewards)
         val events = historicalTrades
             .map { TimelineEvent.TradeEvent(it.timestamp, it) }
             .toMutableList<TimelineEvent>()
@@ -70,6 +74,27 @@ object SnapshotHistoryCalculator {
 
         events.sort()
         return events
+    }
+
+    /**
+     * Raw reverse replay has no benchmark classifier, so validate conversion groups before any
+     * leg can be applied independently. An incomplete group must block reconstruction instead of
+     * silently moving only one asset balance backward.
+     */
+    private fun requireCompleteConversions(events: List<LedgerEvent>) {
+        val conversionEvents = events.filter {
+            it.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
+        }
+        if (conversionEvents.isEmpty()) return
+
+        val classifications = LedgerFlowClassifier.classifyAll(events)
+        val invalid = conversionEvents.firstOrNull {
+            classifications[it.ledgerId] != FlowCategory.INTERNAL_MOVE
+        }
+        require(invalid == null) {
+            "Cannot reverse-apply incomplete or contradictory conversion ledger group: " +
+                "${invalid?.ledgerId}"
+        }
     }
 
     private data class RawHistoricalPoint(

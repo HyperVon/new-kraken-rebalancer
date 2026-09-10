@@ -329,7 +329,7 @@ achieved against a **synthetic buy-and-hold** strategy:
 
 - **Buy & Hold** starts from the effective comparison baseline snapshot across all view windows: the strategy inception baseline unless you explicitly accept a verified later comparison start.
   Strategy-neutral flows (legacy staking rewards, crypto dividends, top-level promotion `reward` credits, modern `earn/reward`, USD cash
-  dividends, adjustments, consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
+  dividends, adjustments, complete linked `conversion` transformations, consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
   identically to the actual portfolio. Genuine owner contributions after the effective comparison baseline are instead
   invested by the original inception weights, and owner withdrawals shrink the whole synthetic
   portfolio proportionally — so the cash event itself never invents alpha for either side.
@@ -354,12 +354,16 @@ achieved against a **synthetic buy-and-hold** strategy:
   evidence, keep the comparison unavailable.
 - `transfer` is not automatically internal: an exact documented internal subtype, authoritative
   internal evidence, or same-asset zero-net paired movement can prove `INTERNAL_MOVE`; documented
-  `reward` subtype is `EXTERNAL_BALANCE`. Undocumented prose descriptions (`airdrop`, `fork`, `distribution`)
-  and bare transfers stay ambiguous without affirmative external provenance. `refid` values provide correlation
+  `reward` and observed/documented `airdrop` credits are `EXTERNAL_BALANCE`. Undocumented prose descriptions
+  (`fork`, `distribution`) and bare transfers stay ambiguous without affirmative external provenance. `refid` values provide correlation
   identity only, so strings such as `KF...`, `futures`, or `internal` do not prove wallet semantics.
 - Observed top-level `reward` rows from Kraken promotion or contest-style credits
   are also in-kind `EXTERNAL_BALANCE` events and never count as owner capital.
   Unknown top-level ledger types remain unavailable rather than guessed.
+- A complete two-leg, refid-linked `conversion` between distinct assets is an
+  `INTERNAL_MOVE`: each leg's authoritative balance delta and fee is replayed once,
+  with no owner-capital, reward, or Buy & Hold scaling effect. Incomplete or
+  contradictory conversion groups keep the comparison unavailable.
 - Modern `earn` rows are explicit: `reward` is replayed as performance, while `allocation`,
   `deallocation`, `autoallocate`, and `migration` are internal and excluded from the rewards chart.
   Unknown Earn subtypes keep the comparison unavailable.
@@ -441,7 +445,7 @@ required Kraken permission in the server log.
 ### Staking, Promotion & Earn Rewards
 
 A dedicated chart below the comparison shows the cumulative USD value of
-`staking`, `dividend`, top-level promotion `reward`, and `earn/reward` ledger entries for tracked assets in the selected
+`staking`, `dividend`, top-level promotion `reward`, transfer `airdrop` credits, and `earn/reward` ledger entries for tracked assets in the selected
 range, with one series per asset and a total shown beside the title. Values are
 aligned to portfolio snapshots and use each snapshot's asset price; the chart is
 empty until ledger data has been synchronized. Untracked asset cash dividends credited
@@ -449,7 +453,7 @@ in USD are accounted for in portfolio comparison but omitted from crypto staking
 Earn allocation mechanics are retained for account reconstruction but are not
 shown as rewards or treated as performance.
 A caption below the chart reads:
-*Cumulative staking, dividend, promotion, and Earn reward value accrued during the selected range.
+*Cumulative staking, dividend, promotion, transfer-airdrop, and Earn reward value accrued during the selected range.
 Assets without a snapshot price in the range are excluded.*
 
 ### Portfolio Value & Asset Holdings

@@ -1135,6 +1135,15 @@ class InceptionRecoveryService(
                 "ledger provenance unresolved: ${ambiguousLedger.type}".take(MAX_REASON_LENGTH),
             )
         }
+        val unsupportedClassifiedLedger = historicalLedgers.firstOrNull { event ->
+            flowCategories[event.ledgerId] == FlowCategory.UNSUPPORTED
+        }
+        if (unsupportedClassifiedLedger != null) {
+            return BaselineResult.Failure(
+                InceptionRecoveryStatus.AMBIGUOUS,
+                "unsupported ledger type ${unsupportedClassifiedLedger.type}".take(MAX_REASON_LENGTH),
+            )
+        }
 
         val runningBalances = anchor.assets.mapKeys { (symbol, _) ->
             Asset.normalizeLedgerAsset(symbol).uppercase()
@@ -1258,7 +1267,16 @@ class InceptionRecoveryService(
         if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) return true
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         val delta = event.netBalanceDelta()
-        if (symbol !in expectedUniverse) return delta.signum() == 0
+        if (symbol !in expectedUniverse) {
+            // A structurally complete conversion can legitimately leave the configured strategy
+            // universe (for example USD -> a stablecoin the strategy does not track). The linked
+            // opposite leg proves this is an internal transformation; do not reinterpret it as
+            // unexplained owner capital, but also do not invent a price for the untracked asset.
+            return delta.signum() == 0 || event.type.equals(
+                KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                ignoreCase = true,
+            )
+        }
         val balance = balances.getValue(symbol)
         balances[symbol] = balance.subtract(delta)
         return true
@@ -1789,7 +1807,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "3"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "4"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

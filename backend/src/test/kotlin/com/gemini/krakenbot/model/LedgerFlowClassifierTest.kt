@@ -21,6 +21,9 @@ class LedgerFlowClassifierTest : StringSpec() {
         subtype: String? = null,
         asset: String = "USD",
         fee: String = "0",
+        hasAuthoritativeBalance: Boolean = false,
+        hasAuthoritativeFee: Boolean = fee != "0",
+        hasValidFee: Boolean = true,
     ): LedgerEvent = LedgerEvent(
         ledgerId = id,
         refid = refid,
@@ -30,6 +33,9 @@ class LedgerFlowClassifierTest : StringSpec() {
         asset = asset,
         amount = BigDecimal(amount),
         fee = BigDecimal(fee),
+        hasAuthoritativeBalance = hasAuthoritativeBalance,
+        hasAuthoritativeFee = hasAuthoritativeFee,
+        hasValidFee = hasValidFee,
     )
 
     init {
@@ -371,7 +377,7 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.INTERNAL_MOVE
         }
 
-        "reward predicate recognizes legacy, promotion, and earn rewards" {
+        "reward predicate recognizes legacy, promotion, transfer airdrop, and earn rewards" {
             LedgerEvent.isRewardEvent(event("staking", KrakenApiConstants.LEDGER_TYPE_STAKING, "1.00")) shouldBe true
             LedgerEvent.isRewardEvent(event("promotion", KrakenApiConstants.LEDGER_TYPE_REWARD, "1.00")) shouldBe true
             LedgerEvent.isRewardEvent(
@@ -380,7 +386,193 @@ class LedgerFlowClassifierTest : StringSpec() {
             LedgerEvent.isRewardEvent(
                 event("earn-allocation", KrakenApiConstants.LEDGER_TYPE_EARN, "1.00", subtype = "allocation"),
             ) shouldBe false
+            LedgerEvent.isRewardEvent(
+                event("airdrop", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = " Airdrop "),
+            ) shouldBe true
+            LedgerEvent.isRewardEvent(
+                event("staking-transfer", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "spottostaking"),
+            ) shouldBe false
             LedgerEvent.isRewardEvent(event("deposit", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "1.00")) shouldBe false
+        }
+
+        "complete cross-asset conversion groups are internal and preserve each fee-bearing leg" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "conversion-source",
+                        KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        "-1.00000000",
+                        refid = "CONVERSION-1",
+                        asset = "BTC",
+                        fee = "0.00100000",
+                        hasAuthoritativeBalance = true,
+                        hasAuthoritativeFee = true,
+                    ),
+                    event(
+                        "conversion-destination",
+                        KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        "14.95000000",
+                        refid = "CONVERSION-1",
+                        asset = "ETH",
+                        fee = "0.00500000",
+                        hasAuthoritativeBalance = true,
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+            )
+
+            result.values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+            result.values.toList().size shouldBe 2
+            LedgerEvent.isRewardEvent(
+                event("conversion-reward-check", KrakenApiConstants.LEDGER_TYPE_CONVERSION, "1.00"),
+            ) shouldBe false
+        }
+
+        "conversion direction is structural, not asset-name dependent" {
+            val result = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "conversion-eth-source",
+                        KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        "-10.00000000",
+                        refid = "CONVERSION-2",
+                        asset = "ETH",
+                        hasAuthoritativeBalance = true,
+                        hasAuthoritativeFee = true,
+                    ),
+                    event(
+                        "conversion-btc-destination",
+                        KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        "0.25000000",
+                        refid = "CONVERSION-2",
+                        asset = "BTC",
+                        hasAuthoritativeBalance = true,
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+            )
+
+            result.values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+        }
+
+        "incomplete or contradictory conversion groups fail closed" {
+            val oneLeg = LedgerFlowClassifier.classify(
+                event(
+                    "conversion-only",
+                    KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                    "-1.00",
+                    refid = "CONVERSION-INCOMPLETE",
+                    asset = "BTC",
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                ),
+            )
+            oneLeg shouldBe FlowCategory.UNSUPPORTED
+
+            val sameAsset = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "conversion-negative",
+                        KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        "-1.00",
+                        refid = "CONVERSION-CONTRADICTORY",
+                        asset = "BTC",
+                        hasAuthoritativeBalance = true,
+                        hasAuthoritativeFee = true,
+                    ),
+                    event(
+                        "conversion-negative-2",
+                        KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        "-2.00",
+                        refid = "CONVERSION-CONTRADICTORY",
+                        asset = "ETH",
+                        hasAuthoritativeBalance = true,
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+            )
+            sameAsset.values.toSet() shouldBe setOf(FlowCategory.UNSUPPORTED)
+
+            val missingRefid = LedgerFlowClassifier.classify(
+                event(
+                    "conversion-missing-refid",
+                    KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                    "1.00",
+                    asset = "ETH",
+                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeFee = true,
+                ),
+            )
+            missingRefid shouldBe FlowCategory.UNSUPPORTED
+
+            val validSource = event(
+                "conversion-authority-source",
+                KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                "-1.00",
+                refid = "CONVERSION-AUTHORITY",
+                asset = "BTC",
+                fee = "0.01",
+                hasAuthoritativeBalance = true,
+                hasAuthoritativeFee = true,
+            )
+            val validDestination = event(
+                "conversion-authority-destination",
+                KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                "15.00",
+                refid = "CONVERSION-AUTHORITY",
+                asset = "ETH",
+                fee = "0.02",
+                hasAuthoritativeBalance = true,
+                hasAuthoritativeFee = true,
+            )
+            fun conversionCategory(source: LedgerEvent, destination: LedgerEvent): Set<FlowCategory> =
+                LedgerFlowClassifier.classifyAll(listOf(source, destination)).values.toSet()
+
+            conversionCategory(validSource, validDestination.copy(hasAuthoritativeBalance = false)) shouldBe
+                setOf(FlowCategory.UNSUPPORTED)
+            conversionCategory(validSource.copy(hasAuthoritativeFee = false), validDestination) shouldBe
+                setOf(FlowCategory.UNSUPPORTED)
+            conversionCategory(validSource, validDestination.copy(hasValidFee = false)) shouldBe
+                setOf(FlowCategory.UNSUPPORTED)
+            conversionCategory(
+                validSource,
+                validDestination.copy(amount = BigDecimal("0.01"), fee = BigDecimal("0.02")),
+            ) shouldBe
+                setOf(FlowCategory.UNSUPPORTED)
+            conversionCategory(validSource.copy(fee = BigDecimal("-0.01")), validDestination) shouldBe
+                setOf(FlowCategory.UNSUPPORTED)
+            conversionCategory(
+                validSource,
+                validDestination.copy(amount = BigDecimal.ZERO, fee = BigDecimal.ZERO),
+            ) shouldBe
+                setOf(FlowCategory.UNSUPPORTED)
+            conversionCategory(validSource, validDestination.copy(asset = "BTC")) shouldBe
+                setOf(FlowCategory.UNSUPPORTED)
+            conversionCategory(validSource.copy(amount = BigDecimal("1.00")), validDestination) shouldBe
+                setOf(FlowCategory.UNSUPPORTED)
+
+            LedgerFlowClassifier.classifyAll(
+                listOf(
+                    validSource,
+                    validDestination,
+                    validDestination.copy(ledgerId = "conversion-extra", asset = "USD"),
+                ),
+            ).values.toSet() shouldBe setOf(FlowCategory.UNSUPPORTED)
+            LedgerFlowClassifier.classifyAll(
+                listOf(validSource, validDestination.copy(ledgerId = validSource.ledgerId)),
+            ).values.toSet() shouldBe setOf(FlowCategory.UNSUPPORTED)
+            LedgerFlowClassifier.classifyAll(
+                listOf(
+                    validSource,
+                    event(
+                        "conversion-linked-trade",
+                        "trade",
+                        "1.00",
+                        refid = "CONVERSION-AUTHORITY",
+                        asset = "ETH",
+                    ),
+                ),
+            ).values.toSet() shouldBe setOf(FlowCategory.UNSUPPORTED)
         }
 
         "unknown earn subtype is fail-closed" {
@@ -392,13 +584,19 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.AMBIGUOUS
         }
 
-        "documented transfer reward semantics are performance, while undocumented prose subtypes stay ambiguous" {
+        "documented transfer and airdrop semantics are external; prose subtypes stay ambiguous" {
             LedgerFlowClassifier.classify(
-                event("reward", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "reward", asset = "ETH"),
+                event(
+                    "reward",
+                    KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                    "1.00",
+                    subtype = "reward",
+                    asset = "ETH",
+                ),
             ) shouldBe FlowCategory.EXTERNAL_BALANCE
             LedgerFlowClassifier.classify(
                 event("airdrop", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "airdrop", asset = "ETH"),
-            ) shouldBe FlowCategory.AMBIGUOUS
+            ) shouldBe FlowCategory.EXTERNAL_BALANCE
             LedgerFlowClassifier.classify(
                 event("fork", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", subtype = "fork", asset = "ETH"),
             ) shouldBe FlowCategory.AMBIGUOUS
@@ -775,6 +973,41 @@ class LedgerFlowClassifierTest : StringSpec() {
             result["deposit"] shouldBe FlowCategory.AMBIGUOUS
             result["spend"] shouldBe FlowCategory.EXTERNAL_BALANCE
             result["reward"] shouldBe FlowCategory.EXTERNAL_BALANCE
+        }
+
+        "observed retained-history top-level types have explicit dispositions" {
+            val observedTopLevelTypes = setOf(
+                "conversion",
+                "deposit",
+                "dividend",
+                "receive",
+                "reward",
+                "spend",
+                "staking",
+                "trade",
+                "transfer",
+                "withdrawal",
+            )
+            val supportedForHistory = LedgerEvent.EXTERNAL_BALANCE_TYPES + KrakenApiConstants.LEDGER_TYPE_TRADE
+            (observedTopLevelTypes - supportedForHistory) shouldBe emptySet()
+
+            val explicitDispositions = mapOf(
+                "deposit" to FlowCategory.AMBIGUOUS,
+                "dividend" to FlowCategory.EXTERNAL_BALANCE,
+                "receive" to FlowCategory.EXTERNAL_BALANCE,
+                "reward" to FlowCategory.EXTERNAL_BALANCE,
+                "spend" to FlowCategory.EXTERNAL_BALANCE,
+                "staking" to FlowCategory.EXTERNAL_BALANCE,
+                "trade" to FlowCategory.TRADE_IGNORED,
+                "transfer" to FlowCategory.AMBIGUOUS,
+                "withdrawal" to FlowCategory.AMBIGUOUS,
+            )
+            for ((type, expected) in explicitDispositions) {
+                LedgerFlowClassifier.classify(event("observed-$type", type, "1.00")) shouldBe expected
+            }
+            LedgerFlowClassifier.classify(
+                event("observed-airdrop", "transfer", "1.00", subtype = "airdrop"),
+            ) shouldBe FlowCategory.EXTERNAL_BALANCE
         }
     }
 }

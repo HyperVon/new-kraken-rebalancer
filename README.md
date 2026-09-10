@@ -307,19 +307,19 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 
 ### Ledger, Staking, Promotion & Earn Rewards Synchronization
 
-- Synchronizes fourteen strategy-neutral entry types (`staking`, `dividend`, `earn`, `reward`, `deposit`,
+- Synchronizes fifteen balance-affecting entry types (`staking`, `dividend`, `earn`, `reward`, `deposit`,
   `withdrawal`, `transfer`, `adjustment`, `spend`, `receive`, `margin`, `rollover`, `settled`,
-  and `credit`) from Kraken's private
+  `credit`, and observed top-level `conversion` rows) from Kraken's private
   `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold Flow fetching.
   The live adapter queries the documented `sale` filter for consumer `spend`/`receive`
-  rows, and queries `all` for `earn`/top-level `reward` rows before filtering the
+  rows, and queries `all` for `earn`/top-level `reward`/`conversion` rows before filtering the
   returned rows by their response type.
 - Persists ledger entries in SQLite using the `(ledger id, timestamp, asset, type)`
   identity so overlapping pages and retries remain idempotent
 - Stores durable seed progress and timestamps in `history_sync_metadata`, then
   uses a five-minute incremental overlap to avoid missing entries near a
   watermark
-- Serves `/api/history/rewards` with cumulative staking, dividend, top-level promotion, and Earn rewards aligned to
+- Serves `/api/history/rewards` with cumulative staking, dividend, top-level promotion, transfer-airdrop, and Earn rewards aligned to
   portfolio snapshots and valued using each snapshot's asset prices. Ledger
   assets are normalized to the tracked base symbol (Earn suffixes and legacy
   `X`/`Z` codes), and assets without a snapshot price in the range are excluded
@@ -333,10 +333,18 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   ATH basis reconstruction, and Buy & Hold; `earn` allocation mechanics replay
   only where needed to reconstruct account balances and remain neutral in
   strategy accounting. Unknown Earn subtypes remain unavailable.
-- Observed top-level `reward` rows from Kraken promotions or contests are
+- Observed top-level `reward` rows from Kraken promotions or contests, and documented
+  `transfer/airdrop` credits, are
   retained by ordinary synchronization and unfiltered inception recovery, then
-  replayed as in-kind external balance changes; they never count as owner
+  replayed as in-kind external balance changes and shown in the rewards chart; they never count as owner
   capital. Unknown top-level ledger types remain fail-closed.
+- Observed top-level `conversion` rows are retained and require a complete two-leg,
+  non-blank-`refid` cross-asset debit/credit group with authoritative balances and fees.
+  The group replays each per-asset `amount - fee` delta once as an internal transformation;
+  it is not owner capital, a reward, or a Buy & Hold contribution. Missing, contradictory,
+  or multi-leg shapes remain unavailable rather than being netted by raw token quantity.
+- Kraken `transfer/airdrop` credits are treated as external balance changes; bare transfers and
+  unsupported transfer subtypes remain ambiguous without authoritative provenance.
 - Rebalancer vs Buy & Hold replays every supported external ledger type using
   `amount - fee`; ATH basis reconstruction separately replays the actual
   event-time asset effects. Consumer Buy Crypto activity is
@@ -816,7 +824,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET` | `/api/history/trades` | Trade log for History page (JSON, `?range=`) |
 | `GET` | `/api/history/stats` | History summary-card aggregates (JSON, `?range=`) |
 | `GET` | `/api/history/comparison` | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`) |
-| `GET` | `/api/history/rewards` | Cumulative staking, dividend, top-level promotion, and Earn rewards by asset (JSON, `?range=`) |
+| `GET` | `/api/history/rewards` | Cumulative staking, dividend, promotion, transfer-airdrop, and Earn rewards by asset (JSON, `?range=`) |
 | `GET` | `/api/history/sync-progress` | Polling endpoint for ordinary Kraken history sync and bounded inception-recovery progress/status (JSON) |
 | `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 

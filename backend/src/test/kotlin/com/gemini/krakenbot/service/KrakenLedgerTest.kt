@@ -426,6 +426,60 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
             }
         }
 
+        "getLedgers_QueriesAllForObservedConversionAndFiltersReturnedRows" {
+            runTest {
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "ledger": {
+                                "CONVERSION-SOURCE": {
+                                    "refid": "CONVERSION-1",
+                                    "time": 1700000000.0000,
+                                    "type": "conversion",
+                                    "asset": "ZUSD",
+                                    "amount": "-1000.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "0.00000000"
+                                },
+                                "CONVERSION-DESTINATION": {
+                                    "refid": "CONVERSION-1",
+                                    "time": 1700000000.0000,
+                                    "type": "conversion",
+                                    "asset": "USDG",
+                                    "amount": "1000.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "1000.00000000"
+                                },
+                                "OTHER": {
+                                    "refid": "OTHER",
+                                    "time": 1700000000.0000,
+                                    "type": "staking",
+                                    "asset": "XBT",
+                                    "amount": "0.10000000",
+                                    "fee": "0.00000000",
+                                    "balance": "1.00000000"
+                                }
+                            },
+                            "count": 3
+                        }
+                    }
+                """.trimIndent()
+                var capturedBody = ""
+                val service = createService(responseJson) { request ->
+                    capturedBody = (request.body as TextContent).text
+                }
+
+                val entries = service.getLedgers(types = setOf(KrakenApiConstants.LEDGER_TYPE_CONVERSION))
+
+                capturedBody shouldContain "type=${KrakenApiConstants.LEDGER_TYPE_ALL}"
+                entries.map { it.ledgerId } shouldBe listOf("CONVERSION-SOURCE", "CONVERSION-DESTINATION")
+                entries.all { it.type == KrakenApiConstants.LEDGER_TYPE_CONVERSION } shouldBe true
+                service.getLastLedgerTotalCount() shouldBe 3
+                service.getLastLedgerRawPageSize() shouldBe 3
+            }
+        }
+
         "getLedgers_MultipleTypes_QueriesEachTypeSeparatelyAndMerges" {
             runTest {
                 val stakingJson = """
