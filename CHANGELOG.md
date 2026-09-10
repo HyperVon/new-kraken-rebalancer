@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.43] - 2026-09-09
+
+### Fixed
+
+- **Dependabot security alert #136**: Raised the Kotlin/JS Yarn `js-yaml`
+  security floor to `4.3.2` and regenerated the lockfile to prevent CPU denial
+  of service through empty merge sources bypassing `maxTotalMergeKeys`.
+
 ## [6.17.42] - 2026-09-09
 
 ### Fixed
