@@ -647,7 +647,8 @@ the same external capital over time:
   balance observation, or recovery write. Empty databases may bind a hashed scope; non-empty legacy
   databases without a binding, unavailable scopes, and mismatches fail closed without claiming the
   existing history. `InceptionRecoveryService` then runs at most four private-history pages per
-  invocation, no more often than once per five minutes. It uses the authenticated Kraken
+  invocation, continuing healthy incomplete batches after ~30 seconds while retaining a conservative
+  five-minute retry delay for failures and transient conditions. It uses the authenticated Kraken
   TradesHistory and Ledgers endpoints, a fixed inclusive recovery horizon captured on the first run,
   and separate durable offsets, totals, oldest-record markers, status, version, and
   configuration/account fingerprint. A resumed incomplete stream re-reads one page of overlap

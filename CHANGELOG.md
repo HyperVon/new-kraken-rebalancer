@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.44] - 2026-09-10
+
+### Performance
+
+- **Historical inception recovery continuation cadence**: Separated the healthy
+  bounded recovery continuation cadence (`30s`) from the conservative failure retry
+  interval (`300s`) in `InceptionRecoveryService`. When previous bounded runs succeed
+  with `IN_PROGRESS` and `bounded recovery continues`, the next bounded run is eligible
+  after approximately 30 seconds instead of waiting the full 5-minute failure delay. All
+  private history requests continue to pass through the shared Kraken `RateLimiter` without
+  modifying rate-limit constants or recovery correctness guarantees.
+
 ## [6.17.43] - 2026-09-09
 
 ### Fixed
