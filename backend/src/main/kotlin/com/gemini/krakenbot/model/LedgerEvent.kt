@@ -5,8 +5,8 @@ import java.time.Instant
 
 /**
  * One entry from the Kraken private Ledgers endpoint (e.g. `staking` rewards, `dividend` payouts,
- * modern `earn` activity, `deposit`, `withdrawal`, `transfer`, `adjustment`, and
- * consumer-transaction `spend`/`receive` entries). Amounts are signed (+ for credit, - for debit)
+ * observed top-level `reward` promotion credits, modern `earn` activity, `deposit`, `withdrawal`,
+ * `transfer`, `adjustment`, and consumer-transaction `spend`/`receive` entries). Amounts are signed (+ for credit, - for debit)
  * and denominated in the ledger asset. Fees are non-negative.
  *
  * [ledgerId] is the Kraken ledger entry id (the response map key), unique per entry;
@@ -49,9 +49,10 @@ data class LedgerEvent(
             setOf(
                 KrakenApiConstants.LEDGER_TYPE_STAKING,
                 KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
+                KrakenApiConstants.LEDGER_TYPE_REWARD,
             )
 
-        /** True for legacy reward families and the documented modern Earn reward subtype. */
+        /** True for legacy rewards, observed promotion rewards, and the documented modern Earn reward subtype. */
         fun isRewardEvent(event: LedgerEvent): Boolean = event.type.lowercase() in REWARD_TYPES ||
             (
                 event.type.equals(KrakenApiConstants.LEDGER_TYPE_EARN, ignoreCase = true) &&
@@ -71,6 +72,7 @@ data class LedgerEvent(
                 KrakenApiConstants.LEDGER_TYPE_STAKING,
                 KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
                 KrakenApiConstants.LEDGER_TYPE_EARN,
+                KrakenApiConstants.LEDGER_TYPE_REWARD,
                 KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                 KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
                 KrakenApiConstants.LEDGER_TYPE_TRANSFER,

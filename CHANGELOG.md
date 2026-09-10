@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.45] - 2026-09-10
+
+### Fixed
+
+- **Promotion reward ledger handling**: Observed top-level Kraken `reward` rows
+  are now treated as in-kind external balance changes during inception baseline
+  replay, ATH accounting, Buy & Hold reconciliation, and the rewards chart.
+  Unknown ledger types remain fail-closed, and complete recovered history is
+  reused without repagination.
+
 ## [6.17.44] - 2026-09-10
 
 ### Performance

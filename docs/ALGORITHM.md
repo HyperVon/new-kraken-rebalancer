@@ -148,8 +148,8 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      `Adjusted ATH = Current ATH * (Pre-Flow Value + Net External Flow) / Pre-Flow Value`
      This ensures an external deposit scales ATH without wiping out an existing drawdown percentage, and an external
      withdrawal scales ATH down without triggering artificial drawdown or forced fiat deployment. Staking rewards,
-     dividends, and `earn/reward` are investment performance that improve portfolio value and reduce drawdown
-     without scaling ATH; Earn allocation mechanics remain internal.
+     dividends, observed top-level promotion `reward` rows, and `earn/reward` are investment performance that improve
+     portfolio value and reduce drawdown without scaling ATH; Earn allocation mechanics remain internal.
    - **Two-Layer Funding Provenance & Flow Classification**: Kraken reuses coarse ledger types for economically
      distinct activity, so classification follows a strict two-layer architecture:
      1. *Intrinsic classification (`LedgerFlowClassifier`)*: Evaluates intrinsic ledger metadata. Same-asset
@@ -160,7 +160,9 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
         `EXTERNAL_BALANCE`; `earn/allocation`, `deallocation`, `autoallocate`, and `migration` are
         `INTERNAL_MOVE`; another Earn subtype is ambiguous. For `transfer`, exact internal subtypes,
         authoritative internal evidence, or an asset-aware same-asset zero-net pairing may prove
-        `INTERNAL_MOVE`; documented `reward` subtype is `EXTERNAL_BALANCE`; undocumented prose
+        `INTERNAL_MOVE`; documented `reward` subtype is `EXTERNAL_BALANCE`; observed top-level
+        Kraken promotion/airdrop-style rows with `type=reward` are also `EXTERNAL_BALANCE` and never owner capital;
+        undocumented prose
         descriptions (`airdrop`, `fork`, `distribution`) and bare transfers remain ambiguous without
         affirmative external provenance. `refid` is used only to correlate
         rows and never parsed for undocumented meaning. For deposits and withdrawals, the classifier
@@ -495,7 +497,7 @@ failure.
       dry-run returns before changing balances.
 5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
 
-### Ledger history and staking/Earn rewards
+### Ledger history and external rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
 once every **300 seconds**, requesting the thirteen strategy-neutral response types
@@ -517,6 +519,12 @@ ledger time (or watermark) with a **300-second overlap**. SQLite enforces the
 are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
 and [ledger field guidance](https://support.kraken.com/articles/360001169383-how-to-interpret-ledger-history-fields).
 
+Inception recovery requests unfiltered ledger pages, so an observed top-level
+`type=reward` row is retained even though Kraken's current public query enum does
+not advertise `reward` as a filter value. The classifier treats that exact row as
+an in-kind `EXTERNAL_BALANCE`, never `OWNER_CAPITAL`; unknown top-level values
+remain unsupported and fail closed.
+
 Funding provenance uses authenticated `DepositStatus` and `WithdrawStatus`
 lookups. Kraken documents `DepositStatus` with **Funds: Query** and
 `WithdrawStatus` with **Funds: Withdraw** or **Data: Query ledger entries**;
@@ -528,8 +536,8 @@ pass without changing the contract or fail-closed permission semantics. A permis
 denial is retained as `FUNDING_PROVENANCE_UNAVAILABLE` and logged with the required
 permission.
 
-The History `/api/history/rewards` endpoint charts `staking`, `dividend`, and
-`earn/reward` entries for tracked allocation assets. It aligns cumulative
+The History `/api/history/rewards` endpoint charts `staking`, `dividend`, top-level
+promotion `reward`, and `earn/reward` entries for tracked allocation assets. It aligns cumulative
 per-asset amounts to
 stored portfolio snapshot timestamps, values each asset using that snapshot's
 price, and returns total and per-asset USD series for the selected range.
@@ -537,10 +545,12 @@ Earn allocation mechanics are persisted for account reconstruction but are not
 performance rewards; unknown Earn subtypes remain fail-closed. Dividend entries
 for untracked assets remain persisted but excluded as external inflows.
 
-For ATH and benchmark accounting, all thirteen synchronized ledger types are
+For ATH and benchmark accounting, all supported persisted ledger types—including
+observed top-level promotion `reward` rows recovered from unfiltered pages—are
 classified before application and use `amount - fee` where replayed, preserving
-both legs of a consumer transaction. `earn/reward` is an in-kind performance
-event; Earn allocation mechanics are internal and ignored by ATH and Buy & Hold.
+both legs of a consumer transaction. Top-level `reward` and `earn/reward` are
+in-kind performance events; Earn allocation mechanics are internal and ignored
+by ATH and Buy & Hold.
 Historical snapshot reconstruction replays the corresponding account-balance
 legs so reconstructed Spot balances remain faithful. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
@@ -710,7 +720,8 @@ the same external capital over time:
   never a live ticker for an old contribution — and missing prices fail closed.
 - **Owner withdrawals scale the whole synthetic portfolio proportionally by
   market value**, so the cash event itself creates no artificial alpha either way.
-- Investment returns (staking, dividends, adjustments) replay in-kind;
+- Investment returns (staking, dividends, observed top-level promotion rewards,
+  `earn/reward`, and adjustments) replay in-kind;
   internal moves are ignored; unrecognized or ambiguous ledger rows fail closed
   (`UNSUPPORTED_LEDGER_TYPE`, `AMBIGUOUS_LEDGER_TYPE`).
 

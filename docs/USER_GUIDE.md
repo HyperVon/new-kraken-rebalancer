@@ -328,7 +328,7 @@ The first chart below the summary cards compares what the rebalancer actually
 achieved against a **synthetic buy-and-hold** strategy:
 
 - **Buy & Hold** starts from the effective comparison baseline snapshot across all view windows: the strategy inception baseline unless you explicitly accept a verified later comparison start.
-  Strategy-neutral flows (legacy staking rewards, crypto dividends, modern `earn/reward`, USD cash
+  Strategy-neutral flows (legacy staking rewards, crypto dividends, top-level promotion `reward` credits, modern `earn/reward`, USD cash
   dividends, adjustments, consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
   identically to the actual portfolio. Genuine owner contributions after the effective comparison baseline are instead
   invested by the original inception weights, and owner withdrawals shrink the whole synthetic
@@ -357,6 +357,9 @@ achieved against a **synthetic buy-and-hold** strategy:
   `reward` subtype is `EXTERNAL_BALANCE`. Undocumented prose descriptions (`airdrop`, `fork`, `distribution`)
   and bare transfers stay ambiguous without affirmative external provenance. `refid` values provide correlation
   identity only, so strings such as `KF...`, `futures`, or `internal` do not prove wallet semantics.
+- Observed top-level `reward` rows from Kraken promotion or contest-style credits
+  are also in-kind `EXTERNAL_BALANCE` events and never count as owner capital.
+  Unknown top-level ledger types remain unavailable rather than guessed.
 - Modern `earn` rows are explicit: `reward` is replayed as performance, while `allocation`,
   `deallocation`, `autoallocate`, and `migration` are internal and excluded from the rewards chart.
   Unknown Earn subtypes keep the comparison unavailable.

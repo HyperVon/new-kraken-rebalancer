@@ -2777,6 +2777,18 @@ class InceptionRecoveryServiceTest : StringSpec() {
                         timestamp = Instant.parse("2026-01-03T00:00:00Z"),
                     ),
                 )
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "promotion-reward",
+                            time = requestedStart.plusSeconds(7200),
+                            type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.001"),
+                            fee = BigDecimal("0.0001"),
+                        ),
+                    ),
+                )
                 krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
                 krakenService.tradeHistoryTotalCountOverride = 2
 
@@ -2792,10 +2804,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ),
                 )
                 baseline.timestamp shouldBe requestedStart
-                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.02")
+                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.0191")
                 baseline.assets.getValue(Asset.BTC).price shouldBeEqualComparingTo BigDecimal("100.00000000")
                 baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("1000.01")
-                baseline.totalValueUSD shouldBeEqualComparingTo BigDecimal("1002.01")
+                baseline.totalValueUSD shouldBeEqualComparingTo BigDecimal("1001.92")
             }
         }
 
@@ -2899,6 +2911,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val initialHorizon = repository.getSyncMetadata(
                     SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
                 )
+                val initialTradeCalls = krakenService.getTradeHistoryCallCount
+                val initialLedgerCalls = krakenService.getLedgersCallCount
 
                 repository.saveSnapshot(
                     anchorSnapshot(
@@ -2915,6 +2929,8 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT) shouldBe ""
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC) shouldBe
                     initialHorizon
+                krakenService.getTradeHistoryCallCount shouldBe initialTradeCalls
+                krakenService.getLedgersCallCount shouldBe initialLedgerCalls
             }
         }
 

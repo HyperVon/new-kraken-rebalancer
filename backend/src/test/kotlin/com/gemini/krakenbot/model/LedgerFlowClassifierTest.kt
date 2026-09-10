@@ -371,8 +371,9 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.INTERNAL_MOVE
         }
 
-        "reward predicate recognizes only legacy rewards and earn reward" {
+        "reward predicate recognizes legacy, promotion, and earn rewards" {
             LedgerEvent.isRewardEvent(event("staking", KrakenApiConstants.LEDGER_TYPE_STAKING, "1.00")) shouldBe true
+            LedgerEvent.isRewardEvent(event("promotion", KrakenApiConstants.LEDGER_TYPE_REWARD, "1.00")) shouldBe true
             LedgerEvent.isRewardEvent(
                 event("earn-reward", KrakenApiConstants.LEDGER_TYPE_EARN, "1.00", subtype = " Reward "),
             ) shouldBe true
@@ -702,8 +703,10 @@ class LedgerFlowClassifierTest : StringSpec() {
         "staking and rewards are external balance, not owner capital" {
             LedgerFlowClassifier.classify(event("1", "staking", "0.10")) shouldBe FlowCategory.EXTERNAL_BALANCE
             LedgerFlowClassifier.classify(event("2", "dividend", "1.00")) shouldBe FlowCategory.EXTERNAL_BALANCE
-            LedgerFlowClassifier.classify(event("3", "spend", "-5.00")) shouldBe FlowCategory.EXTERNAL_BALANCE
-            LedgerFlowClassifier.classify(event("4", "receive", "5.00")) shouldBe FlowCategory.EXTERNAL_BALANCE
+            LedgerFlowClassifier.classify(event("3", KrakenApiConstants.LEDGER_TYPE_REWARD, "0.10")) shouldBe
+                FlowCategory.EXTERNAL_BALANCE
+            LedgerFlowClassifier.classify(event("4", "spend", "-5.00")) shouldBe FlowCategory.EXTERNAL_BALANCE
+            LedgerFlowClassifier.classify(event("5", "receive", "5.00")) shouldBe FlowCategory.EXTERNAL_BALANCE
         }
 
         "trade rows are ignored" {

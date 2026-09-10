@@ -2981,7 +2981,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
-        "staking rewards improve portfolio value and reduce drawdown without scaling ATH" {
+        "promotion rewards improve portfolio value and reduce drawdown without scaling ATH" {
             runTest {
                 val mockLedgers = mockk<LedgerRepository>(relaxed = true)
                 val mockTrades = mockk<TradeRepository>(relaxed = true)
@@ -3003,19 +3003,19 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
                 } returns fixedTime.minusSeconds(3600).epochSecond.toString()
 
-                // Staking reward of $10,000 USD increases portfolio to 90,000
-                val stakingReward = LedgerEvent(
+                // Promotion reward of $10,000 USD increases portfolio to 90,000
+                val promotionReward = LedgerEvent(
                     ledgerId = "S1",
                     time = fixedTime.minusSeconds(1800),
-                    type = "staking",
+                    type = KrakenApiConstants.LEDGER_TYPE_REWARD,
                     asset = "USD",
                     amount = BigDecimal("10000.00"),
                     fee = BigDecimal.ZERO,
                 )
-                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(stakingReward)
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(promotionReward)
 
                 // Total portfolio is now 90,000.
-                // Because staking is NOT in OWNER_CAPITAL_TYPES, netExternalFlow is 0.
+                // Because promotion rewards are NOT in OWNER_CAPITAL_TYPES, netExternalFlow is 0.
                 // ATH is NOT scaled and remains 100,000.
                 // Drawdown is (100,000 - 90,000) / 100,000 = 10.0000%!
                 val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(

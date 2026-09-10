@@ -130,7 +130,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coVerify {
                     repository.setSyncMetadata(
                         SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
-                        "5",
+                        TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
                     )
                 }
                 coVerify {
@@ -147,7 +147,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 val service = createService()
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
-                } returns "5"
+                } returns TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
                 } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION

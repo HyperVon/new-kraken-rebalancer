@@ -13,6 +13,7 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
+import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -940,7 +941,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 coVerify {
                     repository.setSyncMetadata(
                         SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
-                        "5",
+                        TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
                     )
                 }
             }

@@ -305,7 +305,7 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Deduplicates overlapping records within a ~5 minute window via pair-alias normalization (e.g. `XBTUSD` vs `XXBTZUSD`), local-estimate vs API fill reconciliation, and fee-difference tolerance
 - Tracks synchronization state in `history_sync_metadata` to prevent redundant API queries
 
-### Ledger, Staking & Earn Rewards Synchronization
+### Ledger, Staking, Promotion & Earn Rewards Synchronization
 
 - Synchronizes thirteen strategy-neutral entry types (`staking`, `dividend`, `earn`, `deposit`,
   `withdrawal`, `transfer`, `adjustment`, `spend`, `receive`, `margin`, `rollover`, `settled`,
@@ -318,7 +318,7 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 - Stores durable seed progress and timestamps in `history_sync_metadata`, then
   uses a five-minute incremental overlap to avoid missing entries near a
   watermark
-- Serves `/api/history/rewards` with cumulative staking, dividend, and Earn rewards aligned to
+- Serves `/api/history/rewards` with cumulative staking, dividend, top-level promotion, and Earn rewards aligned to
   portfolio snapshots and valued using each snapshot's asset prices. Ledger
   assets are normalized to the tracked base symbol (Earn suffixes and legacy
   `X`/`Z` codes), and assets without a snapshot price in the range are excluded
@@ -332,6 +332,10 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   ATH basis reconstruction, and Buy & Hold; `earn` allocation mechanics replay
   only where needed to reconstruct account balances and remain neutral in
   strategy accounting. Unknown Earn subtypes remain unavailable.
+- Observed top-level `reward` rows from Kraken promotions or contests are
+  retained by unfiltered inception recovery and replayed as in-kind external
+  balance changes; they never count as owner capital. Unknown top-level ledger
+  types remain fail-closed.
 - Rebalancer vs Buy & Hold replays every supported external ledger type using
   `amount - fee`; ATH basis reconstruction separately replays the actual
   event-time asset effects. Consumer Buy Crypto activity is
@@ -811,7 +815,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET` | `/api/history/trades` | Trade log for History page (JSON, `?range=`) |
 | `GET` | `/api/history/stats` | History summary-card aggregates (JSON, `?range=`) |
 | `GET` | `/api/history/comparison` | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`) |
-| `GET` | `/api/history/rewards` | Cumulative staking, dividend, and Earn rewards by asset (JSON, `?range=`) |
+| `GET` | `/api/history/rewards` | Cumulative staking, dividend, top-level promotion, and Earn rewards by asset (JSON, `?range=`) |
 | `GET` | `/api/history/sync-progress` | Polling endpoint for ordinary Kraken history sync and bounded inception-recovery progress/status (JSON) |
 | `GET` | `/static/*` | Static assets (JS, dynamically compiled CSS via kotlinx-css) |
 

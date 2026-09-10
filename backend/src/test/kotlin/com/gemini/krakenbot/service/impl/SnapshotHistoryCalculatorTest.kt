@@ -531,6 +531,48 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
         }
 
+        "calculateHistoricalSnapshots reverse-applies promotion rewards net of fee" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val rewardTime = now.minus(2, ChronoUnit.DAYS)
+            val reward =
+                LedgerEvent(
+                    ledgerId = "ledger-promotion",
+                    time = rewardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                    asset = "BTC",
+                    amount = BigDecimal("0.1"),
+                    fee = BigDecimal("0.01"),
+                )
+
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = emptyList(),
+                historicalRewards = listOf(reward),
+                cutoffTime = cutoff,
+                now = now,
+            )
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("0.5"),
+                "USD" to BigDecimal("10000.00"),
+            )
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = listOf(
+                    Allocation(Asset(Asset.BTC), 50.0),
+                    Allocation(Asset.USD, 50.0),
+                ),
+                runningBalances = runningBalances,
+                currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            ).shouldNotBeEmpty()
+
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.41"))
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+        }
+
         "calculateHistoricalSnapshots floors OHLC price to prior DailyCloseEvent (CQ-18-4)" {
             val now = Instant.parse("2026-08-07T12:00:00Z")
             val cutoff = now.minus(5, ChronoUnit.DAYS)
