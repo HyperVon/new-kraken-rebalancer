@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.isSupportedMarket
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
@@ -34,10 +35,23 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "9"
+        const val CURRENT_RECONSTRUCTION_VERSION = "10"
+
+        /**
+         * Grace window allowing a coverage horizon taken at sync query time to satisfy a
+         * reconstruction anchor captured after the sync completes. Sync pagination and trade
+         * reconciliation can take minutes on large histories; without tolerance the post-sync
+         * horizon (queryNow) would false-reject against the later anchor and reconstruction
+         * would never trigger.
+         */
+        const val RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS = 300L
     }
 
-    suspend fun canRebuildSnapshots(config: AppConfig? = null, requestedStart: Instant? = null): Boolean {
+    suspend fun canRebuildSnapshots(
+        config: AppConfig? = null,
+        requestedStart: Instant? = null,
+        reconstructionAnchor: Instant? = null,
+    ): Boolean {
         if (!ledgerRepository.isLedgersSeeded() || !repository.isHistorySeeded()) {
             return false
         }
@@ -52,24 +66,28 @@ class TradeHistoryReconstructionService(
             return false
         }
 
+        val anchor = reconstructionAnchor ?: nowProvider()
         val parsedInception = requestedStart
             ?: config?.settings?.inceptionDate?.let(InceptionDiscoveryService::parseInceptionDate)
-        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
+        val seedBound = anchor.minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
         val effectiveStart = parsedInception?.takeIf { it.isBefore(seedBound) } ?: seedBound
 
-        val ledgerHorizon = ledgerRepository
+        val ledgerHorizonSec = ledgerRepository
             .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
             ?.toLongOrNull()
-            ?.let(Instant::ofEpochSecond)
-        val tradeHorizon = repository
+        val tradeHorizonSec = repository
             .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
             ?.toLongOrNull()
-            ?.let(Instant::ofEpochSecond)
 
-        if (ledgerHorizon == null || ledgerHorizon.isBefore(effectiveStart)) {
+        val anchorFloorSec = anchor.epochSecond - RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS
+        if (ledgerHorizonSec == null || ledgerHorizonSec < anchorFloorSec ||
+            ledgerHorizonSec < effectiveStart.epochSecond
+        ) {
             return false
         }
-        if (tradeHorizon == null || tradeHorizon.isBefore(effectiveStart)) {
+        if (tradeHorizonSec == null || tradeHorizonSec < anchorFloorSec ||
+            tradeHorizonSec < effectiveStart.epochSecond
+        ) {
             return false
         }
 
@@ -121,19 +139,33 @@ class TradeHistoryReconstructionService(
     suspend fun reconstructHistoricalSnapshots(config: AppConfig, backend: KrakenService) =
         reconstructHistoricalSnapshots(config, backend, replaceExisting = false)
 
-    suspend fun rebuildHistoricalSnapshots(config: AppConfig, backend: KrakenService) {
-        check(canRebuildSnapshots(config)) {
+    suspend fun reconstructHistoricalSnapshots(
+        config: AppConfig,
+        backend: KrakenService,
+        reconstructionAnchor: Instant,
+    ) = reconstructHistoricalSnapshots(config, backend, replaceExisting = false, anchorOverride = reconstructionAnchor)
+
+    suspend fun rebuildHistoricalSnapshots(
+        config: AppConfig,
+        backend: KrakenService,
+        reconstructionAnchor: Instant = nowProvider(),
+    ) {
+        check(canRebuildSnapshots(config, reconstructionAnchor = reconstructionAnchor)) {
             "Cannot rebuild historical snapshots before ledger synchronization, trade synchronization, and coverage migration complete"
         }
-        reconstructHistoricalSnapshots(config, backend, replaceExisting = true)
+        reconstructHistoricalSnapshots(config, backend, replaceExisting = true, anchorOverride = reconstructionAnchor)
     }
 
     private suspend fun reconstructHistoricalSnapshots(
         config: AppConfig,
         backend: KrakenService,
         replaceExisting: Boolean,
+        anchorOverride: Instant? = null,
     ) {
-        if (!canRebuildSnapshots(config)) {
+        val reconstructionNow = anchorOverride ?: nowProvider()
+        val parsedInception = config.settings.inceptionDate
+            ?.let(InceptionDiscoveryService::parseInceptionDate)
+        if (!canRebuildSnapshots(config, parsedInception, reconstructionNow)) {
             log.info(
                 "Skipping historical snapshot reconstruction: trade or ledger history is not seeded or coverage is not current.",
             )
@@ -142,7 +174,6 @@ class TradeHistoryReconstructionService(
 
         log.info("Starting historical snapshots reconstruction...")
         val allocations = config.allocations
-        val reconstructionNow = nowProvider()
 
         // load() is newest-first (DESC); lastOrNull() is the oldest retained snapshot.
         val currentSnapshots = if (replaceExisting) emptyList() else repository.load()
@@ -201,8 +232,6 @@ class TradeHistoryReconstructionService(
 
         // Slightly wider than HISTORICAL_DAYS_BACK so daily closes cover the full reconstruction window.
         val ohlcData = mutableMapOf<String, List<Pair<Long, BigDecimal>>>()
-        val parsedInception = config.settings.inceptionDate
-            ?.let(InceptionDiscoveryService::parseInceptionDate)
         val defaultSince = reconstructionNow.minus(95, ChronoUnit.DAYS)
         val since = if (parsedInception != null && parsedInception.isBefore(defaultSince)) {
             parsedInception.minus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
@@ -239,6 +268,17 @@ class TradeHistoryReconstructionService(
                 }
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
+        val allocationSymbols = allocations.map { it.symbol.value }
+        val unsupportedTrade = historicalTrades.firstOrNull { !it.isSupportedMarket(allocationSymbols) }
+        if (unsupportedTrade != null) {
+            log.warn(
+                "Skipping historical snapshot reconstruction: unsupported historical trade found without reliable " +
+                    "economic valuation (pair: {}, symbol: {}).",
+                unsupportedTrade.pair,
+                unsupportedTrade.symbol,
+            )
+            return
+        }
 
         val allLedgers = ledgerRepository.getLedgersInRange(since, reconstructionNow)
         val validation = AuthoritativeLedgerBalanceValidator.validate(allLedgers)
@@ -336,6 +376,14 @@ class TradeHistoryReconstructionService(
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID, "")
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT, "")
         }
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+            since.epochSecond.toString(),
+        )
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+            reconstructionNow.epochSecond.toString(),
+        )
         // Keep reconstruction freshness tied to the ledger coverage that was replayed. A
         // current reconstruction marker from an older coverage migration must not suppress the
         // first rebuild that can include newly supported ledger types.

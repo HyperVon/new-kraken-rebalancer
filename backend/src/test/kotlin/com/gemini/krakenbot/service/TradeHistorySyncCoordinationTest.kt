@@ -486,6 +486,8 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     firstArg<Long?>() shouldBe expectedStartSec
                     emptyList()
                 }
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 0
 
                 createService(syncNowProvider = { fixedNow }).syncTradesFromKraken()
 

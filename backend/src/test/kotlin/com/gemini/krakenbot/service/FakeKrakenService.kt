@@ -49,6 +49,10 @@ class FakeKrakenService :
     var getBalancesCallCount = 0
     var getTradeHistoryCallCount = 0
     var tradeHistoryTotalCountOverride = 0
+    var tradeHistoryTotalCountAvailable = false
+    var tradeHistoryPageShapeValid = true
+    var tradeHistoryRawPageSizeOverride: Int? = null
+    private var lastRecordedTradeHistoryRawPageSize = 0
     var getLedgersCallCount = 0
     var ledgerTotalCountOverride = 0
     var ledgerTotalCountAvailable = false
@@ -85,12 +89,16 @@ class FakeKrakenService :
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
         getTradeHistoryCallCount++
-        return tradeHistorySupplier(startSec, offset)
+        val entries = tradeHistorySupplier(startSec, offset)
+        lastRecordedTradeHistoryRawPageSize = entries.size
+        return entries
     }
 
     override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
         getTradeHistoryCallCount++
-        return tradeHistorySupplier(startSec, offset)
+        val entries = tradeHistorySupplier(startSec, offset)
+        lastRecordedTradeHistoryRawPageSize = entries.size
+        return entries
     }
 
     override suspend fun getRecoveryTradeHistoryUntil(
@@ -99,10 +107,19 @@ class FakeKrakenService :
         endSec: Long?,
     ): List<TradeRecord> {
         getTradeHistoryCallCount++
-        return tradeHistorySupplier(startSec, offset)
+        val entries = tradeHistorySupplier(startSec, offset)
+        lastRecordedTradeHistoryRawPageSize = entries.size
+        return entries
     }
 
     override fun getLastTradeHistoryTotalCount(): Int = tradeHistoryTotalCountOverride
+
+    override fun hasLastTradeHistoryTotalCount(): Boolean = tradeHistoryTotalCountAvailable
+
+    override fun hasLastTradeHistoryPageShape(): Boolean = tradeHistoryPageShapeValid
+
+    override fun getLastTradeHistoryRawPageSize(): Int =
+        tradeHistoryRawPageSizeOverride ?: lastRecordedTradeHistoryRawPageSize
 
     override suspend fun getLedgers(
         startSec: Long?,

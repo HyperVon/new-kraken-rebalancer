@@ -22,6 +22,8 @@ SyncMetadataKeys:
   TRADE_COVERAGE_HORIZON_EPOCH_SEC: "trade_coverage_horizon_epoch_sec"
   TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST: "trade_coverage_account_scope_digest"
   SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION: "snapshot_reconstruction_trade_coverage_version"
+  SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC: "snapshot_reconstruction_start_epoch_sec"
+  SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC: "snapshot_reconstruction_through_epoch_sec"
   INCEPTION_SNAPSHOT_ID: "inception_snapshot_id"
   DETECTED_INCEPTION_EPOCH_MS: "detected_inception_epoch_ms"
   DETECTED_INCEPTION_SOURCE: "detected_inception_source"

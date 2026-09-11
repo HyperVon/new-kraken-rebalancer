@@ -52,6 +52,9 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
             block(service)
         }
         every { service.hasLastLedgerPageShape() } returns true
+        every { service.hasLastTradeHistoryPageShape() } returns true
+        every { service.hasLastTradeHistoryTotalCount() } returns false
+        every { service.hasLastLedgerTotalCount() } returns false
     }
 
     protected fun createService(
@@ -82,10 +85,18 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
         coEvery {
             repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION)
         } returns com.gemini.krakenbot.service.impl.history.TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        coEvery {
+            repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+        } answers { (syncNowProvider().epochSecond + 60).toString() }
         coEvery { ledgerRepository.isLedgersSeeded() } returns true
         coEvery {
             ledgerRepository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
         } returns com.gemini.krakenbot.service.impl.history.LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        coEvery {
+            ledgerRepository.getSyncMetadata(
+                com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+            )
+        } answers { (syncNowProvider().epochSecond + 60).toString() }
 
         return TradeHistoryServiceImpl(
             repository,

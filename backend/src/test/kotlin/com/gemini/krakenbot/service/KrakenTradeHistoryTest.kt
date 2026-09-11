@@ -602,5 +602,66 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
                 trades.first().symbol shouldBe "BTC"
             }
         }
+
+        "getTradeHistory_tracksEnvelopeShapeAndCountAndRawSize" {
+            runTest {
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "trades": {
+                                "T1": {
+                                    "pair": "XXBTZUSD",
+                                    "time": 1700000000.1234,
+                                    "type": "buy",
+                                    "price": "50000.00",
+                                    "cost": "5000.00",
+                                    "vol": "0.10000000"
+                                }
+                            },
+                            "count": 42
+                        }
+                    }
+                """.trimIndent()
+                val service = createService(responseJson)
+                val trades = service.getRecoveryTradeHistoryUntil(startSec = 100L, offset = 0, endSec = 200L)
+                trades.size shouldBe 1
+                service.getLastTradeHistoryTotalCount() shouldBe 42
+                service.hasLastTradeHistoryTotalCount() shouldBe true
+                service.hasLastTradeHistoryPageShape() shouldBe true
+                service.getLastTradeHistoryRawPageSize() shouldBe 1
+            }
+        }
+
+        "getRecoveryTradeHistoryUntil_preservesUnsupportedMarketTradesWithZeroUsdAndErrorMessage" {
+            runTest {
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "trades": {
+                                "T1": {
+                                    "pair": "ADAEUR",
+                                    "time": 1700000000.1234,
+                                    "type": "buy",
+                                    "price": "0.50",
+                                    "cost": "50.00",
+                                    "fee": "0.10",
+                                    "vol": "100.00000000"
+                                }
+                            },
+                            "count": 1
+                        }
+                    }
+                """.trimIndent()
+                val service = createService(responseJson)
+                val trades = service.getRecoveryTradeHistoryUntil(startSec = 100L, offset = 0, endSec = 200L)
+                trades.size shouldBe 1
+                val trade = trades.first()
+                trade.pair shouldBe "ADAEUR"
+                trade.usdAmount.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                trade.errorMessage shouldBe "unsupported historical trade market: ADAEUR"
+            }
+        }
     }
 }

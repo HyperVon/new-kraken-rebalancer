@@ -523,6 +523,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 0
 
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
@@ -581,7 +583,9 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.isHistorySeeded() } returns false
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 every { krakenService.getLastTradeHistoryTotalCount() } returns 51
+                every { krakenService.getLastTradeHistoryRawPageSize() } returns 50 andThen 1
 
                 val firstPageFill = TestFixtures.tradeRecord(
                     timestamp = Instant.ofEpochSecond(1700000000),
@@ -688,7 +692,9 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                         totalFeesPaid = BigDecimal.ZERO,
                         latestSnapshotTime = null,
                     )
+                    every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                     every { krakenService.getLastTradeHistoryTotalCount() } returns allTrades.size
+                    every { krakenService.getLastTradeHistoryRawPageSize() } returns 50
                     coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
                         val startSec = firstArg<Long?>()
                         val offset = secondArg<Int?>() ?: 0
@@ -898,6 +904,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 )
                 every { configService.getConfig() } returns simulationConfig
                 coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 0
 
                 val tradeHistoryService = TradeHistoryServiceImpl(
                     repository,

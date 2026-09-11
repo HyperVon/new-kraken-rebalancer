@@ -527,5 +527,22 @@ class EngineModelTest : StringSpec() {
             dto.pair shouldBe "XBTUSD"
             dto.source shouldBe "LOCAL_ESTIMATE"
         }
+
+        "isSupportedMarket accepts recognized USD-quoted markets and rejects unmapped or non-USD pairs" {
+            val usdTrade = EngineTestFixtures.tradeRecord(pair = "XBTUSD", symbol = "BTC")
+            usdTrade.isSupportedMarket() shouldBe true
+            usdTrade.isSupportedMarket(listOf("BTC")) shouldBe true
+
+            val ethTrade = EngineTestFixtures.tradeRecord(pair = "ETHUSD", symbol = "ETH")
+            ethTrade.isSupportedMarket(listOf("ETH")) shouldBe true
+
+            val nonUsdPair = EngineTestFixtures.tradeRecord(pair = "ADAEUR", symbol = "ADA")
+            nonUsdPair.isSupportedMarket() shouldBe false
+            nonUsdPair.isSupportedMarket(listOf("ADA")) shouldBe false
+
+            val usdtPair = EngineTestFixtures.tradeRecord(pair = "SOLUSDT", symbol = "SOL")
+            usdtPair.isSupportedMarket() shouldBe false
+            usdtPair.isSupportedMarket(listOf("SOL")) shouldBe false
+        }
     }
 }

@@ -53,14 +53,27 @@ object KrakenParsers {
             }
         }.toMap()
 
-    fun parseTradeHistory(
+    data class TradePageResult(
+        val entries: List<TradeRecord>,
+        val totalCount: Int,
+        val rawPageSize: Int,
+        val hasTotalCount: Boolean,
+        val hasTradeContainer: Boolean,
+    )
+
+    fun parseTradeHistoryPage(
         result: JsonNode,
         allocations: List<String>,
         preserveUnmapped: Boolean = false,
-    ): Pair<List<TradeRecord>, Int> {
-        val count = result.path(KrakenApiConstants.FIELD_COUNT).asInt(0)
+    ): TradePageResult {
+        val countNode = result.get(KrakenApiConstants.FIELD_COUNT)
+        val hasTotalCount = countNode?.isIntegralNumber == true &&
+            countNode.canConvertToInt() &&
+            countNode.intValue() >= 0
+        val count = countNode?.takeIf { hasTotalCount }?.intValue() ?: 0
         val tradesNode = result.path(KrakenApiConstants.FIELD_TRADES)
-        if (!tradesNode.isObject) return emptyList<TradeRecord>() to count
+        if (!tradesNode.isObject) return TradePageResult(emptyList(), count, 0, hasTotalCount, false)
+        val rawPageSize = tradesNode.size()
 
         val tradesList = mutableListOf<TradeRecord>()
         tradesNode.properties().forEach { (tradeId, tradeNode) ->
@@ -79,7 +92,9 @@ object KrakenParsers {
                     orderTxidNode.asText().ifBlank { null }
                 }
 
-            val symbol = Asset.fromTradingPair(pair, allocations)
+            val supportedSymbol = Asset.fromTradingPair(pair, allocations)
+            val isSupportedMarket = supportedSymbol != null
+            val symbol = supportedSymbol
                 ?: if (preserveUnmapped) {
                     Asset.fromTradingPair(pair, emptyList()) ?: pair.trim().uppercase()
                 } else {
@@ -89,7 +104,16 @@ object KrakenParsers {
             val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
             val side = type.uppercase()
             val volume = safeParseBigDecimal(volStr, PrecisionConstants.SCALE_CRYPTO)
-            val usdAmount = safeParseBigDecimal(costStr, PrecisionConstants.SCALE_USD)
+            val usdAmount = if (isSupportedMarket) {
+                safeParseBigDecimal(costStr, PrecisionConstants.SCALE_USD)
+            } else {
+                BigDecimal.ZERO
+            }
+            val errorMessage = if (isSupportedMarket) {
+                null
+            } else {
+                "unsupported historical trade market: $pair"
+            }
 
             tradesList.add(
                 TradeRecord(
@@ -101,6 +125,7 @@ object KrakenParsers {
                     usdAmount = usdAmount,
                     success = true,
                     dryRun = false,
+                    errorMessage = errorMessage,
                     price = safeParseBigDecimal(priceStr, PrecisionConstants.SCALE_CRYPTO),
                     fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_FEE),
                     source = TradeSource.API_FILL,
@@ -109,7 +134,16 @@ object KrakenParsers {
                 ),
             )
         }
-        return tradesList to count
+        return TradePageResult(tradesList, count, rawPageSize, hasTotalCount, true)
+    }
+
+    fun parseTradeHistory(
+        result: JsonNode,
+        allocations: List<String>,
+        preserveUnmapped: Boolean = false,
+    ): Pair<List<TradeRecord>, Int> {
+        val page = parseTradeHistoryPage(result, allocations, preserveUnmapped)
+        return page.entries to page.totalCount
     }
 
     data class LedgerPageResult(

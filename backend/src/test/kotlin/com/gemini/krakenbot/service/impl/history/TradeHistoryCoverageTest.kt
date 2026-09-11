@@ -141,19 +141,72 @@ class TradeHistoryCoverageTest : StringSpec() {
         )
     }
 
+    private fun reconstructionService(now: Instant = fixedNow): TradeHistoryReconstructionService =
+        TradeHistoryReconstructionService(
+            repository = repository,
+            ledgerRepository = ledgerRepository,
+            krakenService = fakeKraken,
+            configService = configService,
+            portfolioStatsRepository = portfolioStatsRepository,
+            nowProvider = { now },
+            accountHistoryScopeGuard = scopeGuard,
+        )
+
+    private suspend fun seedCurrentCoverage(
+        ledgerDigest: String = defaultScopeDigest,
+        tradeDigest: String = defaultScopeDigest,
+        ledgerHorizonSec: String? = fixedNow.epochSecond.toString(),
+        tradeHorizonSec: String? = fixedNow.epochSecond.toString(),
+        ledgerStartSec: String? = inception.epochSecond.toString(),
+        tradeStartSec: String? = inception.epochSecond.toString(),
+    ) {
+        ledgerRepository.setLedgersSeeded(true)
+        ledgerRepository.setSyncMetadata(
+            SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+            LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+        )
+        ledgerHorizonSec?.let {
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC, it)
+        }
+        ledgerStartSec?.let {
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC, it)
+        }
+        ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST, ledgerDigest)
+
+        repository.setHistorySeeded(true)
+        repository.setSyncMetadata(
+            SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+            TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+        )
+        tradeHorizonSec?.let {
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC, it)
+        }
+        tradeStartSec?.let {
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC, it)
+        }
+        repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST, tradeDigest)
+    }
+
+    private fun createMockKraken(): KrakenService {
+        val mock = mockk<KrakenService>(relaxed = true)
+        coEvery { mock.withStableBackend(any<suspend (KrakenService) -> Any?>()) } coAnswers {
+            val block = firstArg<suspend (KrakenService) -> Any?>()
+            block(mock)
+        }
+        every { mock.hasLastLedgerPageShape() } returns true
+        every { mock.hasLastTradeHistoryPageShape() } returns true
+        every { mock.hasLastTradeHistoryTotalCount() } returns true
+        every { mock.hasLastLedgerTotalCount() } returns true
+        coEvery { mock.getTradeHistory(any(), any()) } returns emptyList()
+        return mock
+    }
+
     init {
         "configured inception older than default 96-day window triggers trade coverage backfill" {
             stubBackend()
             repository.setHistorySeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "")
-            val mockKraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
-            coEvery {
-                mockKraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
-            } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
-                block(mockKraken)
-            }
-            coEvery { mockKraken.getTradeHistory(any(), any()) } returns emptyList()
+            val mockKraken = createMockKraken()
 
             val syncService = service(kraken = mockKraken)
             syncService.syncTradesFromKraken()
@@ -173,14 +226,7 @@ class TradeHistoryCoverageTest : StringSpec() {
 
         "ordinary trade coverage extends to inception when no reusable proof exists" {
             stubBackend()
-            val mockKraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
-            coEvery {
-                mockKraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
-            } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
-                block(mockKraken)
-            }
-            coEvery { mockKraken.getTradeHistory(any(), any()) } returns emptyList()
+            val mockKraken = createMockKraken()
 
             val syncService = service(kraken = mockKraken)
             syncService.syncTradesFromKraken()
@@ -207,13 +253,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 recoveryHorizon = fixedNow,
             )
 
-            val mockKraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
-            coEvery {
-                mockKraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
-            } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
-                block(mockKraken)
-            }
+            val mockKraken = createMockKraken()
 
             val syncService = service(kraken = mockKraken)
             syncService.syncTradesFromKraken()
@@ -239,14 +279,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 recoveryHorizon = horizon,
             )
 
-            val mockKraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
-            coEvery {
-                mockKraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
-            } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
-                block(mockKraken)
-            }
-            coEvery { mockKraken.getTradeHistory(any(), any()) } returns emptyList()
+            val mockKraken = createMockKraken()
 
             val syncService = service(kraken = mockKraken)
             syncService.syncTradesFromKraken()
@@ -281,14 +314,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 tradeOldest = inception.plus(10, ChronoUnit.DAYS), // Starts after inception!
             )
 
-            val mockKraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
-            coEvery {
-                mockKraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
-            } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
-                block(mockKraken)
-            }
-            coEvery { mockKraken.getTradeHistory(any(), any()) } returns emptyList()
+            val mockKraken = createMockKraken()
 
             val syncService = service(kraken = mockKraken)
             syncService.syncTradesFromKraken()
@@ -311,14 +337,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 requiredStart = inception,
             )
 
-            val mockKraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
-            coEvery {
-                mockKraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
-            } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
-                block(mockKraken)
-            }
-            coEvery { mockKraken.getTradeHistory(any(), any()) } returns emptyList()
+            val mockKraken = createMockKraken()
 
             val syncService = service(kraken = mockKraken)
             syncService.syncTradesFromKraken()
@@ -341,14 +360,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 tradeTotal = "invalid_total",
             )
 
-            val mockKraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
-            coEvery {
-                mockKraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
-            } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
-                block(mockKraken)
-            }
-            coEvery { mockKraken.getTradeHistory(any(), any()) } returns emptyList()
+            val mockKraken = createMockKraken()
 
             val syncService = service(kraken = mockKraken)
             syncService.syncTradesFromKraken()
@@ -372,14 +384,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 tradeOffset = "50",
             )
 
-            val mockKraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
-            coEvery {
-                mockKraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
-            } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
-                block(mockKraken)
-            }
-            coEvery { mockKraken.getTradeHistory(any(), any()) } returns emptyList()
+            val mockKraken = createMockKraken()
 
             val syncService = service(kraken = mockKraken)
             syncService.syncTradesFromKraken()
@@ -398,13 +403,7 @@ class TradeHistoryCoverageTest : StringSpec() {
             repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "0")
             val failure = RuntimeException("Kraken API 500 error")
 
-            val mockKraken = mockk<com.gemini.krakenbot.service.KrakenService>(relaxed = true)
-            coEvery {
-                mockKraken.withStableBackend(any<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>())
-            } coAnswers {
-                val block = firstArg<suspend (com.gemini.krakenbot.service.KrakenService) -> Any?>()
-                block(mockKraken)
-            }
+            val mockKraken = createMockKraken()
             coEvery { mockKraken.getTradeHistory(any(), any()) } throws failure
 
             val syncService = service(kraken = mockKraken)
@@ -496,6 +495,64 @@ class TradeHistoryCoverageTest : StringSpec() {
             reconstructionService.canRebuildSnapshots(appConfig, inception) shouldBe true
         }
 
+        "canRebuildSnapshots() rejects an invalid account scope" {
+            stubBackend()
+            coEvery { scopeGuard.validateAccountScope() } returns
+                AccountScopeValidationResult.scopeMismatch(current = "account-b-digest")
+            seedCurrentCoverage()
+
+            reconstructionService().canRebuildSnapshots(appConfig, inception) shouldBe false
+        }
+
+        "canRebuildSnapshots() skips digest checks when the current scope digest is blank" {
+            stubBackend(null)
+            seedCurrentCoverage()
+
+            reconstructionService().canRebuildSnapshots(appConfig, inception) shouldBe true
+        }
+
+        "canRebuildSnapshots() rejects a mismatched ledger scope digest" {
+            stubBackend()
+            seedCurrentCoverage(ledgerDigest = "stale-ledger-digest")
+
+            reconstructionService().canRebuildSnapshots(appConfig, inception) shouldBe false
+        }
+
+        "canRebuildSnapshots() rejects a mismatched trade scope digest" {
+            stubBackend()
+            seedCurrentCoverage(tradeDigest = "stale-trade-digest")
+
+            reconstructionService().canRebuildSnapshots(appConfig, inception) shouldBe false
+        }
+
+        "canRebuildSnapshots() fails closed when the ledger coverage horizon is missing" {
+            stubBackend()
+            seedCurrentCoverage(ledgerHorizonSec = null)
+
+            reconstructionService().canRebuildSnapshots(appConfig, inception) shouldBe false
+        }
+
+        "canRebuildSnapshots() fails closed when the trade coverage horizon is missing" {
+            stubBackend()
+            seedCurrentCoverage(tradeHorizonSec = null)
+
+            reconstructionService().canRebuildSnapshots(appConfig, inception) shouldBe false
+        }
+
+        "canRebuildSnapshots() fails closed when the ledger coverage start is missing" {
+            stubBackend()
+            seedCurrentCoverage(ledgerStartSec = null)
+
+            reconstructionService().canRebuildSnapshots(appConfig, inception) shouldBe false
+        }
+
+        "canRebuildSnapshots() fails closed when the trade coverage start is missing" {
+            stubBackend()
+            seedCurrentCoverage(tradeStartSec = null)
+
+            reconstructionService().canRebuildSnapshots(appConfig, inception) shouldBe false
+        }
+
         "earlier fills arriving after an existing reconstruction invalidate stale snapshots" {
             stubBackend()
             val continuousStart = Instant.parse("2026-06-01T00:00:00Z")
@@ -563,6 +620,65 @@ class TradeHistoryCoverageTest : StringSpec() {
             syncService.importRecoveredApiTrades(listOf(forwardTrade))
 
             // Snapshot reconstruction version must remain current
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        }
+
+        "fills exactly at reconstruction interval boundaries invalidate stale snapshots (inclusive)" {
+            stubBackend()
+            val intervalStart = Instant.parse("2026-05-01T00:00:00Z")
+            val intervalThrough = Instant.parse("2026-06-01T00:00:00Z")
+
+            suspend fun resetReconstructionMarkers() {
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                    TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+                    intervalStart.epochSecond.toString(),
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+                    intervalThrough.epochSecond.toString(),
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                    intervalStart.toEpochMilli().toString(),
+                )
+            }
+
+            fun boundaryTrade(id: Int, txid: String, timestamp: Instant) = TradeRecord(
+                id = id,
+                orderTxid = txid,
+                pair = "XBTUSD",
+                symbol = "BTC",
+                side = "buy",
+                price = BigDecimal("90000.00"),
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("9000.00"),
+                fee = BigDecimal("9.00"),
+                timestamp = timestamp,
+                success = true,
+                dryRun = false,
+                source = TradeSource.API_FILL,
+            )
+
+            // Exactly at START invalidates (inclusive lower bound).
+            resetReconstructionMarkers()
+            service().importRecoveredApiTrades(listOf(boundaryTrade(11, "order-txid-start", intervalStart)))
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
+
+            // Exactly at THROUGH invalidates (inclusive upper bound).
+            resetReconstructionMarkers()
+            service().importRecoveredApiTrades(listOf(boundaryTrade(12, "order-txid-through", intervalThrough)))
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
+
+            // Just after THROUGH does not invalidate (forward incremental).
+            resetReconstructionMarkers()
+            service().importRecoveredApiTrades(
+                listOf(boundaryTrade(13, "order-txid-after", intervalThrough.plusSeconds(1))),
+            )
             repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe
                 TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
         }
@@ -1284,6 +1400,184 @@ class TradeHistoryCoverageTest : StringSpec() {
             syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
+        }
+
+        "canRebuildSnapshots() enforces trade and ledger coverage horizons reach reconstruction anchor" {
+            every { configService.getConfig() } returns appConfig
+            stubBackend()
+            ledgerRepository.setLedgersSeeded(true)
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                inception.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                defaultScopeDigest,
+            )
+            repository.setHistorySeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                inception.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                defaultScopeDigest,
+            )
+
+            val reconstructionService = TradeHistoryReconstructionService(
+                repository = repository,
+                ledgerRepository = ledgerRepository,
+                krakenService = fakeKraken,
+                configService = configService,
+                portfolioStatsRepository = portfolioStatsRepository,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            )
+
+            // Both horizons reach anchor: true
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe true
+            // Default anchor (nowProvider = fixedNow): true
+            reconstructionService.canRebuildSnapshots(appConfig, inception) shouldBe true
+
+            // Trade horizon behind anchor: false
+            val futureAnchor = fixedNow.plusSeconds(3600)
+            reconstructionService.canRebuildSnapshots(appConfig, inception, futureAnchor) shouldBe false
+
+            // Ledger horizon within the post-sync grace window: true. A horizon taken at
+            // sync query time must still satisfy an anchor captured after pagination.
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.minusSeconds(60).epochSecond.toString(),
+            )
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe true
+
+            // Ledger horizon beyond the grace window: false
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.minusSeconds(
+                    TradeHistoryReconstructionService.RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS + 60,
+                ).epochSecond.toString(),
+            )
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe false
+
+            // Restore ledger horizon, trade horizon within grace window: true (symmetry).
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.minusSeconds(60).epochSecond.toString(),
+            )
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe true
+
+            // Trade horizon beyond the grace window: false
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.minusSeconds(
+                    TradeHistoryReconstructionService.RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS + 60,
+                ).epochSecond.toString(),
+            )
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe false
+
+            // Restore trade horizon, test trade start after requested start: false
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                inception.plusSeconds(60).epochSecond.toString(),
+            )
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe false
+
+            // Restore trade start, test ledger start after requested start: false
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                inception.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                inception.plusSeconds(60).epochSecond.toString(),
+            )
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe false
+        }
+
+        "reconstructHistoricalSnapshots fails closed and aborts when historical trades contain unsupported markets" {
+            every { configService.getConfig() } returns appConfig
+            stubBackend()
+            ledgerRepository.setLedgersSeeded(true)
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                inception.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                defaultScopeDigest,
+            )
+            repository.setHistorySeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                inception.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                defaultScopeDigest,
+            )
+
+            // Save an unsupported trade market
+            val unsupportedTrade = TestFixtures.tradeRecord(
+                timestamp = inception.plusSeconds(100),
+                pair = "ADAEUR",
+                side = "buy",
+                symbol = "ADA",
+                volume = BigDecimal("100.0"),
+                usdAmount = BigDecimal.ZERO,
+                price = BigDecimal("0.50"),
+                fee = BigDecimal("0.10"),
+                source = TradeSource.API_FILL,
+                tradeId = "ADA-1",
+            )
+            repository.saveTrade(unsupportedTrade)
+
+            val reconstructionService = TradeHistoryReconstructionService(
+                repository = repository,
+                ledgerRepository = ledgerRepository,
+                krakenService = fakeKraken,
+                configService = configService,
+                portfolioStatsRepository = portfolioStatsRepository,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            )
+
+            reconstructionService.reconstructHistoricalSnapshots(appConfig, fakeKraken)
+
+            // Reconstruction must abort and NOT stamp version 10
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe null
         }
     }
 }

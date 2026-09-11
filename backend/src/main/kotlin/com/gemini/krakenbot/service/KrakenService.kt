@@ -40,6 +40,15 @@ interface KrakenService {
      */
     fun getLastTradeHistoryTotalCount(): Int = 0
 
+    /** Whether the last [getTradeHistory] response included an authoritative `count` field. */
+    fun hasLastTradeHistoryTotalCount(): Boolean = false
+
+    /** Whether the last [getTradeHistory] response had an object-valued `trades` container. */
+    fun hasLastTradeHistoryPageShape(): Boolean = true
+
+    /** Number of raw entries returned in the last [getTradeHistory] page before local filtering. */
+    fun getLastTradeHistoryRawPageSize(): Int = 0
+
     /**
      * Ledger entries in [startSec, endSec] starting at [offset], optionally filtered to response
      * [types] (for example `staking`, `spend`, or `receive`). The live Kraken adapter maps the

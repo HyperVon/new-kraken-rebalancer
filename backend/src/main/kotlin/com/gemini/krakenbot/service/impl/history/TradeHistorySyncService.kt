@@ -15,6 +15,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.getRecoveryTradeHistoryUntil
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import com.gemini.krakenbot.service.withExecutionSession
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -72,19 +73,6 @@ class TradeHistorySyncService(
             seenApiFillKeys = mutableSetOf(),
         )
 
-        // Earlier fills arriving after an existing reconstruction invalidate stale snapshots
-        val continuousHistoryStart = repository
-            .getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
-            ?.toLongOrNull()
-            ?.let(Instant::ofEpochMilli)
-        if (continuousHistoryStart != null && apiTrades.any { it.timestamp.isBefore(continuousHistoryStart) }) {
-            log.info(
-                "Recovered trades predate continuous history start ({}); invalidating snapshot reconstruction.",
-                continuousHistoryStart,
-            )
-            repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "")
-        }
-
         result
     }
 
@@ -94,7 +82,8 @@ class TradeHistorySyncService(
 
         val parsedInception = config.settings.inceptionDate
             ?.let(InceptionDiscoveryService::parseInceptionDate)
-        val canRebuild = reconstructionService.canRebuildSnapshots(config, parsedInception)
+        val reconstructionAnchor = nowProvider()
+        val canRebuild = reconstructionService.canRebuildSnapshots(config, parsedInception, reconstructionAnchor)
         val storedContinuousStart = repository
             .getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
             ?.toLongOrNull()
@@ -121,7 +110,7 @@ class TradeHistorySyncService(
             val pinnedConfig = configService.getConfig()
             if (pinnedConfig.settings.simulation) return@withExecutionSession
             krakenService.withStableBackend { backend ->
-                reconstructionService.rebuildHistoricalSnapshots(pinnedConfig, backend)
+                reconstructionService.rebuildHistoricalSnapshots(pinnedConfig, backend, reconstructionAnchor)
             }
         }
     }
@@ -339,24 +328,97 @@ class TradeHistorySyncService(
     ): Pair<Int, Int> {
         var totalAdded = 0
         var totalReconciled = 0
+        val results = mutableListOf<TradeReconciliationResult>()
         for (apiTrade in apiTrades) {
             if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
 
-            when (
-                reconcileOrInsertApiTrade(
-                    apiTrade = apiTrade,
-                    originalLocalTrades = originalLocalTrades,
-                    allocations = allocations,
-                    orderMetadataByTxid = orderMetadataByTxid,
-                )
-            ) {
-                TradeReconciliationResult.INSERTED -> totalAdded++
-                TradeReconciliationResult.RECONCILED -> totalReconciled++
-                TradeReconciliationResult.ALREADY_PERSISTED -> { /* no-op */ }
+            val result = reconcileOrInsertApiTrade(
+                apiTrade = apiTrade,
+                originalLocalTrades = originalLocalTrades,
+                allocations = allocations,
+                orderMetadataByTxid = orderMetadataByTxid,
+            )
+            results.add(result)
+            when (result) {
+                is TradeReconciliationResult.Inserted -> totalAdded++
+                is TradeReconciliationResult.Reconciled -> totalReconciled++
+                TradeReconciliationResult.AlreadyPersisted -> { /* no-op */ }
             }
         }
+        invalidateReconstructionIfStale(results)
         return totalAdded to totalReconciled
     }
+
+    private suspend fun invalidateReconstructionIfStale(results: List<TradeReconciliationResult>) {
+        val reconstructionVersion = repository
+            .getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+        if (reconstructionVersion.isNullOrBlank()) return
+
+        val throughSec = repository
+            .getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC)
+            ?.toLongOrNull()
+        val startSec = repository
+            .getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC)
+            ?.toLongOrNull()
+        val continuousStartMs = repository
+            .getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+            ?.toLongOrNull()
+
+        val reconstructedThrough = throughSec?.let(Instant::ofEpochSecond)
+            ?: continuousStartMs?.let(Instant::ofEpochMilli)
+            ?: return
+        val reconstructedStart = startSec?.let(Instant::ofEpochSecond) ?: Instant.EPOCH
+
+        fun isInReconstructionInterval(time: Instant): Boolean =
+            !time.isBefore(reconstructedStart) && !time.isAfter(reconstructedThrough)
+
+        var shouldInvalidate = false
+        for (result in results) {
+            when (result) {
+                is TradeReconciliationResult.Inserted -> {
+                    if (isInReconstructionInterval(result.trade.timestamp)) {
+                        log.info(
+                            "New fill arrived within reconstruction interval [{}, {}] (timestamp={}); invalidating snapshot reconstruction.",
+                            reconstructedStart,
+                            reconstructedThrough,
+                            result.trade.timestamp,
+                        )
+                        shouldInvalidate = true
+                        break
+                    }
+                }
+
+                is TradeReconciliationResult.Reconciled -> {
+                    if (isInReconstructionInterval(result.newTrade.timestamp) &&
+                        hasMaterialEconomicChange(result.oldTrade, result.newTrade)
+                    ) {
+                        log.info(
+                            "Reconciled trade materially changed within reconstruction interval [{}, {}] (timestamp={}); invalidating snapshot reconstruction.",
+                            reconstructedStart,
+                            reconstructedThrough,
+                            result.newTrade.timestamp,
+                        )
+                        shouldInvalidate = true
+                        break
+                    }
+                }
+
+                TradeReconciliationResult.AlreadyPersisted -> { /* no-op */ }
+            }
+        }
+
+        if (shouldInvalidate) {
+            repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "")
+            repository.setSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS, "")
+        }
+    }
+
+    private fun hasMaterialEconomicChange(old: TradeRecord, new: TradeRecord): Boolean =
+        old.volume.compareTo(new.volume) != 0 ||
+            old.usdAmount.compareTo(new.usdAmount) != 0 ||
+            old.price.compareTo(new.price) != 0 ||
+            old.fee.compareTo(new.fee) != 0 ||
+            old.timestamp != new.timestamp
 
     private fun buildOrderMetadata(originalLocalTrades: List<TradeRecord>): MutableMap<String, LocalOrderMetadata> =
         mutableMapOf<String, LocalOrderMetadata>().also { result ->
@@ -405,7 +467,7 @@ class TradeHistorySyncService(
                 allocations = allocations,
             )
             originalLocalTrades.remove(persistedFill)
-            return TradeReconciliationResult.ALREADY_PERSISTED
+            return TradeReconciliationResult.AlreadyPersisted
         }
 
         val resolution = resolveLocalOrderContextForApiFill(
@@ -421,14 +483,14 @@ class TradeHistorySyncService(
             }
 
             is LocalOrderResolution.ReconcileLocal -> {
-                reconcileWithLocalTrade(
+                val reconciled = reconcileWithLocalTrade(
                     apiTrade = apiTrade,
                     matchingLocalTrade = resolution.localTrade,
                     metadata = resolution.metadata,
                     originalLocalTrades = originalLocalTrades,
                     orderMetadataByTxid = orderMetadataByTxid,
                 )
-                TradeReconciliationResult.RECONCILED
+                TradeReconciliationResult.Reconciled(resolution.localTrade, reconciled)
             }
 
             is LocalOrderResolution.EnrichedFromCache -> {
@@ -440,7 +502,7 @@ class TradeHistorySyncService(
                     orderTxid = resolution.metadata.orderTxid,
                 )
                 repository.saveTrade(enrichedTrade)
-                TradeReconciliationResult.INSERTED
+                TradeReconciliationResult.Inserted(enrichedTrade)
             }
 
             is LocalOrderResolution.None -> {
@@ -460,17 +522,17 @@ class TradeHistorySyncService(
                         cycleId = matchingLocal.cycleId,
                         clientOrderId = matchingLocal.clientOrderId,
                     )
-                    reconcileWithLocalTrade(
+                    val reconciled = reconcileWithLocalTrade(
                         apiTrade = apiTrade,
                         matchingLocalTrade = matchingLocal,
                         metadata = metadata,
                         originalLocalTrades = originalLocalTrades,
                         orderMetadataByTxid = orderMetadataByTxid,
                     )
-                    TradeReconciliationResult.RECONCILED
+                    TradeReconciliationResult.Reconciled(matchingLocal, reconciled)
                 } else {
                     repository.saveTrade(apiTrade)
-                    TradeReconciliationResult.INSERTED
+                    TradeReconciliationResult.Inserted(apiTrade)
                 }
             }
         }
@@ -657,7 +719,7 @@ class TradeHistorySyncService(
         metadata: LocalOrderMetadata,
         originalLocalTrades: MutableList<TradeRecord>,
         orderMetadataByTxid: MutableMap<String, LocalOrderMetadata>,
-    ) {
+    ): TradeRecord {
         val effectiveTxid = (apiTrade.orderTxid ?: matchingLocalTrade.orderTxid)?.trim()?.takeIf(String::isNotBlank)
         if (effectiveTxid != null) {
             orderMetadataByTxid.putIfAbsent(effectiveTxid, metadata)
@@ -680,6 +742,7 @@ class TradeHistorySyncService(
 
         repository.updateTrade(matchingLocalTrade, reconciledTrade)
         originalLocalTrades.remove(matchingLocalTrade)
+        return reconciledTrade
     }
 
     private data class LocalOrderMetadata(
@@ -704,7 +767,11 @@ class TradeHistorySyncService(
         data class Conflict(val message: String) : LocalOrderResolution()
     }
 
-    private enum class TradeReconciliationResult { INSERTED, RECONCILED, ALREADY_PERSISTED }
+    private sealed class TradeReconciliationResult {
+        data class Inserted(val trade: TradeRecord) : TradeReconciliationResult()
+        data class Reconciled(val oldTrade: TradeRecord, val newTrade: TradeRecord) : TradeReconciliationResult()
+        data object AlreadyPersisted : TradeReconciliationResult()
+    }
 
     private suspend fun triggerReconstructionIfNeeded(config: AppConfig, backend: KrakenService) {
         val snapshots = repository.load()
@@ -712,7 +779,8 @@ class TradeHistorySyncService(
         val isSimulation = config.settings.simulation
 
         if (!isSimulation && totalTrades > 0 && snapshots.size <= 1) {
-            if (!reconstructionService.canRebuildSnapshots(config)) {
+            val reconstructionAnchor = nowProvider()
+            if (!reconstructionService.canRebuildSnapshots(config, reconstructionAnchor = reconstructionAnchor)) {
                 log.info(
                     "Skipping historical snapshot reconstruction during trade sync: trade or ledger coverage is not current.",
                 )
@@ -724,7 +792,7 @@ class TradeHistorySyncService(
                 totalTrades,
             )
             try {
-                reconstructionService.reconstructHistoricalSnapshots(config, backend)
+                reconstructionService.reconstructHistoricalSnapshots(config, backend, reconstructionAnchor)
                 log.info("Historical snapshot reconstruction completed successfully.")
             } catch (e: CancellationException) {
                 throw e
@@ -921,13 +989,42 @@ class TradeHistorySyncService(
 
             while (true) {
                 log.info("Fetching trade history batch with offset={}", offset)
-                val apiTrades = krakenService.getTradeHistoryUntil(
+                val apiTrades = krakenService.getRecoveryTradeHistoryUntil(
                     startSec = startSec,
                     offset = offset,
                     endSec = endSec,
                 )
                 val totalCount = krakenService.getLastTradeHistoryTotalCount().coerceAtLeast(0)
-                val hasAuthoritativeTotal = totalCount > 0
+                val hasAuthoritativeTotal = krakenService.hasLastTradeHistoryTotalCount()
+                if (!krakenService.hasLastTradeHistoryPageShape()) {
+                    throw IllegalStateException("Kraken returned a malformed trade page envelope")
+                }
+                val rawPageSize = krakenService.getLastTradeHistoryRawPageSize().coerceAtLeast(apiTrades.size)
+                val expectedPageSize = (totalCount - offset)
+                    .takeIf { it > 0 }
+                    ?.coerceAtMost(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
+                val pageMatchesReportedTotal = when {
+                    !hasAuthoritativeTotal -> true
+
+                    totalCount == 0 -> apiTrades.isEmpty() && rawPageSize == 0
+
+                    else ->
+                        expectedPageSize != null &&
+                            rawPageSize == expectedPageSize &&
+                            apiTrades.size <= expectedPageSize
+                }
+                if (hasAuthoritativeTotal && !pageMatchesReportedTotal) {
+                    throw IllegalStateException(
+                        "Kraken trade page occupancy disagreed with count " +
+                            "(offset=$offset, count=$totalCount, rawPageSize=$rawPageSize)",
+                    )
+                }
+                if (!isSeeded && !hasAuthoritativeTotal && rawPageSize == 0 && apiTrades.isEmpty()) {
+                    throw IllegalStateException(
+                        "Cannot finalize an unseeded trade sync from an unknown empty page " +
+                            "(offset=$offset)",
+                    )
+                }
 
                 val paginationShifted = hasAuthoritativeTotal && (
                     (priorTotal > 0 && totalCount != priorTotal) ||
@@ -953,7 +1050,7 @@ class TradeHistorySyncService(
                 val hasMorePages = !paginationShifted && if (hasAuthoritativeTotal) {
                     nextOffset < totalCount
                 } else {
-                    apiTrades.size >= KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
+                    rawPageSize >= KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
                 }
                 if (!hasMorePages) break
                 offset = nextOffset

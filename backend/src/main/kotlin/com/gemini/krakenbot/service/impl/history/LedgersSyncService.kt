@@ -334,9 +334,57 @@ class LedgersSyncService(
         // index; saveLedgers returns the number of rows actually inserted.
         getLedgersPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
             .collect { apiLedgers ->
+                invalidateReconstructionIfStale(apiLedgers)
                 totalAdded += repository.saveLedgers(apiLedgers)
             }
         return totalAdded
+    }
+
+    private suspend fun invalidateReconstructionIfStale(apiLedgers: List<LedgerEvent>) {
+        val tradeRepo = tradeRepository ?: return
+        val reconstructionVersion = tradeRepo
+            .getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+        if (reconstructionVersion.isNullOrBlank()) return
+
+        val throughSec = tradeRepo
+            .getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC)
+            ?.toLongOrNull()
+        val startSec = tradeRepo
+            .getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC)
+            ?.toLongOrNull()
+        val continuousStartMs = tradeRepo
+            .getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+            ?.toLongOrNull()
+        val reconstructedThrough = throughSec?.let(Instant::ofEpochSecond)
+            ?: continuousStartMs?.let(Instant::ofEpochMilli)
+            ?: return
+        val reconstructedStart = startSec?.let(Instant::ofEpochSecond) ?: Instant.EPOCH
+
+        fun isInReconstructionInterval(time: Instant): Boolean =
+            !time.isBefore(reconstructedStart) && !time.isAfter(reconstructedThrough)
+
+        val historicalLedgers = apiLedgers.filter { isInReconstructionInterval(it.time) }
+        if (historicalLedgers.isEmpty()) return
+
+        val minTime = historicalLedgers.minOf { it.time }
+        val maxTime = historicalLedgers.maxOf { it.time }
+        val existing = repository.getLedgersInRange(minTime, maxTime)
+        val hasNewHistoricalLedger = historicalLedgers.any { candidate ->
+            existing.none {
+                it.ledgerId == candidate.ledgerId &&
+                    it.type == candidate.type &&
+                    it.asset == candidate.asset
+            }
+        }
+
+        if (hasNewHistoricalLedger) {
+            log.info(
+                "New ledger rows arrived before reconstructed through ({}); invalidating snapshot reconstruction.",
+                reconstructedThrough,
+            )
+            tradeRepo.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "")
+            tradeRepo.setSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS, "")
+        }
     }
 
     private suspend fun finalizeSync(

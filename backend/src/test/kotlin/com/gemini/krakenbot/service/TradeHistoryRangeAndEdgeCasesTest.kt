@@ -379,6 +379,8 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     latestSnapshotTime = Instant.EPOCH,
                 )
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 0
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(
                     TestFixtures.tradeRecord(
                         timestamp = Instant.now().minus(1, ChronoUnit.DAYS),
@@ -496,6 +498,8 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 )
 
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 0
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(dryRunTwin, liveTwin)
                 coEvery { repository.saveTrade(any()) } returns 1
                 coEvery { krakenService.getOHLC(TestFixtures.BTCUSD, 1440, any()) } returns emptyList()
@@ -516,9 +520,12 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
         "syncTradesFromKraken_UsesKrakenServiceImplLastFetchedCountForSyncMetadata" {
             runTest {
                 val realKraken = mockk<KrakenServiceImpl>(relaxed = true)
+                every { realKraken.hasLastTradeHistoryTotalCount() } returns true
                 every { realKraken.getLastTradeHistoryTotalCount() } returns 42
+                every { realKraken.getLastTradeHistoryRawPageSize() } returns 42
                 coEvery { realKraken.getTradeHistory(any(), 0) } returns emptyList()
                 stubWithStableBackend(realKraken)
+                every { realKraken.hasLastTradeHistoryTotalCount() } returns true
 
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials(
@@ -571,7 +578,10 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
         "syncTradesFromKraken_UsesDynamicKrakenServiceRealLastFetchedCount" {
             runTest {
                 val realKraken = mockk<KrakenServiceImpl>(relaxed = true)
+                every { realKraken.hasLastTradeHistoryPageShape() } returns true
+                every { realKraken.hasLastTradeHistoryTotalCount() } returns true
                 every { realKraken.getLastTradeHistoryTotalCount() } returns 99
+                every { realKraken.getLastTradeHistoryRawPageSize() } returns 50 andThen 49
                 coEvery { realKraken.getTradeHistory(any(), any()) } returns emptyList()
                 val simulated = mockk<SimulatedKrakenService>(relaxed = true)
                 val dynamic = DynamicKrakenService(

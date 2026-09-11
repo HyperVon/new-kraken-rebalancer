@@ -613,9 +613,13 @@ seconds, eliminating historical coverage gaps and enabling continuous Rebalancer
 comparison across the entire strategy lifecycle. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
 and not Trades history, so the comparison does not try to deduplicate these ledger
-rows against `TradesHistory`. Reconstruction version `9` records the continuous history start and
+rows against `TradesHistory`. Reconstruction version `10` records the continuous history start and
 is paired with the ledger and trade coverage versions it replayed, so a coverage migration cannot suppress
-the required rebuild.
+the required rebuild. Each reconstruction trigger captures a single time anchor: coverage horizons may lag
+the anchor by up to **300 seconds** (`RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS`) to absorb ordinary
+sync/validate clock skew. On either history stream, a newly inserted fill inside the inclusive
+reconstruction interval `[SNAPSHOT_RECONSTRUCTION_START, SNAPSHOT_RECONSTRUCTION_THROUGH]`, or a
+reconciled fill whose economics materially changed, invalidates the reconstruction.
 
 When a seeded database migrates to ledger coverage version `9` or trade coverage version `1`, the migration may reuse completed
 inception-recovery coverage only when both private-history streams are complete, their durable

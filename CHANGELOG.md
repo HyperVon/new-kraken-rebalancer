@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.51] - 2026-09-11
+
+### Fixed
+
+- **Deterministic reconstruction anchor and ledger invalidation parity**: snapshot reconstruction
+  captures a single time anchor per trigger instead of sampling the clock twice, and tolerates up to
+  300 seconds of coverage-horizon lag behind the anchor so ordinary sync/validate clock skew no longer
+  forces spurious rebuilds. Ledger-side reconstruction invalidation now uses the same inclusive
+  `[START, THROUGH]` interval as the trade side, invalidating on fills that land exactly on either
+  bound. Reconstruction version advanced to `10`.
+
 ## [6.17.50] - 2026-09-11
 
 ### Fixed

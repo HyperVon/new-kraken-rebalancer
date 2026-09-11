@@ -536,5 +536,22 @@ class SimulatedKrakenServiceTest : StringSpec() {
             simulatedService.hasLastLedgerTotalCount() shouldBe true
             simulatedService.hasLastLedgerPageShape() shouldBe true
         }
+
+        "should track trade history total count, envelope shape, and raw page size" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getTradeHistory()
+            simulatedService.hasLastTradeHistoryTotalCount() shouldBe true
+            simulatedService.hasLastTradeHistoryPageShape() shouldBe true
+            // DEFAULT_TEST_CONFIG seeds 7 paired rebalances (14 fills).
+            simulatedService.getLastTradeHistoryTotalCount() shouldBe 14
+            simulatedService.getLastTradeHistoryRawPageSize() shouldBe 14
+
+            simulatedService.getRecoveryTradeHistoryUntil(null, null, null)
+            simulatedService.hasLastTradeHistoryTotalCount() shouldBe true
+            simulatedService.getLastTradeHistoryTotalCount() shouldBe 14
+        }
     }
 }

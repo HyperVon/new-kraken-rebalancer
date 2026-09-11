@@ -693,5 +693,92 @@ class KrakenParsersTest : StringSpec() {
                 pair = "XXBTZUSD",
             ) shouldBe emptyList()
         }
+
+        "parseTradeHistoryPage preserves unsupported non-USD pairs with zero usd and diagnostic error" {
+            val json = objectMapper.readTree(
+                """
+                {
+                  "result": {
+                    "count": 2,
+                    "trades": {
+                      "T1": {
+                        "pair": "XBTUSD",
+                        "time": 1700000000.0,
+                        "type": "buy",
+                        "price": "50000.00",
+                        "cost": "5000.00",
+                        "vol": "0.10000000",
+                        "fee": "1.00"
+                      },
+                      "T2": {
+                        "pair": "SOLUSDT",
+                        "time": 1700000010.0,
+                        "type": "buy",
+                        "price": "150.00",
+                        "cost": "1500.00",
+                        "vol": "10.00000000",
+                        "fee": "2.00"
+                      }
+                    }
+                  }
+                }
+                """.trimIndent(),
+            )
+            val parsed = KrakenParsers.parseTradeHistoryPage(
+                json.get("result"),
+                listOf("BTC", "SOL"),
+                preserveUnmapped = true,
+            )
+            parsed.hasTradeContainer shouldBe true
+            parsed.hasTotalCount shouldBe true
+            parsed.totalCount shouldBe 2
+            parsed.rawPageSize shouldBe 2
+            parsed.entries.size shouldBe 2
+
+            val normal = parsed.entries.first { it.tradeId == "T1" }
+            normal.usdAmount.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+            normal.errorMessage shouldBe null
+
+            val unsupported = parsed.entries.first { it.tradeId == "T2" }
+            unsupported.usdAmount.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            unsupported.errorMessage shouldBe "unsupported historical trade market: SOLUSDT"
+        }
+
+        "parseTradeHistoryPage validates envelope shape and count presence" {
+            // Missing count
+            val noCountJson = objectMapper.readTree(
+                """
+                {
+                  "result": {
+                    "trades": {}
+                  }
+                }
+                """.trimIndent(),
+            )
+            val parsedNoCount = KrakenParsers.parseTradeHistoryPage(noCountJson.get("result"), emptyList())
+            parsedNoCount.hasTradeContainer shouldBe true
+            parsedNoCount.hasTotalCount shouldBe false
+            parsedNoCount.totalCount shouldBe 0
+            parsedNoCount.rawPageSize shouldBe 0
+
+            // Trades is array instead of object -> invalid page shape
+            val arrayTradesJson = objectMapper.readTree(
+                """
+                {
+                  "result": {
+                    "count": 0,
+                    "trades": []
+                  }
+                }
+                """.trimIndent(),
+            )
+            val parsedArray = KrakenParsers.parseTradeHistoryPage(arrayTradesJson.get("result"), emptyList())
+            parsedArray.hasTradeContainer shouldBe false
+
+            // Result content is empty (no trades node at all)
+            val emptyResultJson = objectMapper.readTree("{}")
+            val parsedMissing = KrakenParsers.parseTradeHistoryPage(emptyResultJson, emptyList())
+            parsedMissing.hasTradeContainer shouldBe false
+        }
     }
 }

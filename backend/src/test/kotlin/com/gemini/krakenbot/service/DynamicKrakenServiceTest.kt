@@ -519,5 +519,33 @@ class DynamicKrakenServiceTest : StringSpec() {
             verify(exactly = 1) { realService.hasLastLedgerTotalCount() }
             verify(exactly = 1) { realService.hasLastLedgerPageShape() }
         }
+
+        "caches the last trade history total count, envelope shape, and raw page size from the selected backend" {
+            every { configService.getConfig() } returns appConfig(simulation = false)
+            every { realService.getLastTradeHistoryTotalCount() } returnsMany listOf(12, 34, 56)
+            every { realService.hasLastTradeHistoryTotalCount() } returns true
+            every { realService.hasLastTradeHistoryPageShape() } returns true
+            every { realService.getLastTradeHistoryRawPageSize() } returns 50
+            coEvery { realService.getTradeHistory(any(), any()) } returns emptyList()
+            val dynamicService = createService()
+
+            dynamicService.getTradeHistory()
+            dynamicService.getLastTradeHistoryTotalCount() shouldBe 12
+            dynamicService.hasLastTradeHistoryTotalCount() shouldBe true
+            dynamicService.hasLastTradeHistoryPageShape() shouldBe true
+            dynamicService.getLastTradeHistoryRawPageSize() shouldBe 50
+            verify(exactly = 1) { realService.getLastTradeHistoryTotalCount() }
+            verify(exactly = 1) { realService.hasLastTradeHistoryTotalCount() }
+            verify(exactly = 1) { realService.hasLastTradeHistoryPageShape() }
+            verify(exactly = 1) { realService.getLastTradeHistoryRawPageSize() }
+
+            coEvery { realService.getTradeHistoryUntil(any(), any(), any()) } returns emptyList()
+            dynamicService.getTradeHistoryUntil(100L, 0, 200L)
+            dynamicService.getLastTradeHistoryTotalCount() shouldBe 34
+
+            coEvery { realService.getRecoveryTradeHistoryUntil(any(), any(), any()) } returns emptyList()
+            dynamicService.getRecoveryTradeHistoryUntil(100L, 0, 200L)
+            dynamicService.getLastTradeHistoryTotalCount() shouldBe 56
+        }
     }
 }

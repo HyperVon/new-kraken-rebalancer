@@ -52,6 +52,10 @@ fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
     this.symbol.equals(other.symbol, ignoreCase = true) &&
         this.side.equals(other.side, ignoreCase = true)
 
+/** True when the trade represents a supported USD-quoted pair. */
+fun TradeRecord.isSupportedMarket(allocations: List<String> = emptyList()): Boolean =
+    Asset.fromTradingPair(pair, allocations) != null || Asset.matchesUsdQuotedPair(pair, symbol)
+
 /** Exact pair identity, or one of Kraken's known USD pair aliases for the same symbol. */
 fun TradeRecord.hasCompatiblePairIdentity(other: TradeRecord): Boolean =
     this.pair.equals(other.pair, ignoreCase = true) ||

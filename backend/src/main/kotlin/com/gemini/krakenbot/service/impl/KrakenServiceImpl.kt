@@ -65,12 +65,21 @@ class KrakenServiceImpl(
     )
 
     private val lastFetchedCount = AtomicInteger(0)
+    private val lastTradeHistoryCountPresent = AtomicBoolean(false)
+    private val lastTradeHistoryPageShapeValid = AtomicBoolean(false)
+    private val lastTradeHistoryRawPageSize = AtomicInteger(0)
     private val lastLedgerCount = AtomicInteger(0)
     private val lastLedgerCountPresent = AtomicBoolean(false)
     private val lastLedgerPageShapeValid = AtomicBoolean(false)
     private val lastLedgerRawPageSize = AtomicInteger(0)
 
     override fun getLastTradeHistoryTotalCount(): Int = lastFetchedCount.get()
+
+    override fun hasLastTradeHistoryTotalCount(): Boolean = lastTradeHistoryCountPresent.get()
+
+    override fun hasLastTradeHistoryPageShape(): Boolean = lastTradeHistoryPageShapeValid.get()
+
+    override fun getLastTradeHistoryRawPageSize(): Int = lastTradeHistoryRawPageSize.get()
 
     override fun getLastLedgerTotalCount(): Int = lastLedgerCount.get()
 
@@ -300,6 +309,9 @@ class KrakenServiceImpl(
 
     override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
         lastFetchedCount.set(0)
+        lastTradeHistoryCountPresent.set(false)
+        lastTradeHistoryPageShapeValid.set(false)
+        lastTradeHistoryRawPageSize.set(0)
         if (!configService.getConfig().kraken.hasValidCredentials()) {
             throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for trade history.")
         }
@@ -320,9 +332,12 @@ class KrakenServiceImpl(
             }
 
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
-        val (trades, count) = KrakenParsers.parseTradeHistory(result, allocations)
-        lastFetchedCount.set(count)
-        return trades
+        val page = KrakenParsers.parseTradeHistoryPage(result, allocations)
+        lastFetchedCount.set(page.totalCount)
+        lastTradeHistoryCountPresent.set(page.hasTotalCount)
+        lastTradeHistoryPageShapeValid.set(page.hasTradeContainer)
+        lastTradeHistoryRawPageSize.set(page.rawPageSize)
+        return page.entries
     }
 
     override suspend fun getRecoveryTradeHistoryUntil(
@@ -331,6 +346,9 @@ class KrakenServiceImpl(
         endSec: Long?,
     ): List<TradeRecord> {
         lastFetchedCount.set(0)
+        lastTradeHistoryCountPresent.set(false)
+        lastTradeHistoryPageShapeValid.set(false)
+        lastTradeHistoryRawPageSize.set(0)
         if (!configService.getConfig().kraken.hasValidCredentials()) {
             throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for trade history.")
         }
@@ -351,9 +369,12 @@ class KrakenServiceImpl(
             }
 
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
-        val (trades, count) = KrakenParsers.parseTradeHistory(result, allocations, preserveUnmapped = true)
-        lastFetchedCount.set(count)
-        return trades
+        val page = KrakenParsers.parseTradeHistoryPage(result, allocations, preserveUnmapped = true)
+        lastFetchedCount.set(page.totalCount)
+        lastTradeHistoryCountPresent.set(page.hasTotalCount)
+        lastTradeHistoryPageShapeValid.set(page.hasTradeContainer)
+        lastTradeHistoryRawPageSize.set(page.rawPageSize)
+        return page.entries
     }
 
     override suspend fun getLedgers(
