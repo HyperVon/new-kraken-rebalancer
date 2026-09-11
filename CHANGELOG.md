@@ -35,7 +35,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lower bound so later configuration changes trigger another backfill. Historical snapshot
   reconstruction stops without writing derived snapshots or version markers when authoritative
   ledger validation fails, and comparison replay does not use unscoped staking balances as Spot
-  corrections. Malformed-fee internal transfers remain unsupported.
+  corrections. A seeded coverage migration may reuse only a completed, account-bound recovery
+  stream with durable horizon, total, and oldest-row evidence; otherwise it fetches the missing
+  range from Kraken and retains the old coverage marker on failure. Malformed-fee internal
+  transfers remain unsupported.
 
 ## [6.17.48] - 2026-09-10
 

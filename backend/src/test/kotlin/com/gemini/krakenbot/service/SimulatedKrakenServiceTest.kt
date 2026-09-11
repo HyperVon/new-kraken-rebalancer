@@ -466,6 +466,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 .all { it } shouldBe true
             entries.all { it.amount > BigDecimal.ZERO } shouldBe true
             simulatedService.getLastLedgerTotalCount() shouldBe 5
+            simulatedService.hasLastLedgerTotalCount() shouldBe true
+            simulatedService.hasLastLedgerPageShape() shouldBe true
         }
 
         "should filter ledger entries by type" {
@@ -531,6 +533,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             simulatedService.getLedgers(null, null, null, null).isEmpty() shouldBe true
             simulatedService.getLastLedgerTotalCount() shouldBe 0
+            simulatedService.hasLastLedgerTotalCount() shouldBe true
+            simulatedService.hasLastLedgerPageShape() shouldBe true
         }
     }
 }

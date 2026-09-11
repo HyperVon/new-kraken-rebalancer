@@ -87,6 +87,12 @@ interface KrakenService {
     /** Total ledger entry count from the last [getLedgers] response (Kraken `count`). */
     fun getLastLedgerTotalCount(): Int = 0
 
+    /** Whether the last [getLedgers] response included an authoritative `count` field. */
+    fun hasLastLedgerTotalCount(): Boolean = false
+
+    /** Whether the last [getLedgers] response had an object-valued `ledger` container. */
+    fun hasLastLedgerPageShape(): Boolean = true
+
     /** Number of raw entries returned in the last [getLedgers] page before local type filtering. */
     fun getLastLedgerRawPageSize(): Int = 0
 

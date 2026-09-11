@@ -245,6 +245,29 @@ class KrakenParsersTest : StringSpec() {
             staking.balance.shouldBeEqualComparingTo(BigDecimal("10.5"))
             staking.hasAuthoritativeBalance shouldBe true
             staking.hasValidFee shouldBe true
+            val parsedPage = KrakenParsers.parseLedgerPage(response, null)
+            parsedPage.hasTotalCount shouldBe true
+            parsedPage.hasLedgerContainer shouldBe true
+        }
+
+        "treats missing and malformed ledger totals as unknown" {
+            listOf(
+                "{}",
+                "{\"count\": null}",
+                "{\"count\": -1}",
+                "{\"count\": 1.5}",
+                "{\"count\": \"2\"}",
+            ).forEach { response ->
+                val parsedPage = KrakenParsers.parseLedgerPage(objectMapper.readTree(response), null)
+
+                parsedPage.totalCount shouldBe 0
+                parsedPage.hasTotalCount shouldBe false
+            }
+
+            val explicitZero = KrakenParsers.parseLedgerPage(objectMapper.readTree("{\"count\": 0}"), null)
+            explicitZero.totalCount shouldBe 0
+            explicitZero.hasTotalCount shouldBe true
+            explicitZero.hasLedgerContainer shouldBe false
         }
 
         "retains blank fees, rejects negative fees, and accepts unfiltered ledger pages" {

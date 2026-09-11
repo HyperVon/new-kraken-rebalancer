@@ -99,6 +99,11 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   rule and records the covered lower bound for later configuration changes.
   Numeric `ledger_offset` and `ledger_total` progress markers are durable until
   completion; recovery restarts from offset zero because newest-first pages can shift.
+- A version-`8` migration may reuse completed inception recovery only with a matching validated
+  account-scope binding, complete trade and ledger streams, complete offsets/version, and durable
+  total plus oldest-row evidence reaching the required lower bound. It fetches only an unproven
+  tail after that horizon; insufficient, later-starting, mismatched, failed, or partial proof
+  falls back to Kraken and cannot promote coverage from an old row alone.
 - Incremental passes use `latestLedgerTime ?: ledger_watermark_epoch_sec` minus
   **300s**, and persist `ledger_watermark_epoch_sec` after successful completion.
 - `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.

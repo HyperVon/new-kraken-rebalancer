@@ -614,6 +614,14 @@ rows against `TradesHistory`. Reconstruction version `8` records the continuous 
 is paired with the ledger coverage version it replayed, so a coverage migration cannot suppress
 the required rebuild.
 
+When a seeded database migrates to ledger coverage version `8`, the migration may reuse completed
+inception-recovery coverage only when both private-history streams are complete, their durable
+offsets/version and total/oldest-row evidence reach the required lower bound, and the persisted
+account-scope binding matches the scope validated for the current run. It then fetches only an
+unproven tail after the recovery horizon. Insufficient, later-starting, account-mismatched,
+failed, or partial evidence falls back to the required historical backfill; an old retained row
+alone never promotes coverage.
+
 Benchmark events are built from the original classified ledger rows before any
 passthrough reduction. Safe same-source-timestamp USD funding plumbing (`OWNER_CAPITAL`
 deposit/withdrawal plus `spend`/`receive`) carries the original typed category

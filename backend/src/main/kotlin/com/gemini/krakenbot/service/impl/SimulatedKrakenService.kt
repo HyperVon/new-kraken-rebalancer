@@ -451,6 +451,10 @@ class SimulatedKrakenService(private val configService: ConfigService) :
 
     override fun getLastLedgerTotalCount(): Int = lastLedgerCount
 
+    override fun hasLastLedgerTotalCount(): Boolean = true
+
+    override fun hasLastLedgerPageShape(): Boolean = true
+
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
 
     /** Offline emulator has no network rate limiter; returns 0.0. */

@@ -39,6 +39,7 @@ class TradeHistoryServiceImpl(
         syncNowProvider: () -> Instant = Instant::now,
         orderIntentRepository: OrderIntentRepository? = null,
         inceptionRecoveryService: InceptionRecoveryService? = null,
+        accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
     ) : this(
         snapshotStore =
         TradeHistorySnapshotStore(
@@ -79,7 +80,9 @@ class TradeHistoryServiceImpl(
             repository = ledgerRepository,
             krakenService = krakenService,
             configService = configService,
+            tradeRepository = repository,
             nowProvider = syncNowProvider,
+            accountHistoryScopeGuard = accountHistoryScopeGuard,
         ),
         inceptionRecoveryService = inceptionRecoveryService,
     )

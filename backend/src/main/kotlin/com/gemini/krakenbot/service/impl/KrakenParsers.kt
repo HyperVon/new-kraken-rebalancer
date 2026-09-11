@@ -112,12 +112,22 @@ object KrakenParsers {
         return tradesList to count
     }
 
-    data class LedgerPageResult(val entries: List<LedgerEvent>, val totalCount: Int, val rawPageSize: Int)
+    data class LedgerPageResult(
+        val entries: List<LedgerEvent>,
+        val totalCount: Int,
+        val rawPageSize: Int,
+        val hasTotalCount: Boolean,
+        val hasLedgerContainer: Boolean,
+    )
 
     fun parseLedgerPage(result: JsonNode, expectedTypes: Set<String>?): LedgerPageResult {
-        val count = result.path(KrakenApiConstants.FIELD_COUNT).asInt(0)
+        val countNode = result.get(KrakenApiConstants.FIELD_COUNT)
+        val hasTotalCount = countNode?.isIntegralNumber == true &&
+            countNode.canConvertToInt() &&
+            countNode.intValue() >= 0
+        val count = countNode?.takeIf { hasTotalCount }?.intValue() ?: 0
         val ledgerNode = result.path(KrakenApiConstants.FIELD_LEDGERS)
-        if (!ledgerNode.isObject) return LedgerPageResult(emptyList(), count, 0)
+        if (!ledgerNode.isObject) return LedgerPageResult(emptyList(), count, 0, hasTotalCount, false)
         val rawPageSize = ledgerNode.size()
 
         val ledgerList = mutableListOf<LedgerEvent>()
@@ -183,7 +193,7 @@ object KrakenParsers {
                 ),
             )
         }
-        return LedgerPageResult(ledgerList, count, rawPageSize)
+        return LedgerPageResult(ledgerList, count, rawPageSize, hasTotalCount, true)
     }
 
     fun parseDepositStatus(result: JsonNode): List<DepositStatusRecord> = parseDepositStatusPage(result).records

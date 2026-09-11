@@ -51,6 +51,8 @@ class FakeKrakenService :
     var tradeHistoryTotalCountOverride = 0
     var getLedgersCallCount = 0
     var ledgerTotalCountOverride = 0
+    var ledgerTotalCountAvailable = false
+    var ledgerPageShapeValid = true
     var ledgerRawPageSizeOverride: Int? = null
     private var lastRecordedLedgerRawPageSize = 0
     var getDepositStatusCallCount = 0
@@ -116,6 +118,10 @@ class FakeKrakenService :
 
     override fun getLastLedgerTotalCount(): Int = ledgerTotalCountOverride
 
+    override fun hasLastLedgerTotalCount(): Boolean = ledgerTotalCountAvailable
+
+    override fun hasLastLedgerPageShape(): Boolean = ledgerPageShapeValid
+
     override fun getLastLedgerRawPageSize(): Int = ledgerRawPageSizeOverride ?: lastRecordedLedgerRawPageSize
 
     override suspend fun getDepositStatus(startSec: Long?, endSec: Long?): List<DepositStatusRecord> {
@@ -150,6 +156,7 @@ class FakeKrakenService :
                     (endSec == null || entry.time.epochSecond <= endSec)
             }.sortedByDescending { it.time }
             ledgerTotalCountOverride = matching.size
+            ledgerTotalCountAvailable = true
             matching.drop((offset ?: 0).coerceAtLeast(0)).take(KrakenApiConstants.LEDGER_PAGE_SIZE)
         }
     }

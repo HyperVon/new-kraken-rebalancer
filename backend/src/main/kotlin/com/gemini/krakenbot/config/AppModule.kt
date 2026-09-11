@@ -128,6 +128,7 @@ val coreModule =
                 repository = get(),
                 krakenService = get(),
                 configService = get(),
+                tradeRepository = get(),
                 accountHistoryScopeGuard = get(),
             )
         }

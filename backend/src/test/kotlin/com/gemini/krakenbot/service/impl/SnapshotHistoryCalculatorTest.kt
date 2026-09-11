@@ -4,8 +4,10 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.impl.history.AuthoritativeLedgerBalanceValidator
 import com.gemini.krakenbot.service.impl.history.SnapshotHistoryCalculator
@@ -33,6 +35,62 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             fiatMaxDrawdown = 50.0,
             fiatDeploymentExponent = 1.0,
         )
+
+    private fun historicalBalanceBeforeTransfer(
+        asset: String,
+        anchorBalance: String,
+        legs: List<LedgerEvent>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+    ): BigDecimal {
+        val transferTime = legs.first().time
+        val preTransferPoint = transferTime.minusSeconds(1)
+        val runningBalances = mutableMapOf(asset to BigDecimal(anchorBalance)).apply {
+            if (asset != Asset.USD) this[Asset.USD] = BigDecimal("1000.00")
+        }
+        val allocations = if (asset == Asset.USD) {
+            listOf(Allocation(Asset.USD, 100.0))
+        } else {
+            listOf(Allocation(Asset(asset), 50.0), Allocation(Asset.USD, 50.0))
+        }
+        val currentPrices = if (asset == Asset.USD) {
+            mapOf(Asset.USD to BigDecimal.ONE)
+        } else {
+            mapOf(asset to BigDecimal.ONE, Asset.USD to BigDecimal.ONE)
+        }
+        val snapshots = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+            events = (
+                legs.map { SnapshotHistoryCalculator.TimelineEvent.RewardEvent(it.time, it) } +
+                    SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(preTransferPoint)
+                ).sorted(),
+            allocations = allocations,
+            runningBalances = runningBalances,
+            currentPrices = currentPrices,
+            ohlcData = emptyMap(),
+            tradePrices = emptyMap(),
+            settings = defaultSettings,
+            resolvedScopes = resolvedScopes,
+        )
+        return snapshots.first { it.timestamp == preTransferPoint }.assets.getValue(asset).balance
+    }
+
+    private fun transferLeg(
+        ledgerId: String,
+        time: Instant,
+        asset: String,
+        amount: String,
+        subtype: String,
+        refid: String,
+    ) = LedgerEvent(
+        ledgerId = ledgerId,
+        time = time,
+        type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+        subtype = subtype,
+        refid = refid,
+        asset = asset,
+        amount = BigDecimal(amount),
+        hasAuthoritativeBalance = true,
+        hasAuthoritativeFee = true,
+    )
 
     init {
         "buildTimelineEvents should generate trade and daily close events sorted descending" {
@@ -1080,7 +1138,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             }
         }
 
-        "calculateHistoricalSnapshots respects SPOT scope and skips documented internal marker and unallocated asset" {
+        "calculateHistoricalSnapshots respects resolved wallet scope and unallocated asset" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
             val spotReward = LedgerEvent(
@@ -1097,7 +1155,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 ledgerId = "earn-marker",
                 time = now.minus(2, ChronoUnit.DAYS),
                 type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
-                subtype = "spotfromstaking",
+                subtype = "spottostaking",
                 asset = "BTC",
                 amount = BigDecimal("0.05"),
                 fee = BigDecimal.ZERO,
@@ -1138,9 +1196,154 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 ohlcData = emptyMap(),
                 tradePrices = emptyMap(),
                 settings = defaultSettings,
-                resolvedScopes = mapOf("spot-reward" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT),
+                resolvedScopes = mapOf(
+                    "spot-reward" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                    "earn-marker" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                ),
             )
             runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.48"))
+        }
+
+        "historical replay restores the Spot leg of a Spot-to-staking transfer" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val legs = listOf(
+                transferLeg("spot-debit", time, Asset.SOL, "-4", "spottostaking", "staking-1"),
+                transferLeg("staking-credit", time, Asset.SOL, "4", "spottostaking", "staking-1"),
+            )
+
+            historicalBalanceBeforeTransfer(
+                asset = Asset.SOL,
+                anchorBalance = "6",
+                legs = legs,
+                resolvedScopes = mapOf(
+                    "spot-debit" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                    "staking-credit" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                ),
+            ).shouldBeEqualComparingTo(BigDecimal("10"))
+            LedgerFlowClassifier.classifyAll(legs).values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+            legs.all { !LedgerEvent.isRewardEvent(it) } shouldBe true
+        }
+
+        "historical replay restores the Spot leg of a staking-to-Spot transfer" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val legs = listOf(
+                transferLeg("staking-debit", time, Asset.SOL, "-4", "stakingtospot", "staking-2"),
+                transferLeg("spot-credit", time, Asset.SOL, "4", "stakingtospot", "staking-2"),
+            )
+
+            historicalBalanceBeforeTransfer(
+                asset = Asset.SOL,
+                anchorBalance = "10",
+                legs = legs,
+                resolvedScopes = mapOf(
+                    "staking-debit" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                    "spot-credit" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                ),
+            ).shouldBeEqualComparingTo(BigDecimal("6"))
+            LedgerFlowClassifier.classifyAll(legs).values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+            legs.all { !LedgerEvent.isRewardEvent(it) } shouldBe true
+        }
+
+        "historical replay restores the Spot leg of a Spot-to-Futures transfer" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val legs = listOf(
+                transferLeg("spot-debit", time, Asset.USD, "-100", "spottofutures", "futures-1"),
+                transferLeg("futures-credit", time, Asset.USD, "100", "spottofutures", "futures-1"),
+            )
+
+            historicalBalanceBeforeTransfer(
+                asset = Asset.USD,
+                anchorBalance = "1000",
+                legs = legs,
+                resolvedScopes = mapOf(
+                    "spot-debit" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                    "futures-credit" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                ),
+            ).shouldBeEqualComparingTo(BigDecimal("1100"))
+            LedgerFlowClassifier.classifyAll(legs).values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+            legs.all { !LedgerEvent.isRewardEvent(it) } shouldBe true
+        }
+
+        "historical replay restores the Spot leg of a Futures-to-Spot transfer" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val legs = listOf(
+                transferLeg("futures-debit", time, Asset.USD, "-100", "spotfromfutures", "futures-2"),
+                transferLeg("spot-credit", time, Asset.USD, "100", "spotfromfutures", "futures-2"),
+            )
+
+            historicalBalanceBeforeTransfer(
+                asset = Asset.USD,
+                anchorBalance = "1100",
+                legs = legs,
+                resolvedScopes = mapOf(
+                    "futures-debit" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                    "spot-credit" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT,
+                ),
+            ).shouldBeEqualComparingTo(BigDecimal("1000"))
+            LedgerFlowClassifier.classifyAll(legs).values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+            legs.all { !LedgerEvent.isRewardEvent(it) } shouldBe true
+        }
+
+        "historical replay ignores trade ledger rows" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val tradeLedger = LedgerEvent(
+                ledgerId = "trade-ledger",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                asset = Asset.USD,
+                amount = BigDecimal("-100"),
+            )
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = emptyList(),
+                historicalRewards = listOf(tradeLedger),
+                cutoffTime = time.plusSeconds(1),
+                now = time,
+                reconstructionStart = time.minusSeconds(1),
+            )
+            events.filterIsInstance<SnapshotHistoryCalculator.TimelineEvent.RewardEvent>() shouldBe emptyList()
+            val runningBalances = mutableMapOf(Asset.USD to BigDecimal("1000"))
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = listOf(Allocation(Asset.USD, 100.0)),
+                runningBalances = runningBalances,
+                currentPrices = mapOf(Asset.USD to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+            runningBalances[Asset.USD]!! shouldBeEqualComparingTo BigDecimal("1000")
+        }
+
+        "historical replay skips an opaque staking scope" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val opaqueStaking = LedgerEvent(
+                ledgerId = "opaque-staking",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = Asset.SOL,
+                amount = BigDecimal("0.5"),
+                hasAuthoritativeBalance = true,
+            )
+            val runningBalances = mutableMapOf(Asset.SOL to BigDecimal("1"), Asset.USD to BigDecimal("1000"))
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = listOf(
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, opaqueStaking),
+                    SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(time.minusSeconds(1)),
+                ),
+                allocations = listOf(
+                    Allocation(Asset.SOL, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                ),
+                runningBalances = runningBalances,
+                currentPrices = mapOf(Asset.SOL to BigDecimal.ONE, Asset.USD to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+                resolvedScopes = mapOf(
+                    opaqueStaking.ledgerId to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING,
+                ),
+            )
+            runningBalances[Asset.SOL]!! shouldBeEqualComparingTo BigDecimal("1")
         }
     }
 }

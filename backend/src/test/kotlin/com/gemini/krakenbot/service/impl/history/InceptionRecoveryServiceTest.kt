@@ -159,6 +159,23 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "completed empty recovery streams persist explicit zero totals" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                krakenService.ledgerTotalCountAvailable = true
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "COMPLETE"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) shouldBe "completed"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL) shouldBe "0"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe "COMPLETE"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe "completed"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe "0"
+            }
+        }
+
         "bounded recovery rewinds ledger offsets when newest-first totals shift" {
             runTest {
                 val ledgerHistory = (0 until 250).map { index ->
@@ -327,6 +344,296 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "positive ledger totals do not complete from an empty page" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                krakenService.ledgerTotalCountOverride = 2
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerSupplier = { _, _, _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "0"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe
+                    "0"
+            }
+        }
+
+        "positive ledger totals complete on an exact final page" {
+            runTest {
+                val history = (0 until 60).map { index ->
+                    LedgerEvent(
+                        ledgerId = "exact-final-ledger-$index",
+                        time = now.minusSeconds(index.toLong() + 1),
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        asset = Asset.BTC,
+                        amount = BigDecimal.ZERO,
+                    )
+                }
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                krakenService.ledgerTotalCountOverride = history.size
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerSupplier = { _, offset, _, _ ->
+                    history.drop(offset ?: 0).take(KrakenApiConstants.LEDGER_PAGE_SIZE)
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.ledgerOffset shouldBe "completed"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe
+                    history.size.toString()
+                krakenService.getLedgersCallCount shouldBe 2
+            }
+        }
+
+        "unknown positive ledger totals continue past a full page" {
+            runTest {
+                val history = (0 until KrakenApiConstants.LEDGER_PAGE_SIZE).map { index ->
+                    LedgerEvent(
+                        ledgerId = "unknown-total-ledger-$index",
+                        time = now.minusSeconds(index.toLong() + 1),
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        asset = Asset.BTC,
+                        amount = BigDecimal.ZERO,
+                    )
+                }
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                krakenService.ledgerTotalCountOverride = history.size
+                krakenService.ledgerSupplier = { _, offset, _, _ ->
+                    history.drop(offset ?: 0).take(KrakenApiConstants.LEDGER_PAGE_SIZE)
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.ledgerOffset shouldBe "completed"
+                krakenService.getLedgersCallCount shouldBe 2
+            }
+        }
+
+        "an authoritative ledger total appearing after an unknown page rewinds to page zero" {
+            runTest {
+                val history = (0 until 90).map { index ->
+                    LedgerEvent(
+                        ledgerId = "unknown-then-known-ledger-$index",
+                        time = now.minusSeconds(index.toLong() + 1),
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        asset = Asset.BTC,
+                        amount = BigDecimal.ZERO,
+                    )
+                }
+                val requestedOffsets = mutableListOf<Int?>()
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                var authoritativeCountSeen = false
+                krakenService.ledgerSupplier = { _, offset, _, _ ->
+                    requestedOffsets += offset
+                    authoritativeCountSeen = authoritativeCountSeen || (offset != null && offset > 0)
+                    krakenService.ledgerTotalCountAvailable = authoritativeCountSeen
+                    krakenService.ledgerTotalCountOverride = if (krakenService.ledgerTotalCountAvailable) {
+                        history.size
+                    } else {
+                        0
+                    }
+                    history.drop(offset ?: 0).take(KrakenApiConstants.LEDGER_PAGE_SIZE)
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.ledgerOffset shouldBe "completed"
+                requestedOffsets shouldBe listOf(0, 50, 0, 50)
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe
+                    history.size.toString()
+            }
+        }
+
+        "positive ledger totals retain the offset for a short non-empty page" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "60")
+                krakenService.ledgerTotalCountOverride = 60
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    (0 until 9).map { index ->
+                        LedgerEvent(
+                            ledgerId = "short-ledger-$index",
+                            time = now.minusSeconds(index.toLong() + 1),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        )
+                    }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "50"
+                krakenService.getLedgersCallCount shouldBe InceptionRecoveryService.MAX_PAGES_PER_RUN
+            }
+        }
+
+        "explicit zero ledger totals clear a prior positive total" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "100")
+                krakenService.ledgerTotalCountOverride = 0
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerSupplier = { _, _, _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.ledgerOffset shouldBe "completed"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe "0"
+                krakenService.getLedgersCallCount shouldBe 2
+            }
+        }
+
+        "unknown empty ledger pages do not create reusable zero coverage" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                krakenService.ledgerSupplier = { _, _, _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.ledgerOffset shouldBe "completed"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe ""
+            }
+        }
+
+        "malformed ledger envelopes fail closed instead of proving an empty recovery" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerTotalCountOverride = 0
+                krakenService.ledgerPageShapeValid = false
+                krakenService.ledgerSupplier = { _, _, _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe "FAILED"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) shouldBe "0"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe ""
+            }
+        }
+
+        "decreased positive ledger totals reconcile after rewinding pagination" {
+            runTest {
+                val history = (0 until 90).map { index ->
+                    LedgerEvent(
+                        ledgerId = "decreased-total-ledger-$index",
+                        time = now.minusSeconds(index.toLong() + 1),
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        asset = Asset.BTC,
+                        amount = BigDecimal.ZERO,
+                    )
+                }
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "100")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "100")
+                krakenService.ledgerTotalCountOverride = history.size
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerSupplier = { _, offset, _, _ ->
+                    history.drop(offset ?: 0).take(KrakenApiConstants.LEDGER_PAGE_SIZE)
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.ledgerOffset shouldBe "completed"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL) shouldBe
+                    history.size.toString()
+                krakenService.getLedgersCallCount shouldBe 3
+            }
+        }
+
+        "positive ledger totals reject oversized and out-of-range pages" {
+            runTest {
+                newService().prepareForCurrentConfiguration(null) shouldBe true
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "COMPLETE")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
+                krakenService.ledgerTotalCountOverride = 2
+                krakenService.ledgerTotalCountAvailable = true
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    (0 until KrakenApiConstants.LEDGER_PAGE_SIZE).map { index ->
+                        LedgerEvent(
+                            ledgerId = "oversized-ledger-$index",
+                            time = now,
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        )
+                    }
+                }
+
+                var status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "0"
+
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "100")
+                krakenService.ledgerSupplier = { _, _, _, _ ->
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "out-of-range-ledger",
+                            time = now,
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                        ),
+                    )
+                }
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+
+                status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "50"
+            }
+        }
+
         "a count shift on page zero continues from the next page boundary" {
             runTest {
                 val bot = apiTrade("page-zero-shift", Instant.parse("2026-04-01T00:00:00Z"))
@@ -349,7 +656,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "a ledger count shift on page zero continues from the next page boundary" {
+        "a ledger count shift with missing rows remains at the current page" {
             runTest {
                 val event = LedgerEvent(
                     ledgerId = "ledger-page-zero-shift",
@@ -365,15 +672,16 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "0")
                 ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "1")
                 krakenService.ledgerTotalCountOverride = 2
+                krakenService.ledgerTotalCountAvailable = true
                 krakenService.ledgerSupplier = { _, offset, _, _ ->
                     if ((offset ?: 0) == 0) listOf(event) else emptyList()
                 }
 
                 val status = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
-                status.ledgerOffset shouldBe "completed"
-                krakenService.getLedgersCallCount shouldBe 2
+                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
+                status.ledgerOffset shouldBe "0"
+                krakenService.getLedgersCallCount shouldBe 4
             }
         }
 

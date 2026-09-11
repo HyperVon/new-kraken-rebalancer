@@ -179,13 +179,19 @@ class TradeHistoryReconstructionService(
         }
         val resolvedScopes = validation.resolvedScopes
 
-        val externalLedgers = allLedgers.filter { event ->
+        val unresolvedNonzeroLedger = allLedgers.firstOrNull { event ->
             event.type in LedgerEvent.EXTERNAL_BALANCE_TYPES &&
-                (
-                    !event.type.equals(KrakenApiConstants.LEDGER_TYPE_STAKING, ignoreCase = true) ||
-                        validation.resolvedScopes.containsKey(event.ledgerId)
-                    )
+                event.netBalanceDelta().signum() != 0 &&
+                event.ledgerId !in resolvedScopes
         }
+        if (unresolvedNonzeroLedger != null) {
+            log.warn(
+                "Skipping historical snapshot reconstruction: nonzero ledger scope is unresolved for type {}",
+                unresolvedNonzeroLedger.type,
+            )
+            return
+        }
+        val externalLedgers = allLedgers.filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
         val historicalRewards = externalLedgers.filter { it.time.isBefore(cutoffTime) }
 
         val events =

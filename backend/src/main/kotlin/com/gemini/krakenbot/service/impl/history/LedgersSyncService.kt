@@ -5,7 +5,9 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +36,7 @@ class LedgersSyncService(
     private val repository: LedgerRepository,
     private val krakenService: KrakenService,
     private val configService: ConfigService,
+    private val tradeRepository: TradeRepository? = null,
     private val nowProvider: () -> Instant = Instant::now,
     private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
 ) {
@@ -99,14 +102,14 @@ class LedgersSyncService(
                     )
                     return@withStableBackend
                 }
-                syncLedgersFromKrakenPinned(pinnedConfig)
+                syncLedgersFromKrakenPinned(pinnedConfig, scopeResult?.currentScopeDigest)
             }
         } finally {
             configService.endExecutionSession()
         }
     }
 
-    private suspend fun syncLedgersFromKrakenPinned(config: AppConfig) {
+    private suspend fun syncLedgersFromKrakenPinned(config: AppConfig, verifiedAccountScopeDigest: String?) {
         val isSeeded = repository.isLedgersSeeded()
         val coverageVersion = repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
         val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
@@ -129,23 +132,43 @@ class LedgersSyncService(
                 CURRENT_LEDGER_COVERAGE_VERSION,
                 coverageBackfillBound,
             )
-            val totalAdded = processLedgerPages(
-                // Kraken's start bound is exclusive; step back one second so an event exactly
-                // at the configured inception is included in the migration backfill.
-                startSec = coverageBackfillBound.minusSeconds(1).epochSecond,
-                endSec = queryNow.epochSecond,
-                isSeeded = true,
-                typesToFetch = SUPPORTED_LEDGER_TYPES,
+            val recoveredCoverageThrough = recoverableCompletedRecoveryThrough(
+                requiredStart = coverageBackfillBound,
+                queryNow = queryNow,
+                verifiedAccountScopeDigest = verifiedAccountScopeDigest,
             )
+            val totalAdded = if (recoveredCoverageThrough == null) {
+                processLedgerPages(
+                    // Kraken's start bound is exclusive; step back one second so an event exactly
+                    // at the configured inception is included in the migration backfill.
+                    startSec = coverageBackfillBound.minusSeconds(1).epochSecond,
+                    endSec = queryNow.epochSecond,
+                    isSeeded = true,
+                    typesToFetch = SUPPORTED_LEDGER_TYPES,
+                )
+            } else if (recoveredCoverageThrough.isBefore(queryNow)) {
+                // Completed recovery proves the historical prefix. Only refresh the unproven tail;
+                // never repaginate the already recovered inception-to-horizon range.
+                processLedgerPages(
+                    startSec = recoveredCoverageThrough.minusSeconds(300).epochSecond,
+                    endSec = queryNow.epochSecond,
+                    isSeeded = true,
+                    typesToFetch = SUPPORTED_LEDGER_TYPES,
+                )
+            } else {
+                0
+            }
+            val currentWatermark = readSyncWatermark()
+            if (currentWatermark == null || queryNow.isAfter(currentWatermark)) {
+                writeSyncWatermark(queryNow)
+            }
+            // Persist the watermark before promoting coverage. If a later metadata write fails,
+            // the old coverage version remains authoritative and the next run retries the range.
             repository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 coverageBackfillBound.epochSecond.toString(),
             )
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, CURRENT_LEDGER_COVERAGE_VERSION)
-            val currentWatermark = readSyncWatermark()
-            if (currentWatermark == null || queryNow.isAfter(currentWatermark)) {
-                writeSyncWatermark(queryNow)
-            }
             pruneOldEntries(queryNow)
             lastSyncTime = nowProvider()
             log.info(
@@ -205,6 +228,82 @@ class LedgersSyncService(
             lastSyncTime = nowProvider()
         }
         log.info("Ledger synchronization completed. Added: {} entries.", totalAdded)
+    }
+
+    /**
+     * Returns the latest locally proven ledger horizon when the completed inception recovery is
+     * bound to the active account and reaches [requiredStart]. A completed stream plus its durable
+     * oldest-row/total evidence is required; an old row by itself is never enough to promote
+     * ordinary coverage.
+     */
+    private suspend fun recoverableCompletedRecoveryThrough(
+        requiredStart: Instant,
+        queryNow: Instant,
+        verifiedAccountScopeDigest: String?,
+    ): Instant? {
+        val tradeRepository = tradeRepository ?: return null
+        if (verifiedAccountScopeDigest.isNullOrBlank()) return null
+
+        val storedScopeDigest = tradeRepository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+            ?.trim()
+        val storedBindingVersion = tradeRepository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION)
+            ?.trim()
+        if (storedScopeDigest != verifiedAccountScopeDigest ||
+            storedBindingVersion != AccountHistoryScopeGuard.CURRENT_BINDING_VERSION
+        ) {
+            return null
+        }
+
+        if (tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION) !=
+            InceptionRecoveryService.CURRENT_RECOVERY_VERSION ||
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) !=
+            InceptionRecoveryStatus.COMPLETE ||
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) !=
+            InceptionRecoveryStatus.COMPLETE ||
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) != "completed" ||
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) != "completed"
+        ) {
+            return null
+        }
+
+        val recoveryHorizon = tradeRepository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochSecond)
+            ?: return null
+        if (recoveryHorizon.isBefore(requiredStart) || recoveryHorizon.isAfter(queryNow)) return null
+
+        val ledgerTotal = repository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL)
+            ?.toIntOrNull()
+            ?.takeIf { it >= 0 }
+            ?: return null
+        val ledgerOldest = repository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochMilli)
+        val ledgerRangeEvidence = ledgerTotal == 0 || ledgerOldest?.let { !it.isAfter(requiredStart) } == true
+        if (!ledgerRangeEvidence) return null
+
+        val tradeTotal = tradeRepository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL)
+            ?.toIntOrNull()
+            ?.takeIf { it >= 0 }
+            ?: return null
+        val tradeOldest = tradeRepository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochMilli)
+        val tradeRangeEvidence = tradeTotal == 0 || tradeOldest?.let { !it.isAfter(requiredStart) } == true
+        if (!tradeRangeEvidence) return null
+
+        // Do not combine this prefix proof with an unrelated ordinary watermark: a prior v7
+        // store may begin at the default seed bound, leaving a gap between that bound and this
+        // recovery horizon. The migration must fetch from the recovery horizon to queryNow and
+        // establish continuity itself.
+        return recoveryHorizon
     }
 
     private suspend fun calculateEffectiveLatestTime(): Instant? {
@@ -298,6 +397,7 @@ class LedgersSyncService(
     ): Flow<List<LedgerEvent>> = flow {
         val perTypeOffset = mutableMapOf<String, Int>().apply { types.forEach { this[it] = 0 } }
         val perTypeTotal = mutableMapOf<String, Int>().apply { types.forEach { this[it] = 0 } }
+        val perTypeTotalKnown = mutableMapOf<String, Boolean>().apply { types.forEach { this[it] = false } }
         val perTypeDone = mutableMapOf<String, Boolean>().apply { types.forEach { this[it] = false } }
 
         while (perTypeDone.values.any { !it }) {
@@ -314,37 +414,60 @@ class LedgersSyncService(
                     types = setOf(type),
                 )
                 val totalCount = krakenService.getLastLedgerTotalCount()
-                val rawPageSize = krakenService.getLastLedgerRawPageSize()
-                perTypeTotal[type] = totalCount
+                val hasAuthoritativeTotal = krakenService.hasLastLedgerTotalCount()
+                if (!krakenService.hasLastLedgerPageShape()) {
+                    throw IllegalStateException("Kraken returned a malformed ledger page envelope")
+                }
+                val rawPageSize = krakenService.getLastLedgerRawPageSize().coerceAtLeast(page.size)
+                val expectedPageSize = (totalCount - offset)
+                    .takeIf { it > 0 }
+                    ?.coerceAtMost(KrakenApiConstants.LEDGER_PAGE_SIZE)
+                val pageMatchesReportedTotal = when {
+                    !hasAuthoritativeTotal -> true
+
+                    totalCount == 0 -> page.isEmpty() && rawPageSize == 0
+
+                    else ->
+                        expectedPageSize != null &&
+                            rawPageSize == expectedPageSize &&
+                            page.size <= expectedPageSize
+                }
+                if (hasAuthoritativeTotal && !pageMatchesReportedTotal) {
+                    throw IllegalStateException(
+                        "Kraken ledger page occupancy disagreed with count " +
+                            "(type=$type, offset=$offset, count=$totalCount, rawPageSize=$rawPageSize)",
+                    )
+                }
+                if (!isSeeded && !hasAuthoritativeTotal && rawPageSize == 0 && page.isEmpty()) {
+                    throw IllegalStateException(
+                        "Cannot finalize an unseeded ledger sync from an unknown empty page " +
+                            "(type=$type, offset=$offset)",
+                    )
+                }
+                perTypeTotal[type] = if (hasAuthoritativeTotal) totalCount else 0
+                perTypeTotalKnown[type] = hasAuthoritativeTotal
                 batches.add(page)
                 combinedBatchSize += page.size
                 val nextOffset = offset + KrakenApiConstants.LEDGER_PAGE_SIZE
-                val hasMoreForType = if (totalCount > 0) {
+                val hasMoreForType = if (hasAuthoritativeTotal) {
                     nextOffset < totalCount
                 } else {
-                    val pageSizeToCheck = if (rawPageSize > 0) rawPageSize else page.size
-                    pageSizeToCheck >= KrakenApiConstants.LEDGER_PAGE_SIZE
+                    rawPageSize >= KrakenApiConstants.LEDGER_PAGE_SIZE
                 }
                 if (!hasMoreForType) perTypeDone[type] = true else perTypeOffset[type] = nextOffset
             }
             if (!isSeeded) {
                 val effectiveOffset = types.sumOf { type ->
-                    if (perTypeDone[type] ==
-                        true
-                    ) {
+                    if (perTypeDone[type] == true && perTypeTotalKnown[type] == true) {
                         perTypeTotal[type] ?: 0
                     } else {
                         perTypeOffset[type] ?: 0
                     }
                 }
-                val effectiveTotal = perTypeTotal.values.sum().let {
-                    if (it ==
-                        0
-                    ) {
-                        effectiveOffset + combinedBatchSize
-                    } else {
-                        it
-                    }
+                val effectiveTotal = if (perTypeTotalKnown.values.all { it }) {
+                    perTypeTotal.values.sum()
+                } else {
+                    effectiveOffset + combinedBatchSize
                 }
                 repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, effectiveOffset.toString())
                 repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, effectiveTotal.toString())

@@ -41,6 +41,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
             val block = firstArg<suspend (KrakenService) -> Any?>()
             block(service)
         }
+        every { service.hasLastLedgerPageShape() } returns true
     }
 
     protected fun createService(

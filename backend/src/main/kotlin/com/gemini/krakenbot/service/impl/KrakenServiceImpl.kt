@@ -29,6 +29,7 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.milliseconds
@@ -65,11 +66,17 @@ class KrakenServiceImpl(
 
     private val lastFetchedCount = AtomicInteger(0)
     private val lastLedgerCount = AtomicInteger(0)
+    private val lastLedgerCountPresent = AtomicBoolean(false)
+    private val lastLedgerPageShapeValid = AtomicBoolean(false)
     private val lastLedgerRawPageSize = AtomicInteger(0)
 
     override fun getLastTradeHistoryTotalCount(): Int = lastFetchedCount.get()
 
     override fun getLastLedgerTotalCount(): Int = lastLedgerCount.get()
+
+    override fun hasLastLedgerTotalCount(): Boolean = lastLedgerCountPresent.get()
+
+    override fun hasLastLedgerPageShape(): Boolean = lastLedgerPageShapeValid.get()
 
     override fun getLastLedgerRawPageSize(): Int = lastLedgerRawPageSize.get()
 
@@ -356,6 +363,8 @@ class KrakenServiceImpl(
         types: Set<String>?,
     ): List<LedgerEvent> {
         lastLedgerCount.set(0)
+        lastLedgerCountPresent.set(false)
+        lastLedgerPageShapeValid.set(false)
         if (!configService.getConfig().kraken.hasValidCredentials()) {
             throw KrakenCredentialsUnavailableException("Kraken credentials are unavailable for ledgers.")
         }
@@ -377,6 +386,8 @@ class KrakenServiceImpl(
                 )
             }
             lastLedgerCount.set(pages.sumOf { it.totalCount })
+            lastLedgerCountPresent.set(pages.all { it.hasTotalCount })
+            lastLedgerPageShapeValid.set(pages.all { it.hasLedgerContainer })
             lastLedgerRawPageSize.set(pages.sumOf { it.rawPageSize })
             return pages.flatMap { it.entries }
         }
@@ -388,6 +399,8 @@ class KrakenServiceImpl(
         }
         val pageResult = queryLedgerPage(pageParams, types)
         lastLedgerCount.set(pageResult.totalCount)
+        lastLedgerCountPresent.set(pageResult.hasTotalCount)
+        lastLedgerPageShapeValid.set(pageResult.hasLedgerContainer)
         lastLedgerRawPageSize.set(pageResult.rawPageSize)
         return pageResult.entries
     }

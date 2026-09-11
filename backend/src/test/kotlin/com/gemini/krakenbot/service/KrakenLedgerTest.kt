@@ -414,6 +414,8 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 entries.single().type shouldBe KrakenApiConstants.LEDGER_TYPE_EARN
                 entries.single().subtype shouldBe "reward"
                 service.getLastLedgerTotalCount() shouldBe 4
+                service.hasLastLedgerTotalCount() shouldBe true
+                service.hasLastLedgerPageShape() shouldBe true
                 service.getLastLedgerRawPageSize() shouldBe 4
 
                 val promotionEntries = service.getLedgers(types = setOf(KrakenApiConstants.LEDGER_TYPE_REWARD))
@@ -422,6 +424,8 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 promotionEntries.map { it.ledgerId } shouldBe listOf("PROMO-1")
                 promotionEntries.single().type shouldBe KrakenApiConstants.LEDGER_TYPE_REWARD
                 service.getLastLedgerTotalCount() shouldBe 4
+                service.hasLastLedgerTotalCount() shouldBe true
+                service.hasLastLedgerPageShape() shouldBe true
                 service.getLastLedgerRawPageSize() shouldBe 4
             }
         }

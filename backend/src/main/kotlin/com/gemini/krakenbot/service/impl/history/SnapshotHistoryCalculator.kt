@@ -180,7 +180,7 @@ object SnapshotHistoryCalculator {
         }
     }
 
-    /** Undo one external ledger balance delta, respecting resolved wallet scopes and documented internal markers. */
+    /** Undo one external ledger balance delta, respecting the resolved wallet scope. */
     private fun reverseApplyReward(
         event: LedgerEvent,
         runningBalances: MutableMap<String, BigDecimal>,
@@ -190,9 +190,6 @@ object SnapshotHistoryCalculator {
         if (symbol !in runningBalances) return
         val scope = resolvedScopes[event.ledgerId]
         if (scope != null && scope != AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT) {
-            return
-        }
-        if (LedgerFlowClassifier.isDocumentedInternalScopeMarker(event)) {
             return
         }
         val netDelta = event.netBalanceDelta()

@@ -139,7 +139,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
             }
         }
 
-        "reconstructHistoricalSnapshots_AppliesStakingRewardsFromLedgers" {
+        "reconstructHistoricalSnapshots_FailsClosedForUnresolvedStakingRows" {
             runTest {
                 val service = createService()
 
@@ -231,7 +231,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 service.syncTradesFromKraken()
 
                 coVerify(atLeast = 1) { ledgerRepository.getLedgersInRange(any(), any()) }
-                coVerify(atLeast = 1) { repository.save(any()) }
+                coVerify(exactly = 0) { repository.save(any()) }
             }
         }
 

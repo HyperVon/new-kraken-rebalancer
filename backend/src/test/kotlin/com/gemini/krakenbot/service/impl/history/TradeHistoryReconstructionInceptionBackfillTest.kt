@@ -20,6 +20,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.every
@@ -155,7 +156,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
             }
         }
 
-        "reverse ledger replay respects wallet scopes during snapshot reconstruction" {
+        "historical reconstruction fails closed for an unresolved nonzero staking row" {
             runTest {
                 ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
                 ledgerRepository.setSyncMetadata(
@@ -169,7 +170,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
                 )
                 krakenService.ohlcSupplier = { _, _, _ -> ohlc }
 
-                // Staking reward in non-Spot wallet should not mutate Spot balance during reverse replay
+                repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "7")
                 val stakingLedger = LedgerEvent(
                     ledgerId = "staking-reward-1",
                     time = inception.plusSeconds(3600),
@@ -189,14 +190,143 @@ class TradeHistoryReconstructionInceptionBackfillTest :
                     )
                 }
 
+                val snapshotCountBefore = repository.getAllSnapshotsInRange(
+                    Instant.EPOCH,
+                    Instant.ofEpochMilli(Long.MAX_VALUE),
+                ).size
                 reconstructionService.rebuildHistoricalSnapshots(appConfig, krakenService)
 
-                val snapshots = repository.getAllSnapshotsInRange(Instant.EPOCH, Instant.ofEpochMilli(Long.MAX_VALUE))
-                    .sortedBy { it.timestamp }
+                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe "7"
+                repository.getAllSnapshotsInRange(Instant.EPOCH, Instant.ofEpochMilli(Long.MAX_VALUE)).size shouldBe
+                    snapshotCountBefore
+            }
+        }
 
-                val inceptionSnapshot = snapshots.first { it.timestamp == inception }
-                // BTC balance should remain 1.0 because the staking reward was non-Spot and not subtracted from Spot
+        "historical reconstruction ignores an unresolved zero-delta staking row safely" {
+            runTest {
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+                )
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    listOf(
+                        inception.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
+                        now.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
+                    )
+                }
+                krakenService.balanceSupplier = {
+                    mapOf(Asset.BTC to BigDecimal("1.0"), Asset.USD to BigDecimal("10000.00"))
+                }
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "zero-delta-staking",
+                            time = inception.plusSeconds(3600),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = false,
+                        ),
+                    ),
+                )
+
+                reconstructionService.rebuildHistoricalSnapshots(appConfig, krakenService)
+
+                repository.getAllSnapshotsInRange(Instant.EPOCH, Instant.ofEpochMilli(Long.MAX_VALUE))
+                    .shouldNotBeEmpty()
+                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe
+                    TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+            }
+        }
+
+        "historical reconstruction skips a staking-wallet reward resolved by an authoritative balance" {
+            runTest {
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+                )
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    listOf(
+                        inception.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
+                        now.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
+                    )
+                }
+                krakenService.balanceSupplier = {
+                    mapOf(Asset.BTC to BigDecimal("1.0"), Asset.USD to BigDecimal("10000.00"))
+                }
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "resolved-staking-reward",
+                            time = inception.plusSeconds(3600),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.05"),
+                            balance = BigDecimal("0.05"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+
+                reconstructionService.rebuildHistoricalSnapshots(appConfig, krakenService)
+
+                val inceptionSnapshot = repository.getAllSnapshotsInRange(
+                    Instant.EPOCH,
+                    Instant.ofEpochMilli(Long.MAX_VALUE),
+                ).first { it.timestamp == inception }
                 inceptionSnapshot.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("1.0")
+            }
+        }
+
+        "historical reconstruction replays a staking row resolved to Spot" {
+            runTest {
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
+                ledgerRepository.setSyncMetadata(
+                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+                )
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    listOf(
+                        inception.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
+                        now.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
+                    )
+                }
+                krakenService.balanceSupplier = {
+                    mapOf(Asset.BTC to BigDecimal("1.05"), Asset.USD to BigDecimal("10000.00"))
+                }
+                val receiveTime = inception.plusSeconds(60)
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "spot-seed",
+                            time = receiveTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ONE,
+                            balance = BigDecimal.ONE,
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "spot-scoped-staking",
+                            time = inception.plusSeconds(120),
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.05"),
+                            balance = BigDecimal("1.05"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+
+                reconstructionService.rebuildHistoricalSnapshots(appConfig, krakenService)
+
+                val receiveSnapshot = repository.getAllSnapshotsInRange(
+                    Instant.EPOCH,
+                    Instant.ofEpochMilli(Long.MAX_VALUE),
+                ).first { it.timestamp == receiveTime }
+                receiveSnapshot.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("1.0")
             }
         }
 

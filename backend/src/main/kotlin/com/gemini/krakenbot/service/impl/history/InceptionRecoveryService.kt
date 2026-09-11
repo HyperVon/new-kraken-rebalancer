@@ -822,6 +822,9 @@ class InceptionRecoveryService(
         }
         if (complete) {
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, COMPLETED)
+            if (total == 0 && page.isEmpty()) {
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "0")
+            }
             repository.setSyncMetadata(
                 SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS,
                 repository
@@ -849,6 +852,10 @@ class InceptionRecoveryService(
             types = null,
         )
         val rawPageSize = backend.getLastLedgerRawPageSize().coerceAtLeast(page.size)
+        if (!backend.hasLastLedgerPageShape()) {
+            throw IllegalStateException("Kraken returned a malformed ledger page envelope")
+        }
+        val hasAuthoritativeTotal = backend.hasLastLedgerTotalCount()
         val authoritativeTotal = backend.getLastLedgerTotalCount().coerceAtLeast(0)
         val priorTotal = ledgerRepository
             .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL)
@@ -856,28 +863,50 @@ class InceptionRecoveryService(
             .toIntOrNull()
             ?.coerceAtLeast(0)
             ?: 0
-        val total = if (authoritativeTotal > 0) {
-            maxOf(priorTotal, authoritativeTotal)
-        } else {
-            priorTotal
-        }
-        if (total > 0) {
+        val total = if (hasAuthoritativeTotal) authoritativeTotal else 0
+        if (hasAuthoritativeTotal) {
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, total.toString())
+        } else {
+            // A page without a valid count cannot leave an older count usable as coverage proof.
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "")
         }
-        val paginationShifted = priorTotal > 0 && authoritativeTotal > 0 && authoritativeTotal != priorTotal
+        val paginationShifted = hasAuthoritativeTotal && (
+            (priorTotal > 0 && authoritativeTotal != priorTotal) ||
+                (priorTotal == 0 && offset > 0)
+            )
         ledgerRepository.saveLedgers(page)
 
-        val nextOffset = if (paginationShifted && offset > 0) {
-            0
-        } else {
-            offset + KrakenApiConstants.LEDGER_PAGE_SIZE
+        val expectedPageSize = (authoritativeTotal - offset)
+            .takeIf { it > 0 }
+            ?.coerceAtMost(KrakenApiConstants.LEDGER_PAGE_SIZE)
+        val pageMatchesReportedTotal = when {
+            !hasAuthoritativeTotal -> true
+
+            authoritativeTotal == 0 -> page.isEmpty() && rawPageSize == 0
+
+            else ->
+                expectedPageSize != null &&
+                    rawPageSize == expectedPageSize &&
+                    page.size == expectedPageSize
         }
-        val complete = !paginationShifted && (
-            rawPageSize < KrakenApiConstants.LEDGER_PAGE_SIZE ||
-                (authoritativeTotal > 0 && nextOffset >= authoritativeTotal)
-            )
+        val nextOffset = when {
+            paginationShifted -> 0
+            !pageMatchesReportedTotal -> offset
+            else -> offset + KrakenApiConstants.LEDGER_PAGE_SIZE
+        }
+        val reportedTotalReached = hasAuthoritativeTotal &&
+            pageMatchesReportedTotal &&
+            nextOffset >= authoritativeTotal
+        val complete = !paginationShifted && if (hasAuthoritativeTotal) {
+            reportedTotalReached
+        } else {
+            rawPageSize < KrakenApiConstants.LEDGER_PAGE_SIZE
+        }
         if (complete) {
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, COMPLETED)
+            if (hasAuthoritativeTotal && total == 0 && page.isEmpty()) {
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "0")
+            }
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS,
                 ledgerRepository
