@@ -151,6 +151,24 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
                         "70.12949477",
                         fee = "0.0129",
                     ),
+                    event(
+                        "staking-return-debit",
+                        2,
+                        "transfer",
+                        "-0.03007118",
+                        "70.09942359",
+                        subtype = "stakingtospot",
+                        refid = "staking-return",
+                    ),
+                    event(
+                        "staking-return-credit",
+                        2,
+                        "transfer",
+                        "0.03007118",
+                        "70.12948612",
+                        subtype = "stakingtospot",
+                        refid = "staking-return",
+                    ),
                 ),
             )
 
@@ -328,7 +346,8 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
                 ),
             )
 
-            authoritativeResult.isValid shouldBe true
+            authoritativeResult.isValid shouldBe false
+            requireNotNull(authoritativeResult.failure).diagnostic shouldContain "replay semantics"
         }
 
         "rejects duplicate ledger identities" {
@@ -1181,6 +1200,71 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
             result.scopeCount shouldBe 2
         }
 
+        "fails closed when equal balances have different replay scope assignments" {
+            val result = AuthoritativeLedgerBalanceValidator.validate(
+                listOf(
+                    event("spot", 0, "receive", "2", "2", asset = "SOL"),
+                    event(
+                        "spot-to-staking",
+                        1,
+                        "transfer",
+                        "-1",
+                        "1",
+                        asset = "SOL",
+                        subtype = "spottostaking",
+                        refid = "initial-staking-transfer",
+                    ),
+                    event(
+                        "staking-scope",
+                        1,
+                        "transfer",
+                        "1",
+                        "1",
+                        asset = "SOL",
+                        subtype = "spottostaking",
+                        refid = "initial-staking-transfer",
+                    ),
+                    event("ambiguous-staking-row", 2, "staking", "0.1", "1.1", asset = "SOL"),
+                ),
+            )
+
+            result.isValid shouldBe false
+            requireNotNull(result.failure).diagnostic shouldContain "replay semantics"
+        }
+
+        "detects replay-scope ambiguity while equivalent balance states are being searched" {
+            val result = AuthoritativeLedgerBalanceValidator.validate(
+                listOf(
+                    event("spot", 0, "receive", "2", "2", asset = "SOL"),
+                    event(
+                        "spot-to-staking",
+                        1,
+                        "transfer",
+                        "-1",
+                        "1",
+                        asset = "SOL",
+                        subtype = "spottostaking",
+                        refid = "initial-staking-transfer",
+                    ),
+                    event(
+                        "staking-scope",
+                        1,
+                        "transfer",
+                        "1",
+                        "1",
+                        asset = "SOL",
+                        subtype = "spottostaking",
+                        refid = "initial-staking-transfer",
+                    ),
+                    event("staking-a", 2, "staking", "0.1", "1.1", asset = "SOL"),
+                    event("staking-b", 2, "staking", "0.1", "1.1", asset = "SOL"),
+                ),
+            )
+
+            result.isValid shouldBe false
+            requireNotNull(result.failure).diagnostic shouldContain "replay semantics"
+        }
+
         "maps same-asset transfers across independent wallet scopes" {
             val result = AuthoritativeLedgerBalanceValidator.validate(
                 listOf(
@@ -1412,6 +1496,73 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
                 ),
             )
 
+            result.isValid shouldBe true
+        }
+
+        "validates ATOM ledger sequence with staking reward and dust sweeping" {
+            val events = listOf(
+                event("trade-1", 100, "trade", "43.41408352", "43.41408352", asset = "ATOM"),
+                event("trade-2", 200, "trade", "-43.41408352", "0", asset = "ATOM"),
+                event("trade-3", 300, "trade", "43.95797617", "43.95797617", asset = "ATOM"),
+                event("trade-4", 400, "trade", "-43.95797617", "0", asset = "ATOM"),
+                event("trade-5", 500, "trade", "43.73305343", "43.73305343", asset = "ATOM"),
+                event("trade-6", 600, "trade", "-43.73305343", "0", asset = "ATOM"),
+                event("trade-7", 700, "trade", "42.73760000", "42.73760000", asset = "ATOM"),
+                event("trade-8", 701, "trade", "0.00008153", "42.73768153", asset = "ATOM"),
+                event("trade-9", 800, "trade", "-42.73768153", "0", asset = "ATOM"),
+                event("trade-10", 900, "trade", "306.53043092", "306.53043092", asset = "ATOM"),
+                event(
+                    "transfer-spot",
+                    1000,
+                    "transfer",
+                    "-306.53043092",
+                    "0",
+                    asset = "ATOM",
+                    subtype = "spottostaking",
+                    refid = "t1",
+                ),
+                event(
+                    "transfer-stake",
+                    1000,
+                    "transfer",
+                    "306.53043092",
+                    "306.53043092",
+                    asset = "ATOM",
+                    subtype = "spottostaking",
+                    refid = "t1",
+                ),
+                event("staking-1", 1100, "staking", "0.01491875", "306.54087405", asset = "ATOM", fee = "0.00447562"),
+                event("staking-2", 1101, "staking", "0.02860726", "0.02002509", asset = "ATOM", fee = "0.00858217"),
+                event("dust-1", 1200, "spend", "-0.02002509", "0", asset = "ATOM", subtype = "dustsweeping"),
+                event(
+                    "transfer-back-stake",
+                    1300,
+                    "transfer",
+                    "-306.54087405",
+                    "0",
+                    asset = "ATOM",
+                    subtype = "stakingtospot",
+                    refid = "t2",
+                ),
+                event(
+                    "transfer-back-spot",
+                    1300,
+                    "transfer",
+                    "306.54087405",
+                    "306.54087405",
+                    asset = "ATOM",
+                    subtype = "stakingtospot",
+                    refid = "t2",
+                ),
+                event("trade-sell", 1400, "trade", "-306.54087405", "0", asset = "ATOM"),
+                event("staking-3", 1500, "staking", "0.03869550", "0.02708685", asset = "ATOM", fee = "0.01160865"),
+                event("staking-4", 1501, "staking", "0.11871749", "0.11018910", asset = "ATOM", fee = "0.03561524"),
+                event("dust-2", 1600, "spend", "-0.11018910", "0", asset = "ATOM", subtype = "dustsweeping"),
+                event("staking-5", 1700, "staking", "0.00002662", "0.00001864", asset = "ATOM", fee = "0.00000798"),
+                event("dust-3", 1800, "spend", "-0.00001864", "0", asset = "ATOM", subtype = "dustsweeping"),
+            )
+
+            val result = AuthoritativeLedgerBalanceValidator.validate(events)
             result.isValid shouldBe true
         }
     }

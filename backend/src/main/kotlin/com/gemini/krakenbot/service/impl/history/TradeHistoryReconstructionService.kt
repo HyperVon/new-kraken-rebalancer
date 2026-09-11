@@ -31,7 +31,7 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "7"
+        const val CURRENT_RECONSTRUCTION_VERSION = "8"
     }
 
     suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded() &&
@@ -128,7 +128,15 @@ class TradeHistoryReconstructionService(
 
         // Slightly wider than HISTORICAL_DAYS_BACK so daily closes cover the full reconstruction window.
         val ohlcData = mutableMapOf<String, List<Pair<Long, BigDecimal>>>()
-        val since = reconstructionNow.minus(95, ChronoUnit.DAYS)
+        val parsedInception = config.settings.inceptionDate
+            ?.takeIf(String::isNotBlank)
+            ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        val defaultSince = reconstructionNow.minus(95, ChronoUnit.DAYS)
+        val since = if (parsedInception != null && parsedInception.isBefore(defaultSince)) {
+            parsedInception.minus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
+        } else {
+            defaultSince
+        }
         val sinceSec = since.epochSecond
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
@@ -160,10 +168,11 @@ class TradeHistoryReconstructionService(
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
 
-        val externalLedgers =
-            ledgerRepository
-                .getLedgersInRange(since, reconstructionNow)
-                .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+        val allLedgers = ledgerRepository.getLedgersInRange(since, reconstructionNow)
+        val validation = AuthoritativeLedgerBalanceValidator.validate(allLedgers)
+        val resolvedScopes = if (validation.isValid) validation.resolvedScopes else emptyMap()
+
+        val externalLedgers = allLedgers.filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
         val historicalRewards = externalLedgers.filter { it.time.isBefore(cutoffTime) }
 
         val events =
@@ -172,6 +181,7 @@ class TradeHistoryReconstructionService(
                 historicalRewards = historicalRewards,
                 cutoffTime = cutoffTime,
                 now = reconstructionNow,
+                reconstructionStart = parsedInception,
             )
 
         // An empty OHLC response is recoverable only when another trustworthy source can value
@@ -214,6 +224,7 @@ class TradeHistoryReconstructionService(
                 tradePrices = tradePrices,
                 settings = settings,
                 currentAth = currentAth,
+                resolvedScopes = resolvedScopes,
             )
 
         if (snapshotsToSave.isNotEmpty()) {
@@ -223,6 +234,16 @@ class TradeHistoryReconstructionService(
             } else {
                 repository.save(snapshotsToSave)
             }
+            val earliest = snapshotsToSave.minBy { it.timestamp }
+            repository.setSyncMetadata(
+                SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                earliest.timestamp.toEpochMilli().toString(),
+            )
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT, "")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS, "")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS, "")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID, "")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT, "")
         }
         // Keep reconstruction freshness tied to the ledger coverage that was replayed. A
         // current reconstruction marker from an older coverage migration must not suppress the

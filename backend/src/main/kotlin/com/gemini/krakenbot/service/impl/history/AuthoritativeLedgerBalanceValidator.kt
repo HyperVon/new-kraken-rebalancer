@@ -338,11 +338,16 @@ object AuthoritativeLedgerBalanceValidator {
                 )
             }
 
+            val nonzeroDeltaIds = assetEvents
+                .filter { it.netBalanceDelta().signum() != 0 }
+                .map { it.ledgerId }
+                .toSet()
             val search = solveAsset(
                 asset = asset,
                 groups = eventsByTime.values.toList(),
                 linkedGroupSizes = linkedGroupSizes,
                 validationBudget = validationBudget,
+                nonzeroDeltaIds = nonzeroDeltaIds,
             )
             if (search.truncated) {
                 return invalid(
@@ -392,8 +397,24 @@ object AuthoritativeLedgerBalanceValidator {
                     scopeCount = scopeCount,
                 )
             }
+            if (search.solutions.map { replayScopeAssignmentSignature(it, nonzeroDeltaIds) }.distinct().size > 1) {
+                return invalid(
+                    events = events,
+                    failure = failure(
+                        asset = asset,
+                        scope = null,
+                        previous = null,
+                        current = assetEvents.first(),
+                        expected = null,
+                        observed = assetEvents.first().balance.takeIf { assetEvents.first().hasAuthoritativeBalance },
+                        detail = "ambiguous wallet scopes produce different replay semantics",
+                    ),
+                    counters = totalState.counters,
+                    scopeCount = scopeCount,
+                )
+            }
             val state = search.solutions.minWith(
-                compareBy<ReplayState> { it.scopes.size }.thenBy { it.signature() },
+                compareBy<ReplayState> { it.scopes.size }.thenBy { it.signature(nonzeroDeltaIds) },
             )
             totalState = totalState.copy(
                 resolvedScopes = totalState.resolvedScopes + state.resolvedScopes,
@@ -421,6 +442,7 @@ object AuthoritativeLedgerBalanceValidator {
         initialState: ReplayState,
         linkedGroupSizes: Map<String, Int>,
         validationBudget: SearchBudget,
+        nonzeroDeltaIds: Set<String>,
     ): GroupSearch {
         val solutions = mutableListOf<GroupSolution>()
         val failures = mutableListOf<ValidationFailure>()
@@ -432,7 +454,7 @@ object AuthoritativeLedgerBalanceValidator {
         fun search(state: ReplayState, remaining: List<LedgerEvent>) {
             if (truncated) return
             val stateKey = buildString {
-                append(state.signature())
+                append(state.signature(nonzeroDeltaIds))
                 append("|")
                 remaining.asSequence().map(LedgerEvent::ledgerId).sorted().joinTo(this, ",")
             }
@@ -443,7 +465,7 @@ object AuthoritativeLedgerBalanceValidator {
                 return
             }
             if (remaining.isEmpty()) {
-                if (solutions.none { it.state.signature() == state.signature() }) {
+                if (solutions.none { it.state.signature(nonzeroDeltaIds) == state.signature(nonzeroDeltaIds) }) {
                     solutions += GroupSolution(state)
                     if (solutions.size > MAX_VALID_SOLUTIONS) truncated = true
                 }
@@ -485,6 +507,7 @@ object AuthoritativeLedgerBalanceValidator {
         groups: List<List<LedgerEvent>>,
         linkedGroupSizes: Map<String, Int>,
         validationBudget: SearchBudget,
+        nonzeroDeltaIds: Set<String>,
     ): AssetSearch {
         val solutions = mutableListOf<ReplayState>()
         val failures = mutableListOf<ValidationFailure>()
@@ -493,13 +516,13 @@ object AuthoritativeLedgerBalanceValidator {
 
         fun search(index: Int, state: ReplayState) {
             if (truncated) return
-            if (!visitedStates.add("$index|${state.signature()}")) return
+            if (!visitedStates.add("$index|${state.signature(nonzeroDeltaIds)}")) return
             if (!validationBudget.tryConsume()) {
                 truncated = true
                 return
             }
             if (index == groups.size) {
-                if (solutions.none { it.signature() == state.signature() }) {
+                if (solutions.none { it.signature(nonzeroDeltaIds) == state.signature(nonzeroDeltaIds) }) {
                     solutions += state
                     if (solutions.size > MAX_VALID_SOLUTIONS) truncated = true
                 }
@@ -511,6 +534,7 @@ object AuthoritativeLedgerBalanceValidator {
                 initialState = state,
                 linkedGroupSizes = linkedGroupSizes,
                 validationBudget = validationBudget,
+                nonzeroDeltaIds = nonzeroDeltaIds,
             )
             if (groupSearch.truncated) {
                 truncated = true
@@ -534,12 +558,26 @@ object AuthoritativeLedgerBalanceValidator {
         )
     }
 
-    private fun ReplayState.signature(): String = scopes
-        .toSortedMap()
-        .entries
-        .joinToString("|") { (scope, state) ->
-            "$scope=${state.balance.toPlainString()}"
+    private fun ReplayState.signature(nonzeroDeltaIds: Set<String>): String = buildString {
+        scopes.toSortedMap().forEach { (scope, state) ->
+            append(scope).append('=').append(state.balance.toPlainString()).append(';')
         }
+        append('#')
+        resolvedScopes.entries
+            .filter { it.key in nonzeroDeltaIds }
+            .sortedBy { it.key }
+            .forEach { (id, scope) ->
+                append(id).append('=').append(scope.name).append(';')
+            }
+    }
+
+    private fun replayScopeAssignmentSignature(state: ReplayState, nonzeroDeltaIds: Set<String>): String =
+        state.resolvedScopes.entries
+            .filter { it.key in nonzeroDeltaIds }
+            .sortedBy { it.key }
+            .joinToString("|") { (ledgerId, scope) ->
+                "$ledgerId=${scope.name}"
+            }
 
     private fun aggregateBalanceSignature(state: ReplayState): String = state.scopes.values
         .fold(ZERO) { total, scope -> total.add(scope.balance) }
@@ -637,7 +675,12 @@ object AuthoritativeLedgerBalanceValidator {
             val failures = mutableListOf<ValidationFailure>()
             val candidateScopes = if (flexibleKind == FlexibleKind.STAKING) {
                 buildList {
-                    addAll(state.scopes.keys.filter(::isStakingScope))
+                    addAll(
+                        state.scopes.keys.filter {
+                            isStakingScope(it) &&
+                                state.scopes.getValue(it).balance.signum() != 0
+                        },
+                    )
                     // Some Kraken staking rows continue the Spot balance scope while other rows
                     // start a zero-based staking sub-ledger. Both are retained as candidates and
                     // resolved across later checkpoints rather than by a timestamp tie-breaker.

@@ -501,11 +501,14 @@ class TradeHistoryQueryService(
     }
 
     private suspend fun resolveContinuousHistoryStart(snapshots: List<PortfolioSnapshot>): Instant {
-        val stored = repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+        val storedEpoch = repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
             ?.toLongOrNull()
-            ?.takeIf { it >= 0L }
-        if (stored != null) {
-            return Instant.ofEpochMilli(stored)
+        if (storedEpoch != null && storedEpoch >= 0L) {
+            val stored = Instant.ofEpochMilli(storedEpoch)
+            val earliestSnapshot = snapshots.minByOrNull { it.timestamp }?.timestamp
+            if (earliestSnapshot == null || !earliestSnapshot.isBefore(stored)) {
+                return stored
+            }
         }
 
         val installType = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE)

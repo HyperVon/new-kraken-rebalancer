@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.service.impl.history.AuthoritativeLedgerBalanceValidator
 import com.gemini.krakenbot.service.impl.history.SnapshotHistoryCalculator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -990,6 +991,156 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             val forwardUsd = runningBalances["USD"]!!.add(spendEvent.netBalanceDelta())
             forwardBtc.shouldBeEqualComparingTo(BigDecimal("0.10"))
             forwardUsd.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+        }
+
+        "buildTimelineEvents ignores reconstructionStart when at or after cutoffTime" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = emptyList(),
+                cutoffTime = cutoff,
+                now = now,
+                reconstructionStart = cutoff.plusSeconds(10),
+            )
+            events.none { it.timestamp == cutoff.plusSeconds(10) } shouldBe true
+        }
+
+        "calculateHistoricalSnapshots handles sell trade and reverse applies correctly" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now.minus(2, ChronoUnit.DAYS),
+                pair = "XBTUSD",
+                side = OrderSide.SELL.uppercaseName,
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                fee = BigDecimal("10.00"),
+            )
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = listOf(trade),
+                cutoffTime = cutoff,
+                now = now,
+            )
+            val allocations = listOf(
+                Allocation(Asset(Asset.BTC), 50.0),
+                Allocation(Asset.USD, 50.0),
+            )
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("0.5"),
+                "USD" to BigDecimal("10000.00"),
+            )
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = currentPrices,
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.6"))
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("5010.00"))
+        }
+
+        "calculateHistoricalSnapshots throws on unsupported trade side" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now.minus(2, ChronoUnit.DAYS),
+                pair = "XBTUSD",
+                side = "UNSUPPORTED",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+            )
+            val events = listOf(SnapshotHistoryCalculator.TimelineEvent.TradeEvent(trade.timestamp, trade))
+            val allocations = listOf(
+                Allocation(Asset(Asset.BTC), 50.0),
+                Allocation(Asset.USD, 50.0),
+            )
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("0.5"),
+                "USD" to BigDecimal("10000.00"),
+            )
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+
+            shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = events,
+                    allocations = allocations,
+                    runningBalances = runningBalances,
+                    currentPrices = currentPrices,
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                )
+            }
+        }
+
+        "calculateHistoricalSnapshots respects SPOT scope and skips documented internal marker and unallocated asset" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val spotReward = LedgerEvent(
+                ledgerId = "spot-reward",
+                time = now.minus(3, ChronoUnit.DAYS),
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = "BTC",
+                amount = BigDecimal("0.02"),
+                fee = BigDecimal.ZERO,
+                balance = BigDecimal("0.52"),
+                hasAuthoritativeBalance = true,
+            )
+            val earnMarker = LedgerEvent(
+                ledgerId = "earn-marker",
+                time = now.minus(2, ChronoUnit.DAYS),
+                type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                subtype = "spotfromstaking",
+                asset = "BTC",
+                amount = BigDecimal("0.05"),
+                fee = BigDecimal.ZERO,
+                balance = BigDecimal("0.57"),
+                hasAuthoritativeBalance = true,
+            )
+            val unallocated = LedgerEvent(
+                ledgerId = "eth-reward",
+                time = now.minus(1, ChronoUnit.DAYS),
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = "ETH",
+                amount = BigDecimal("1.0"),
+                fee = BigDecimal.ZERO,
+                balance = BigDecimal("1.0"),
+                hasAuthoritativeBalance = true,
+            )
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = emptyList(),
+                historicalRewards = listOf(spotReward, earnMarker, unallocated),
+                cutoffTime = cutoff,
+                now = now,
+            )
+            val allocations = listOf(
+                Allocation(Asset(Asset.BTC), 50.0),
+                Allocation(Asset.USD, 50.0),
+            )
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("0.5"),
+                "USD" to BigDecimal("10000.00"),
+            )
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = currentPrices,
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+                resolvedScopes = mapOf("spot-reward" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT),
+            )
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.48"))
         }
     }
 }

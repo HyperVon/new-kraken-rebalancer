@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.49] - 2026-09-10
+
+### Added
+
+- **Inception snapshot reconstruction & backfill**: `SnapshotHistoryCalculator` and
+  `TradeHistoryReconstructionService` now dynamically backfill daily close snapshots and an
+  inception anchor back to the configured `settings.inceptionDate` (spanning 280+ days back to
+  December 5, 2025). This eliminates snapshot coverage gaps across the entire strategy history,
+  enabling verified all-time Rebalancer vs. Buy & Hold performance comparison.
+  Reconstruction version `8` records the updated continuous history start.
+
+### Fixed
+
+- **Wallet-scoped ledger replay & closed staking disambiguation**: Approved-start reconstruction
+  now applies balance deltas only for ledger rows resolved to the configured Spot wallet.
+  Staking scopes with zero balance are excluded from reward candidate assignment so trailing
+  rewards and dust sweeps resolve unambiguously to Spot rather than branching into ghost staking
+  permutations. Staking, Futures, and opaque-staking rows remain outside the Spot baseline, while
+  legitimate Spot-scoped staking rows still replay. Zero-net rows may remain intentionally
+  unresolved because they cannot mutate the reconstructed balance; every other unresolved
+  balance-changing row remains fail-closed. Replay-state identity now includes replay-relevant
+  scope assignments, and histories with equal aggregate balances but different replay semantics
+  are rejected as ambiguous. Baseline replay version `7` invalidates only the derived baseline;
+  completed recovery streams and offsets remain reusable without repagination.
+
 ## [6.17.48] - 2026-09-10
 
 ### Fixed

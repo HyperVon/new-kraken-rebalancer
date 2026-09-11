@@ -1872,6 +1872,22 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "resolveContinuousHistoryStart_ReturnsStoredWhenEarliestSnapshotNotBeforeStored" {
+            runTest {
+                val storedTime = now.minusSeconds(86400 * 20)
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+                } returns storedTime.toEpochMilli().toString()
+
+                val snap1 = snapshot(now.minusSeconds(86400 * 10), "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+
+                val proposal = service.getComparisonStartProposal(now.minusSeconds(86400 * 5))
+                proposal.shouldBeNull()
+            }
+        }
+
         "resolveContinuousHistoryStart_SetsEpochForFreshInstall" {
             runTest {
                 coEvery {

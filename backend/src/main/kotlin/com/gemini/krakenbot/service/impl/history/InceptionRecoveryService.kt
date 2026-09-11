@@ -1292,10 +1292,8 @@ class InceptionRecoveryService(
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
     ): Boolean {
         if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) return true
-        if (flowCategories[event.ledgerId] == FlowCategory.INTERNAL_MOVE &&
-            !event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
-        ) {
-            if (!LedgerFlowClassifier.isDocumentedInternalTransfer(event)) return true
+        val isConversion = event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
+        if (!isConversion) {
             when (resolvedScopes[event.ledgerId]) {
                 AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT -> Unit
 
@@ -1304,7 +1302,26 @@ class InceptionRecoveryService(
                 AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING,
                 -> return true
 
-                null -> return false
+                null -> {
+                    // A zero net delta cannot change the reconstructed configured balance, so it
+                    // is safe to ignore even when its authoritative checkpoint was deliberately
+                    // left without a replay scope.
+                    if (event.netBalanceDelta().signum() == 0) return true
+                    // Valid authoritative rows are assigned by the validator. A missing scope
+                    // would make applying versus skipping a balance-changing event unknowable.
+                    if (event.hasAuthoritativeBalance) return false
+                    // For an internal transfer, a documented internal scope marker (e.g. Earn allocation)
+                    // is known to be non-Spot and safely skipped, while an undocumented internal move
+                    // without a resolved scope fails closed.
+                    if (flowCategories[event.ledgerId] == FlowCategory.INTERNAL_MOVE) {
+                        return LedgerFlowClassifier.isDocumentedInternalScopeMarker(event)
+                    }
+                    // A staking row without an authoritative balance whose wallet scope could not
+                    // be resolved by the validator is ambiguous and must fail closed.
+                    if (event.type.equals(KrakenApiConstants.LEDGER_TYPE_STAKING, ignoreCase = true)) {
+                        return false
+                    }
+                }
             }
         }
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
@@ -1831,7 +1848,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "6"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "7"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

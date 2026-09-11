@@ -551,10 +551,13 @@ an ambiguous dust-sweep scope that changes aggregate balances, incomplete intern
 duplicate identity, malformed fee, unknown internal-transfer scope, or unresolved authoritative
 mismatch fails closed with a
 sanitized log diagnostic and a compact metadata reason. The validator returns the resolved wallet
-scope disposition per ledger ID and baseline replay consumes that same evidence: only a `SPOT` leg
-of a documented internal transfer changes the reconstructed configured balance; staking, Futures,
-and opaque-staking legs remain strategy-neutral and are excluded from Spot replay. Baseline replay
-version `6` invalidates only the derived baseline result,
+scope disposition per ledger ID and baseline replay consumes that same evidence: trade rows are
+ignored because `TradesHistory` is authoritative; every non-conversion row resolved to `SPOT`
+changes the reconstructed configured balance; and `STAKING`, `FUTURES`, and `OPAQUE_STAKING` rows
+are skipped. A zero-net row may remain intentionally unresolved because it cannot mutate the
+reconstructed balance, but an unresolved nonzero row fails closed. Complete conversions retain
+their explicit strategy-neutral two-leg replay and do not affect owner capital, rewards, ATH, or
+Buy & Hold scaling. Baseline replay version `7` invalidates only the derived baseline result,
 so completed recovery trade/ledger streams and their offsets remain reusable.
 
 The supplied forensic snapshot contained 7,553 retained ledger rows; 7,411 rows fall within the
@@ -614,12 +617,16 @@ Historical snapshot reconstruction replays the corresponding account-balance
 legs so reconstructed Spot balances remain faithful. For internal wallet moves, a Spot debit is
 reversed into the earlier balance and a Spot credit is reversed out; non-Spot counterpart legs are
 ignored. Same-scope Spot-to-Spot pairs are both applied once, so their net-zero balance effect
-remains net zero. Kraken
+remains net zero. The reconstruction dynamically walks backward to the configured `inceptionDate`
+(e.g. December 5, 2025), generating daily close snapshots and an inception anchor using historical
+Kraken OHLC daily pricing (`interval = 1440`). This bounds consecutive snapshot intervals to `<= 86,400L`
+seconds, eliminating historical coverage gaps and enabling continuous Rebalancer vs. Buy & Hold
+comparison across the entire strategy lifecycle. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
 and not Trades history, so the comparison does not try to deduplicate these ledger
-rows against `TradesHistory`. The reconstruction marker is paired with the ledger
-coverage version it replayed, so a coverage migration cannot suppress the required
-rebuild.
+rows against `TradesHistory`. Reconstruction version `8` records the continuous history start and
+is paired with the ledger coverage version it replayed, so a coverage migration cannot suppress
+the required rebuild.
 
 Benchmark events are built from the original classified ledger rows before any
 passthrough reduction. Safe same-source-timestamp USD funding plumbing (`OWNER_CAPITAL`
