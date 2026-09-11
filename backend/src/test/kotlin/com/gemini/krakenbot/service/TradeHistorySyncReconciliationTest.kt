@@ -15,6 +15,7 @@ import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
+import com.gemini.krakenbot.service.impl.history.TradeHistorySyncService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -921,6 +922,10 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 coEvery {
                     ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
                 } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery { repository.isHistorySeeded() } returns true
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION)
+                } returns TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
                 coEvery { krakenService.getBalances() } returns mapOf("USD" to BigDecimal("100.00"))
                 coEvery { krakenService.getTickerPrices(any()) } returns emptyMap()
                 coEvery { repository.load() } returns emptyList()

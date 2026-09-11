@@ -63,10 +63,9 @@ class FakeKrakenLedgerSyncIntegrationTest : StringSpec() {
             syncService.syncLedgersFromKraken()
 
             val stored = ledgerRepository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(86400))
-            stored.size shouldBe 3
-            stored.map { it.type }.toSet() shouldBe
-                setOf(KrakenApiConstants.LEDGER_TYPE_STAKING, KrakenApiConstants.LEDGER_TYPE_DIVIDEND)
-            stored.map { it.ledgerId }.toSet() shouldBe setOf("ledger-1", "ledger-2", "ledger-3")
+            stored.size shouldBe 4
+            stored.map { it.type }.toSet() shouldBe setOf("staking", "dividend", "trade")
+            stored.map { it.ledgerId }.toSet() shouldBe setOf("ledger-1", "ledger-2", "ledger-3", "ledger-4")
 
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED) shouldBe "true"
             ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET) shouldBe SyncMetadataKeys.COMPLETED

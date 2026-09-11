@@ -65,6 +65,8 @@ class TradeHistoryServiceImpl(
             krakenService = krakenService,
             configService = configService,
             nowProvider = syncNowProvider,
+            accountHistoryScopeGuard = accountHistoryScopeGuard,
+            ledgerRepository = ledgerRepository,
             reconstructionService =
             TradeHistoryReconstructionService(
                 repository = repository,
@@ -73,6 +75,7 @@ class TradeHistoryServiceImpl(
                 configService = configService,
                 portfolioStatsRepository = portfolioStatsRepository,
                 nowProvider = syncNowProvider,
+                accountHistoryScopeGuard = accountHistoryScopeGuard,
             ),
         ),
         ledgersSyncService =

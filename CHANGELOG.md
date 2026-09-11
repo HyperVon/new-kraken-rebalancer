@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.50] - 2026-09-11
+
+### Fixed
+
+- **Authoritative raw ledger coverage**: Coverage-grade ledger synchronization now queries unprojected
+  Kraken ledgers (`types = null`) so that all ledger records, including top-level trade continuity
+  checkpoints and unknown future ledger types, are captured. Unknown types remain visible through to
+  authoritative balance validation, failing closed on unresolved balance deltas. Ledger coverage version
+  advanced to `9`.
+- **Durable trade coverage and start-aware snapshot reconstruction**: Added durable trade coverage
+  metadata (`TRADE_COVERAGE_VERSION`, `TRADE_COVERAGE_START_EPOCH_SEC`, `TRADE_COVERAGE_HORIZON_EPOCH_SEC`,
+  and `TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST`). Snapshot reconstruction now verifies that both trade and
+  ledger coverage reach the requested start without relying on ordinary forward sync watermarks. Completed
+  account-bound inception recovery prefixes are adopted for trade coverage without re-downloading proven
+  history. Snapshot reconstruction invalidation is narrow, clearing derived snapshots only when historical
+  evidence predating the continuous start arrives or contracts change, preserving forward incremental syncs.
+  Reconstruction version advanced to `9`.
+
 ## [6.17.49] - 2026-09-10
 
 ### Added

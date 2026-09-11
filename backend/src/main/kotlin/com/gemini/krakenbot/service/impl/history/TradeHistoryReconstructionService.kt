@@ -13,6 +13,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.withExecutionSession
+import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
@@ -28,16 +29,87 @@ class TradeHistoryReconstructionService(
     private val configService: ConfigService,
     private val portfolioStatsRepository: PortfolioStatsRepository? = null,
     private val nowProvider: () -> Instant = Instant::now,
+    private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
 ) {
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "8"
+        const val CURRENT_RECONSTRUCTION_VERSION = "9"
     }
 
-    suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded() &&
-        ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) ==
-        LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+    suspend fun canRebuildSnapshots(config: AppConfig? = null, requestedStart: Instant? = null): Boolean {
+        if (!ledgerRepository.isLedgersSeeded() || !repository.isHistorySeeded()) {
+            return false
+        }
+        if (ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) !=
+            LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        ) {
+            return false
+        }
+        if (repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) !=
+            TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        ) {
+            return false
+        }
+
+        val parsedInception = requestedStart
+            ?: config?.settings?.inceptionDate?.let(InceptionDiscoveryService::parseInceptionDate)
+        val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
+        val effectiveStart = parsedInception?.takeIf { it.isBefore(seedBound) } ?: seedBound
+
+        val ledgerHorizon = ledgerRepository
+            .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochSecond)
+        val tradeHorizon = repository
+            .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochSecond)
+
+        if (ledgerHorizon == null || ledgerHorizon.isBefore(effectiveStart)) {
+            return false
+        }
+        if (tradeHorizon == null || tradeHorizon.isBefore(effectiveStart)) {
+            return false
+        }
+
+        if (effectiveStart.isBefore(seedBound)) {
+            val storedLedgerStartSec = ledgerRepository
+                .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC)
+                ?.toLongOrNull()
+            if (storedLedgerStartSec == null || storedLedgerStartSec > effectiveStart.epochSecond) {
+                return false
+            }
+            val storedTradeStartSec = repository
+                .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC)
+                ?.toLongOrNull()
+            if (storedTradeStartSec == null || storedTradeStartSec > effectiveStart.epochSecond) {
+                return false
+            }
+        }
+
+        if (accountHistoryScopeGuard != null) {
+            val scope = accountHistoryScopeGuard.validateAccountScope()
+            if (!scope.isValid) {
+                return false
+            }
+            val currentDigest = scope.currentScopeDigest
+            if (!currentDigest.isNullOrBlank()) {
+                val ledgerScopeDigest = ledgerRepository
+                    .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                if (ledgerScopeDigest != currentDigest) {
+                    return false
+                }
+                val tradeScopeDigest = repository
+                    .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                if (tradeScopeDigest != currentDigest) {
+                    return false
+                }
+            }
+        }
+
+        return true
+    }
 
     suspend fun reconstructHistoricalSnapshots() = configService.withExecutionSession {
         val config = configService.getConfig()
@@ -50,8 +122,8 @@ class TradeHistoryReconstructionService(
         reconstructHistoricalSnapshots(config, backend, replaceExisting = false)
 
     suspend fun rebuildHistoricalSnapshots(config: AppConfig, backend: KrakenService) {
-        check(canRebuildSnapshots()) {
-            "Cannot rebuild historical snapshots before ledger synchronization and coverage migration complete"
+        check(canRebuildSnapshots(config)) {
+            "Cannot rebuild historical snapshots before ledger synchronization, trade synchronization, and coverage migration complete"
         }
         reconstructHistoricalSnapshots(config, backend, replaceExisting = true)
     }
@@ -61,9 +133,9 @@ class TradeHistoryReconstructionService(
         backend: KrakenService,
         replaceExisting: Boolean,
     ) {
-        if (!canRebuildSnapshots()) {
+        if (!canRebuildSnapshots(config)) {
             log.info(
-                "Skipping historical snapshot reconstruction: ledger history is not seeded or ledger coverage is not current.",
+                "Skipping historical snapshot reconstruction: trade or ledger history is not seeded or coverage is not current.",
             )
             return
         }
@@ -270,6 +342,10 @@ class TradeHistoryReconstructionService(
         repository.setSyncMetadata(
             SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
             LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+        )
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION,
+            TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
         )
         repository.setSyncMetadata(
             SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,

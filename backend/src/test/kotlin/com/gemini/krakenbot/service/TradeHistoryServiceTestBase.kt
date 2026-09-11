@@ -23,7 +23,14 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
 
     protected val objectMapper: ObjectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
     protected val repository = mockk<TradeRepository>(relaxed = true).also {
+        coEvery { it.isHistorySeeded() } returns true
         coEvery { it.getSnapshotBefore(any()) } returns null
+        coEvery {
+            it.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION)
+        } returns com.gemini.krakenbot.service.impl.history.TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        coEvery {
+            it.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+        } answers { Instant.now().epochSecond.toString() }
     }
     protected val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     protected val ledgerRepository = mockk<LedgerRepository>(relaxed = true).also {
@@ -31,6 +38,9 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
         coEvery {
             it.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
         } returns com.gemini.krakenbot.service.impl.history.LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        coEvery {
+            it.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+        } answers { Instant.now().epochSecond.toString() }
     }
     protected val krakenService = mockk<KrakenService>(relaxed = true).also { stubWithStableBackend(it) }
     protected val configService = mockk<ConfigService>(relaxed = true)
@@ -69,6 +79,9 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
         }
         coEvery { repository.load() } answers { savedSnapshots.take(50) }
         coEvery { repository.getLatestSnapshot() } coAnswers { repository.load().firstOrNull() }
+        coEvery {
+            repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION)
+        } returns com.gemini.krakenbot.service.impl.history.TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
         coEvery { ledgerRepository.isLedgersSeeded() } returns true
         coEvery {
             ledgerRepository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION)

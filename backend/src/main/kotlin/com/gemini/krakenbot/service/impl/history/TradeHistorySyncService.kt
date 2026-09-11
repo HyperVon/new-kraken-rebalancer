@@ -10,8 +10,10 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.isLegacyUnknown
 import com.gemini.krakenbot.model.isLocalEstimate
 import com.gemini.krakenbot.model.isSettledApiFill
+import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import com.gemini.krakenbot.service.withExecutionSession
@@ -34,10 +36,15 @@ class TradeHistorySyncService(
     private val reconstructionService: TradeHistoryReconstructionService,
     private val nowProvider: () -> Instant = Instant::now,
     private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
+    private val ledgerRepository: LedgerRepository? = null,
 ) {
     private val log = LoggerFactory.getLogger(TradeHistorySyncService::class.java)
     private val syncMutex = Mutex()
     private var lastSyncTime: Instant = Instant.EPOCH
+
+    companion object {
+        const val CURRENT_TRADE_COVERAGE_VERSION = "1"
+    }
 
     suspend fun syncTradesFromKraken() = syncMutex.withLock {
         syncTradesFromKrakenLocked()
@@ -57,30 +64,59 @@ class TradeHistorySyncService(
             .toMutableList()
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
         val orderMetadataByTxid = buildOrderMetadata(originalLocalTrades)
-        processApiTradeBatch(
+        val result = processApiTradeBatch(
             apiTrades = apiTrades,
             originalLocalTrades = originalLocalTrades,
             allocations = allocations,
             orderMetadataByTxid = orderMetadataByTxid,
             seenApiFillKeys = mutableSetOf(),
         )
+
+        // Earlier fills arriving after an existing reconstruction invalidate stale snapshots
+        val continuousHistoryStart = repository
+            .getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochMilli)
+        if (continuousHistoryStart != null && apiTrades.any { it.timestamp.isBefore(continuousHistoryStart) }) {
+            log.info(
+                "Recovered trades predate continuous history start ({}); invalidating snapshot reconstruction.",
+                continuousHistoryStart,
+            )
+            repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "")
+        }
+
+        result
     }
 
     suspend fun rebuildHistoricalSnapshotsIfNeeded() {
         val config = configService.getConfig()
         if (config.settings.simulation) return
 
-        val ledgerCoverageReady = reconstructionService.canRebuildSnapshots()
+        val parsedInception = config.settings.inceptionDate
+            ?.let(InceptionDiscoveryService::parseInceptionDate)
+        val canRebuild = reconstructionService.canRebuildSnapshots(config, parsedInception)
+        val storedContinuousStart = repository
+            .getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochMilli)
+        val continuousStartCoversInception = parsedInception == null ||
+            (storedContinuousStart != null && !storedContinuousStart.isAfter(parsedInception))
+
         val reconstructionIsCurrent =
             repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) ==
                 TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION &&
                 repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION) ==
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION &&
-                ledgerCoverageReady
+                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION) ==
+                CURRENT_TRADE_COVERAGE_VERSION &&
+                continuousStartCoversInception &&
+                canRebuild
 
-        if (reconstructionIsCurrent || !ledgerCoverageReady) return
+        if (reconstructionIsCurrent || !canRebuild) return
 
-        log.info("Snapshot reconstruction version is stale or missing; rebuilding historical snapshots.")
+        log.info(
+            "Snapshot reconstruction version is stale, missing, or does not cover requested inception; rebuilding historical snapshots.",
+        )
         configService.withExecutionSession {
             val pinnedConfig = configService.getConfig()
             if (pinnedConfig.settings.simulation) return@withExecutionSession
@@ -121,33 +157,108 @@ class TradeHistorySyncService(
                     )
                     return@withStableBackend
                 }
-                syncTradesFromKrakenPinned(pinnedConfig, backend)
+                syncTradesFromKrakenPinned(pinnedConfig, backend, scopeResult?.currentScopeDigest)
             }
         } finally {
             configService.endExecutionSession()
         }
     }
 
-    private suspend fun syncTradesFromKrakenPinned(config: AppConfig, backend: KrakenService) {
+    private suspend fun syncTradesFromKrakenPinned(
+        config: AppConfig,
+        backend: KrakenService,
+        verifiedAccountScopeDigest: String?,
+    ) {
         val isSeeded = repository.isHistorySeeded()
-        val effectiveLatest = calculateEffectiveLatestTime()
-        // Bound every history pull to the seed lookback window instead of fetching full history
-        // since the account was created: snapshot/trade pruning honors the lifetime retention
-        // contract (never prune at or after inception) and reconstruction only reaches ~95 days,
-        // so anything older would be immediately discarded. Incremental syncs still overlap the
-        // previous watermark by 5 minutes so fills near it are re-fetched and reconciled rather
-        // than double-inserted.
-        // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
+        val coverageVersion = repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION)
         val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
-        val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond ?: seedBound.epochSecond
-        // A numeric progress cursor marks an interrupted seed. Recovery only applies while the
-        // database is unseeded: once seeding completed, an orphaned numeric offset (e.g. the process
-        // died after setHistorySeeded but before the COMPLETED marker) is stale and must not force
-        // a full-history query on every future sync.
+        val configuredInception = config.settings.inceptionDate
+            ?.let(InceptionDiscoveryService::parseInceptionDate)
+        val coverageBackfillBound = configuredInception?.takeIf { it.isBefore(seedBound) } ?: seedBound
+        val storedCoverageStartSec = repository
+            .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC)
+            ?.toLongOrNull()
+        val coverageStartMatches = !coverageBackfillBound.isBefore(seedBound) ||
+            (storedCoverageStartSec != null && storedCoverageStartSec <= coverageBackfillBound.epochSecond)
+        val storedScopeDigest = repository
+            .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+        val scopeMatches = verifiedAccountScopeDigest.isNullOrBlank() || storedScopeDigest == verifiedAccountScopeDigest
+        val isCoverageCurrent =
+            coverageVersion == CURRENT_TRADE_COVERAGE_VERSION && coverageStartMatches && scopeMatches
+        val needsCoverageBackfill = isSeeded && !isCoverageCurrent
+        val queryNow = nowProvider()
+
+        if (needsCoverageBackfill) {
+            log.info(
+                "Trade store is seeded but coverage version is {} (expected {}). Running coverage backfill from {}...",
+                coverageVersion,
+                CURRENT_TRADE_COVERAGE_VERSION,
+                coverageBackfillBound,
+            )
+            val recoveredCoverageThrough = recoverableCompletedTradeRecoveryThrough(
+                requiredStart = coverageBackfillBound,
+                queryNow = queryNow,
+                verifiedAccountScopeDigest = verifiedAccountScopeDigest,
+            )
+            val queryEnd = queryNow.plusSeconds(300)
+            val (totalAdded, totalReconciled) = if (recoveredCoverageThrough == null) {
+                val originalLocalTrades = repository
+                    .getTradesInRange(coverageBackfillBound.minusSeconds(1), queryEnd)
+                    .toMutableList()
+                val allocations = config.allocations.map { it.symbol.value }
+                processApiTrades(
+                    startSec = coverageBackfillBound.minusSeconds(1).epochSecond,
+                    endSec = queryNow.epochSecond,
+                    isSeeded = true,
+                    originalLocalTrades = originalLocalTrades,
+                    allocations = allocations,
+                )
+            } else if (recoveredCoverageThrough.isBefore(queryNow)) {
+                // Completed recovery proves the historical prefix. Only refresh the unproven tail;
+                // never repaginate the already recovered inception-to-horizon range.
+                val originalLocalTrades = repository
+                    .getTradesInRange(recoveredCoverageThrough.minusSeconds(300), queryEnd)
+                    .toMutableList()
+                val allocations = config.allocations.map { it.symbol.value }
+                processApiTrades(
+                    startSec = recoveredCoverageThrough.minusSeconds(300).epochSecond,
+                    endSec = queryNow.epochSecond,
+                    isSeeded = true,
+                    originalLocalTrades = originalLocalTrades,
+                    allocations = allocations,
+                )
+            } else {
+                0 to 0
+            }
+            finalizeSync(
+                isSeeded = true,
+                successfulQueryHorizon = queryNow,
+                coverageStart = coverageBackfillBound,
+                verifiedAccountScopeDigest = verifiedAccountScopeDigest,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                coverageBackfillBound.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, CURRENT_TRADE_COVERAGE_VERSION)
+            triggerReconstructionIfNeeded(config, backend)
+            log.info(
+                "Trade coverage backfill completed. Added: {} new, Reconciled: {}. Coverage version is now {}.",
+                totalAdded,
+                totalReconciled,
+                CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            return
+        }
+
+        val effectiveLatest = calculateEffectiveLatestTime()
+        val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
-        // A resumed seed restarts from page zero (new fills can shift Kraken offsets) but is still
-        // bounded to the seed lookback; the persisted page offset is only a progress marker.
-        val paginationStartSec = if (isRecoveringInitialSync) seedBound.epochSecond else startSec
+        val paginationStartSec = if (!isSeeded) {
+            coverageBackfillBound.epochSecond
+        } else {
+            startSec ?: seedBound.epochSecond
+        }
 
         log.info(
             "Starting trade history synchronization (isSeeded={}, startSec={}, recovering={})...",
@@ -160,7 +271,6 @@ class TradeHistorySyncService(
         // horizon as the Kraken pull (previously this was a full-history EPOCH query on a resumed
         // seed, pulling far more than the retained/ reconstructable window).
         val queryStart = Instant.ofEpochSecond(paginationStartSec)
-        val queryNow = nowProvider()
         val queryEnd = queryNow.plusSeconds(300)
         val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()
         val allocations = config.allocations.map { it.symbol.value }
@@ -173,11 +283,16 @@ class TradeHistorySyncService(
             allocations = allocations,
         )
 
-        triggerReconstructionIfNeeded(config, backend)
-
         // Persist the successful request horizon, not the later completion timestamp. A slow
         // pagination/reconstruction phase must not move the next query window past unseen fills.
-        finalizeSync(isSeeded, queryNow)
+        finalizeSync(
+            isSeeded = isSeeded,
+            successfulQueryHorizon = queryNow,
+            coverageStart = coverageBackfillBound,
+            verifiedAccountScopeDigest = verifiedAccountScopeDigest,
+        )
+
+        triggerReconstructionIfNeeded(config, backend)
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 
@@ -597,9 +712,9 @@ class TradeHistorySyncService(
         val isSimulation = config.settings.simulation
 
         if (!isSimulation && totalTrades > 0 && snapshots.size <= 1) {
-            if (!reconstructionService.canRebuildSnapshots()) {
+            if (!reconstructionService.canRebuildSnapshots(config)) {
                 log.info(
-                    "Skipping historical snapshot reconstruction during trade sync: ledger coverage is not current.",
+                    "Skipping historical snapshot reconstruction during trade sync: trade or ledger coverage is not current.",
                 )
                 return
             }
@@ -619,9 +734,32 @@ class TradeHistorySyncService(
         }
     }
 
-    private suspend fun finalizeSync(isSeeded: Boolean, successfulQueryHorizon: Instant) {
+    private suspend fun finalizeSync(
+        isSeeded: Boolean,
+        successfulQueryHorizon: Instant,
+        coverageStart: Instant,
+        verifiedAccountScopeDigest: String? = null,
+    ) {
         if (!isSeeded) {
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                coverageStart.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                successfulQueryHorizon.epochSecond.toString(),
+            )
+            if (verifiedAccountScopeDigest != null) {
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                    verifiedAccountScopeDigest,
+                )
+            }
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
         } else if (readInitialPaginationOffset() != null) {
@@ -638,10 +776,81 @@ class TradeHistorySyncService(
         }
         // Persist watermark even when no real fills exist so the next sync is incremental.
         writeSyncWatermark(successfulQueryHorizon)
+        repository.setSyncMetadata(
+            SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+            successfulQueryHorizon.epochSecond.toString(),
+        )
+        if (verifiedAccountScopeDigest != null) {
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                verifiedAccountScopeDigest,
+            )
+        }
         // Local throttling is based on completion; the durable cursor is based on the request
         // horizon above and must never be advanced in a finally block after a failed pull.
         lastSyncTime = nowProvider()
     }
+
+    private suspend fun recoverableCompletedTradeRecoveryThrough(
+        requiredStart: Instant,
+        queryNow: Instant,
+        verifiedAccountScopeDigest: String?,
+    ): Instant? {
+        if (verifiedAccountScopeDigest.isNullOrBlank()) return null
+
+        val storedScopeDigest = getTradeMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)?.trim()
+        val storedBindingVersion = getTradeMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION)?.trim()
+        if (storedScopeDigest != verifiedAccountScopeDigest ||
+            storedBindingVersion != AccountHistoryScopeGuard.CURRENT_BINDING_VERSION
+        ) {
+            return null
+        }
+
+        if (getTradeMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION) !=
+            InceptionRecoveryService.CURRENT_RECOVERY_VERSION ||
+            getTradeMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) !=
+            InceptionRecoveryStatus.COMPLETE ||
+            getLedgerMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) !=
+            InceptionRecoveryStatus.COMPLETE ||
+            getTradeMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET) != "completed" ||
+            getLedgerMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET) != "completed"
+        ) {
+            return null
+        }
+
+        val recoveryHorizon = getTradeMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochSecond)
+            ?: return null
+        if (recoveryHorizon.isBefore(requiredStart) || recoveryHorizon.isAfter(queryNow)) return null
+
+        val tradeTotal = getTradeMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL)
+            ?.toIntOrNull()
+            ?.takeIf { it >= 0 }
+            ?: return null
+        val tradeOldest = getTradeMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochMilli)
+        val tradeRangeEvidence = tradeTotal == 0 || tradeOldest?.let { !it.isAfter(requiredStart) } == true
+        if (!tradeRangeEvidence) return null
+
+        val ledgerTotal = getLedgerMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL)
+            ?.toIntOrNull()
+            ?.takeIf { it >= 0 }
+            ?: return null
+        val ledgerOldest = getLedgerMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS)
+            ?.toLongOrNull()
+            ?.let(Instant::ofEpochMilli)
+        val ledgerRangeEvidence = ledgerTotal == 0 || ledgerOldest?.let { !it.isAfter(requiredStart) } == true
+        if (!ledgerRangeEvidence) return null
+
+        return recoveryHorizon
+    }
+
+    private suspend fun getTradeMetadata(key: String): String? = repository.getSyncMetadata(key)
+
+    private suspend fun getLedgerMetadata(key: String): String? =
+        ledgerRepository?.getSyncMetadata(key) ?: repository.getSyncMetadata(key)
 
     private suspend fun readSyncWatermark(): Instant? =
         repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
@@ -704,6 +913,11 @@ class TradeHistorySyncService(
     private fun getTradeHistoryPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<TradeRecord>> =
         flow {
             var offset = 0
+            var priorTotal = repository
+                .getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
+                ?.toIntOrNull()
+                ?.coerceAtLeast(0)
+                ?: 0
 
             while (true) {
                 log.info("Fetching trade history batch with offset={}", offset)
@@ -712,17 +926,31 @@ class TradeHistorySyncService(
                     offset = offset,
                     endSec = endSec,
                 )
-                val totalCount = krakenService.getLastTradeHistoryTotalCount()
+                val totalCount = krakenService.getLastTradeHistoryTotalCount().coerceAtLeast(0)
+                val hasAuthoritativeTotal = totalCount > 0
+
+                val paginationShifted = hasAuthoritativeTotal && (
+                    (priorTotal > 0 && totalCount != priorTotal) ||
+                        (priorTotal == 0 && offset > 0)
+                    )
+                priorTotal = if (hasAuthoritativeTotal) totalCount else priorTotal
 
                 if (!isSeeded) {
                     repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, offset.toString())
-                    repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, totalCount.toString())
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.SYNC_TOTAL,
+                        if (hasAuthoritativeTotal) totalCount.toString() else (offset + apiTrades.size).toString(),
+                    )
                 }
 
                 if (apiTrades.isNotEmpty()) emit(apiTrades)
 
-                val nextOffset = offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
-                val hasMorePages = if (totalCount > 0) {
+                val nextOffset = if (paginationShifted && offset > 0) {
+                    0
+                } else {
+                    offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
+                }
+                val hasMorePages = !paginationShifted && if (hasAuthoritativeTotal) {
                     nextOffset < totalCount
                 } else {
                     apiTrades.size >= KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE

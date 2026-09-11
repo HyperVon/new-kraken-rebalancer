@@ -318,6 +318,10 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
             repository.saveTrade(apiFill(0, time = baseTime))
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, "-1")
             coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
@@ -333,6 +337,10 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
             repository.saveTrade(apiFill(0))
             repository.setSyncMetadata(
                 SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
@@ -351,6 +359,10 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
             repository.saveTrade(apiFill(0, time = baseTime))
 
             var now = fixedNow
@@ -429,7 +441,7 @@ class TradeHistorySyncServiceTest : StringSpec() {
         "triggers snapshot reconstruction after a live seed that added trades when canRebuildSnapshots is true" {
             stubStableBackend()
             stubConfig()
-            coEvery { reconstructionService.canRebuildSnapshots() } returns true
+            coEvery { reconstructionService.canRebuildSnapshots(any(), any()) } returns true
             coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
             coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
 
@@ -441,7 +453,7 @@ class TradeHistorySyncServiceTest : StringSpec() {
         "skips snapshot reconstruction during trade sync when ledger coverage is stale or unseeded" {
             stubStableBackend()
             stubConfig()
-            coEvery { reconstructionService.canRebuildSnapshots() } returns false
+            coEvery { reconstructionService.canRebuildSnapshots(any(), any()) } returns false
             coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
             coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
 
@@ -1469,6 +1481,10 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
 
             val initialWatermark = 1700000000L
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, initialWatermark.toString())

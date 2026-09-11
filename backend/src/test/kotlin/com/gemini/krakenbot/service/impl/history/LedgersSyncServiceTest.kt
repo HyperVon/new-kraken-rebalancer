@@ -139,9 +139,9 @@ class LedgersSyncServiceTest : StringSpec() {
             var now = fixedNow
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { now })
 
-            val requestedTypes = mutableListOf<Set<String>>()
+            val requestedTypes = mutableListOf<Set<String>?>()
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                requestedTypes += arg<Set<String>>(3)
+                requestedTypes += arg<Set<String>?>(3)
                 emptyList()
             }
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
@@ -149,30 +149,12 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
             service.syncLedgersFromKraken()
 
-            // Per-type cursors fetch every supported response family once per sync (offset 0),
+            // Unified raw coverage queries with types = null once per sync (offset 0),
             // while the second sync is throttled.
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(any(), any(), any(), any())
             }
-            val expectedTypes = setOf(
-                setOf(KrakenApiConstants.LEDGER_TYPE_STAKING),
-                setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND),
-                setOf(KrakenApiConstants.LEDGER_TYPE_EARN),
-                setOf(KrakenApiConstants.LEDGER_TYPE_REWARD),
-                setOf(KrakenApiConstants.LEDGER_TYPE_DEPOSIT),
-                setOf(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL),
-                setOf(KrakenApiConstants.LEDGER_TYPE_TRANSFER),
-                setOf(KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT),
-                setOf(KrakenApiConstants.LEDGER_TYPE_CONVERSION),
-                setOf(KrakenApiConstants.LEDGER_TYPE_SPEND),
-                setOf(KrakenApiConstants.LEDGER_TYPE_RECEIVE),
-                setOf(KrakenApiConstants.LEDGER_TYPE_MARGIN),
-                setOf(KrakenApiConstants.LEDGER_TYPE_ROLLOVER),
-                setOf(KrakenApiConstants.LEDGER_TYPE_SETTLED),
-                setOf(KrakenApiConstants.LEDGER_TYPE_CREDIT),
-            )
-            requestedTypes.toSet() shouldBe expectedTypes
-            LedgersSyncService.SUPPORTED_LEDGER_TYPES.toSet() shouldBe expectedTypes.flatten().toSet()
+            requestedTypes shouldBe listOf(null)
             service.isLedgersSeeded() shouldBe true
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
@@ -215,12 +197,11 @@ class LedgersSyncServiceTest : StringSpec() {
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
                 fixedNow.epochSecond.toString()
-            // Per-type cursors: each offset is fetched for every supported type
-            // (duplicates are deduped by unique index).
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            // Unified coverage queries each offset once with types = null.
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(any(), 0, any(), any())
             }
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(any(), 50, any(), any())
             }
         }
@@ -274,63 +255,35 @@ class LedgersSyncServiceTest : StringSpec() {
             }
         }
 
-        "per-type cursors continue staking after dividend is exhausted" {
+        "paginates multiple raw pages until total count is exhausted" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
 
-            // Staking has 75 (2 pages), dividend has 10 (1 page) — exercises the `continue` branch when perTypeDone[dividend] becomes true.
-            val stakingPageOne = (0 until 50).map { event(it, time = baseTime) }
-            val stakingPageTwo = (50 until 75).map { event(it, time = baseTime) }
-            val dividendPage = (100 until 110).map {
+            val pageOne = (0 until 50).map { event(it, time = baseTime) }
+            val pageTwo = (50 until 85).map {
                 event(it, time = baseTime).copy(type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND)
             }
 
-            coEvery {
-                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)))
-            } coAnswers
-                {
-                    val offset = secondArg<Int?>() ?: 0
-                    if (offset == 0) stakingPageOne else stakingPageTwo
-                }
-            coEvery {
-                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND)))
-            } returns
-                dividendPage
             var lastTotalCount = 0
             var lastRawPageSize = 0
             coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { lastRawPageSize }
             coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { lastTotalCount }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                lastTotalCount = 0
-                lastRawPageSize = 0
-                emptyList()
-            }
-            coEvery {
-                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)))
-            } coAnswers {
                 val offset = secondArg<Int?>() ?: 0
-                lastTotalCount = 75
-                lastRawPageSize = if (offset == 0) 50 else 25
-                if (offset == 0) stakingPageOne else stakingPageTwo
-            }
-            coEvery {
-                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND)))
-            } coAnswers {
-                lastTotalCount = 10
-                lastRawPageSize = 10
-                dividendPage
+                lastTotalCount = 85
+                lastRawPageSize = if (offset == 0) 50 else 35
+                if (offset == 0) pageOne else pageTwo
             }
 
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
             repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 85
-            // Dividend done after first page, second iteration only fetches staking pageTwo.
             coVerify(exactly = 1) {
-                krakenService.getLedgers(any(), 0, any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND)))
+                krakenService.getLedgers(any(), 0, any(), any())
             }
-            coVerify(exactly = 2) {
-                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)))
+            coVerify(exactly = 1) {
+                krakenService.getLedgers(any(), 50, any(), any())
             }
         }
 
@@ -437,8 +390,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 if (now == fixedNow) 0 else 1
             }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
-                if (now != fixedNow && types == setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)) {
+                if (now != fixedNow) {
                     listOf(event(1, time = fixedNow.minusSeconds(120)))
                 } else {
                     emptyList()
@@ -452,7 +404,7 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             val expectedInitialStart = baseTime.minusSeconds(300).epochSecond
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(
                     startSec = expectedInitialStart,
                     offset = 0,
@@ -461,7 +413,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 )
             }
             val expectedIncrementalStart = fixedNow.minusSeconds(300).epochSecond
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(
                     startSec = expectedIncrementalStart,
                     offset = 0,
@@ -506,9 +458,8 @@ class LedgersSyncServiceTest : StringSpec() {
             now = fixedNow.plusSeconds(1_200)
             failureEnabled = false
             service.syncLedgersFromKraken()
-            // The failed retry reaches the first per-type request before
-            // throwing: 1 failed call + one retry call per supported type.
-            coVerify(exactly = 1 + LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            // 1 failed call + 1 successful retry call.
+            coVerify(exactly = 2) {
                 krakenService.getLedgers(
                     startSec = fixedNow.minusSeconds(300).epochSecond,
                     offset = 0,
@@ -634,33 +585,17 @@ class LedgersSyncServiceTest : StringSpec() {
                 )
 
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
-            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
-                when (types) {
-                    setOf(KrakenApiConstants.LEDGER_TYPE_DEPOSIT) -> listOf(depositEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL) -> listOf(withdrawalEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_TRANSFER) -> listOf(transferEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT) -> listOf(adjustmentEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_SPEND) -> listOf(spendEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_RECEIVE) -> listOf(receiveEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_STAKING) -> listOf(event(0, time = baseTime))
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_EARN) -> listOf(earnRewardEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_REWARD) -> listOf(promotionRewardEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_CONVERSION) -> listOf(conversionEvent)
-
-                    // duplicate
-                    else -> emptyList()
-                }
-            }
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(
+                depositEvent,
+                withdrawalEvent,
+                transferEvent,
+                adjustmentEvent,
+                spendEvent,
+                receiveEvent,
+                earnRewardEvent,
+                promotionRewardEvent,
+                conversionEvent,
+            )
 
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.isLedgerCoverageCurrent() shouldBe false
@@ -843,7 +778,7 @@ class LedgersSyncServiceTest : StringSpec() {
                     nowProvider = { fixedNow },
                     accountHistoryScopeGuard = scopeGuard,
                 ).syncLedgersFromKraken()
-                apiCalls - beforeCalls shouldBe LedgersSyncService.SUPPORTED_LEDGER_TYPES.size
+                apiCalls - beforeCalls shouldBe 1
             }
 
             fallback(currentDigest = null)
@@ -1156,15 +1091,9 @@ class LedgersSyncServiceTest : StringSpec() {
             repository.setLedgersSeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "2")
 
-            val failure = RuntimeException("Kraken API Rate Limit on spend type")
+            val failure = RuntimeException("Kraken API Rate Limit on ledger sync")
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
-            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
-                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_SPEND)) {
-                    throw failure
-                }
-                emptyList()
-            }
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } throws failure
 
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             shouldThrow<RuntimeException> { service.syncLedgersFromKraken() } shouldBe failure
@@ -1182,23 +1111,17 @@ class LedgersSyncServiceTest : StringSpec() {
 
             val firstPage = (0 until 50).map { event(it) }
             val secondPage = listOf(event(50))
-            val failure = RuntimeException("Kraken API failed during the second staking page")
+            val failure = RuntimeException("Kraken API failed during the second ledger page")
             var failureEnabled = true
             var lastTotalCount = 0
             coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { lastTotalCount }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>>(3)
                 val offset = secondArg<Int?>() ?: 0
-                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)) {
-                    lastTotalCount = 100
-                    when (offset) {
-                        0 -> firstPage
-                        50 -> if (failureEnabled) throw failure else secondPage
-                        else -> emptyList()
-                    }
-                } else {
-                    lastTotalCount = 0
-                    emptyList()
+                lastTotalCount = 100
+                when (offset) {
+                    0 -> firstPage
+                    50 -> if (failureEnabled) throw failure else secondPage
+                    else -> emptyList()
                 }
             }
 
@@ -1250,32 +1173,23 @@ class LedgersSyncServiceTest : StringSpec() {
             coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { lastTotalCount }
             coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { lastRawPageSize }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
                 val offset = secondArg<Int?>() ?: 0
-                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_EARN)) {
-                    lastTotalCount = 100
-                    when (offset) {
-                        0 -> {
-                            // Page 1: 50 non-earn rows received from type=all query; filtered down to empty
-                            lastRawPageSize = 50
-                            emptyList()
-                        }
-
-                        50 -> {
-                            // Page 2: 50 raw rows with 2 earn rows
-                            lastRawPageSize = 50
-                            listOf(earnEvent1, earnEvent2)
-                        }
-
-                        else -> {
-                            lastRawPageSize = 0
-                            emptyList()
-                        }
+                lastTotalCount = 100
+                when (offset) {
+                    0 -> {
+                        lastRawPageSize = 50
+                        emptyList()
                     }
-                } else {
-                    lastTotalCount = 0
-                    lastRawPageSize = 0
-                    emptyList()
+
+                    50 -> {
+                        lastRawPageSize = 50
+                        listOf(earnEvent1, earnEvent2)
+                    }
+
+                    else -> {
+                        lastRawPageSize = 0
+                        emptyList()
+                    }
                 }
             }
 
@@ -1318,28 +1232,22 @@ class LedgersSyncServiceTest : StringSpec() {
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
             coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { lastRawPageSize }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
                 val offset = secondArg<Int?>() ?: 0
-                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_EARN)) {
-                    when (offset) {
-                        0 -> {
-                            lastRawPageSize = 50
-                            emptyList()
-                        }
-
-                        50 -> {
-                            lastRawPageSize = 10
-                            listOf(earnEvent)
-                        }
-
-                        else -> {
-                            lastRawPageSize = 0
-                            emptyList()
-                        }
+                when (offset) {
+                    0 -> {
+                        lastRawPageSize = 50
+                        emptyList()
                     }
-                } else {
-                    lastRawPageSize = 0
-                    emptyList()
+
+                    50 -> {
+                        lastRawPageSize = 10
+                        listOf(earnEvent)
+                    }
+
+                    else -> {
+                        lastRawPageSize = 0
+                        emptyList()
+                    }
                 }
             }
 

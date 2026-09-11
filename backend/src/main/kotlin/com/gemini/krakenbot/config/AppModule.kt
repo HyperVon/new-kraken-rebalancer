@@ -139,6 +139,7 @@ val coreModule =
                 krakenService = get(),
                 configService = get(),
                 portfolioStatsRepository = get(),
+                accountHistoryScopeGuard = get(),
             )
         }
         single {
@@ -148,6 +149,7 @@ val coreModule =
                 configService = get(),
                 reconstructionService = get(),
                 accountHistoryScopeGuard = get(),
+                ledgerRepository = get(),
             )
         }
         single {

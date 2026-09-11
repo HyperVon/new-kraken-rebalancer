@@ -151,6 +151,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
                 } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION)
+                } returns "1"
 
                 service.rebuildHistoricalSnapshotsIfNeeded()
 
@@ -1013,7 +1016,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 )
                 every { configService.getConfig() } returns appConfig
 
-                coEvery { repository.isHistorySeeded() } returns false
+                var historySeeded = false
+                coEvery { repository.isHistorySeeded() } answers { historySeeded }
+                coEvery { repository.setHistorySeeded(any()) } answers { historySeeded = firstArg() }
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getSyncMetadata(TestFixtures.SYNC_OFFSET) } returns null
                 coEvery { repository.getSyncMetadata(TestFixtures.SYNC_TOTAL) } returns null
@@ -1053,7 +1058,6 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade1, apiTrade2)
                 coEvery { repository.saveTrade(any()) } returns 1
                 coEvery { repository.updateTrade(any(), any()) } just Runs
-                coEvery { repository.setHistorySeeded(true) } just Runs
                 coEvery { repository.setSyncMetadata(any(), any()) } just Runs
 
                 val mockBalances = mapOf(

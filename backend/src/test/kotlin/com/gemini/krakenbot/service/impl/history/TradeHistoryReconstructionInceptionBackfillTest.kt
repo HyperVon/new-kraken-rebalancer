@@ -80,14 +80,38 @@ class TradeHistoryReconstructionInceptionBackfillTest :
             nowProvider = { now },
         )
 
+        suspend fun seedCoverageForInception(coverageStart: Instant = inception, horizon: Instant = now) {
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                coverageStart.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                horizon.epochSecond.toString(),
+            )
+            repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                coverageStart.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                horizon.epochSecond.toString(),
+            )
+        }
+
         "reconstructs full historical timeline back to inception date bridging all snapshot gaps" {
             runTest {
-                // Seed ledger seeded marker and coverage
-                ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
-                ledgerRepository.setSyncMetadata(
-                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-                )
+                seedCoverageForInception()
 
                 // Seed fake OHLC daily close prices from inception to now (~280 days)
                 val days = ChronoUnit.DAYS.between(
@@ -158,11 +182,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
 
         "historical reconstruction fails closed for an unresolved nonzero staking row" {
             runTest {
-                ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
-                ledgerRepository.setSyncMetadata(
-                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-                )
+                seedCoverageForInception()
 
                 val ohlc = listOf(
                     inception.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
@@ -204,11 +224,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
 
         "historical reconstruction ignores an unresolved zero-delta staking row safely" {
             runTest {
-                ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
-                ledgerRepository.setSyncMetadata(
-                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-                )
+                seedCoverageForInception()
                 krakenService.ohlcSupplier = { _, _, _ ->
                     listOf(
                         inception.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
@@ -242,11 +258,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
 
         "historical reconstruction skips a staking-wallet reward resolved by an authoritative balance" {
             runTest {
-                ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
-                ledgerRepository.setSyncMetadata(
-                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-                )
+                seedCoverageForInception()
                 krakenService.ohlcSupplier = { _, _, _ ->
                     listOf(
                         inception.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
@@ -282,11 +294,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
 
         "historical reconstruction replays a staking row resolved to Spot" {
             runTest {
-                ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
-                ledgerRepository.setSyncMetadata(
-                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-                )
+                seedCoverageForInception()
                 krakenService.ohlcSupplier = { _, _, _ ->
                     listOf(
                         inception.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
@@ -332,11 +340,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
 
         "handles various inception dates and invalid ledger validation" {
             runTest {
-                ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED, "true")
-                ledgerRepository.setSyncMetadata(
-                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                    LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-                )
+                seedCoverageForInception()
 
                 val ohlc = listOf(
                     now.minus(96, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),

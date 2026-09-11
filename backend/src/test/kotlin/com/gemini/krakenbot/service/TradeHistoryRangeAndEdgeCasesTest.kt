@@ -436,9 +436,13 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 val service = createService()
                 every { configService.getConfig() } returns appConfig
 
-                coEvery { repository.isHistorySeeded() } returns false
+                var historySeeded = false
+                val syncMetadata = mutableMapOf<String, String>()
+                coEvery { repository.isHistorySeeded() } answers { historySeeded }
+                coEvery { repository.setHistorySeeded(any()) } answers { historySeeded = firstArg() }
                 coEvery { repository.getLatestTradeTime() } returns null
-                coEvery { repository.getSyncMetadata(any()) } returns null
+                coEvery { repository.getSyncMetadata(any()) } answers { syncMetadata[firstArg()] }
+                coEvery { repository.setSyncMetadata(any(), any()) } answers { syncMetadata[firstArg()] = secondArg() }
 
                 val cutoff = Instant.now().minus(5, ChronoUnit.DAYS)
                 val existingSnapshot = PortfolioSnapshot(
@@ -494,9 +498,6 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(dryRunTwin, liveTwin)
                 coEvery { repository.saveTrade(any()) } returns 1
-                coEvery { repository.updateTrade(any(), any()) } just Runs
-                coEvery { repository.setHistorySeeded(true) } just Runs
-                coEvery { repository.setSyncMetadata(any(), any()) } just Runs
                 coEvery { krakenService.getOHLC(TestFixtures.BTCUSD, 1440, any()) } returns emptyList()
 
                 val reconstructed = slot<List<PortfolioSnapshot>>()

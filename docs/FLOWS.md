@@ -452,8 +452,11 @@ trade synchronization, but it has separate metadata and insert-only semantics:
 - Incremental passes begin from the latest stored ledger time or watermark minus
   **300 seconds**, with a captured end time for stable newest-first pagination.
 - Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
-  so overlap and repeated pages are harmless. The sync requests `staking`,
-  `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `conversion`,
+  so overlap and repeated pages are harmless. Coverage-grade synchronization
+  (`CURRENT_LEDGER_COVERAGE_VERSION = "9"`) requests unprojected ledger pages (`types = null`),
+  ensuring all raw entries (including `trade` balance-continuity checkpoints and unknown future types)
+  are captured and persisted without allow-list projection. Ordinary non-coverage sync passes request
+  `staking`, `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `conversion`,
   `spend`, `receive`, `margin`, `rollover`, `settled`, `credit`, and top-level `reward`
   response types. The live Kraken adapter sends `type=sale` for `spend` and `receive`
   because `sale` is the documented query filter, and sends `type=all` for `earn`,
@@ -461,7 +464,9 @@ trade synchronization, but it has separate metadata and insert-only semantics:
 - Inception recovery separately requests unfiltered ledger pages. If Kraken
   returns an observed top-level `type=reward` row there, it is persisted and
   replayed as an in-kind external balance event. Ordinary synchronization uses
-  the same local response-type filtering for future reward rows.
+  the same local response-type filtering for future reward rows. Durable trade
+  coverage version `1` records start epoch sec, horizon epoch sec, and verified account
+  scope digest, enabling start-aware reconstruction without relying on forward trade watermarks.
 - Invalid live credentials skip the sync without opening an execution session;
   a real sync brackets all pages with the same `ConfigService` execution-session
   boundary used by trade synchronization. Simulation mode does not call Kraken.

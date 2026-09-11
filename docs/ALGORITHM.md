@@ -504,7 +504,10 @@ failure.
 ### Ledger history and external rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
-once every **300 seconds**, requesting the fifteen retained balance-affecting response types
+once every **300 seconds**. Coverage-grade synchronization (`CURRENT_LEDGER_COVERAGE_VERSION = "9"`) queries
+unprojected Kraken ledgers (`types = null`) so that all raw ledger records—including top-level `trade`
+checkpoint rows and unknown future ledger types—are captured and persisted. Ordinary non-coverage
+sync passes fall back to the fifteen retained balance-affecting response types
 (`staking`, `dividend`, `earn`, `reward`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
 `conversion`, `spend`, `receive`, `margin`, `rollover`, `settled`, and `credit`) in pages of **50**. Kraken's API query filter does not
 support `type=earn` (passing `type=earn` returns `EGeneral:Invalid arguments`);
@@ -514,8 +517,8 @@ consumer `spend`/`receive` rows and filters locally. Pagination for filtered que
 checks Kraken's authoritative total count (`nextOffset < totalCount`) and the
 raw response page size (`rawPageSize >= 50`) so intermediate pages containing
 zero target rows continue paginating until completion. A seeded installation whose coverage
-version predates version `8` backfills from the configured inception date when it predates the
-default window, otherwise it performs the bounded **96-day** backfill
+version predates version `9` backfills from the configured inception date when it predates the
+default window, otherwise it performs the bounded **96-day** backfill with unprojected ledgers
 with the same identity deduplication and records the covered lower bound; a later earlier
 configured inception triggers another bounded migration backfill. Ledgers remain retained for the
 lifetime of the account. The first and recovered initial syncs use the configured inception when
@@ -610,11 +613,11 @@ seconds, eliminating historical coverage gaps and enabling continuous Rebalancer
 comparison across the entire strategy lifecycle. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
 and not Trades history, so the comparison does not try to deduplicate these ledger
-rows against `TradesHistory`. Reconstruction version `8` records the continuous history start and
-is paired with the ledger coverage version it replayed, so a coverage migration cannot suppress
+rows against `TradesHistory`. Reconstruction version `9` records the continuous history start and
+is paired with the ledger and trade coverage versions it replayed, so a coverage migration cannot suppress
 the required rebuild.
 
-When a seeded database migrates to ledger coverage version `8`, the migration may reuse completed
+When a seeded database migrates to ledger coverage version `9` or trade coverage version `1`, the migration may reuse completed
 inception-recovery coverage only when both private-history streams are complete, their durable
 offsets/version and total/oldest-row evidence reach the required lower bound, and the persisted
 account-scope binding matches the scope validated for the current run. It then fetches only an
