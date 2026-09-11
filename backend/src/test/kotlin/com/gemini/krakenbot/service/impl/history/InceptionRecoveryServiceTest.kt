@@ -6,10 +6,12 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.FlowCategory
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerOrderIdentities
@@ -784,7 +786,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "reverse accounting handles sells and harmless out-of-universe zero ledger rows" {
+        "reverse accounting applies only the Spot-facing internal transfer leg" {
             runTest {
                 val botTime = Instant.parse("2026-01-02T00:00:00Z")
                 val buy = apiTrade(
@@ -805,7 +807,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.saveTrade(localEstimate(sell.timestamp, sell))
                 repository.saveSnapshot(
                     anchorSnapshot(
-                        balances = mapOf(Asset.BTC to BigDecimal("0.4"), Asset.USD to BigDecimal("959.40")),
+                        balances = mapOf(Asset.BTC to BigDecimal("0.4"), Asset.USD to BigDecimal("1059.40")),
                         timestamp = Instant.parse("2026-01-03T00:00:00Z"),
                     ),
                 )
@@ -820,13 +822,25 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             amount = BigDecimal.ZERO,
                         ),
                         LedgerEvent(
-                            ledgerId = "internal-wallet-credit",
+                            ledgerId = "internal-wallet-futures-debit",
                             time = botTime.plusSeconds(1800),
-                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            subtype = "spotfromfutures",
+                            asset = Asset.USD,
+                            amount = BigDecimal("-100.00"),
+                            balance = BigDecimal.ZERO,
+                            refid = "internal-wallet-transfer",
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "internal-wallet-spot-credit",
+                            time = botTime.plusSeconds(1800),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
                             subtype = "spotfromfutures",
                             asset = Asset.USD,
                             amount = BigDecimal("100.00"),
                             balance = BigDecimal("100.00"),
+                            refid = "internal-wallet-transfer",
                             hasAuthoritativeBalance = true,
                         ),
                     ),
@@ -842,6 +856,139 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     baseline.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal.ZERO)
                     baseline.assets.getValue(Asset.USD).balance.shouldBeEqualComparingTo(BigDecimal("1000.00"))
                 }
+            }
+        }
+
+        "approved-start replay restores a Spot debit for Spot-to-staking" {
+            runTest {
+                val baseline = recoverApprovedInternalTransferBaseline(
+                    asset = Asset.SOL,
+                    allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                    anchorBalances = mapOf(Asset.SOL to BigDecimal("6"), Asset.USD to BigDecimal("100")),
+                    subtype = "spottostaking",
+                    expectedBaseline = BigDecimal("10"),
+                    legs = listOf(
+                        TransferLeg("staking-credit", "4", "4"),
+                        TransferLeg("spot-debit", "-4", "6"),
+                    ),
+                )
+
+                baseline.assets.getValue(Asset.SOL).balance shouldBeEqualComparingTo BigDecimal("10")
+                baseline.drawdownPercent shouldBeEqualComparingTo BigDecimal.ZERO
+                baseline.fiatDeploymentPercent shouldBeEqualComparingTo BigDecimal.ZERO
+            }
+        }
+
+        "approved-start replay removes a Spot credit for staking-to-Spot" {
+            runTest {
+                val baseline = recoverApprovedInternalTransferBaseline(
+                    asset = Asset.SOL,
+                    allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                    anchorBalances = mapOf(Asset.SOL to BigDecimal("10"), Asset.USD to BigDecimal("100")),
+                    subtype = "stakingtospot",
+                    expectedBaseline = BigDecimal("6"),
+                    legs = listOf(
+                        TransferLeg("spot-credit", "4", "10"),
+                        TransferLeg("staking-debit", "-4", "0"),
+                    ),
+                )
+
+                baseline.assets.getValue(Asset.SOL).balance shouldBeEqualComparingTo BigDecimal("6")
+            }
+        }
+
+        "approved-start replay removes a Futures-to-Spot credit from the Spot baseline" {
+            runTest {
+                val baseline = recoverApprovedInternalTransferBaseline(
+                    asset = Asset.USD,
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                    anchorBalances = mapOf(Asset.USD to BigDecimal("1100")),
+                    subtype = "spotfromfutures",
+                    expectedBaseline = BigDecimal("1000"),
+                    legs = listOf(
+                        TransferLeg("spot-credit", "100", "1100"),
+                        TransferLeg("futures-debit", "-100", "0"),
+                    ),
+                )
+
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("1000")
+            }
+        }
+
+        "approved-start replay restores a Spot debit for Spot-to-Futures" {
+            runTest {
+                val baseline = recoverApprovedInternalTransferBaseline(
+                    asset = Asset.USD,
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                    anchorBalances = mapOf(Asset.USD to BigDecimal("1000")),
+                    subtype = "spottofutures",
+                    expectedBaseline = BigDecimal("1100"),
+                    legs = listOf(
+                        TransferLeg("futures-credit", "100", "100"),
+                        TransferLeg("spot-debit", "-100", "1000"),
+                    ),
+                )
+
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("1100")
+            }
+        }
+
+        "approved-start replay does not double-apply a same-scope Spot transfer" {
+            runTest {
+                val baseline = recoverApprovedInternalTransferBaseline(
+                    asset = Asset.SOL,
+                    allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                    anchorBalances = mapOf(Asset.SOL to BigDecimal("6"), Asset.USD to BigDecimal("100")),
+                    subtype = "spottospot",
+                    expectedBaseline = BigDecimal("6"),
+                    legs = listOf(
+                        TransferLeg("spot-debit", "-4", "2", secondsAfterStart = 60),
+                        TransferLeg("spot-credit", "4", "6", secondsAfterStart = 61),
+                    ),
+                )
+
+                baseline.assets.getValue(Asset.SOL).balance shouldBeEqualComparingTo BigDecimal("6")
+            }
+        }
+
+        "approved-start replay ignores an opaque Earn wallet marker" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = appConfig(listOf(Allocation(Asset.USD, 100.0))).copy(
+                    settings = config.settings.copy(inceptionDate = requestedStart.toString()),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.USD to BigDecimal("100")),
+                        timestamp = requestedStart.plusSeconds(120),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 0
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "opaque-earn-marker",
+                            time = requestedStart.plusSeconds(60),
+                            type = KrakenApiConstants.LEDGER_TYPE_EARN,
+                            subtype = "allocation",
+                            asset = Asset.USD,
+                            amount = BigDecimal("5"),
+                            balance = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = false,
+                        ),
+                    ),
+                )
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = requireNotNull(
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                        ?.toIntOrNull(),
+                )
+                val baseline = requireNotNull(repository.getSnapshotById(baselineId))
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("100")
             }
         }
 
@@ -3761,6 +3908,81 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 ) shouldBe InceptionRecoveryService.RecoveryCadence.RETRY
             }
         }
+    }
+
+    private data class TransferLeg(
+        val id: String,
+        val amount: String,
+        val balance: String,
+        val secondsAfterStart: Long = 60,
+    )
+
+    private suspend fun recoverApprovedInternalTransferBaseline(
+        asset: String,
+        allocations: List<Allocation>,
+        anchorBalances: Map<String, BigDecimal>,
+        subtype: String,
+        expectedBaseline: BigDecimal,
+        legs: List<TransferLeg>,
+    ): PortfolioSnapshot {
+        val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+        config = appConfig(allocations).copy(
+            settings = config.settings.copy(inceptionDate = requestedStart.toString()),
+        )
+        if (!Asset(asset).isUsd) {
+            repository.saveTrade(
+                apiTrade(
+                    id = "price-$subtype",
+                    timestamp = requestedStart,
+                    symbol = asset,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal("100.00"),
+                    fee = BigDecimal.ZERO,
+                ),
+            )
+        }
+        repository.saveSnapshot(
+            anchorSnapshot(
+                balances = anchorBalances,
+                timestamp = requestedStart.plusSeconds(120),
+            ),
+        )
+        val refid = "internal-transfer-$subtype"
+        val events = legs.map { leg ->
+            LedgerEvent(
+                ledgerId = leg.id,
+                refid = refid,
+                time = requestedStart.plusSeconds(leg.secondsAfterStart),
+                type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                subtype = subtype,
+                asset = asset,
+                amount = BigDecimal(leg.amount),
+                balance = BigDecimal(leg.balance),
+                hasAuthoritativeBalance = true,
+            )
+        }
+        val validation = AuthoritativeLedgerBalanceValidator.validate(events)
+        validation.isValid shouldBe true
+        validation.resolvedScopes.keys shouldBe events.map(LedgerEvent::ledgerId).toSet()
+        validation.resolvedScopes.values.size shouldBe events.size
+        LedgerFlowClassifier.classifyAll(events).values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+        events.any(LedgerEvent::isRewardEvent) shouldBe false
+
+        krakenService.tradeHistoryTotalCountOverride = 0
+        krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+        krakenService.seedLedgerEntries(events)
+        val status = newService().recoverOneBoundedRun()
+
+        status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+        val baselineId = requireNotNull(
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)?.toIntOrNull(),
+        )
+        val baseline = requireNotNull(repository.getSnapshotById(baselineId))
+        baseline.assets.getValue(asset).balance shouldBeEqualComparingTo expectedBaseline
+        baseline.drawdownPercent shouldBeEqualComparingTo BigDecimal.ZERO
+        baseline.fiatDeploymentPercent shouldBeEqualComparingTo BigDecimal.ZERO
+        baseline.actions shouldBe emptyList()
+        return baseline
     }
 
     private fun newService(

@@ -583,8 +583,10 @@ direction violations are persisted/checked before replay. It preserves fail-clos
 wallet scopes that change aggregate balances, incomplete internal-transfer groups, malformed fees,
 duplicate identities,
 unsupported transfer scopes, and unresolved balance differences. Changing this derived replay
-contract advances the baseline replay version
-and clears only derived baseline metadata; completed recovery offsets and stream status are kept.
+contract advances the baseline replay version. The validator's resolved per-ledger wallet scope is
+passed directly to baseline replay: Spot-facing internal transfer legs are reversed, while staking,
+Futures, and opaque-staking counterpart legs are excluded from the Spot snapshot balance. Completed
+recovery offsets and stream status are kept.
 
 ---
 

@@ -1189,7 +1189,14 @@ class InceptionRecoveryService(
             }
         }
         for (event in historicalLedgers.sortedByDescending { it.time }) {
-            if (!reverseApplyLedger(event, runningBalances, expectedUniverse, flowCategories)) {
+            if (!reverseApplyLedger(
+                    event = event,
+                    balances = runningBalances,
+                    expectedUniverse = expectedUniverse,
+                    flowCategories = flowCategories,
+                    resolvedScopes = balanceValidation.resolvedScopes,
+                )
+            ) {
                 return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "ledger changed tracked universe")
             }
         }
@@ -1282,12 +1289,23 @@ class InceptionRecoveryService(
         balances: MutableMap<String, BigDecimal>,
         expectedUniverse: Set<String>,
         flowCategories: Map<String, FlowCategory>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
     ): Boolean {
         if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) return true
         if (flowCategories[event.ledgerId] == FlowCategory.INTERNAL_MOVE &&
             !event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
         ) {
-            return true
+            if (!LedgerFlowClassifier.isDocumentedInternalTransfer(event)) return true
+            when (resolvedScopes[event.ledgerId]) {
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT -> Unit
+
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING,
+                -> return true
+
+                null -> return false
+            }
         }
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         val delta = event.netBalanceDelta()
@@ -1813,7 +1831,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "5"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "6"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

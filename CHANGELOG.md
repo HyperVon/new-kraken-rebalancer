@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.48] - 2026-09-10
+
+### Fixed
+
+- **Spot-scoped internal wallet replay**: Approved-start reconstruction now consumes the exact
+  wallet scope resolved by authoritative ledger validation. It reverses only the Spot-facing leg
+  of complete Spot/staking and Spot/Futures transfers, excludes staking/Futures/opaque-staking
+  counterparts from the Spot snapshot, preserves same-scope Spot-to-Spot net-zero behavior, and
+  keeps every internal move out of owner-capital, reward, ATH, and Buy & Hold scaling. Replay
+  version `6` invalidates only the derived baseline; completed recovery streams and offsets remain
+  reusable without repagination.
+
 ## [6.17.47] - 2026-09-10
 
 ### Fixed

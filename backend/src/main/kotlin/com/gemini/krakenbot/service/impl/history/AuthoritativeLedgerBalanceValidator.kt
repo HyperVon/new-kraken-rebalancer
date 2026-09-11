@@ -33,6 +33,19 @@ object AuthoritativeLedgerBalanceValidator {
         .movePointLeft(PrecisionConstants.SCALE_CRYPTO)
         .divide(TWO)
 
+    /**
+     * Wallet scope resolved for a ledger row by the authoritative-balance search.
+     *
+     * Asset identity remains separate from this disposition: SOL in [SPOT] and SOL in [STAKING]
+     * are different balance scopes even though they normalize to the same configured symbol.
+     */
+    enum class LedgerWalletScope {
+        SPOT,
+        STAKING,
+        FUTURES,
+        OPAQUE_STAKING,
+    }
+
     data class ValidationResult(
         val authoritativeCheckpointCount: Int,
         val validatedCheckpointCount: Int,
@@ -42,6 +55,8 @@ object AuthoritativeLedgerBalanceValidator {
         val flexibleCheckpointCount: Int,
         val nonAuthoritativeEventCount: Int,
         val scopeCount: Int,
+        /** Resolved wallet scope for each ledger row that the validator could safely assign. */
+        val resolvedScopes: Map<String, LedgerWalletScope> = emptyMap(),
         val failure: ValidationFailure? = null,
     ) {
         val isValid: Boolean get() = failure == null
@@ -103,6 +118,7 @@ object AuthoritativeLedgerBalanceValidator {
 
     private data class ReplayState(
         val scopes: Map<String, ScopeState> = emptyMap(),
+        val resolvedScopes: Map<String, LedgerWalletScope> = emptyMap(),
         val counters: Counters = Counters(),
     )
 
@@ -269,6 +285,27 @@ object AuthoritativeLedgerBalanceValidator {
                 ),
             )
         }
+        // The preceding check has already rejected every documented internal row without a
+        // complete, nonblank-refid pair, so this pass only needs to find an unknown subtype scope.
+        val unscopedInternalTransfer = events
+            .filter(LedgerFlowClassifier::isDocumentedInternalTransfer)
+            .firstOrNull { fixedScope(it) == null }
+        if (unscopedInternalTransfer != null) {
+            return invalid(
+                events = events,
+                failure = failure(
+                    asset = normalizeAsset(unscopedInternalTransfer.asset),
+                    scope = null,
+                    previous = null,
+                    current = unscopedInternalTransfer,
+                    expected = null,
+                    observed = unscopedInternalTransfer.balance.takeIf {
+                        unscopedInternalTransfer.hasAuthoritativeBalance
+                    },
+                    detail = "internal transfer subtype has no known balance scope",
+                ),
+            )
+        }
 
         val linkedGroupSizes = events
             .mapNotNull { it.refid?.trim()?.takeIf(String::isNotEmpty) }
@@ -358,7 +395,10 @@ object AuthoritativeLedgerBalanceValidator {
             val state = search.solutions.minWith(
                 compareBy<ReplayState> { it.scopes.size }.thenBy { it.signature() },
             )
-            totalState = totalState.copy(counters = totalState.counters.merge(state.counters))
+            totalState = totalState.copy(
+                resolvedScopes = totalState.resolvedScopes + state.resolvedScopes,
+                counters = totalState.counters.merge(state.counters),
+            )
             scopeCount += state.scopes.size
         }
 
@@ -371,6 +411,7 @@ object AuthoritativeLedgerBalanceValidator {
             flexibleCheckpointCount = totalState.counters.flexibleCheckpointCount,
             nonAuthoritativeEventCount = nonAuthoritativeCount,
             scopeCount = scopeCount,
+            resolvedScopes = totalState.resolvedScopes,
         )
     }
 
@@ -583,7 +624,11 @@ object AuthoritativeLedgerBalanceValidator {
                             allowNonAuthoritativeZero = false,
                         )
                     }
-                    return skippedNonAuthoritative(state)
+                    return skippedNonAuthoritative(
+                        state = state,
+                        event = event,
+                        scope = fixed.takeIf { LedgerFlowClassifier.isDocumentedInternalTransfer(event) },
+                    )
                 }
             }
         }
@@ -714,10 +759,21 @@ object AuthoritativeLedgerBalanceValidator {
         )
     }
 
-    private fun skippedNonAuthoritative(state: ReplayState): EventApplication = EventApplication(
-        candidates = listOf(EventCandidate(state, "unvalidated")),
-        failure = null,
-    )
+    private fun skippedNonAuthoritative(
+        state: ReplayState,
+        event: LedgerEvent? = null,
+        scope: String? = null,
+    ): EventApplication {
+        val nextState = if (event != null && scope != null) {
+            state.copy(resolvedScopes = state.resolvedScopes + (event.ledgerId to ledgerWalletScope(scope)))
+        } else {
+            state
+        }
+        return EventApplication(
+            candidates = listOf(EventCandidate(nextState, scope ?: "unvalidated")),
+            failure = null,
+        )
+    }
 
     private fun applyToScope(
         asset: String,
@@ -811,6 +867,7 @@ object AuthoritativeLedgerBalanceValidator {
                     subtype = event.subtype,
                 )
                 ),
+            resolvedScopes = state.resolvedScopes + (event.ledgerId to ledgerWalletScope(scope)),
             counters = state.counters.after(
                 event = event,
                 sameTimestampGroup = sameTimestampGroup,
@@ -906,6 +963,14 @@ object AuthoritativeLedgerBalanceValidator {
 
     private fun isStakingScope(scope: String): Boolean =
         scope == STAKING_SCOPE || scope.startsWith(OPAQUE_STAKING_SCOPE_PREFIX)
+
+    private fun ledgerWalletScope(scope: String): LedgerWalletScope = when {
+        scope == SPOT_SCOPE -> LedgerWalletScope.SPOT
+        scope == STAKING_SCOPE -> LedgerWalletScope.STAKING
+        scope == FUTURES_SCOPE -> LedgerWalletScope.FUTURES
+        scope.startsWith(OPAQUE_STAKING_SCOPE_PREFIX) -> LedgerWalletScope.OPAQUE_STAKING
+        else -> error("unknown ledger wallet scope")
+    }
 
     private fun allowedDifference(event: LedgerEvent): BigDecimal =
         BALANCE_ROUNDING_ALLOWANCE.add(feeRoundingAllowance(event))

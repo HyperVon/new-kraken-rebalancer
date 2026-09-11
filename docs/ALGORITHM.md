@@ -550,8 +550,11 @@ closed. Non-authoritative rows are never treated as balance checkpoints;
 an ambiguous dust-sweep scope that changes aggregate balances, incomplete internal-transfer group,
 duplicate identity, malformed fee, unknown internal-transfer scope, or unresolved authoritative
 mismatch fails closed with a
-sanitized log diagnostic and a compact metadata reason. Baseline replay version `5` invalidates only
-the derived baseline result,
+sanitized log diagnostic and a compact metadata reason. The validator returns the resolved wallet
+scope disposition per ledger ID and baseline replay consumes that same evidence: only a `SPOT` leg
+of a documented internal transfer changes the reconstructed configured balance; staking, Futures,
+and opaque-staking legs remain strategy-neutral and are excluded from Spot replay. Baseline replay
+version `6` invalidates only the derived baseline result,
 so completed recovery trade/ledger streams and their offsets remain reusable.
 
 The supplied forensic snapshot contained 7,553 retained ledger rows; 7,411 rows fall within the
@@ -608,7 +611,10 @@ each source and destination leg is replayed once with its own balance delta and
 fee, but the group contributes no owner capital, reward, or synthetic Buy & Hold
 scaling. Incomplete or contradictory conversion groups fail closed.
 Historical snapshot reconstruction replays the corresponding account-balance
-legs so reconstructed Spot balances remain faithful. Kraken
+legs so reconstructed Spot balances remain faithful. For internal wallet moves, a Spot debit is
+reversed into the earlier balance and a Spot credit is reversed out; non-Spot counterpart legs are
+ignored. Same-scope Spot-to-Spot pairs are both applied once, so their net-zero balance effect
+remains net zero. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
 and not Trades history, so the comparison does not try to deduplicate these ledger
 rows against `TradesHistory`. The reconstruction marker is paired with the ledger

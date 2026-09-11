@@ -116,6 +116,10 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
 
             result.isValid shouldBe true
             result.scopeCount shouldBe 2
+            result.resolvedScopes["to-staking"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            result.resolvedScopes["from-spot"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING
         }
 
         "accepts a legacy four-decimal fee envelope derived from the stored fee" {
@@ -571,6 +575,10 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
             result.isValid shouldBe true
             result.scopeCount shouldBe 1
             result.nonAuthoritativeEventCount shouldBe 2
+            result.resolvedScopes["unobserved-internal-debit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            result.resolvedScopes["unobserved-internal-credit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
         }
 
         "normalizes Kraken asset aliases before continuity validation" {
@@ -1222,6 +1230,71 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
 
             result.isValid shouldBe true
             result.scopeCount shouldBe 3
+            result.resolvedScopes["staking-debit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            result.resolvedScopes["staking-credit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING
+            result.resolvedScopes["futures-debit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            result.resolvedScopes["futures-credit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES
+        }
+
+        "rejects a complete internal subtype without a known wallet scope" {
+            val result = AuthoritativeLedgerBalanceValidator.validate(
+                listOf(
+                    event(
+                        "allocation-debit",
+                        0,
+                        "transfer",
+                        "-1",
+                        "0",
+                        subtype = "allocation",
+                        refid = "unscoped-transfer",
+                    ),
+                    event(
+                        "allocation-credit",
+                        0,
+                        "transfer",
+                        "1",
+                        "1",
+                        subtype = "allocation",
+                        refid = "unscoped-transfer",
+                    ),
+                ),
+            )
+
+            result.isValid shouldBe false
+            requireNotNull(result.failure).diagnostic shouldContain
+                "internal transfer subtype has no known balance scope"
+
+            val unobserved = AuthoritativeLedgerBalanceValidator.validate(
+                listOf(
+                    event(
+                        "unobserved-allocation-debit",
+                        0,
+                        "transfer",
+                        "-1",
+                        "0",
+                        subtype = "allocation",
+                        refid = "unobserved-allocation-transfer",
+                        authoritativeBalance = false,
+                    ),
+                    event(
+                        "unobserved-allocation-credit",
+                        0,
+                        "transfer",
+                        "1",
+                        "0",
+                        subtype = "allocation",
+                        refid = "unobserved-allocation-transfer",
+                        authoritativeBalance = false,
+                    ),
+                ),
+            )
+
+            unobserved.isValid shouldBe false
+            requireNotNull(unobserved.failure).diagnostic shouldContain "observed=n/a"
         }
 
         "accepts the observed SOL03/SOL internal alias but rejects arbitrary cross-asset pairs" {
@@ -1275,6 +1348,10 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
             )
 
             observedAlias.isValid shouldBe true
+            observedAlias.resolvedScopes["sol03-credit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING
+            observedAlias.resolvedScopes["sol-debit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
             arbitraryPair.isValid shouldBe false
             requireNotNull(arbitraryPair.failure).diagnostic shouldContain "complete linked group"
         }
