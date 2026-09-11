@@ -13,6 +13,7 @@ SyncMetadataKeys:
   LEDGER_TOTAL: "ledger_total"
   SNAPSHOT_RECONSTRUCTION_VERSION: "snapshot_reconstruction_version"
   LEDGER_COVERAGE_VERSION: "ledger_coverage_version"
+  LEDGER_COVERAGE_START_EPOCH_SEC: "ledger_coverage_start_epoch_sec"
   SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION: "snapshot_reconstruction_ledger_coverage_version"
   INCEPTION_SNAPSHOT_ID: "inception_snapshot_id"
   DETECTED_INCEPTION_EPOCH_MS: "detected_inception_epoch_ms"

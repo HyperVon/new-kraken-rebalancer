@@ -342,6 +342,41 @@ class LedgerFlowClassifierTest : StringSpec() {
             )
             completeTransfer.values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
 
+            val malformedFeeTransfer = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "10",
+                        "transfer",
+                        "10.00",
+                        subtype = "spottostaking",
+                        refid = "MALFORMED-FEE",
+                        hasValidFee = false,
+                    ),
+                    event(
+                        "11",
+                        "transfer",
+                        "-10.00",
+                        subtype = "spottostaking",
+                        refid = "MALFORMED-FEE",
+                    ),
+                ),
+            )
+            malformedFeeTransfer shouldBe mapOf(
+                "10" to FlowCategory.UNSUPPORTED,
+                "11" to FlowCategory.UNSUPPORTED,
+            )
+
+            val malformedShapeTransfer = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("12", "transfer", "10.00", subtype = "spottostaking", refid = "POSITIVE-POSITIVE"),
+                    event("13", "transfer", "10.00", subtype = "spottostaking", refid = "POSITIVE-POSITIVE"),
+                ),
+            )
+            malformedShapeTransfer shouldBe mapOf(
+                "12" to FlowCategory.UNSUPPORTED,
+                "13" to FlowCategory.UNSUPPORTED,
+            )
+
             val arbitraryCrossAsset = LedgerFlowClassifier.classifyAll(
                 listOf(
                     event("8", "transfer", "10.00", subtype = "spottostaking", refid = "CROSS", asset = "BTC"),

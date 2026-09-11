@@ -598,18 +598,6 @@ object AuthoritativeLedgerBalanceValidator {
                 FlexibleKind.STAKING -> {
                     // A staking row without a balance cannot identify a wallet scope. Preserve
                     // its economics for replay elsewhere, but do not invent a checkpoint scope.
-                    if (state.scopes.size == 1) {
-                        return applyToScope(
-                            asset = asset,
-                            event = event,
-                            state = state,
-                            scope = state.scopes.keys.single(),
-                            sameTimestampGroup = sameTimestampGroup,
-                            linkedGroup = linkedGroup,
-                            flexible = false,
-                            allowNonAuthoritativeZero = false,
-                        )
-                    }
                     return skippedNonAuthoritative(state)
                 }
 

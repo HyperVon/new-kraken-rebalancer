@@ -1255,6 +1255,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                         timestamp = now.plusSeconds(5),
                         asset = "BTC",
                         amount = "0.57702727",
+                        type = KrakenApiConstants.LEDGER_TYPE_REWARD,
                         fee = "0.1731",
                         balance = "1.40391909",
                     ),
@@ -1334,6 +1335,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                         timestamp = t0.plusMillis(200),
                         asset = "BTC",
                         amount = "0.10000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_REWARD,
                         balance = "1.00000000",
                     ),
                 ),
@@ -1342,6 +1344,42 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "authoritative staking balance cannot override Spot ledger replay" {
+            val t0 = now
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                    ),
+                    snapshot(
+                        t0.plusSeconds(10),
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(5),
+                        asset = "BTC",
+                        amount = "0.10000000",
+                        balance = "1.00000000",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
         "legacy cost fallback reports the later interval with an unexplained balance change" {

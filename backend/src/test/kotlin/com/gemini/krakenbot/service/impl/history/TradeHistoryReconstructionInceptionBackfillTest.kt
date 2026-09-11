@@ -22,7 +22,6 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -179,7 +178,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
                     amount = BigDecimal("0.05"),
                     fee = BigDecimal.ZERO,
                     balance = BigDecimal("0.05"),
-                    hasAuthoritativeBalance = true,
+                    hasAuthoritativeBalance = false,
                 )
                 ledgerRepository.saveLedgers(listOf(stakingLedger))
 
@@ -197,7 +196,7 @@ class TradeHistoryReconstructionInceptionBackfillTest :
 
                 val inceptionSnapshot = snapshots.first { it.timestamp == inception }
                 // BTC balance should remain 1.0 because the staking reward was non-Spot and not subtracted from Spot
-                inceptionSnapshot.assets[Asset.BTC]?.balance?.shouldBeEqualComparingTo(BigDecimal("1.0"))
+                inceptionSnapshot.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("1.0")
             }
         }
 
@@ -222,11 +221,15 @@ class TradeHistoryReconstructionInceptionBackfillTest :
                 val blankConfig = appConfig.copy(settings = appConfig.settings.copy(inceptionDate = ""))
                 every { configService.getConfig() } returns blankConfig
                 reconstructionService.rebuildHistoricalSnapshots(blankConfig, krakenService)
+                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe
+                    TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
 
                 // 2. Invalid inception date
                 val invalidConfig = appConfig.copy(settings = appConfig.settings.copy(inceptionDate = "not-a-date"))
                 every { configService.getConfig() } returns invalidConfig
                 reconstructionService.rebuildHistoricalSnapshots(invalidConfig, krakenService)
+                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe
+                    TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
 
                 // 3. Recent inception date (e.g. 5 days ago, not before defaultSince = 95 days ago)
                 val recentConfig = appConfig.copy(
@@ -234,6 +237,11 @@ class TradeHistoryReconstructionInceptionBackfillTest :
                 )
                 every { configService.getConfig() } returns recentConfig
                 reconstructionService.rebuildHistoricalSnapshots(recentConfig, krakenService)
+                val recentSnapshots = repository.getAllSnapshotsInRange(
+                    Instant.EPOCH,
+                    Instant.ofEpochMilli(Long.MAX_VALUE),
+                )
+                recentSnapshots.minOf { it.timestamp } shouldBe now.minus(5, ChronoUnit.DAYS)
 
                 // 4. Ledger validation is invalid (contradictory checkpoints)
                 val contradictory1 = LedgerEvent(
@@ -255,7 +263,14 @@ class TradeHistoryReconstructionInceptionBackfillTest :
                     hasAuthoritativeBalance = true,
                 )
                 ledgerRepository.saveLedgers(listOf(contradictory1, contradictory2))
+                repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "7")
+                val snapshotCountBeforeInvalidValidation = repository
+                    .getAllSnapshotsInRange(Instant.EPOCH, Instant.ofEpochMilli(Long.MAX_VALUE))
+                    .size
                 reconstructionService.rebuildHistoricalSnapshots(recentConfig, krakenService)
+                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe "7"
+                repository.getAllSnapshotsInRange(Instant.EPOCH, Instant.ofEpochMilli(Long.MAX_VALUE)).size shouldBe
+                    snapshotCountBeforeInvalidValidation
             }
         }
     })

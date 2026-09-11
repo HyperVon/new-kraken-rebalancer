@@ -1080,6 +1080,17 @@ object RebalancerComparisonCalculator {
         val trackedLedgers = ledgers.filter {
             Asset.normalizeLedgerAsset(it.asset).uppercase() in trackedAssets
         }
+        // A staking row's balance may belong to a non-Spot wallet. Without an explicit wallet
+        // scope, using it as a Spot correction can make an unrelated staking checkpoint appear
+        // reconciled. Internal scope markers have the same ambiguity and must use ledger
+        // economics, which fails closed when the Spot snapshot does not reflect the row.
+        if (trackedLedgers.any {
+                it.type.equals(KrakenApiConstants.LEDGER_TYPE_STAKING, ignoreCase = true) ||
+                    LedgerFlowClassifier.isDocumentedInternalScopeMarker(it)
+            }
+        ) {
+            return false
+        }
         return trackedLedgers.isNotEmpty() &&
             trackedLedgers.all(LedgerEvent::hasAuthoritativeBalance) &&
             trackedLedgers.groupingBy { Asset.normalizeLedgerAsset(it.asset).uppercase() }

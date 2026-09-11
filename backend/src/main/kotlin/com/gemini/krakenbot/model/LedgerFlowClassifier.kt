@@ -121,6 +121,8 @@ object LedgerFlowClassifier {
     internal fun isCompleteInternalTransferGroup(legs: List<LedgerEvent>): Boolean {
         if (legs.size != 2 || legs.any { !isDocumentedInternalTransfer(it) }) return false
         if (legs.any { !hasValidAmountShape(it) }) return false
+        if (legs.any { !it.hasValidFee || it.fee.signum() < 0 }) return false
+        if (legs.count { it.amount.signum() < 0 } != 1 || legs.count { it.amount.signum() > 0 } != 1) return false
         val rawAssets = legs.map { it.asset.trim().uppercase() }.toSet()
         val normalizedAssets = legs.map { normalizeAsset(it.asset) }.toSet()
         // The forensic account contains Kraken's SOL staking-wallet marker as SOL03. Accept that

@@ -867,7 +867,7 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
             requireNotNull(result.failure).diagnostic shouldContain "observed=n/a"
         }
 
-        "uses the only known scope for a non-authoritative staking row" {
+        "fails closed when non-authoritative staking cannot identify a scope" {
             val result = AuthoritativeLedgerBalanceValidator.validate(
                 listOf(
                     event("seed", 0, "receive", "1", "1"),
@@ -876,7 +876,7 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
                 ),
             )
 
-            result.isValid shouldBe true
+            result.isValid shouldBe false
         }
 
         "skips a non-authoritative sweep that has no closing scope" {

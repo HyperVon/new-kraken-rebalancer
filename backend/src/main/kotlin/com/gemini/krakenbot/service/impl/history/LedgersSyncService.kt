@@ -42,7 +42,7 @@ class LedgersSyncService(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     companion object {
-        const val CURRENT_LEDGER_COVERAGE_VERSION = "7"
+        const val CURRENT_LEDGER_COVERAGE_VERSION = "8"
         val SUPPORTED_LEDGER_TYPES = listOf(
             KrakenApiConstants.LEDGER_TYPE_STAKING,
             KrakenApiConstants.LEDGER_TYPE_DIVIDEND,
@@ -109,23 +109,37 @@ class LedgersSyncService(
     private suspend fun syncLedgersFromKrakenPinned(config: AppConfig) {
         val isSeeded = repository.isLedgersSeeded()
         val coverageVersion = repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
-        val isCoverageCurrent = coverageVersion == CURRENT_LEDGER_COVERAGE_VERSION
-        val needsCoverageBackfill = isSeeded && !isCoverageCurrent
-
         val seedBound = nowProvider().minus(PrecisionConstants.SEED_HISTORY_LOOKBACK_DAYS, ChronoUnit.DAYS)
+        val configuredInception = config.settings.inceptionDate
+            ?.let(InceptionDiscoveryService::parseInceptionDate)
+        val coverageBackfillBound = configuredInception?.takeIf { it.isBefore(seedBound) } ?: seedBound
+        val storedCoverageStartSec = repository
+            .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC)
+            ?.toLongOrNull()
+        val coverageStartMatches = !coverageBackfillBound.isBefore(seedBound) ||
+            (storedCoverageStartSec != null && storedCoverageStartSec <= coverageBackfillBound.epochSecond)
+        val isCoverageCurrent = coverageVersion == CURRENT_LEDGER_COVERAGE_VERSION && coverageStartMatches
+        val needsCoverageBackfill = isSeeded && !isCoverageCurrent
         val queryNow = nowProvider()
 
         if (needsCoverageBackfill) {
             log.info(
-                "Ledger store is seeded but coverage version is {} (expected {}). Running bounded backfill for newly supported types...",
+                "Ledger store is seeded but coverage version is {} (expected {}). Running coverage backfill from {}...",
                 coverageVersion,
                 CURRENT_LEDGER_COVERAGE_VERSION,
+                coverageBackfillBound,
             )
             val totalAdded = processLedgerPages(
-                startSec = seedBound.epochSecond,
+                // Kraken's start bound is exclusive; step back one second so an event exactly
+                // at the configured inception is included in the migration backfill.
+                startSec = coverageBackfillBound.minusSeconds(1).epochSecond,
                 endSec = queryNow.epochSecond,
                 isSeeded = true,
                 typesToFetch = SUPPORTED_LEDGER_TYPES,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                coverageBackfillBound.epochSecond.toString(),
             )
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, CURRENT_LEDGER_COVERAGE_VERSION)
             val currentWatermark = readSyncWatermark()
@@ -144,13 +158,15 @@ class LedgersSyncService(
 
         val effectiveLatest = calculateEffectiveLatestTime()
         // Incremental sync overlaps by 5 minutes so entries near the previous watermark are
-        // re-fetched and deduplicated rather than missed. Unseeded initial sync and recovery both
-        // bound to SEED_HISTORY_LOOKBACK_DAYS like TradeHistorySyncService. Ledger entries are
+        // re-fetched and deduplicated rather than missed. Unseeded initial sync and recovery use
+        // the configured inception when it predates the default 96-day bound. Ledger entries are
         // retained indefinitely (lifetime retention contract), so no prune follows the fetch.
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
-        val paginationStartSec = if (isRecoveringInitialSync) {
-            seedBound.epochSecond
+        val paginationStartSec = if (!isSeeded) {
+            // Kraken's start bound is exclusive; step back one second so an event exactly at the
+            // configured inception or default seed bound is included.
+            coverageBackfillBound.minusSeconds(1).epochSecond
         } else {
             (
                 startSec
@@ -177,7 +193,11 @@ class LedgersSyncService(
         // skip the full history fetch. Live runs (even with an empty account) always finalize.
         val isSimulation = config.settings.simulation
         if (!isSimulation || isSeeded || totalAdded > 0) {
-            finalizeSync(isSeeded, queryNow)
+            finalizeSync(
+                isSeeded = isSeeded,
+                successfulQueryHorizon = queryNow,
+                coverageStart = coverageBackfillBound,
+            )
         } else {
             log.info("Simulation ledger sync produced no entries; leaving ledger store unseeded.")
             // Keep the 5-minute throttle engaged even when a simulation sync finds nothing: only
@@ -211,12 +231,16 @@ class LedgersSyncService(
         return totalAdded
     }
 
-    private suspend fun finalizeSync(isSeeded: Boolean, successfulQueryHorizon: Instant) {
+    private suspend fun finalizeSync(isSeeded: Boolean, successfulQueryHorizon: Instant, coverageStart: Instant) {
         if (!isSeeded) {
             repository.setLedgersSeeded(true)
             repository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
                 CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                coverageStart.epochSecond.toString(),
             )
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, SyncMetadataKeys.COMPLETED)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, SyncMetadataKeys.COMPLETED)

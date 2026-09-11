@@ -4,6 +4,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.resolveBalance
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
@@ -129,8 +130,7 @@ class TradeHistoryReconstructionService(
         // Slightly wider than HISTORICAL_DAYS_BACK so daily closes cover the full reconstruction window.
         val ohlcData = mutableMapOf<String, List<Pair<Long, BigDecimal>>>()
         val parsedInception = config.settings.inceptionDate
-            ?.takeIf(String::isNotBlank)
-            ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            ?.let(InceptionDiscoveryService::parseInceptionDate)
         val defaultSince = reconstructionNow.minus(95, ChronoUnit.DAYS)
         val since = if (parsedInception != null && parsedInception.isBefore(defaultSince)) {
             parsedInception.minus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
@@ -170,9 +170,22 @@ class TradeHistoryReconstructionService(
 
         val allLedgers = ledgerRepository.getLedgersInRange(since, reconstructionNow)
         val validation = AuthoritativeLedgerBalanceValidator.validate(allLedgers)
-        val resolvedScopes = if (validation.isValid) validation.resolvedScopes else emptyMap()
+        if (!validation.isValid) {
+            log.warn(
+                "Skipping historical snapshot reconstruction: authoritative ledger validation failed: {}",
+                validation.failure?.diagnostic ?: "unknown validation failure",
+            )
+            return
+        }
+        val resolvedScopes = validation.resolvedScopes
 
-        val externalLedgers = allLedgers.filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+        val externalLedgers = allLedgers.filter { event ->
+            event.type in LedgerEvent.EXTERNAL_BALANCE_TYPES &&
+                (
+                    !event.type.equals(KrakenApiConstants.LEDGER_TYPE_STAKING, ignoreCase = true) ||
+                        validation.resolvedScopes.containsKey(event.ledgerId)
+                    )
+        }
         val historicalRewards = externalLedgers.filter { it.time.isBefore(cutoffTime) }
 
         val events =

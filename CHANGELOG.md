@@ -12,8 +12,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Inception snapshot reconstruction & backfill**: `SnapshotHistoryCalculator` and
   `TradeHistoryReconstructionService` now dynamically backfill daily close snapshots and an
-  inception anchor back to the configured `settings.inceptionDate` (spanning 280+ days back to
-  December 5, 2025). This eliminates snapshot coverage gaps across the entire strategy history,
+  inception anchor back to the configured `settings.inceptionDate`, including starts older than
+  the default bounded recovery window. This eliminates snapshot coverage gaps across the entire strategy history,
   enabling verified all-time Rebalancer vs. Buy & Hold performance comparison.
   Reconstruction version `8` records the updated continuous history start.
 
@@ -30,6 +30,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scope assignments, and histories with equal aggregate balances but different replay semantics
   are rejected as ambiguous. Baseline replay version `7` invalidates only the derived baseline;
   completed recovery streams and offsets remain reusable without repagination.
+- **Fail-closed history coverage and replay validation**: Fresh, recovered, and seeded ledger
+  syncs now honor an older configured inception date, while migrations persist their covered
+  lower bound so later configuration changes trigger another backfill. Historical snapshot
+  reconstruction stops without writing derived snapshots or version markers when authoritative
+  ledger validation fails, and comparison replay does not use unscoped staking balances as Spot
+  corrections. Malformed-fee internal transfers remain unsupported.
 
 ## [6.17.48] - 2026-09-10
 

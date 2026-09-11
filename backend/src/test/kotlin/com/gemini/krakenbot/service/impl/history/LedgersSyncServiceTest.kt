@@ -217,7 +217,7 @@ class LedgersSyncServiceTest : StringSpec() {
             service.isLedgersSeeded() shouldBe true
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
@@ -281,7 +281,7 @@ class LedgersSyncServiceTest : StringSpec() {
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
@@ -481,7 +481,7 @@ class LedgersSyncServiceTest : StringSpec() {
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
@@ -498,7 +498,7 @@ class LedgersSyncServiceTest : StringSpec() {
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
@@ -619,7 +619,7 @@ class LedgersSyncServiceTest : StringSpec() {
                     "ledger-9",
                 )
 
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
@@ -653,6 +653,146 @@ class LedgersSyncServiceTest : StringSpec() {
             service.isLedgerCoverageCurrent() shouldBe true
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        }
+
+        "coverage migration backfills from an older configured inception date" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            every { configService.getConfig() } returns configured
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = inception.minusSeconds(1).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        }
+
+        "coverage migration accepts a date-only configured inception date" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString().substringBefore("T")),
+            )
+            every { configService.getConfig() } returns configured
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = inception.minusSeconds(1).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+        }
+
+        "initial sync backfills from an older configured inception date" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            every { configService.getConfig() } returns configured
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = inception.minusSeconds(1).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) shouldBe
+                inception.epochSecond.toString()
+        }
+
+        "current coverage migrates when configuration moves inception earlier" {
+            stubStableBackend()
+            val previousBound = fixedNow.minus(96, ChronoUnit.DAYS)
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            every { configService.getConfig() } returns configured
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                previousBound.epochSecond.toString(),
+            )
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = inception.minusSeconds(1).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) shouldBe
+                inception.epochSecond.toString()
+        }
+
+        "current coverage keeps the default bound for a recent configured inception date" {
+            stubStableBackend()
+            val recentInception = fixedNow.minus(5, ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = recentInception.toString()),
+            )
+            every { configService.getConfig() } returns configured
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
         }
 
         "partial backfill failure across multiple ledger types leaves coverage version stale" {

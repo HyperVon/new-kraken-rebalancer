@@ -264,7 +264,7 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      horizon is rescanned and the applied-flow journal filters what was already decided, so late-arriving backfill
      below an old watermark is reconciled exactly once.
      *Performance & Storage Tradeoff*: Rescanning every retained row is linear in the retained ledger set, which
-     is naturally bounded by the 90-day retention horizon (typically a few thousand rows in active accounts).
+     is retained for the account lifetime and is typically a few thousand rows in active accounts.
      This design choice prioritizes correctness and exact-once reconciliation over sliding-window heuristics,
      as bounded overlap cursors can silently miss backfilled rows older than their window. Future optimization
      paths include an indexed database status column or a hybrid bounded overlap cursor with periodic full sweeps.
@@ -513,11 +513,13 @@ filters rows locally for the requested response type. Similarly, the API query f
 consumer `spend`/`receive` rows and filters locally. Pagination for filtered queries
 checks Kraken's authoritative total count (`nextOffset < totalCount`) and the
 raw response page size (`rawPageSize >= 50`) so intermediate pages containing
-zero target rows continue paginating until completion. A seeded installation
-whose coverage version predates version `7` performs a bounded **96-day** backfill
-with the same identity deduplication; ledgers remain retained for the lifetime
-of the account. The first and recovered initial syncs also use a bounded **96-day**
-seed window and store durable progress metadata; later syncs use the latest stored
+zero target rows continue paginating until completion. A seeded installation whose coverage
+version predates version `8` backfills from the configured inception date when it predates the
+default window, otherwise it performs the bounded **96-day** backfill
+with the same identity deduplication and records the covered lower bound; a later earlier
+configured inception triggers another bounded migration backfill. Ledgers remain retained for the
+lifetime of the account. The first and recovered initial syncs use the configured inception when
+it predates the default window, otherwise **96 days**, and store durable progress metadata; later syncs use the latest stored
 ledger time (or watermark) with a **300-second overlap**. SQLite enforces the
 `(ledger id, timestamp, asset, type)` identity so overlapping pages and retries
 are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
@@ -560,28 +562,12 @@ their explicit strategy-neutral two-leg replay and do not affect owner capital, 
 Buy & Hold scaling. Baseline replay version `7` invalidates only the derived baseline result,
 so completed recovery trade/ledger streams and their offsets remain reusable.
 
-The supplied forensic snapshot contained 7,553 retained ledger rows; 7,411 rows fall within the
-approved reconstruction window, of which 7,402 have authoritative balances. The following observed
-inventory counts only approved-window rows, not economic transactions:
-
-| Type / subtype | Rows | Disposition |
-| --- | ---: | --- |
-| `conversion` / blank | 2 | Complete linked pair → strategy-neutral internal transformation |
-| `deposit` / blank | 32 | Funding provenance required; otherwise ambiguous |
-| `dividend` / `cashdividend` | 8 | External balance |
-| `receive` / blank, `dustsweeping` | 98 | External balance |
-| `reward` / `equityfpsl`, `welcomebonus` | 27 | External balance and reward reporting |
-| `spend` / blank, `dustsweeping` | 134 | External balance |
-| `staking` / blank | 289 | External balance |
-| `trade` / `tradeequities`, `tradespot` | 6,777 | `TradesHistory` is authoritative; ignored by ledger replay |
-| `transfer` / `airdrop`, `spottostaking`, `stakingtospot` | 37 | Airdrops are external; documented wallet markers require a complete pair; bare transfers fail closed without scope proof |
-| `withdrawal` / blank | 7 | Funding provenance required; otherwise ambiguous |
-
-That snapshot's two `conversion` rows formed one same-timestamp, nonblank-refid
-cross-asset group: a sanitized `Unknown`-shaped refid linked a USD debit of
-`1000.00000000` to a USDG credit of `1000.00000000`; both balances were
-authoritative and both explicit fees were zero. The inventory is evidence of
-what was observed in that forensic copy, not a closed-world assertion that
+The implementation was validated against a sanitized forensic copy containing
+conversion, funding, reward, trade, and documented transfer activity. No
+account-specific row counts, amounts, identifiers, or credentials are part of
+this repository's algorithm contract; the inventory is intentionally described
+by behavior rather than copied from an account export. The observed copy is
+evidence for the supported classifications, not a closed-world assertion that
 Kraken can never return another type or subtype.
 
 Funding provenance uses authenticated `DepositStatus` and `WithdrawStatus`
@@ -617,8 +603,8 @@ Historical snapshot reconstruction replays the corresponding account-balance
 legs so reconstructed Spot balances remain faithful. For internal wallet moves, a Spot debit is
 reversed into the earlier balance and a Spot credit is reversed out; non-Spot counterpart legs are
 ignored. Same-scope Spot-to-Spot pairs are both applied once, so their net-zero balance effect
-remains net zero. The reconstruction dynamically walks backward to the configured `inceptionDate`
-(e.g. December 5, 2025), generating daily close snapshots and an inception anchor using historical
+remains net zero. The reconstruction dynamically walks backward to the configured `inceptionDate`,
+generating daily close snapshots and an inception anchor using historical
 Kraken OHLC daily pricing (`interval = 1440`). This bounds consecutive snapshot intervals to `<= 86,400L`
 seconds, eliminating historical coverage gaps and enabling continuous Rebalancer vs. Buy & Hold
 comparison across the entire strategy lifecycle. Kraken
