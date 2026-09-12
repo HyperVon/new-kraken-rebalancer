@@ -2,8 +2,10 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.hasValidEconomicFields
@@ -11,8 +13,12 @@ import com.gemini.krakenbot.service.impl.KrakenParsers
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.mockk.Runs
 import io.mockk.coEvery
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.slot
+import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -21,6 +27,29 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val fixedNow = Instant.parse("2026-07-01T12:00:00Z")
+
+    private fun contractSnapshot(timestamp: Instant): PortfolioSnapshot =
+        TestFixtures.emptySnapshot(timestamp, BigDecimal("100000")).copy(
+            assets =
+            mapOf(
+                "BTC" to
+                    TestFixtures.assetSnapshot(
+                        "BTC",
+                        BigDecimal("1"),
+                        BigDecimal("50000"),
+                        BigDecimal("50000"),
+                        BigDecimal("50"),
+                    ),
+                "USD" to
+                    TestFixtures.assetSnapshot(
+                        "USD",
+                        BigDecimal("50000"),
+                        BigDecimal.ONE,
+                        BigDecimal("50000"),
+                        BigDecimal("50"),
+                    ),
+            ),
+        )
 
     init {
         "comparison fails closed on malformed supported trade economics" {
@@ -264,6 +293,268 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             val page = KrakenParsers.parseTradeHistoryPage(node, listOf("BTC", "USD"), true)
             page.entries[0].hasValidPrice shouldBe false
             page.entries[0].hasValidEconomicFields() shouldBe false
+        }
+        "comparison fails closed when displayed snapshots overlap stale reconstruction" {
+            val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+            val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
+            val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null)
+            val reconStart = fixedNow.minusSeconds(86400)
+            val reconThrough = fixedNow.plusSeconds(86400)
+            val s1 = contractSnapshot(fixedNow)
+            val s2 = contractSnapshot(fixedNow.plusSeconds(3600))
+            coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
+            coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
+            coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { mockTrades.getSyncMetadata(any()) } returns null
+            coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
+                reconStart.epochSecond.toString()
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
+                reconThrough.epochSecond.toString()
+
+            val result = svc.getRebalancerComparison(fixedNow, s2.timestamp)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
+        }
+        "comparison fails closed when the inception snapshot lies inside stale reconstruction" {
+            val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+            val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
+            val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+            val reconStart = fixedNow.minusSeconds(86400)
+            val reconThrough = fixedNow.plusSeconds(86400)
+            val live1 = contractSnapshot(reconThrough.plusSeconds(1000))
+            val live2 = contractSnapshot(reconThrough.plusSeconds(4600))
+            val staleInception = contractSnapshot(reconThrough.minusSeconds(600))
+            val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+            coEvery { inceptionService.resolveInception() } returns
+                InceptionResolution(
+                    inceptionTime = staleInception.timestamp,
+                    inceptionSnapshot = staleInception,
+                    isAutoDetected = false,
+                )
+            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null, inceptionService)
+            coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(live1, live2)
+            coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(live1, live2)
+            coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { mockTrades.getSyncMetadata(any()) } returns null
+            coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
+                reconStart.epochSecond.toString()
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
+                reconThrough.epochSecond.toString()
+
+            val result = svc.getRebalancerComparison(live1.timestamp, live2.timestamp)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
+        }
+        "comparison fails closed when the predecessor anchor lies inside stale reconstruction" {
+            val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+            val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
+            val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null)
+            val reconStart = fixedNow.minusSeconds(86400)
+            val reconThrough = fixedNow.plusSeconds(86400)
+            val live1 = contractSnapshot(reconThrough.plusSeconds(1000))
+            val live2 = contractSnapshot(reconThrough.plusSeconds(4600))
+            val stalePredecessor = contractSnapshot(reconThrough.minusSeconds(60))
+            coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(live1, live2)
+            coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(live1, live2)
+            coEvery { mockTrades.getSnapshotBefore(any()) } returns stalePredecessor
+            coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { mockTrades.getSyncMetadata(any()) } returns null
+            coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
+                reconStart.epochSecond.toString()
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
+                reconThrough.epochSecond.toString()
+
+            val result = svc.getRebalancerComparison(live1.timestamp, live2.timestamp)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
+        }
+        "comparison with only live snapshot dependencies is not stale-blocked" {
+            val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+            val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
+            val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+            val reconStart = fixedNow.minusSeconds(86400)
+            val reconThrough = fixedNow.plusSeconds(86400)
+            val live1 = contractSnapshot(reconThrough.plusSeconds(1000))
+            val live2 = contractSnapshot(reconThrough.plusSeconds(4600))
+            val livePredecessor = contractSnapshot(reconThrough.plusSeconds(500))
+            val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+            coEvery { inceptionService.resolveInception() } returns
+                InceptionResolution(
+                    inceptionTime = live1.timestamp,
+                    inceptionSnapshot = live1,
+                    isAutoDetected = false,
+                )
+            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null, inceptionService)
+            coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(live1, live2)
+            coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(live1, live2)
+            coEvery { mockTrades.getSnapshotBefore(any()) } returns livePredecessor
+            coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { mockTrades.getSyncMetadata(any()) } returns null
+            coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
+                reconStart.epochSecond.toString()
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
+                reconThrough.epochSecond.toString()
+
+            val result = svc.getRebalancerComparison(live1.timestamp, live2.timestamp)
+
+            (result.unavailableReason != ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP) shouldBe true
+        }
+        "stale reconstruction version without a persisted interval does not block comparison" {
+            val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+            val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
+            val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+            val s1 = contractSnapshot(fixedNow)
+            val s2 = contractSnapshot(fixedNow.plusSeconds(3600))
+            val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+            coEvery { inceptionService.resolveInception() } returns
+                InceptionResolution(
+                    inceptionTime = s1.timestamp,
+                    inceptionSnapshot = s1,
+                    isAutoDetected = false,
+                )
+            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null, inceptionService)
+            coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
+            coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
+            coEvery { mockTrades.getSnapshotBefore(any()) } returns contractSnapshot(fixedNow.minusSeconds(3600))
+            coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { mockTrades.getSyncMetadata(any()) } returns null
+            coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
+
+            val result = svc.getRebalancerComparison(s1.timestamp, s2.timestamp)
+
+            (result.unavailableReason != ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP) shouldBe true
+        }
+        "rebuilt reconstruction restores comparison availability inside the former interval" {
+            val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+            val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
+            val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+            val s1 = contractSnapshot(fixedNow)
+            val s2 = contractSnapshot(fixedNow.plusSeconds(3600))
+            val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+            coEvery { inceptionService.resolveInception() } returns
+                InceptionResolution(
+                    inceptionTime = s1.timestamp,
+                    inceptionSnapshot = s1,
+                    isAutoDetected = false,
+                )
+            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null, inceptionService)
+            coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
+            coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(s1, s2)
+            coEvery { mockTrades.getSnapshotBefore(any()) } returns contractSnapshot(fixedNow.minusSeconds(3600))
+            coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { mockTrades.getSyncMetadata(any()) } returns null
+            coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+            coEvery {
+                mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
+            } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery {
+                mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION)
+            } returns TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+
+            val result = svc.getRebalancerComparison(s1.timestamp, s2.timestamp)
+
+            (result.unavailableReason != ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP) shouldBe true
+        }
+        "proposal search never verifies a baseline that depends on stale reconstruction" {
+            val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+            val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
+            val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null)
+            val reconStart = fixedNow.minusSeconds(86400)
+            val reconThrough = fixedNow.plusSeconds(86400)
+            val c1 = contractSnapshot(reconThrough.plusSeconds(1000))
+            val c2 = contractSnapshot(reconThrough.plusSeconds(4600))
+            val stalePredecessor = contractSnapshot(reconThrough.minusSeconds(60))
+            coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(c1, c2)
+            coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(c1, c2)
+            coEvery { mockTrades.getSnapshotBefore(any()) } returns stalePredecessor
+            coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { mockTrades.getSyncMetadata(any()) } returns null
+            coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
+                reconStart.epochSecond.toString()
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
+                reconThrough.epochSecond.toString()
+
+            runTest {
+                val proposal = svc.findLaterComparisonStartProposal(
+                    startAfter = c1.timestamp.minusSeconds(1800),
+                    inceptionResolution = null,
+                )
+
+                proposal.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                proposal.timestamp shouldBe null
+            }
+        }
+        "proposal fingerprint changes when the reconstruction contract changes" {
+            val mockTrades = mockk<com.gemini.krakenbot.repository.TradeRepository>(relaxed = true)
+            val mockStats = mockk<com.gemini.krakenbot.repository.PortfolioStatsRepository>(relaxed = true)
+            val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
+            val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null)
+            val reconStart = fixedNow.minusSeconds(86400)
+            val reconThrough = fixedNow.plusSeconds(86400)
+            val c1 = contractSnapshot(reconThrough.plusSeconds(1000))
+            val c2 = contractSnapshot(reconThrough.plusSeconds(4600))
+            val livePredecessor = contractSnapshot(reconThrough.plusSeconds(500))
+            val metadataSlot = slot<Map<String, String>>()
+            coEvery { mockTrades.setSyncMetadataAtomically(capture(metadataSlot)) } just Runs
+            coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(c1, c2)
+            coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(c1, c2)
+            coEvery { mockTrades.getSnapshotBefore(any()) } returns livePredecessor
+            coEvery { mockTrades.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
+            coEvery { mockTrades.getSyncMetadata(any()) } returns null
+            coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
+                reconStart.epochSecond.toString()
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC) } returns
+                reconThrough.epochSecond.toString()
+            val fingerprints = mutableListOf<String?>()
+
+            runTest {
+                svc.findLaterComparisonStartProposal(c1.timestamp.minusSeconds(1800), null)
+                fingerprints += metadataSlot.captured[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT]
+
+                coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns
+                    TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
+                } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION)
+                } returns TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+                svc.findLaterComparisonStartProposal(c1.timestamp.minusSeconds(1800), null)
+                fingerprints += metadataSlot.captured[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT]
+            }
+
+            fingerprints.size shouldBe 2
+            fingerprints.all { !it.isNullOrBlank() } shouldBe true
+            (fingerprints[0] != fingerprints[1]) shouldBe true
         }
     }
 }

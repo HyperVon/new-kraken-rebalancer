@@ -362,11 +362,7 @@ class LedgersSyncServiceTest : StringSpec() {
         "incremental syncs start five minutes before the newest stored entry" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            seedLedgerCoverage()
             repository.saveLedgers(listOf(event(0, time = baseTime)))
 
             coEvery { krakenService.getLedgers(any(), 0, any(), any()) } returns emptyList()
@@ -385,11 +381,7 @@ class LedgersSyncServiceTest : StringSpec() {
         "incremental ledger syncs prefer the successful watermark over the newest entry" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            seedLedgerCoverage()
             repository.saveLedgers(listOf(event(0, time = baseTime)))
             val watermark = baseTime.minusSeconds(3600)
             repository.setSyncMetadata(
@@ -413,11 +405,7 @@ class LedgersSyncServiceTest : StringSpec() {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             every { krakenService.hasLastLedgerTotalCount() } returns false
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            seedLedgerCoverage()
             repository.saveLedgers(listOf(event(0, time = baseTime)))
 
             var now = fixedNow
@@ -1100,11 +1088,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 settings = appConfig.settings.copy(inceptionDate = recentInception.toString()),
             )
             every { configService.getConfig() } returns configured
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            seedLedgerCoverage()
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
 
@@ -1192,6 +1176,10 @@ class LedgersSyncServiceTest : StringSpec() {
                 fixedNow.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
             )
             repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
                 AccountHistoryScopeGuard.digestAccountScope("test-account"),
             )
@@ -1257,11 +1245,7 @@ class LedgersSyncServiceTest : StringSpec() {
         "pagination falls back to rawPageSize when totalCount is unstated or zero" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            seedLedgerCoverage()
             every { krakenService.hasLastLedgerTotalCount() } returns false
 
             val earnEvent = LedgerEvent(
@@ -1691,11 +1675,7 @@ class LedgersSyncServiceTest : StringSpec() {
         "pagination falls back to filtered page size when both totalCount and rawPageSize are unstated" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            seedLedgerCoverage()
             every { krakenService.hasLastLedgerTotalCount() } returns false
 
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0

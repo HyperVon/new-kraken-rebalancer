@@ -104,7 +104,7 @@ class TradeHistoryQueryService(
 
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
-        private const val PROPOSAL_SEARCH_VERSION = "5"
+        private const val PROPOSAL_SEARCH_VERSION = "6"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
         /**
@@ -260,6 +260,19 @@ class TradeHistoryQueryService(
             }
 
         val anchorSnapshot = repository.getSnapshotBefore(firstTimestamp)
+        // Stale-history policy: a displayed window may start after an invalidated reconstruction
+        // interval while the lifetime comparison still resolves an inception or predecessor
+        // baseline inside it. Any required snapshot dependency that is stale fails the whole
+        // comparison closed until the affected history is rebuilt.
+        if (isSnapshotStale(inceptionSnapshot) || isSnapshotStale(anchorSnapshot)) {
+            return RebalancerComparisonCalculator.calculate(
+                snapshots = orderedSnapshots,
+                trades = emptyList(),
+                rewards = emptyList(),
+                knownInceptionTime = orderedSnapshots.first().timestamp,
+                inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+            )
+        }
         val eventQueryStart = listOfNotNull(
             inceptionSnapshot?.balancesObservedAt ?: inceptionSnapshot?.timestamp,
             anchorSnapshot?.balancesObservedAt ?: anchorSnapshot?.timestamp,
@@ -369,7 +382,7 @@ class TradeHistoryQueryService(
      * have". Window-independent: trials cover all retained snapshots, never
      * just the requested display range.
      */
-    private suspend fun findLaterComparisonStartProposal(
+    internal suspend fun findLaterComparisonStartProposal(
         startAfter: Instant,
         inceptionResolution: InceptionResolution?,
     ): ComparisonStartProposal {
@@ -641,6 +654,19 @@ class TradeHistoryQueryService(
         return snapshots.any { !it.timestamp.isBefore(reconStart) && !it.timestamp.isAfter(reconThrough) }
     }
 
+    /**
+     * True when one snapshot dependency (inception baseline, predecessor anchor, or an explicitly
+     * selected candidate baseline) falls inside an invalidated reconstruction interval. Null
+     * dependencies are not stale. Every snapshot that participates in a comparison must pass this
+     * check, not only the displayed window.
+     */
+    private suspend fun isSnapshotStale(snapshot: PortfolioSnapshot?): Boolean {
+        if (snapshot == null) return false
+        val stale = staleReconstructedInterval() ?: return false
+        val (reconStart, reconThrough) = stale
+        return !snapshot.timestamp.isBefore(reconStart) && !snapshot.timestamp.isAfter(reconThrough)
+    }
+
     private fun List<PortfolioSnapshot>.proposalCursorAt(index: Int): ProposalCursor {
         val timestamp = this[index].timestamp
         val ordinal = subList(0, index).count { it.timestamp == timestamp }
@@ -711,10 +737,37 @@ class TradeHistoryQueryService(
                 .append('\u0000')
             append(ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION).orEmpty())
                 .append('\u0000')
+            append(repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION).orEmpty())
+                .append('\u0000')
             append(ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC).orEmpty())
                 .append('\u0000')
             append(repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC).orEmpty())
                 .append('\u0000')
+            // Reconstruction currentness participates in the fingerprint: invalidating or
+            // rebuilding reconstructed history must force proposal re-trials instead of letting a
+            // stored VERIFIED cursor resume against a different evidence baseline.
+            append(repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION).orEmpty())
+                .append('\u0000')
+            append(
+                repository.getSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+                ).orEmpty(),
+            ).append('\u0000')
+            append(
+                repository.getSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+                ).orEmpty(),
+            ).append('\u0000')
+            append(
+                repository.getSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
+                ).orEmpty(),
+            ).append('\u0000')
+            append(
+                repository.getSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION,
+                ).orEmpty(),
+            ).append('\u0000')
             predecessorSnapshot?.let {
                 append("predecessor\n")
                 appendSnapshotDigest(it)

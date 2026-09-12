@@ -479,7 +479,11 @@ class TradeHistorySyncServiceTest : StringSpec() {
             sync.syncTradesFromKraken()
 
             repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 51
-            sync.isHistorySeeded() shouldBe true
+            // The reported total shifted mid-scan, so the run carries no completeness proof and
+            // must not promote the store to certified coverage.
+            sync.isHistorySeeded() shouldBe false
+            sync.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe null
+            sync.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe null
         }
 
         "fails closed when Kraken reports zero trades but a nonzero raw page size" {
@@ -518,7 +522,15 @@ class TradeHistorySyncServiceTest : StringSpec() {
             // incremental pass retries from offset zero when the newly-appeared total proves
             // the in-flight progress inconsistent.
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
             val pageOne = (0 until 50).map { apiFill(it) }
             coEvery { krakenService.getTradeHistory(any(), 0) } returns pageOne
             coEvery { krakenService.getTradeHistory(any(), 50) } returns listOf(apiFill(50))
@@ -672,6 +684,14 @@ class TradeHistorySyncServiceTest : StringSpec() {
                 SyncMetadataKeys.TRADE_COVERAGE_VERSION,
                 TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
             )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
             repository.saveTrade(apiFill(0, time = baseTime))
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, "-1")
             coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
@@ -693,6 +713,14 @@ class TradeHistorySyncServiceTest : StringSpec() {
             )
             repository.saveTrade(apiFill(0))
             repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.minusSeconds(3600).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
                 SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
                 baseTime.minusSeconds(3600).epochSecond.toString(),
             )
@@ -712,6 +740,14 @@ class TradeHistorySyncServiceTest : StringSpec() {
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_VERSION,
                 TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
             )
             repository.saveTrade(apiFill(0, time = baseTime))
 
@@ -2111,6 +2147,10 @@ class TradeHistorySyncServiceTest : StringSpec() {
             )
 
             val initialWatermark = 1700000000L
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                initialWatermark.toString(),
+            )
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, initialWatermark.toString())
 
             val local = TestFixtures.tradeRecord(

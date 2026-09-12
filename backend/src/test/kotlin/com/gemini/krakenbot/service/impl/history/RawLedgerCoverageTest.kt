@@ -156,7 +156,7 @@ class RawLedgerCoverageTest : StringSpec() {
             )
             ledgerRepository.saveLedgers(listOf(deposit, tradeLedger))
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 baseTime.epochSecond.toString(),
@@ -183,7 +183,7 @@ class RawLedgerCoverageTest : StringSpec() {
             )
             tradeRepository.saveTrade(tradeRecord)
             tradeRepository.setHistorySeeded(true)
-            tradeRepository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            tradeRepository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             tradeRepository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 baseTime.epochSecond.toString(),
@@ -262,7 +262,7 @@ class RawLedgerCoverageTest : StringSpec() {
             )
             ledgerRepository.saveLedgers(listOf(unknownLedger))
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 baseTime.epochSecond.toString(),
@@ -273,7 +273,7 @@ class RawLedgerCoverageTest : StringSpec() {
             )
 
             tradeRepository.setHistorySeeded(true)
-            tradeRepository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            tradeRepository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             tradeRepository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 baseTime.epochSecond.toString(),
@@ -419,6 +419,171 @@ class RawLedgerCoverageTest : StringSpec() {
                 syncService.syncLedgersFromKraken()
             }
             ex.message shouldContain "Kraken ledger page occupancy disagreed with count"
+        }
+
+        "count-less incremental ledger refresh advances only the sync watermark, not certified coverage" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            ledgerRepository.setLedgersSeeded(true)
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            fakeKraken.ledgerTotalCountAvailable = false
+            fakeKraken.ledgerSupplier = { _, _, _, _ -> emptyList() }
+
+            LedgersSyncService(
+                repository = ledgerRepository,
+                krakenService = fakeKraken,
+                configService = configService,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                certifiedHorizon.epochSecond.toString()
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "10"
+        }
+
+        "empty authoritative ledger scan certifies the contiguous tail" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            ledgerRepository.setLedgersSeeded(true)
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            fakeKraken.ledgerTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerSupplier = { _, _, _, _ -> emptyList() }
+
+            LedgersSyncService(
+                repository = ledgerRepository,
+                krakenService = fakeKraken,
+                configService = configService,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+        }
+
+        "authoritative ledger scan retains raw unknown and trade checkpoint rows and extends coverage" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            ledgerRepository.setLedgersSeeded(true)
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            fakeKraken.ledgerTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 2
+            fakeKraken.ledgerSupplier = { _, offset, _, _ ->
+                if (offset == 0) {
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "mystery-1",
+                            time = certifiedHorizon.plusSeconds(600),
+                            type = "mystery_type",
+                            asset = "XXBT",
+                            amount = BigDecimal("0.01"),
+                            balance = BigDecimal("1.01"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "trade-checkpoint-1",
+                            time = certifiedHorizon.plusSeconds(700),
+                            type = "trade",
+                            asset = "XXBT",
+                            amount = BigDecimal("-0.1"),
+                            balance = BigDecimal("0.91"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    )
+                } else {
+                    emptyList()
+                }
+            }
+
+            LedgersSyncService(
+                repository = ledgerRepository,
+                krakenService = fakeKraken,
+                configService = configService,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            val stored = ledgerRepository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(86400))
+            stored.map { it.ledgerId }.toSet() shouldBe setOf("mystery-1", "trade-checkpoint-1")
+            stored.map { it.type }.toSet() shouldBe setOf("mystery_type", "trade")
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+        }
+
+        "failed incremental ledger pull advances neither the watermark nor certified coverage" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            ledgerRepository.setLedgersSeeded(true)
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            fakeKraken.ledgerTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 1
+            fakeKraken.ledgerSupplier = { _, _, _, _ -> throw IllegalStateException("ledger network down") }
+
+            shouldThrow<IllegalStateException> {
+                LedgersSyncService(
+                    repository = ledgerRepository,
+                    krakenService = fakeKraken,
+                    configService = configService,
+                    nowProvider = { fixedNow },
+                ).syncLedgersFromKraken()
+            }
+
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
+                certifiedHorizon.epochSecond.toString()
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                certifiedHorizon.epochSecond.toString()
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "10"
         }
     }
 }

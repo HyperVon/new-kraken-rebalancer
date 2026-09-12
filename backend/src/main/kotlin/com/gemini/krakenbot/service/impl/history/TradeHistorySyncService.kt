@@ -45,7 +45,7 @@ class TradeHistorySyncService(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     companion object {
-        const val CURRENT_TRADE_COVERAGE_VERSION = "1"
+        const val CURRENT_TRADE_COVERAGE_VERSION = "2"
 
         /**
          * Coverage-certification vs incremental-refresh distinction.
@@ -55,7 +55,10 @@ class TradeHistorySyncService(
          * `count`, raw occupancy consistent with count, and stable pagination. A count-less or
          * malformed page fails the entire migration and leaves the previous marker unchanged.
          *
-         * INCREMENTAL is an ordinary refresh that may safely retry a weaker response later.
+         * INCREMENTAL is an ordinary refresh that may safely retry a weaker response later. It
+         * always advances the ordinary sync watermark on success, but it may only advance the
+         * certified coverage horizon when the same authoritative proof holds and the proven scan
+         * tail is contiguous with the previously certified horizon.
          */
         enum class CoverageSyncMode {
             INCREMENTAL,
@@ -199,11 +202,17 @@ class TradeHistorySyncService(
             ?.toLongOrNull()
         val coverageStartMatches = !coverageBackfillBound.isBefore(seedBound) ||
             (storedCoverageStartSec != null && storedCoverageStartSec <= coverageBackfillBound.epochSecond)
+        val storedCoverageHorizonSec = repository
+            .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
         val storedScopeDigest = repository
             .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST)
         val scopeMatches = verifiedAccountScopeDigest.isNullOrBlank() || storedScopeDigest == verifiedAccountScopeDigest
         val isCoverageCurrent =
-            coverageVersion == CURRENT_TRADE_COVERAGE_VERSION && coverageStartMatches && scopeMatches
+            coverageVersion == CURRENT_TRADE_COVERAGE_VERSION &&
+                coverageStartMatches &&
+                scopeMatches &&
+                storedCoverageHorizonSec != null
         val needsCoverageBackfill = isSeeded && !isCoverageCurrent
         val queryNow = nowProvider()
 
@@ -220,7 +229,7 @@ class TradeHistorySyncService(
                 verifiedAccountScopeDigest = verifiedAccountScopeDigest,
             )
             val queryEnd = queryNow.plusSeconds(300)
-            val (totalAdded, totalReconciled) = if (recoveredCoverageThrough == null) {
+            val scanOutcome = if (recoveredCoverageThrough == null) {
                 val originalLocalTrades = repository
                     .getTradesInRange(coverageBackfillBound.minusSeconds(1), queryEnd)
                     .toMutableList()
@@ -250,24 +259,29 @@ class TradeHistorySyncService(
                     mode = CoverageSyncMode.COVERAGE_CERTIFICATION,
                 )
             } else {
-                0 to 0
+                TradeSyncScanOutcome(
+                    totalAdded = 0,
+                    totalReconciled = 0,
+                    scanStartSec = coverageBackfillBound.epochSecond,
+                    authoritativeCompletenessProven = true,
+                )
             }
+            // A completed recovery prefix or a full certifying scan re-certifies coverage from the
+            // coverage start wholesale; it does not extend a tail and needs no horizon contiguity.
             finalizeSync(
                 isSeeded = true,
                 successfulQueryHorizon = queryNow,
                 coverageStart = coverageBackfillBound,
+                certifiedFromSec = coverageBackfillBound.epochSecond,
+                authoritativeCompletenessProven = scanOutcome.authoritativeCompletenessProven,
+                extendsCertifiedTail = false,
                 verifiedAccountScopeDigest = verifiedAccountScopeDigest,
             )
-            repository.setSyncMetadata(
-                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
-                coverageBackfillBound.epochSecond.toString(),
-            )
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, CURRENT_TRADE_COVERAGE_VERSION)
             triggerReconstructionIfNeeded(config, backend)
             log.info(
                 "Trade coverage backfill completed. Added: {} new, Reconciled: {}. Coverage version is now {}.",
-                totalAdded,
-                totalReconciled,
+                scanOutcome.totalAdded,
+                scanOutcome.totalReconciled,
                 CURRENT_TRADE_COVERAGE_VERSION,
             )
             return
@@ -276,11 +290,16 @@ class TradeHistorySyncService(
         val effectiveLatest = calculateEffectiveLatestTime()
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
-        val paginationStartSec = if (!isSeeded) {
+        val baseStartSec = if (!isSeeded) {
             coverageBackfillBound.epochSecond
         } else {
             startSec ?: seedBound.epochSecond
         }
+        // Re-scan back to the last certified horizon (minus the continuity overlap) so a later
+        // authoritative response can re-prove a tail that earlier weak incremental responses
+        // advanced only on the watermark. The 300s overlap is query continuity, not tolerance.
+        val certificationStartSec = storedCoverageHorizonSec?.minus(300)
+        val paginationStartSec = listOfNotNull(baseStartSec, certificationStartSec).min()
 
         log.info(
             "Starting trade history synchronization (isSeeded={}, startSec={}, recovering={})...",
@@ -297,7 +316,7 @@ class TradeHistorySyncService(
         val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()
         val allocations = config.allocations.map { it.symbol.value }
 
-        val (totalAdded, totalReconciled) = processApiTrades(
+        val scanOutcome = processApiTrades(
             startSec = paginationStartSec,
             endSec = queryNow.epochSecond,
             isSeeded = isSeeded,
@@ -312,11 +331,18 @@ class TradeHistorySyncService(
             isSeeded = isSeeded,
             successfulQueryHorizon = queryNow,
             coverageStart = coverageBackfillBound,
+            certifiedFromSec = paginationStartSec,
+            authoritativeCompletenessProven = scanOutcome.authoritativeCompletenessProven,
+            extendsCertifiedTail = isSeeded,
             verifiedAccountScopeDigest = verifiedAccountScopeDigest,
         )
 
         triggerReconstructionIfNeeded(config, backend)
-        log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
+        log.info(
+            "Trade history synchronization completed. Added: {} new, Reconciled: {}.",
+            scanOutcome.totalAdded,
+            scanOutcome.totalReconciled,
+        )
     }
 
     private suspend fun calculateEffectiveLatestTime(): Instant? {
@@ -332,13 +358,20 @@ class TradeHistorySyncService(
         originalLocalTrades: MutableList<TradeRecord>,
         allocations: List<String>,
         mode: CoverageSyncMode = CoverageSyncMode.INCREMENTAL,
-    ): Pair<Int, Int> {
+    ): TradeSyncScanOutcome {
         var totalAdded = 0
         var totalReconciled = 0
         val seenApiFillKeys = mutableSetOf<String>()
         val orderMetadataByTxid = buildOrderMetadata(originalLocalTrades)
+        val receipt = ScanCertificationReceipt()
 
-        getTradeHistoryPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded, mode = mode)
+        getTradeHistoryPaginated(
+            startSec = startSec,
+            endSec = endSec,
+            isSeeded = isSeeded,
+            mode = mode,
+            receipt = receipt,
+        )
             .collect { apiTrades ->
                 val result = processApiTradeBatch(
                     apiTrades = apiTrades,
@@ -351,7 +384,12 @@ class TradeHistorySyncService(
                 totalReconciled += result.second
             }
 
-        return totalAdded to totalReconciled
+        return TradeSyncScanOutcome(
+            totalAdded = totalAdded,
+            totalReconciled = totalReconciled,
+            scanStartSec = startSec,
+            authoritativeCompletenessProven = receipt.authoritativeCompletenessProven,
+        )
     }
 
     private suspend fun processApiTradeBatch(
@@ -841,31 +879,33 @@ class TradeHistorySyncService(
         isSeeded: Boolean,
         successfulQueryHorizon: Instant,
         coverageStart: Instant,
+        certifiedFromSec: Long?,
+        authoritativeCompletenessProven: Boolean,
+        extendsCertifiedTail: Boolean,
         verifiedAccountScopeDigest: String? = null,
-    ) {
-        if (!isSeeded) {
+    ): Boolean {
+        val successfulHorizonSec = successfulQueryHorizon.epochSecond
+        val storedCoverageHorizonSec = repository
+            .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
+        // First certification has no previously certified baseline: an unseeded store may still
+        // carry stale horizon metadata from an older contract, so the monotonic guard must not
+        // compare the freshly proven horizon against it.
+        val certifiedBaselineHorizonSec = if (isSeeded) storedCoverageHorizonSec else null
+        val decision = decideCertifiedCoverageAdvance(
+            storedHorizonSec = certifiedBaselineHorizonSec,
+            certifiedFromSec = certifiedFromSec,
+            successfulHorizonSec = successfulHorizonSec,
+            authoritativeCompletenessProven = authoritativeCompletenessProven,
+            extendsCertifiedTail = extendsCertifiedTail,
+        )
+        val coverageAdvances = decision.advances
+
+        if (!isSeeded && coverageAdvances) {
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
-                CURRENT_TRADE_COVERAGE_VERSION,
-            )
-            repository.setSyncMetadata(
-                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
-                coverageStart.epochSecond.toString(),
-            )
-            repository.setSyncMetadata(
-                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
-                successfulQueryHorizon.epochSecond.toString(),
-            )
-            if (verifiedAccountScopeDigest != null) {
-                repository.setSyncMetadata(
-                    SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
-                    verifiedAccountScopeDigest,
-                )
-            }
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
-        } else if (readInitialPaginationOffset() != null) {
+        } else if (isSeeded && readInitialPaginationOffset() != null) {
             // Self-heal: an orphaned numeric offset (crash after seeding, before COMPLETED) would
             // otherwise linger forever; it must not mark any future sync as an interrupted seed.
             // Also normalize SYNC_TOTAL so a crash between the two COMPLETED writes does not leave
@@ -877,12 +917,41 @@ class TradeHistorySyncService(
                 repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
             }
         }
-        // Persist watermark even when no real fills exist so the next sync is incremental.
+
+        // Persist the successful request watermark even when no real fills exist so the next sync
+        // is incremental. The watermark records that the query window was refreshed; it is not a
+        // completeness proof and must never be consumed as one.
         writeSyncWatermark(successfulQueryHorizon)
-        repository.setSyncMetadata(
-            SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
-            successfulQueryHorizon.epochSecond.toString(),
-        )
+
+        if (coverageAdvances) {
+            // Refresh version, certified range start, and horizon together: a re-certified store
+            // may move the start earlier (configuration/version migration) and must never expose a
+            // stale start alongside a newer horizon.
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                coverageStart.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                successfulHorizonSec.toString(),
+            )
+        } else if (!authoritativeCompletenessProven) {
+            log.info(
+                "Trade sync carried no authoritative completeness proof; certified coverage horizon stays at {}.",
+                storedCoverageHorizonSec,
+            )
+        } else if (!decision.tailIsContiguous) {
+            log.info(
+                "Trade sync proof starts at {} after the certified horizon {}; refusing to bridge the gap.",
+                certifiedFromSec,
+                storedCoverageHorizonSec,
+            )
+        }
+
         if (verifiedAccountScopeDigest != null) {
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
@@ -892,6 +961,7 @@ class TradeHistorySyncService(
         // Local throttling is based on completion; the durable cursor is based on the request
         // horizon above and must never be advanced in a finally block after a failed pull.
         lastSyncTime = nowProvider()
+        return coverageAdvances
     }
 
     private suspend fun recoverableCompletedTradeRecoveryThrough(
@@ -1018,6 +1088,7 @@ class TradeHistorySyncService(
         endSec: Long,
         isSeeded: Boolean,
         mode: CoverageSyncMode = CoverageSyncMode.INCREMENTAL,
+        receipt: ScanCertificationReceipt = ScanCertificationReceipt(),
     ): Flow<List<TradeRecord>> = flow {
         var offset = 0
         var priorTotal = repository
@@ -1076,6 +1147,10 @@ class TradeHistorySyncService(
                     (priorTotal == 0 && offset > 0)
                 )
             priorTotal = if (hasAuthoritativeTotal) totalCount else priorTotal
+            receipt.recordPage(
+                authoritativeTotal = hasAuthoritativeTotal,
+                paginationShifted = paginationShifted,
+            )
 
             if (!isSeeded) {
                 repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, offset.toString())
@@ -1108,5 +1183,12 @@ class TradeHistorySyncService(
 
     suspend fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
 }
+
+private data class TradeSyncScanOutcome(
+    val totalAdded: Int,
+    val totalReconciled: Int,
+    val scanStartSec: Long?,
+    val authoritativeCompletenessProven: Boolean,
+)
 
 private fun AppConfig.canPullTradeHistory(): Boolean = settings.simulation || kraken.hasValidCredentials()

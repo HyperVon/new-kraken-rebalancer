@@ -57,7 +57,7 @@ class HistoricalEvidenceContractTest : StringSpec() {
 
     private suspend fun seedCoverage(tradeHorizon: Instant, ledgerHorizon: Instant) {
         repository.setHistorySeeded(true)
-        repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+        repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
         repository.setSyncMetadata(
             SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
             inception.epochSecond.toString(),
@@ -68,7 +68,7 @@ class HistoricalEvidenceContractTest : StringSpec() {
         )
         repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST, scopeDigest)
         ledgerRepository.setLedgersSeeded(true)
-        ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+        ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
         ledgerRepository.setSyncMetadata(
             SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
             inception.epochSecond.toString(),
@@ -302,7 +302,7 @@ class HistoricalEvidenceContractTest : StringSpec() {
                 accountHistoryScopeGuard = scopeGuard,
             )
             sync.syncTradesFromKraken()
-            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "1"
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
         }
         "seeded coverage migration with malformed page does not promote" {
             every { configService.getConfig() } returns appConfig

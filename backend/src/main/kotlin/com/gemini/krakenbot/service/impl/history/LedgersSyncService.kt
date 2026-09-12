@@ -44,12 +44,15 @@ class LedgersSyncService(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     companion object {
-        const val CURRENT_LEDGER_COVERAGE_VERSION = "9"
+        const val CURRENT_LEDGER_COVERAGE_VERSION = "10"
 
         /**
          * Coverage-certification vs incremental distinction (mirrors TradeHistorySyncService).
          * Certification promotes coverage version/start/horizon and requires authoritative
          * `count` proof on every page; a count-less or malformed page fails the migration.
+         * An ordinary incremental run always advances the sync watermark on success, but may
+         * only advance the certified coverage horizon when the scan carried authoritative
+         * completeness proof and the proven tail is contiguous with the previous horizon.
          */
         enum class LedgerCoverageSyncMode {
             INCREMENTAL,
@@ -135,8 +138,14 @@ class LedgersSyncService(
         val storedScopeDigest = repository
             .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
         val scopeMatches = verifiedAccountScopeDigest.isNullOrBlank() || storedScopeDigest == verifiedAccountScopeDigest
+        val storedCoverageHorizonSec = repository
+            .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
         val isCoverageCurrent =
-            coverageVersion == CURRENT_LEDGER_COVERAGE_VERSION && coverageStartMatches && scopeMatches
+            coverageVersion == CURRENT_LEDGER_COVERAGE_VERSION &&
+                coverageStartMatches &&
+                scopeMatches &&
+                storedCoverageHorizonSec != null
         val needsCoverageBackfill = isSeeded && !isCoverageCurrent
         val queryNow = nowProvider()
 
@@ -152,7 +161,7 @@ class LedgersSyncService(
                 queryNow = queryNow,
                 verifiedAccountScopeDigest = verifiedAccountScopeDigest,
             )
-            val totalAdded = if (recoveredCoverageThrough == null) {
+            val scanOutcome = if (recoveredCoverageThrough == null) {
                 processLedgerPages(
                     // Kraken's start bound is exclusive; step back one second so an event exactly
                     // at the configured inception is included in the migration backfill.
@@ -172,34 +181,28 @@ class LedgersSyncService(
                     mode = LedgerCoverageSyncMode.COVERAGE_CERTIFICATION,
                 )
             } else {
-                0
-            }
-            val currentWatermark = readSyncWatermark()
-            if (currentWatermark == null || queryNow.isAfter(currentWatermark)) {
-                writeSyncWatermark(queryNow)
-            }
-            // Persist the watermark before promoting coverage. If a later metadata write fails,
-            // the old coverage version remains authoritative and the next run retries the range.
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
-                coverageBackfillBound.epochSecond.toString(),
-            )
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
-                queryNow.epochSecond.toString(),
-            )
-            if (verifiedAccountScopeDigest != null) {
-                repository.setSyncMetadata(
-                    SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
-                    verifiedAccountScopeDigest,
+                LedgerSyncScanOutcome(
+                    totalAdded = 0,
+                    scanStartSec = coverageBackfillBound.epochSecond,
+                    authoritativeCompletenessProven = true,
                 )
             }
-            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, CURRENT_LEDGER_COVERAGE_VERSION)
+            // A completed recovery prefix (or a full certifying scan) re-certifies coverage from
+            // the coverage start wholesale, so no horizon-contiguity check applies here; the
+            // ordinary success watermark is written even when the response carried no proof.
+            finalizeSync(
+                isSeeded = true,
+                successfulQueryHorizon = queryNow,
+                coverageStart = coverageBackfillBound,
+                certifiedFromSec = coverageBackfillBound.epochSecond,
+                authoritativeCompletenessProven = scanOutcome.authoritativeCompletenessProven,
+                extendsCertifiedTail = false,
+                verifiedAccountScopeDigest = verifiedAccountScopeDigest,
+            )
             pruneOldEntries(queryNow)
-            lastSyncTime = nowProvider()
             log.info(
                 "Ledger coverage backfill completed. Added: {} entries. Coverage version is now {}.",
-                totalAdded,
+                scanOutcome.totalAdded,
                 CURRENT_LEDGER_COVERAGE_VERSION,
             )
             return
@@ -212,7 +215,7 @@ class LedgersSyncService(
         // retained indefinitely (lifetime retention contract), so no prune follows the fetch.
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
-        val paginationStartSec = if (!isSeeded) {
+        val baseStartSec = if (!isSeeded) {
             // Kraken's start bound is exclusive; step back one second so an event exactly at the
             // configured inception or default seed bound is included.
             coverageBackfillBound.minusSeconds(1).epochSecond
@@ -222,6 +225,11 @@ class LedgersSyncService(
                     ?: seedBound.epochSecond
                 )
         }
+        // Re-scan back to the last certified horizon (minus the continuity overlap) so a later
+        // authoritative response can re-prove a tail that earlier weak incremental responses
+        // advanced only on the watermark. The 300s overlap is query continuity, not tolerance.
+        val certificationStartSec = storedCoverageHorizonSec?.minus(300)
+        val paginationStartSec = listOfNotNull(baseStartSec, certificationStartSec).min()
 
         log.info(
             "Starting ledger synchronization (isSeeded={}, startSec={}, recovering={})...",
@@ -230,13 +238,14 @@ class LedgersSyncService(
             isRecoveringInitialSync,
         )
 
-        val totalAdded = processLedgerPages(
+        val scanOutcome = processLedgerPages(
             startSec = paginationStartSec,
             endSec = queryNow.epochSecond,
             isSeeded = isSeeded,
             // An unseeded first pass promotes coverage version/start/horizon, so it must
             // certify against the authoritative `count`. Ordinary incremental refresh of an
-            // already-certified store stays retryable and does not re-promote coverage.
+            // already-certified store stays retryable and only advances the certified horizon
+            // when the response carries authoritative completeness proof.
             mode = if (isSeeded) LedgerCoverageSyncMode.INCREMENTAL else LedgerCoverageSyncMode.COVERAGE_CERTIFICATION,
         )
 
@@ -244,11 +253,14 @@ class LedgersSyncService(
         // has no ledger data, and a bogus "seeded + watermark" state would make a later live sync
         // skip the full history fetch. Live runs (even with an empty account) always finalize.
         val isSimulation = config.settings.simulation
-        if (!isSimulation || isSeeded || totalAdded > 0) {
+        if (!isSimulation || isSeeded || scanOutcome.totalAdded > 0) {
             finalizeSync(
                 isSeeded = isSeeded,
                 successfulQueryHorizon = queryNow,
                 coverageStart = coverageBackfillBound,
+                certifiedFromSec = paginationStartSec,
+                authoritativeCompletenessProven = scanOutcome.authoritativeCompletenessProven,
+                extendsCertifiedTail = isSeeded,
                 verifiedAccountScopeDigest = verifiedAccountScopeDigest,
             )
         } else {
@@ -257,7 +269,7 @@ class LedgersSyncService(
             // the seed/watermark state is deferred, never the next-sync timing.
             lastSyncTime = nowProvider()
         }
-        log.info("Ledger synchronization completed. Added: {} entries.", totalAdded)
+        log.info("Ledger synchronization completed. Added: {} entries.", scanOutcome.totalAdded)
     }
 
     /**
@@ -349,16 +361,26 @@ class LedgersSyncService(
         endSec: Long,
         isSeeded: Boolean,
         mode: LedgerCoverageSyncMode = LedgerCoverageSyncMode.INCREMENTAL,
-    ): Int {
+    ): LedgerSyncScanOutcome {
         var totalAdded = 0
+        val receipt = ScanCertificationReceipt()
         // Cross-page duplicates are dropped by the unique (ledger id, timestamp, asset, type)
         // index; saveLedgers returns the number of rows actually inserted.
-        getLedgersPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded, mode = mode)
-            .collect { apiLedgers ->
-                invalidateReconstructionIfStale(apiLedgers)
-                totalAdded += repository.saveLedgers(apiLedgers)
-            }
-        return totalAdded
+        getLedgersPaginated(
+            startSec = startSec,
+            endSec = endSec,
+            isSeeded = isSeeded,
+            mode = mode,
+            receipt = receipt,
+        ).collect { apiLedgers ->
+            invalidateReconstructionIfStale(apiLedgers)
+            totalAdded += repository.saveLedgers(apiLedgers)
+        }
+        return LedgerSyncScanOutcome(
+            totalAdded = totalAdded,
+            scanStartSec = startSec,
+            authoritativeCompletenessProven = receipt.authoritativeCompletenessProven,
+        )
     }
 
     private suspend fun invalidateReconstructionIfStale(apiLedgers: List<LedgerEvent>) {
@@ -412,10 +434,55 @@ class LedgersSyncService(
         isSeeded: Boolean,
         successfulQueryHorizon: Instant,
         coverageStart: Instant,
+        certifiedFromSec: Long?,
+        authoritativeCompletenessProven: Boolean,
+        extendsCertifiedTail: Boolean,
         verifiedAccountScopeDigest: String? = null,
-    ) {
-        if (!isSeeded) {
+    ): Boolean {
+        val successfulHorizonSec = successfulQueryHorizon.epochSecond
+        val storedCoverageHorizonSec = repository
+            .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
+        // First certification has no previously certified baseline: an unseeded store may still
+        // carry stale horizon metadata from an older contract, so the monotonic guard must not
+        // compare the freshly proven horizon against it.
+        val certifiedBaselineHorizonSec = if (isSeeded) storedCoverageHorizonSec else null
+        val decision = decideCertifiedCoverageAdvance(
+            storedHorizonSec = certifiedBaselineHorizonSec,
+            certifiedFromSec = certifiedFromSec,
+            successfulHorizonSec = successfulHorizonSec,
+            authoritativeCompletenessProven = authoritativeCompletenessProven,
+            extendsCertifiedTail = extendsCertifiedTail,
+        )
+        val coverageAdvances = decision.advances
+
+        if (!isSeeded && coverageAdvances) {
             repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, SyncMetadataKeys.COMPLETED)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, SyncMetadataKeys.COMPLETED)
+        } else if (isSeeded && readInitialPaginationOffset() != null) {
+            // Self-heal: an orphaned numeric offset (crash after seeding, before COMPLETED) must
+            // not mark any future sync as an interrupted seed.
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, SyncMetadataKeys.COMPLETED)
+            if (repository.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL)
+                    ?.toIntOrNull() != null
+            ) {
+                repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, SyncMetadataKeys.COMPLETED)
+            }
+        }
+
+        // Persist the successful request watermark even when no real entries exist so the next
+        // sync is incremental. The watermark records that the query window was refreshed; it is
+        // not a completeness proof and must never be consumed as one. Keep it forward-only.
+        val currentWatermark = readSyncWatermark()
+        if (currentWatermark == null || successfulQueryHorizon.isAfter(currentWatermark)) {
+            writeSyncWatermark(successfulQueryHorizon)
+        }
+
+        if (coverageAdvances) {
+            // Refresh version, certified range start, and horizon together: a re-certified store
+            // may move the start earlier (configuration/version migration) and must never expose a
+            // stale start alongside a newer horizon.
             repository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
                 CURRENT_LEDGER_COVERAGE_VERSION,
@@ -426,32 +493,21 @@ class LedgersSyncService(
             )
             repository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
-                successfulQueryHorizon.epochSecond.toString(),
+                successfulHorizonSec.toString(),
             )
-            if (verifiedAccountScopeDigest != null) {
-                repository.setSyncMetadata(
-                    SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
-                    verifiedAccountScopeDigest,
-                )
-            }
-            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, SyncMetadataKeys.COMPLETED)
-            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, SyncMetadataKeys.COMPLETED)
-        } else if (readInitialPaginationOffset() != null) {
-            // Self-heal: an orphaned numeric offset (crash after seeding, before COMPLETED) must
-            // not mark any future sync as an interrupted seed.
-            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, SyncMetadataKeys.COMPLETED)
-            if (repository.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL)
-                    ?.toIntOrNull() != null
-            ) {
-                repository.setSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL, SyncMetadataKeys.COMPLETED)
-            }
+        } else if (!authoritativeCompletenessProven) {
+            log.info(
+                "Ledger sync carried no authoritative completeness proof; certified coverage horizon stays at {}.",
+                storedCoverageHorizonSec,
+            )
+        } else if (!decision.tailIsContiguous) {
+            log.info(
+                "Ledger sync proof starts at {} after the certified horizon {}; refusing to bridge the gap.",
+                certifiedFromSec,
+                storedCoverageHorizonSec,
+            )
         }
-        // Persist watermark even when no real entries exist so the next sync is incremental.
-        writeSyncWatermark(successfulQueryHorizon)
-        repository.setSyncMetadata(
-            SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
-            successfulQueryHorizon.epochSecond.toString(),
-        )
+
         if (verifiedAccountScopeDigest != null) {
             repository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
@@ -460,6 +516,7 @@ class LedgersSyncService(
         }
         pruneOldEntries(successfulQueryHorizon)
         lastSyncTime = nowProvider()
+        return coverageAdvances
     }
 
     /**
@@ -497,6 +554,7 @@ class LedgersSyncService(
         endSec: Long,
         isSeeded: Boolean,
         mode: LedgerCoverageSyncMode = LedgerCoverageSyncMode.INCREMENTAL,
+        receipt: ScanCertificationReceipt = ScanCertificationReceipt(),
     ): Flow<List<LedgerEvent>> = flow {
         var offset = 0
         var priorTotal = repository
@@ -555,6 +613,10 @@ class LedgersSyncService(
                     (priorTotal == 0 && offset > 0)
                 )
             priorTotal = if (hasAuthoritativeTotal) totalCount else priorTotal
+            receipt.recordPage(
+                authoritativeTotal = hasAuthoritativeTotal,
+                paginationShifted = paginationShifted,
+            )
 
             if (!isSeeded) {
                 repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, offset.toString())
@@ -589,5 +651,11 @@ class LedgersSyncService(
     suspend fun isLedgerCoverageCurrent(): Boolean =
         repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) == CURRENT_LEDGER_COVERAGE_VERSION
 }
+
+private data class LedgerSyncScanOutcome(
+    val totalAdded: Int,
+    val scanStartSec: Long?,
+    val authoritativeCompletenessProven: Boolean,
+)
 
 private fun AppConfig.canPullLedgers(): Boolean = settings.simulation || kraken.hasValidCredentials()

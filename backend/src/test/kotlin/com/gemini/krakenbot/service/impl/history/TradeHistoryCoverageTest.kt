@@ -21,6 +21,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -217,7 +218,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                     offset = 0,
                 )
             }
-            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "1"
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) shouldBe
                 inception.epochSecond.toString()
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
@@ -238,7 +239,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 )
             }
             repository.isHistorySeeded() shouldBe true
-            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "1"
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) shouldBe
                 inception.epochSecond.toString()
         }
@@ -260,7 +261,7 @@ class TradeHistoryCoverageTest : StringSpec() {
 
             // Zero historical API calls because horizon covers fixedNow
             coVerify(exactly = 0) { mockKraken.getTradeHistory(any(), any()) }
-            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "1"
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) shouldBe
                 inception.epochSecond.toString()
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
@@ -297,7 +298,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                     offset = any(),
                 )
             }
-            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "1"
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) shouldBe
                 inception.epochSecond.toString()
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
@@ -415,7 +416,7 @@ class TradeHistoryCoverageTest : StringSpec() {
         "canRebuildSnapshots() rejects ledger complete + trade incomplete" {
             stubBackend()
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -426,7 +427,7 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             // Trade start is AFTER inception!
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
@@ -453,7 +454,7 @@ class TradeHistoryCoverageTest : StringSpec() {
         "canRebuildSnapshots() accepts ledger complete + trade complete through required start" {
             stubBackend()
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -468,7 +469,7 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -687,7 +688,7 @@ class TradeHistoryCoverageTest : StringSpec() {
             stubBackend()
             val seedBound = fixedNow.minus(96, ChronoUnit.DAYS)
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 seedBound.epochSecond.toString(),
@@ -698,7 +699,7 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 seedBound.epochSecond.toString(),
@@ -726,9 +727,9 @@ class TradeHistoryCoverageTest : StringSpec() {
             stubBackend()
             val seedBound = fixedNow.minus(96, ChronoUnit.DAYS)
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
 
             val reconstructionService = TradeHistoryReconstructionService(
                 repository = repository,
@@ -905,7 +906,7 @@ class TradeHistoryCoverageTest : StringSpec() {
             syncService.syncTradesFromKraken()
 
             requestedStartSec shouldBe recoveryHorizon.minusSeconds(300).epochSecond
-            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "1"
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
             repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
                 fixedNow.epochSecond.toString()
         }
@@ -947,13 +948,13 @@ class TradeHistoryCoverageTest : StringSpec() {
             syncService.syncTradesFromKraken()
 
             fakeKraken.getTradeHistoryCallCount shouldBe 0
-            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "1"
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
         }
 
         "rebuildHistoricalSnapshotsIfNeeded skips rebuild when continuous history start covers inception" {
             stubBackend()
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -967,7 +968,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 defaultScopeDigest,
             )
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1017,7 +1018,7 @@ class TradeHistoryCoverageTest : StringSpec() {
         "rebuildHistoricalSnapshotsIfNeeded rebuilds when continuous history start does not cover inception" {
             stubBackend()
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1031,7 +1032,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 defaultScopeDigest,
             )
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1087,7 +1088,7 @@ class TradeHistoryCoverageTest : StringSpec() {
         "canRebuildSnapshots() rejects outdated trade coverage version" {
             stubBackend()
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             repository.setHistorySeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "0")
 
@@ -1111,7 +1112,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 currentScopeDigest = null,
             )
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1121,7 +1122,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 fixedNow.epochSecond.toString(),
             )
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1147,7 +1148,7 @@ class TradeHistoryCoverageTest : StringSpec() {
         "canRebuildSnapshots() rejects mismatched ledger or trade account scope digest" {
             stubBackend("digest-A")
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1158,7 +1159,7 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST, "digest-B")
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1455,7 +1456,7 @@ class TradeHistoryCoverageTest : StringSpec() {
             every { configService.getConfig() } returns appConfig
             stubBackend()
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1469,7 +1470,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 defaultScopeDigest,
             )
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1581,7 +1582,7 @@ class TradeHistoryCoverageTest : StringSpec() {
             every { configService.getConfig() } returns appConfig
             stubBackend()
             ledgerRepository.setLedgersSeeded(true)
-            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "9")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1595,7 +1596,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 defaultScopeDigest,
             )
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
             repository.setSyncMetadata(
                 SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
                 inception.epochSecond.toString(),
@@ -1638,6 +1639,208 @@ class TradeHistoryCoverageTest : StringSpec() {
 
             // Reconstruction must abort and NOT stamp version 10
             repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe null
+        }
+
+        "certified coverage advance requires proof and a tail contiguous with the stored horizon" {
+            val stored = 1_700_000_000L
+
+            // Proof that starts after the stored horizon would bridge an unproven gap.
+            val gap = decideCertifiedCoverageAdvance(
+                storedHorizonSec = stored,
+                certifiedFromSec = stored + 1_000,
+                successfulHorizonSec = stored + 2_000,
+                authoritativeCompletenessProven = true,
+                extendsCertifiedTail = true,
+            )
+            gap.advances shouldBe false
+            gap.tailIsContiguous shouldBe false
+
+            // A scan whose start overlaps the stored horizon may extend certified coverage.
+            decideCertifiedCoverageAdvance(
+                storedHorizonSec = stored,
+                certifiedFromSec = stored - 300,
+                successfulHorizonSec = stored + 2_000,
+                authoritativeCompletenessProven = true,
+                extendsCertifiedTail = true,
+            ).advances shouldBe true
+
+            // No completeness proof means no certification, regardless of contiguity.
+            decideCertifiedCoverageAdvance(
+                storedHorizonSec = stored,
+                certifiedFromSec = stored - 300,
+                successfulHorizonSec = stored + 2_000,
+                authoritativeCompletenessProven = false,
+                extendsCertifiedTail = true,
+            ).advances shouldBe false
+
+            // Self-contained certification (backfill/recovery) starts a fresh tail.
+            decideCertifiedCoverageAdvance(
+                storedHorizonSec = stored,
+                certifiedFromSec = stored + 1_000,
+                successfulHorizonSec = stored + 2_000,
+                authoritativeCompletenessProven = true,
+                extendsCertifiedTail = false,
+            ).advances shouldBe true
+        }
+
+        "count-less incremental trade refresh advances only the sync watermark, not certified coverage" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            seedCurrentCoverage(tradeHorizonSec = certifiedHorizon.epochSecond.toString())
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            fakeKraken.tradeHistoryTotalCountAvailable = false
+            fakeKraken.tradeHistorySupplier = { _, _ -> emptyList() }
+
+            service().syncTradesFromKraken()
+
+            repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                certifiedHorizon.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) shouldBe
+                inception.epochSecond.toString()
+            // The watermark moved, but reconstruction evidence must not follow it.
+            reconstructionService().canRebuildSnapshots(appConfig, reconstructionAnchor = fixedNow) shouldBe false
+        }
+
+        "malformed incremental trade page leaves the watermark and certified coverage unchanged" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            seedCurrentCoverage(tradeHorizonSec = certifiedHorizon.epochSecond.toString())
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.tradeHistoryTotalCountOverride = 100
+            fakeKraken.tradeHistoryRawPageSizeOverride = 20
+            fakeKraken.tradeHistorySupplier = { _, _ -> emptyList() }
+
+            val error = shouldThrow<IllegalStateException> {
+                service().syncTradesFromKraken()
+            }
+
+            error.message.orEmpty() shouldContain "occupancy"
+            repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe
+                certifiedHorizon.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                certifiedHorizon.epochSecond.toString()
+        }
+
+        "authoritative incremental trade scan overlapping the certified horizon extends coverage" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            seedCurrentCoverage(tradeHorizonSec = certifiedHorizon.epochSecond.toString())
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            val fill = TestFixtures.tradeRecord(
+                timestamp = certifiedHorizon.plusSeconds(600),
+                pair = "XBTUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("9000.00"),
+                price = BigDecimal("90000.00"),
+                fee = BigDecimal("9.00"),
+                source = TradeSource.API_FILL,
+                tradeId = "authoritative-tail-fill",
+            )
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.tradeHistoryTotalCountOverride = 1
+            fakeKraken.tradeHistorySupplier = { _, offset -> if (offset == 0) listOf(fill) else emptyList() }
+
+            service().syncTradesFromKraken()
+
+            repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
+            reconstructionService().canRebuildSnapshots(appConfig, reconstructionAnchor = fixedNow) shouldBe true
+        }
+
+        "empty authoritative trade scan certifies the contiguous tail" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            seedCurrentCoverage(tradeHorizonSec = certifiedHorizon.epochSecond.toString())
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistorySupplier = { _, _ -> emptyList() }
+
+            service().syncTradesFromKraken()
+
+            repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+            reconstructionService().canRebuildSnapshots(appConfig, reconstructionAnchor = fixedNow) shouldBe true
+        }
+
+        "failed incremental trade pull advances neither the watermark nor certified coverage" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            seedCurrentCoverage(tradeHorizonSec = certifiedHorizon.epochSecond.toString())
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.tradeHistoryTotalCountOverride = 1
+            fakeKraken.tradeHistorySupplier = { _, _ -> throw IllegalStateException("network down") }
+
+            shouldThrow<IllegalStateException> {
+                service().syncTradesFromKraken()
+            }
+
+            repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe
+                certifiedHorizon.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                certifiedHorizon.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe "2"
+        }
+
+        "a later authoritative trade refresh re-certifies a tail advanced only by weak scans" {
+            stubBackend()
+            val certifiedHorizon = fixedNow.minusSeconds(3600)
+            val weakNow = fixedNow.minusSeconds(600)
+            seedCurrentCoverage(tradeHorizonSec = certifiedHorizon.epochSecond.toString())
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
+                certifiedHorizon.epochSecond.toString(),
+            )
+
+            fakeKraken.tradeHistoryTotalCountAvailable = false
+            fakeKraken.tradeHistorySupplier = { _, _ -> emptyList() }
+            service(now = weakNow).syncTradesFromKraken()
+
+            repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe
+                weakNow.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                certifiedHorizon.epochSecond.toString()
+            reconstructionService(now = weakNow).canRebuildSnapshots(appConfig, reconstructionAnchor = weakNow) shouldBe
+                false
+
+            // A later authoritative scan restarts at the certified horizon minus the continuity
+            // overlap, so it can re-prove the tail the weak scans advanced only on the watermark.
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            service(now = fixedNow).syncTradesFromKraken()
+
+            repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                fixedNow.epochSecond.toString()
+            reconstructionService().canRebuildSnapshots(appConfig, reconstructionAnchor = fixedNow) shouldBe true
         }
     }
 }

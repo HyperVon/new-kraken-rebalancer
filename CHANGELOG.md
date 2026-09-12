@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.52] - 2026-09-12
+
+### Fixed
+
+- **Certified coverage horizons separated from sync watermarks**: `TRADE_COVERAGE_HORIZON_EPOCH_SEC`
+  and `LEDGER_COVERAGE_HORIZON_EPOCH_SEC` now advance only when an incremental scan carries
+  authoritative completeness proof over a tail contiguous with the previously certified horizon.
+  Ordinary sync watermarks still track every successful refresh. Snapshot reconstruction consumes
+  only certified horizons, so a count-less or malformed incremental response can no longer make
+  historical reconstruction eligible. Trade coverage version advanced to `2`; ledger coverage
+  version advanced to `10`.
+- **History comparisons fail closed on stale reconstruction dependencies**: the Rebalancer vs
+  Buy & Hold comparison now validates the inception snapshot and predecessor anchor as well as the
+  displayed window, returning `HISTORICAL_COVERAGE_GAP` when any required snapshot falls inside an
+  invalidated reconstruction interval. Proposal search re-trials candidates after reconstruction
+  state changes instead of resuming a stored verified baseline.
+
 ## [6.17.51] - 2026-09-11
 
 ### Fixed

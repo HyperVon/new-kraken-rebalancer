@@ -153,7 +153,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION)
-                } returns "1"
+                } returns "2"
 
                 service.rebuildHistoricalSnapshotsIfNeeded()
 
@@ -449,6 +449,11 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, any())
                 } answers { watermarks += secondArg<String>() }
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
+                // Constant certified horizon: the base-class stub would consume this test's scripted
+                // clock entries every time the service reads coverage metadata.
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns queryHorizon.epochSecond.toString()
 
                 service.syncTradesFromKraken()
                 service.syncTradesFromKraken()
@@ -1091,8 +1096,15 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 val reconstructedSnapshots = slot<List<PortfolioSnapshot>>()
                 coEvery { repository.save(capture(reconstructedSnapshots)) } just Runs
 
-                val service = createService()
+                // Scripted clock so the seed can certify: the base-class coverage horizon stub
+                // reports a future horizon (read time + 60s) that a fresh seed could never prove
+                // against, which would leave the store unseeded and reconstruction ineligible.
+                val fixedNow = Instant.now().plusSeconds(60)
+                val service = createService(syncNowProvider = { fixedNow })
                 every { configService.getConfig() } returns appConfig
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns fixedNow.epochSecond.toString()
                 service.syncTradesFromKraken()
 
                 reconstructedSnapshots.captured.first().assets.getValue(Asset.BTC).balance
