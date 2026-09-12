@@ -436,6 +436,12 @@ object AuthoritativeLedgerBalanceValidator {
         )
     }
 
+    /**
+     * Recursive within a single timestamp group only. [MAX_SAME_TIMESTAMP_GROUP_SIZE] bounds the
+     * number of events handled per call and [MAX_GROUP_SEARCH_NODES] bounds the node count, so
+     * recursion depth here is structurally bounded. [solveAsset] stays iterative because an
+     * asset's history length is not bounded.
+     */
     private fun solveGroup(
         asset: String,
         group: List<LedgerEvent>,
@@ -502,6 +508,14 @@ object AuthoritativeLedgerBalanceValidator {
         )
     }
 
+    /**
+     * Iterative frontier traversal over an asset's timestamp groups.
+     *
+     * Recursing once per group overflowed the JVM stack for assets with thousands of retained
+     * ledger rows, so history length must not influence call-stack depth. Each step advances a
+     * deduplicated frontier of replay states across exactly one group; the only recursion left is
+     * inside [solveGroup], which is structurally bounded per group.
+     */
     private fun solveAsset(
         asset: String,
         groups: List<List<LedgerEvent>>,
@@ -510,50 +524,68 @@ object AuthoritativeLedgerBalanceValidator {
         nonzeroDeltaIds: Set<String>,
     ): AssetSearch {
         val solutions = mutableListOf<ReplayState>()
-        val failures = mutableListOf<ValidationFailure>()
-        val visitedStates = mutableSetOf<String>()
+        var firstFailure: ValidationFailure? = null
         var truncated = false
 
-        fun search(index: Int, state: ReplayState) {
-            if (truncated) return
-            if (!visitedStates.add("$index|${state.signature(nonzeroDeltaIds)}")) return
-            if (!validationBudget.tryConsume()) {
-                truncated = true
-                return
-            }
-            if (index == groups.size) {
-                if (solutions.none { it.signature(nonzeroDeltaIds) == state.signature(nonzeroDeltaIds) }) {
-                    solutions += state
-                    if (solutions.size > MAX_VALID_SOLUTIONS) truncated = true
+        var frontier = listOf(ReplayState())
+        for (group in groups) {
+            val nextFrontier = mutableListOf<ReplayState>()
+            val seenStates = mutableSetOf<String>()
+            for (state in frontier) {
+                if (!validationBudget.tryConsume()) {
+                    truncated = true
+                    break
                 }
-                return
+                val groupSearch = solveGroup(
+                    asset = asset,
+                    group = group,
+                    initialState = state,
+                    linkedGroupSizes = linkedGroupSizes,
+                    validationBudget = validationBudget,
+                    nonzeroDeltaIds = nonzeroDeltaIds,
+                )
+                if (groupSearch.truncated) {
+                    truncated = true
+                    break
+                }
+                if (groupSearch.solutions.isEmpty()) {
+                    if (firstFailure == null) firstFailure = groupSearch.firstFailure
+                    continue
+                }
+                for (solution in groupSearch.solutions) {
+                    val signature = solution.state.signature(nonzeroDeltaIds)
+                    if (seenStates.add(signature)) nextFrontier += solution.state
+                }
             }
-            val groupSearch = solveGroup(
-                asset = asset,
-                group = groups[index],
-                initialState = state,
-                linkedGroupSizes = linkedGroupSizes,
-                validationBudget = validationBudget,
-                nonzeroDeltaIds = nonzeroDeltaIds,
-            )
-            if (groupSearch.truncated) {
-                truncated = true
-                return
+            if (truncated) break
+            if (nextFrontier.isEmpty()) {
+                return AssetSearch(solutions = emptyList(), firstFailure = firstFailure, truncated = false)
             }
-            if (groupSearch.solutions.isEmpty()) {
-                groupSearch.firstFailure?.let(failures::add)
-                return
-            }
-            for (solution in groupSearch.solutions) {
-                search(index + 1, solution.state)
-                if (truncated) return
+            frontier = nextFrontier
+        }
+
+        if (!truncated) {
+            val seenTerminalStates = mutableSetOf<String>()
+            for (state in frontier) {
+                if (!validationBudget.tryConsume()) {
+                    truncated = true
+                    break
+                }
+                val signature = state.signature(nonzeroDeltaIds)
+                if (!seenTerminalStates.add(signature)) continue
+                if (solutions.none { it.signature(nonzeroDeltaIds) == signature }) {
+                    solutions += state
+                    if (solutions.size > MAX_VALID_SOLUTIONS) {
+                        truncated = true
+                        break
+                    }
+                }
             }
         }
 
-        search(index = 0, state = ReplayState())
         return AssetSearch(
             solutions = solutions,
-            firstFailure = failures.firstOrNull(),
+            firstFailure = firstFailure,
             truncated = truncated,
         )
     }
