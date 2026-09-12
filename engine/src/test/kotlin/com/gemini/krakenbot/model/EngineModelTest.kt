@@ -561,5 +561,22 @@ class EngineModelTest : StringSpec() {
             usdtPair.isSupportedMarket() shouldBe false
             usdtPair.isSupportedMarket(listOf("SOL")) shouldBe false
         }
+
+        "isHistoricallyReplayable accepts parseable delisted and non-USD quoted markets" {
+            val delistedZBase = EngineTestFixtures.tradeRecord(pair = "STRCZUSD", symbol = "STRCZUSD")
+            delistedZBase.isHistoricallyReplayable() shouldBe true
+
+            val usdtQuoted = EngineTestFixtures.tradeRecord(pair = "ATOMUSDT", symbol = "ATOM")
+            usdtQuoted.isHistoricallyReplayable() shouldBe true
+
+            val usdcQuoted = EngineTestFixtures.tradeRecord(pair = "SOLUSDC", symbol = "SOL")
+            usdcQuoted.isHistoricallyReplayable() shouldBe true
+
+            val unsupportedQuote = EngineTestFixtures.tradeRecord(pair = "BTCEUR", symbol = "BTC")
+            unsupportedQuote.isHistoricallyReplayable() shouldBe false
+
+            val malformedPair = EngineTestFixtures.tradeRecord(pair = "", symbol = "BTC")
+            malformedPair.isHistoricallyReplayable() shouldBe false
+        }
     }
 }

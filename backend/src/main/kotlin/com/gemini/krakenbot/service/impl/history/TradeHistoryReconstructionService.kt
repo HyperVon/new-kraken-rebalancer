@@ -9,7 +9,7 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.hasValidEconomicFields
-import com.gemini.krakenbot.model.isSupportedMarket
+import com.gemini.krakenbot.model.isHistoricallyReplayable
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
@@ -304,12 +304,11 @@ class TradeHistoryReconstructionService(
                 }
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
-        val allocationSymbols = allocations.map { it.symbol.value }
         // A retained historical market stays reconstructable even when the pair is delisted or
         // the base is outside the live allocations, as long as the pair carries real base/quote
         // semantics. Truly unsplittable pairs still fail closed.
         val unsupportedTrade = historicalTrades.firstOrNull { trade ->
-            !trade.isSupportedMarket(allocationSymbols) && Asset.splitTradingPair(trade.pair) == null
+            !trade.isHistoricallyReplayable()
         }
         if (unsupportedTrade != null) {
             log.warn(
@@ -322,8 +321,7 @@ class TradeHistoryReconstructionService(
         }
         // Malformed supported-market economics must fail closed, never become zero-value fills.
         val invalidTrade = historicalTrades.firstOrNull { trade ->
-            (trade.isSupportedMarket(allocationSymbols) || Asset.splitTradingPair(trade.pair) != null) &&
-                !trade.hasValidEconomicFields()
+            trade.isHistoricallyReplayable() && !trade.hasValidEconomicFields()
         }
         if (invalidTrade != null) {
             log.warn(

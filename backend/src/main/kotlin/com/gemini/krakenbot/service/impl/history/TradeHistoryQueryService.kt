@@ -14,7 +14,7 @@ import com.gemini.krakenbot.model.RewardsOverTimePoint
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.hasValidEconomicFields
-import com.gemini.krakenbot.model.isSupportedMarket
+import com.gemini.krakenbot.model.isHistoricallyReplayable
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -71,7 +71,18 @@ class TradeHistoryQueryService(
     suspend fun getLatestSnapshot(): PortfolioSnapshot? = repository.getLatestSnapshot()
 
     suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
-        excludeIdentitySnapshots(repository.getAllSnapshotsInRange(from, to)).downsampleSnapshots()
+        excludeIdentitySnapshots(repository.getAllSnapshotsInRange(from, to))
+            .collapseDuplicateInstants()
+            .downsampleSnapshots()
+
+    /**
+     * Reconstruction replays events newest-first and persists a row per replayed event, so an
+     * instant that spans several events keeps several cumulative rows. Rows arrive ordered by
+     * timestamp and id ascending, which places the state after all events of an instant first:
+     * the recorded series exposes only that final state.
+     */
+    private fun List<PortfolioSnapshot>.collapseDuplicateInstants(): List<PortfolioSnapshot> =
+        distinctBy { it.timestamp }
 
     /**
      * Identity anchors survive series rewrites, so a rewrite can place a reconstructed snapshot
@@ -306,15 +317,16 @@ class TradeHistoryQueryService(
         // LedgerFlowClassifier and fail closed as UNSUPPORTED/AMBIGUOUS instead of disappearing
         // here. `trade` rows are retained as continuity checkpoints and classify as TRADE_IGNORED.
         val ledgers = ledgerRepository.getLedgersInRange(queryFrom, queryTo)
-        // Fail closed on unsupported raw trade markets in the comparison evidence interval.
-        // Coverage-grade ingestion preserves e.g. ADAEUR/XBTUSDT/XBTUSDC; their Kraken `cost`
-        // must never be assigned to USD nor silently dropped outside the tracked universe.
-        // Raw retrieval may still be COMPLETE while economic comparison is UNAVAILABLE.
-        val comparisonUniverse = (inceptionSnapshot ?: firstSnapshot).assets.keys.toList()
+        // Fail closed on trade markets that recorded history cannot interpret. Coverage-grade
+        // ingestion preserves e.g. ADAEUR/XBTUSDT/XBTUSDC; their Kraken `cost` must never be
+        // assigned to USD nor silently dropped. Economic replayability is decided by the shared
+        // historical pair parser, so a delisted or no-longer-configured market (for example
+        // STRCZUSD) remains comparable while an unparseable one still fails closed. Raw
+        // retrieval may still be COMPLETE while economic comparison is UNAVAILABLE.
         val unsupportedTrade = trades.firstOrNull {
             it.success && !it.dryRun &&
                 !it.timestamp.isBefore(queryFrom) && !it.timestamp.isAfter(queryTo) &&
-                !it.isSupportedMarket(comparisonUniverse)
+                !it.isHistoricallyReplayable()
         }
         if (unsupportedTrade != null) {
             // Force UNAVAILABLE even if reconciliation would otherwise succeed:
@@ -334,7 +346,7 @@ class TradeHistoryQueryService(
         val invalidTrade = trades.firstOrNull {
             it.success && !it.dryRun &&
                 !it.timestamp.isBefore(queryFrom) && !it.timestamp.isAfter(queryTo) &&
-                it.isSupportedMarket(comparisonUniverse) && !it.hasValidEconomicFields()
+                it.isHistoricallyReplayable() && !it.hasValidEconomicFields()
         }
         if (invalidTrade != null) {
             return RebalancerComparison(

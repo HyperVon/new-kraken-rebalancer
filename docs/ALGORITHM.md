@@ -576,8 +576,8 @@ once instead of being replayed as its rounded quote equivalent, and leg rounding
 recorded movement. Missing, duplicated, unexpected, or direction-contradictory leg shapes fail
 closed, and a missing leg is accepted only when its reported movement is provably zero. Complete
 conversions retain their explicit strategy-neutral two-leg replay and do not affect owner capital,
-rewards, ATH, or Buy & Hold scaling. Baseline replay version `12` and snapshot reconstruction
-version `13` invalidate only the derived baseline and snapshot results, so completed recovery
+rewards, ATH, or Buy & Hold scaling. Baseline replay version `13` and snapshot reconstruction
+version `14` invalidate only the derived baseline and snapshot results, so completed recovery
 trade/ledger streams and their offsets remain reusable. The reconstruction
 universe is derived per run: configured allocations plus every replayable trade base and quote plus
 non-zero-delta Spot ledger assets. Historical-only balances are seeded from the latest authoritative
@@ -787,8 +787,9 @@ the same external capital over time:
   close is before the baseline and no more than 15 minutes old. OHLC lookup is bounded to 24 hours;
   the current ticker is never used for an old price. The candidate asset may use only its own
   execution price at the candidate-minus-one-millisecond baseline. Missing historical prices,
-  missing retained anchors, negative reconstructed balances, a non-positive total baseline, changed
-  universes, or incomplete funding groups leave the comparison unavailable.
+  missing retained anchors, negative reconstructed balances, a non-positive total baseline, a
+  snapshot that drops a configured baseline asset, or incomplete funding groups leave the
+  comparison unavailable.
 - **Resolution and retention states are durable.** `IN_PROGRESS` and `FAILED` retain resumable
   coverage; `AMBIGUOUS`, `COMPLETE_NO_BOT_EVIDENCE`, and `BASELINE_UNAVAILABLE` explain why no
   lifetime baseline was confirmed; `CONFIRMED` records the candidate, source, baseline identity,
@@ -815,6 +816,25 @@ the same external capital over time:
   when no asset has a target), so historical-only holdings reconstructed for accounting stay out of
   the benchmark basket and weights; the comparison difference then starts non-zero by the excluded
   value instead of silently absorbing it.
+- **Comparison reconciles actual holdings through recorded base/quote semantics.** Every successful
+  trade in the interval is replayed through `Asset.splitTradingPair`, so a delisted or no longer
+  configured USD market (for example `STRCZUSD`) adjusts the tracked quote balance and its base
+  holding instead of making the whole comparison unavailable; a pair with unknown quote semantics
+  still fails closed. Snapshots may carry historical-only assets beyond the configured targets, but
+  every non-zero balance must be produced by the replayed baseline, trades, or ledger events — an
+  unexplained appearance fails closed. Dropping a configured baseline asset still reports
+  `ASSET_UNIVERSE_CHANGED`.
+- **Recorded history exposes one final state per instant and only spot-wallet effects.**
+  Reconstruction persists a row per replayed event, so several cumulative rows can share a
+  millisecond; the chart and comparison keep the first row written for an instant (the state
+  after every event of that instant) before down-sampling. Ledger rows resolved to Kraken's
+  staking or futures wallet scopes never move comparison balances, mirroring the recorded
+  series, while linked internal-transfer pairs are still classified over the full ledger set.
+  A trade whose quote asset never enters the recorded universe settles only its tracked leg;
+  a tracked quote without a recorded balance fails closed. A one-unit crypto quantity offset
+  left by backward replay from live balances is tolerated, while quote cash stays cent-exact;
+  the comparison remains fail-closed (`UNEXPLAINED_BALANCE_CHANGE`) when the recorded series
+  is inconsistent with retained trade and ledger evidence.
 - **Owner contributions after inception are invested by original inception value
   weights** (existing synthetic holdings untouched); only the new money moves.
   Confirmed card Buy Crypto transactions collapse into a single net owner contribution

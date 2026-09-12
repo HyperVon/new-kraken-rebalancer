@@ -355,7 +355,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableAt shouldBe now.plusSeconds(3600)
         }
 
-        "asset added: returns ASSET_UNIVERSE_CHANGED" {
+        "asset added without explaining events: returns UNEXPLAINED_BALANCE_CHANGE" {
             val snapshots = listOf(
                 snapshot(now, "50000.00", mapOf("BTC" to assetRow("1.0", "50000.00", "50000.00"))),
                 snapshot(
@@ -371,7 +371,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = calculate(snapshots, emptyList())
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
         "asset removed: returns ASSET_UNIVERSE_CHANGED" {
@@ -391,6 +391,328 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+        }
+
+        "historical-only asset purchase is available and stays out of the benchmark basket" {
+            val t0 = now
+            val t1 = now.plusSeconds(1800)
+            val t2 = now.plusSeconds(3600)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                    ),
+                ),
+                snapshot(
+                    t2,
+                    "103002.10",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("56997.90", "1.00", "56997.90"),
+                        "STRC" to assetRow("30.0", "200.14", "6004.20"),
+                    ),
+                ),
+            )
+            val strcBuy = trade(
+                t1,
+                side = "buy",
+                symbol = "STRCZUSD",
+                volume = "30.0",
+                usdAmount = "3002.10",
+                price = "100.07",
+            ).copy(pair = "STRCZUSD")
+
+            val result = calculate(snapshots, listOf(strcBuy))
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            val last = result.points.last()
+            last.rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("103002.10")
+            last.buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            last.differenceUSD shouldBeEqualComparingTo BigDecimal("3002.10")
+        }
+
+        "historical-only asset liquidation to zero keeps the comparison available" {
+            val t0 = now
+            val t2 = now.plusSeconds(3600)
+            val t3 = now.plusSeconds(5400)
+            val t4 = now.plusSeconds(7200)
+            val buySnapshot = snapshot(
+                t2,
+                "103002.10",
+                mapOf(
+                    "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                    "USD" to assetRow("56997.90", "1.00", "56997.90"),
+                    "STRC" to assetRow("30.0", "200.14", "6004.20"),
+                ),
+            )
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                    ),
+                ),
+                buySnapshot,
+                snapshot(
+                    t4,
+                    "103002.10",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("63002.10", "1.00", "63002.10"),
+                    ),
+                ),
+            )
+            val strcBuy = trade(
+                now.plusSeconds(1800),
+                side = "buy",
+                symbol = "STRCZUSD",
+                volume = "30.0",
+                usdAmount = "3002.10",
+                price = "100.07",
+            ).copy(pair = "STRCZUSD")
+            val strcSell = trade(
+                t3,
+                side = "sell",
+                symbol = "STRCZUSD",
+                volume = "30.0",
+                usdAmount = "6004.20",
+                price = "200.14",
+            ).copy(pair = "STRCZUSD")
+
+            val result = calculate(snapshots, listOf(strcBuy, strcSell))
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            val last = result.points.last()
+            last.rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("103002.10")
+            last.buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            last.differenceUSD shouldBeEqualComparingTo BigDecimal("3002.10")
+        }
+
+        "historical-only liquidation of a holding absent from the series stays out of the benchmark" {
+            val t0 = now
+            val t1 = now.plusSeconds(1800)
+            val t2 = now.plusSeconds(3600)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                    ),
+                ),
+                snapshot(
+                    t2,
+                    "100299.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60299.00", "1.00", "60299.00"),
+                    ),
+                ),
+            )
+            // Reconstructed history settles the quote proceeds of a pre-series holding
+            // (production MORPHO) without recording the base asset anywhere in the series.
+            val morphoSell = trade(
+                t1,
+                side = "sell",
+                symbol = "MORPHO",
+                volume = "300.0",
+                usdAmount = "300.00",
+                price = "1.00",
+                fee = "1.00",
+            )
+
+            val result = calculate(snapshots, listOf(morphoSell))
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            val last = result.points.last()
+            last.rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100299.00")
+            last.buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            last.differenceUSD shouldBeEqualComparingTo BigDecimal("299.00")
+        }
+
+        "purchase settled outside the recorded quote universe keeps the comparison available" {
+            val t0 = now
+            val t1 = now.plusSeconds(1800)
+            val t2 = now.plusSeconds(3600)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                    ),
+                ),
+                snapshot(
+                    t2,
+                    "100500.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                        "ATOM" to assetRow("10.0", "50.00", "500.00"),
+                    ),
+                ),
+            )
+            val atomBuy = trade(
+                t1,
+                side = "buy",
+                symbol = "ATOM",
+                volume = "10.0",
+                usdAmount = "500.00",
+                price = "50.00",
+            ).copy(pair = "ATOMUSDT")
+
+            val result = calculate(snapshots, listOf(atomBuy))
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            val last = result.points.last()
+            last.rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100500.00")
+            last.buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            last.differenceUSD shouldBeEqualComparingTo BigDecimal("500.00")
+        }
+
+        "tracked quote with no recorded balance fails closed" {
+            val t0 = now
+            val t1 = now.plusSeconds(1800)
+            val t2 = now.plusSeconds(3600)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                    ),
+                ),
+                snapshot(
+                    t2,
+                    "100500.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                        "ATOM" to assetRow("10.0", "50.00", "500.00"),
+                        "USDT" to assetRow("0.0", "1.00", "0.00"),
+                    ),
+                ),
+            )
+            val atomBuy = trade(
+                t1,
+                side = "buy",
+                symbol = "ATOM",
+                volume = "10.0",
+                usdAmount = "500.00",
+                price = "50.00",
+            ).copy(pair = "ATOMUSDT")
+
+            val result = calculate(snapshots, listOf(atomBuy))
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+            result.unavailableAt shouldBe t1
+        }
+
+        "spot staking transfer leaving one quantum of dust still reconciles" {
+            val t0 = now
+            val t1 = now.plusSeconds(1800)
+            val t2 = now.plusSeconds(3600)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "101000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                        "SOL" to assetRow("10.00000009", "100.00", "1000.00"),
+                    ),
+                ),
+                snapshot(
+                    t2,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                        "SOL" to assetRow("0.00000001", "100.00", "0.00"),
+                    ),
+                ),
+            )
+            val spotLeg = ledgerEvent(
+                t1,
+                "SOL",
+                "-10.00000009",
+                type = "transfer",
+                subtype = "spottostaking",
+                refid = "STAKEPAIR",
+                ledgerId = "SOL-SPOT-1",
+            )
+            val stakingLeg = ledgerEvent(
+                t1,
+                "SOL03",
+                "+10.00000009",
+                type = "transfer",
+                subtype = "spottostaking",
+                refid = "STAKEPAIR",
+                ledgerId = "SOL-STAKING-1",
+            )
+
+            val result = calculate(snapshots, emptyList(), listOf(spotLeg, stakingLeg))
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "two-quantum dust difference still fails closed" {
+            val t0 = now
+            val t1 = now.plusSeconds(1800)
+            val t2 = now.plusSeconds(3600)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "101000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                        "SOL" to assetRow("10.00000009", "100.00", "1000.00"),
+                    ),
+                ),
+                snapshot(
+                    t2,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.00", "60000.00"),
+                        "SOL" to assetRow("0.00000002", "100.00", "0.00"),
+                    ),
+                ),
+            )
+            val spotLeg = ledgerEvent(
+                t1,
+                "SOL",
+                "-10.00000009",
+                type = "transfer",
+                subtype = "spottostaking",
+                refid = "STAKEPAIR",
+                ledgerId = "SOL-SPOT-1",
+            )
+            val stakingLeg = ledgerEvent(
+                t1,
+                "SOL03",
+                "+10.00000009",
+                type = "transfer",
+                subtype = "spottostaking",
+                refid = "STAKEPAIR",
+                ledgerId = "SOL-STAKING-1",
+            )
+
+            val result = calculate(snapshots, emptyList(), listOf(spotLeg, stakingLeg))
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe t2
         }
 
         "unexplained USD credit fails closed" {
@@ -1922,7 +2244,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.first().timestamp shouldBe now
         }
 
-        "trade for unknown symbol: skipped, comparison still available" {
+        "trade for a symbol absent from the snapshot series fails closed" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -1947,15 +2269,16 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     side = "buy",
                     symbol = "UNKNOWN",
                     volume = "1.0",
-                    usdAmount = "0",
+                    usdAmount = "1000.00",
                     fee = "0",
                 ),
             )
 
             val result = calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.unavailableReason shouldBe null
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
         }
 
         "non-USD quoted trade: returns UNSUPPORTED_TRADE" {
@@ -2236,7 +2559,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
         }
 
-        "trades for assets outside the snapshot universe are skipped, not fatal" {
+        "trade for an asset absent from the snapshot series fails closed" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2259,6 +2582,37 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 trade(now.plusSeconds(1800), "BUY", "XLM", "100.0", "105.00"),
                 trade(now.plusSeconds(900), "BUY", "BTC", "0.5", "25000.00"),
                 trade(now.plusSeconds(2700), "SELL", "BTC", "0.5", "25000.00"),
+            )
+
+            val result = calculate(snapshots, trades, emptyList())
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(3600)
+        }
+
+        "out-of-universe round trip that nets to zero is not fatal" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(now.plusSeconds(900), "BUY", "XLM", "100.0", "105.00"),
+                trade(now.plusSeconds(1800), "SELL", "XLM", "100.0", "105.00"),
             )
 
             val result = calculate(snapshots, trades, emptyList())
@@ -4451,6 +4805,67 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "base-denominated ledger fee settles from the retained trade legs" {
+            val t0 = now.minusSeconds(86400)
+            val t1 = now
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "40000.00", "40000.00"),
+                        "USD" to assetRow("60000.00", "1.0", "60000.00"),
+                    ),
+                ),
+                snapshot(
+                    t1,
+                    "99996.00",
+                    mapOf(
+                        "BTC" to assetRow("0.8999", "40000.00", "35996.00"),
+                        "USD" to assetRow("64000.00", "1.0", "64000.00"),
+                    ),
+                ),
+            )
+            // Kraken reports a quote-equivalent fee, but the retained legs show the fee was
+            // charged in BTC; the wallet effect must come from the legs, not the TradeRecord.
+            val trades = listOf(
+                manualTrade(
+                    timestamp = t1,
+                    side = "sell",
+                    symbol = "BTC",
+                    volume = "0.1",
+                    usdAmount = "4000.00",
+                    fee = "4.0",
+                    tradeId = "TKRAKEN1",
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = t1,
+                    asset = "BTC",
+                    amount = "-0.1001",
+                    type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                    refid = "TKRAKEN1",
+                    balance = "0.8999",
+                ),
+                ledgerEvent(
+                    timestamp = t1,
+                    asset = "USD",
+                    amount = "4000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                    refid = "TKRAKEN1",
+                    balance = "64000.00",
+                ),
+            )
+
+            val result = calculate(snapshots, trades, ledgers)
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("99996.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("99996.00")
         }
 
         "UNKNOWN SELL trade makes comparison unavailable with AMBIGUOUS_TRADE_OWNERSHIP" {
@@ -7351,12 +7766,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             }
         }
 
-        "calculate with inception snapshot whose asset universe differs returns ASSET_UNIVERSE_CHANGED" {
+        "calculate with inception snapshot whose asset universe grows reports unexplained balance change" {
             val t0 = now.minusSeconds(86400 * 30)
             val t1 = now
-            val t2 = now.plusSeconds(3600)
 
-            // Inception had BTC and USD
             val inceptionSnap = snapshot(
                 timestamp = t0,
                 totalValueUSD = "100000.00",
@@ -7366,35 +7779,26 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            // Current window snapshots have BTC, ETH, and USD
+            // ETH appears in the series with no trade or ledger that could have acquired it.
             val s1 = snapshot(
                 timestamp = t1,
-                totalValueUSD = "100000.00",
+                totalValueUSD = "120000.00",
                 assets = mapOf(
-                    "BTC" to assetRow("0.5", "40000.00", "20000.00"),
-                    "ETH" to assetRow("10.0", "3000.00", "30000.00"),
-                    "USD" to assetRow("50000.00", "1.00", "50000.00"),
-                ),
-            )
-            val s2 = snapshot(
-                timestamp = t2,
-                totalValueUSD = "95000.00",
-                assets = mapOf(
-                    "BTC" to assetRow("0.5", "30000.00", "15000.00"),
+                    "BTC" to assetRow("1.0", "40000.00", "40000.00"),
                     "ETH" to assetRow("10.0", "3000.00", "30000.00"),
                     "USD" to assetRow("50000.00", "1.00", "50000.00"),
                 ),
             )
 
             val result = calculate(
-                snapshots = listOf(s1, s2),
+                snapshots = listOf(inceptionSnap, s1),
                 trades = emptyList(),
                 anchorSnapshot = null,
                 inceptionSnapshot = inceptionSnap,
             )
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
             result.unavailableAt shouldBe t1
             result.baselineTimestamp shouldBe t0
         }

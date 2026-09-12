@@ -71,6 +71,14 @@ fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
 fun TradeRecord.isSupportedMarket(allocations: List<String> = emptyList()): Boolean =
     Asset.fromTradingPair(pair, allocations) != null || Asset.matchesUsdQuotedPair(pair, symbol)
 
+/**
+ * True when the pair can be economically replayed from recorded history: the shared Kraken
+ * pair parser resolves a base and a supported quote. Current configured-universe membership
+ * is deliberately not part of the contract — a delisted or no-longer-configured market can
+ * still be reconstructed and compared from the retained evidence.
+ */
+fun TradeRecord.isHistoricallyReplayable(): Boolean = Asset.splitTradingPair(pair) != null
+
 /** Exact pair identity, or one of Kraken's known USD pair aliases for the same symbol. */
 fun TradeRecord.hasCompatiblePairIdentity(other: TradeRecord): Boolean =
     this.pair.equals(other.pair, ignoreCase = true) ||

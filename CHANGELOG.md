@@ -35,6 +35,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   recorded series still exposes only the reconstructed history: a preserved anchor is hidden when a
   recorded snapshot shares its instant, and the inception resolution prefers the recorded snapshot when a
   preserved anchor occupies the configured start.
+- **The comparison accepts delisted and no-longer-configured markets through their recorded base/quote
+  semantics**: every successful trade in the interval now replays its true base and quote via
+  `Asset.splitTradingPair`, so a delisted USD market such as `STRCZUSD` adjusts the actual holdings instead
+  of making the whole comparison unavailable; pairs with unknown quotes and malformed economics still fail
+  closed. Snapshot universes may grow with explained historical-only holdings while a dropped configured
+  asset still reports `ASSET_UNIVERSE_CHANGED`; the strict target basket keeps historical-only assets out
+  of Buy & Hold, and any non-zero holding that no replayed baseline, trade, or ledger event produces fails
+  closed. Comparison results are computed live and the reconstruction acceptance set is unchanged, so no
+  replay/reconstruction version constant changes.
+- **The recorded history exposes one final state per instant and only spot-wallet effects**: reconstruction
+  persists a row per replayed event, so several cumulative rows can share a millisecond; the chart and
+  comparison now keep the first row written for an instant (the state after every event of that instant)
+  before down-sampling. Ledger rows resolved to Kraken's staking or futures wallet scopes no longer move
+  comparison balances, matching the recorded series, while linked internal-transfer pairs are still
+  classified over the full ledger set. A trade whose quote asset never enters the recorded universe settles
+  only its tracked leg, a tracked quote without a recorded balance still fails closed, and a one-unit crypto
+  quantity offset left by backward replay from live balances is tolerated while quote cash stays cent-exact.
 
 ## [6.17.58] - 2026-09-12
 

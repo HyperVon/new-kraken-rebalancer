@@ -11,7 +11,6 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.NormalizedFundingTransaction
-import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RebalancerComparisonPoint
@@ -124,8 +123,10 @@ object RebalancerComparisonCalculator {
                     baselineTimestamp = benchmarkInception.timestamp,
                 )
             }
-            // Universe check runs against the trimmed first snapshot, not a pre-inception one
-            if (benchmarkInception.assets.keys != trimmed.first().assets.keys) {
+            // Universe check runs against the trimmed first snapshot, not a pre-inception one.
+            // Historical-only holdings may extend the series universe; every benchmark target
+            // still has to be observable, while extra assets are legitimate actual-side holdings.
+            if (!trimmed.first().assets.keys.containsAll(benchmarkInception.assets.keys)) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
                     unavailableAt = trimmed.first().timestamp,
@@ -147,7 +148,7 @@ object RebalancerComparisonCalculator {
         if (priceError != null) return priceError
 
         val effectiveAnchor = anchorSnapshot?.takeIf {
-            it.timestamp < baseline.timestamp && it.assets.keys == baseline.assets.keys
+            it.timestamp < baseline.timestamp && it.assets.keys.containsAll(baseline.assets.keys)
         }
         val validationSnapshots = if (effectiveAnchor != null) {
             listOf(effectiveAnchor) + effectiveSnapshots
@@ -155,12 +156,31 @@ object RebalancerComparisonCalculator {
             effectiveSnapshots
         }
 
+        // Kraken charges trade-ledger fees in each leg's own asset (often the base) and ledger
+        // amounts can round differently from the reported volume. Retained trade legs are the
+        // authoritative wallet effect for comparison, exactly as they are for reconstruction;
+        // the reported TradeRecord economics remain the fallback when legs are absent.
+        val tradeLegsByRefId = rewards
+            .filter { it.type.equals(KrakenApiConstants.LEDGER_TYPE_TRADE, ignoreCase = true) }
+            .filter { !it.refid.isNullOrBlank() }
+            .groupBy { it.refid!!.trim() }
+
+        // The recorded series tracks spot-wallet balances: ledger rows resolved to another
+        // Kraken wallet scope (staking/futures) never moved the series, so they must not move
+        // reconciliation balances either. Unresolved scopes keep the previous behavior.
+        val ledgerScopes = AuthoritativeLedgerBalanceValidator.validate(rewards).resolvedScopes
+        val spotRewards = rewards.filter { ledger ->
+            val scope = ledgerScopes[ledger.ledgerId]
+            scope == null || scope == AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+        }
+
         val balanceResult = validateTrackedBalanceChanges(
             snapshots = validationSnapshots,
             trades = trades,
-            ledgers = rewards,
+            ledgers = spotRewards,
             knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             baseline = baseline,
+            tradeLegsByRefId = tradeLegsByRefId,
         )
 
         val (reconciledTrades, reconciledLedgers) = when (balanceResult) {
@@ -217,7 +237,7 @@ object RebalancerComparisonCalculator {
         }
 
         val intermediateLedgers = if (baseline.timestamp < windowObservationStart) {
-            rewards.filter {
+            spotRewards.filter {
                 it.type in externalBalanceLedgerTypes &&
                     ledgerClassifications[it.ledgerId] != FlowCategory.INTERNAL_MOVE &&
                     ledgerClassifications[it.ledgerId] != FlowCategory.TRADE_IGNORED &&
@@ -252,7 +272,7 @@ object RebalancerComparisonCalculator {
             priceProvider?.priceAt(feeAsset, timestamp)
         }
         val cardNormalizations = CardFundingNormalizer.normalizeAll(
-            events = rewards,
+            events = spotRewards,
             provenanceResolver = preparedProvenanceResolver,
             priceProvider = feePriceProvider,
         )
@@ -306,6 +326,7 @@ object RebalancerComparisonCalculator {
                     runningSyntheticBalances,
                     benchmarkEvents[eventIndex],
                     priceProvider,
+                    tradeLegsByRefId,
                 )
                 if (replayFailure != null) {
                     return unavailable(
@@ -470,7 +491,7 @@ object RebalancerComparisonCalculator {
     ): RebalancerComparison? {
         val baselineKeys = baseline.assets.keys
         for (snapshot in snapshots.drop(1)) {
-            if (snapshot.assets.keys != baselineKeys) {
+            if (!snapshot.assets.keys.containsAll(baselineKeys)) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
                     unavailableAt = snapshot.timestamp,
@@ -512,6 +533,7 @@ object RebalancerComparisonCalculator {
         ledgers: List<LedgerEvent>,
         knownRebalancerOrderTxids: Set<String>,
         baseline: PortfolioSnapshot,
+        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
     ): TrackedBalanceValidation {
         val invalidFeeLedger = ledgers.firstOrNull { it.type in externalBalanceLedgerTypes && !it.hasValidFee }
         if (invalidFeeLedger != null) {
@@ -568,7 +590,8 @@ object RebalancerComparisonCalculator {
                 trade = trade,
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             )
-            if (ownership == TradeOwnership.UNKNOWN && trade.symbol.uppercase() in baseline.assets.keys) {
+            val tradeBase = Asset.splitTradingPair(trade.pair)?.base ?: trade.symbol.uppercase()
+            if (ownership == TradeOwnership.UNKNOWN && tradeBase in baseline.assets.keys) {
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
                     unavailableAt = trade.timestamp,
@@ -582,6 +605,15 @@ object RebalancerComparisonCalculator {
             intervalAccountingMode: TradeAccountingMode,
         ): TrackedBalanceValidation.Failed? {
             val assignedTradeIndexes = attempt.assignedTradeIndexes
+
+            // A trade can change tracked balances through either leg: a configured-target base
+            // is tracked directly, and a supported quote is tracked whenever the quote asset is
+            // part of the baseline (USD always is). Historical-only bases therefore still settle
+            // their quote leg instead of being skipped.
+            fun affectsTrackedBalances(trade: TradeRecord): Boolean {
+                val split = Asset.splitTradingPair(trade.pair) ?: return false
+                return split.base in baseline.assets.keys || split.quote in baseline.assets.keys
+            }
             val assignedLedgerIndexes = attempt.assignedLedgerIndexes
             val embeddedTradeIndexes = attempt.embeddedTradeIndexes
             val embeddedLedgerIndexes = attempt.embeddedLedgerIndexes
@@ -607,7 +639,7 @@ object RebalancerComparisonCalculator {
                             currObs,
                             latestCandidateTime(prev),
                         ) &&
-                        trade.symbol.uppercase() in baseline.assets.keys
+                        affectsTrackedBalances(trade)
                 }
             } else {
                 emptyList()
@@ -634,7 +666,7 @@ object RebalancerComparisonCalculator {
                         index !in initialTradeIndices &&
                         trade.timestamp > currObs &&
                         trade.timestamp <= latestCandidateTime(curr) &&
-                        trade.symbol.uppercase() in baseline.assets.keys
+                        affectsTrackedBalances(trade)
                 }
             val lateLedgerCandidates = indexedLedgers
                 .filter { (index, ledger) ->
@@ -661,7 +693,7 @@ object RebalancerComparisonCalculator {
                         index !in initialTradeIndices &&
                         trade.timestamp > lowerBound &&
                         trade.timestamp <= upperBound &&
-                        trade.symbol.uppercase() in baseline.assets.keys
+                        affectsTrackedBalances(trade)
                 }
             } else {
                 emptyList()
@@ -699,7 +731,7 @@ object RebalancerComparisonCalculator {
                         index in assignedTradeIndexes ||
                         index in initialTradeIndices ||
                         index in legacyRegularTradeIndexes ||
-                        trade.symbol.uppercase() !in baseline.assets.keys
+                        !affectsTrackedBalances(trade)
                     ) {
                         false
                     } else {
@@ -758,7 +790,14 @@ object RebalancerComparisonCalculator {
                     )
                 }
                 val candidateBalances = impliedBalances.toMutableMap()
-                if (!applyRealizedTrade(candidateBalances, lateTrade, intervalAccountingMode)) {
+                if (!applyRealizedTrade(
+                        candidateBalances,
+                        lateTrade,
+                        intervalAccountingMode,
+                        curr.assets.keys,
+                        tradeLegsByRefId,
+                    )
+                ) {
                     return TrackedBalanceValidation.Failed(
                         reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                         unavailableAt = lateTrade.timestamp,
@@ -791,7 +830,14 @@ object RebalancerComparisonCalculator {
                         )
                     }
                     val candidateBalances = impliedBalances.toMutableMap()
-                    if (!applyRealizedTrade(candidateBalances, boundaryTrade, intervalAccountingMode)) {
+                    if (!applyRealizedTrade(
+                            candidateBalances,
+                            boundaryTrade,
+                            intervalAccountingMode,
+                            curr.assets.keys,
+                            tradeLegsByRefId,
+                        )
+                    ) {
                         return TrackedBalanceValidation.Failed(
                             reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                             unavailableAt = boundaryTrade.timestamp,
@@ -849,7 +895,14 @@ object RebalancerComparisonCalculator {
                         )
                     }
                     val candidateBalances = impliedBalances.toMutableMap()
-                    if (!applyRealizedTrade(candidateBalances, initialTrade, intervalAccountingMode)) {
+                    if (!applyRealizedTrade(
+                            candidateBalances,
+                            initialTrade,
+                            intervalAccountingMode,
+                            curr.assets.keys,
+                            tradeLegsByRefId,
+                        )
+                    ) {
                         return TrackedBalanceValidation.Failed(
                             reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                             unavailableAt = initialTrade.timestamp,
@@ -871,6 +924,7 @@ object RebalancerComparisonCalculator {
                     snapshot = curr,
                     accountingMode = intervalAccountingMode,
                     useAuthoritativeLedgerBalances = useAuthoritativeLedgerBalances,
+                    tradeLegsByRefId = tradeLegsByRefId,
                 ) ?: return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                     unavailableAt = curr.timestamp,
@@ -937,7 +991,14 @@ object RebalancerComparisonCalculator {
                 impliedBalances.putAll(initialAssignment.resultingBalances)
             } else {
                 for ((index, trade) in regularIntervalTrades) {
-                    if (!applyRealizedTrade(impliedBalances, trade, intervalAccountingMode)) {
+                    if (!applyRealizedTrade(
+                            impliedBalances,
+                            trade,
+                            intervalAccountingMode,
+                            curr.assets.keys,
+                            tradeLegsByRefId,
+                        )
+                    ) {
                         return TrackedBalanceValidation.Failed(
                             reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                             unavailableAt = trade.timestamp,
@@ -963,6 +1024,7 @@ object RebalancerComparisonCalculator {
                         curr,
                         intervalAccountingMode,
                         useAuthoritativeLedgerBalances,
+                        tradeLegsByRefId,
                     )
                 } else {
                     null
@@ -984,7 +1046,13 @@ object RebalancerComparisonCalculator {
                 }
             }
 
-            if (impliedBalances.keys.any { it !in curr.assets }) {
+            // A fully liquidated historical-only asset can disappear from the recorded series,
+            // so only keys with a materially non-zero balance must still be observable.
+            if (impliedBalances.any { (symbol, balance) ->
+                    symbol !in curr.assets &&
+                        balance.setScale(balanceScale(symbol), RoundingMode.HALF_UP).signum() != 0
+                }
+            ) {
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
                     unavailableAt = curr.timestamp,
@@ -1057,20 +1125,40 @@ object RebalancerComparisonCalculator {
         else -> eventTime
     }
 
+    private fun balanceScale(symbol: String): Int =
+        if (symbol == Asset.USD) PrecisionConstants.SCALE_USD else PrecisionConstants.SCALE_CRYPTO
+
     private fun balancesMatchSnapshot(
         expectedBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
     ): Boolean {
         for ((symbol, expectedBalance) in expectedBalances) {
-            val actualBalance = snapshot.assets[symbol]?.balance ?: return false
-            val scale = if (symbol == Asset.USD) {
-                PrecisionConstants.SCALE_USD
-            } else {
-                PrecisionConstants.SCALE_CRYPTO
-            }
+            val scale = balanceScale(symbol)
+            // Only crypto quantities can carry the one-unit replay offset; quote cash is cent-exact.
+            val tolerance =
+                if (symbol == Asset.USD) BigDecimal.ZERO else BigDecimal.ONE.movePointLeft(scale)
             val roundedExpected = expectedBalance.setScale(scale, RoundingMode.HALF_UP)
-            val roundedActual = actualBalance.setScale(scale, RoundingMode.HALF_UP)
-            if (roundedExpected.compareTo(roundedActual) != 0) return false
+            val snapshotBalance = snapshot.assets[symbol]?.balance
+            if (snapshotBalance == null) {
+                // A fully liquidated position may be dropped from the recorded series.
+                if (roundedExpected.signum() == 0) continue
+                return false
+            }
+            val roundedActual = snapshotBalance.setScale(scale, RoundingMode.HALF_UP)
+            // The recorded series is replayed backwards from live wallet balances, so it can
+            // carry a constant one-unit offset at the asset scale that only surfaces when the
+            // replayed history cancels a holding to zero.
+            if (roundedExpected.subtract(roundedActual).abs().compareTo(tolerance) > 0) return false
+        }
+        for ((symbol, asset) in snapshot.assets) {
+            if (symbol in expectedBalances) continue
+            // A holding the replayed events never produced is unexplained: historical-only
+            // assets are tolerated only when the recorded trades or ledgers acquired them.
+            val scale = balanceScale(symbol)
+            val tolerance =
+                if (symbol == Asset.USD) BigDecimal.ZERO else BigDecimal.ONE.movePointLeft(scale)
+            val net = asset.balance.setScale(scale, RoundingMode.HALF_UP).abs()
+            if (net.compareTo(tolerance) > 0) return false
         }
         return true
     }
@@ -1080,7 +1168,9 @@ object RebalancerComparisonCalculator {
         ledgers: List<LedgerEvent>,
         trackedAssets: Set<String>,
     ): Boolean {
-        if (trades.any { it.symbol.uppercase() in trackedAssets }) return false
+        if (trades.any { (Asset.splitTradingPair(it.pair)?.base ?: it.symbol.uppercase()) in trackedAssets }) {
+            return false
+        }
         val trackedLedgers = ledgers.filter {
             Asset.normalizeLedgerAsset(it.asset).uppercase() in trackedAssets
         }
@@ -1122,6 +1212,7 @@ object RebalancerComparisonCalculator {
         snapshot: PortfolioSnapshot,
         accountingMode: TradeAccountingMode,
         useAuthoritativeLedgerBalances: Boolean,
+        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
     ): InitialAssignmentMatch? {
         if (initialCandidates.size + lateCandidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
 
@@ -1147,7 +1238,14 @@ object RebalancerComparisonCalculator {
                     ).sortedBy(TradeRecord::timestamp)
 
                 for (trade in allPostTrades) {
-                    if (!applyRealizedTrade(testBalances, trade, accountingMode)) {
+                    if (!applyRealizedTrade(
+                            testBalances,
+                            trade,
+                            accountingMode,
+                            snapshot.assets.keys,
+                            tradeLegsByRefId,
+                        )
+                    ) {
                         validEconomics = false
                         break
                     }
@@ -1185,6 +1283,7 @@ object RebalancerComparisonCalculator {
                         snapshot,
                         accountingMode,
                         useAuthoritativeLedgerBalances,
+                        tradeLegsByRefId,
                     )
                     if (late != null) {
                         InitialAssignmentMatch(
@@ -1244,6 +1343,7 @@ object RebalancerComparisonCalculator {
         snapshot: PortfolioSnapshot,
         accountingMode: TradeAccountingMode,
         useAuthoritativeLedgerBalances: Boolean,
+        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
     ): LateAssignment? {
         if (candidates.isEmpty() || candidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
 
@@ -1280,7 +1380,15 @@ object RebalancerComparisonCalculator {
             when (val candidate = candidates[position]) {
                 is LateCandidate.Trade -> {
                     val nextBalances = balances.toMutableMap()
-                    if (applyRealizedTrade(nextBalances, candidate.trade, accountingMode)) {
+                    if (
+                        applyRealizedTrade(
+                            nextBalances,
+                            candidate.trade,
+                            accountingMode,
+                            snapshot.assets.keys,
+                            tradeLegsByRefId,
+                        )
+                    ) {
                         selectedTrades += candidate.index
                         search(position + 1, nextBalances)
                         selectedTrades.removeAt(selectedTrades.lastIndex)
@@ -1635,7 +1743,9 @@ object RebalancerComparisonCalculator {
                             left !== right &&
                                 eventDistanceMillis(left, right) < MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS
                         }
-                        .map { right -> minOf(left.timestamp, right.timestamp) }
+                        .map { right ->
+                            minOf(left.timestamp, right.timestamp)
+                        }
                 }
                 .minOrNull()
 
@@ -1759,6 +1869,7 @@ object RebalancerComparisonCalculator {
         balances: MutableMap<String, BigDecimal>,
         event: BenchmarkEvent,
         priceProvider: HistoricalPriceProvider?,
+        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
     ): Pair<ComparisonUnavailableReason, Instant>? {
         when (event) {
             is BenchmarkEvent.ExternalBalance -> {
@@ -1830,8 +1941,11 @@ object RebalancerComparisonCalculator {
             }
 
             is BenchmarkEvent.Trade -> {
-                if (event.ownership == TradeOwnership.MANUAL_OR_EXTERNAL) {
-                    applyRealizedTrade(balances, event.trade, event.usdNotional)
+                // Buy & Hold mirrors only trades in its configured-target basket: a
+                // historical-only base must never acquire a synthetic benchmark holding.
+                val base = Asset.splitTradingPair(event.trade.pair)?.base
+                if (event.ownership == TradeOwnership.MANUAL_OR_EXTERNAL && base != null && base in balances) {
+                    applyRealizedTrade(balances, event.trade, event.usdNotional, balances.keys, tradeLegsByRefId)
                 }
             }
         }
@@ -1874,18 +1988,24 @@ object RebalancerComparisonCalculator {
         balances: MutableMap<String, BigDecimal>,
         trade: TradeRecord,
         accountingMode: TradeAccountingMode,
-    ): Boolean = applyRealizedTrade(balances, trade, realizedUsdNotional(trade, accountingMode))
+        trackedUniverse: Set<String>,
+        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
+    ): Boolean = applyRealizedTrade(
+        balances,
+        trade,
+        realizedUsdNotional(trade, accountingMode),
+        trackedUniverse,
+        tradeLegsByRefId,
+    )
 
     private fun applyRealizedTrade(
         balances: MutableMap<String, BigDecimal>,
         trade: TradeRecord,
         usdNotional: BigDecimal,
+        trackedUniverse: Set<String>,
+        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
     ): Boolean {
-        val side = trade.side.uppercase()
-        val symbol = trade.symbol.uppercase()
         if (
-            symbol == Asset.USD ||
-            !Asset.matchesUsdQuotedPair(trade.pair, symbol) ||
             trade.volume.signum() < 0 ||
             trade.usdAmount.signum() < 0 ||
             trade.price.signum() < 0 ||
@@ -1894,31 +2014,68 @@ object RebalancerComparisonCalculator {
         ) {
             return false
         }
-        if (Asset.USD !in balances) {
-            return false
+        // The shared historical classifier owns pair parsing, side validation and the
+        // authoritative ledger effect; a malformed trade identity fails closed here.
+        val replay = when (val classification = TradeLedgerReplay.classify(trade, tradeLegsByRefId)) {
+            is TradeLedgerReplay.Classification.Unsupported -> return false
+            is TradeLedgerReplay.Classification.Replayable -> classification
         }
-        if (symbol !in balances) {
+        val ledgerEffect = replay.ledgerEffect
+        if (ledgerEffect != null) {
+            // Kraken charges the fee in the leg's own asset and ledger amounts can round from
+            // the reported volume; the retained legs are the wallet truth.
+            val baseBalance = balances[replay.base]
+            when {
+                baseBalance != null -> balances[replay.base] = baseBalance.add(ledgerEffect.baseNetDelta)
+
+                replay.isBuy && replay.base in trackedUniverse ->
+                    balances[replay.base] = ledgerEffect.baseNetDelta
+            }
+            if (!applyQuoteLeg(balances, replay.quote, trackedUniverse, ledgerEffect.quoteNetDelta)) {
+                return false
+            }
             return true
         }
-        val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
-        val assetBalance = balances.getValue(symbol)
-
-        when {
-            OrderSide.isBuy(side) -> {
-                balances[symbol] = assetBalance.add(trade.volume)
-                val usdCost = usdNotional.add(trade.fee)
-                balances[Asset.USD] = usdBalance.subtract(usdCost)
+        if (replay.isBuy) {
+            // The recorded series tracks the base only once the asset belongs to it; an
+            // out-of-universe purchase settles entirely through its quote leg.
+            if (replay.base in balances || replay.base in trackedUniverse) {
+                balances[replay.base] = (balances[replay.base] ?: BigDecimal.ZERO).add(replay.volume)
             }
-
-            OrderSide.isSell(side) -> {
-                balances[symbol] = assetBalance.subtract(trade.volume)
-                val usdProceeds = usdNotional.subtract(trade.fee)
-                balances[Asset.USD] = usdBalance.add(usdProceeds)
+            val quoteDelta = usdNotional.add(replay.fee).negate()
+            if (!applyQuoteLeg(balances, replay.quote, trackedUniverse, quoteDelta)) {
+                return false
             }
-
-            else -> return false
+        } else {
+            // Liquidation of a historical-only holding is not an error: reconstruction
+            // settles its quote proceeds without recording the base asset.
+            balances[replay.base]?.let { baseBalance ->
+                balances[replay.base] = baseBalance.subtract(replay.volume)
+            }
+            if (!applyQuoteLeg(balances, replay.quote, trackedUniverse, usdNotional.subtract(replay.fee))) {
+                return false
+            }
         }
         return true
+    }
+
+    /**
+     * Applies the quote leg of a recorded trade: the leg is invisible when the quote never
+     * belongs to the recorded universe, while a tracked quote without a recorded balance is a
+     * genuine gap that fails closed.
+     */
+    private fun applyQuoteLeg(
+        balances: MutableMap<String, BigDecimal>,
+        quote: String,
+        trackedUniverse: Set<String>,
+        delta: BigDecimal,
+    ): Boolean {
+        val quoteBalance = balances[quote]
+        if (quoteBalance != null) {
+            balances[quote] = quoteBalance.add(delta)
+            return true
+        }
+        return quote !in trackedUniverse
     }
 
     private fun realizedUsdNotional(trade: TradeRecord, accountingMode: TradeAccountingMode): BigDecimal {
