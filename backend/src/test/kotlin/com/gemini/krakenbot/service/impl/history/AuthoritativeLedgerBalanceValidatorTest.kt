@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -8,6 +9,7 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicReference
 
 class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -1564,6 +1566,149 @@ class AuthoritativeLedgerBalanceValidatorTest : StringSpec() {
 
             val result = AuthoritativeLedgerBalanceValidator.validate(events)
             result.isValid shouldBe true
+        }
+
+        "replays thousands of distinct timestamp groups without exhausting the call stack" {
+            val groupCount = 4_000
+            val events = List(groupCount) { index ->
+                event(
+                    id = "long-$index",
+                    seconds = index.toLong(),
+                    type = "receive",
+                    amount = "1",
+                    balance = (index + 1).toString(),
+                )
+            }
+            // Run under a deliberately small stack so a per-group recursive search would
+            // reliably overflow here instead of only on the production thread stack.
+            val outcome = AtomicReference<AuthoritativeLedgerBalanceValidator.ValidationResult?>()
+            val failure = AtomicReference<Throwable?>()
+            val worker = Thread(
+                null,
+                Runnable {
+                    try {
+                        outcome.set(AuthoritativeLedgerBalanceValidator.validate(events))
+                    } catch (error: Throwable) {
+                        failure.set(error)
+                    }
+                },
+                "validator-deep-history",
+                256L * 1024L,
+            )
+
+            worker.start()
+            worker.join()
+
+            failure.get()?.let { throw it }
+            val result = requireNotNull(outcome.get())
+
+            result.isValid shouldBe true
+            result.authoritativeCheckpointCount shouldBe groupCount
+            result.validatedCheckpointCount shouldBe groupCount
+            result.scopeCount shouldBe 1
+            result.resolvedScopes.values.distinct() shouldBe
+                listOf(AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT)
+        }
+
+        "replays thousands of trade checkpoints with consistent post-entry balances" {
+            val checkpointCount = 3_000
+            val events = List(checkpointCount) { index ->
+                event(
+                    id = "trade-long-$index",
+                    seconds = index.toLong(),
+                    type = "trade",
+                    amount = "1",
+                    balance = (index + 1).toString(),
+                )
+            }
+
+            val result = AuthoritativeLedgerBalanceValidator.validate(events)
+
+            result.isValid shouldBe true
+            result.authoritativeCheckpointCount shouldBe checkpointCount
+            result.tradeCheckpointCount shouldBe checkpointCount
+        }
+
+        "replays a long mixed wallet-scope chain with staking transfers and dust sweeps" {
+            val events = mutableListOf<LedgerEvent>()
+            var second = 0L
+            var spot = BigDecimal.ZERO
+            var staking = BigDecimal.ZERO
+            repeat(300) { round ->
+                spot = spot.add(BigDecimal.ONE)
+                events += event("m-$round-buy", second++, "trade", "1", spot.toPlainString())
+                spot = spot.add(BigDecimal("0.5"))
+                events += event("m-$round-stake", second++, "staking", "0.5", spot.toPlainString())
+                events += event(
+                    "m-$round-dust",
+                    second++,
+                    "spend",
+                    spot.negate().toPlainString(),
+                    "0",
+                    subtype = "dustsweeping",
+                )
+                spot = BigDecimal.ZERO
+                spot = spot.add(BigDecimal.ONE)
+                events += event("m-$round-buy-2", second++, "trade", "1", spot.toPlainString())
+                spot = spot.subtract(BigDecimal.ONE)
+                staking = staking.add(BigDecimal.ONE)
+                events += event(
+                    "m-$round-to-staking",
+                    second,
+                    "transfer",
+                    "-1",
+                    "0",
+                    subtype = "spottostaking",
+                    refid = "m-$round-out",
+                )
+                events += event(
+                    "m-$round-staking-credit",
+                    second,
+                    "transfer",
+                    "1",
+                    staking.toPlainString(),
+                    subtype = "spottostaking",
+                    refid = "m-$round-out",
+                )
+                second++
+                staking = staking.subtract(BigDecimal.ONE)
+                spot = spot.add(BigDecimal.ONE)
+                events += event(
+                    "m-$round-from-staking",
+                    second,
+                    "transfer",
+                    "-1",
+                    staking.toPlainString(),
+                    subtype = "stakingtospot",
+                    refid = "m-$round-back",
+                )
+                events += event(
+                    "m-$round-spot-credit",
+                    second,
+                    "transfer",
+                    "1",
+                    spot.toPlainString(),
+                    subtype = "stakingtospot",
+                    refid = "m-$round-back",
+                )
+                second++
+                spot = spot.subtract(BigDecimal.ONE)
+                events += event("m-$round-sell", second++, "trade", "-1", spot.toPlainString())
+            }
+
+            val result = AuthoritativeLedgerBalanceValidator.validate(events)
+
+            result.isValid shouldBe true
+            result.authoritativeCheckpointCount shouldBe 2_700
+            result.tradeCheckpointCount shouldBe 900
+            result.flexibleCheckpointCount shouldBe 600
+            result.groupedEventCheckpointCount shouldBe 1_200
+            result.sameTimestampCheckpointCount shouldBe 1_200
+            result.scopeCount shouldBe 2
+            result.resolvedScopes["m-0-stake"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            result.resolvedScopes["m-0-staking-credit"] shouldBe
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING
         }
     }
 

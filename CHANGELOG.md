@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.53] - 2026-09-12
+
+### Fixed
+
+- **Ledger balance validation no longer recurses per timestamp group**: `AuthoritativeLedgerBalanceValidator.solveAsset()`
+  used one stack frame per distinct asset timestamp, so a production ledger interval with thousands of
+  retained rows raised `StackOverflowError` during inception recovery and reconstruction. The asset-level
+  search is now an iterative frontier traversal with the same completeness proof, deduplication, search
+  budgets, ambiguity detection, and fail-closed truncation; the bounded same-timestamp group search stays
+  recursive. A regression test replays 4,000 distinct timestamp groups on a 256 KiB stack.
+
 ## [6.17.52] - 2026-09-12
 
 ### Fixed
