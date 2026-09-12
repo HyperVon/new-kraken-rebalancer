@@ -1736,6 +1736,219 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "production-shaped BTC fills with base-denominated fees reconstruct exact balances" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+
+                val fills = listOf(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(1),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00703085"),
+                        usdAmount = BigDecimal("461.14"),
+                        price = BigDecimal("65588"),
+                        fee = BigDecimal("0.9223"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-1218-cycle",
+                        orderTxid = "btc-fill-1218-order",
+                        tradeId = "btc-fill-1218",
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(2),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00456718"),
+                        usdAmount = BigDecimal("354.87"),
+                        price = BigDecimal("77700"),
+                        fee = BigDecimal("0.7097"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-2997-cycle",
+                        orderTxid = "btc-fill-2997-order",
+                        tradeId = "btc-fill-2997",
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(3),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00022827"),
+                        usdAmount = BigDecimal("19.91"),
+                        price = BigDecimal("87218.7"),
+                        fee = BigDecimal("0.0398"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-4352-cycle",
+                        orderTxid = "btc-fill-4352-order",
+                        tradeId = "btc-fill-4352",
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(4),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00400203"),
+                        usdAmount = BigDecimal("361.56"),
+                        price = BigDecimal("90343.4"),
+                        fee = BigDecimal("1.2655"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-4440-cycle",
+                        orderTxid = "btc-fill-4440-order",
+                        tradeId = "btc-fill-4440",
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(5),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.SELL.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00223943"),
+                        usdAmount = BigDecimal("200"),
+                        price = BigDecimal("89308.6"),
+                        fee = BigDecimal("0.7"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-4532-cycle",
+                        orderTxid = "btc-fill-4532-order",
+                        tradeId = "btc-fill-4532",
+                    ),
+                )
+                fills.forEach { repository.saveTrade(it) }
+
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "btc-fill-1218-base",
+                            refid = "btc-fill-1218",
+                            time = botTime.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.00703085"),
+                            fee = BigDecimal("0.00001406"),
+                            balance = BigDecimal("0.01701679"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-1218-quote",
+                            refid = "btc-fill-1218",
+                            time = botTime.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-461.14"),
+                            balance = BigDecimal("1000.00"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-2997-base",
+                            refid = "btc-fill-2997",
+                            time = botTime.plusSeconds(2),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.00456718"),
+                            fee = BigDecimal("0.00000913"),
+                            balance = BigDecimal("0.02157484"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-2997-quote",
+                            refid = "btc-fill-2997",
+                            time = botTime.plusSeconds(2),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-354.87"),
+                            balance = BigDecimal("645.13"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4352-base",
+                            refid = "btc-fill-4352",
+                            time = botTime.plusSeconds(3),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.00022827"),
+                            fee = BigDecimal("0.00000046"),
+                            balance = BigDecimal("0.02180265"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4352-quote",
+                            refid = "btc-fill-4352",
+                            time = botTime.plusSeconds(3),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-19.91"),
+                            balance = BigDecimal("625.22"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4440-base",
+                            refid = "btc-fill-4440",
+                            time = botTime.plusSeconds(4),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.00400203"),
+                            fee = BigDecimal("0.00001401"),
+                            balance = BigDecimal("0.02579067"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4440-quote",
+                            refid = "btc-fill-4440",
+                            time = botTime.plusSeconds(4),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-361.56"),
+                            balance = BigDecimal("263.66"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4532-base",
+                            refid = "btc-fill-4532",
+                            time = botTime.plusSeconds(5),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("-0.00223943"),
+                            fee = BigDecimal("0.00000784"),
+                            balance = BigDecimal("0.02354340"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4532-quote",
+                            refid = "btc-fill-4532",
+                            time = botTime.plusSeconds(5),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("200.00"),
+                            balance = BigDecimal("463.66"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.02"), Asset.USD to BigDecimal("463.66")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                    ?.toInt() ?: error("baseline snapshot id is missing")
+                val baseline = repository.getSnapshotById(baselineId)
+                baseline.shouldNotBeNull()
+                // The five fills net to exactly the recorded pre-fill balance: the old quote-fee
+                // replay dropped 0.00004550 BTC of base-denominated fees and went negative.
+                baseline.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                baseline.assets.getValue(Asset.USD).balance.shouldBeEqualComparingTo(BigDecimal("1462.15"))
+                baseline.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1462.15"))
+            }
+        }
+
         "recovery rejects trades on unsupported historical markets" {
             runTest {
                 val botTime = Instant.parse("2026-01-02T00:00:00Z")
@@ -1973,7 +2186,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
         }
 
         "baseline replay version reflects historical universe semantics" {
-            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "11"
+            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "12"
         }
 
         "recovery rejects unsupported trade economics" {

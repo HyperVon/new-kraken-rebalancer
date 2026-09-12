@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.58] - 2026-09-12
+
+### Fixed
+
+- **Trade-type ledger legs now own the wallet effect during reverse replay**: the approved-start baseline
+  and the reconstructed-snapshot walk share one `TradeLedgerReplay` contract that matches each trade to its
+  trade-type ledger legs by the execution identity (`trade_id`/`refid`) and inverts the recorded net wallet
+  movement instead of assuming a quote-denominated fee. Kraken charges some fills in the base asset while
+  TradesHistory reports only the rounded quote equivalent, so replaying the quote-side fee and gross volume
+  moved the base balance by the wrong amount; the base-denominated fees on those fills are now inverted from
+  the authoritative base-leg delta exactly once, and any leg-level rounding is taken from the leg amount.
+- **Trade ledger rows stay checkpoints, never a second trade**: trade-type rows are grouped by identity and
+  consumed as wallet-effect evidence only; the TradeRecord remains the economic trade. Missing, duplicated,
+  unexpected, contradictory, or zero-volume-with-movement leg shapes fail closed with bounded reasons
+  (`missing historical trade ledger leg`, `unexpected historical trade ledger legs`, `contradictory
+  historical trade ledger effect`, `zero-volume historical trade moved a wallet balance`), and a missing leg
+  is accepted only when its reported movement is provably zero. Non-USD quote pairs keep their true quote
+  economics with the fee charged in the asset that actually carried it.
+- **Replay versions advanced**: baseline replay version `12` and snapshot reconstruction version `13`, so
+  retained trades and ledgers are replayed in place with the corrected trade accounting without
+  re-downloading history.
+
 ## [6.17.57] - 2026-09-12
 
 ### Fixed

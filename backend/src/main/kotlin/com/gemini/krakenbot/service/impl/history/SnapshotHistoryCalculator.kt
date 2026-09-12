@@ -43,7 +43,19 @@ object SnapshotHistoryCalculator {
         data class DailyCloseEvent(override val timestamp: Instant) : TimelineEvent()
 
         // Newest first — [calculateHistoricalSnapshots] undoes trades after each snapshot.
-        override fun compareTo(other: TimelineEvent): Int = other.timestamp.compareTo(this.timestamp)
+        // Ledger rows sort before trades at the same instant so a fill's recorded post-balances
+        // are restored before its wallet effect is inverted.
+        override fun compareTo(other: TimelineEvent): Int {
+            val byTime = other.timestamp.compareTo(this.timestamp)
+            if (byTime != 0) return byTime
+            return order().compareTo(other.order())
+        }
+
+        private fun order(): Int = when (this) {
+            is RewardEvent -> 0
+            is TradeEvent -> 1
+            is DailyCloseEvent -> 2
+        }
     }
 
     private val externalLedgerTypes = LedgerEvent.EXTERNAL_BALANCE_TYPES
@@ -139,6 +151,7 @@ object SnapshotHistoryCalculator {
         settings: Settings,
         currentAth: BigDecimal = BigDecimal.ZERO,
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
+        tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
     ): List<PortfolioSnapshot> {
         val rawPoints = mutableListOf<RawHistoricalPoint>()
 
@@ -162,7 +175,7 @@ object SnapshotHistoryCalculator {
             rawPoints.add(RawHistoricalPoint(snapshotTimestamp, exactPortfolioValue, calculatedAssets))
 
             if (ev is TimelineEvent.TradeEvent) {
-                reverseApplyTrade(ev.trade, runningBalances)
+                reverseApplyTrade(ev.trade, runningBalances, tradeLegsByRefId)
             } else if (ev is TimelineEvent.RewardEvent) {
                 reverseApplyReward(ev.event, runningBalances, resolvedScopes)
             }
@@ -171,22 +184,27 @@ object SnapshotHistoryCalculator {
         return buildSnapshotsChronological(rawPoints, allocations, settings, currentAth)
     }
 
-    /** Undo one fill: buy spent usd+fee for volume; sell received usd−fee for volume. */
-    private fun reverseApplyTrade(trade: TradeRecord, runningBalances: MutableMap<String, BigDecimal>) {
-        val volume = trade.volume
-        val usdAmount = trade.usdAmount
-        val fee = trade.fee
-        val symbol = trade.symbol.uppercase()
-        require(OrderSide.isBuy(trade.side) || OrderSide.isSell(trade.side)) {
-            "Unsupported trade side during historical reconstruction: ${trade.side}"
-        }
+    /**
+     * Undo one fill through the shared trade replay contract. Authoritative retained ledger legs
+     * restore the recorded post-entry balances before their net deltas are inverted; trades
+     * without retained legs fall back to the TradeRecord economics. Balances for untracked
+     * markets are created lazily, matching the historical behavior of this display path.
+     */
+    private fun reverseApplyTrade(
+        trade: TradeRecord,
+        runningBalances: MutableMap<String, BigDecimal>,
+        tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
+    ) {
+        val replay = when (val classification = TradeLedgerReplay.classify(trade, tradeLegsByRefId)) {
+            is TradeLedgerReplay.Classification.Replayable -> classification
 
-        if (OrderSide.isBuy(trade.side)) {
-            runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(volume)
-            runningBalances[Asset.USD] = (runningBalances[Asset.USD] ?: BigDecimal.ZERO).add(usdAmount).add(fee)
-        } else if (OrderSide.isSell(trade.side)) {
-            runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).add(volume)
-            runningBalances[Asset.USD] = (runningBalances[Asset.USD] ?: BigDecimal.ZERO).subtract(usdAmount).add(fee)
+            is TradeLedgerReplay.Classification.Unsupported ->
+                throw IllegalArgumentException(classification.reason)
+        }
+        runningBalances.putIfAbsent(replay.base, BigDecimal.ZERO)
+        runningBalances.putIfAbsent(replay.quote, BigDecimal.ZERO)
+        require(TradeLedgerReplay.reverseApply(replay, runningBalances)) {
+            "Missing tracked balance during historical reconstruction for ${trade.symbol}"
         }
     }
 

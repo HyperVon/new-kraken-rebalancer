@@ -271,6 +271,80 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("5013.00"))
         }
 
+        "calculateHistoricalSnapshots should apply authoritative trade ledger legs to base fees" {
+            val now = Instant.parse("2026-07-10T12:00:00Z")
+            val tradeTime = now.minus(2, ChronoUnit.DAYS)
+            val trade =
+                TestFixtures.tradeRecord(
+                    timestamp = tradeTime,
+                    pair = "XXBTZUSD",
+                    side = OrderSide.BUY.uppercaseName,
+                    symbol = "BTC",
+                    volume = BigDecimal("0.00703085"),
+                    usdAmount = BigDecimal("461.14"),
+                    price = BigDecimal("65588"),
+                    fee = BigDecimal("0.9223"),
+                    tradeId = "btc-base-fee-snapshot",
+                )
+            val legs =
+                listOf(
+                    LedgerEvent(
+                        ledgerId = "snapshot-base-leg",
+                        refid = "btc-base-fee-snapshot",
+                        time = tradeTime,
+                        type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                        asset = "BTC",
+                        amount = BigDecimal("0.00703085"),
+                        fee = BigDecimal("0.00001406"),
+                        balance = BigDecimal("0.06541898"),
+                        hasAuthoritativeBalance = true,
+                    ),
+                    LedgerEvent(
+                        ledgerId = "snapshot-quote-leg",
+                        refid = "btc-base-fee-snapshot",
+                        time = tradeTime,
+                        type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                        asset = "USD",
+                        amount = BigDecimal("-461.1394"),
+                        balance = BigDecimal("0.0103"),
+                        hasAuthoritativeBalance = true,
+                    ),
+                )
+
+            val events =
+                SnapshotHistoryCalculator.buildTimelineEvents(
+                    historicalTrades = listOf(trade),
+                    cutoffTime = now.minus(5, ChronoUnit.DAYS),
+                    now = now,
+                )
+
+            val runningBalances =
+                mutableMapOf(
+                    "BTC" to BigDecimal("0.06541898"),
+                    "USD" to BigDecimal("0.0103"),
+                )
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations =
+                listOf(
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                ),
+                runningBalances = runningBalances,
+                currentPrices = mapOf("BTC" to BigDecimal("65588"), "USD" to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+                tradeLegsByRefId = mapOf("btc-base-fee-snapshot" to legs),
+            )
+
+            // Reverse replay from the recorded post-fill checkpoints: BTC takes the base-leg net
+            // delta (volume minus fee) and USD the quote leg exactly, not the USD-equivalent fee.
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.05840219"))
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("461.1497"))
+        }
+
         "calculateHistoricalSnapshots should reverse-apply both conversion legs and each fee once" {
             val now = Instant.parse("2026-07-10T12:00:00Z")
             val conversionTime = now.minus(2, ChronoUnit.DAYS)
@@ -1355,6 +1429,70 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 ),
             )
             runningBalances[Asset.SOL]!! shouldBeEqualComparingTo BigDecimal("1")
+        }
+
+        "same-instant replay orders ledger rows before trades and daily closes" {
+            val now = Instant.parse("2026-07-10T12:00:00Z")
+            val time = Instant.parse("2026-07-09T23:59:59Z")
+            val trade = TestFixtures.tradeRecord(
+                timestamp = time,
+                pair = "BTCUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.5"),
+                usdAmount = BigDecimal("10000"),
+                fee = BigDecimal.ZERO,
+            )
+            val reward = LedgerEvent(
+                ledgerId = "same-instant-reward",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = Asset.BTC,
+                amount = BigDecimal("0.5"),
+            )
+
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = listOf(trade),
+                historicalRewards = listOf(reward),
+                cutoffTime = now,
+                now = now,
+            )
+
+            events.filter { it.timestamp == time } shouldBe listOf(
+                SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, reward),
+                SnapshotHistoryCalculator.TimelineEvent.TradeEvent(time, trade),
+                SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(time),
+            )
+        }
+
+        "historical replay fails closed on unsupported trade markets" {
+            val now = Instant.parse("2026-07-10T12:00:00Z")
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now.minusSeconds(60),
+                pair = "ADAEUR",
+                side = "buy",
+                symbol = "ADA",
+                volume = BigDecimal("1"),
+                usdAmount = BigDecimal("1"),
+            )
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = listOf(trade),
+                cutoffTime = now,
+                now = now,
+            )
+
+            val exception = shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = events,
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                    runningBalances = mutableMapOf(Asset.USD to BigDecimal("1000")),
+                    currentPrices = mapOf(Asset.USD to BigDecimal.ONE),
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                )
+            }
+            exception.message shouldBe "unsupported historical market ADAEUR"
         }
     }
 }

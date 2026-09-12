@@ -12,7 +12,6 @@ import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.LedgerFlowClassifier
-import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeOwnership
@@ -1215,19 +1214,28 @@ class InceptionRecoveryService(
         // getTradesInRange returns persisted rows, whose database identity is required for
         // duplicate selection and durable recovery evidence.
         val accountingTrades = historicalTrades.filterNot { it.id!! in duplicateTradeIds }
-        val tradeReplays = accountingTrades.associate { trade -> trade.id!! to classifyTradeReplay(trade) }
+        // Trade-type ledger rows are continuity checkpoints for their TradeRecord, keyed by the
+        // shared execution identity. They are never a second economic trade.
+        val tradeLedgerLegs = historicalLedgers
+            .filter { event -> event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true) }
+            .filter { event -> !event.refid.isNullOrBlank() }
+            .groupBy { event -> event.refid!!.trim() }
+        val tradeReplays = accountingTrades.associate { trade ->
+            trade.id!! to TradeLedgerReplay.classify(trade, tradeLedgerLegs)
+        }
         val unsupportedTrade = accountingTrades.firstOrNull { trade ->
-            tradeReplays.getValue(trade.id!!) is TradeReplaySupport.Unsupported
+            tradeReplays.getValue(trade.id!!) is TradeLedgerReplay.Classification.Unsupported
         }
         if (unsupportedTrade != null) {
-            val reason = (tradeReplays.getValue(unsupportedTrade.id!!) as TradeReplaySupport.Unsupported).reason
+            val reason = (tradeReplays.getValue(unsupportedTrade.id!!) as TradeLedgerReplay.Classification.Unsupported)
+                .reason
             return BaselineResult.Failure(
                 InceptionRecoveryStatus.AMBIGUOUS,
                 reason.take(MAX_REASON_LENGTH),
             )
         }
         val replayableTrades = accountingTrades.map { trade ->
-            trade to (tradeReplays.getValue(trade.id!!) as TradeReplaySupport.Replayable)
+            trade to (tradeReplays.getValue(trade.id!!) as TradeLedgerReplay.Classification.Replayable)
         }
         val historicalOnlyUniverse = (
             replayableTrades.filter { (_, replay) -> replay.volume.signum() != 0 }
@@ -1274,7 +1282,7 @@ class InceptionRecoveryService(
         for (step in replaySteps) {
             when (step) {
                 is ReplayStep.Trade -> {
-                    if (!reverseApplyTrade(step.replay, runningBalances)) {
+                    if (!TradeLedgerReplay.reverseApply(step.replay, runningBalances)) {
                         return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "unsupported trade economics")
                     }
                 }
@@ -1362,36 +1370,6 @@ class InceptionRecoveryService(
         )
     }
 
-    private fun reverseApplyTrade(
-        replay: TradeReplaySupport.Replayable,
-        balances: MutableMap<String, BigDecimal>,
-    ): Boolean {
-        if (replay.volume.signum() < 0 || replay.quoteCost.signum() < 0 || replay.fee.signum() < 0) return false
-        val baseBalance = balances[replay.base] ?: return false
-        val quoteBalance = balances[replay.quote] ?: return false
-        if (replay.isBuy) {
-            balances[replay.base] = baseBalance.subtract(replay.volume)
-            balances[replay.quote] = quoteBalance.add(replay.quoteCost).add(replay.fee)
-        } else {
-            balances[replay.base] = baseBalance.add(replay.volume)
-            balances[replay.quote] = quoteBalance.subtract(replay.quoteCost).add(replay.fee)
-        }
-        return true
-    }
-
-    private sealed interface TradeReplaySupport {
-        data class Replayable(
-            val base: String,
-            val quote: String,
-            val isBuy: Boolean,
-            val volume: BigDecimal,
-            val quoteCost: BigDecimal,
-            val fee: BigDecimal,
-        ) : TradeReplaySupport
-
-        data class Unsupported(val reason: String) : TradeReplaySupport
-    }
-
     /**
      * One step of the merged newest-first reconstruction walk. Ledger rows are checkpoints that
      * sort before trades at the same instant, so a fill's recorded post-balances are restored
@@ -1402,8 +1380,11 @@ class InceptionRecoveryService(
         val isCheckpoint: Boolean
         val tieBreak: String
 
-        data class Trade(override val time: Instant, val id: Int, val replay: TradeReplaySupport.Replayable) :
-            ReplayStep {
+        data class Trade(
+            override val time: Instant,
+            val id: Int,
+            val replay: TradeLedgerReplay.Classification.Replayable,
+        ) : ReplayStep {
             override val isCheckpoint: Boolean = false
             override val tieBreak: String = id.toString()
         }
@@ -1413,44 +1394,6 @@ class InceptionRecoveryService(
             override val isCheckpoint: Boolean = true
             override val tieBreak: String = event.ledgerId
         }
-    }
-
-    /**
-     * Decide whether a retained trade can be replayed with its real base/quote economics. The
-     * stored pair is authoritative: the quote from the pair decides how the retained cost field is
-     * interpreted, so a non-USD market is never revalued as if its cost were USD.
-     */
-    private fun classifyTradeReplay(trade: TradeRecord): TradeReplaySupport {
-        val split = Asset.splitTradingPair(trade.pair)
-            ?: return TradeReplaySupport.Unsupported(
-                "unsupported historical market ${trade.pair.trim().uppercase()}".take(MAX_REASON_LENGTH),
-            )
-        if (!OrderSide.isBuy(trade.side) && !OrderSide.isSell(trade.side)) {
-            return TradeReplaySupport.Unsupported("unsupported historical trade side")
-        }
-        if (trade.volume.signum() < 0 || trade.fee.signum() < 0) {
-            return TradeReplaySupport.Unsupported("malformed historical trade economics")
-        }
-        val quoteCost = when {
-            trade.volume.signum() == 0 -> BigDecimal.ZERO
-
-            split.quote == Asset.USD && trade.usdAmount.signum() < 0 ->
-                return TradeReplaySupport.Unsupported("malformed historical trade economics")
-
-            split.quote == Asset.USD && trade.usdAmount.signum() > 0 -> trade.usdAmount
-
-            trade.price.signum() > 0 -> trade.price.multiply(trade.volume)
-
-            else -> return TradeReplaySupport.Unsupported("missing historical trade cost")
-        }
-        return TradeReplaySupport.Replayable(
-            base = split.base,
-            quote = split.quote,
-            isBuy = OrderSide.isBuy(trade.side),
-            volume = trade.volume,
-            quoteCost = quoteCost,
-            fee = trade.fee,
-        )
     }
 
     private fun reverseApplyLedger(
@@ -2028,7 +1971,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "11"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "12"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

@@ -546,8 +546,9 @@ top-level values remain unsupported and fail closed.
 
 Before an approved-start baseline is replayed, `AuthoritativeLedgerBalanceValidator` checks the
 retained ledger sequence against Kraken's post-entry balances. It includes authoritative `trade`
-rows as continuity checkpoints for this validation, while `TradesHistory` remains the sole source
-for trade economics during replay. Rows for one normalized asset and timestamp are validated as a
+rows as continuity checkpoints for this validation, and replay matches each trade to those same
+rows by execution identity so the leg's recorded net wallet movement supplies the balance effect,
+while `TradesHistory` remains the source of trade economics. Rows for one normalized asset and timestamp are validated as a
 bounded unordered group rather than by lexically sorting ledger IDs. Documented Spot/staking,
 Spot/Futures, and Spot/Spot transfer markers use their mapped wallet scopes; staking rows that do
 not identify a scope are resolved against all compatible known scopes, or seed a new opaque scope
@@ -564,14 +565,20 @@ an ambiguous dust-sweep scope that changes aggregate balances, incomplete intern
 duplicate identity, malformed fee, unknown internal-transfer scope, or unresolved authoritative
 mismatch fails closed with a
 sanitized log diagnostic and a compact metadata reason. The validator returns the resolved wallet
-scope disposition per ledger ID and baseline replay consumes that same evidence: trade rows are
-ignored because `TradesHistory` is authoritative; every non-conversion row resolved to `SPOT`
-changes the reconstructed configured balance; and `STAKING`, `FUTURES`, and `OPAQUE_STAKING` rows
-are skipped. A zero-net row may remain intentionally unresolved because it cannot mutate the
-reconstructed balance, but an unresolved nonzero row fails closed. Complete conversions retain
-their explicit strategy-neutral two-leg replay and do not affect owner capital, rewards, ATH, or
-Buy & Hold scaling. Baseline replay version `10` invalidates only the derived baseline result,
-so completed recovery trade/ledger streams and their offsets remain reusable. The reconstruction
+scope disposition per ledger ID and baseline replay consumes that same evidence: every
+non-conversion row resolved to `SPOT` changes the reconstructed configured balance, and
+`STAKING`, `FUTURES`, and `OPAQUE_STAKING` rows are skipped. A zero-net row may remain
+intentionally unresolved because it cannot mutate the reconstructed balance, but an unresolved
+nonzero row fails closed. Trade-type rows are consumed through one shared `TradeLedgerReplay`
+contract: a trade is matched to its legs by execution identity and inverted from each leg's
+recorded net movement, so a fee charged in the base asset is applied to the base balance exactly
+once instead of being replayed as its rounded quote equivalent, and leg rounding follows the
+recorded movement. Missing, duplicated, unexpected, or direction-contradictory leg shapes fail
+closed, and a missing leg is accepted only when its reported movement is provably zero. Complete
+conversions retain their explicit strategy-neutral two-leg replay and do not affect owner capital,
+rewards, ATH, or Buy & Hold scaling. Baseline replay version `12` and snapshot reconstruction
+version `13` invalidate only the derived baseline and snapshot results, so completed recovery
+trade/ledger streams and their offsets remain reusable. The reconstruction
 universe is derived per run: configured allocations plus every replayable trade base and quote plus
 non-zero-delta Spot ledger assets. Historical-only balances are seeded from the latest authoritative
 retained ledger balance at or before the anchor; a missing seed fails closed as

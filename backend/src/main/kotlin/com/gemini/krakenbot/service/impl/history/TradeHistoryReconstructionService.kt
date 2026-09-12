@@ -37,7 +37,7 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "12"
+        const val CURRENT_RECONSTRUCTION_VERSION = "13"
 
         /**
          * Historical fail-closed anchor contract (v11).
@@ -372,6 +372,13 @@ class TradeHistoryReconstructionService(
         }
         val externalLedgers = allLedgers.filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
         val historicalRewards = externalLedgers.filter { it.time.isBefore(cutoffTime) }
+        // Trade-type ledger rows are wallet-effect checkpoints for their TradeRecord identity;
+        // they are handed to the replay so base-denominated fees and leg rounding follow the
+        // authoritative balance movement instead of the quote-only TradeRecord economics.
+        val tradeLedgerLegs = allLedgers
+            .filter { it.type.equals(KrakenApiConstants.LEDGER_TYPE_TRADE, ignoreCase = true) }
+            .filter { !it.refid.isNullOrBlank() }
+            .groupBy { it.refid!!.trim() }
 
         val events =
             SnapshotHistoryCalculator.buildTimelineEvents(
@@ -423,6 +430,7 @@ class TradeHistoryReconstructionService(
                 settings = settings,
                 currentAth = currentAth,
                 resolvedScopes = resolvedScopes,
+                tradeLegsByRefId = tradeLedgerLegs,
             )
 
         if (snapshotsToSave.isNotEmpty()) {
