@@ -1158,8 +1158,21 @@ class InceptionRecoveryService(
         )
 
         val cardGroups = CardFundingNormalizer.identifyCandidateGroups(ledgerContext)
-        for ((refid, group) in cardGroups) {
-            if (group.none { it.time > baselineTime && !it.time.isAfter(anchorObservation) }) continue
+        val loneFundingRefIds = cardGroups.filterValues { group ->
+            val leg = group.singleOrNull()
+            leg != null &&
+                CardFundingNormalizer.isFundingLeg(leg) &&
+                leg.time > baselineTime &&
+                !leg.time.isAfter(anchorObservation)
+        }.keys
+        val retainedCardGroups = if (loneFundingRefIds.isEmpty()) {
+            emptyMap()
+        } else {
+            CardFundingNormalizer.identifyCandidateGroups(ledgerRepository.getLedgersByRefIds(loneFundingRefIds))
+        }
+        for ((refid, contextGroup) in cardGroups) {
+            if (contextGroup.none { it.time > baselineTime && !it.time.isAfter(anchorObservation) }) continue
+            val group = retainedCardGroups[refid] ?: contextGroup
             when (val parsed = CardFundingNormalizer.parseCardFundingGroup(refid, group, preparedProvenance)) {
                 is CardFundingNormalizer.ParsedGroup.Ambiguous -> {
                     return BaselineResult.Failure(
@@ -1177,9 +1190,15 @@ class InceptionRecoveryService(
             flowCategories[event.ledgerId] == FlowCategory.AMBIGUOUS
         }
         if (ambiguousLedger != null) {
+            val detail = preparedProvenance.explain(ambiguousLedger)?.takeIf(String::isNotBlank)
+            val reason = if (detail == null) {
+                "ledger provenance unresolved: ${ambiguousLedger.type}"
+            } else {
+                "ledger provenance unresolved: ${ambiguousLedger.type}: $detail"
+            }
             return BaselineResult.Failure(
                 InceptionRecoveryStatus.AMBIGUOUS,
-                "ledger provenance unresolved: ${ambiguousLedger.type}".take(MAX_REASON_LENGTH),
+                reason.take(MAX_REASON_LENGTH),
             )
         }
         val unsupportedClassifiedLedger = historicalLedgers.firstOrNull { event ->
@@ -1192,28 +1211,56 @@ class InceptionRecoveryService(
             )
         }
 
-        val runningBalances = anchor.assets.mapKeys { (symbol, _) ->
-            Asset.normalizeLedgerAsset(symbol).uppercase()
-        }.mapValuesTo(mutableMapOf()) { (_, row) -> row.balance }
-
         val duplicateTradeIds = TradeDeduplicator.findDuplicateTradeIds(historicalTrades)
         // getTradesInRange returns persisted rows, whose database identity is required for
         // duplicate selection and durable recovery evidence.
         val accountingTrades = historicalTrades.filterNot { it.id!! in duplicateTradeIds }
-        val unknownTrade = accountingTrades.firstOrNull {
-            Asset.normalizeLedgerAsset(it.symbol).uppercase() !in expectedUniverse &&
-                it.volume.signum() != 0
+        val tradeReplays = accountingTrades.associate { trade -> trade.id!! to classifyTradeReplay(trade) }
+        val unsupportedTrade = accountingTrades.firstOrNull { trade ->
+            tradeReplays.getValue(trade.id!!) is TradeReplaySupport.Unsupported
         }
-        if (unknownTrade != null) {
-            return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "trade outside configured universe")
+        if (unsupportedTrade != null) {
+            val reason = (tradeReplays.getValue(unsupportedTrade.id!!) as TradeReplaySupport.Unsupported).reason
+            return BaselineResult.Failure(
+                InceptionRecoveryStatus.AMBIGUOUS,
+                reason.take(MAX_REASON_LENGTH),
+            )
         }
-        for (trade in accountingTrades.sortedWith(
-            compareByDescending<TradeRecord> { it.timestamp }.thenByDescending {
-                it.id
-                    ?: 0
-            },
+        val replayableTrades = accountingTrades.map { trade ->
+            trade to (tradeReplays.getValue(trade.id!!) as TradeReplaySupport.Replayable)
+        }
+        val historicalOnlyUniverse = (
+            replayableTrades.filter { (_, replay) -> replay.volume.signum() != 0 }
+                .flatMap { (_, replay) -> listOf(replay.base, replay.quote) } +
+                historicalLedgers.filter { event ->
+                    event.netBalanceDelta().signum() != 0 &&
+                        !event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true) &&
+                        balanceValidation.resolvedScopes[event.ledgerId] ==
+                        AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+                }.map { event -> Asset.normalizeLedgerAsset(event.asset).uppercase() }
+            ).toSet() - expectedUniverse
+
+        val runningBalances = anchor.assets.mapKeys { (symbol, _) ->
+            Asset.normalizeLedgerAsset(symbol).uppercase()
+        }.mapValuesTo(mutableMapOf()) { (_, row) -> row.balance }
+        if (historicalOnlyUniverse.isNotEmpty()) {
+            val seeded = ledgerRepository.getLatestAuthoritativeBalances(historicalOnlyUniverse, anchorObservation)
+            val missing = historicalOnlyUniverse.filterNot(seeded::containsKey).sorted()
+            if (missing.isNotEmpty()) {
+                return BaselineResult.Failure(
+                    InceptionRecoveryStatus.AMBIGUOUS,
+                    "no authoritative balance for historical asset ${missing.first()}".take(MAX_REASON_LENGTH),
+                )
+            }
+            runningBalances.putAll(seeded)
+        }
+        val historicalUniverse = expectedUniverse + historicalOnlyUniverse
+
+        for ((_, replay) in replayableTrades.sortedWith(
+            compareByDescending<Pair<TradeRecord, TradeReplaySupport.Replayable>> { it.first.timestamp }
+                .thenByDescending { it.first.id ?: 0 },
         )) {
-            if (!reverseApplyTrade(trade, runningBalances, expectedUniverse)) {
+            if (!reverseApplyTrade(replay, runningBalances)) {
                 return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "unsupported trade economics")
             }
         }
@@ -1221,7 +1268,7 @@ class InceptionRecoveryService(
             if (!reverseApplyLedger(
                     event = event,
                     balances = runningBalances,
-                    expectedUniverse = expectedUniverse,
+                    expectedUniverse = historicalUniverse,
                     flowCategories = flowCategories,
                     resolvedScopes = balanceValidation.resolvedScopes,
                 )
@@ -1230,16 +1277,17 @@ class InceptionRecoveryService(
             }
         }
 
-        if (runningBalances.values.any { it < NEGATIVE_BALANCE_TOLERANCE.negate() }) {
+        val negativeBalance = runningBalances.entries.firstOrNull { it.value < NEGATIVE_BALANCE_TOLERANCE.negate() }
+        if (negativeBalance != null) {
             return BaselineResult.Failure(
                 InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
-                "negative reconstructed balance",
+                "negative reconstructed balance for ${negativeBalance.key}",
             )
         }
         runningBalances.replaceAll { _, balance -> balance.max(BigDecimal.ZERO) }
 
         val prices = resolveHistoricalPrices(
-            allocations = allocations,
+            universe = historicalUniverse,
             baselineTime = baselineTime,
             candidatePriceEvidence = candidatePriceEvidence,
             runningBalances = runningBalances,
@@ -1248,8 +1296,11 @@ class InceptionRecoveryService(
             InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
             HISTORICAL_PRICE_UNAVAILABLE_REASON,
         )
-        val total = allocations.sumOf { allocation ->
-            val symbol = Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase()
+        val targetPercents = allocations.associate { allocation ->
+            Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase() to
+                BigDecimal.valueOf(allocation.targetPercent)
+        }
+        val total = historicalUniverse.sumOf { symbol ->
             runningBalances.getValue(symbol).multiply(prices.getValue(symbol))
         }
         if (total <= BigDecimal.ZERO) {
@@ -1259,17 +1310,16 @@ class InceptionRecoveryService(
             )
         }
 
-        val assetSnapshots = allocations.associate { allocation ->
-            val symbol = Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase()
+        val assetSnapshots = historicalUniverse.associateWith { symbol ->
             val balance = runningBalances.getValue(symbol).max(BigDecimal.ZERO)
             val price = prices.getValue(symbol)
             val value = balance.multiply(price)
-            symbol to PortfolioCalculations.createAssetSnapshot(
+            PortfolioCalculations.createAssetSnapshot(
                 symbol = symbol,
                 balance = balance,
                 price = price,
                 valueUSD = value,
-                targetPercent = BigDecimal.valueOf(allocation.targetPercent),
+                targetPercent = targetPercents[symbol] ?: BigDecimal.ZERO,
                 totalPortfolioValueUSD = total,
             )
         }
@@ -1293,24 +1343,71 @@ class InceptionRecoveryService(
     }
 
     private fun reverseApplyTrade(
-        trade: TradeRecord,
+        replay: TradeReplaySupport.Replayable,
         balances: MutableMap<String, BigDecimal>,
-        expectedUniverse: Set<String>,
     ): Boolean {
-        val symbol = Asset.normalizeLedgerAsset(trade.symbol).uppercase()
-        if (symbol !in expectedUniverse || (!OrderSide.isBuy(trade.side) && !OrderSide.isSell(trade.side))) return false
-        val usd = Asset.USD
-        val assetBalance = balances.getValue(symbol)
-        val usdBalance = balances.getValue(usd)
-        if (trade.volume.signum() < 0 || trade.usdAmount.signum() < 0 || trade.fee.signum() < 0) return false
-        if (OrderSide.isBuy(trade.side)) {
-            balances[symbol] = assetBalance.subtract(trade.volume)
-            balances[usd] = usdBalance.add(trade.usdAmount).add(trade.fee)
+        if (replay.volume.signum() < 0 || replay.quoteCost.signum() < 0 || replay.fee.signum() < 0) return false
+        val baseBalance = balances[replay.base] ?: return false
+        val quoteBalance = balances[replay.quote] ?: return false
+        if (replay.isBuy) {
+            balances[replay.base] = baseBalance.subtract(replay.volume)
+            balances[replay.quote] = quoteBalance.add(replay.quoteCost).add(replay.fee)
         } else {
-            balances[symbol] = assetBalance.add(trade.volume)
-            balances[usd] = usdBalance.subtract(trade.usdAmount).add(trade.fee)
+            balances[replay.base] = baseBalance.add(replay.volume)
+            balances[replay.quote] = quoteBalance.subtract(replay.quoteCost).add(replay.fee)
         }
         return true
+    }
+
+    private sealed interface TradeReplaySupport {
+        data class Replayable(
+            val base: String,
+            val quote: String,
+            val isBuy: Boolean,
+            val volume: BigDecimal,
+            val quoteCost: BigDecimal,
+            val fee: BigDecimal,
+        ) : TradeReplaySupport
+
+        data class Unsupported(val reason: String) : TradeReplaySupport
+    }
+
+    /**
+     * Decide whether a retained trade can be replayed with its real base/quote economics. The
+     * stored pair is authoritative: the quote from the pair decides how the retained cost field is
+     * interpreted, so a non-USD market is never revalued as if its cost were USD.
+     */
+    private fun classifyTradeReplay(trade: TradeRecord): TradeReplaySupport {
+        val split = Asset.splitTradingPair(trade.pair)
+            ?: return TradeReplaySupport.Unsupported(
+                "unsupported historical market ${trade.pair.trim().uppercase()}".take(MAX_REASON_LENGTH),
+            )
+        if (!OrderSide.isBuy(trade.side) && !OrderSide.isSell(trade.side)) {
+            return TradeReplaySupport.Unsupported("unsupported historical trade side")
+        }
+        if (trade.volume.signum() < 0 || trade.fee.signum() < 0) {
+            return TradeReplaySupport.Unsupported("malformed historical trade economics")
+        }
+        val quoteCost = when {
+            trade.volume.signum() == 0 -> BigDecimal.ZERO
+
+            split.quote == Asset.USD && trade.usdAmount.signum() < 0 ->
+                return TradeReplaySupport.Unsupported("malformed historical trade economics")
+
+            split.quote == Asset.USD && trade.usdAmount.signum() > 0 -> trade.usdAmount
+
+            trade.price.signum() > 0 -> trade.price.multiply(trade.volume)
+
+            else -> return TradeReplaySupport.Unsupported("missing historical trade cost")
+        }
+        return TradeReplaySupport.Replayable(
+            base = split.base,
+            quote = split.quote,
+            isBuy = OrderSide.isBuy(trade.side),
+            volume = trade.volume,
+            quoteCost = quoteCost,
+            fee = trade.fee,
+        )
     }
 
     private fun reverseApplyLedger(
@@ -1369,7 +1466,7 @@ class InceptionRecoveryService(
     }
 
     private suspend fun resolveHistoricalPrices(
-        allocations: List<Allocation>,
+        universe: Set<String>,
         baselineTime: Instant,
         candidatePriceEvidence: Pair<String, BigDecimal>?,
         runningBalances: Map<String, BigDecimal>,
@@ -1377,8 +1474,7 @@ class InceptionRecoveryService(
     ): Map<String, BigDecimal>? {
         val evidenceSymbol = candidatePriceEvidence?.first
         val prices = mutableMapOf<String, BigDecimal>()
-        for (allocation in allocations) {
-            val symbol = Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase()
+        for (symbol in universe) {
             if (symbol == Asset.USD) {
                 prices[symbol] = BigDecimal.ONE
                 continue
@@ -1877,7 +1973,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "7"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "10"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

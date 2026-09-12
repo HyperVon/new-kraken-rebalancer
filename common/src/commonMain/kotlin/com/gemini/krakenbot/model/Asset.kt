@@ -2,6 +2,9 @@ package com.gemini.krakenbot.model
 
 import kotlin.jvm.JvmInline
 
+/** Base/quote decomposition of a stored Kraken market pair. */
+data class TradingPairSplit(val base: String, val quote: String, val rawPair: String)
+
 /** Portfolio symbol wrapper; Kraken ticker/pair/balance-key aliases live here for JVM + JS. */
 @JvmInline
 value class Asset(val value: String) {
@@ -119,6 +122,42 @@ value class Asset(val value: String) {
 
         fun matchesUsdQuotedPair(pairKey: String, symbol: String): Boolean =
             pairKey.uppercase() in acceptedUsdQuotedPairs(symbol)
+
+        /** Quote assets the historical replay universe can settle; unknown quotes fail closed. */
+        val SUPPORTED_QUOTE_ASSETS: Set<String> = setOf(USD, USDT, USDC)
+
+        /**
+         * Split a stored Kraken market pair into base and quote assets. The longest known quote
+         * suffix wins (`USDGUSDC` → USDG/USDC, `USDTZUSD` → USDT/USD, `ATOMUSDT` → ATOM/USDT);
+         * unknown quotes return null so unsupported markets fail closed instead of being
+         * reinterpreted as USD.
+         */
+        fun splitTradingPair(pair: String): TradingPairSplit? {
+            val normalizedPair = pair.trim().uppercase()
+            if (normalizedPair.isEmpty()) return null
+            val quoteSuffix = QUOTE_SUFFIX_ORDER.firstOrNull { suffix ->
+                normalizedPair.endsWith(suffix) && normalizedPair.length > suffix.length
+            } ?: return null
+            // Kraken's legacy Z-quote marker collides with modern bases that end in Z
+            // (CHZUSD, XTZUSD): a one- or two-character body cannot be a legacy
+            // X-prefixed asset code, so prefer the plain USD split there.
+            val legacyQuote = quoteSuffix == "Z$USD"
+            val legacyBase = normalizedPair.removeSuffix(quoteSuffix)
+            val resolvedSuffix = if (legacyQuote && legacyBase.length <= 2) USD else quoteSuffix
+            val quote = QUOTE_SUFFIX_TO_ASSET.getValue(resolvedSuffix)
+            val base = normalizeLedgerAsset(normalizedPair.removeSuffix(resolvedSuffix)).uppercase()
+            if (base.isEmpty() || base == quote) return null
+            return TradingPairSplit(base = base, quote = quote, rawPair = normalizedPair)
+        }
+
+        private val QUOTE_SUFFIX_ORDER = listOf("Z$USD", USDT, USDC, USD)
+
+        private val QUOTE_SUFFIX_TO_ASSET = mapOf(
+            "Z$USD" to USD,
+            USDT to USDT,
+            USDC to USDC,
+            USD to USD,
+        )
 
         private fun acceptedKrakenPairs(symbol: String): Set<String> = acceptedUsdQuotedPairs(symbol)
 

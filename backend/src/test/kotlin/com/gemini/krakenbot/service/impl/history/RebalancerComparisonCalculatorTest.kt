@@ -3098,6 +3098,77 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal("-1300.00")
         }
 
+        "a historical-only asset in the inception baseline is excluded from the benchmark" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-10T12:00:00Z")
+            val t2 = Instant.parse("2026-06-11T12:00:00Z")
+            // The reconstructed inception portfolio carries a leftover historical-only
+            // holding (SEI, target 0) alongside the configured BTC/USD targets.
+            val inceptionBaseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("1005.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("0.005"),
+                        price = BigDecimal("100000.00"),
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                    "USD" to assetSnapshot(
+                        symbol = "USD",
+                        balance = BigDecimal("500.00"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                    "SEI" to assetSnapshot(
+                        symbol = "SEI",
+                        balance = BigDecimal("10.00"),
+                        price = BigDecimal("0.50"),
+                        valueUSD = BigDecimal("5.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal("50.0"),
+            )
+            val s1 = snapshot(
+                t1,
+                "1005.00",
+                mapOf(
+                    "BTC" to assetRow("0.005", "100000.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.0", "500.00"),
+                ),
+            )
+            val s2 = snapshot(
+                t2,
+                "1005.00",
+                mapOf(
+                    "BTC" to assetRow("0.005", "100000.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.0", "500.00"),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(s1, s2),
+                trades = emptyList(),
+                rewards = emptyList(),
+                inceptionSnapshot = inceptionBaseline,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            // The benchmark opens at the configured-target basket (BTC + USD = $1,000)
+            // while the bot still carries the $5 historical-only holding, so the
+            // comparison intentionally starts with a disclosed $5 difference.
+            result.points[0].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("1005.00")
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.points[0].differenceUSD shouldBeEqualComparingTo BigDecimal("5.00")
+        }
+
         "Crypto contribution is valued at event time then invested by inception weights" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-10T12:00:00Z")
@@ -4814,6 +4885,53 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val contribution = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
             contribution.contributionUsd shouldBeEqualComparingTo BigDecimal("4980.00")
             contribution.sourceLedgerIds shouldContainExactlyInAnyOrder ledgers.map { it.ledgerId }
+        }
+
+        "a lone card deposit contributes its net balance once to buy and hold" {
+            val loneRef = "LONE-PAYPAL-2026-07-01T1230Z"
+            val loneTime = now.plusSeconds(1800)
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = loneTime,
+                    asset = "USD",
+                    amount = "50.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = loneRef,
+                    fee = "1.03",
+                    ledgerId = "lone-card-deposit",
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = loneRef,
+                        txid = "lone-card-tx",
+                        asset = "USD",
+                        amount = BigDecimal("50.00"),
+                        fee = BigDecimal("1.03"),
+                        time = loneTime,
+                        status = "Success",
+                        method = "PayPal",
+                    ),
+                ),
+            )
+
+            val builtEvents = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = ledgers,
+                baseline = snapshot(
+                    now,
+                    "1000.00",
+                    mapOf("USD" to assetRow("1000.00", "1.0", "1000.00")),
+                ),
+                inceptionWeights = mapOf("USD" to BigDecimal("1.0")),
+                priceProvider = mapPriceProvider(emptyMap()),
+                provenanceResolver = provenance,
+            )
+
+            builtEvents.filterIsInstance<BenchmarkEvent.ExternalBalance>() shouldBe emptyList()
+            val contribution = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
+            contribution.contributionUsd shouldBeEqualComparingTo BigDecimal("48.97")
+            contribution.sourceLedgerIds shouldContainExactlyInAnyOrder listOf("lone-card-deposit")
         }
 
         "Scenario BB: card Buy Crypto legs with sub-second and several-second offsets are linked within 120s" {

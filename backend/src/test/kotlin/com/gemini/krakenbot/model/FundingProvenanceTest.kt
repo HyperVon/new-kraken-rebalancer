@@ -104,6 +104,170 @@ class FundingProvenanceTest : StringSpec() {
             resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
         }
 
+        "direct refid tolerates booking-time lag beyond the correlation window" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-LAG",
+                txid = "0xlag",
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.001"),
+                time = now.plusSeconds(600),
+                status = "Success",
+                method = "Ethereum",
+            )
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(deposit),
+            )
+            val event = LedgerEvent(
+                ledgerId = "L-LAG",
+                refid = "REF-LAG",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
+        }
+
+        "direct refid tolerates representation-level amount drift" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-DRIFT",
+                txid = "0xdrift",
+                asset = "RENDER",
+                amount = BigDecimal("214.20305909"),
+                fee = BigDecimal.ZERO,
+                time = now,
+                status = "Success",
+                method = "RENDER - Sol",
+            )
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(deposit),
+            )
+            val event = LedgerEvent(
+                ledgerId = "L-DRIFT",
+                refid = "REF-DRIFT",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "RENDER",
+                amount = BigDecimal("214.203059"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
+        }
+
+        "fuzzy matching keeps the strict correlation window" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-FUZZY",
+                txid = "0xfuzzy",
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.001"),
+                time = now.plusSeconds(600),
+                status = "Success",
+                method = "Ethereum",
+            )
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(deposit),
+            )
+            val event = LedgerEvent(
+                ledgerId = "L-FUZZY",
+                refid = null,
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+            resolver.explain(event) shouldBe "no funding record matched"
+        }
+
+        "explain reports bounded unresolved reasons without identifiers" {
+            val pendingEvent = LedgerEvent(
+                ledgerId = "L-PENDING",
+                refid = "REF-PENDING",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+            val pending = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "REF-PENDING",
+                        txid = "0xpending",
+                        asset = "ETH",
+                        amount = BigDecimal("2.5"),
+                        fee = BigDecimal("0.001"),
+                        time = now,
+                        status = "Pending",
+                        method = "Ethereum",
+                    ),
+                ),
+            )
+            pending.resolve(pendingEvent) shouldBe FundingEvidence.UNRESOLVED
+            pending.explain(pendingEvent) shouldBe "funding record is not in a terminal status"
+
+            val noProofEvent = LedgerEvent(
+                ledgerId = "L-NOPROOF",
+                refid = "REF-NOPROOF",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+            val noProof = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "REF-NOPROOF",
+                        txid = null,
+                        asset = "ETH",
+                        amount = BigDecimal("2.5"),
+                        fee = BigDecimal("0.001"),
+                        time = now,
+                        status = "Success",
+                        method = null,
+                    ),
+                ),
+            )
+            noProof.resolve(noProofEvent) shouldBe FundingEvidence.UNRESOLVED
+            noProof.explain(noProofEvent) shouldBe "funding record lacks external proof"
+
+            val empty = SimpleFundingProvenanceResolver()
+            empty.explain(noProofEvent) shouldBe "no funding record matched"
+
+            val tradeEvent = LedgerEvent(
+                ledgerId = "L-TRADE",
+                refid = "REF-TRADE",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+            empty.explain(tradeEvent) shouldBe null
+        }
+
+        "unavailable provenance explains permission and request failures" {
+            val event = LedgerEvent(
+                ledgerId = "L-UNAVAILABLE",
+                refid = "REF-UNAVAILABLE",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+            val permissionDenied = FundingProvenanceResolver.unavailable(
+                FundingProvenanceFailure(FundingProvenanceFailureReason.PERMISSION_DENIED, "denied"),
+            )
+            permissionDenied.explain(event) shouldBe "funding evidence unavailable: permission denied"
+
+            val requestFailed = FundingProvenanceResolver.unavailable(
+                FundingProvenanceFailure(FundingProvenanceFailureReason.REQUEST_FAILED, "failed"),
+            )
+            requestFailed.explain(event) shouldBe "funding evidence unavailable: request failed"
+        }
+
         "SimpleFundingProvenanceResolver rejects unconfirmed deposit by direct refid" {
             val pendingDeposit = DepositStatusRecord(
                 refid = "REF-DEP-PENDING",
@@ -627,6 +791,421 @@ class FundingProvenanceTest : StringSpec() {
             ) shouldBe FundingEvidence.UNRESOLVED
         }
 
+        "explain reports duplicate direct funding references" {
+            val first = DepositStatusRecord(
+                refid = "REF-DUPLICATE",
+                txid = "0x1",
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.0"),
+                time = now,
+                status = "Success",
+                method = "Ethereum",
+            )
+            val second = first.copy(txid = "0x2")
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(first, second))
+            val event = LedgerEvent(
+                ledgerId = "L-DUPLICATE",
+                refid = "REF-DUPLICATE",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+            resolver.explain(event) shouldBe "multiple funding records share the ledger reference"
+        }
+
+        "explain reports direct mismatches and conflicting evidence" {
+            val mismatched = DepositStatusRecord(
+                refid = "REF-MISMATCH",
+                txid = "0xm",
+                asset = "BTC",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.0"),
+                time = now,
+                status = "Success",
+                method = "Bitcoin",
+            )
+            val mismatchEvent = LedgerEvent(
+                ledgerId = "L-MISMATCH",
+                refid = "REF-MISMATCH",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+            val mismatchResolver = SimpleFundingProvenanceResolver(deposits = listOf(mismatched))
+
+            mismatchResolver.explain(mismatchEvent) shouldBe "direct funding record does not match the ledger row"
+
+            val direct = DepositStatusRecord(
+                refid = "REF-DIRECT",
+                txid = "0xd",
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.0"),
+                time = now,
+                status = "Success",
+                method = "Ethereum",
+            )
+            val pending = direct.copy(refid = "REF-PENDING", status = "Pending")
+            val conflictResolver = SimpleFundingProvenanceResolver(deposits = listOf(direct, pending))
+            val conflictEvent = LedgerEvent(
+                ledgerId = "L-CONFLICT",
+                refid = "REF-DIRECT",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+
+            conflictResolver.resolve(conflictEvent) shouldBe FundingEvidence.UNRESOLVED
+            conflictResolver.explain(conflictEvent) shouldBe "conflicting funding evidence"
+        }
+
+        "explain reports fuzzy duplicate matches" {
+            val first = DepositStatusRecord(
+                refid = "REF-FUZZY-A",
+                txid = "0xa",
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.0"),
+                time = now,
+                status = "Success",
+                method = "Ethereum",
+            )
+            val second = first.copy(refid = "REF-FUZZY-B", txid = "0xb")
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(first, second))
+            val event = LedgerEvent(
+                ledgerId = "L-FUZZY-DUPLICATE",
+                refid = null,
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+            resolver.explain(event) shouldBe "multiple funding records matched"
+        }
+
+        "internal funding methods lack external proof and card methods are recognised" {
+            val internalRecord = DepositStatusRecord(
+                refid = "REF-INTERNAL-METHOD",
+                txid = null,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.0"),
+                time = now,
+                status = "Success",
+                method = "Internal Transfer",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(internalRecord))
+            val event = LedgerEvent(
+                ledgerId = "L-INTERNAL-METHOD",
+                refid = "REF-INTERNAL-METHOD",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+            resolver.explain(event) shouldBe "funding record lacks external proof"
+
+            val cardRecord = internalRecord.copy(refid = "REF-CARD", method = "Visa debit card")
+            val cardResolver = SimpleFundingProvenanceResolver(deposits = listOf(cardRecord))
+            val cardEvent = event.copy(ledgerId = "L-CARD", refid = "REF-CARD")
+
+            cardResolver.isCardFunding(cardEvent) shouldBe true
+
+            val nonCardResolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(cardRecord.copy(refid = "REF-NON-CARD", method = "Ethereum")),
+            )
+            nonCardResolver.isCardFunding(
+                cardEvent.copy(ledgerId = "L-NON-CARD", refid = "REF-NON-CARD"),
+            ) shouldBe false
+        }
+
+        "withdrawal correlation counts the authoritative fee" {
+            val record = WithdrawStatusRecord(
+                refid = "REF-WITHDRAW-FEE",
+                txid = "0xw",
+                asset = "USD",
+                amount = BigDecimal("100.25"),
+                fee = BigDecimal("0.25"),
+                time = now,
+                status = "Success",
+                method = "Wire",
+            )
+            val resolver = SimpleFundingProvenanceResolver(withdrawals = listOf(record))
+            val event = LedgerEvent(
+                ledgerId = "L-WITHDRAW-FEE",
+                refid = "REF-WITHDRAW-FEE",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                asset = "USD",
+                amount = BigDecimal("-100.50"),
+                fee = BigDecimal("0.25"),
+                hasAuthoritativeFee = true,
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
+        }
+
+        "negative fees never correlate" {
+            val record = DepositStatusRecord(
+                refid = "REF-NEGATIVE-FEE",
+                txid = "0xn",
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.001"),
+                time = now,
+                status = "Success",
+                method = "Ethereum",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(record))
+            val event = LedgerEvent(
+                ledgerId = "L-NEGATIVE-FEE",
+                refid = "REF-NEGATIVE-FEE",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("-0.001"),
+                hasAuthoritativeFee = true,
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+        }
+
+        "explain returns null when funding evidence resolves" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-EXPLAIN-OK",
+                txid = "0xabc",
+                asset = "ETH",
+                amount = BigDecimal("1.0"),
+                fee = BigDecimal("0.001"),
+                time = now,
+                status = "Success",
+                method = "Ethereum",
+            )
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(deposit),
+            )
+            val event = LedgerEvent(
+                ledgerId = "L-EXPLAIN-OK",
+                refid = "REF-EXPLAIN-OK",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("1.0"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
+            resolver.explain(event) shouldBe null
+        }
+
+        "card funding requires a single external matching deposit" {
+            val event = LedgerEvent(
+                ledgerId = "L-CARD",
+                refid = "REF-CARD",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+            )
+            val cardDeposit = DepositStatusRecord(
+                refid = "REF-CARD",
+                txid = "0xcard",
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                fee = BigDecimal("0.00"),
+                time = now,
+                status = "Success",
+                method = "Visa debit card",
+            )
+
+            SimpleFundingProvenanceResolver(deposits = emptyList()).isCardFunding(event) shouldBe false
+            SimpleFundingProvenanceResolver(
+                deposits = listOf(cardDeposit.copy(status = "Pending")),
+            ).isCardFunding(event) shouldBe false
+            SimpleFundingProvenanceResolver(
+                deposits = listOf(cardDeposit.copy(method = null)),
+            ).isCardFunding(event) shouldBe false
+        }
+
+        "explain reports a single unresolved fuzzy match" {
+            val withdrawal = WithdrawStatusRecord(
+                refid = "W-FUZZY",
+                txid = "0xfuzzy",
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                fee = BigDecimal("0.25"),
+                time = now,
+                status = "Pending",
+                method = "Ethereum",
+            )
+            val resolver = SimpleFundingProvenanceResolver(
+                withdrawals = listOf(withdrawal),
+            )
+            val event = LedgerEvent(
+                ledgerId = "L-W-FUZZY",
+                refid = null,
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                asset = "USD",
+                amount = BigDecimal("-100.25"),
+                fee = BigDecimal("0.25"),
+                hasAuthoritativeFee = true,
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.UNRESOLVED
+            resolver.explain(event) shouldBe "funding record is not in a terminal status"
+        }
+
+        "card funding matches by direct reference" {
+            val cardDeposit = DepositStatusRecord(
+                refid = "CARD-REF",
+                txid = "0xcard",
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                fee = BigDecimal.ZERO,
+                time = now,
+                status = "Success",
+                method = "Mastercard",
+            )
+            val cardEvent = LedgerEvent(
+                ledgerId = "L-CARD",
+                refid = "CARD-REF",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+            )
+            val nonCardResolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(cardDeposit.copy(method = "Ethereum")),
+            )
+
+            SimpleFundingProvenanceResolver(deposits = listOf(cardDeposit)).isCardFunding(cardEvent) shouldBe true
+            nonCardResolver.isCardFunding(cardEvent) shouldBe false
+        }
+
+        "non-funded events and zero amounts never resolve" {
+            val withdrawalEvent = LedgerEvent(
+                ledgerId = "L-CARD-W",
+                refid = "CARD-W",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                asset = "USD",
+                amount = BigDecimal("-100"),
+            )
+            SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "CARD-W",
+                        txid = "0xcard",
+                        asset = "USD",
+                        amount = BigDecimal("100"),
+                        fee = BigDecimal.ZERO,
+                        time = now,
+                        status = "Success",
+                        method = "Mastercard",
+                    ),
+                ),
+            ).isCardFunding(withdrawalEvent) shouldBe false
+
+            val zeroResolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "ZERO-RECORD",
+                        txid = "0xzero",
+                        asset = "ETH",
+                        amount = BigDecimal.ZERO,
+                        fee = BigDecimal.ZERO,
+                        time = now,
+                        status = "Success",
+                        method = "Ethereum",
+                    ),
+                ),
+            )
+            val zeroEvent = LedgerEvent(
+                ledgerId = "L-ZERO",
+                refid = "ZERO-RECORD",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal.ZERO,
+            )
+            zeroResolver.resolve(zeroEvent) shouldBe FundingEvidence.UNRESOLVED
+
+            val fundedEvent = zeroEvent.copy(amount = BigDecimal("1.0"))
+            zeroResolver.resolve(fundedEvent) shouldBe FundingEvidence.UNRESOLVED
+        }
+
+        "card funding matches by fuzzy correlation without a reference" {
+            val cardDeposit = DepositStatusRecord(
+                refid = "CARD-FUZZY",
+                txid = "0xcardfuzzy",
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                fee = BigDecimal.ZERO,
+                time = now,
+                status = "Success",
+                method = "Visa debit card",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(cardDeposit))
+            val event = LedgerEvent(
+                ledgerId = "L-CARD-FUZZY",
+                refid = null,
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+            )
+
+            resolver.isCardFunding(event) shouldBe true
+        }
+
+        "explain ignores unrelated records during conflict scans" {
+            val direct = DepositStatusRecord(
+                refid = "REF-SCAN",
+                txid = "0xscan",
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.001"),
+                time = now,
+                status = "Success",
+                method = "Ethereum",
+            )
+            val unrelated = DepositStatusRecord(
+                refid = "REF-UNRELATED",
+                txid = "0xunrelated",
+                asset = "BTC",
+                amount = BigDecimal("0.5"),
+                fee = BigDecimal("0.001"),
+                time = now,
+                status = "Success",
+                method = "Bitcoin",
+            )
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(direct, unrelated),
+            )
+            val event = LedgerEvent(
+                ledgerId = "L-SCAN",
+                refid = "REF-SCAN",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+
+            resolver.resolve(event) shouldBe FundingEvidence.EXTERNAL
+            resolver.explain(event) shouldBe null
+        }
+
         "correlation honors authoritative fee semantics and full timestamp precision" {
             val deposit = DepositStatusRecord(
                 refid = "FEE-1",
@@ -669,10 +1248,10 @@ class FundingProvenanceTest : StringSpec() {
                     hasAuthoritativeFee = true,
                 ),
             ) shouldBe FundingEvidence.UNRESOLVED
-            resolver.resolve(
+            SimpleFundingProvenanceResolver(deposits = listOf(deposit)).resolve(
                 LedgerEvent(
                     ledgerId = "subsecond-outside-window",
-                    refid = "FEE-1",
+                    refid = null,
                     time = now.plusMillis(180_001),
                     type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     asset = "USD",

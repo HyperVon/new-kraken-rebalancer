@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.repository.impl
 
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
@@ -16,6 +17,7 @@ import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.slf4j.LoggerFactory
+import java.math.BigDecimal
 import java.time.Instant
 
 class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerRepository {
@@ -41,6 +43,47 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
                     (LedgerTable.timestamp lessEq to.toEpochMilli())
             }.orderBy(LedgerTable.timestamp, SortOrder.DESC)
             .map(LedgerTable::toModel)
+    }
+
+    override suspend fun getLedgersByRefIds(refIds: Collection<String>): List<LedgerEvent> {
+        if (refIds.isEmpty()) return emptyList()
+        return database.readTransactionIO {
+            LedgerTable
+                .selectAll()
+                .where { LedgerTable.refid inList refIds }
+                .orderBy(LedgerTable.timestamp, SortOrder.DESC)
+                .map(LedgerTable::toModel)
+        }
+    }
+
+    override suspend fun getLatestAuthoritativeBalances(
+        symbols: Collection<String>,
+        atOrBefore: Instant,
+    ): Map<String, BigDecimal> {
+        if (symbols.isEmpty()) return emptyMap()
+        val normalizedSymbols = symbols.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet()
+        val aliases = normalizedSymbols
+            .flatMap { Asset.possibleBalanceKeys(it) }
+            .map(String::uppercase)
+            .distinct()
+        return database.readTransactionIO {
+            val latest = mutableMapOf<String, BigDecimal>()
+            LedgerTable
+                .selectAll()
+                .where {
+                    (LedgerTable.asset inList aliases) and
+                        (LedgerTable.timestamp lessEq atOrBefore.toEpochMilli())
+                }.orderBy(LedgerTable.timestamp, SortOrder.DESC)
+                .map(LedgerTable::toModel)
+                .forEach { event ->
+                    if (!event.hasAuthoritativeBalance) return@forEach
+                    val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
+                    if (symbol in normalizedSymbols) {
+                        latest.putIfAbsent(symbol, event.balance)
+                    }
+                }
+            latest
+        }
     }
 
     override suspend fun getLatestLedgerTime(): Instant? = database.readTransactionIO {

@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.56] - 2026-09-12
+
+### Fixed
+
+- **Historical reconstruction splits the live and replay universes**: approved-start replay no longer
+  requires every historical trade to belong to the configured allocations. Each trade replays with its
+  real base/quote pair (`Asset.splitTradingPair`), the reconstruction-only universe is derived from those
+  bases and quotes plus non-zero-delta Spot ledger assets, and historical-only balances are seeded from
+  the latest authoritative retained ledger balance at or before the anchor. Missing evidence fails closed
+  as `no authoritative balance for historical asset <symbol>`; unsupported quotes, malformed economics, and
+  missing historical cost keep failing closed with bounded reasons. Historical-only assets receive no target
+  allocation and never appear in live snapshots or orders.
+- **Buy & Hold keeps the strict configured-target benchmark**: the inception baseline is restricted to
+  assets with a positive `targetPercent` (keep-all fallback when none), so historical-only holdings are
+  excluded from benchmark weights and basket. When excluded holdings have value, the comparison difference
+  legitimately starts non-zero by that amount instead of being silently absorbed. Baseline replay version
+  advanced to `10` so retained history is reclassified in place without re-downloading it.
+
+## [6.17.55] - 2026-09-12
+
+### Fixed
+
+- **Lone card/payment-method deposits are accepted as owner capital when no plumbing exists**: a confirmed
+  card deposit on a cash-like asset (USD, ZUSD, USDC, USDT) with authoritative external provenance and no
+  spend/receive plumbing anywhere in retained history is treated as an ordinary owner contribution at its net
+  balance delta (`amount - fee`), so the PayPal deposit that previously blocked the approved-start baseline now
+  establishes owner capital exactly once. Partial plumbing, non-cash-like assets, internal subtypes, invalid
+  amount/fee shapes, unresolved provenance, duplicate evidence, and withdrawals keep failing closed with
+  distinct bounded reasons.
+- **Card identity checks read the retained ledger, not only the reconstruction context**: a lone card deposit
+  is re-grouped from all retained rows sharing its `refid` (new `LedgerRepository.getLedgersByRefIds`), so a
+  distant same-refid sibling still joins the group and fails closed through the existing span and plumbing
+  validations instead of being silently accepted. Baseline replay version advanced to `9` so retained history
+  is reclassified in place without re-downloading it.
+
+## [6.17.54] - 2026-09-12
+
+### Fixed
+
+- **Funding provenance reads Kraken Funding (Beta) history**: the production resolver now retrieves
+  authenticated `GET /funding/v1/deposits` and `GET /funding/v1/withdrawals` pages with `start_time`/
+  `end_time`, header-based signing, and `next_cursor` pagination under a bounded page budget, resolving
+  `method_id` through `GET /funding/v1/methods/{deposit|withdraw}`. Deprecated
+  `DepositStatus`/`WithdrawStatus` calls are used only to enrich records whose modern method metadata is
+  unavailable; a legacy page at the request limit or with unparseable entries is discarded instead of
+  partially trusted, and incomplete modern pagination fails closed rather than looking like "no funding".
+- **Direct funding identity tolerates Kraken booking lag**: a ledger `refid` equal to the funding record
+  id still validates family, normalized asset, direction, amount, fee, and terminal status, but no longer
+  rejects a match solely because the ledger posted minutes after the funding record; representation-level
+  amount drift (for example 8-decimal funding amounts against 6-decimal ledger amounts) is also accepted.
+  Fuzzy correlation without a matching id keeps the strict 180-second window and absolute tolerance.
+- **Funding provenance failures explain themselves**: unresolved rows now append a bounded reason
+  (`ledger provenance unresolved: <type>: <reason>`, for example `no funding record matched` or
+  `funding record is not in a terminal status`) without exposing identifiers. Baseline replay version
+  advanced to `8` so retained history is reclassified in place without re-downloading it.
+
 ## [6.17.53] - 2026-09-12
 
 ### Fixed

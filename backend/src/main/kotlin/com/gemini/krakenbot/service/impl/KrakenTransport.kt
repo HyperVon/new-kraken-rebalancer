@@ -12,6 +12,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.URLBuilder
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -33,6 +34,17 @@ internal fun krakenPrivateEndpointCost(path: String): Double = when {
 
     else -> 1.0
 }
+
+private val FUNDING_PERMISSION_PATHS = setOf(
+    KrakenApiConstants.PATH_DEPOSIT_STATUS,
+    KrakenApiConstants.PATH_WITHDRAW_STATUS,
+    KrakenApiConstants.PATH_FUNDING_DEPOSITS,
+    KrakenApiConstants.PATH_FUNDING_WITHDRAWALS,
+    KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT,
+    KrakenApiConstants.PATH_FUNDING_METHODS_WITHDRAW,
+)
+
+internal fun isFundingPermissionPath(path: String): Boolean = path in FUNDING_PERMISSION_PATHS
 
 class KrakenTransport(
     private val configService: ConfigService,
@@ -138,10 +150,7 @@ class KrakenTransport(
                             null
                         } else if (
                             errorMsg.contains("permission", ignoreCase = true) &&
-                            path in setOf(
-                                KrakenApiConstants.PATH_DEPOSIT_STATUS,
-                                KrakenApiConstants.PATH_WITHDRAW_STATUS,
-                            )
+                            isFundingPermissionPath(path)
                         ) {
                             throw KrakenApiPermissionDeniedException(path, errorMsg)
                         } else {
@@ -149,6 +158,80 @@ class KrakenTransport(
                         }
                     } else {
                         root.path(KrakenApiConstants.FIELD_RESULT)
+                    }
+                } catch (e: JsonProcessingException) {
+                    throw RuntimeException(
+                        KrakenApiConstants.ERROR_PARSE_PRIVATE,
+                        e,
+                    )
+                }
+            }
+
+            if (attemptResult != null) return attemptResult
+        }
+    }
+
+    /**
+     * Funding (Beta) private GET: the query string is part of the signed payload and the nonce
+     * travels in the API-Nonce header instead of the body.
+     */
+    suspend fun queryPrivateGet(path: String, query: Map<String, String>): JsonNode {
+        val maxRetries = 5
+        var retryCount = 0
+        while (true) {
+            val requestCost = krakenPrivateEndpointCost(path)
+            if (requestCost > 0.0) rateLimiter.acquireWithCost(requestCost)
+
+            val attemptResult: JsonNode? = privateRequestMutex.withLock {
+                val credentials = configService.getConfig().kraken
+                check(credentials.apiKey.value.isNotBlank()) { KrakenApiConstants.ERROR_API_KEY_NULL }
+                val nonce = nonceGenerator.incrementAndGet().toString()
+                val url = URLBuilder(apiUrl + path).apply {
+                    query.forEach { (key, value) -> parameters.append(key, value) }
+                }.build()
+                val signedPath = if (url.encodedQuery.isEmpty()) path else "$path?${url.encodedQuery}"
+                val signature = KrakenSigning.signGet(
+                    signedPath = signedPath,
+                    nonce = nonce,
+                    base64Secret = credentials.privateKey.value,
+                )
+
+                val response =
+                    httpClient.get(url.toString()) {
+                        header(KrakenApiConstants.HEADER_API_KEY, credentials.apiKey.value)
+                        header(KrakenApiConstants.HEADER_API_SIGN, signature)
+                        header(KrakenApiConstants.HEADER_API_NONCE, nonce)
+                    }
+                val responseBody = response.bodyAsText()
+                if (!response.status.isSuccess()) {
+                    throw ResponseException(response, responseBody)
+                }
+
+                try {
+                    val root: JsonNode = objectMapper.readTree(responseBody)
+                    if (!root.path(KrakenApiConstants.FIELD_ERROR).isEmpty) {
+                        val errorMsg = root.path(KrakenApiConstants.FIELD_ERROR).toString()
+                        if (errorMsg.contains(KrakenApiConstants.ERROR_INVALID_NONCE) && retryCount < maxRetries) {
+                            val bumpAmount = 100_000_000L * (1L shl retryCount)
+                            log.warn(
+                                "Invalid nonce detected. Adjusting nonce generator by {} and retrying (Attempt {}/{})",
+                                bumpAmount,
+                                retryCount + 1,
+                                maxRetries,
+                            )
+                            nonceGenerator.addAndGet(bumpAmount)
+                            retryCount++
+                            null
+                        } else if (
+                            errorMsg.contains("permission", ignoreCase = true) &&
+                            isFundingPermissionPath(path)
+                        ) {
+                            throw KrakenApiPermissionDeniedException(path, errorMsg)
+                        } else {
+                            throw RuntimeException("${KrakenApiConstants.ERROR_API_PREFIX}$errorMsg")
+                        }
+                    } else {
+                        root
                     }
                 } catch (e: JsonProcessingException) {
                     throw RuntimeException(

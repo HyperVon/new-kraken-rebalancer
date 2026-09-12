@@ -251,6 +251,42 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
+        "buildSnapshot ignores balances for assets outside the configured allocations" {
+            runTest {
+                every { configService.getConfig() } returns
+                    TestFixtures.config(
+                        settings = TestFixtures.settings(),
+                        allocations = listOf(
+                            Allocation(Asset.BTC, 50.0),
+                            Allocation(Asset.USD, 50.0),
+                        ),
+                    )
+
+                val snapshot =
+                    analyzer.buildSnapshot(
+                        balances = mapOf(
+                            "BTC" to BigDecimal("1"),
+                            "USD" to BigDecimal("100"),
+                            "SEI" to BigDecimal("500"),
+                        ),
+                        prices = mapOf("BTC" to BigDecimal("20000")),
+                        currentValuesUSD = mapOf(
+                            "BTC" to BigDecimal("20000"),
+                            "USD" to BigDecimal("100"),
+                            "SEI" to BigDecimal("250"),
+                        ),
+                        totalPortfolioValueUSD = BigDecimal("20350"),
+                        effectiveUsdTarget = BigDecimal("50"),
+                        cryptoScaleFactor = BigDecimal("1"),
+                        drawdownPct = BigDecimal.ZERO,
+                        fiatDeploymentPct = BigDecimal.ZERO,
+                        actionLog = emptyList(),
+                    )
+
+                snapshot.assets.keys shouldBe setOf("BTC", "USD")
+            }
+        }
+
         "fetchObservedBalances captures balances and observation timestamp" {
             runTest {
                 coEvery { krakenService.getBalances() } returns mapOf("BTC" to BigDecimal("1.5"))
@@ -1845,6 +1881,81 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                     portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("14980.00")) == 0
+                        },
+                        any(),
+                        any(),
+                    )
+                }
+            }
+        }
+
+        "updateAth scales ATH using the net balance of a lone card deposit without plumbing" {
+            runTest {
+                val mockLedgers = mockk<LedgerRepository>(relaxed = true)
+                val mockTrades = mockk<TradeRepository>(relaxed = true)
+                val fixedTime = Instant.parse("2026-08-01T12:00:00Z")
+                val analyzerWithRepos = createAnalyzerWithRepos(
+                    ledgerRepository = mockLedgers,
+                    tradeRepository = mockTrades,
+                    nowProvider = { fixedTime },
+                    provenanceResolver = object : FundingProvenanceResolver {
+                        override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+                        override fun isCardFunding(event: LedgerEvent): Boolean = true
+                    },
+                )
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery {
+                    mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.epochSecond.toString()
+                coEvery {
+                    mockTrades.getSyncMetadata(SyncMetadataKeys.ATH_FLOW_WATERMARK_EPOCH_SEC)
+                } returns fixedTime.minusSeconds(3600).epochSecond.toString()
+
+                val loneRef = "LONE-PAYPAL-2026-08-01T1145Z"
+                val loneTime = fixedTime.minusSeconds(900)
+                val loneDeposit = LedgerEvent(
+                    ledgerId = "L-LONE-DEP",
+                    refid = loneRef,
+                    time = loneTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    asset = "USD",
+                    amount = BigDecimal("50.00"),
+                    fee = BigDecimal("1.03"),
+                    hasAuthoritativeFee = true,
+                )
+                coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns listOf(loneDeposit)
+
+                val snap = PortfolioSnapshot(
+                    timestamp = loneTime.minusSeconds(5),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        "USD" to TestFixtures.assetSnapshot(
+                            symbol = "USD",
+                            balance = BigDecimal("10000.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("10000.00"),
+                            targetPercent = BigDecimal("100.0"),
+                        ),
+                    ),
+                    actions = emptyList<String>(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+                coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+
+                // Current total portfolio: 10,000 baseline + 48.97 net lone card funding = 10,048.97
+                val dd = analyzerWithRepos.updateAthAndCalculateDrawdown(
+                    totalPortfolioValueUSD = BigDecimal("10048.97"),
+                    netExternalFlowUSD = BigDecimal.ZERO,
+                )
+                dd.shouldBeEqualComparingTo(BigDecimal.ZERO)
+
+                coVerify(exactly = 1) {
+                    portfolioStatsRepository.saveAthStateWithFlowCheckpoint(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("10048.97")) == 0
                         },
                         any(),
                         any(),

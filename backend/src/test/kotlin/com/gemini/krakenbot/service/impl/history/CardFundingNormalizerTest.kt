@@ -378,7 +378,7 @@ class CardFundingNormalizerTest : StringSpec() {
             result.reason shouldContain "conflicting deposit and withdrawal"
         }
 
-        "confirmed card deposit without passthrough remains pending" {
+        "lone card deposit without retained plumbing becomes ordinary owner capital" {
             val legs = listOf(
                 event("1", "deposit", "5000.00"),
             )
@@ -390,8 +390,175 @@ class CardFundingNormalizerTest : StringSpec() {
                 defaultPriceProvider,
             )
 
-            result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
-            result.reason shouldContain "missing spend and receive"
+            result shouldBe NormalizedFundingTransaction.NotApplicable
+        }
+
+        "lone card deposits on cash-like assets are accepted as ordinary owner capital" {
+            val cases = listOf(
+                Triple("Visa", "USD", "CARD-REF-1"),
+                Triple("PayPal", "USD", "PAYPAL-REF-1"),
+                Triple("Visa", "USDC", "USDC-REF-1"),
+                Triple("Visa", "USDT", "USDT-REF-1"),
+                Triple("Visa", "ZUSD", "ZUSD-REF-1"),
+            )
+
+            for ((method, asset, refid) in cases) {
+                val resolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(depositRecord(refid, "5000.00", asset = asset, method = method)),
+                )
+
+                val result = CardFundingNormalizer.normalizeGroup(
+                    refid,
+                    listOf(event("1", "deposit", "5000.00", refid = refid, asset = asset)),
+                    resolver,
+                    defaultPriceProvider,
+                )
+
+                result shouldBe NormalizedFundingTransaction.NotApplicable
+            }
+        }
+
+        "lone card deposits on non-cash-like assets still fail closed" {
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(depositRecord("BTC-REF-1", "0.1", asset = "BTC", method = "Visa")),
+            )
+
+            val result = CardFundingNormalizer.normalizeGroup(
+                "BTC-REF-1",
+                listOf(event("1", "deposit", "0.1", refid = "BTC-REF-1", asset = "BTC")),
+                resolver,
+                defaultPriceProvider,
+            )
+
+            val ambiguous = result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            ambiguous.reason shouldContain "non-cash-like"
+        }
+
+        "lone card deposits with internal subtypes fail closed" {
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(event("1", "deposit", "5000.00", subtype = "spottostaking")),
+                externalCardResolver,
+                defaultPriceProvider,
+            )
+
+            val ambiguous = result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            ambiguous.reason shouldContain "internal subtype"
+        }
+
+        "isLoneOwnerCapitalCardDeposit rejects unsafe lone shapes" {
+            val alwaysCardResolver = object : FundingProvenanceResolver {
+                override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+                override fun isCardFunding(event: LedgerEvent): Boolean = true
+            }
+            val unresolvedCardResolver = object : FundingProvenanceResolver {
+                override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                override fun isCardFunding(event: LedgerEvent): Boolean = true
+            }
+            val nonCardResolver = FundingProvenanceResolver { FundingEvidence.EXTERNAL }
+
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "10.00"), event("2", "deposit", "10.00")),
+                alwaysCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "withdrawal", "-10.00")),
+                alwaysCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "10.00", subtype = "spottostaking")),
+                alwaysCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "0.5", asset = "BTC")),
+                alwaysCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "0.00")),
+                alwaysCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "10.00", fee = "-1.00")),
+                alwaysCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "10.00", fee = "10.00")),
+                alwaysCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "10.00")),
+                unresolvedCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "10.00")),
+                nonCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "10.00").copy(hasValidAmount = false)),
+                alwaysCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "10.00").copy(hasValidFee = false)),
+                alwaysCardResolver,
+            ) shouldBe false
+            CardFundingNormalizer.isLoneOwnerCapitalCardDeposit(
+                listOf(event("1", "deposit", "10.00", subtype = "")),
+                alwaysCardResolver,
+            ) shouldBe true
+        }
+
+        "lone card withdrawals without plumbing fail closed" {
+            val alwaysCardResolver = object : FundingProvenanceResolver {
+                override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+                override fun isCardFunding(event: LedgerEvent): Boolean = true
+            }
+
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(event("1", "withdrawal", "-5000.00")),
+                alwaysCardResolver,
+                defaultPriceProvider,
+            )
+
+            val ambiguous = result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            ambiguous.reason shouldContain "withdrawal requires spend and receive plumbing"
+        }
+
+        "lone card deposits with negative fees fail closed" {
+            val alwaysCardResolver = object : FundingProvenanceResolver {
+                override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+                override fun isCardFunding(event: LedgerEvent): Boolean = true
+            }
+
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(event("1", "deposit", "5000.00", fee = "-1.00")),
+                alwaysCardResolver,
+                defaultPriceProvider,
+            )
+
+            val ambiguous = result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            ambiguous.reason shouldContain "amount, fee, or balance shape"
+        }
+
+        "lone card deposits that cannot net positive fail closed" {
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(depositRecord("CARD-REF-1", "1.00", method = "Visa")),
+            )
+
+            val result = CardFundingNormalizer.normalizeGroup(
+                "CARD-REF-1",
+                listOf(event("1", "deposit", "1.00", fee = "1.00")),
+                resolver,
+                defaultPriceProvider,
+            )
+
+            val ambiguous = result.shouldBeInstanceOf<NormalizedFundingTransaction.Ambiguous>()
+            ambiguous.reason shouldContain "amount, fee, or balance shape"
         }
 
         "confirmed Wire and ACH deposits without passthrough remain NotApplicable" {

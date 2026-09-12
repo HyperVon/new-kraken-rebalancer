@@ -9,6 +9,7 @@ import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
+import java.time.Instant
 
 @Suppress("unused")
 class KrakenParsersTest : StringSpec() {
@@ -710,6 +711,313 @@ class KrakenParsersTest : StringSpec() {
             )
 
             page.records.map { it.refid } shouldBe listOf("GOOD")
+        }
+
+        "parses funding v1 pages with nested amounts and next cursor" {
+            val page = KrakenParsers.parseFundingV1Page(
+                objectMapper.readTree(
+                    """
+                    {
+                      "deposits": [{
+                        "deposit_id": "FTCQ4qW-fWGQbQwUfqdnZo4dsMn1ao",
+                        "method_id": "method-1",
+                        "status": "success",
+                        "amount": {"asset": {"class": "currency", "name": "USDC"}, "amount": "20.00000000"},
+                        "fee": {"asset": {"class": "currency", "name": "USDC"}, "amount": "0.10000000"},
+                        "create_time": "2026-07-01T08:31:33Z"
+                      }],
+                      "next_cursor": "abc"
+                    }
+                    """.trimIndent(),
+                ),
+                KrakenApiConstants.FIELD_DEPOSITS,
+                KrakenApiConstants.FIELD_DEPOSIT_ID,
+            )
+
+            val record = page.records.single()
+            record.id shouldBe "FTCQ4qW-fWGQbQwUfqdnZo4dsMn1ao"
+            record.methodId shouldBe "method-1"
+            record.status shouldBe "success"
+            record.asset shouldBe "USDC"
+            record.amount shouldBeEqualComparingTo BigDecimal("20.00000000")
+            record.fee shouldBeEqualComparingTo BigDecimal("0.10000000")
+            record.hasAuthoritativeFee shouldBe true
+            record.time shouldBe Instant.parse("2026-07-01T08:31:33Z")
+            page.nextCursor shouldBe "abc"
+            page.rawCount shouldBe 1
+        }
+
+        "drops malformed funding v1 entries but reports the raw count" {
+            val page = KrakenParsers.parseFundingV1Page(
+                objectMapper.readTree(
+                    """
+                    {
+                      "deposits": [
+                        {
+                          "deposit_id": "GOOD-V1",
+                          "status": "success",
+                          "amount": {"asset": {"name": "USDC"}, "amount": "5.00000000"},
+                          "fee": {"amount": "0.00000000"},
+                          "create_time": "2026-07-01T08:31:33Z"
+                        },
+                        {
+                          "deposit_id": "NO-TIME",
+                          "status": "success",
+                          "amount": {"asset": {"name": "USDC"}, "amount": "5.00000000"},
+                          "fee": {"amount": "0.00000000"},
+                          "create_time": "not-a-time"
+                        },
+                        {
+                          "deposit_id": "NEGATIVE",
+                          "status": "success",
+                          "amount": {"asset": {"name": "USDC"}, "amount": "-5.00000000"},
+                          "fee": {"amount": "0.00000000"},
+                          "create_time": "2026-07-01T08:31:33Z"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+                KrakenApiConstants.FIELD_DEPOSITS,
+                KrakenApiConstants.FIELD_DEPOSIT_ID,
+            )
+
+            page.records.single().id shouldBe "GOOD-V1"
+            page.rawCount shouldBe 3
+        }
+
+        "parses funding method pages" {
+            val page = KrakenParsers.parseFundingMethodsPage(
+                objectMapper.readTree(
+                    """
+                    {
+                      "methods": [
+                        {"method_id": "method-1", "method_name": "ACH (Plaid Transfer, via Plaid)"},
+                        {"method_id": "", "method_name": "ignored"},
+                        {"method_id": "method-2"}
+                      ],
+                      "next_cursor": "next"
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            page.records.single().methodId shouldBe "method-1"
+            page.records.single().methodName shouldBe "ACH (Plaid Transfer, via Plaid)"
+            page.nextCursor shouldBe "next"
+            page.rawCount shouldBe 3
+        }
+
+        "parses result-wrapped funding v1 pages and ignores non-array containers" {
+            val wrapped = KrakenParsers.parseFundingV1Page(
+                objectMapper.readTree(
+                    """
+                    {
+                      "result": {
+                        "deposits": [{
+                          "deposit_id": "WRAPPED-1",
+                          "status": "success",
+                          "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "10.00"},
+                          "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                          "create_time": "2026-07-01T08:31:33Z"
+                        }],
+                        "next_cursor": "wrapped-next"
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+                KrakenApiConstants.FIELD_DEPOSITS,
+                KrakenApiConstants.FIELD_DEPOSIT_ID,
+            )
+
+            wrapped.records.single().id shouldBe "WRAPPED-1"
+            wrapped.nextCursor shouldBe "wrapped-next"
+            wrapped.rawCount shouldBe 1
+
+            val notAnArray = KrakenParsers.parseFundingV1Page(
+                objectMapper.readTree("""{"result": {"deposits": {}}}"""),
+                KrakenApiConstants.FIELD_DEPOSITS,
+                KrakenApiConstants.FIELD_DEPOSIT_ID,
+            )
+
+            notAnArray.records shouldBe emptyList()
+            notAnArray.nextCursor shouldBe null
+            notAnArray.rawCount shouldBe 0
+        }
+
+        "drops malformed funding v1 entries and keeps blank-fee precision flags" {
+            val page = KrakenParsers.parseFundingV1Page(
+                objectMapper.readTree(
+                    """
+                    {
+                      "deposits": [
+                        "not-an-object",
+                        {
+                          "deposit_id": " ",
+                          "amount": {"asset": {"name": "USD"}, "amount": "5.00"},
+                          "create_time": "2026-07-01T08:31:33Z"
+                        },
+                        {
+                          "deposit_id": "NO-AMOUNT",
+                          "create_time": "2026-07-01T08:31:33Z"
+                        },
+                        {
+                          "deposit_id": "NEGATIVE-FEE",
+                          "amount": {"asset": {"name": "USD"}, "amount": "5.00"},
+                          "fee": {"asset": {"name": "USD"}, "amount": "-0.01"},
+                          "create_time": "2026-07-01T08:31:33Z"
+                        },
+                        {
+                          "deposit_id": "BLANK-FEE",
+                          "amount": {"asset": {"name": "USDC"}, "amount": "20.00000000"},
+                          "fee": {"asset": {"name": "USDC"}, "amount": ""},
+                          "create_time": "2026-07-01T08:31:33Z"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+                KrakenApiConstants.FIELD_DEPOSITS,
+                KrakenApiConstants.FIELD_DEPOSIT_ID,
+            )
+
+            page.rawCount shouldBe 5
+            page.records.single().id shouldBe "BLANK-FEE"
+            page.records.single().methodId shouldBe null
+            page.records.single().hasAuthoritativeFee shouldBe false
+        }
+
+        "handles absent or incomplete funding method entries" {
+            val absent = KrakenParsers.parseFundingMethodsPage(objectMapper.readTree("{}"))
+
+            absent.records shouldBe emptyList()
+            absent.nextCursor shouldBe null
+            absent.rawCount shouldBe 0
+
+            val incomplete = KrakenParsers.parseFundingMethodsPage(
+                objectMapper.readTree("""{"methods": [{"method_id": "m-1"}, {"method_name": "Wire"}]}"""),
+            )
+
+            incomplete.records shouldBe emptyList()
+            incomplete.rawCount shouldBe 2
+        }
+
+        "parses withdrawal status pages from the withdrawal container" {
+            val page = KrakenParsers.parseWithdrawStatusPage(
+                objectMapper.readTree(
+                    """
+                    {
+                      "withdrawal": [
+                        {
+                          "method": "Bitcoin",
+                          "asset": "XXBT",
+                          "refid": "W-GOOD",
+                          "amount": "0.25",
+                          "fee": "0.0002",
+                          "time": 1700000000,
+                          "status": "Success"
+                        },
+                        {
+                          "asset": "XXBT",
+                          "amount": "0.10",
+                          "time": 1700000001,
+                          "status": "Success"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            page.records.single().refid shouldBe "W-GOOD"
+            page.rawCount shouldBe 2
+        }
+
+        "parses empty funding v1 pages from root arrays" {
+            val page = KrakenParsers.parseFundingV1Page(
+                objectMapper.readTree("[]"),
+                KrakenApiConstants.FIELD_DEPOSITS,
+                KrakenApiConstants.FIELD_DEPOSIT_ID,
+            )
+
+            page.records shouldBe emptyList()
+            page.rawCount shouldBe 0
+            page.nextCursor shouldBe null
+        }
+
+        "drops legacy funding entries with missing amounts" {
+            val depositPage = KrakenParsers.parseDepositStatusPage(
+                objectMapper.readTree(
+                    """
+                    {
+                      "deposit": [
+                        {
+                          "method": "Wire",
+                          "asset": "USD",
+                          "refid": "LEGACY-GOOD",
+                          "txid": "legacy-tx",
+                          "amount": "10.00",
+                          "fee": "0.00",
+                          "time": 1700000000,
+                          "status": "Success"
+                        },
+                        {"asset": "USD", "refid": "LEGACY-NO-AMOUNT", "time": 1700000000, "status": "Success"}
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+            val withdrawalPage = KrakenParsers.parseWithdrawStatusPage(
+                objectMapper.readTree(
+                    """
+                    {
+                      "withdrawal": [
+                        {
+                          "method": "Wire",
+                          "asset": "USD",
+                          "refid": "LEGACY-W-GOOD",
+                          "txid": "legacy-w-tx",
+                          "amount": "10.00",
+                          "fee": "0.00",
+                          "time": 1700000000,
+                          "status": "Success"
+                        },
+                        {"asset": "USD", "refid": "LEGACY-W-NO-AMOUNT", "time": 1700000000, "status": "Success"}
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            depositPage.records.single().refid shouldBe "LEGACY-GOOD"
+            depositPage.rawCount shouldBe 2
+            withdrawalPage.records.single().refid shouldBe "LEGACY-W-GOOD"
+            withdrawalPage.rawCount shouldBe 2
+        }
+
+        "drops funding v1 entries with unparseable fees" {
+            val page = KrakenParsers.parseFundingV1Page(
+                objectMapper.readTree(
+                    """
+                    {
+                      "deposits": [
+                        {
+                          "deposit_id": "BAD-FEE",
+                          "status": "success",
+                          "amount": {"asset": {"class": "currency", "name": "USDC"}, "amount": "5.00"},
+                          "fee": {"asset": {"class": "currency", "name": "USDC"}, "amount": "not-a-number"},
+                          "create_time": "2026-07-01T08:31:33Z"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+                KrakenApiConstants.FIELD_DEPOSITS,
+                KrakenApiConstants.FIELD_DEPOSIT_ID,
+            )
+
+            page.records.size shouldBe 0
+            page.rawCount shouldBe 1
         }
 
         "parses OHLC golden response while ignoring last and malformed rows" {

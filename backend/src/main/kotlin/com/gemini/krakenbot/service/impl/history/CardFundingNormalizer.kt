@@ -79,6 +79,34 @@ object CardFundingNormalizer {
         return norm == Asset.USD || norm == "ZUSD"
     }
 
+    /** Cash-like funding assets that may form a lone card/payment-method owner contribution. */
+    private val LONE_OWNER_CAPITAL_ASSETS: Set<String> = setOf(Asset.USD, "ZUSD", Asset.USDC, Asset.USDT)
+
+    private fun isCashLikeFundingAsset(asset: String): Boolean =
+        Asset.normalizeLedgerAsset(asset).uppercase() in LONE_OWNER_CAPITAL_ASSETS
+
+    /**
+     * A lone card or payment-method deposit may be ordinary owner capital when authoritative
+     * provenance proves the external deposit and the caller supplied the complete retained group
+     * for the identity (so a single leg proves no spend/receive plumbing exists anywhere).
+     * Crypto assets outside the cash-like set, invalid amounts, and non-terminal evidence still
+     * fail closed in [parseCardFundingGroup].
+     */
+    fun isLoneOwnerCapitalCardDeposit(
+        group: List<LedgerEvent>,
+        provenanceResolver: FundingProvenanceResolver,
+    ): Boolean {
+        val leg = group.singleOrNull() ?: return false
+        if (!leg.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, ignoreCase = true)) return false
+        if (!leg.subtype.isNullOrBlank()) return false
+        if (!isCashLikeFundingAsset(leg.asset)) return false
+        if (!leg.hasValidAmount || leg.amount.signum() <= 0) return false
+        if (!leg.hasValidFee || leg.fee.signum() < 0) return false
+        if (leg.netBalanceDelta().signum() <= 0) return false
+        if (provenanceResolver.resolve(leg) != FundingEvidence.EXTERNAL) return false
+        return provenanceResolver.isCardFunding(leg)
+    }
+
     /**
      * Groups raw ledger events by exact non-blank refid.
      * Rows without a refid are excluded and must never be joined with others.
@@ -404,18 +432,50 @@ object CardFundingNormalizer {
         val hasNonUsdLeg = group.any { !isUsd(it.asset) }
 
         // Confirmed card/consumer funding must wait for its complete plumbing
-        // shape. Ordinary confirmed Wire/ACH deposits remain simple owner
-        // capital and are handled by LedgerFlowClassifier instead.
+        // shape. A lone cash-like card deposit with authoritative external
+        // provenance and no retained plumbing is ordinary owner capital instead.
         if (spendLegs.isEmpty() && receiveLegs.isEmpty()) {
-            return if (hasCardEvidence) {
-                ParsedGroup.Ambiguous(
-                    refid = refid,
-                    unavailableAt = minTime,
-                    reason = "Confirmed card funding is missing spend and receive plumbing legs",
+            if (!hasCardEvidence) return ParsedGroup.NotApplicable
+            if (isLoneOwnerCapitalCardDeposit(group, provenanceResolver)) {
+                log.info(
+                    "Card funding with refid {} has no retained spend/receive plumbing; " +
+                        "treating the lone external deposit as owner capital",
+                    refid,
                 )
-            } else {
-                ParsedGroup.NotApplicable
+                return ParsedGroup.NotApplicable
             }
+            val loneLeg = externalFunding.single()
+            val reason = when {
+                group.size > 1 -> "Confirmed card funding is missing spend and receive plumbing legs"
+
+                !loneLeg.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, ignoreCase = true) ->
+                    "Confirmed card funding withdrawal requires spend and receive plumbing legs"
+
+                !loneLeg.subtype.isNullOrBlank() ->
+                    "Confirmed card funding with an internal subtype cannot be a lone owner contribution"
+
+                !isCashLikeFundingAsset(loneLeg.asset) ->
+                    "Confirmed card funding on a non-cash-like asset cannot be a lone owner contribution"
+
+                (
+                    !loneLeg.hasValidAmount ||
+                        loneLeg.amount.signum() <= 0 ||
+                        !loneLeg.hasValidFee ||
+                        loneLeg.fee.signum() < 0 ||
+                        loneLeg.netBalanceDelta().signum() <= 0
+                    ) ->
+                    "Confirmed card funding amount, fee, or balance shape cannot form a positive owner contribution"
+
+                provenanceResolver.resolve(loneLeg) != FundingEvidence.EXTERNAL ->
+                    "Confirmed card funding provenance is unresolved"
+
+                else -> "Confirmed card funding requires spend and receive plumbing legs"
+            }
+            return ParsedGroup.Ambiguous(
+                refid = refid,
+                unavailableAt = minTime,
+                reason = reason,
+            )
         }
 
         val representative = fundingLegs.minWith(compareBy({ it.time }, { it.ledgerId }))

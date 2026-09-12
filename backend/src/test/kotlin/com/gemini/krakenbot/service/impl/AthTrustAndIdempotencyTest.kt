@@ -242,7 +242,16 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                         ),
                     ),
                 )
-                ledgerRepository.saveLedgers(listOf(deposit))
+                val spend = LedgerEvent(
+                    ledgerId = "late-spend",
+                    refid = cardRef,
+                    time = cardTime.plusMillis(100),
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                ledgerRepository.saveLedgers(listOf(deposit, spend))
                 ledgerRepository.setSyncMetadata(
                     SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
                     t80.epochSecond.toString(),
@@ -261,15 +270,6 @@ class AthTrustAndIdempotencyTest : StringSpec() {
 
                 ledgerRepository.saveLedgers(
                     listOf(
-                        LedgerEvent(
-                            ledgerId = "late-spend",
-                            refid = cardRef,
-                            time = cardTime.plusMillis(100),
-                            type = KrakenApiConstants.LEDGER_TYPE_SPEND,
-                            asset = "USD",
-                            amount = BigDecimal("-4980.00"),
-                            fee = BigDecimal("20.00"),
-                        ),
                         LedgerEvent(
                             ledgerId = "late-receive",
                             refid = cardRef,
@@ -312,7 +312,16 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     asset = "USD",
                     amount = BigDecimal("5000.00"),
                 )
-                ledgerRepository.saveLedgers(listOf(deposit))
+                val spend = LedgerEvent(
+                    ledgerId = "initial-late-spend",
+                    refid = cardRef,
+                    time = cardTime.plusMillis(100),
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
+                ledgerRepository.saveLedgers(listOf(deposit, spend))
                 ledgerRepository.setSyncMetadata(
                     SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
                     t80.epochSecond.toString(),
@@ -619,6 +628,15 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     asset = "USD",
                     amount = BigDecimal("5000.00"),
                 )
+                val oldSpend = LedgerEvent(
+                    ledgerId = "old-card-spend",
+                    refid = oldRef,
+                    time = t70.plusMillis(100),
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    asset = "USD",
+                    amount = BigDecimal("-4980.00"),
+                    fee = BigDecimal("20.00"),
+                )
                 val bankDeposit = LedgerEvent(
                     ledgerId = "new-bank-deposit",
                     refid = bankRef,
@@ -627,9 +645,12 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                     asset = "USD",
                     amount = BigDecimal("1000.00"),
                 )
-                ledgerRepository.saveLedgers(listOf(oldDeposit, bankDeposit))
+                ledgerRepository.saveLedgers(listOf(oldDeposit, oldSpend, bankDeposit))
                 statsRepository.journalPresumedDecidedFlows(
-                    listOf(AppliedAthFlow(oldDeposit.ledgerId, oldDeposit.time.epochSecond)),
+                    listOf(
+                        AppliedAthFlow(oldDeposit.ledgerId, oldDeposit.time.epochSecond),
+                        AppliedAthFlow(oldSpend.ledgerId, oldSpend.time.epochSecond),
+                    ),
                 )
                 ledgerRepository.setSyncMetadata(
                     SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,

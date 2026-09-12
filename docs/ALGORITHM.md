@@ -172,28 +172,36 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
         rows and never parsed for undocumented meaning. For deposits and withdrawals, the classifier
         delegates external validation to an affirmative `FundingProvenanceResolver`.
      2. *External provenance verification (`FundingProvenanceResolver`)*: In production,
-        `KrakenFundingProvenanceResolver` batches authenticated `/0/private/DepositStatus` and
-        `/0/private/WithdrawStatus` requests over the ledger range (with a bounded correlation margin),
-        paginates with Kraken's `cursor`/`limit` parameters, and caches the fetched families while they
-        cover the batch. It does not make one funding request per ledger row. A direct reference or fuzzy
-        candidate must agree on the ledger family, normalized asset, direction, gross/net amount, fee when
-        authoritative, timestamp, and terminal status; for withdrawals the account-debit alternative is
-        `amount + fee`, while deposit credit uses `amount - fee`. Fuzzy correlation accepts exactly one candidate only.
-        Zero, duplicate, or contradictory candidates remain unresolved. The legacy status endpoints are
-        active but deprecated in Kraken's API documentation; Spot REST does not provide a historical
-        Futures-transfer query, so a Spot/Futures leg that is not explicitly marked or represented by an
-        authoritative internal source remains unresolved. An indistinguishable status record cannot be
-        separated from external funding by the Spot API alone. Confirmed external deposits and withdrawals
-        classify as `OWNER_CAPITAL`.
+        `KrakenFundingProvenanceResolver` batches authenticated Kraken Funding (Beta)
+        `GET /funding/v1/deposits` and `GET /funding/v1/withdrawals` requests over the ledger range
+        (with a bounded correlation margin), follows Kraken's `next_cursor` pagination with a bounded page
+        budget, resolves `method_id` through `GET /funding/v1/methods/{deposit|withdraw}`, and caches the
+        fetched families while they cover the batch. It does not make one funding request per ledger row.
+        Deprecated `DepositStatus`/`WithdrawStatus` requests are used only to enrich records whose modern
+        method metadata is unavailable; a legacy page at the request limit or with unparseable entries is
+        discarded rather than partially trusted. A direct reference (`refid` equals the funding record id)
+        proves identity: the ledger family, normalized asset, direction, amount (tolerating
+        representation-level drift), fee when authoritative, and terminal status must still agree, while
+        booking-time lag is tolerated because Kraken can post ledgers minutes after the funding record.
+        Fuzzy correlation keeps the strict time window and absolute amount tolerance and accepts exactly
+        one candidate only. Zero, duplicate, or contradictory candidates remain unresolved, and
+        incomplete pagination is never treated as proof that no record exists. Spot REST does not provide
+        a historical Futures-transfer query, so a Spot/Futures leg that is not explicitly marked or
+        represented by an authoritative internal source remains unresolved. An indistinguishable status
+        record cannot be separated from external funding by the Spot API alone. Confirmed external
+        deposits and withdrawals classify as `OWNER_CAPITAL`.
      Flows for assets outside the configured allocation universe are ignored.
    - **Net Capital for Fee-Bearing Deposits**: Confirmed external deposits contribute their net capital
      (`event.netBalanceDelta() = amount - fee`) as `OWNER_CAPITAL`. ATH scales strictly on the net contributed
      funds, preventing fee drag from being misattributed as strategy loss or unproven plumbing.
    - **Prepared Card Funding Lifecycle**: ATH retains the full ledger batch for refid correlation, prepares
       one immutable `FundingProvenanceResolver` snapshot, and passes that exact prepared instance to classification,
-      card normalization, and basis context. A confirmed card/consumer funding deposit is ambiguous until its
-      complete plumbing shape arrives (external deposit + USD `spend` + purchased-asset `receive` for a card buy);
-      incomplete rows defer ATH and remain unjournaled. Confirmed ordinary Wire/ACH funding without plumbing stays
+      card normalization, and basis context. A confirmed card/consumer funding deposit is ambiguous while its
+      plumbing shape is incomplete (external deposit + USD `spend` + purchased-asset `receive` for a card buy);
+      partial rows defer ATH and remain unjournaled. A confirmed card deposit on a cash-like asset (USD, ZUSD,
+      USDC, USDT) whose identity has no spend/receive plumbing anywhere in retained history is ordinary owner
+      capital at its net balance delta; the lone-deposit identity check re-groups retained rows by `refid`, so a
+      distant sibling still fails closed on span or shape. Confirmed ordinary Wire/ACH funding without plumbing stays
       `NotApplicable` to `CardFundingNormalizer` and is handled as ordinary owner capital. Every funding leg in a
       normalized owner event must be `EXTERNAL`; unresolved siblings or external/internal mixtures are ambiguous,
       all-internal groups are `NotApplicable`, and multiple external funding legs are unsupported unless a future
@@ -562,8 +570,12 @@ changes the reconstructed configured balance; and `STAKING`, `FUTURES`, and `OPA
 are skipped. A zero-net row may remain intentionally unresolved because it cannot mutate the
 reconstructed balance, but an unresolved nonzero row fails closed. Complete conversions retain
 their explicit strategy-neutral two-leg replay and do not affect owner capital, rewards, ATH, or
-Buy & Hold scaling. Baseline replay version `7` invalidates only the derived baseline result,
-so completed recovery trade/ledger streams and their offsets remain reusable.
+Buy & Hold scaling. Baseline replay version `10` invalidates only the derived baseline result,
+so completed recovery trade/ledger streams and their offsets remain reusable. The reconstruction
+universe is derived per run: configured allocations plus every replayable trade base and quote plus
+non-zero-delta Spot ledger assets. Historical-only balances are seeded from the latest authoritative
+retained ledger balance at or before the anchor; a missing seed fails closed as
+`no authoritative balance for historical asset <symbol>`.
 
 The implementation was validated against a sanitized forensic copy containing
 conversion, funding, reward, trade, and documented transfer activity. No
@@ -573,16 +585,15 @@ by behavior rather than copied from an account export. The observed copy is
 evidence for the supported classifications, not a closed-world assertion that
 Kraken can never return another type or subtype.
 
-Funding provenance uses authenticated `DepositStatus` and `WithdrawStatus`
-lookups. Kraken documents `DepositStatus` with **Funds: Query** and
-`WithdrawStatus` with **Funds: Withdraw** or **Data: Query ledger entries**;
-the configured **Query Funds** and **Query Ledgers** permissions therefore
-cover the application's read-only use. Note: Kraken's REST documentation marks
-`DepositStatus` and `WithdrawStatus` as deprecated in favor of `List Funding Deposits`
-and `List Funding Withdrawals`. The endpoints will be migrated in a follow-up
-pass without changing the contract or fail-closed permission semantics. A permission
-denial is retained as `FUNDING_PROVENANCE_UNAVAILABLE` and logged with the required
-permission.
+Funding provenance uses authenticated Kraken Funding (Beta) deposit and withdrawal
+history. Kraken documents `List Funding Deposits` and `List Funding Withdrawals`
+with **Funds: Query**, so the configured **Query Funds** permission covers the
+application's read-only use. Records whose modern `method_id` is no longer listed
+fall back to the deprecated `DepositStatus`/`WithdrawStatus` endpoints
+(**Funds: Query** for deposits; **Funds: Withdraw** or **Data: Query ledger entries**
+for withdrawals) for method metadata only; enrichment failure degrades to unresolved
+provenance and never fails the whole read. A permission denial is retained as
+`FUNDING_PROVENANCE_UNAVAILABLE` and logged with the required permission.
 
 The History `/api/history/rewards` endpoint charts `staking`, `dividend`, top-level
 promotion `reward`, transfer `airdrop` credits, and `earn/reward` entries for tracked allocation assets. It aligns cumulative
@@ -658,7 +669,10 @@ validates complete transaction shapes:
    a supported normalization shape and remain unavailable rather than being guessed.
 
 Incomplete shapes (such as deposit plus spend without receive leg) or USD-only plumbing netting to zero
-fail closed as ambiguous (`AMBIGUOUS_FUNDING` for ATH, `AMBIGUOUS_LEDGER_TYPE` for B&H).
+fail closed as ambiguous (`AMBIGUOUS_FUNDING` for ATH, `AMBIGUOUS_LEDGER_TYPE` for B&H). A lone cash-like
+card deposit with authoritative external provenance and no retained plumbing is instead an ordinary owner
+contribution at its net balance delta; the same rule does not apply to crypto assets, withdrawals, internal
+subtypes, or any group with a sibling leg.
 Non-USD leg fees (such as BTC receive fees) are converted to USD at event-time historical prices
 before deducting from gross capital; unpriceable fees fail closed (`HISTORICAL_PRICE_UNAVAILABLE`
 for ATH, `MISSING_PRICE` for B&H). The confirmed transaction collapses into a single owner contribution
@@ -748,8 +762,13 @@ the same external capital over time:
   and no bot evidence produces `COMPLETE_NO_BOT_EVIDENCE`.
 - **Automatic confirmation requires a baseline as well as a candidate.** The service selects the
   latest retained balance anchor whose timestamp and `balancesObservedAt` are not after the fixed
-  recovery horizon, verifies the exact configured asset universe, then reverse-replays complete
-  supported events from the candidate through that anchor. Trades are safely de-duplicated for this
+  recovery horizon, verifies the configured allocation universe at the anchor, derives the
+  reconstruction-only universe (replayable trade bases and quotes plus non-zero-delta Spot ledger
+  assets) with authoritative balance seeds, then reverse-replays complete supported events from the
+  candidate through that anchor. Each trade replays with its real base and quote asset from the stored
+  pair (`Asset.splitTradingPair`); a non-USD quote is never reinterpreted as USD cost, unknown quotes
+  fail closed, and the reconstructed baseline carries historical-only assets at their true balances
+  with no target allocation. Trades are safely de-duplicated for this
   read-only accounting pass without changing stored identities. Ledger fees remain at ledger-asset
   precision; authenticated funding provenance and complete card/consumer refid groups are required,
   while unknown, unsupported, inconsistent, or ambiguous events fail closed. The synthetic baseline
@@ -784,6 +803,11 @@ the same external capital over time:
   pruning, continuous history start is tracked monotonically in metadata; if older candidate coverage was destroyed
   by pruning or contains a gap exceeding 24 hours, comparison availability reports `HISTORICAL_COVERAGE_GAP`
   and no retained snapshot is presented as the earliest trustworthy start.
+- **The Buy & Hold basket is strictly the configured targets.** The inception baseline used for
+  benchmark weights is restricted to assets with a positive `targetPercent` (keep-all fallback only
+  when no asset has a target), so historical-only holdings reconstructed for accounting stay out of
+  the benchmark basket and weights; the comparison difference then starts non-zero by the excluded
+  value instead of silently absorbing it.
 - **Owner contributions after inception are invested by original inception value
   weights** (existing synthetic holdings untouched); only the new money moves.
   Confirmed card Buy Crypto transactions collapse into a single net owner contribution

@@ -20,8 +20,9 @@ import java.time.Instant
  * row's shape: when Kraken status or optional internal-transfer evidence is
  * unavailable, the resolver returns [FundingEvidence.UNRESOLVED].
  *
- * Limitation note: Funding provenance currently uses legacy DepositStatus/WithdrawStatus APIs.
- * Migrate to List Funding Deposits / List Funding Withdrawals in a follow-up.
+ * Funding (Beta) List Funding Deposits / List Funding Withdrawals are the primary
+ * evidence source; the deprecated DepositStatus/WithdrawStatus endpoints are only
+ * consulted to enrich records whose modern funding-method metadata is unavailable.
  */
 class KrakenFundingProvenanceResolver(
     private val krakenService: KrakenService,
@@ -35,6 +36,7 @@ class KrakenFundingProvenanceResolver(
 
     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
     override fun isCardFunding(event: LedgerEvent): Boolean = prepared?.resolver?.isCardFunding(event) ?: false
+    override fun explain(event: LedgerEvent): String? = prepared?.resolver?.explain(event)
 
     /**
      * Returns an immutable resolver snapshot for this batch. The production
@@ -93,8 +95,6 @@ class KrakenFundingProvenanceResolver(
                 // All three calls use the backend selected by one stable
                 // DynamicKrakenService pin. A mode flip cannot mix live and
                 // simulated evidence within this batch.
-                // TODO: Funding provenance currently uses legacy DepositStatus/WithdrawStatus APIs.
-                // Migrate to List Funding Deposits / List Funding Withdrawals in a follow-up.
                 val deposits = if (KrakenApiConstants.LEDGER_TYPE_DEPOSIT in requiredFamilies) {
                     backend.getDepositStatus(requestedRange.startSec, requestedRange.endSec)
                 } else {
@@ -135,8 +135,7 @@ class KrakenFundingProvenanceResolver(
             } catch (e: KrakenApiPermissionDeniedException) {
                 prepared = null
                 val message =
-                    "Kraken denied ${e.endpoint}; enable Funds: Query for DepositStatus and " +
-                        "Funds: Withdraw or Data: Query ledger entries for WithdrawStatus."
+                    "Kraken denied ${e.endpoint}; funding provenance requires the Funds: Query permission."
                 log.error(message, e)
                 FundingProvenanceResolver.unavailable(
                     FundingProvenanceFailure(

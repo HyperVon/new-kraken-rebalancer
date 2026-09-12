@@ -1618,7 +1618,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "recovery rejects nonzero trades outside the configured universe" {
+        "recovery rejects nonzero trades outside the configured universe without an authoritative balance" {
             runTest {
                 val botTime = Instant.parse("2026-01-02T00:00:00Z")
                 val bot = apiTrade("bot", botTime)
@@ -1648,8 +1648,201 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "trade outside configured universe"
+                status.reason shouldBe "no authoritative balance for historical asset ETH"
             }
+        }
+
+        "historical-only trades replay with their real quote asset and remain untargeted" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(1),
+                        pair = "ATOMUSDT",
+                        side = OrderSide.BUY.apiValue,
+                        symbol = "ATOM",
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("999.00"),
+                        price = BigDecimal("2.00"),
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "atom-buy-cycle",
+                        orderTxid = "atom-buy-order",
+                        tradeId = "atom-buy-trade",
+                    ),
+                )
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(2),
+                        pair = "ATOMUSDT",
+                        side = OrderSide.SELL.apiValue,
+                        symbol = "ATOM",
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("999.00"),
+                        price = BigDecimal("2.00"),
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "atom-sell-cycle",
+                        orderTxid = "atom-sell-order",
+                        tradeId = "atom-sell-trade",
+                    ),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "seed-atom",
+                            time = Instant.parse("2025-12-31T00:00:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                            asset = "ATOM",
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "seed-usdt",
+                            time = Instant.parse("2025-12-31T00:00:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                            asset = "USDT",
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                    ?.toInt() ?: error("baseline snapshot id is missing")
+                val baseline = repository.getSnapshotById(baselineId)
+                baseline.shouldNotBeNull()
+                baseline.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.01"))
+                baseline.assets.getValue(Asset.USD).balance.shouldBeEqualComparingTo(BigDecimal("1000.01"))
+                baseline.assets.getValue("ATOM").balance.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                baseline.assets.getValue("ATOM").targetPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                baseline.assets.getValue("USDT").balance.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                baseline.assets.getValue("USDT").targetPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
+        }
+
+        "recovery rejects trades on unsupported historical markets" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(1),
+                        pair = "ADAEUR",
+                        side = OrderSide.BUY.apiValue,
+                        symbol = "ADA",
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("10.00"),
+                        price = BigDecimal("100.00"),
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "unsupported-market-cycle",
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldBe "unsupported historical market ADAEUR"
+            }
+        }
+
+        "recovery rejects trades without a replayable historical cost" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime,
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "missing-cost-cycle",
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 0
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldBe "missing historical trade cost"
+            }
+        }
+
+        "ambiguous funding rows surface the bounded provenance reason" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "ambiguous-deposit",
+                            refid = "AMBIGUOUS-REF",
+                            time = botTime.plusSeconds(3600),
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("100.00"),
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                val resolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                    override fun explain(event: LedgerEvent): String? = "no candidate"
+                }
+
+                val status = newService(fundingProvenanceResolver = resolver).recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldBe "ledger provenance unresolved: deposit: no candidate"
+            }
+        }
+
+        "baseline replay version reflects historical universe semantics" {
+            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "10"
         }
 
         "recovery rejects unsupported trade economics" {
@@ -1679,7 +1872,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "unsupported trade economics"
+                status.reason shouldBe "malformed historical trade economics"
             }
         }
 
@@ -1711,7 +1904,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "unsupported trade economics"
+                status.reason shouldBe "unsupported historical trade side"
             }
         }
 
@@ -1769,7 +1962,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "negative reconstructed balance"
+                status.reason shouldBe "negative reconstructed balance for BTC"
             }
         }
 
@@ -1796,7 +1989,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "unsupported trade economics"
+                status.reason shouldBe "malformed historical trade economics"
             }
         }
 
@@ -1823,7 +2016,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "unsupported trade economics"
+                status.reason shouldBe "malformed historical trade economics"
             }
         }
 
@@ -2532,6 +2725,101 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
                 status.reason shouldBe "Card deposit missing crypto receive plumbing leg"
+            }
+        }
+
+        "a lone card deposit without retained plumbing is accepted as owner capital" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade(
+                    "bot",
+                    botTime,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                    fee = BigDecimal("0.50"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "lone-card-deposit",
+                            refid = "lone-card-ref",
+                            time = botTime.plusSeconds(3600),
+                            type = "deposit",
+                            asset = Asset.USD,
+                            amount = BigDecimal("100.00"),
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("1.00"), Asset.USD to BigDecimal("949.50")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ).copy(balancesObservedAt = null),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                val cardResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+                    override fun isCardFunding(event: LedgerEvent): Boolean = true
+                }
+
+                val status = newService(fundingProvenanceResolver = cardResolver).recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+            }
+        }
+
+        "a card deposit with a distant retained sibling fails the lone-deposit gate" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade(
+                    "bot",
+                    botTime,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                    fee = BigDecimal("0.50"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "lone-card-spend",
+                            refid = "lone-card-ref",
+                            time = botTime.minusSeconds(1800),
+                            type = "spend",
+                            asset = Asset.USD,
+                            amount = BigDecimal("-100.00"),
+                        ),
+                        LedgerEvent(
+                            ledgerId = "lone-card-deposit",
+                            refid = "lone-card-ref",
+                            time = botTime.plusSeconds(3600),
+                            type = "deposit",
+                            asset = Asset.USD,
+                            amount = BigDecimal("100.00"),
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("899.50")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ).copy(balancesObservedAt = null),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                val cardResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+                    override fun isCardFunding(event: LedgerEvent): Boolean = true
+                }
+
+                val status = newService(fundingProvenanceResolver = cardResolver).recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldContain "exceeding maximum"
             }
         }
 

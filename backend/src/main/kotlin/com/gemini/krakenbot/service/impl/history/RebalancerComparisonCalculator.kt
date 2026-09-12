@@ -102,11 +102,15 @@ object RebalancerComparisonCalculator {
             )
         }
         val orderedSnapshots = snapshots.sortedBy(PortfolioSnapshot::timestamp)
-        val (baseline, effectiveSnapshots) = if (inceptionSnapshot != null) {
-            val trimmed = if (orderedSnapshots.first().timestamp < inceptionSnapshot.timestamp) {
-                val postInception = orderedSnapshots.filter { it.timestamp >= inceptionSnapshot.timestamp }
-                if (postInception.isEmpty() || postInception.first().timestamp > inceptionSnapshot.timestamp) {
-                    listOf(inceptionSnapshot) + postInception
+        // The benchmark only tracks configured target assets. Reconstructed inception baselines
+        // may carry historical-only holdings recovered for accounting; they stay out of the B&H
+        // basket and its inception weights (strict configured-target benchmark).
+        val benchmarkInception = inceptionSnapshot?.restrictToBenchmarkTargets()
+        val (baseline, effectiveSnapshots) = if (benchmarkInception != null) {
+            val trimmed = if (orderedSnapshots.first().timestamp < benchmarkInception.timestamp) {
+                val postInception = orderedSnapshots.filter { it.timestamp >= benchmarkInception.timestamp }
+                if (postInception.isEmpty() || postInception.first().timestamp > benchmarkInception.timestamp) {
+                    listOf(benchmarkInception) + postInception
                 } else {
                     postInception
                 }
@@ -117,18 +121,18 @@ object RebalancerComparisonCalculator {
                 return unavailable(
                     reason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                     unavailableAt = orderedSnapshots.last().timestamp,
-                    baselineTimestamp = inceptionSnapshot.timestamp,
+                    baselineTimestamp = benchmarkInception.timestamp,
                 )
             }
             // Universe check runs against the trimmed first snapshot, not a pre-inception one
-            if (inceptionSnapshot.assets.keys != trimmed.first().assets.keys) {
+            if (benchmarkInception.assets.keys != trimmed.first().assets.keys) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
                     unavailableAt = trimmed.first().timestamp,
-                    baselineTimestamp = inceptionSnapshot.timestamp,
+                    baselineTimestamp = benchmarkInception.timestamp,
                 )
             }
-            inceptionSnapshot to trimmed
+            benchmarkInception to trimmed
         } else {
             orderedSnapshots.first() to orderedSnapshots
         }
@@ -1319,6 +1323,18 @@ object RebalancerComparisonCalculator {
 
         /** Contribution-time prices unavailable; caller fails closed. */
         data object Unpriceable : OwnerFlowBuild
+    }
+
+    /**
+     * Restrict a reconstructed inception baseline to configured benchmark targets (assets with a
+     * positive target percent). Baselines without any positive target keep all assets so planless
+     * fixtures and legacy snapshots behave exactly as before.
+     */
+    private fun PortfolioSnapshot.restrictToBenchmarkTargets(): PortfolioSnapshot {
+        val targeted = assets.filterValues { asset ->
+            asset.targetPercent.signum() > 0
+        }
+        return if (targeted.isEmpty()) this else copy(assets = targeted)
     }
 
     /** Original inception value weights (normalized symbol to fraction, renormalized to 1). */

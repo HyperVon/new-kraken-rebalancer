@@ -327,7 +327,7 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 The first chart below the summary cards compares what the rebalancer actually
 achieved against a **synthetic buy-and-hold** strategy:
 
-- **Buy & Hold** starts from the effective comparison baseline snapshot across all view windows: the strategy inception baseline unless you explicitly accept a verified later comparison start.
+- **Buy & Hold** starts from the effective comparison baseline snapshot across all view windows: the strategy inception baseline unless you explicitly accept a verified later comparison start. The synthetic basket tracks only assets with a configured target; historical-only holdings present at the baseline are excluded, so the comparison difference legitimately starts non-zero by their value.
   Strategy-neutral flows (legacy staking rewards, crypto dividends, top-level promotion `reward` credits, modern `earn/reward`, USD cash
   dividends, adjustments, complete linked `conversion` transformations, consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
   identically to the actual portfolio. Genuine owner contributions after the effective comparison baseline are instead
@@ -336,22 +336,26 @@ achieved against a **synthetic buy-and-hold** strategy:
   When a documented card purchase links an external funding row, USD spend, and purchased-asset
   receive row with one shared refid (within a 120-second proximity window), the benchmark collapses
   them into a single net owner contribution allocated strictly by original inception weights; the conversion
-  legs are consumed as plumbing evidence and not replayed into Buy & Hold. A confirmed card deposit that
-  arrives before its spend/receive legs remains pending: ATH defers with `AMBIGUOUS_FUNDING`, and no
-  ledger identity is journaled until the complete group arrives. Confirmed ordinary Wire/ACH deposits
-  without card plumbing continue through the ordinary owner-capital path. The normalized event keeps
+  legs are consumed as plumbing evidence and not replayed into Buy & Hold. A confirmed card deposit with
+  partial plumbing remains pending: ATH defers with `AMBIGUOUS_FUNDING`, and no ledger identity is journaled
+  until the complete group arrives. Confirmed ordinary Wire/ACH deposits without card plumbing continue
+  through the ordinary owner-capital path, and a lone cash-like (USD, ZUSD, USDC, USDT) card deposit with
+  authoritative external provenance and no spend/receive legs anywhere in retained history is treated the
+  same way at its net `amount - fee`. The normalized event keeps
   synthetic `netOwnerCapitalUsd` separate from actual per-leg asset effects; only the synthetic amount
   is allocated by Buy & Hold, while ATH basis reconstruction replays the actual effects and fees once.
   Unproven or incomplete relationships remain unavailable rather than guessed.
   Kraken app/Buy Crypto activity is read from Ledger history, including both asset legs, rather
   than inferred from the trade-history feed.
 - Funding rows count as owner capital only when the production resolver finds one confirmed,
-  matching Kraken funding-status record. The resolver batches and caches authenticated
-  `DepositStatus`/`WithdrawStatus` lookups for the history range; asset, direction, amount/net
-  amount, known fee, time, and terminal status must agree. Deposit credits allow the record's
-  amount or `amount - fee`; withdrawal debits allow the record's amount or `amount + fee` in
-  magnitude. Missing or conflicting records, and Spot/Futures transfers without explicit internal
-  evidence, keep the comparison unavailable.
+  matching Kraken funding-history record. The resolver batches and caches authenticated
+  Funding (Beta) deposit/withdrawal lookups for the history range, and reads deprecated status
+  records only to enrich method metadata when needed; asset, direction, amount/net
+  amount, known fee, time, and terminal status must agree. Direct reference matches also tolerate
+  Kraken's ledger booking delay and minor representation rounding, while fuzzy matches keep the
+  strict window. Deposit credits allow the record's amount or `amount - fee`; withdrawal debits
+  allow the record's amount or `amount + fee` in magnitude. Missing or conflicting records, and
+  Spot/Futures transfers without explicit internal evidence, keep the comparison unavailable.
 - `transfer` is not automatically internal: an exact documented internal subtype, authoritative
   internal evidence, or same-asset zero-net paired movement can prove `INTERNAL_MOVE`; documented
   `reward` and observed/documented `airdrop` credits are `EXTERNAL_BALANCE`. Undocumented prose descriptions
@@ -413,11 +417,11 @@ The comparison cannot be computed when:
 | Inception snapshot pruned | The strategy start is known but no trustworthy baseline snapshot survives at or near it; Settings offers the earliest verified later comparison start instead. |
 | Unsupported ledger type | A ledger entry of a type outside Kraken's documented set blocks safe comparison. |
 | Ambiguous ledger type | A ledger entry cannot be classified as owner capital or an internal movement. |
-| Funding provenance unavailable | Deposit/withdrawal status evidence could not be retrieved; funding is not guessed. |
+| Funding provenance unavailable | Funding-history evidence could not be retrieved; funding is not guessed. |
 | Inception recovery incomplete | Bounded Kraken history recovery is still pending or a page failed; no lifetime number is produced. |
 | Ambiguous inception | Historical activity cannot be assigned uniquely to this strategy. |
 | No bot evidence | Recovered history contains no positively identified non-dry-run bot fill. |
-| Inception baseline unavailable | A retained balance anchor, historical price, or complete event replay is missing. |
+| Inception baseline unavailable | A retained balance anchor, historical price, an authoritative balance for a historical-only asset, or a complete event replay is missing. |
 | Inception history truncated | Legacy retained history cannot prove the lifetime baseline; set the strategy inception date in Settings. |
 | Historical coverage incomplete | Retention removed part of the strategy period, so the earliest trustworthy comparison start cannot be determined. |
 
@@ -530,9 +534,11 @@ badges instead.
 
 1. Provide Kraken API keys with **Query Funds**, **Query Closed Orders & Trades**,
    **Query Ledgers**, and **Create & Modify Orders**. Funding provenance also
-   reads `DepositStatus` (Funds: Query, covered by Query Funds) and
-   `WithdrawStatus` (Funds: Withdraw or Data: Query ledger entries, covered by
-   Query Ledgers); no withdrawal-placement permission is needed.
+   reads Kraken Funding (Beta) deposit and withdrawal history (Funds: Query,
+   covered by Query Funds) and only falls back to `DepositStatus`/`WithdrawStatus`
+   records for method metadata (Funds: Query; Funds: Withdraw or Data: Query
+   ledger entries); fallback failure never blocks the read-only comparison, and
+   no withdrawal-placement permission is needed.
 2. Leave **Simulation** off; enable **Dry Run**.
 3. Confirm Dashboard prices and History sync look right before considering live
    mode.
