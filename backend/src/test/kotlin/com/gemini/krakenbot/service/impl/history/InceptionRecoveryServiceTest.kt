@@ -1147,7 +1147,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             subtype = "spotfromfutures",
                             asset = Asset.USD,
                             amount = BigDecimal("100.00"),
-                            balance = BigDecimal("100.00"),
+                            balance = BigDecimal("1049.70"),
                             refid = "internal-wallet-transfer",
                             hasAuthoritativeBalance = true,
                         ),
@@ -1841,8 +1841,139 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "interleaved staking-wallet chains reconstruct spot exactly" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                // The recorded balances interleave the spot and staking-wallet chains for the
+                // same asset. The early staking reward's checkpoint misses the chain by -0.00004,
+                // which its non-zero fee makes tolerable; a non-snapping replay folds that drift
+                // into the pre-window spot balance and fails on a tiny negative SOL balance.
+                fun solEvent(
+                    id: String,
+                    offsetSeconds: Long,
+                    type: String,
+                    subtype: String?,
+                    amount: String,
+                    fee: String,
+                    balance: String,
+                    refid: String? = null,
+                ) = LedgerEvent(
+                    ledgerId = id,
+                    refid = refid,
+                    time = botTime.plusSeconds(offsetSeconds),
+                    type = type,
+                    subtype = subtype,
+                    asset = "SOL",
+                    amount = BigDecimal(amount),
+                    fee = BigDecimal(fee),
+                    balance = BigDecimal(balance),
+                    hasAuthoritativeBalance = true,
+                )
+
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        solEvent(
+                            "sol-spot-start",
+                            1,
+                            KrakenApiConstants.LEDGER_TYPE_REWARD,
+                            "welcomebonus",
+                            "0.01",
+                            "0",
+                            "0.01",
+                        ),
+                        solEvent(
+                            "sol-early-reward",
+                            2,
+                            KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            null,
+                            "0.0201",
+                            "0.0001",
+                            "0.02996",
+                        ),
+                        solEvent(
+                            "sol-spot-stake-out",
+                            3,
+                            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            "spottostaking",
+                            "-0.02996",
+                            "0",
+                            "0.00",
+                            refid = "sol-stake-move-1",
+                        ),
+                        solEvent(
+                            "sol-stake-in",
+                            3,
+                            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            "spottostaking",
+                            "0.02996",
+                            "0",
+                            "0.02996",
+                            refid = "sol-stake-move-1",
+                        ),
+                        solEvent(
+                            "sol-stake-reward",
+                            4,
+                            KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            null,
+                            "0.0001",
+                            "0",
+                            "0.03006",
+                        ),
+                        solEvent(
+                            "sol-stake-spot-out",
+                            5,
+                            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            "stakingtospot",
+                            "-0.03006",
+                            "0",
+                            "0.00",
+                            refid = "sol-stake-move-2",
+                        ),
+                        solEvent(
+                            "sol-spot-in",
+                            5,
+                            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            "stakingtospot",
+                            "0.03006",
+                            "0",
+                            "0.03006",
+                            refid = "sol-stake-move-2",
+                        ),
+                        solEvent(
+                            "sol-late-reward",
+                            6,
+                            KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            null,
+                            "0.0001",
+                            "0",
+                            "0.03016",
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)?.toInt()
+                    ?: error("baseline snapshot id is missing")
+                val baseline = repository.getSnapshotById(baselineId) ?: error("baseline snapshot is missing")
+                baseline.assets.getValue(Asset.SOL).balance shouldBeEqualComparingTo BigDecimal.ZERO
+            }
+        }
+
         "baseline replay version reflects historical universe semantics" {
-            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "10"
+            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "11"
         }
 
         "recovery rejects unsupported trade economics" {
@@ -2518,7 +2649,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             type = "deposit",
                             asset = Asset.USD,
                             amount = BigDecimal("100.00"),
-                            balance = BigDecimal("100.00"),
+                            balance = BigDecimal("1049.50"),
                             hasAuthoritativeBalance = true,
                         ),
                         LedgerEvent(
@@ -2554,7 +2685,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             asset = Asset.USD,
                             amount = BigDecimal("-20.00"),
                             fee = BigDecimal("0.20"),
-                            balance = BigDecimal("79.80"),
+                            balance = BigDecimal("1029.30"),
                             hasAuthoritativeBalance = true,
                             hasAuthoritativeFee = true,
                         ),

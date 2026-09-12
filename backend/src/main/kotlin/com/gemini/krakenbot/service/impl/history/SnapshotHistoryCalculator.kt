@@ -203,7 +203,14 @@ object SnapshotHistoryCalculator {
             return
         }
         val netDelta = event.netBalanceDelta()
-        runningBalances[symbol] = runningBalances.getValue(symbol).subtract(netDelta)
+        runningBalances[symbol] = if (event.hasAuthoritativeBalance) {
+            // Mirror the validator's forward checkpoint: an authoritative row advanced this scope
+            // to the recorded post-entry balance, so inverting the delta from that post-state
+            // keeps reconstruction exactly inverse instead of accumulating per-row rounding drift.
+            event.balance.subtract(netDelta)
+        } else {
+            runningBalances.getValue(symbol).subtract(netDelta)
+        }
     }
 
     private fun getPriceForTimestamp(

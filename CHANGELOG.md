@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.57] - 2026-09-12
+
+### Fixed
+
+- **Baseline and snapshot reverse replay restore authoritative balance checkpoints**: the approved-start
+  baseline walk and the reconstructed-snapshot walk now invert each authoritative wallet-scope ledger row
+  from its recorded post-entry balance (the exact inverse of the validator's forward checkpoint) instead
+  of folding per-row rounding differences into reconstructed balances. The baseline replay merges trades
+  and ledger rows into one newest-first walk with ledger checkpoints ordered ahead of same-instant trades,
+  so a fill's recorded post-balances are restored before its delta is inverted. Wallet scope still comes
+  from `AuthoritativeLedgerBalanceValidator`, so staking, opaque-staking, and futures rows never move
+  reconstructed spot holdings. Reconstructed spot balances now match the validated chain exactly (the
+  SOL staking-era chain that previously produced a tiny negative reconstructed balance now lands on the
+  authoritative pre-window value), and the baseline replay version plus the snapshot reconstruction
+  version advanced so retained history is rebuilt in place without re-downloading it.
+
 ## [6.17.56] - 2026-09-12
 
 ### Fixed

@@ -37,7 +37,7 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "11"
+        const val CURRENT_RECONSTRUCTION_VERSION = "12"
 
         /**
          * Historical fail-closed anchor contract (v11).

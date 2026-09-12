@@ -1256,24 +1256,44 @@ class InceptionRecoveryService(
         }
         val historicalUniverse = expectedUniverse + historicalOnlyUniverse
 
-        for ((_, replay) in replayableTrades.sortedWith(
-            compareByDescending<Pair<TradeRecord, TradeReplaySupport.Replayable>> { it.first.timestamp }
-                .thenByDescending { it.first.id ?: 0 },
-        )) {
-            if (!reverseApplyTrade(replay, runningBalances)) {
-                return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "unsupported trade economics")
+        // A single newest-first walk keeps the reconstruction exactly inverse to the validator's
+        // forward chain. Ledger checkpoints sort before trades at the same instant because a
+        // trade's own ledger rows carry the post-fill balances its delta is inverted from, and
+        // authoritative rows snap to the recorded post-entry balance instead of letting the
+        // validator's allowed per-row rounding difference accumulate across the walk.
+        val replaySteps = buildList {
+            replayableTrades.forEach { (trade, replay) ->
+                add(ReplayStep.Trade(trade.timestamp, trade.id ?: 0, replay))
             }
-        }
-        for (event in historicalLedgers.sortedByDescending { it.time }) {
-            if (!reverseApplyLedger(
-                    event = event,
-                    balances = runningBalances,
-                    expectedUniverse = historicalUniverse,
-                    flowCategories = flowCategories,
-                    resolvedScopes = balanceValidation.resolvedScopes,
-                )
-            ) {
-                return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "ledger changed tracked universe")
+            historicalLedgers.forEach { event -> add(ReplayStep.Ledger(event)) }
+        }.sortedWith(
+            compareByDescending<ReplayStep> { it.time }
+                .thenByDescending { it.isCheckpoint }
+                .thenByDescending { it.tieBreak },
+        )
+        for (step in replaySteps) {
+            when (step) {
+                is ReplayStep.Trade -> {
+                    if (!reverseApplyTrade(step.replay, runningBalances)) {
+                        return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "unsupported trade economics")
+                    }
+                }
+
+                is ReplayStep.Ledger -> {
+                    if (!reverseApplyLedger(
+                            event = step.event,
+                            balances = runningBalances,
+                            expectedUniverse = historicalUniverse,
+                            flowCategories = flowCategories,
+                            resolvedScopes = balanceValidation.resolvedScopes,
+                        )
+                    ) {
+                        return BaselineResult.Failure(
+                            InceptionRecoveryStatus.AMBIGUOUS,
+                            "ledger changed tracked universe",
+                        )
+                    }
+                }
             }
         }
 
@@ -1373,6 +1393,29 @@ class InceptionRecoveryService(
     }
 
     /**
+     * One step of the merged newest-first reconstruction walk. Ledger rows are checkpoints that
+     * sort before trades at the same instant, so a fill's recorded post-balances are restored
+     * before its delta is inverted. [tieBreak] keeps equal-timestamp ordering deterministic.
+     */
+    private sealed interface ReplayStep {
+        val time: Instant
+        val isCheckpoint: Boolean
+        val tieBreak: String
+
+        data class Trade(override val time: Instant, val id: Int, val replay: TradeReplaySupport.Replayable) :
+            ReplayStep {
+            override val isCheckpoint: Boolean = false
+            override val tieBreak: String = id.toString()
+        }
+
+        data class Ledger(val event: LedgerEvent) : ReplayStep {
+            override val time: Instant = event.time
+            override val isCheckpoint: Boolean = true
+            override val tieBreak: String = event.ledgerId
+        }
+    }
+
+    /**
      * Decide whether a retained trade can be replayed with its real base/quote economics. The
      * stored pair is authoritative: the quote from the pair decides how the retained cost field is
      * interpreted, so a non-USD market is never revalued as if its cost were USD.
@@ -1417,7 +1460,12 @@ class InceptionRecoveryService(
         flowCategories: Map<String, FlowCategory>,
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
     ): Boolean {
-        if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) return true
+        if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) {
+            // Trade economics are replayed from the authoritative TradeRecord; the ledger row is
+            // only a duplicate checkpoint of the same fill and is not re-applied here so the
+            // recorded balance can never be inverted against the wrong side of a fill.
+            return true
+        }
         val isConversion = event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
         if (!isConversion) {
             when (resolvedScopes[event.ledgerId]) {
@@ -1461,7 +1509,14 @@ class InceptionRecoveryService(
                 event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
         }
         val balance = balances.getValue(symbol)
-        balances[symbol] = balance.subtract(delta)
+        balances[symbol] = if (event.hasAuthoritativeBalance) {
+            // The validator advanced this scope to the recorded post-entry balance; inverting the
+            // delta from that authoritative post-state keeps replay exactly inverse instead of
+            // letting per-row rounding differences accumulate into the reconstructed balance.
+            event.balance.subtract(delta)
+        } else {
+            balance.subtract(delta)
+        }
         return true
     }
 
@@ -1973,7 +2028,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "10"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "11"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

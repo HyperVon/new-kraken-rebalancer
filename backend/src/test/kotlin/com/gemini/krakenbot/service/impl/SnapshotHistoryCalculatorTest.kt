@@ -44,6 +44,15 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
     ): BigDecimal {
         val transferTime = legs.first().time
         val preTransferPoint = transferTime.minusSeconds(1)
+        // The spot-facing leg is the only spot-affecting row, so its authoritative post-entry
+        // balance is the anchor the helper walks back from.
+        val scopedLegs = legs.map { leg ->
+            if (resolvedScopes[leg.ledgerId] == AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT) {
+                leg.copy(balance = BigDecimal(anchorBalance))
+            } else {
+                leg
+            }
+        }
         val runningBalances = mutableMapOf(asset to BigDecimal(anchorBalance)).apply {
             if (asset != Asset.USD) this[Asset.USD] = BigDecimal("1000.00")
         }
@@ -59,7 +68,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
         }
         val snapshots = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
             events = (
-                legs.map { SnapshotHistoryCalculator.TimelineEvent.RewardEvent(it.time, it) } +
+                scopedLegs.map { SnapshotHistoryCalculator.TimelineEvent.RewardEvent(it.time, it) } +
                     SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(preTransferPoint)
                 ).sorted(),
             allocations = allocations,
@@ -274,6 +283,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     asset = "BTC",
                     amount = BigDecimal("-1.00"),
                     fee = BigDecimal("0.01"),
+                    balance = BigDecimal("0.50"),
                     hasAuthoritativeBalance = true,
                     hasAuthoritativeFee = true,
                 ),
@@ -285,6 +295,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     asset = "ETH",
                     amount = BigDecimal("2.00"),
                     fee = BigDecimal("0.02"),
+                    balance = BigDecimal("1.98"),
                     hasAuthoritativeBalance = true,
                     hasAuthoritativeFee = true,
                 ),
@@ -1148,7 +1159,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 asset = "BTC",
                 amount = BigDecimal("0.02"),
                 fee = BigDecimal.ZERO,
-                balance = BigDecimal("0.52"),
+                balance = BigDecimal("0.50"),
                 hasAuthoritativeBalance = true,
             )
             val earnMarker = LedgerEvent(
