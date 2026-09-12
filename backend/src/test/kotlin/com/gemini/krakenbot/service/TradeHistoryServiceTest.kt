@@ -144,8 +144,9 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
                 val tradeHistoryService = createService()
                 val from = Instant.now()
                 val to = Instant.now()
+                coEvery { repository.getAllSnapshotsInRange(from, to) } returns emptyList()
                 tradeHistoryService.getSnapshotsInRange(from, to)
-                coVerify(exactly = 1) { repository.getSnapshotsInRange(from, to) }
+                coVerify(exactly = 1) { repository.getAllSnapshotsInRange(from, to) }
             }
         }
 
@@ -164,12 +165,12 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
                 val tradeHistoryService = createService()
                 val from = Instant.parse("2026-07-01T00:00:00Z")
                 val to = Instant.parse("2026-07-02T00:00:00Z")
-                coEvery { repository.getSnapshotsInRange(from, to) } returns
+                coEvery { repository.getAllSnapshotsInRange(from, to) } returns
                     listOf(TestFixtures.emptySnapshot(timestamp = from, totalValueUSD = BigDecimal.ONE))
 
                 tradeHistoryService.getRebalancerComparison(from, to)
 
-                coVerify(exactly = 1) { repository.getSnapshotsInRange(from, to) }
+                coVerify(exactly = 1) { repository.getAllSnapshotsInRange(from, to) }
                 coVerify(exactly = 0) { repository.getTradesInRange(any(), any()) }
             }
         }
@@ -181,7 +182,7 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
                 val baseline = from.plusSeconds(60)
                 val last = from.plusSeconds(120)
                 val to = from.plusSeconds(180)
-                coEvery { repository.getSnapshotsInRange(from, to) } returns
+                coEvery { repository.getAllSnapshotsInRange(from, to) } returns
                     listOf(
                         TestFixtures.emptySnapshot(timestamp = baseline, totalValueUSD = BigDecimal.ONE),
                         TestFixtures.emptySnapshot(timestamp = last, totalValueUSD = BigDecimal.ONE),

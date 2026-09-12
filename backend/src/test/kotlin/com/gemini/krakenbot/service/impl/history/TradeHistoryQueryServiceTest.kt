@@ -1960,6 +1960,36 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 proposal.shouldBeNull()
             }
         }
+
+        "getSnapshotsInRange drops an identity anchor when a reconstructed snapshot shares the instant" {
+            runTest {
+                val anchor = snapshot(now, "1235.68", btc = "0.0" to "0.00")
+                val reconstructed = snapshot(now, "1490.81", btc = "0.5" to "40000.00")
+                val later = snapshot(now.plusSeconds(1800), "1500.00", btc = "0.6" to "40000.00")
+                coEvery { repository.getSnapshotsInRange(now, now) } returns listOf(anchor, reconstructed)
+                coEvery { repository.getSnapshotsInRange(now, now.plusSeconds(3600)) } returns
+                    listOf(anchor, reconstructed, later)
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) } returns
+                    "7"
+                coEvery { repository.getSnapshotById(7) } returns anchor
+
+                service.getSnapshotsInRange(now, now.plusSeconds(3600)) shouldBe listOf(reconstructed, later)
+            }
+        }
+
+        "getSnapshotsInRange keeps an identity anchor when no snapshot shares the instant" {
+            runTest {
+                val anchor = snapshot(now, "1235.68", btc = "0.0" to "0.00")
+                val later = snapshot(now.plusSeconds(1800), "1500.00", btc = "0.6" to "40000.00")
+                coEvery { repository.getSnapshotsInRange(now, now) } returns listOf(anchor)
+                coEvery { repository.getSnapshotsInRange(now, now.plusSeconds(3600)) } returns listOf(anchor, later)
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) } returns
+                    "7"
+                coEvery { repository.getSnapshotById(7) } returns anchor
+
+                service.getSnapshotsInRange(now, now.plusSeconds(3600)) shouldBe listOf(anchor, later)
+            }
+        }
     }
 
     private fun snapshot(

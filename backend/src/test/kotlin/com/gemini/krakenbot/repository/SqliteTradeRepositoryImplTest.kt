@@ -10,6 +10,7 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -260,6 +261,65 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
 
                 repository.load().map { it.totalValueUSD } shouldBe listOf(BigDecimal("2000.00"))
                 repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(1)).size shouldBe 1
+            }
+        }
+
+        "replace snapshots preserves snapshots referenced by identity metadata" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val identityKeys = listOf(
+                    SyncMetadataKeys.INCEPTION_SNAPSHOT_ID,
+                    SyncMetadataKeys.INCEPTION_RECOVERY_BASELINE_SNAPSHOT_ID,
+                    SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID,
+                    SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+                )
+                val anchorIds = identityKeys.mapIndexed { index, key ->
+                    val anchor = TestFixtures.emptySnapshot(
+                        timestamp = now.minusSeconds(100L - index),
+                        totalValueUSD = BigDecimal("1000.00").plus(BigDecimal(index)),
+                    ).copy(
+                        assets = mapOf(
+                            Asset.BTC to TestFixtures.assetSnapshot(
+                                symbol = Asset.BTC,
+                                balance = BigDecimal("0.25"),
+                                price = BigDecimal("2000.00"),
+                                valueUSD = BigDecimal("500.00"),
+                                targetPercent = BigDecimal("100.0"),
+                            ),
+                        ),
+                        actions = listOf("anchor-action-$index"),
+                    )
+                    val id = repository.saveSnapshot(anchor)
+                    repository.setSyncMetadata(key, id.toString())
+                    id
+                }
+                repository.saveSnapshot(TestFixtures.emptySnapshot(now.minusSeconds(200), BigDecimal("500.00")))
+                val replacement = TestFixtures.emptySnapshot(now, BigDecimal("2000.00"))
+
+                repository.replaceSnapshots(listOf(replacement))
+
+                anchorIds.forEachIndexed { index, id ->
+                    val preserved = repository.getSnapshotById(id).shouldNotBeNull()
+                    preserved.timestamp shouldBe now.minusSeconds(100L - index)
+                    preserved.actions shouldBe listOf("anchor-action-$index")
+                    preserved.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal("0.25")
+                }
+                val retained = repository.getSnapshotsInRange(Instant.EPOCH, now.plusSeconds(1))
+                retained.map { it.timestamp } shouldBe
+                    (0 until identityKeys.size).map { now.minusSeconds(100L - it) } + now
+            }
+        }
+
+        "replace snapshots continues when identity metadata references a missing snapshot" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, "999999")
+                repository.saveSnapshot(TestFixtures.emptySnapshot(now.minusSeconds(10), BigDecimal("500.00")))
+                val replacement = TestFixtures.emptySnapshot(now, BigDecimal("2000.00"))
+
+                repository.replaceSnapshots(listOf(replacement))
+
+                repository.load().map { it.timestamp } shouldBe listOf(now)
             }
         }
 

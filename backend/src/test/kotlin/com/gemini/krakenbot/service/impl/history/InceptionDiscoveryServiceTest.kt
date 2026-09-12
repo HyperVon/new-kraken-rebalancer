@@ -143,6 +143,38 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
+        "resolveInception prefers the recorded snapshot when a preserved anchor shares the configured instant" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val recorded = dummySnapshot(configuredInstant)
+                val anchor = recorded.copy(
+                    totalValueUSD = BigDecimal("9999.99"),
+                    assets = recorded.assets + (
+                        Asset.ADA to TestFixtures.assetSnapshot(
+                            symbol = Asset.ADA,
+                            balance = BigDecimal("1"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal.ONE,
+                            targetPercent = BigDecimal.ZERO,
+                        )
+                        ),
+                    balancesObservedAt = null,
+                )
+                coEvery {
+                    tradeRepository.getSnapshotsInRange(configuredInstant, configuredInstant)
+                } returns listOf(anchor, recorded)
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                } returns "7"
+                coEvery { tradeRepository.getSnapshotById(7) } returns anchor
+
+                val result = service.resolveInception()
+
+                result.inceptionSnapshot shouldBe recorded
+            }
+        }
+
         "resolveInception ignores a configured inception date in the future" {
             runTest {
                 coEvery { configService.getConfig() } returns

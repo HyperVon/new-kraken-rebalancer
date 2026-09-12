@@ -463,10 +463,15 @@ class InceptionDiscoveryService(
             .singleOrNull()
     }
 
-    private suspend fun findExactConfiguredSnapshot(targetTime: Instant): PortfolioSnapshot? = tradeRepository
-        .getSnapshotsInRange(targetTime, targetTime)
-        .filter { hasExactBaselineObservation(it, targetTime) }
-        .singleOrNull()
+    private suspend fun findExactConfiguredSnapshot(targetTime: Instant): PortfolioSnapshot? {
+        val exactSnapshots = tradeRepository
+            .getSnapshotsInRange(targetTime, targetTime)
+            .filter { hasExactBaselineObservation(it, targetTime) }
+        // A preserved identity anchor can share the instant with the recorded series row; the
+        // series row is the comparable observation, so it wins when both exist.
+        val recordedSnapshots = exactSnapshots.filterNot { it in tradeRepository.snapshotIdentityAnchors() }
+        return recordedSnapshots.singleOrNull() ?: exactSnapshots.singleOrNull()
+    }
 
     companion object {
         const val BURST_WINDOW_MS = 5000L

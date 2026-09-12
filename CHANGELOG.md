@@ -28,6 +28,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   markets, so a delisted USD market recorded in retained history no longer skips snapshot reconstruction.
   Baseline replay version `13` and snapshot reconstruction version `14` rebuild derived state in place
   from retained history without re-downloading it.
+- **Approved-start and inception baselines survive snapshot-series rewrites**: the snapshots referenced by
+  the inception, recovered-baseline, approved-baseline, and accepted comparison-start metadata keys are now
+  excluded from the wholesale replacement performed by reconstruction, so a rebuilt series no longer leaves
+  those references dangling and a restart confirms the existing baseline instead of replaying it again. The
+  recorded series still exposes only the reconstructed history: a preserved anchor is hidden when a
+  recorded snapshot shares its instant, and the inception resolution prefers the recorded snapshot when a
+  preserved anchor occupies the configured start.
 
 ## [6.17.58] - 2026-09-12
 

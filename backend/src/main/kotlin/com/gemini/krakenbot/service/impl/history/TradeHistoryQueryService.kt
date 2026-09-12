@@ -19,6 +19,7 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.repository.downsampleSnapshots
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.sync.Mutex
@@ -70,7 +71,22 @@ class TradeHistoryQueryService(
     suspend fun getLatestSnapshot(): PortfolioSnapshot? = repository.getLatestSnapshot()
 
     suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
-        repository.getSnapshotsInRange(from, to)
+        excludeIdentitySnapshots(repository.getAllSnapshotsInRange(from, to)).downsampleSnapshots()
+
+    /**
+     * Identity anchors survive series rewrites, so a rewrite can place a reconstructed snapshot
+     * at the anchor's instant. Only that collision is hidden: the reconstructed snapshot is the
+     * recorded series, while an anchor without a same-instant counterpart (for example the
+     * approved-start baseline before reconstruction) remains part of the series. The collision
+     * check reads the stored instant directly because range sampling can drop the twin from the
+     * returned page while keeping the anchor as the range endpoint.
+     */
+    private suspend fun excludeIdentitySnapshots(snapshots: List<PortfolioSnapshot>): List<PortfolioSnapshot> {
+        val replacedAnchors = repository.snapshotIdentityAnchors().filter { anchor ->
+            repository.getSnapshotsInRange(anchor.timestamp, anchor.timestamp).any { it != anchor }
+        }
+        return snapshots.filterNot { it in replacedAnchors }
+    }
 
     suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = repository.getTradesInRange(from, to)
 
