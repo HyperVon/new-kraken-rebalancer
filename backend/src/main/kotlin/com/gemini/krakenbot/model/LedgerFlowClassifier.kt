@@ -33,7 +33,7 @@ import java.math.BigDecimal
  *   leaving the portfolio ([LedgerEvent.netBalanceDelta]), even if Kraken deducted a fee.
  * - Insufficient evidence: bare deposits or withdrawals without affirmative external
  *   or internal provenance fall back conservatively to [FlowCategory.AMBIGUOUS].
- * - Conservative transfer rule: known internal transfer evidence is
+ * - Conservative transfer rule: only a complete, linked two-leg internal transfer is
  *   [FlowCategory.INTERNAL_MOVE], documented reward semantics are
  *   [FlowCategory.EXTERNAL_BALANCE], observed/documented airdrop credits are
  *   external, and an unproven bare transfer (including prose-only descriptions
@@ -96,6 +96,59 @@ object LedgerFlowClassifier {
     private val ZERO_NET_TOLERANCE = BigDecimal("0.00000001")
 
     /**
+     * Returns true only for Kraken's documented internal-transfer markers.
+     *
+     * This deliberately does not treat a bare `transfer`, `airdrop`, or `reward` row as an
+     * internal move. Those rows can represent an external balance change and must remain
+     * visible to the provenance classifier.
+     */
+    fun isDocumentedInternalTransfer(event: LedgerEvent): Boolean =
+        event.type.equals(KrakenApiConstants.LEDGER_TYPE_TRANSFER, ignoreCase = true) &&
+            isInternalSubtype(event.subtype)
+
+    /** Returns true for transfer or Earn markers whose wallet scope is internal but opaque here. */
+    fun isDocumentedInternalScopeMarker(event: LedgerEvent): Boolean = isDocumentedInternalTransfer(event) ||
+        (
+            event.type.equals(KrakenApiConstants.LEDGER_TYPE_EARN, ignoreCase = true) &&
+                isInternalSubtype(event.subtype)
+            )
+
+    /**
+     * Returns true only for a complete documented internal-transfer pair. A lone marker or a
+     * cross-asset pair is not enough to prove that the rows are wallet movement rather than an
+     * external balance change; callers must fail closed for those cases.
+     */
+    internal fun isCompleteInternalTransferGroup(legs: List<LedgerEvent>): Boolean {
+        if (legs.size != 2 || legs.any { !isDocumentedInternalTransfer(it) }) return false
+        if (legs.any { !hasValidAmountShape(it) }) return false
+        if (legs.any { !it.hasValidFee || it.fee.signum() < 0 }) return false
+        if (legs.count { it.amount.signum() < 0 } != 1 || legs.count { it.amount.signum() > 0 } != 1) return false
+        val rawAssets = legs.map { it.asset.trim().uppercase() }.toSet()
+        val normalizedAssets = legs.map { normalizeAsset(it.asset) }.toSet()
+        // The forensic account contains Kraken's SOL staking-wallet marker as SOL03. Accept that
+        // observed same-asset alias, but do not generalize cross-asset refid pairing.
+        if (normalizedAssets.size != 1 && rawAssets != setOf(Asset.SOL, "SOL03")) return false
+        val deltas = legs.map(LedgerEvent::netBalanceDelta)
+        return deltas.count { it.signum() < 0 } == 1 && deltas.count { it.signum() > 0 } == 1
+    }
+
+    /** Obvious wire-level amount invariants; ambiguous types remain type-valid but are checked elsewhere. */
+    fun hasValidAmountShape(event: LedgerEvent): Boolean {
+        if (!event.hasValidAmount) return false
+        return when (event.type.trim().lowercase()) {
+            KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+            KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+            -> event.amount.signum() >= 0
+
+            KrakenApiConstants.LEDGER_TYPE_SPEND,
+            KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+            -> event.amount.signum() <= 0
+
+            else -> true
+        }
+    }
+
+    /**
      * Classifies a single event without group context.
      */
     fun classify(
@@ -123,6 +176,15 @@ object LedgerFlowClassifier {
                     FlowCategory.UNSUPPORTED
                 }
                 legs.forEach { result[it.ledgerId] = conversionCategory }
+                continue
+            }
+            if (legs.any { isDocumentedInternalTransfer(it) }) {
+                val internalTransferCategory = if (isCompleteInternalTransferGroup(legs)) {
+                    FlowCategory.INTERNAL_MOVE
+                } else {
+                    FlowCategory.UNSUPPORTED
+                }
+                legs.forEach { result[it.ledgerId] = internalTransferCategory }
                 continue
             }
             val sameAsset = legs.map { normalizeAsset(it.asset) }.toSet().size == 1
@@ -173,6 +235,7 @@ object LedgerFlowClassifier {
     }
 
     private fun classifySingle(event: LedgerEvent, provenanceResolver: FundingProvenanceResolver): FlowCategory {
+        if (!hasValidAmountShape(event)) return FlowCategory.UNSUPPORTED
         val type = event.type.lowercase()
         val evidence = if (isFundingType(type) || type == KrakenApiConstants.LEDGER_TYPE_TRANSFER) {
             provenanceResolver.resolve(event)
@@ -196,7 +259,9 @@ object LedgerFlowClassifier {
             KrakenApiConstants.LEDGER_TYPE_TRANSFER -> when {
                 internalSubtype && evidence == FundingEvidence.EXTERNAL -> FlowCategory.AMBIGUOUS
 
-                internalSubtype -> FlowCategory.INTERNAL_MOVE
+                // A documented internal transfer is meaningful only as a complete linked pair;
+                // classifyAll handles that group before reaching this single-row fallback.
+                internalSubtype -> FlowCategory.UNSUPPORTED
 
                 isKnownTransferExternalSubtype(event.subtype) && evidence == FundingEvidence.INTERNAL ->
                     FlowCategory.AMBIGUOUS
@@ -204,7 +269,11 @@ object LedgerFlowClassifier {
                 isKnownTransferExternalSubtype(event.subtype) || evidence == FundingEvidence.EXTERNAL ->
                     FlowCategory.EXTERNAL_BALANCE
 
-                evidence == FundingEvidence.INTERNAL -> FlowCategory.INTERNAL_MOVE
+                // Resolver evidence can confirm the provenance of a funding row, but it cannot
+                // establish the wallet scope or missing counterpart of a bare transfer row.
+                // Require the documented linked pair handled by classifyAll instead of silently
+                // dropping an arbitrary transfer from replay.
+                evidence == FundingEvidence.INTERNAL -> FlowCategory.UNSUPPORTED
 
                 else -> FlowCategory.AMBIGUOUS
             }
@@ -261,13 +330,18 @@ object LedgerFlowClassifier {
      * cross-asset quantity netting. Kraken's retained rows must provide one debit and one credit
      * for two distinct assets, linked by one refid, with authoritative balances and fees.
      */
-    private fun isCompleteConversionGroup(legs: List<LedgerEvent>): Boolean {
+    internal fun isCompleteConversionGroup(legs: List<LedgerEvent>): Boolean {
         // The caller only invokes this helper for a non-blank refid group; single or
         // unlinked conversion rows are rejected by classifySingle before reaching here.
         if (legs.size != 2 || legs.any { !isConversionType(it.type) }) return false
         if (legs.map(LedgerEvent::ledgerId).toSet().size != legs.size) return false
         if (legs.map { normalizeAsset(it.asset) }.toSet().size != 2) return false
-        if (legs.any { !it.hasAuthoritativeBalance || !it.hasAuthoritativeFee || !it.hasValidFee }) return false
+        if (legs.any {
+                !hasValidAmountShape(it) || !it.hasAuthoritativeBalance || !it.hasAuthoritativeFee || !it.hasValidFee
+            }
+        ) {
+            return false
+        }
         if (legs.any { it.fee.signum() < 0 || it.amount.signum() == 0 }) return false
 
         val debitAmountCount = legs.count { it.amount.signum() < 0 }

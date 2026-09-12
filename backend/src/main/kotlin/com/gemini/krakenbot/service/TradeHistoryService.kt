@@ -40,8 +40,11 @@ interface TradeHistoryService {
 
     suspend fun syncLedgersFromKraken()
 
-    /** Rebuilds legacy snapshot history when its reconstruction version is stale. */
-    suspend fun rebuildHistoricalSnapshotsIfNeeded() = Unit
+    /**
+     * Rebuilds legacy snapshot history when its reconstruction version is stale. [observedBalances]
+     * is the pre-sync balance observation whose timestamp anchors the reconstruction.
+     */
+    suspend fun rebuildHistoricalSnapshotsIfNeeded(observedBalances: ObservedBalances? = null) = Unit
 
     suspend fun getSyncMetadata(key: String): String?
 

@@ -452,8 +452,11 @@ trade synchronization, but it has separate metadata and insert-only semantics:
 - Incremental passes begin from the latest stored ledger time or watermark minus
   **300 seconds**, with a captured end time for stable newest-first pagination.
 - Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
-  so overlap and repeated pages are harmless. The sync requests `staking`,
-  `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `conversion`,
+  so overlap and repeated pages are harmless. Coverage-grade synchronization
+  (`CURRENT_LEDGER_COVERAGE_VERSION = "9"`) requests unprojected ledger pages (`types = null`),
+  ensuring all raw entries (including `trade` balance-continuity checkpoints and unknown future types)
+  are captured and persisted without allow-list projection. Ordinary non-coverage sync passes request
+  `staking`, `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `conversion`,
   `spend`, `receive`, `margin`, `rollover`, `settled`, `credit`, and top-level `reward`
   response types. The live Kraken adapter sends `type=sale` for `spend` and `receive`
   because `sale` is the documented query filter, and sends `type=all` for `earn`,
@@ -461,7 +464,9 @@ trade synchronization, but it has separate metadata and insert-only semantics:
 - Inception recovery separately requests unfiltered ledger pages. If Kraken
   returns an observed top-level `type=reward` row there, it is persisted and
   replayed as an in-kind external balance event. Ordinary synchronization uses
-  the same local response-type filtering for future reward rows.
+  the same local response-type filtering for future reward rows. Durable trade
+  coverage version `1` records start epoch sec, horizon epoch sec, and verified account
+  scope digest, enabling start-aware reconstruction without relying on forward trade watermarks.
 - Invalid live credentials skip the sync without opening an execution session;
   a real sync brackets all pages with the same `ConfigService` execution-session
   boundary used by trade synchronization. Simulation mode does not call Kraken.
@@ -570,6 +575,26 @@ sequenceDiagram
     History->>DB: GET /api/history/sync-progress
     DB-->>History: ordinary sync + recovery status/progress/reason
 ```
+
+When both bounded recovery streams are complete, the approved-start path validates the retained
+ledger evidence before constructing the baseline. The validator treats Kraken's authoritative
+post-entry balances as wallet-scoped checkpoints, includes trade ledger rows for continuity while
+leaving trade economics to `TradesHistory`, and solves same-timestamp rows as bounded groups
+without manufacturing an order from ledger IDs. The observed `SOL03`/`SOL` staking-wallet alias is
+accepted as one same-asset internal pair; arbitrary cross-asset internal pairs remain invalid. The shared
+classifier requires the same complete linked two-leg shape for internal transfer markers, so a lone
+marker cannot be silently skipped by ordinary comparison. Parser amount validity and obvious credit/debit
+direction violations are persisted/checked before replay. It preserves fail-closed behavior for ambiguous
+wallet scopes that change aggregate balances, incomplete internal-transfer groups, malformed fees,
+duplicate identities,
+unsupported transfer scopes, and unresolved balance differences. Changing this derived replay
+contract advances the baseline replay version. The validator's resolved per-ledger wallet scope is
+passed directly to baseline replay: trade rows are ignored because `TradesHistory` is authoritative;
+every non-conversion row resolved to Spot is reversed against the configured balance; staking,
+Futures, and opaque-staking rows are excluded from the Spot snapshot balance; and unresolved
+nonzero rows fail closed. Zero-net rows may remain unresolved because they cannot mutate the
+reconstructed balance. Complete conversions retain their explicit strategy-neutral two-leg
+treatment. Completed recovery offsets and stream status are kept.
 
 ---
 

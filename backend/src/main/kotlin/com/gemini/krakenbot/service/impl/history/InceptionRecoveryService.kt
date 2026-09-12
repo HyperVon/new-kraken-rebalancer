@@ -822,6 +822,9 @@ class InceptionRecoveryService(
         }
         if (complete) {
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, COMPLETED)
+            if (total == 0 && page.isEmpty()) {
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "0")
+            }
             repository.setSyncMetadata(
                 SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS,
                 repository
@@ -849,6 +852,10 @@ class InceptionRecoveryService(
             types = null,
         )
         val rawPageSize = backend.getLastLedgerRawPageSize().coerceAtLeast(page.size)
+        if (!backend.hasLastLedgerPageShape()) {
+            throw IllegalStateException("Kraken returned a malformed ledger page envelope")
+        }
+        val hasAuthoritativeTotal = backend.hasLastLedgerTotalCount()
         val authoritativeTotal = backend.getLastLedgerTotalCount().coerceAtLeast(0)
         val priorTotal = ledgerRepository
             .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL)
@@ -856,28 +863,50 @@ class InceptionRecoveryService(
             .toIntOrNull()
             ?.coerceAtLeast(0)
             ?: 0
-        val total = if (authoritativeTotal > 0) {
-            maxOf(priorTotal, authoritativeTotal)
-        } else {
-            priorTotal
-        }
-        if (total > 0) {
+        val total = if (hasAuthoritativeTotal) authoritativeTotal else 0
+        if (hasAuthoritativeTotal) {
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, total.toString())
+        } else {
+            // A page without a valid count cannot leave an older count usable as coverage proof.
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "")
         }
-        val paginationShifted = priorTotal > 0 && authoritativeTotal > 0 && authoritativeTotal != priorTotal
+        val paginationShifted = hasAuthoritativeTotal && (
+            (priorTotal > 0 && authoritativeTotal != priorTotal) ||
+                (priorTotal == 0 && offset > 0)
+            )
         ledgerRepository.saveLedgers(page)
 
-        val nextOffset = if (paginationShifted && offset > 0) {
-            0
-        } else {
-            offset + KrakenApiConstants.LEDGER_PAGE_SIZE
+        val expectedPageSize = (authoritativeTotal - offset)
+            .takeIf { it > 0 }
+            ?.coerceAtMost(KrakenApiConstants.LEDGER_PAGE_SIZE)
+        val pageMatchesReportedTotal = when {
+            !hasAuthoritativeTotal -> true
+
+            authoritativeTotal == 0 -> page.isEmpty() && rawPageSize == 0
+
+            else ->
+                expectedPageSize != null &&
+                    rawPageSize == expectedPageSize &&
+                    page.size == expectedPageSize
         }
-        val complete = !paginationShifted && (
-            rawPageSize < KrakenApiConstants.LEDGER_PAGE_SIZE ||
-                (authoritativeTotal > 0 && nextOffset >= authoritativeTotal)
-            )
+        val nextOffset = when {
+            paginationShifted -> 0
+            !pageMatchesReportedTotal -> offset
+            else -> offset + KrakenApiConstants.LEDGER_PAGE_SIZE
+        }
+        val reportedTotalReached = hasAuthoritativeTotal &&
+            pageMatchesReportedTotal &&
+            nextOffset >= authoritativeTotal
+        val complete = !paginationShifted && if (hasAuthoritativeTotal) {
+            reportedTotalReached
+        } else {
+            rawPageSize < KrakenApiConstants.LEDGER_PAGE_SIZE
+        }
         if (complete) {
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, COMPLETED)
+            if (hasAuthoritativeTotal && total == 0 && page.isEmpty()) {
+                ledgerRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "0")
+            }
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS,
                 ledgerRepository
@@ -1106,9 +1135,27 @@ class InceptionRecoveryService(
         if (historicalLedgers.any { !it.hasValidFee }) {
             return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "invalid ledger fee")
         }
-        if (!hasConsistentAuthoritativeLedgerBalances(historicalLedgers)) {
-            return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "inconsistent ledger balances")
+        val balanceValidation = AuthoritativeLedgerBalanceValidator.validate(historicalLedgers)
+        if (!balanceValidation.isValid) {
+            val failure = requireNotNull(balanceValidation.failure)
+            log.warn("Inception ledger balance validation failed: {}", failure.diagnostic)
+            return BaselineResult.Failure(
+                InceptionRecoveryStatus.AMBIGUOUS,
+                failure.reason.take(MAX_REASON_LENGTH),
+            )
         }
+        log.info(
+            "Validated inception ledger balances: checkpoints={}/{}, trades={}, grouped={}, " +
+                "sameTimestamp={}, flexible={}, nonAuthoritative={}, scopes={}",
+            balanceValidation.validatedCheckpointCount,
+            balanceValidation.authoritativeCheckpointCount,
+            balanceValidation.tradeCheckpointCount,
+            balanceValidation.groupedEventCheckpointCount,
+            balanceValidation.sameTimestampCheckpointCount,
+            balanceValidation.flexibleCheckpointCount,
+            balanceValidation.nonAuthoritativeEventCount,
+            balanceValidation.scopeCount,
+        )
 
         val cardGroups = CardFundingNormalizer.identifyCandidateGroups(ledgerContext)
         for ((refid, group) in cardGroups) {
@@ -1171,7 +1218,14 @@ class InceptionRecoveryService(
             }
         }
         for (event in historicalLedgers.sortedByDescending { it.time }) {
-            if (!reverseApplyLedger(event, runningBalances, expectedUniverse)) {
+            if (!reverseApplyLedger(
+                    event = event,
+                    balances = runningBalances,
+                    expectedUniverse = expectedUniverse,
+                    flowCategories = flowCategories,
+                    resolvedScopes = balanceValidation.resolvedScopes,
+                )
+            ) {
                 return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "ledger changed tracked universe")
             }
         }
@@ -1263,8 +1317,42 @@ class InceptionRecoveryService(
         event: LedgerEvent,
         balances: MutableMap<String, BigDecimal>,
         expectedUniverse: Set<String>,
+        flowCategories: Map<String, FlowCategory>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
     ): Boolean {
         if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) return true
+        val isConversion = event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
+        if (!isConversion) {
+            when (resolvedScopes[event.ledgerId]) {
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT -> Unit
+
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING,
+                -> return true
+
+                null -> {
+                    // A zero net delta cannot change the reconstructed configured balance, so it
+                    // is safe to ignore even when its authoritative checkpoint was deliberately
+                    // left without a replay scope.
+                    if (event.netBalanceDelta().signum() == 0) return true
+                    // Valid authoritative rows are assigned by the validator. A missing scope
+                    // would make applying versus skipping a balance-changing event unknowable.
+                    if (event.hasAuthoritativeBalance) return false
+                    // For an internal transfer, a documented internal scope marker (e.g. Earn allocation)
+                    // is known to be non-Spot and safely skipped, while an undocumented internal move
+                    // without a resolved scope fails closed.
+                    if (flowCategories[event.ledgerId] == FlowCategory.INTERNAL_MOVE) {
+                        return LedgerFlowClassifier.isDocumentedInternalScopeMarker(event)
+                    }
+                    // A staking row without an authoritative balance whose wallet scope could not
+                    // be resolved by the validator is ambiguous and must fail closed.
+                    if (event.type.equals(KrakenApiConstants.LEDGER_TYPE_STAKING, ignoreCase = true)) {
+                        return false
+                    }
+                }
+            }
+        }
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         val delta = event.netBalanceDelta()
         if (symbol !in expectedUniverse) {
@@ -1272,29 +1360,11 @@ class InceptionRecoveryService(
             // universe (for example USD -> a stablecoin the strategy does not track). The linked
             // opposite leg proves this is an internal transformation; do not reinterpret it as
             // unexplained owner capital, but also do not invent a price for the untracked asset.
-            return delta.signum() == 0 || event.type.equals(
-                KrakenApiConstants.LEDGER_TYPE_CONVERSION,
-                ignoreCase = true,
-            )
+            return delta.signum() == 0 ||
+                event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
         }
         val balance = balances.getValue(symbol)
         balances[symbol] = balance.subtract(delta)
-        return true
-    }
-
-    private fun hasConsistentAuthoritativeLedgerBalances(events: List<LedgerEvent>): Boolean {
-        val previousByAsset = mutableMapOf<String, LedgerEvent>()
-        for (event in events.filterNot { it.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true) }
-            .sortedWith(compareBy<LedgerEvent> { it.time }.thenBy { it.ledgerId })) {
-            if (!event.hasAuthoritativeBalance) continue
-            val asset = Asset.normalizeLedgerAsset(event.asset).uppercase()
-            val previous = previousByAsset[asset]
-            if (previous != null) {
-                val expected = previous.balance.add(event.netBalanceDelta())
-                if (expected.subtract(event.balance).abs() > NEGATIVE_BALANCE_TOLERANCE) return false
-            }
-            previousByAsset[asset] = event
-        }
         return true
     }
 
@@ -1648,7 +1718,7 @@ class InceptionRecoveryService(
                     .append(event.asset).append('|').append(event.amount.digestScale()).append('|')
                     .append(event.fee.digestScale()).append('|').append(event.balance.digestScale()).append('|')
                     .append(event.hasAuthoritativeBalance).append('|').append(event.hasAuthoritativeFee).append('|')
-                    .append(event.hasValidFee).append('\n')
+                    .append(event.hasValidFee).append('|').append(event.hasValidAmount).append('\n')
             }
         }
         return sha256Hex(material)
@@ -1807,7 +1877,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "4"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "7"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

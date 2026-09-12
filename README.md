@@ -345,6 +345,10 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   or multi-leg shapes remain unavailable rather than being netted by raw token quantity.
 - Kraken `transfer/airdrop` credits are treated as external balance changes; bare transfers and
   unsupported transfer subtypes remain ambiguous without authoritative provenance.
+- Newly parsed ledger amount validity is preserved at the parser and SQLite boundaries; malformed
+  amounts and impossible obvious credit/debit directions fail closed rather than becoming zero
+  flows. Legacy rows retain their pre-existing interpretation because SQLite does not retain the
+  original amount text.
 - Rebalancer vs Buy & Hold replays every supported external ledger type using
   `amount - fee`; ATH basis reconstruction separately replays the actual
   event-time asset effects. Consumer Buy Crypto activity is

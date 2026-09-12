@@ -1255,6 +1255,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                         timestamp = now.plusSeconds(5),
                         asset = "BTC",
                         amount = "0.57702727",
+                        type = KrakenApiConstants.LEDGER_TYPE_REWARD,
                         fee = "0.1731",
                         balance = "1.40391909",
                     ),
@@ -1334,6 +1335,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                         timestamp = t0.plusMillis(200),
                         asset = "BTC",
                         amount = "0.10000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_REWARD,
                         balance = "1.00000000",
                     ),
                 ),
@@ -1342,6 +1344,42 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "authoritative staking balance cannot override Spot ledger replay" {
+            val t0 = now
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                    ),
+                    snapshot(
+                        t0.plusSeconds(10),
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(5),
+                        asset = "BTC",
+                        amount = "0.10000000",
+                        balance = "1.00000000",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
         "legacy cost fallback reports the later interval with an unexplained balance change" {
@@ -1605,6 +1643,34 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "lone internal transfer markers are unavailable instead of silently skipped" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100.00",
+                    mapOf("BTC" to assetRow("1.00", "100.00", "100.00")),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "200.00",
+                    mapOf("BTC" to assetRow("2.00", "100.00", "200.00")),
+                ),
+            )
+            val loneInternalMarker = ledgerEvent(
+                timestamp = now.plusSeconds(1800),
+                asset = "BTC",
+                amount = "1.00",
+                type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                subtype = "spottostaking",
+                refid = "incomplete-internal-transfer",
+            )
+
+            val result = calculate(snapshots, rewards = listOf(loneInternalMarker))
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
         }
 
         "tracked sell: asset volume and USD/fee deltas match and remain available" {
@@ -3525,7 +3591,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
         }
 
-        "Non-positive funding amounts are skipped without moving the benchmark" {
+        "Non-positive funding amounts fail closed before moving the benchmark" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-10T12:00:00Z")
             val tMid = Instant.parse("2026-06-10T18:00:00Z")
@@ -3535,9 +3601,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 "USD" to assetRow("50000.00", "1.0", "50000.00"),
             )
             val inceptionSnap = snapshot(t0, "100000.00", flatAssets)
-            // Bot balance drops $100 on a negative-amount deposit row (a
-            // correction-style row): the benchmark skips it rather than
-            // investing a negative contribution.
+            // A negative deposit is malformed at the ledger boundary and must not become a
+            // negative owner contribution.
             val s1 = snapshot(t1, "100000.00", flatAssets)
             val s2 = snapshot(
                 t2,
@@ -3563,12 +3628,11 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
             )
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
-            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("-100.00")
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
-        "Malformed positive-amount withdrawal is skipped without moving the benchmark" {
+        "Malformed positive-amount withdrawal fails closed before moving the benchmark" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-10T12:00:00Z")
             val tMid = Instant.parse("2026-06-10T18:00:00Z")
@@ -3603,9 +3667,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
             )
 
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
-            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
         }
 
         "Same-timestamp deposit and larger spend are not reclassified as a withdrawal" {
@@ -5510,7 +5573,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
             result.unavailableAt shouldBe cardTime
         }
 
@@ -6985,7 +7048,17 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 asset = "USD",
                 amount = "500.00",
                 type = "transfer",
-            ).copy(subtype = "spotfromfutures")
+                subtype = "spotfromfutures",
+                refid = "internal-transfer",
+            )
+            val transferOut = ledgerEvent(
+                timestamp = tMid,
+                asset = "USD",
+                amount = "-500.00",
+                type = "transfer",
+                subtype = "spotfromfutures",
+                refid = "internal-transfer",
+            )
             val tradeRow = ledgerEvent(
                 timestamp = tMid.plusSeconds(60),
                 asset = "BTC",
@@ -6996,7 +7069,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = emptyList(),
-                rewards = listOf(transfer, tradeRow),
+                rewards = listOf(transfer, transferOut, tradeRow),
                 inceptionSnapshot = inceptionSnap,
             )
 
@@ -7778,6 +7851,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         asset: String,
         amount: String,
         type: String = KrakenApiConstants.LEDGER_TYPE_STAKING,
+        subtype: String? = null,
         fee: String = "0",
         balance: String? = null,
         ledgerId: String? = null,
@@ -7799,6 +7873,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             refid = resolvedRefid,
             time = timestamp,
             type = type,
+            subtype = subtype,
             asset = asset,
             amount = BigDecimal(amount),
             fee = BigDecimal(fee),

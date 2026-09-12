@@ -57,6 +57,23 @@ class EngineModelTest : StringSpec() {
             (defaultFailure as OrderResult.Failure).errorMessage shouldBe "Unknown error"
         }
 
+        "hasValidEconomicFields reflects raw parser flags" {
+            val now = Instant.now()
+            val valid = EngineTestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = java.math.BigDecimal.ONE,
+                usdAmount = java.math.BigDecimal("50000.00"),
+            )
+            valid.hasValidEconomicFields() shouldBe true
+            valid.copy(hasValidVolume = false).hasValidEconomicFields() shouldBe false
+            valid.copy(hasValidCost = false).hasValidEconomicFields() shouldBe false
+            valid.copy(hasValidPrice = false).hasValidEconomicFields() shouldBe false
+            valid.copy(hasValidFee = false).hasValidEconomicFields() shouldBe false
+        }
+
         "testTradeRecordExtensions" {
             val now = Instant.now()
             val t1 =
@@ -526,6 +543,23 @@ class EngineModelTest : StringSpec() {
             dto.id shouldBe 7
             dto.pair shouldBe "XBTUSD"
             dto.source shouldBe "LOCAL_ESTIMATE"
+        }
+
+        "isSupportedMarket accepts recognized USD-quoted markets and rejects unmapped or non-USD pairs" {
+            val usdTrade = EngineTestFixtures.tradeRecord(pair = "XBTUSD", symbol = "BTC")
+            usdTrade.isSupportedMarket() shouldBe true
+            usdTrade.isSupportedMarket(listOf("BTC")) shouldBe true
+
+            val ethTrade = EngineTestFixtures.tradeRecord(pair = "ETHUSD", symbol = "ETH")
+            ethTrade.isSupportedMarket(listOf("ETH")) shouldBe true
+
+            val nonUsdPair = EngineTestFixtures.tradeRecord(pair = "ADAEUR", symbol = "ADA")
+            nonUsdPair.isSupportedMarket() shouldBe false
+            nonUsdPair.isSupportedMarket(listOf("ADA")) shouldBe false
+
+            val usdtPair = EngineTestFixtures.tradeRecord(pair = "SOLUSDT", symbol = "SOL")
+            usdtPair.isSupportedMarket() shouldBe false
+            usdtPair.isSupportedMarket(listOf("SOL")) shouldBe false
         }
     }
 }

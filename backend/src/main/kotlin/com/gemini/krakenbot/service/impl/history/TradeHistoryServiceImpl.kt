@@ -17,6 +17,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
@@ -39,6 +40,7 @@ class TradeHistoryServiceImpl(
         syncNowProvider: () -> Instant = Instant::now,
         orderIntentRepository: OrderIntentRepository? = null,
         inceptionRecoveryService: InceptionRecoveryService? = null,
+        accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
     ) : this(
         snapshotStore =
         TradeHistorySnapshotStore(
@@ -64,6 +66,8 @@ class TradeHistoryServiceImpl(
             krakenService = krakenService,
             configService = configService,
             nowProvider = syncNowProvider,
+            accountHistoryScopeGuard = accountHistoryScopeGuard,
+            ledgerRepository = ledgerRepository,
             reconstructionService =
             TradeHistoryReconstructionService(
                 repository = repository,
@@ -72,6 +76,7 @@ class TradeHistoryServiceImpl(
                 configService = configService,
                 portfolioStatsRepository = portfolioStatsRepository,
                 nowProvider = syncNowProvider,
+                accountHistoryScopeGuard = accountHistoryScopeGuard,
             ),
         ),
         ledgersSyncService =
@@ -79,7 +84,9 @@ class TradeHistoryServiceImpl(
             repository = ledgerRepository,
             krakenService = krakenService,
             configService = configService,
+            tradeRepository = repository,
             nowProvider = syncNowProvider,
+            accountHistoryScopeGuard = accountHistoryScopeGuard,
         ),
         inceptionRecoveryService = inceptionRecoveryService,
     )
@@ -122,7 +129,8 @@ class TradeHistoryServiceImpl(
 
     override suspend fun syncLedgersFromKraken() = ledgersSyncService.syncLedgersFromKraken()
 
-    override suspend fun rebuildHistoricalSnapshotsIfNeeded() = syncService.rebuildHistoricalSnapshotsIfNeeded()
+    override suspend fun rebuildHistoricalSnapshotsIfNeeded(observedBalances: ObservedBalances?) =
+        syncService.rebuildHistoricalSnapshotsIfNeeded(observedBalances)
 
     override suspend fun getSyncMetadata(key: String): String? = syncService.getSyncMetadata(key)
 

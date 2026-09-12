@@ -53,23 +53,48 @@ object SnapshotHistoryCalculator {
         historicalRewards: List<LedgerEvent> = emptyList(),
         cutoffTime: Instant,
         now: Instant = Instant.now(),
+        reconstructionStart: Instant? = null,
     ): List<TimelineEvent> {
         requireCompleteConversions(historicalRewards)
+        // Fail closed on unknown raw ledger evidence: the repository is raw/unprojected, so any
+        // type outside EXTERNAL_BALANCE_TYPES (except `trade` checkpoints) must block timeline
+        // construction rather than being silently filtered out here.
+        val unknownReward = historicalRewards.firstOrNull {
+            it.type !in externalLedgerTypes &&
+                !it.type.equals(KrakenApiConstants.LEDGER_TYPE_TRADE, ignoreCase = true)
+        }
+        require(unknownReward == null) {
+            "Cannot build timeline with unknown raw ledger type: ${unknownReward?.type} (${unknownReward?.ledgerId})"
+        }
         val events = historicalTrades
             .map { TimelineEvent.TradeEvent(it.timestamp, it) }
             .toMutableList<TimelineEvent>()
         events += historicalRewards
             .filter { it.type in externalLedgerTypes }
             .map { TimelineEvent.RewardEvent(it.time, it) }
-        events += (0..PrecisionConstants.HISTORICAL_DAYS_BACK).mapNotNull { day ->
+        val daysBack = maxOf(
+            PrecisionConstants.HISTORICAL_DAYS_BACK.toLong(),
+            reconstructionStart?.let {
+                ChronoUnit.DAYS.between(it.truncatedTo(ChronoUnit.DAYS), now.truncatedTo(ChronoUnit.DAYS)) + 1
+            } ?: 0L,
+        )
+        events += (0..daysBack).mapNotNull { day ->
             val dailyTime =
                 now
-                    .minus(day.toLong(), ChronoUnit.DAYS)
+                    .minus(day, ChronoUnit.DAYS)
                     .truncatedTo(ChronoUnit.DAYS)
                     .plus(PrecisionConstants.LAST_HOUR_OF_DAY.toLong(), ChronoUnit.HOURS)
                     .plus(PrecisionConstants.LAST_MINUTE_OF_HOUR.toLong(), ChronoUnit.MINUTES)
                     .plus(PrecisionConstants.LAST_SECOND_OF_MINUTE.toLong(), ChronoUnit.SECONDS)
-            dailyTime.takeIf { it.isBefore(cutoffTime) }?.let(TimelineEvent::DailyCloseEvent)
+            dailyTime.takeIf {
+                it.isBefore(cutoffTime) && (reconstructionStart == null || !it.isBefore(reconstructionStart))
+            }?.let(TimelineEvent::DailyCloseEvent)
+        }
+        if (reconstructionStart != null &&
+            reconstructionStart.isBefore(cutoffTime) &&
+            events.none { it.timestamp == reconstructionStart }
+        ) {
+            events += TimelineEvent.DailyCloseEvent(reconstructionStart)
         }
 
         events.sort()
@@ -113,6 +138,7 @@ object SnapshotHistoryCalculator {
         tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
         settings: Settings,
         currentAth: BigDecimal = BigDecimal.ZERO,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
     ): List<PortfolioSnapshot> {
         val rawPoints = mutableListOf<RawHistoricalPoint>()
 
@@ -138,7 +164,7 @@ object SnapshotHistoryCalculator {
             if (ev is TimelineEvent.TradeEvent) {
                 reverseApplyTrade(ev.trade, runningBalances)
             } else if (ev is TimelineEvent.RewardEvent) {
-                reverseApplyReward(ev.event, runningBalances)
+                reverseApplyReward(ev.event, runningBalances, resolvedScopes)
             }
         }
 
@@ -164,10 +190,18 @@ object SnapshotHistoryCalculator {
         }
     }
 
-    /** Undo one external ledger balance delta, including both legs of a consumer transaction. */
-    private fun reverseApplyReward(event: LedgerEvent, runningBalances: MutableMap<String, BigDecimal>) {
+    /** Undo one external ledger balance delta, respecting the resolved wallet scope. */
+    private fun reverseApplyReward(
+        event: LedgerEvent,
+        runningBalances: MutableMap<String, BigDecimal>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
+    ) {
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         if (symbol !in runningBalances) return
+        val scope = resolvedScopes[event.ledgerId]
+        if (scope != null && scope != AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT) {
+            return
+        }
         val netDelta = event.netBalanceDelta()
         runningBalances[symbol] = runningBalances.getValue(symbol).subtract(netDelta)
     }

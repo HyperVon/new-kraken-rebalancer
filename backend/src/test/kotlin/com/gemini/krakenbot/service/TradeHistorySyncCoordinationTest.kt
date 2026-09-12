@@ -151,6 +151,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coEvery {
                     repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION)
                 } returns LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION)
+                } returns "2"
 
                 service.rebuildHistoricalSnapshotsIfNeeded()
 
@@ -446,6 +449,11 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, any())
                 } answers { watermarks += secondArg<String>() }
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
+                // Constant certified horizon: the base-class stub would consume this test's scripted
+                // clock entries every time the service reads coverage metadata.
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns queryHorizon.epochSecond.toString()
 
                 service.syncTradesFromKraken()
                 service.syncTradesFromKraken()
@@ -483,6 +491,8 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     firstArg<Long?>() shouldBe expectedStartSec
                     emptyList()
                 }
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 0
 
                 createService(syncNowProvider = { fixedNow }).syncTradesFromKraken()
 
@@ -1013,7 +1023,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 )
                 every { configService.getConfig() } returns appConfig
 
-                coEvery { repository.isHistorySeeded() } returns false
+                var historySeeded = false
+                coEvery { repository.isHistorySeeded() } answers { historySeeded }
+                coEvery { repository.setHistorySeeded(any()) } answers { historySeeded = firstArg() }
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getSyncMetadata(TestFixtures.SYNC_OFFSET) } returns null
                 coEvery { repository.getSyncMetadata(TestFixtures.SYNC_TOTAL) } returns null
@@ -1047,13 +1059,14 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     fee = BigDecimal("7.00"),
                 )
 
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 2
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade1, apiTrade2)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
 
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade1, apiTrade2)
                 coEvery { repository.saveTrade(any()) } returns 1
                 coEvery { repository.updateTrade(any(), any()) } just Runs
-                coEvery { repository.setHistorySeeded(true) } just Runs
                 coEvery { repository.setSyncMetadata(any(), any()) } just Runs
 
                 val mockBalances = mapOf(
@@ -1083,8 +1096,15 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 val reconstructedSnapshots = slot<List<PortfolioSnapshot>>()
                 coEvery { repository.save(capture(reconstructedSnapshots)) } just Runs
 
-                val service = createService()
+                // Scripted clock so the seed can certify: the base-class coverage horizon stub
+                // reports a future horizon (read time + 60s) that a fresh seed could never prove
+                // against, which would leave the store unseeded and reconstruction ineligible.
+                val fixedNow = Instant.now().plusSeconds(60)
+                val service = createService(syncNowProvider = { fixedNow })
                 every { configService.getConfig() } returns appConfig
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns fixedNow.epochSecond.toString()
                 service.syncTradesFromKraken()
 
                 reconstructedSnapshots.captured.first().assets.getValue(Asset.BTC).balance

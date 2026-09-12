@@ -5,11 +5,15 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
+import com.gemini.krakenbot.service.impl.history.AccountScopeValidationResult
+import com.gemini.krakenbot.service.impl.history.AccountScopeValidationStatus
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.math.BigDecimal
@@ -19,6 +23,39 @@ import java.time.Instant
 class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
 
     init {
+        "syncLedgersFromKraken_ConvenienceConstructorForwardsAccountScopeGuard" {
+            runTest {
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, simulation = false),
+                    allocations = emptyList(),
+                )
+                val scopeGuard = mockk<AccountHistoryScopeGuard>()
+                coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+                    status = AccountScopeValidationStatus.VALID,
+                    currentScopeDigest = "verified-account",
+                )
+
+                every { krakenService.hasLastLedgerTotalCount() } returns true
+                coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+                every { krakenService.getLastLedgerRawPageSize() } returns 0
+                TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    ledgerRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    accountHistoryScopeGuard = scopeGuard,
+                ).syncLedgersFromKraken()
+
+                coVerify(exactly = 1) { scopeGuard.validateAccountScope() }
+            }
+        }
+
         "init_InSimulationMode_SeedsHistoricalSnapshots" {
             runTest {
                 val appConfig = AppConfig(

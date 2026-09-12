@@ -17,8 +17,10 @@ import java.time.Instant
  * Balance-affecting ledger events ([EXTERNAL_BALANCE_TYPES]) participate in actual portfolio
  * reconstruction and comparison; [LedgerFlowClassifier] may still classify a linked conversion
  * group as an internal transformation rather than an external flow. Trade ledger rows
- * (`trade`) are ignored because `TradesHistory` is authoritative for trade executions; Kraken
- * app/Buy Crypto activity is represented by the `spend`/`receive` ledger rows instead.
+ * (`trade`) are ignored for trade economics because `TradesHistory` is authoritative for trade
+ * executions, but the inception balance-continuity validator may use their authoritative
+ * balances as checkpoints. Kraken app/Buy Crypto activity is represented by the
+ * `spend`/`receive` ledger rows instead.
  */
 data class LedgerEvent(
     val ledgerId: String,
@@ -37,6 +39,8 @@ data class LedgerEvent(
     val hasAuthoritativeFee: Boolean = fee.signum() != 0,
     /** False when the exchange fee field was malformed or had an impossible negative value. */
     val hasValidFee: Boolean = true,
+    /** False when the exchange amount field was missing or malformed at the parser boundary. */
+    val hasValidAmount: Boolean = true,
 ) {
     /**
      * Net balance delta contributed by this ledger event: `amount - fee`.

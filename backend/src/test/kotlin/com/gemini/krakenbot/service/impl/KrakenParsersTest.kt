@@ -198,6 +198,64 @@ class KrakenParsersTest : StringSpec() {
             blankIdTrades.single().tradeId shouldBe null
         }
 
+        "retains zero and negative trade economics with explicit invalid flags" {
+            val response = objectMapper.readTree(
+                """
+                {
+                  "count": 4,
+                  "trades": {
+                    "ZERO-VOL": {
+                      "pair": "XXBTZUSD",
+                      "time": 1700000100,
+                      "type": "buy",
+                      "price": "100",
+                      "cost": "10",
+                      "vol": "0",
+                      "fee": "0.01"
+                    },
+                    "NEGATIVE-COST": {
+                      "pair": "XXBTZUSD",
+                      "time": 1700000101,
+                      "type": "buy",
+                      "price": "100",
+                      "cost": "-10",
+                      "vol": "1",
+                      "fee": "0.01"
+                    },
+                    "ZERO-PRICE": {
+                      "pair": "XXBTZUSD",
+                      "time": 1700000102,
+                      "type": "buy",
+                      "price": "0",
+                      "cost": "10",
+                      "vol": "1",
+                      "fee": "0.01"
+                    },
+                    "NEGATIVE-FEE": {
+                      "pair": "XXBTZUSD",
+                      "time": 1700000103,
+                      "type": "buy",
+                      "price": "100",
+                      "cost": "10",
+                      "vol": "1",
+                      "fee": "-0.01"
+                    }
+                  }
+                }
+                """.trimIndent(),
+            )
+
+            val (trades, _) = KrakenParsers.parseTradeHistory(response, allocations = listOf("BTC", "USD"))
+            val byId = trades.associateBy { it.tradeId }
+
+            byId.getValue("ZERO-VOL").hasValidVolume shouldBe false
+            byId.getValue("NEGATIVE-COST").hasValidCost shouldBe false
+            byId.getValue("ZERO-PRICE").hasValidPrice shouldBe false
+            byId.getValue("NEGATIVE-FEE").hasValidFee shouldBe false
+            byId.getValue("ZERO-VOL").hasValidCost shouldBe true
+            byId.getValue("NEGATIVE-COST").hasValidVolume shouldBe true
+        }
+
         "parses filtered ledger golden response and retains the API total count" {
             val response = objectMapper.readTree(
                 """
@@ -245,6 +303,29 @@ class KrakenParsersTest : StringSpec() {
             staking.balance.shouldBeEqualComparingTo(BigDecimal("10.5"))
             staking.hasAuthoritativeBalance shouldBe true
             staking.hasValidFee shouldBe true
+            val parsedPage = KrakenParsers.parseLedgerPage(response, null)
+            parsedPage.hasTotalCount shouldBe true
+            parsedPage.hasLedgerContainer shouldBe true
+        }
+
+        "treats missing and malformed ledger totals as unknown" {
+            listOf(
+                "{}",
+                "{\"count\": null}",
+                "{\"count\": -1}",
+                "{\"count\": 1.5}",
+                "{\"count\": \"2\"}",
+            ).forEach { response ->
+                val parsedPage = KrakenParsers.parseLedgerPage(objectMapper.readTree(response), null)
+
+                parsedPage.totalCount shouldBe 0
+                parsedPage.hasTotalCount shouldBe false
+            }
+
+            val explicitZero = KrakenParsers.parseLedgerPage(objectMapper.readTree("{\"count\": 0}"), null)
+            explicitZero.totalCount shouldBe 0
+            explicitZero.hasTotalCount shouldBe true
+            explicitZero.hasLedgerContainer shouldBe false
         }
 
         "retains blank fees, rejects negative fees, and accepts unfiltered ledger pages" {
@@ -330,6 +411,32 @@ class KrakenParsersTest : StringSpec() {
             entries.size shouldBe 2
             entries.single { it.ledgerId == "L1" }.hasAuthoritativeBalance.shouldBeFalse()
             entries.single { it.ledgerId == "L2" }.hasAuthoritativeBalance shouldBe true
+        }
+
+        "preserves malformed ledger amount validity instead of turning it into a zero flow" {
+            val response = objectMapper.readTree(
+                """
+                {
+                  "count": 1,
+                  "ledger": {
+                    "INVALID-AMOUNT": {
+                      "time": 1700000100.0000,
+                      "type": "receive",
+                      "asset": "USD",
+                      "amount": "not-a-number",
+                      "fee": "0.00000000",
+                      "balance": "0.00"
+                    }
+                  }
+                }
+                """.trimIndent(),
+            )
+
+            val (entries, count) = KrakenParsers.parseLedgerPage(response, null)
+
+            count shouldBe 1
+            entries.single().amount shouldBe BigDecimal.ZERO.setScale(8)
+            entries.single().hasValidAmount shouldBe false
         }
 
         "parses deposit and withdrawal status pages with cursor and explicit zero fee" {
@@ -643,6 +750,111 @@ class KrakenParsersTest : StringSpec() {
                 ),
                 pair = "XXBTZUSD",
             ) shouldBe emptyList()
+        }
+
+        "parseTradeHistoryPage preserves unsupported non-USD pairs with zero usd and diagnostic error" {
+            val json = objectMapper.readTree(
+                """
+                {
+                  "result": {
+                    "count": 2,
+                    "trades": {
+                      "T1": {
+                        "pair": "XBTUSD",
+                        "time": 1700000000.0,
+                        "type": "buy",
+                        "price": "50000.00",
+                        "cost": "5000.00",
+                        "vol": "0.10000000",
+                        "fee": "1.00"
+                      },
+                      "T2": {
+                        "pair": "SOLUSDT",
+                        "time": 1700000010.0,
+                        "type": "buy",
+                        "price": "150.00",
+                        "cost": "1500.00",
+                        "vol": "10.00000000",
+                        "fee": "2.00"
+                      }
+                    }
+                  }
+                }
+                """.trimIndent(),
+            )
+            val parsed = KrakenParsers.parseTradeHistoryPage(
+                json.get("result"),
+                listOf("BTC", "SOL"),
+                preserveUnmapped = true,
+            )
+            parsed.hasTradeContainer shouldBe true
+            parsed.hasTotalCount shouldBe true
+            parsed.totalCount shouldBe 2
+            parsed.rawPageSize shouldBe 2
+            parsed.entries.size shouldBe 2
+
+            val normal = parsed.entries.first { it.tradeId == "T1" }
+            normal.usdAmount.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+            normal.errorMessage shouldBe null
+
+            val unsupported = parsed.entries.first { it.tradeId == "T2" }
+            unsupported.usdAmount.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            unsupported.errorMessage shouldBe "unsupported historical trade market: SOLUSDT"
+        }
+
+        "parseTradeHistoryPage validates envelope shape and count presence" {
+            // Missing count
+            val noCountJson = objectMapper.readTree(
+                """
+                {
+                  "result": {
+                    "trades": {}
+                  }
+                }
+                """.trimIndent(),
+            )
+            val parsedNoCount = KrakenParsers.parseTradeHistoryPage(noCountJson.get("result"), emptyList())
+            parsedNoCount.hasTradeContainer shouldBe true
+            parsedNoCount.hasTotalCount shouldBe false
+            parsedNoCount.totalCount shouldBe 0
+            parsedNoCount.rawPageSize shouldBe 0
+
+            // Fractional, out-of-int-range, and negative counts are all unknown totals
+            listOf("1.5", "5000000000", "-1").forEach { rawCount ->
+                val malformed = objectMapper.readTree(
+                    """
+                    {
+                      "result": {
+                        "count": $rawCount,
+                        "trades": {}
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                val parsedMalformed = KrakenParsers.parseTradeHistoryPage(malformed.get("result"), emptyList())
+                parsedMalformed.hasTradeContainer shouldBe true
+                parsedMalformed.hasTotalCount shouldBe false
+                parsedMalformed.totalCount shouldBe 0
+            }
+
+            // Trades is array instead of object -> invalid page shape
+            val arrayTradesJson = objectMapper.readTree(
+                """
+                {
+                  "result": {
+                    "count": 0,
+                    "trades": []
+                  }
+                }
+                """.trimIndent(),
+            )
+            val parsedArray = KrakenParsers.parseTradeHistoryPage(arrayTradesJson.get("result"), emptyList())
+            parsedArray.hasTradeContainer shouldBe false
+
+            // Result content is empty (no trades node at all)
+            val emptyResultJson = objectMapper.readTree("{}")
+            val parsedMissing = KrakenParsers.parseTradeHistoryPage(emptyResultJson, emptyList())
+            parsedMissing.hasTradeContainer shouldBe false
         }
     }
 }

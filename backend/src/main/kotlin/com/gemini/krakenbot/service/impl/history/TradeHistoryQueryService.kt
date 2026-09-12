@@ -13,6 +13,8 @@ import com.gemini.krakenbot.model.RewardsOverTime
 import com.gemini.krakenbot.model.RewardsOverTimePoint
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.hasValidEconomicFields
+import com.gemini.krakenbot.model.isSupportedMarket
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -102,7 +104,7 @@ class TradeHistoryQueryService(
 
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
-        private const val PROPOSAL_SEARCH_VERSION = "4"
+        private const val PROPOSAL_SEARCH_VERSION = "6"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
         /**
@@ -122,6 +124,19 @@ class TradeHistoryQueryService(
             return RebalancerComparisonCalculator.calculate(snapshots, emptyList())
         }
         val orderedSnapshots = snapshots.sortedBy { it.timestamp }
+        // Stale reconstructed history must never appear VERIFIED: if the reconstruction contract
+        // was invalidated (unknown/new historical event cleared the version marker) the retained
+        // reconstructed snapshots in [START, THROUGH] are unavailable until rebuilt. Live snapshots
+        // after THROUGH do not depend on reconstruction metadata and remain usable.
+        if (overlapsStaleReconstruction(orderedSnapshots)) {
+            return RebalancerComparisonCalculator.calculate(
+                snapshots = orderedSnapshots,
+                trades = emptyList(),
+                rewards = emptyList(),
+                knownInceptionTime = orderedSnapshots.first().timestamp,
+                inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+            )
+        }
         val inceptionResolution = inceptionDiscoveryService?.resolveInception()
         val result = calculateComparison(orderedSnapshots, inceptionResolution)
         // A later comparison start is actionable only alongside an explicit strategy inception.
@@ -168,6 +183,9 @@ class TradeHistoryQueryService(
         if (inceptionResolution?.isAutoDetected == true) return null
         val snapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: Instant.EPOCH)
         if (snapshots.size < 2) return null
+        // Invalidated reconstructed history must not yield a proposal: a candidate anchored on
+        // stale reconstructed snapshots is not evidence-backed until the rebuild completes.
+        if (overlapsStaleReconstruction(snapshots)) return null
         val current = calculateComparison(snapshots, inceptionResolution)
         if (current.availability != ComparisonAvailability.UNAVAILABLE ||
             current.unavailableReason !in PROPOSAL_ELIGIBLE_REASONS
@@ -242,6 +260,19 @@ class TradeHistoryQueryService(
             }
 
         val anchorSnapshot = repository.getSnapshotBefore(firstTimestamp)
+        // Stale-history policy: a displayed window may start after an invalidated reconstruction
+        // interval while the lifetime comparison still resolves an inception or predecessor
+        // baseline inside it. Any required snapshot dependency that is stale fails the whole
+        // comparison closed until the affected history is rebuilt.
+        if (isSnapshotStale(inceptionSnapshot) || isSnapshotStale(anchorSnapshot)) {
+            return RebalancerComparisonCalculator.calculate(
+                snapshots = orderedSnapshots,
+                trades = emptyList(),
+                rewards = emptyList(),
+                knownInceptionTime = orderedSnapshots.first().timestamp,
+                inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+            )
+        }
         val eventQueryStart = listOfNotNull(
             inceptionSnapshot?.balancesObservedAt ?: inceptionSnapshot?.timestamp,
             anchorSnapshot?.balancesObservedAt ?: anchorSnapshot?.timestamp,
@@ -253,15 +284,54 @@ class TradeHistoryQueryService(
             .plusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
         val trades = getTradesInRange(queryFrom, queryTo)
-        // Closed world: LedgersSyncService only retains balance-affecting types,
-        // including conversion rows in EXTERNAL_BALANCE_TYPES,
-        // so unknown types cannot arrive here. LedgerFlowClassifier inside
-        // RebalancerComparisonCalculator is the second layer: it replays the
-        // margin-family in-kind and fails closed on anything unrecognized.
-        val ledgers =
-            ledgerRepository
-                .getLedgersInRange(queryFrom, queryTo)
-                .filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
+        // Raw-evidence contract: the ledger repository is raw/unprojected (types = null on
+        // ingestion). The classifier/replay layer is the semantic projection — never the query
+        // layer. Pass the complete interval so unknown top-level types reach
+        // LedgerFlowClassifier and fail closed as UNSUPPORTED/AMBIGUOUS instead of disappearing
+        // here. `trade` rows are retained as continuity checkpoints and classify as TRADE_IGNORED.
+        val ledgers = ledgerRepository.getLedgersInRange(queryFrom, queryTo)
+        // Fail closed on unsupported raw trade markets in the comparison evidence interval.
+        // Coverage-grade ingestion preserves e.g. ADAEUR/XBTUSDT/XBTUSDC; their Kraken `cost`
+        // must never be assigned to USD nor silently dropped outside the tracked universe.
+        // Raw retrieval may still be COMPLETE while economic comparison is UNAVAILABLE.
+        val comparisonUniverse = (inceptionSnapshot ?: firstSnapshot).assets.keys.toList()
+        val unsupportedTrade = trades.firstOrNull {
+            it.success && !it.dryRun &&
+                !it.timestamp.isBefore(queryFrom) && !it.timestamp.isAfter(queryTo) &&
+                !it.isSupportedMarket(comparisonUniverse)
+        }
+        if (unsupportedTrade != null) {
+            // Force UNAVAILABLE even if reconciliation would otherwise succeed:
+            // an unsupported market has no trustworthy USD valuation.
+            return RebalancerComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = inceptionResolution?.inceptionTime ?: orderedSnapshots.first().timestamp,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                unavailableAt = unsupportedTrade.timestamp,
+            )
+        }
+        // Malformed supported-market economics must fail closed, never become zero-value fills.
+        val invalidTrade = trades.firstOrNull {
+            it.success && !it.dryRun &&
+                !it.timestamp.isBefore(queryFrom) && !it.timestamp.isAfter(queryTo) &&
+                it.isSupportedMarket(comparisonUniverse) && !it.hasValidEconomicFields()
+        }
+        if (invalidTrade != null) {
+            return RebalancerComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = inceptionResolution?.inceptionTime ?: orderedSnapshots.first().timestamp,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                unavailableAt = invalidTrade.timestamp,
+            )
+        }
         // The calculator prepares one immutable provenance snapshot for this
         // complete history query and uses that same snapshot for classification
         // and card normalization.
@@ -312,7 +382,7 @@ class TradeHistoryQueryService(
      * have". Window-independent: trials cover all retained snapshots, never
      * just the requested display range.
      */
-    private suspend fun findLaterComparisonStartProposal(
+    internal suspend fun findLaterComparisonStartProposal(
         startAfter: Instant,
         inceptionResolution: InceptionResolution?,
     ): ComparisonStartProposal {
@@ -321,6 +391,12 @@ class TradeHistoryQueryService(
             // History request must not fingerprint a stale snapshot list and then overwrite newer
             // durable progress with an older cursor.
             val orderedSnapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: startAfter)
+            // A stale reconstruction interval invalidates every candidate that overlaps it, so no
+            // candidate can be declared VERIFIED until a successful rebuild. Fail the search
+            // incomplete instead of scanning snapshots whose reconstruction contract is stale.
+            if (overlapsStaleReconstruction(orderedSnapshots)) {
+                return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+            }
             if (historicalCoverageGapExists(
                     snapshots = orderedSnapshots,
                     strategyStart = inceptionResolution?.inceptionTime ?: startAfter,
@@ -501,11 +577,14 @@ class TradeHistoryQueryService(
     }
 
     private suspend fun resolveContinuousHistoryStart(snapshots: List<PortfolioSnapshot>): Instant {
-        val stored = repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+        val storedEpoch = repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
             ?.toLongOrNull()
-            ?.takeIf { it >= 0L }
-        if (stored != null) {
-            return Instant.ofEpochMilli(stored)
+        if (storedEpoch != null && storedEpoch >= 0L) {
+            val stored = Instant.ofEpochMilli(storedEpoch)
+            val earliestSnapshot = snapshots.minByOrNull { it.timestamp }?.timestamp
+            if (earliestSnapshot == null || !earliestSnapshot.isBefore(stored)) {
+                return stored
+            }
         }
 
         val installType = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_INSTALL_TYPE)
@@ -536,6 +615,56 @@ class TradeHistoryQueryService(
             }
         }
         return sorted.first().timestamp
+    }
+
+    /**
+     * Returns the stale reconstructed interval [start, through] when the snapshot reconstruction
+     * contract is no longer current but a previous reconstruction range is still recorded.
+     * Null means either no reconstruction was ever recorded (all snapshots are live) or the
+     * contract is current (reconstructed snapshots are trustworthy).
+     */
+    private suspend fun staleReconstructedInterval(): Pair<Instant, Instant>? {
+        val version = repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+        val ledgerCoverage = repository.getSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
+        )
+        val tradeCoverage = repository.getSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION,
+        )
+        val isCurrent =
+            version == TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION &&
+                ledgerCoverage == LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION &&
+                tradeCoverage == TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        if (isCurrent) return null
+        val throughSec = repository.getSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+        )?.toLongOrNull() ?: return null
+        // Version blank with no through means never reconstructed — live snapshots only.
+        if (version.isNullOrBlank() && throughSec == 0L) return null
+        val startSec = repository.getSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+        )?.toLongOrNull() ?: Instant.EPOCH.epochSecond
+        return Instant.ofEpochSecond(startSec) to Instant.ofEpochSecond(throughSec)
+    }
+
+    /** True when any provided snapshot falls inside an invalidated reconstruction interval. */
+    private suspend fun overlapsStaleReconstruction(snapshots: List<PortfolioSnapshot>): Boolean {
+        val stale = staleReconstructedInterval() ?: return false
+        val (reconStart, reconThrough) = stale
+        return snapshots.any { !it.timestamp.isBefore(reconStart) && !it.timestamp.isAfter(reconThrough) }
+    }
+
+    /**
+     * True when one snapshot dependency (inception baseline, predecessor anchor, or an explicitly
+     * selected candidate baseline) falls inside an invalidated reconstruction interval. Null
+     * dependencies are not stale. Every snapshot that participates in a comparison must pass this
+     * check, not only the displayed window.
+     */
+    private suspend fun isSnapshotStale(snapshot: PortfolioSnapshot?): Boolean {
+        if (snapshot == null) return false
+        val stale = staleReconstructedInterval() ?: return false
+        val (reconStart, reconThrough) = stale
+        return !snapshot.timestamp.isBefore(reconStart) && !snapshot.timestamp.isAfter(reconThrough)
     }
 
     private fun List<PortfolioSnapshot>.proposalCursorAt(index: Int): ProposalCursor {
@@ -608,10 +737,37 @@ class TradeHistoryQueryService(
                 .append('\u0000')
             append(ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION).orEmpty())
                 .append('\u0000')
+            append(repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION).orEmpty())
+                .append('\u0000')
             append(ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC).orEmpty())
                 .append('\u0000')
             append(repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC).orEmpty())
                 .append('\u0000')
+            // Reconstruction currentness participates in the fingerprint: invalidating or
+            // rebuilding reconstructed history must force proposal re-trials instead of letting a
+            // stored VERIFIED cursor resume against a different evidence baseline.
+            append(repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION).orEmpty())
+                .append('\u0000')
+            append(
+                repository.getSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+                ).orEmpty(),
+            ).append('\u0000')
+            append(
+                repository.getSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+                ).orEmpty(),
+            ).append('\u0000')
+            append(
+                repository.getSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
+                ).orEmpty(),
+            ).append('\u0000')
+            append(
+                repository.getSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION,
+                ).orEmpty(),
+            ).append('\u0000')
             predecessorSnapshot?.let {
                 append("predecessor\n")
                 appendSnapshotDigest(it)
@@ -649,7 +805,9 @@ class TradeHistoryQueryService(
             .append(trade.fee.digestValue()).append('|').append(trade.slippagePercent?.digestValue()).append('|')
             .append(trade.expectedPrice?.digestValue()).append('|').append(trade.source).append('|')
             .append(trade.cycleId).append('|').append(trade.orderTxid).append('|').append(trade.tradeId).append('|')
-            .append(trade.clientOrderId).append('|').append(trade.submissionState).append('\n')
+            .append(trade.clientOrderId).append('|').append(trade.submissionState).append('|')
+            .append(trade.hasValidVolume).append('|').append(trade.hasValidCost).append('|')
+            .append(trade.hasValidPrice).append('|').append(trade.hasValidFee).append('\n')
     }
 
     private fun StringBuilder.appendLedgerDigest(event: LedgerEvent) {
@@ -658,7 +816,7 @@ class TradeHistoryQueryService(
             .append(event.aclass).append('|').append(event.asset).append('|').append(event.amount.digestValue())
             .append('|').append(event.fee.digestValue()).append('|').append(event.balance.digestValue()).append('|')
             .append(event.hasAuthoritativeBalance).append('|').append(event.hasAuthoritativeFee).append('|')
-            .append(event.hasValidFee).append('\n')
+            .append(event.hasValidFee).append('|').append(event.hasValidAmount).append('\n')
     }
 
     private fun BigDecimal.digestValue(): String =

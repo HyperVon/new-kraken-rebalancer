@@ -8,12 +8,15 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
+import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -29,6 +32,7 @@ class LedgersSyncServiceTest : StringSpec() {
 
     private val db = DatabaseConfig.init(TestFixtures.MEMORY_)
     private val repository = SqliteLedgerRepositoryImpl(db)
+    private val tradeRepository = SqliteTradeRepositoryImpl(db)
     private val krakenService = mockk<KrakenService>(relaxed = true)
     private val configService = mockk<ConfigService>(relaxed = true)
 
@@ -51,6 +55,50 @@ class LedgersSyncServiceTest : StringSpec() {
             val block = firstArg<suspend (KrakenService) -> Any?>()
             block(krakenService)
         }
+        every { krakenService.hasLastLedgerTotalCount() } returns true
+        every { krakenService.hasLastLedgerPageShape() } returns true
+    }
+
+    private suspend fun markCompletedRecovery(
+        scopeDigest: String,
+        requiredStart: Instant,
+        recoveryHorizon: Instant = fixedNow,
+        ledgerOldest: Instant = requiredStart.minusSeconds(1),
+        tradeOldest: Instant = requiredStart.minusSeconds(1),
+    ) {
+        tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, scopeDigest)
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+            AccountHistoryScopeGuard.CURRENT_BINDING_VERSION,
+        )
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_RECOVERY_VERSION,
+            InceptionRecoveryService.CURRENT_RECOVERY_VERSION,
+        )
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS,
+            InceptionRecoveryStatus.COMPLETE,
+        )
+        tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "completed")
+        tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "1")
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS,
+            tradeOldest.toEpochMilli().toString(),
+        )
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
+            recoveryHorizon.epochSecond.toString(),
+        )
+        repository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS,
+            InceptionRecoveryStatus.COMPLETE,
+        )
+        repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "completed")
+        repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "1")
+        repository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS,
+            ledgerOldest.toEpochMilli().toString(),
+        )
     }
 
     private fun event(index: Int, time: Instant = baseTime): LedgerEvent = LedgerEvent(
@@ -61,10 +109,47 @@ class LedgersSyncServiceTest : StringSpec() {
         amount = BigDecimal("0.1"),
     )
 
+    private suspend fun seedLedgerCoverage() {
+        repository.setLedgersSeeded(true)
+        repository.setSyncMetadata(
+            SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+            LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+        )
+        repository.setSyncMetadata(
+            SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+            fixedNow.minus(96, ChronoUnit.DAYS).epochSecond.toString(),
+        )
+        repository.setSyncMetadata(
+            SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+            fixedNow.epochSecond.toString(),
+        )
+    }
+
+    private suspend fun setTradeReconstructionInterval(start: Instant, through: Instant) {
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+            TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+        )
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+            start.epochSecond.toString(),
+        )
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+            through.epochSecond.toString(),
+        )
+        tradeRepository.setSyncMetadata(
+            SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+            start.toEpochMilli().toString(),
+        )
+    }
+
     init {
         "scope mismatch blocks ledger API reads and persistence" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
             coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult.scopeMismatch(
                 current = "account-b-digest",
@@ -81,6 +166,7 @@ class LedgersSyncServiceTest : StringSpec() {
 
             coVerify(exactly = 0) { krakenService.getLedgers(any(), any(), any(), any()) }
             repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 0
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "7"
         }
 
         "skips sync when run again within the 300s throttle window" {
@@ -89,9 +175,9 @@ class LedgersSyncServiceTest : StringSpec() {
             var now = fixedNow
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { now })
 
-            val requestedTypes = mutableListOf<Set<String>>()
+            val requestedTypes = mutableListOf<Set<String>?>()
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                requestedTypes += arg<Set<String>>(3)
+                requestedTypes += arg<Set<String>?>(3)
                 emptyList()
             }
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
@@ -99,30 +185,12 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
             service.syncLedgersFromKraken()
 
-            // Per-type cursors fetch every supported response family once per sync (offset 0),
+            // Unified raw coverage queries with types = null once per sync (offset 0),
             // while the second sync is throttled.
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(any(), any(), any(), any())
             }
-            val expectedTypes = setOf(
-                setOf(KrakenApiConstants.LEDGER_TYPE_STAKING),
-                setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND),
-                setOf(KrakenApiConstants.LEDGER_TYPE_EARN),
-                setOf(KrakenApiConstants.LEDGER_TYPE_REWARD),
-                setOf(KrakenApiConstants.LEDGER_TYPE_DEPOSIT),
-                setOf(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL),
-                setOf(KrakenApiConstants.LEDGER_TYPE_TRANSFER),
-                setOf(KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT),
-                setOf(KrakenApiConstants.LEDGER_TYPE_CONVERSION),
-                setOf(KrakenApiConstants.LEDGER_TYPE_SPEND),
-                setOf(KrakenApiConstants.LEDGER_TYPE_RECEIVE),
-                setOf(KrakenApiConstants.LEDGER_TYPE_MARGIN),
-                setOf(KrakenApiConstants.LEDGER_TYPE_ROLLOVER),
-                setOf(KrakenApiConstants.LEDGER_TYPE_SETTLED),
-                setOf(KrakenApiConstants.LEDGER_TYPE_CREDIT),
-            )
-            requestedTypes.toSet() shouldBe expectedTypes
-            LedgersSyncService.SUPPORTED_LEDGER_TYPES.toSet() shouldBe expectedTypes.flatten().toSet()
+            requestedTypes shouldBe listOf(null)
             service.isLedgersSeeded() shouldBe true
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
@@ -165,12 +233,11 @@ class LedgersSyncServiceTest : StringSpec() {
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
                 fixedNow.epochSecond.toString()
-            // Per-type cursors: each offset is fetched for every supported type
-            // (duplicates are deduped by unique index).
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            // Unified coverage queries each offset once with types = null.
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(any(), 0, any(), any())
             }
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(any(), 50, any(), any())
             }
         }
@@ -183,7 +250,7 @@ class LedgersSyncServiceTest : StringSpec() {
             val pageTwo = listOf(event(49)) + (50 until 74).map { event(it) }
             coEvery { krakenService.getLedgers(any(), 0, any(), any()) } returns pageOne
             coEvery { krakenService.getLedgers(any(), 50, any(), any()) } returns pageTwo
-            coEvery { krakenService.getLastLedgerTotalCount() } returns 74
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 75
 
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
@@ -217,56 +284,41 @@ class LedgersSyncServiceTest : StringSpec() {
             service.isLedgersSeeded() shouldBe true
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
         }
 
-        "per-type cursors continue staking after dividend is exhausted" {
+        "paginates multiple raw pages until total count is exhausted" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
 
-            // Staking has 75 (2 pages), dividend has 10 (1 page) — exercises the `continue` branch when perTypeDone[dividend] becomes true.
-            val stakingPageOne = (0 until 50).map { event(it, time = baseTime) }
-            val stakingPageTwo = (50 until 75).map { event(it, time = baseTime) }
-            val dividendPage = (100 until 110).map {
+            val pageOne = (0 until 50).map { event(it, time = baseTime) }
+            val pageTwo = (50 until 85).map {
                 event(it, time = baseTime).copy(type = KrakenApiConstants.LEDGER_TYPE_DIVIDEND)
             }
 
-            coEvery {
-                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)))
-            } coAnswers
-                {
-                    val offset = secondArg<Int?>() ?: 0
-                    if (offset == 0) stakingPageOne else stakingPageTwo
-                }
-            coEvery {
-                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND)))
-            } returns
-                dividendPage
-            var callCount = 0
-            coEvery { krakenService.getLastLedgerTotalCount() } coAnswers {
-                callCount++
-                // Calls interleave: staking offset0 -> getLast (1) => 75, dividend offset0 -> getLast (2) => 10, staking offset50 -> getLast (3) => 75
-                when (callCount) {
-                    1 -> 75
-                    2 -> 10
-                    3 -> 75
-                    else -> 0
-                }
+            var lastTotalCount = 0
+            var lastRawPageSize = 0
+            coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { lastRawPageSize }
+            coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { lastTotalCount }
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                val offset = secondArg<Int?>() ?: 0
+                lastTotalCount = 85
+                lastRawPageSize = if (offset == 0) 50 else 35
+                if (offset == 0) pageOne else pageTwo
             }
 
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
             repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 85
-            // Dividend done after first page, second iteration only fetches staking pageTwo.
             coVerify(exactly = 1) {
-                krakenService.getLedgers(any(), 0, any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_DIVIDEND)))
+                krakenService.getLedgers(any(), 0, any(), any())
             }
-            coVerify(exactly = 2) {
-                krakenService.getLedgers(any(), any(), any(), eq(setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)))
+            coVerify(exactly = 1) {
+                krakenService.getLedgers(any(), 50, any(), any())
             }
         }
 
@@ -281,7 +333,7 @@ class LedgersSyncServiceTest : StringSpec() {
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
@@ -310,11 +362,7 @@ class LedgersSyncServiceTest : StringSpec() {
         "incremental syncs start five minutes before the newest stored entry" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            seedLedgerCoverage()
             repository.saveLedgers(listOf(event(0, time = baseTime)))
 
             coEvery { krakenService.getLedgers(any(), 0, any(), any()) } returns emptyList()
@@ -333,11 +381,7 @@ class LedgersSyncServiceTest : StringSpec() {
         "incremental ledger syncs prefer the successful watermark over the newest entry" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            seedLedgerCoverage()
             repository.saveLedgers(listOf(event(0, time = baseTime)))
             val watermark = baseTime.minusSeconds(3600)
             repository.setSyncMetadata(
@@ -360,11 +404,8 @@ class LedgersSyncServiceTest : StringSpec() {
         "uses the successful ledger watermark on the next sync and captures a late entry in the overlap" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            every { krakenService.hasLastLedgerTotalCount() } returns false
+            seedLedgerCoverage()
             repository.saveLedgers(listOf(event(0, time = baseTime)))
 
             var now = fixedNow
@@ -372,8 +413,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 if (now == fixedNow) 0 else 1
             }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
-                if (now != fixedNow && types == setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)) {
+                if (now != fixedNow) {
                     listOf(event(1, time = fixedNow.minusSeconds(120)))
                 } else {
                     emptyList()
@@ -387,7 +427,7 @@ class LedgersSyncServiceTest : StringSpec() {
             service.syncLedgersFromKraken()
 
             val expectedInitialStart = baseTime.minusSeconds(300).epochSecond
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(
                     startSec = expectedInitialStart,
                     offset = 0,
@@ -396,7 +436,7 @@ class LedgersSyncServiceTest : StringSpec() {
                 )
             }
             val expectedIncrementalStart = fixedNow.minusSeconds(300).epochSecond
-            coVerify(exactly = LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            coVerify(exactly = 1) {
                 krakenService.getLedgers(
                     startSec = expectedIncrementalStart,
                     offset = 0,
@@ -441,9 +481,8 @@ class LedgersSyncServiceTest : StringSpec() {
             now = fixedNow.plusSeconds(1_200)
             failureEnabled = false
             service.syncLedgersFromKraken()
-            // The failed retry reaches the first per-type request before
-            // throwing: 1 failed call + one retry call per supported type.
-            coVerify(exactly = 1 + LedgersSyncService.SUPPORTED_LEDGER_TYPES.size) {
+            // 1 failed call + 1 successful retry call.
+            coVerify(exactly = 2) {
                 krakenService.getLedgers(
                     startSec = fixedNow.minusSeconds(300).epochSecond,
                     offset = 0,
@@ -481,7 +520,7 @@ class LedgersSyncServiceTest : StringSpec() {
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
@@ -498,7 +537,7 @@ class LedgersSyncServiceTest : StringSpec() {
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
@@ -529,6 +568,7 @@ class LedgersSyncServiceTest : StringSpec() {
         "existing seeded stale-coverage database triggers bounded backfill across 96 days for newly supported types" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
+            every { krakenService.hasLastLedgerTotalCount() } returns true
             repository.setLedgersSeeded(true)
             // Stale coverage version (v1 or v2)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "2")
@@ -567,34 +607,19 @@ class LedgersSyncServiceTest : StringSpec() {
                     amount = BigDecimal("1000.00000000"),
                 )
 
-            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
-            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
-                when (types) {
-                    setOf(KrakenApiConstants.LEDGER_TYPE_DEPOSIT) -> listOf(depositEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL) -> listOf(withdrawalEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_TRANSFER) -> listOf(transferEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT) -> listOf(adjustmentEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_SPEND) -> listOf(spendEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_RECEIVE) -> listOf(receiveEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_STAKING) -> listOf(event(0, time = baseTime))
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_EARN) -> listOf(earnRewardEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_REWARD) -> listOf(promotionRewardEvent)
-
-                    setOf(KrakenApiConstants.LEDGER_TYPE_CONVERSION) -> listOf(conversionEvent)
-
-                    // duplicate
-                    else -> emptyList()
-                }
-            }
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 9
+            every { krakenService.getLastLedgerRawPageSize() } returns 9
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(
+                depositEvent,
+                withdrawalEvent,
+                transferEvent,
+                adjustmentEvent,
+                spendEvent,
+                receiveEvent,
+                earnRewardEvent,
+                promotionRewardEvent,
+                conversionEvent,
+            )
 
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.isLedgerCoverageCurrent() shouldBe false
@@ -619,7 +644,7 @@ class LedgersSyncServiceTest : StringSpec() {
                     "ledger-9",
                 )
 
-            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).minusSeconds(1).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
             }
@@ -655,21 +680,440 @@ class LedgersSyncServiceTest : StringSpec() {
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
         }
 
+        "coverage migration backfills from an older configured inception date" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            every { configService.getConfig() } returns configured
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = inception.minusSeconds(1).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        }
+
+        "coverage migration accepts a date-only configured inception date" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString().substringBefore("T")),
+            )
+            every { configService.getConfig() } returns configured
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = inception.minusSeconds(1).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+        }
+
+        "coverage migration reuses completed account-scoped recovery without Kraken calls" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("account-a")
+            every { configService.getConfig() } returns appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            markCompletedRecovery(scopeDigest, requiredStart = inception)
+            val scopeGuard = mockk<AccountHistoryScopeGuard>()
+            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+                status = AccountScopeValidationStatus.VALID,
+                currentScopeDigest = scopeDigest,
+            )
+
+            val service = LedgersSyncService(
+                repository = repository,
+                krakenService = krakenService,
+                configService = configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            )
+            service.syncLedgersFromKraken()
+
+            coVerify(exactly = 0) { krakenService.getLedgers(any(), any(), any(), any()) }
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) shouldBe
+                inception.epochSecond.toString()
+        }
+
+        "coverage migration falls back when recovery proof is incomplete or insufficient" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("account-a")
+            every { configService.getConfig() } returns appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            repository.setLedgersSeeded(true)
+            val scopeGuard = mockk<AccountHistoryScopeGuard>()
+            var activeScopeDigest: String? = scopeDigest
+            coEvery { scopeGuard.validateAccountScope() } coAnswers {
+                AccountScopeValidationResult(
+                    status = AccountScopeValidationStatus.VALID,
+                    currentScopeDigest = activeScopeDigest,
+                )
+            }
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            var apiCalls = 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
+                apiCalls++
+                emptyList()
+            }
+
+            suspend fun fallback(currentDigest: String? = scopeDigest, mutateProof: suspend () -> Unit = {}) {
+                activeScopeDigest = currentDigest
+                repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+                markCompletedRecovery(scopeDigest, requiredStart = inception)
+                mutateProof()
+                val beforeCalls = apiCalls
+                LedgersSyncService(
+                    repository = repository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    tradeRepository = tradeRepository,
+                    nowProvider = { fixedNow },
+                    accountHistoryScopeGuard = scopeGuard,
+                ).syncLedgersFromKraken()
+                apiCalls - beforeCalls shouldBe 1
+            }
+
+            fallback(currentDigest = null)
+            fallback(currentDigest = "")
+            fallback { tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, "other") }
+            fallback {
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_BINDING_VERSION,
+                    "2",
+                )
+            }
+            fallback {
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_VERSION, "0")
+            }
+            fallback {
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS, "IN_PROGRESS")
+            }
+            fallback {
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OFFSET, "50")
+            }
+            fallback {
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OFFSET, "50")
+            }
+            fallback {
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC, "invalid")
+            }
+            fallback {
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
+                    inception.minusSeconds(1).epochSecond.toString(),
+                )
+            }
+            fallback {
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
+                    fixedNow.plusSeconds(1).epochSecond.toString(),
+                )
+            }
+            fallback {
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "invalid")
+            }
+            fallback {
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS,
+                    inception.plusSeconds(1).toEpochMilli().toString(),
+                )
+            }
+            fallback {
+                tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "invalid")
+            }
+            fallback {
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS,
+                    inception.plusSeconds(1).toEpochMilli().toString(),
+                )
+            }
+        }
+
+        "coverage migration reuses completed empty recovery streams with explicit zero totals" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("empty-account")
+            every { configService.getConfig() } returns appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            markCompletedRecovery(scopeDigest, requiredStart = inception)
+            tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL, "0")
+            tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS, "")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "0")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS, "")
+            val scopeGuard = mockk<AccountHistoryScopeGuard>()
+            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+                status = AccountScopeValidationStatus.VALID,
+                currentScopeDigest = scopeDigest,
+            )
+
+            val service = LedgersSyncService(
+                repository = repository,
+                krakenService = krakenService,
+                configService = configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            )
+            service.syncLedgersFromKraken()
+
+            coVerify(exactly = 0) { krakenService.getLedgers(any(), any(), any(), any()) }
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        }
+
+        "coverage migration does not bridge an unproven gap with an ordinary watermark" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val recoveryHorizon = fixedNow.minus(120, ChronoUnit.DAYS)
+            val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("account-a")
+            every { configService.getConfig() } returns appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+                fixedNow.minus(10, ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            markCompletedRecovery(
+                scopeDigest = scopeDigest,
+                requiredStart = inception,
+                recoveryHorizon = recoveryHorizon,
+            )
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+            val scopeGuard = mockk<AccountHistoryScopeGuard>()
+            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+                status = AccountScopeValidationStatus.VALID,
+                currentScopeDigest = scopeDigest,
+            )
+
+            val service = LedgersSyncService(
+                repository = repository,
+                krakenService = krakenService,
+                configService = configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            )
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = recoveryHorizon.minusSeconds(300).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+        }
+
+        "coverage migration backfills when completed recovery starts after the required inception" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("account-a")
+            every { configService.getConfig() } returns appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            markCompletedRecovery(
+                scopeDigest = scopeDigest,
+                requiredStart = inception,
+                ledgerOldest = inception.plusSeconds(1),
+                tradeOldest = inception.plusSeconds(1),
+            )
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+            val scopeGuard = mockk<AccountHistoryScopeGuard>()
+            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+                status = AccountScopeValidationStatus.VALID,
+                currentScopeDigest = scopeDigest,
+            )
+
+            val service = LedgersSyncService(
+                repository = repository,
+                krakenService = krakenService,
+                configService = configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            )
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = inception.minusSeconds(1).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        }
+
+        "coverage migration does not promote failed or partial recovery evidence" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("account-a")
+            every { configService.getConfig() } returns appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
+            markCompletedRecovery(scopeDigest, requiredStart = inception)
+            tradeRepository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS, "IN_PROGRESS")
+            val failure = RuntimeException("recovery continuation unavailable")
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } throws failure
+            val scopeGuard = mockk<AccountHistoryScopeGuard>()
+            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+                status = AccountScopeValidationStatus.VALID,
+                currentScopeDigest = scopeDigest,
+            )
+
+            val service = LedgersSyncService(
+                repository = repository,
+                krakenService = krakenService,
+                configService = configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            )
+            shouldThrow<RuntimeException> { service.syncLedgersFromKraken() } shouldBe failure
+
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe "7"
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) shouldBe null
+        }
+
+        "initial sync backfills from an older configured inception date" {
+            stubStableBackend()
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            every { configService.getConfig() } returns configured
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = inception.minusSeconds(1).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) shouldBe
+                inception.epochSecond.toString()
+        }
+
+        "current coverage migrates when configuration moves inception earlier" {
+            stubStableBackend()
+            val previousBound = fixedNow.minus(96, ChronoUnit.DAYS)
+            val inception = fixedNow.minus(200, ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = inception.toString()),
+            )
+            every { configService.getConfig() } returns configured
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                previousBound.epochSecond.toString(),
+            )
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = inception.minusSeconds(1).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) shouldBe
+                inception.epochSecond.toString()
+        }
+
+        "current coverage keeps the default bound for a recent configured inception date" {
+            stubStableBackend()
+            val recentInception = fixedNow.minus(5, ChronoUnit.DAYS)
+            val configured = appConfig.copy(
+                settings = appConfig.settings.copy(inceptionDate = recentInception.toString()),
+            )
+            every { configService.getConfig() } returns configured
+            seedLedgerCoverage()
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            coVerify(atLeast = 1) {
+                krakenService.getLedgers(
+                    startSec = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond,
+                    offset = 0,
+                    endSec = any(),
+                    types = any(),
+                )
+            }
+        }
+
         "partial backfill failure across multiple ledger types leaves coverage version stale" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             repository.setLedgersSeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "2")
 
-            val failure = RuntimeException("Kraken API Rate Limit on spend type")
+            val failure = RuntimeException("Kraken API Rate Limit on ledger sync")
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
-            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
-                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_SPEND)) {
-                    throw failure
-                }
-                emptyList()
-            }
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } throws failure
 
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             shouldThrow<RuntimeException> { service.syncLedgersFromKraken() } shouldBe failure
@@ -681,28 +1125,23 @@ class LedgersSyncServiceTest : StringSpec() {
         "partial backfill retries safely without duplicating persisted pages" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
+            every { krakenService.hasLastLedgerTotalCount() } returns true
             repository.setLedgersSeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "2")
 
             val firstPage = (0 until 50).map { event(it) }
             val secondPage = listOf(event(50))
-            val failure = RuntimeException("Kraken API failed during the second staking page")
+            val failure = RuntimeException("Kraken API failed during the second ledger page")
             var failureEnabled = true
             var lastTotalCount = 0
             coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { lastTotalCount }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>>(3)
                 val offset = secondArg<Int?>() ?: 0
-                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_STAKING)) {
-                    lastTotalCount = 100
-                    when (offset) {
-                        0 -> firstPage
-                        50 -> if (failureEnabled) throw failure else secondPage
-                        else -> emptyList()
-                    }
-                } else {
-                    lastTotalCount = 0
-                    emptyList()
+                lastTotalCount = 51
+                when (offset) {
+                    0 -> firstPage
+                    50 -> if (failureEnabled) throw failure else secondPage
+                    else -> emptyList()
                 }
             }
 
@@ -726,10 +1165,23 @@ class LedgersSyncServiceTest : StringSpec() {
         "earn pagination continues across raw pages when early pages contain zero earn rows" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
+            every { krakenService.hasLastLedgerTotalCount() } returns false
             repository.setLedgersSeeded(true)
             repository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                fixedNow.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
             )
 
             val earnEvent1 = LedgerEvent(
@@ -754,32 +1206,23 @@ class LedgersSyncServiceTest : StringSpec() {
             coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { lastTotalCount }
             coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { lastRawPageSize }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
                 val offset = secondArg<Int?>() ?: 0
-                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_EARN)) {
-                    lastTotalCount = 100
-                    when (offset) {
-                        0 -> {
-                            // Page 1: 50 non-earn rows received from type=all query; filtered down to empty
-                            lastRawPageSize = 50
-                            emptyList()
-                        }
-
-                        50 -> {
-                            // Page 2: 50 raw rows with 2 earn rows
-                            lastRawPageSize = 50
-                            listOf(earnEvent1, earnEvent2)
-                        }
-
-                        else -> {
-                            lastRawPageSize = 0
-                            emptyList()
-                        }
+                lastTotalCount = 51
+                when (offset) {
+                    0 -> {
+                        lastRawPageSize = 50
+                        emptyList()
                     }
-                } else {
-                    lastTotalCount = 0
-                    lastRawPageSize = 0
-                    emptyList()
+
+                    50 -> {
+                        lastRawPageSize = 50
+                        listOf(earnEvent1, earnEvent2)
+                    }
+
+                    else -> {
+                        lastRawPageSize = 0
+                        emptyList()
+                    }
                 }
             }
 
@@ -802,11 +1245,8 @@ class LedgersSyncServiceTest : StringSpec() {
         "pagination falls back to rawPageSize when totalCount is unstated or zero" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            repository.setLedgersSeeded(true)
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
-            )
+            seedLedgerCoverage()
+            every { krakenService.hasLastLedgerTotalCount() } returns false
 
             val earnEvent = LedgerEvent(
                 ledgerId = "earn-fallback",
@@ -821,28 +1261,22 @@ class LedgersSyncServiceTest : StringSpec() {
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
             coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { lastRawPageSize }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
-                val types = arg<Set<String>?>(3)
                 val offset = secondArg<Int?>() ?: 0
-                if (types == setOf(KrakenApiConstants.LEDGER_TYPE_EARN)) {
-                    when (offset) {
-                        0 -> {
-                            lastRawPageSize = 50
-                            emptyList()
-                        }
-
-                        50 -> {
-                            lastRawPageSize = 10
-                            listOf(earnEvent)
-                        }
-
-                        else -> {
-                            lastRawPageSize = 0
-                            emptyList()
-                        }
+                when (offset) {
+                    0 -> {
+                        lastRawPageSize = 50
+                        emptyList()
                     }
-                } else {
-                    lastRawPageSize = 0
-                    emptyList()
+
+                    50 -> {
+                        lastRawPageSize = 10
+                        listOf(earnEvent)
+                    }
+
+                    else -> {
+                        lastRawPageSize = 0
+                        emptyList()
+                    }
                 }
             }
 
@@ -853,7 +1287,7 @@ class LedgersSyncServiceTest : StringSpec() {
             stored.map { it.ledgerId } shouldBe listOf("earn-fallback")
         }
 
-        "pagination falls back to filtered page size when both totalCount and rawPageSize are unstated" {
+        "ledgers exactly at reconstruction interval boundaries invalidate stale snapshots (inclusive)" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             repository.setLedgersSeeded(true)
@@ -861,6 +1295,388 @@ class LedgersSyncServiceTest : StringSpec() {
                 SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
             )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                fixedNow.minus(96, ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+
+            val intervalStart = Instant.parse("2026-05-01T00:00:00Z")
+            val intervalThrough = Instant.parse("2026-06-01T00:00:00Z")
+
+            suspend fun resetReconstructionMarkers() {
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                    TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+                )
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+                    intervalStart.epochSecond.toString(),
+                )
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+                    intervalThrough.epochSecond.toString(),
+                )
+                tradeRepository.setSyncMetadata(
+                    SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                    intervalStart.toEpochMilli().toString(),
+                )
+            }
+
+            suspend fun syncBoundaryLedger(ledgerId: String, time: Instant) {
+                resetReconstructionMarkers()
+                val boundaryEvent = LedgerEvent(
+                    ledgerId = ledgerId,
+                    time = time,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "XBT",
+                    amount = BigDecimal("0.1"),
+                )
+                coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(boundaryEvent)
+                coEvery { krakenService.getLastLedgerTotalCount() } returns 1
+                coEvery { krakenService.getLastLedgerRawPageSize() } returns 1
+                LedgersSyncService(
+                    repository,
+                    krakenService,
+                    configService,
+                    tradeRepository = tradeRepository,
+                    nowProvider = { fixedNow },
+                ).syncLedgersFromKraken()
+            }
+
+            // Exactly at START invalidates (inclusive lower bound).
+            syncBoundaryLedger("ledger-boundary-start", intervalStart)
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
+
+            // Exactly at THROUGH invalidates (inclusive upper bound).
+            syncBoundaryLedger("ledger-boundary-through", intervalThrough)
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
+        }
+
+        "already-known ledgers re-fetched inside reconstruction interval keep snapshots" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.setLedgersSeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                fixedNow.minus(96, ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+
+            val intervalStart = Instant.parse("2026-05-01T00:00:00Z")
+            val intervalThrough = Instant.parse("2026-06-01T00:00:00Z")
+            tradeRepository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+            )
+            tradeRepository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+                intervalStart.epochSecond.toString(),
+            )
+            tradeRepository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+                intervalThrough.epochSecond.toString(),
+            )
+            tradeRepository.setSyncMetadata(
+                SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                intervalStart.toEpochMilli().toString(),
+            )
+
+            val knownEvent = LedgerEvent(
+                ledgerId = "ledger-already-known",
+                time = intervalStart.plusSeconds(60),
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = "XBT",
+                amount = BigDecimal("0.1"),
+            )
+            repository.saveLedgers(listOf(knownEvent))
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(knownEvent)
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 1
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 1
+            LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        }
+
+        "fails closed when Kraken returns a malformed ledger page envelope" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            every { krakenService.hasLastLedgerPageShape() } returns false
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(event(0))
+
+            val error = shouldThrow<IllegalStateException> {
+                LedgersSyncService(
+                    repository,
+                    krakenService,
+                    configService,
+                    tradeRepository = tradeRepository,
+                    nowProvider = { fixedNow },
+                ).syncLedgersFromKraken()
+            }
+            error.message shouldContain "malformed ledger page envelope"
+        }
+
+        "fails closed when ledger page occupancy disagrees with the reported count" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(event(0))
+            every { krakenService.hasLastLedgerTotalCount() } returns true
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 10
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 1
+
+            val error = shouldThrow<IllegalStateException> {
+                LedgersSyncService(
+                    repository,
+                    krakenService,
+                    configService,
+                    tradeRepository = tradeRepository,
+                    nowProvider = { fixedNow },
+                ).syncLedgersFromKraken()
+            }
+            error.message shouldContain "page occupancy"
+        }
+
+        "fails closed when an unseeded ledger sync sees an unknown empty page" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            every { krakenService.hasLastLedgerTotalCount() } returns false
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+
+            val error = shouldThrow<IllegalStateException> {
+                LedgersSyncService(
+                    repository,
+                    krakenService,
+                    configService,
+                    tradeRepository = tradeRepository,
+                    nowProvider = { fixedNow },
+                ).syncLedgersFromKraken()
+            }
+            error.message shouldContain "unknown empty page"
+        }
+
+        "seeds an empty ledger history when Kraken reports zero entries" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+            every { krakenService.hasLastLedgerTotalCount() } returns true
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 0
+
+            val service = LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+            )
+            service.syncLedgersFromKraken()
+
+            service.isLedgersSeeded() shouldBe true
+            repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 0
+        }
+
+        "re-fetched ledger with a changed type invalidates snapshots" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            seedLedgerCoverage()
+            val intervalStart = Instant.parse("2026-05-01T00:00:00Z")
+            val intervalThrough = Instant.parse("2026-06-01T00:00:00Z")
+            setTradeReconstructionInterval(intervalStart, intervalThrough)
+
+            val stored = event(0, time = intervalStart.plusSeconds(60)).copy(ledgerId = "ledger-type-change")
+            repository.saveLedgers(listOf(stored))
+            val changedType = stored.copy(type = KrakenApiConstants.LEDGER_TYPE_TRANSFER)
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(changedType)
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 1
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 1
+            LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
+        }
+
+        "re-fetched ledger with a changed asset invalidates snapshots" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            seedLedgerCoverage()
+            val intervalStart = Instant.parse("2026-05-01T00:00:00Z")
+            val intervalThrough = Instant.parse("2026-06-01T00:00:00Z")
+            setTradeReconstructionInterval(intervalStart, intervalThrough)
+
+            val stored = event(0, time = intervalStart.plusSeconds(60)).copy(ledgerId = "ledger-asset-change")
+            repository.saveLedgers(listOf(stored))
+            val changedAsset = stored.copy(asset = "ETH")
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(changedAsset)
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 1
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 1
+            LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
+        }
+
+        "keeps snapshots when reconstruction markers are absent" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            seedLedgerCoverage()
+            tradeRepository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+            )
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(event(0))
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 1
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 1
+            LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        }
+
+        "falls back to continuous start when reconstruction through marker is absent" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            seedLedgerCoverage()
+            val intervalStart = Instant.parse("2026-05-01T00:00:00Z")
+            tradeRepository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+            )
+            tradeRepository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+                intervalStart.epochSecond.toString(),
+            )
+            tradeRepository.setSyncMetadata(
+                SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                Instant.parse("2026-06-01T00:00:00Z").toEpochMilli().toString(),
+            )
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns
+                listOf(event(0, time = intervalStart.plusSeconds(60)))
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 1
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 1
+            LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
+        }
+
+        "ledgers outside reconstruction interval keep snapshots" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            seedLedgerCoverage()
+            val intervalStart = Instant.parse("2026-05-01T00:00:00Z")
+            val intervalThrough = Instant.parse("2026-06-01T00:00:00Z")
+            setTradeReconstructionInterval(intervalStart, intervalThrough)
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns
+                listOf(event(0, time = intervalThrough.plusSeconds(60)))
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 1
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 1
+            LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        }
+
+        "ledger with an unrecognized id inside reconstruction interval invalidates snapshots" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            seedLedgerCoverage()
+            val intervalStart = Instant.parse("2026-05-01T00:00:00Z")
+            val intervalThrough = Instant.parse("2026-06-01T00:00:00Z")
+            setTradeReconstructionInterval(intervalStart, intervalThrough)
+
+            // Same economics as nothing on record: identity is by ledger id, so an
+            // unknown id counts as a new historical row even without a stored twin.
+            repository.saveLedgers(listOf(event(99, time = intervalStart.plusSeconds(60))))
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns
+                listOf(event(0, time = intervalStart.plusSeconds(120)))
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 1
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 1
+            LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+            ).syncLedgersFromKraken()
+
+            tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
+        }
+
+        "unseeded ledger sync persists the verified account scope digest" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("account-a")
+            val scopeGuard = mockk<AccountHistoryScopeGuard>()
+            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+                status = AccountScopeValidationStatus.VALID,
+                currentScopeDigest = scopeDigest,
+            )
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+            every { krakenService.hasLastLedgerTotalCount() } returns true
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLastLedgerRawPageSize() } returns 0
+
+            LedgersSyncService(
+                repository,
+                krakenService,
+                configService,
+                tradeRepository = tradeRepository,
+                nowProvider = { fixedNow },
+                accountHistoryScopeGuard = scopeGuard,
+            ).syncLedgersFromKraken()
+
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) shouldBe scopeDigest
+        }
+
+        "pagination falls back to filtered page size when both totalCount and rawPageSize are unstated" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            seedLedgerCoverage()
+            every { krakenService.hasLastLedgerTotalCount() } returns false
 
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
             coEvery { krakenService.getLastLedgerRawPageSize() } returns 0

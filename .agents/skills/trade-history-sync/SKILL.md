@@ -93,9 +93,17 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   economic legs.
 - It uses the same **300s** throttle, coroutine `Mutex`, credential preflight,
   stable-backend selection, and execution-session boundary as trade sync.
-- The first and recovered initial passes are bounded to the last **96 days**.
+- The first and recovered initial passes use the configured inception date when it
+  is older than the default **96-day** bound, otherwise they use that bound. A
+  seeded database whose coverage migration predates version `8` follows the same
+  rule and records the covered lower bound for later configuration changes.
   Numeric `ledger_offset` and `ledger_total` progress markers are durable until
   completion; recovery restarts from offset zero because newest-first pages can shift.
+- A version-`8` migration may reuse completed inception recovery only with a matching validated
+  account-scope binding, complete trade and ledger streams, complete offsets/version, and durable
+  total plus oldest-row evidence reaching the required lower bound. It fetches only an unproven
+  tail after that horizon; insufficient, later-starting, mismatched, failed, or partial proof
+  falls back to Kraken and cannot promote coverage from an old row alone.
 - Incremental passes use `latestLedgerTime ?: ledger_watermark_epoch_sec` minus
   **300s**, and persist `ledger_watermark_epoch_sec` after successful completion.
 - `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.
@@ -119,7 +127,7 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   an unexplained tracked mutation to estimated numeric alpha. Untracked assets remain outside
   this validation boundary.
 - `SnapshotHistoryCalculator` and `TradeHistoryReconstructionService` (current reconstruction
-  version `7`) query
+  version `8`) query
   `EXTERNAL_BALANCE_TYPES` and apply `event.netBalanceDelta()` (`amount - fee`) backwards
   from current balances.
 - Reconstruction writes the ledger-coverage version alongside its version marker only after
@@ -157,15 +165,17 @@ When DB empty and `settings.simulation`:
 - `SimulatedKrakenService.seedSimulatedTrades()` — ~**15** trades over ~**5** days.
 
 `SnapshotHistoryCalculator` reconstructs timelines (trades + daily closes).
-Pruning / daily-close span uses `HISTORICAL_DAYS_BACK` (**90**); the OHLC
-fetch in `TradeHistoryReconstructionService.reconstructHistoricalSnapshots`
-uses **95** days so daily closes cover the full reconstruction window.
+For unconfigured or recent starts, pruning / daily-close span uses
+`HISTORICAL_DAYS_BACK` (**90**) and the OHLC fetch in
+`TradeHistoryReconstructionService.reconstructHistoricalSnapshots` uses **95**
+days. An older configured inception extends both spans to cover that start.
 
 ## Auto snapshot reconstruction
 
 - After sync, when `!simulation && totalTrades > 0 && snapshots.size <= 1`, call
   `TradeHistoryReconstructionService.reconstructHistoricalSnapshots()`
-  (OHLC ~95 days; prune span 90 days).
+  (OHLC ~95 days and prune span 90 days by default; older configured inception
+  dates extend the reconstruction range).
 - Reconstruction captures one `AppConfig` and one `KrakenService` backend for
   the full pass inside a nested-safe execution session; sync callers pass their
   already-pinned values so one sync cannot mix settings or live/simulation data.

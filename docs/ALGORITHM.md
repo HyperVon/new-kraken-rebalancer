@@ -154,7 +154,9 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      distinct activity, so classification follows a strict two-layer architecture:
      1. *Intrinsic classification (`LedgerFlowClassifier`)*: Evaluates intrinsic ledger metadata. Same-asset
         `refid`-paired zero-net legs and known internal-subtype rows (spot/futures/staking wallet moves, earn
-        allocation, migration) classify as `INTERNAL_MOVE`. Trade rows defer to `TradesHistory` (`TRADE_IGNORED`),
+        allocation, migration) classify as `INTERNAL_MOVE`. Documented `transfer` wallet markers are
+        `INTERNAL_MOVE` only when a complete linked two-leg pair has one debit and one credit for the
+        same asset scope; lone markers and arbitrary cross-asset pairs are unsupported. Trade rows defer to `TradesHistory` (`TRADE_IGNORED`),
         margin-family rows (`margin`, `rollover`, `settled`, `credit`, `sale`) replay in-kind as `EXTERNAL_BALANCE`
         without scaling ATH, and unrecognized ledger types fail closed. Modern `earn/reward` is
         `EXTERNAL_BALANCE`; `earn/allocation`, `deallocation`, `autoallocate`, and `migration` are
@@ -164,7 +166,9 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
         `EXTERNAL_BALANCE`; observed top-level Kraken promotion rows with `type=reward` are also
         `EXTERNAL_BALANCE` and never owner capital; undocumented prose descriptions (`fork`,
         `distribution`) and bare transfers remain ambiguous without
-        affirmative external provenance. `refid` is used only to correlate
+        affirmative external provenance. Obvious credit/debit amount directions and parser amount
+        validity are checked before replay, so malformed decimals do not become zero flows.
+        `refid` is used only to correlate
         rows and never parsed for undocumented meaning. For deposits and withdrawals, the classifier
         delegates external validation to an affirmative `FundingProvenanceResolver`.
      2. *External provenance verification (`FundingProvenanceResolver`)*: In production,
@@ -260,7 +264,7 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
      horizon is rescanned and the applied-flow journal filters what was already decided, so late-arriving backfill
      below an old watermark is reconciled exactly once.
      *Performance & Storage Tradeoff*: Rescanning every retained row is linear in the retained ledger set, which
-     is naturally bounded by the 90-day retention horizon (typically a few thousand rows in active accounts).
+     is retained for the account lifetime and is typically a few thousand rows in active accounts.
      This design choice prioritizes correctness and exact-once reconciliation over sliding-window heuristics,
      as bounded overlap cursors can silently miss backfilled rows older than their window. Future optimization
      paths include an indexed database status column or a hybrid bounded overlap cursor with periodic full sweeps.
@@ -500,7 +504,10 @@ failure.
 ### Ledger history and external rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
-once every **300 seconds**, requesting the fifteen retained balance-affecting response types
+once every **300 seconds**. Coverage-grade synchronization (`CURRENT_LEDGER_COVERAGE_VERSION = "9"`) queries
+unprojected Kraken ledgers (`types = null`) so that all raw ledger records—including top-level `trade`
+checkpoint rows and unknown future ledger types—are captured and persisted. Ordinary non-coverage
+sync passes fall back to the fifteen retained balance-affecting response types
 (`staking`, `dividend`, `earn`, `reward`, `deposit`, `withdrawal`, `transfer`, `adjustment`,
 `conversion`, `spend`, `receive`, `margin`, `rollover`, `settled`, and `credit`) in pages of **50**. Kraken's API query filter does not
 support `type=earn` (passing `type=earn` returns `EGeneral:Invalid arguments`);
@@ -509,11 +516,13 @@ filters rows locally for the requested response type. Similarly, the API query f
 consumer `spend`/`receive` rows and filters locally. Pagination for filtered queries
 checks Kraken's authoritative total count (`nextOffset < totalCount`) and the
 raw response page size (`rawPageSize >= 50`) so intermediate pages containing
-zero target rows continue paginating until completion. A seeded installation
-whose coverage version predates version `7` performs a bounded **96-day** backfill
-with the same identity deduplication; ledgers remain retained for the lifetime
-of the account. The first and recovered initial syncs also use a bounded **96-day**
-seed window and store durable progress metadata; later syncs use the latest stored
+zero target rows continue paginating until completion. A seeded installation whose coverage
+version predates version `9` backfills from the configured inception date when it predates the
+default window, otherwise it performs the bounded **96-day** backfill with unprojected ledgers
+with the same identity deduplication and records the covered lower bound; a later earlier
+configured inception triggers another bounded migration backfill. Ledgers remain retained for the
+lifetime of the account. The first and recovered initial syncs use the configured inception when
+it predates the default window, otherwise **96 days**, and store durable progress metadata; later syncs use the latest stored
 ledger time (or watermark) with a **300-second overlap**. SQLite enforces the
 `(ledger id, timestamp, asset, type)` identity so overlapping pages and retries
 are safe. See Kraken's [Ledgers API reference](https://docs.kraken.com/api-reference/account-data/get-ledgers-info)
@@ -527,27 +536,41 @@ cannot disappear behind an allow-list. The classifier treats the exact
 `reward` row as an in-kind `EXTERNAL_BALANCE`, never `OWNER_CAPITAL`; unknown
 top-level values remain unsupported and fail closed.
 
-The supplied forensic snapshot contained the following observed ledger inventory
-(counts are rows, not economic transactions):
+Before an approved-start baseline is replayed, `AuthoritativeLedgerBalanceValidator` checks the
+retained ledger sequence against Kraken's post-entry balances. It includes authoritative `trade`
+rows as continuity checkpoints for this validation, while `TradesHistory` remains the sole source
+for trade economics during replay. Rows for one normalized asset and timestamp are validated as a
+bounded unordered group rather than by lexically sorting ledger IDs. Documented Spot/staking,
+Spot/Futures, and Spot/Spot transfer markers use their mapped wallet scopes; staking rows that do
+not identify a scope are resolved against all compatible known scopes, or seed a new opaque scope
+only when their own balance matches their net delta within the applicable precision envelope.
+The observed Kraken `SOL03`/`SOL` staking-wallet pair is accepted as a same-asset compatibility
+alias; arbitrary cross-asset internal-transfer pairs remain invalid.
+Existing four-decimal ledger fees are accepted
+only within the precision envelope implied by that stored fee, not by a global tolerance.
+Parser amount validity is persisted through schema migration `12`; existing rows retain their
+legacy interpretation because SQLite does not retain the original amount text, while newly parsed
+malformed amounts remain explicitly invalid. Obvious credit/debit direction violations also fail
+closed. Non-authoritative rows are never treated as balance checkpoints;
+an ambiguous dust-sweep scope that changes aggregate balances, incomplete internal-transfer group,
+duplicate identity, malformed fee, unknown internal-transfer scope, or unresolved authoritative
+mismatch fails closed with a
+sanitized log diagnostic and a compact metadata reason. The validator returns the resolved wallet
+scope disposition per ledger ID and baseline replay consumes that same evidence: trade rows are
+ignored because `TradesHistory` is authoritative; every non-conversion row resolved to `SPOT`
+changes the reconstructed configured balance; and `STAKING`, `FUTURES`, and `OPAQUE_STAKING` rows
+are skipped. A zero-net row may remain intentionally unresolved because it cannot mutate the
+reconstructed balance, but an unresolved nonzero row fails closed. Complete conversions retain
+their explicit strategy-neutral two-leg replay and do not affect owner capital, rewards, ATH, or
+Buy & Hold scaling. Baseline replay version `7` invalidates only the derived baseline result,
+so completed recovery trade/ledger streams and their offsets remain reusable.
 
-| Type / subtype | Rows | Disposition |
-| --- | ---: | --- |
-| `conversion` / blank | 2 | Complete linked pair → strategy-neutral internal transformation |
-| `deposit` / blank | 35 | Funding provenance required; otherwise ambiguous |
-| `dividend` / `cashdividend` | 8 | External balance |
-| `receive` / blank, `dustsweeping` | 99 | External balance |
-| `reward` / `equityfpsl`, `welcomebonus` | 28 | External balance and reward reporting |
-| `spend` / blank, `dustsweeping` | 137 | External balance |
-| `staking` / blank | 282 | External balance |
-| `trade` / `tradeequities`, `tradespot` | 6,873 | `TradesHistory` is authoritative; ignored by ledger replay |
-| `transfer` / blank, `airdrop`, `spottostaking`, `stakingtospot` | 38 | Proven subtype disposition; bare transfer remains ambiguous |
-| `withdrawal` / blank | 8 | Funding provenance required; otherwise ambiguous |
-
-That snapshot's two `conversion` rows formed one same-timestamp, nonblank-refid
-cross-asset group: a sanitized `Unknown`-shaped refid linked a USD debit of
-`1000.00000000` to a USDG credit of `1000.00000000`; both balances were
-authoritative and both explicit fees were zero. The inventory is evidence of
-what was observed in that forensic copy, not a closed-world assertion that
+The implementation was validated against a sanitized forensic copy containing
+conversion, funding, reward, trade, and documented transfer activity. No
+account-specific row counts, amounts, identifiers, or credentials are part of
+this repository's algorithm contract; the inventory is intentionally described
+by behavior rather than copied from an account export. The observed copy is
+evidence for the supported classifications, not a closed-world assertion that
 Kraken can never return another type or subtype.
 
 Funding provenance uses authenticated `DepositStatus` and `WithdrawStatus`
@@ -580,12 +603,33 @@ each source and destination leg is replayed once with its own balance delta and
 fee, but the group contributes no owner capital, reward, or synthetic Buy & Hold
 scaling. Incomplete or contradictory conversion groups fail closed.
 Historical snapshot reconstruction replays the corresponding account-balance
-legs so reconstructed Spot balances remain faithful. Kraken
+legs so reconstructed Spot balances remain faithful. For internal wallet moves, a Spot debit is
+reversed into the earlier balance and a Spot credit is reversed out; non-Spot counterpart legs are
+ignored. Same-scope Spot-to-Spot pairs are both applied once, so their net-zero balance effect
+remains net zero. The reconstruction dynamically walks backward to the configured `inceptionDate`,
+generating daily close snapshots and an inception anchor using historical
+Kraken OHLC daily pricing (`interval = 1440`). This bounds consecutive snapshot intervals to `<= 86,400L`
+seconds, eliminating historical coverage gaps and enabling continuous Rebalancer vs. Buy & Hold
+comparison across the entire strategy lifecycle. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
 and not Trades history, so the comparison does not try to deduplicate these ledger
-rows against `TradesHistory`. The reconstruction marker is paired with the ledger
-coverage version it replayed, so a coverage migration cannot suppress the required
-rebuild.
+rows against `TradesHistory`. Reconstruction version `11` records the continuous history start and
+is paired with the ledger and trade coverage versions it replayed, so a coverage migration cannot suppress
+the required rebuild. Each reconstruction trigger captures a single time anchor that flows through
+coverage check, event range, balance state, and `SNAPSHOT_RECONSTRUCTION_THROUGH` (which equals the
+anchor itself): raw trade/ledger horizons must prove through at least the anchor second — no 300s
+stale-evidence tolerance — because a lagging horizon can hide a trade between evidence end and the
+balance observation. On either history stream, a newly inserted fill inside the inclusive
+reconstruction interval `[SNAPSHOT_RECONSTRUCTION_START, SNAPSHOT_RECONSTRUCTION_THROUGH]`, or a
+reconciled fill whose economics materially changed, invalidates the reconstruction.
+
+When a seeded database migrates to ledger coverage version `9` or trade coverage version `1`, the migration may reuse completed
+inception-recovery coverage only when both private-history streams are complete, their durable
+offsets/version and total/oldest-row evidence reach the required lower bound, and the persisted
+account-scope binding matches the scope validated for the current run. It then fetches only an
+unproven tail after the recovery horizon. Insufficient, later-starting, account-mismatched,
+failed, or partial evidence falls back to the required historical backfill; an old retained row
+alone never promotes coverage.
 
 Benchmark events are built from the original classified ledger rows before any
 passthrough reduction. Safe same-source-timestamp USD funding plumbing (`OWNER_CAPITAL`

@@ -317,7 +317,7 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.INTERNAL_MOVE
         }
 
-        "known internal subtype => INTERNAL_MOVE" {
+        "known internal funding and earn subtypes are internal, but transfer markers need a pair" {
             LedgerFlowClassifier.classify(
                 event("1", "deposit", "10.00", subtype = "spotfromspot"),
             ) shouldBe FlowCategory.INTERNAL_MOVE
@@ -332,7 +332,58 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.INTERNAL_MOVE
             LedgerFlowClassifier.classify(
                 event("5", "transfer", "10.00", subtype = "spottostaking"),
-            ) shouldBe FlowCategory.INTERNAL_MOVE
+            ) shouldBe FlowCategory.UNSUPPORTED
+
+            val completeTransfer = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("6", "transfer", "10.00", subtype = "spottostaking", refid = "PAIR"),
+                    event("7", "transfer", "-10.00", subtype = "spottostaking", refid = "PAIR"),
+                ),
+            )
+            completeTransfer.values.toSet() shouldBe setOf(FlowCategory.INTERNAL_MOVE)
+
+            val malformedFeeTransfer = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "10",
+                        "transfer",
+                        "10.00",
+                        subtype = "spottostaking",
+                        refid = "MALFORMED-FEE",
+                        hasValidFee = false,
+                    ),
+                    event(
+                        "11",
+                        "transfer",
+                        "-10.00",
+                        subtype = "spottostaking",
+                        refid = "MALFORMED-FEE",
+                    ),
+                ),
+            )
+            malformedFeeTransfer shouldBe mapOf(
+                "10" to FlowCategory.UNSUPPORTED,
+                "11" to FlowCategory.UNSUPPORTED,
+            )
+
+            val malformedShapeTransfer = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("12", "transfer", "10.00", subtype = "spottostaking", refid = "POSITIVE-POSITIVE"),
+                    event("13", "transfer", "10.00", subtype = "spottostaking", refid = "POSITIVE-POSITIVE"),
+                ),
+            )
+            malformedShapeTransfer shouldBe mapOf(
+                "12" to FlowCategory.UNSUPPORTED,
+                "13" to FlowCategory.UNSUPPORTED,
+            )
+
+            val arbitraryCrossAsset = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event("8", "transfer", "10.00", subtype = "spottostaking", refid = "CROSS", asset = "BTC"),
+                    event("9", "transfer", "-10.00", subtype = "spottostaking", refid = "CROSS", asset = "ETH"),
+                ),
+            )
+            arbitraryCrossAsset.values.toSet() shouldBe setOf(FlowCategory.UNSUPPORTED)
         }
 
         "earn subtypes preserve reward versus allocation semantics" {
@@ -623,7 +674,7 @@ class LedgerFlowClassifierTest : StringSpec() {
             ) shouldBe FlowCategory.AMBIGUOUS
         }
 
-        "authoritative transfer provenance overrides an opaque refid" {
+        "external transfer provenance is accepted but internal evidence does not bypass pairing" {
             val external = FundingProvenanceResolver { FundingEvidence.EXTERNAL }
             val internal = FundingProvenanceResolver { FundingEvidence.INTERNAL }
 
@@ -634,7 +685,28 @@ class LedgerFlowClassifierTest : StringSpec() {
             LedgerFlowClassifier.classify(
                 event("internal-transfer", KrakenApiConstants.LEDGER_TYPE_TRANSFER, "1.00", refid = "futures-opaque"),
                 internal,
-            ) shouldBe FlowCategory.INTERNAL_MOVE
+            ) shouldBe FlowCategory.UNSUPPORTED
+
+            val arbitraryCrossAsset = LedgerFlowClassifier.classifyAll(
+                listOf(
+                    event(
+                        "internal-btc",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "1.00",
+                        asset = Asset.BTC,
+                        refid = "futures-opaque",
+                    ),
+                    event(
+                        "internal-eth",
+                        KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                        "-1.00",
+                        asset = Asset.ETH,
+                        refid = "futures-opaque",
+                    ),
+                ),
+                internal,
+            )
+            arbitraryCrossAsset.values.toSet() shouldBe setOf(FlowCategory.UNSUPPORTED)
         }
 
         "known internal transfer subtype conflicts with authoritative external evidence" {
@@ -723,7 +795,7 @@ class LedgerFlowClassifierTest : StringSpec() {
             result["2"] shouldBe FlowCategory.AMBIGUOUS
         }
 
-        "refid-paired zero-net legs classify as internal move" {
+        "refid-paired bare transfer legs remain unsupported without documented wallet markers" {
             val legs = listOf(
                 event("1", "transfer", "25.00", refid = "R1", asset = "BTC"),
                 event("2", "transfer", "-25.00", refid = "R1", asset = "BTC"),
@@ -732,8 +804,8 @@ class LedgerFlowClassifierTest : StringSpec() {
                 legs,
                 FundingProvenanceResolver { FundingEvidence.INTERNAL },
             )
-            result["1"] shouldBe FlowCategory.INTERNAL_MOVE
-            result["2"] shouldBe FlowCategory.INTERNAL_MOVE
+            result["1"] shouldBe FlowCategory.UNSUPPORTED
+            result["2"] shouldBe FlowCategory.UNSUPPORTED
         }
 
         "unproven zero-net funding and transfer pairs remain ambiguous" {
@@ -919,6 +991,12 @@ class LedgerFlowClassifierTest : StringSpec() {
             LedgerFlowClassifier.classify(event("5", "receive", "5.00")) shouldBe FlowCategory.EXTERNAL_BALANCE
         }
 
+        "malformed amounts are unsupported before flow classification" {
+            LedgerFlowClassifier.classify(
+                event("malformed", "receive", "1.00").copy(hasValidAmount = false),
+            ) shouldBe FlowCategory.UNSUPPORTED
+        }
+
         "trade rows are ignored" {
             LedgerFlowClassifier.classify(event("1", "trade", "0.50")) shouldBe FlowCategory.TRADE_IGNORED
         }
@@ -1015,7 +1093,8 @@ class LedgerFlowClassifierTest : StringSpec() {
                 "withdrawal" to FlowCategory.AMBIGUOUS,
             )
             for ((type, expected) in explicitDispositions) {
-                LedgerFlowClassifier.classify(event("observed-$type", type, "1.00")) shouldBe expected
+                val amount = if (type == "spend" || type == "withdrawal") "-1.00" else "1.00"
+                LedgerFlowClassifier.classify(event("observed-$type", type, amount)) shouldBe expected
             }
             LedgerFlowClassifier.classify(
                 event("observed-airdrop", "transfer", "1.00", subtype = "airdrop"),

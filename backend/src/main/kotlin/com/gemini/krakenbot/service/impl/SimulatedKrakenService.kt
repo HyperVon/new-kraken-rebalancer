@@ -43,6 +43,7 @@ class SimulatedKrakenService(private val configService: ConfigService) :
     private var historicalTradesSeeded = false
     private var historicalLedgersSeeded = false
     private var lastTradeHistoryTotalCount = 0
+    private var lastTradeHistoryRawPageSize = 0
     private var lastLedgerCount = 0
 
     init {
@@ -404,15 +405,23 @@ class SimulatedKrakenService(private val configService: ConfigService) :
 
             // Kraken returns at most 50 records per page (newest first). An offset
             // at/beyond the result size therefore yields an empty page, not the whole history.
-            filtered
+            val page = filtered
                 .drop(offset?.coerceAtLeast(0) ?: 0)
                 .take(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
+            lastTradeHistoryRawPageSize = page.size
+            page
         }
 
     override suspend fun getRecoveryTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> =
         getTradeHistoryUntil(startSec, offset, endSec)
 
     override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount
+
+    override fun hasLastTradeHistoryTotalCount(): Boolean = true
+
+    override fun hasLastTradeHistoryPageShape(): Boolean = true
+
+    override fun getLastTradeHistoryRawPageSize(): Int = lastTradeHistoryRawPageSize
 
     override suspend fun getLedgers(
         startSec: Long?,
@@ -450,6 +459,10 @@ class SimulatedKrakenService(private val configService: ConfigService) :
     }
 
     override fun getLastLedgerTotalCount(): Int = lastLedgerCount
+
+    override fun hasLastLedgerTotalCount(): Boolean = true
+
+    override fun hasLastLedgerPageShape(): Boolean = true
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
 

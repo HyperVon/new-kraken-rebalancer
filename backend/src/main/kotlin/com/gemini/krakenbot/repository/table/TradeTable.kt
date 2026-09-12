@@ -31,6 +31,12 @@ object TradeTable : Table("trades") {
     val clientOrderId = varchar("client_order_id", 36).nullable()
     val submissionState = varchar("submission_state", 16).nullable()
 
+    // Raw numeric validity at ingestion. Legacy rows predate raw preservation and default true.
+    val hasValidVolume = bool("has_valid_volume").default(true)
+    val hasValidCost = bool("has_valid_cost").default(true)
+    val hasValidPrice = bool("has_valid_price").default(true)
+    val hasValidFee = bool("has_valid_fee").default(true)
+
     init {
         index("idx_trades_timestamp", false, timestamp)
         index("idx_trades_pair_side_timestamp", false, pair, side, timestamp)
@@ -63,6 +69,10 @@ object TradeTable : Table("trades") {
         tradeId = row[tradeId],
         clientOrderId = row[clientOrderId],
         submissionState = row[submissionState]?.let(OrderSubmissionState::valueOf),
+        hasValidVolume = row[hasValidVolume],
+        hasValidCost = row[hasValidCost],
+        hasValidPrice = row[hasValidPrice],
+        hasValidFee = row[hasValidFee],
     )
 
     fun applyTo(builder: UpdateBuilder<*>, trade: TradeRecord) {
@@ -85,5 +95,9 @@ object TradeTable : Table("trades") {
         builder[tradeId] = trade.tradeId
         builder[clientOrderId] = trade.clientOrderId
         builder[submissionState] = trade.submissionState?.name
+        builder[hasValidVolume] = trade.hasValidVolume
+        builder[hasValidCost] = trade.hasValidCost
+        builder[hasValidPrice] = trade.hasValidPrice
+        builder[hasValidFee] = trade.hasValidFee
     }
 }

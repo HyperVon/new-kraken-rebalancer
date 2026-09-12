@@ -359,6 +359,35 @@ class SimulatedKrakenServiceTest : StringSpec() {
             history.size shouldBe 0
         }
 
+        "should skip history seeding when allocations have no usd side" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns
+                TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                    allocations = listOf(Allocation(Asset.BTC, 100.0)),
+                )
+
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getBalances()[Asset.BTC] shouldNotBe null
+            simulatedService.getTradeHistory(null, null).size shouldBe 0
+        }
+
+        "should not seed history when allocations turn usd-only mid initialization" {
+            val configService = mockk<ConfigService>()
+            val usdOnly =
+                TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+            // First read drives the seeding trigger; the later seed passes re-read the config
+            // and must bail out instead of dividing by an empty non-USD allocation list.
+            every { configService.getConfig() } returnsMany listOf(btcUsdConfig, usdOnly, usdOnly)
+
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getBalances()[Asset.BTC] shouldNotBe null
+            simulatedService.getTradeHistory(null, null).size shouldBe 0
+        }
+
         "should handle unknown symbols and missing balances/prices in edge cases" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns
@@ -466,6 +495,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 .all { it } shouldBe true
             entries.all { it.amount > BigDecimal.ZERO } shouldBe true
             simulatedService.getLastLedgerTotalCount() shouldBe 5
+            simulatedService.hasLastLedgerTotalCount() shouldBe true
+            simulatedService.hasLastLedgerPageShape() shouldBe true
         }
 
         "should filter ledger entries by type" {
@@ -531,6 +562,25 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             simulatedService.getLedgers(null, null, null, null).isEmpty() shouldBe true
             simulatedService.getLastLedgerTotalCount() shouldBe 0
+            simulatedService.hasLastLedgerTotalCount() shouldBe true
+            simulatedService.hasLastLedgerPageShape() shouldBe true
+        }
+
+        "should track trade history total count, envelope shape, and raw page size" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getTradeHistory()
+            simulatedService.hasLastTradeHistoryTotalCount() shouldBe true
+            simulatedService.hasLastTradeHistoryPageShape() shouldBe true
+            // DEFAULT_TEST_CONFIG seeds 7 paired rebalances (14 fills).
+            simulatedService.getLastTradeHistoryTotalCount() shouldBe 14
+            simulatedService.getLastTradeHistoryRawPageSize() shouldBe 14
+
+            simulatedService.getRecoveryTradeHistoryUntil(null, null, null)
+            simulatedService.hasLastTradeHistoryTotalCount() shouldBe true
+            simulatedService.getLastTradeHistoryTotalCount() shouldBe 14
         }
     }
 }

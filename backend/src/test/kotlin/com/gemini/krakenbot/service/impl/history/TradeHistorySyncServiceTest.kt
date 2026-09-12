@@ -34,7 +34,14 @@ class TradeHistorySyncServiceTest : StringSpec() {
 
     private val db = DatabaseConfig.init(TestFixtures.MEMORY_)
     private val repository = SqliteTradeRepositoryImpl(db)
-    private val krakenService = mockk<KrakenService>(relaxed = true)
+    private val krakenService = mockk<KrakenService>(relaxed = true).also {
+        every { it.hasLastTradeHistoryPageShape() } returns true
+        every { it.hasLastTradeHistoryTotalCount() } returns false
+        // Match Kraken's TradesHistory contract: an authoritative `count` is always
+        // present, so coverage certification can prove completeness. Individual tests
+        // override this to exercise count-less or malformed responses.
+        every { it.getLastTradeHistoryTotalCount() } returns 0
+    }
     private val configService = mockk<ConfigService>(relaxed = true)
     private val reconstructionService = mockk<TradeHistoryReconstructionService>(relaxed = true)
 
@@ -60,6 +67,9 @@ class TradeHistorySyncServiceTest : StringSpec() {
             val block = firstArg<suspend (KrakenService) -> Any?>()
             block(krakenService)
         }
+        every { krakenService.hasLastTradeHistoryPageShape() } returns true
+        every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+        every { krakenService.getLastTradeHistoryTotalCount() } returns 0
     }
 
     private fun stubConfig(config: AppConfig = appConfig) {
@@ -95,6 +105,24 @@ class TradeHistorySyncServiceTest : StringSpec() {
             dryRun = dryRun,
         )
 
+    private suspend fun setReconstructionInterval(start: Instant, through: Instant) {
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+            TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+        )
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+            start.epochSecond.toString(),
+        )
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+            through.epochSecond.toString(),
+        )
+    }
+
+    private suspend fun reconstructionVersion(): String? =
+        repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+
     init {
         "scope mismatch blocks trade API reads and persistence" {
             stubStableBackend()
@@ -122,6 +150,8 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+            every { krakenService.getLastTradeHistoryTotalCount() } returns 0
 
             val sync = service()
             sync.syncTradesFromKraken()
@@ -199,6 +229,320 @@ class TradeHistorySyncServiceTest : StringSpec() {
             val slippage = reconciled.slippagePercent
             slippage.shouldNotBeNull()
             slippage.shouldBeEqualComparingTo(BigDecimal("0.1001"))
+        }
+
+        "fails closed when Kraken returns a malformed trade page envelope" {
+            stubStableBackend()
+            stubConfig()
+            every { krakenService.hasLastTradeHistoryPageShape() } returns false
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
+
+            val error = shouldThrow<IllegalStateException> { service().syncTradesFromKraken() }
+            error.message shouldContain "malformed trade page envelope"
+        }
+
+        "fails closed when trade page occupancy disagrees with the reported count" {
+            stubStableBackend()
+            stubConfig()
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+            every { krakenService.getLastTradeHistoryTotalCount() } returns 10
+            every { krakenService.getLastTradeHistoryRawPageSize() } returns 1
+
+            val error = shouldThrow<IllegalStateException> { service().syncTradesFromKraken() }
+            error.message shouldContain "page occupancy"
+        }
+
+        "fails closed when an unseeded sync sees an unknown empty page" {
+            stubStableBackend()
+            stubConfig()
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns false
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+
+            val error = shouldThrow<IllegalStateException> { service().syncTradesFromKraken() }
+            error.message shouldContain "unknown empty page"
+        }
+
+        "fails closed when an unseeded sync cannot certify coverage from a count-less page" {
+            stubStableBackend()
+            stubConfig()
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns false
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
+
+            val error = shouldThrow<IllegalStateException> { service().syncTradesFromKraken() }
+            error.message shouldContain "Cannot certify trade coverage from a count-less page"
+            service().isHistorySeeded() shouldBe false
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe null
+        }
+
+        "reconciled materially-changed fill inside reconstruction interval invalidates snapshots" {
+            stubStableBackend()
+            stubConfig()
+            val intervalStart = baseTime.minus(1, ChronoUnit.DAYS)
+            val intervalThrough = baseTime.plus(1, ChronoUnit.DAYS)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+                intervalStart.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+                intervalThrough.epochSecond.toString(),
+            )
+            repository.saveTrade(localEstimate())
+            val result = service().importRecoveredApiTrades(listOf(apiFill(0, fee = BigDecimal("2.00"))))
+
+            result shouldBe (0 to 1)
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
+        }
+
+        "reconciled identical-economics fill inside reconstruction interval keeps snapshots" {
+            stubStableBackend()
+            stubConfig()
+            val intervalStart = baseTime.minus(1, ChronoUnit.DAYS)
+            val intervalThrough = baseTime.plus(1, ChronoUnit.DAYS)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+                intervalStart.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+                intervalThrough.epochSecond.toString(),
+            )
+            repository.saveTrade(localEstimate())
+            // Local estimates persist with a zero fee, so the API fill must also carry zero
+            // fee for the reconciled economics to be identical (no material change).
+            val result = service().importRecoveredApiTrades(listOf(apiFill(0, fee = BigDecimal("0.00"))))
+
+            result shouldBe (0 to 1)
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        }
+
+        "reconciled volume-changed fill inside reconstruction interval invalidates snapshots" {
+            stubStableBackend()
+            stubConfig()
+            setReconstructionInterval(baseTime.minus(1, ChronoUnit.DAYS), baseTime.plus(1, ChronoUnit.DAYS))
+            repository.saveTrade(localEstimate())
+            // +0.5% volume stays within the 1% heuristic match window but is a material change.
+            val changed = apiFill(0, fee = BigDecimal("0.00")).copy(volume = BigDecimal("0.01005"))
+            val result = service().importRecoveredApiTrades(listOf(changed))
+
+            result shouldBe (0 to 1)
+            reconstructionVersion() shouldBe ""
+        }
+
+        "reconciled price-changed fill inside reconstruction interval invalidates snapshots" {
+            stubStableBackend()
+            stubConfig()
+            setReconstructionInterval(baseTime.minus(1, ChronoUnit.DAYS), baseTime.plus(1, ChronoUnit.DAYS))
+            repository.saveTrade(localEstimate())
+            // 99500 stays within the ±1% expected-price match window but is a material change.
+            val changed = apiFill(0, fee = BigDecimal("0.00")).copy(price = BigDecimal("99500.00"))
+            val result = service().importRecoveredApiTrades(listOf(changed))
+
+            result shouldBe (0 to 1)
+            reconstructionVersion() shouldBe ""
+        }
+
+        "reconciled timestamp-changed fill inside reconstruction interval invalidates snapshots" {
+            stubStableBackend()
+            stubConfig()
+            setReconstructionInterval(baseTime.minus(1, ChronoUnit.DAYS), baseTime.plus(1, ChronoUnit.DAYS))
+            repository.saveTrade(localEstimate())
+            // +5s stays within the 10s heuristic match window but is a material change.
+            val changed = apiFill(0, fee = BigDecimal("0.00"), time = baseTime.plusSeconds(5))
+            val result = service().importRecoveredApiTrades(listOf(changed))
+
+            result shouldBe (0 to 1)
+            reconstructionVersion() shouldBe ""
+        }
+
+        "reconciled fill outside reconstruction interval keeps snapshots" {
+            stubStableBackend()
+            stubConfig()
+            setReconstructionInterval(baseTime.plus(1, ChronoUnit.DAYS), baseTime.plus(2, ChronoUnit.DAYS))
+            repository.saveTrade(localEstimate())
+            val result = service().importRecoveredApiTrades(listOf(apiFill(0, fee = BigDecimal("2.00"))))
+
+            result shouldBe (0 to 1)
+            reconstructionVersion() shouldBe TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        }
+
+        "inserted fill before reconstruction interval keeps snapshots" {
+            stubStableBackend()
+            stubConfig()
+            setReconstructionInterval(baseTime.plus(1, ChronoUnit.DAYS), baseTime.plus(2, ChronoUnit.DAYS))
+            val result = service().importRecoveredApiTrades(listOf(apiFill(0)))
+
+            result shouldBe (1 to 0)
+            reconstructionVersion() shouldBe TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        }
+
+        "inserted fill after reconstruction interval keeps snapshots" {
+            stubStableBackend()
+            stubConfig()
+            setReconstructionInterval(baseTime.minus(2, ChronoUnit.DAYS), baseTime.minus(1, ChronoUnit.DAYS))
+            val result = service().importRecoveredApiTrades(listOf(apiFill(0)))
+
+            result shouldBe (1 to 0)
+            reconstructionVersion() shouldBe TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        }
+
+        "keeps snapshots when reconstruction markers are absent" {
+            stubStableBackend()
+            stubConfig()
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+            )
+            val result = service().importRecoveredApiTrades(listOf(apiFill(0)))
+
+            result shouldBe (1 to 0)
+            reconstructionVersion() shouldBe TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        }
+
+        "falls back to continuous start when reconstruction through marker is absent" {
+            stubStableBackend()
+            stubConfig()
+            val continuousStart = baseTime.minus(1, ChronoUnit.DAYS)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+                continuousStart.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                fixedNow.toEpochMilli().toString(),
+            )
+            val result = service().importRecoveredApiTrades(listOf(apiFill(0)))
+
+            result shouldBe (1 to 0)
+            reconstructionVersion() shouldBe ""
+        }
+
+        "importing an empty recovery batch returns zero without touching cursors" {
+            stubStableBackend()
+            stubConfig()
+
+            service().importRecoveredApiTrades(emptyList()) shouldBe (0 to 0)
+        }
+
+        "seeds an empty history when Kraken reports zero trades" {
+            stubStableBackend()
+            stubConfig()
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+            every { krakenService.getLastTradeHistoryTotalCount() } returns 0
+            every { krakenService.getLastTradeHistoryRawPageSize() } returns 0
+
+            val sync = service()
+            sync.syncTradesFromKraken()
+
+            sync.isHistorySeeded() shouldBe true
+            repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 0
+            sync.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET) shouldBe SyncMetadataKeys.COMPLETED
+        }
+
+        "fails closed when Kraken reports zero trades but returns a page" {
+            stubStableBackend()
+            stubConfig()
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+            every { krakenService.getLastTradeHistoryTotalCount() } returns 0
+            every { krakenService.getLastTradeHistoryRawPageSize() } returns 1
+
+            val error = shouldThrow<IllegalStateException> { service().syncTradesFromKraken() }
+            error.message shouldContain "page occupancy"
+        }
+
+        "restarts pagination from zero when the reported trade total shifts mid-sync" {
+            stubStableBackend()
+            stubConfig()
+            val pageOne = (0 until 50).map { apiFill(it) }
+            coEvery { krakenService.getTradeHistory(any(), 0) } returns pageOne
+            coEvery { krakenService.getTradeHistory(any(), 50) } returns listOf(apiFill(50))
+            every { krakenService.getLastTradeHistoryTotalCount() } returnsMany listOf(100, 51, 51, 51)
+            every { krakenService.getLastTradeHistoryRawPageSize() } returnsMany listOf(50, 1, 50, 1)
+
+            val sync = service()
+            sync.syncTradesFromKraken()
+
+            repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 51
+            // The reported total shifted mid-scan, so the run carries no completeness proof and
+            // must not promote the store to certified coverage.
+            sync.isHistorySeeded() shouldBe false
+            sync.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe null
+            sync.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe null
+        }
+
+        "fails closed when Kraken reports zero trades but a nonzero raw page size" {
+            stubStableBackend()
+            stubConfig()
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+            every { krakenService.getLastTradeHistoryTotalCount() } returns 0
+            every { krakenService.getLastTradeHistoryRawPageSize() } returns 5
+
+            val error = shouldThrow<IllegalStateException> { service().syncTradesFromKraken() }
+            error.message shouldContain "page occupancy"
+        }
+
+        "an unseeded multi-page seed without an authoritative total cannot promote coverage" {
+            stubStableBackend()
+            stubConfig()
+            val pageOne = (0 until 50).map { apiFill(it) }
+            coEvery { krakenService.getTradeHistory(any(), 0) } returns pageOne
+            coEvery { krakenService.getTradeHistory(any(), 50) } returns listOf(apiFill(50))
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns false
+            every { krakenService.getLastTradeHistoryRawPageSize() } returnsMany listOf(50, 1)
+
+            val sync = service()
+            shouldThrow<IllegalStateException> { sync.syncTradesFromKraken() }
+
+            sync.isHistorySeeded() shouldBe false
+            sync.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe null
+            sync.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe null
+        }
+
+        "incremental sync retries when an authoritative total appears mid-sync" {
+            stubStableBackend()
+            stubConfig()
+            // A certified store already owns a legitimate coverage marker, so an ordinary
+            // incremental pass retries from offset zero when the newly-appeared total proves
+            // the in-flight progress inconsistent.
+            repository.setHistorySeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            val pageOne = (0 until 50).map { apiFill(it) }
+            coEvery { krakenService.getTradeHistory(any(), 0) } returns pageOne
+            coEvery { krakenService.getTradeHistory(any(), 50) } returns listOf(apiFill(50))
+            every { krakenService.hasLastTradeHistoryTotalCount() } returnsMany listOf(false, true, true, true)
+            every { krakenService.getLastTradeHistoryTotalCount() } returnsMany listOf(0, 51, 51, 51)
+            every { krakenService.getLastTradeHistoryRawPageSize() } returnsMany listOf(50, 1, 50, 1)
+
+            val sync = service()
+            sync.syncTradesFromKraken()
+
+            sync.isHistorySeeded() shouldBe true
+            repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 51
         }
 
         "keeps an already-persisted settled fill intact when re-fetched" {
@@ -288,6 +632,8 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubConfig()
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, "50")
             coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+            every { krakenService.getLastTradeHistoryTotalCount() } returns 0
 
             val sync = service()
             sync.syncTradesFromKraken()
@@ -303,6 +649,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, "50")
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, "75")
             coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
@@ -318,6 +680,18 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
             repository.saveTrade(apiFill(0, time = baseTime))
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, "-1")
             coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
@@ -333,7 +707,19 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
             repository.saveTrade(apiFill(0))
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.minusSeconds(3600).epochSecond.toString(),
+            )
             repository.setSyncMetadata(
                 SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
                 baseTime.minusSeconds(3600).epochSecond.toString(),
@@ -351,10 +737,24 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
             repository.saveTrade(apiFill(0, time = baseTime))
 
             var now = fixedNow
-            coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
+            coEvery { krakenService.getLastTradeHistoryTotalCount() } coAnswers {
+                if (now == fixedNow) 0 else 1
+            }
             coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
                 if (now == fixedNow) emptyList() else listOf(apiFill(1, time = fixedNow.minusSeconds(120)))
             }
@@ -387,6 +787,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
             repository.saveTrade(apiFill(0, time = baseTime))
 
             var now = fixedNow
@@ -429,34 +845,34 @@ class TradeHistorySyncServiceTest : StringSpec() {
         "triggers snapshot reconstruction after a live seed that added trades when canRebuildSnapshots is true" {
             stubStableBackend()
             stubConfig()
-            coEvery { reconstructionService.canRebuildSnapshots() } returns true
+            coEvery { reconstructionService.canRebuildSnapshots(any(), any(), any()) } returns true
             coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
             coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
 
             service().syncTradesFromKraken()
 
-            coVerify(exactly = 1) { reconstructionService.reconstructHistoricalSnapshots(any(), any()) }
+            coVerify(exactly = 1) { reconstructionService.reconstructHistoricalSnapshots(any(), any(), any()) }
         }
 
         "skips snapshot reconstruction during trade sync when ledger coverage is stale or unseeded" {
             stubStableBackend()
             stubConfig()
-            coEvery { reconstructionService.canRebuildSnapshots() } returns false
+            coEvery { reconstructionService.canRebuildSnapshots(any(), any(), any()) } returns false
             coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
             coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
 
             service().syncTradesFromKraken()
 
-            coVerify(exactly = 0) { reconstructionService.reconstructHistoricalSnapshots(any(), any()) }
+            coVerify(exactly = 0) { reconstructionService.reconstructHistoricalSnapshots(any(), any(), any()) }
         }
 
         "completes seeding even when snapshot reconstruction fails" {
             stubStableBackend()
             stubConfig()
-            coEvery { reconstructionService.canRebuildSnapshots() } returns true
+            coEvery { reconstructionService.canRebuildSnapshots(any(), any(), any()) } returns true
             coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
             coEvery { krakenService.getLastTradeHistoryTotalCount() } returns 1
-            coEvery { reconstructionService.reconstructHistoricalSnapshots(any(), any()) } throws
+            coEvery { reconstructionService.reconstructHistoricalSnapshots(any(), any(), any()) } throws
                 RuntimeException("reconstruction boom")
 
             val sync = service()
@@ -471,6 +887,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -564,6 +996,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -646,6 +1094,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -700,6 +1164,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local1 = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -771,6 +1251,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val localCompatible = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -841,6 +1337,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             // Persist a settled API fill for O1 (LINK SELL)
             val settledFill = TestFixtures.tradeRecord(
@@ -897,6 +1409,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val unassociatedApiFill = TestFixtures.tradeRecord(
                 timestamp = baseTime.plusMillis(100),
@@ -933,6 +1461,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local1 = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -999,6 +1543,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             // Persist conflicting settled API fills under O1
             val fill1 = TestFixtures.tradeRecord(
@@ -1068,6 +1628,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1122,6 +1698,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val fill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1161,6 +1753,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1216,6 +1824,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1269,6 +1893,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1336,6 +1976,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1386,6 +2042,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1469,8 +2141,16 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
 
             val initialWatermark = 1700000000L
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                initialWatermark.toString(),
+            )
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, initialWatermark.toString())
 
             val local = TestFixtures.tradeRecord(
@@ -1523,6 +2203,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val fill1 = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1577,6 +2273,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val unkeyedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1609,6 +2321,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val fill1 = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1659,6 +2387,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val legacyFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1691,6 +2435,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val legacyFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1727,6 +2487,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1787,6 +2563,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val blankTxidFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,

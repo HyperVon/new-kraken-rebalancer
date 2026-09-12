@@ -12,7 +12,7 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import java.time.Instant
 
-internal const val CURRENT_SCHEMA_VERSION = 11
+internal const val CURRENT_SCHEMA_VERSION = 13
 
 internal data class SchemaMigration(
     val version: Int,
@@ -62,6 +62,15 @@ internal val SCHEMA_MIGRATIONS = listOf(
             currentDialectMetadata.resetCaches()
         }
     },
+    // The column's DEFAULT true preserves the legacy interpretation when it is added to an
+    // existing table; never overwrite an explicitly persisted invalid flag during replay.
+    SchemaMigration(12, "ledger-amount-validity"),
+    // Trade raw numeric validity. Legacy rows predate raw source preservation and cannot
+    // reconstruct validity; they default true (assumed valid) and are documented as such.
+    // New parser rows write explicit flags; malformed supported-market economics fail closed
+    // downstream while remaining retained as evidence. Columns are added via
+    // addMissingColumnsStatements with DEFAULT true.
+    SchemaMigration(13, "trade-economic-validity"),
 )
 
 internal fun validateSchemaMigrations(migrations: List<SchemaMigration> = SCHEMA_MIGRATIONS) {

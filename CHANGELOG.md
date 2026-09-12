@@ -6,6 +6,114 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.52] - 2026-09-12
+
+### Fixed
+
+- **Certified coverage horizons separated from sync watermarks**: `TRADE_COVERAGE_HORIZON_EPOCH_SEC`
+  and `LEDGER_COVERAGE_HORIZON_EPOCH_SEC` now advance only when an incremental scan carries
+  authoritative completeness proof over a tail contiguous with the previously certified horizon.
+  Ordinary sync watermarks still track every successful refresh. Snapshot reconstruction consumes
+  only certified horizons, so a count-less or malformed incremental response can no longer make
+  historical reconstruction eligible. Trade coverage version advanced to `2`; ledger coverage
+  version advanced to `10`.
+- **History comparisons fail closed on stale reconstruction dependencies**: the Rebalancer vs
+  Buy & Hold comparison now validates the inception snapshot and predecessor anchor as well as the
+  displayed window, returning `HISTORICAL_COVERAGE_GAP` when any required snapshot falls inside an
+  invalidated reconstruction interval. Proposal search re-trials candidates after reconstruction
+  state changes instead of resuming a stored verified baseline.
+
+## [6.17.51] - 2026-09-11
+
+### Fixed
+
+- **Deterministic reconstruction anchor and ledger invalidation parity**: snapshot reconstruction
+  captures a single time anchor per trigger instead of sampling the clock twice, and tolerates up to
+  300 seconds of coverage-horizon lag behind the anchor so ordinary sync/validate clock skew no longer
+  forces spurious rebuilds. Ledger-side reconstruction invalidation now uses the same inclusive
+  `[START, THROUGH]` interval as the trade side, invalidating on fills that land exactly on either
+  bound. Reconstruction version advanced to `10`.
+
+## [6.17.50] - 2026-09-11
+
+### Fixed
+
+- **Authoritative raw ledger coverage**: Coverage-grade ledger synchronization now queries unprojected
+  Kraken ledgers (`types = null`) so that all ledger records, including top-level trade continuity
+  checkpoints and unknown future ledger types, are captured. Unknown types remain visible through to
+  authoritative balance validation, failing closed on unresolved balance deltas. Ledger coverage version
+  advanced to `9`.
+- **Durable trade coverage and start-aware snapshot reconstruction**: Added durable trade coverage
+  metadata (`TRADE_COVERAGE_VERSION`, `TRADE_COVERAGE_START_EPOCH_SEC`, `TRADE_COVERAGE_HORIZON_EPOCH_SEC`,
+  and `TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST`). Snapshot reconstruction now verifies that both trade and
+  ledger coverage reach the requested start without relying on ordinary forward sync watermarks. Completed
+  account-bound inception recovery prefixes are adopted for trade coverage without re-downloading proven
+  history. Snapshot reconstruction invalidation is narrow, clearing derived snapshots only when historical
+  evidence predating the continuous start arrives or contracts change, preserving forward incremental syncs.
+  Reconstruction version advanced to `9`.
+
+## [6.17.49] - 2026-09-10
+
+### Added
+
+- **Inception snapshot reconstruction & backfill**: `SnapshotHistoryCalculator` and
+  `TradeHistoryReconstructionService` now dynamically backfill daily close snapshots and an
+  inception anchor back to the configured `settings.inceptionDate`, including starts older than
+  the default bounded recovery window. This eliminates snapshot coverage gaps across the entire strategy history,
+  enabling verified all-time Rebalancer vs. Buy & Hold performance comparison.
+  Reconstruction version `8` records the updated continuous history start.
+
+### Fixed
+
+- **Wallet-scoped ledger replay & closed staking disambiguation**: Approved-start reconstruction
+  now applies balance deltas only for ledger rows resolved to the configured Spot wallet.
+  Staking scopes with zero balance are excluded from reward candidate assignment so trailing
+  rewards and dust sweeps resolve unambiguously to Spot rather than branching into ghost staking
+  permutations. Staking, Futures, and opaque-staking rows remain outside the Spot baseline, while
+  legitimate Spot-scoped staking rows still replay. Zero-net rows may remain intentionally
+  unresolved because they cannot mutate the reconstructed balance; every other unresolved
+  balance-changing row remains fail-closed. Replay-state identity now includes replay-relevant
+  scope assignments, and histories with equal aggregate balances but different replay semantics
+  are rejected as ambiguous. Baseline replay version `7` invalidates only the derived baseline;
+  completed recovery streams and offsets remain reusable without repagination.
+- **Fail-closed history coverage and replay validation**: Fresh, recovered, and seeded ledger
+  syncs now honor an older configured inception date, while migrations persist their covered
+  lower bound so later configuration changes trigger another backfill. Historical snapshot
+  reconstruction stops without writing derived snapshots or version markers when authoritative
+  ledger validation fails, and comparison replay does not use unscoped staking balances as Spot
+  corrections. A seeded coverage migration may reuse only a completed, account-bound recovery
+  stream with durable horizon, total, and oldest-row evidence; otherwise it fetches the missing
+  range from Kraken and retains the old coverage marker on failure. Malformed-fee internal
+  transfers remain unsupported.
+
+## [6.17.48] - 2026-09-10
+
+### Fixed
+
+- **Spot-scoped internal wallet replay**: Approved-start reconstruction now consumes the exact
+  wallet scope resolved by authoritative ledger validation. It reverses only the Spot-facing leg
+  of complete Spot/staking and Spot/Futures transfers, excludes staking/Futures/opaque-staking
+  counterparts from the Spot snapshot, preserves same-scope Spot-to-Spot net-zero behavior, and
+  keeps every internal move out of owner-capital, reward, ATH, and Buy & Hold scaling. Replay
+  version `6` invalidates only the derived baseline; completed recovery streams and offsets remain
+  reusable without repagination.
+
+## [6.17.47] - 2026-09-10
+
+### Fixed
+
+- **Approved-start ledger balance validation**: Baseline recovery now validates authoritative
+  Kraken post-entry balances with wallet-scope-aware continuity. Trade ledger rows participate as
+  balance checkpoints for validation only, same-timestamp rows are solved without assuming
+  ledger-ID order, legacy four-decimal fees use a derived precision envelope, and staking/internal
+  transfer scopes are kept separate. Only complete linked two-leg internal transfer markers are
+  treated as wallet moves; lone or arbitrary cross-asset markers fail closed at the shared
+  classifier boundary. Ledger amount validity is preserved through parsing and SQLite migration,
+  and impossible credit/debit directions are rejected before replay. Ambiguous, incomplete
+  internal-transfer, malformed, duplicate, or unexplainable evidence remains fail-closed with
+  sanitized diagnostic context. Baseline replay version `5` invalidates only derived baseline
+  state, so completed recovery streams are reused without repagination.
+
 ## [6.17.46] - 2026-09-10
 
 ### Fixed

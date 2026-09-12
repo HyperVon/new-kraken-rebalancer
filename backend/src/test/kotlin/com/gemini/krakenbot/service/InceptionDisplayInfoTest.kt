@@ -1772,5 +1772,50 @@ class InceptionDisplayInfoTest : TradeHistoryServiceTestBase() {
                 info.toDisplayText() shouldBe "Auto-detection in progress — syncing Kraken history…"
             }
         }
+
+        "getInceptionRecoveryStatus_usesRecoveryServiceStatusWhenPresent" {
+            runTest {
+                val recovery = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recovery.getStatus() } returns
+                    InceptionRecoveryStatus(status = InceptionRecoveryStatus.CONFIRMED, candidateTime = "2024-03-15")
+                val service = createServiceWithRecovery(recovery)
+
+                val status = service.getInceptionRecoveryStatus()
+
+                status.status shouldBe "CONFIRMED"
+                status.candidateTime shouldBe "2024-03-15"
+            }
+        }
+
+        "getInceptionRecoveryStatus_fallsBackToDefaultWhenRecoveryServiceAbsent" {
+            runTest {
+                val service = TradeHistoryServiceImpl(
+                    snapshotStore = mockk<TradeHistorySnapshotStore>(relaxed = true),
+                    queryService = mockk<TradeHistoryQueryService>(relaxed = true),
+                    syncService = mockk<TradeHistorySyncService>(relaxed = true),
+                    ledgersSyncService = mockk<LedgersSyncService>(relaxed = true),
+                )
+
+                val status = service.getInceptionRecoveryStatus()
+
+                status.status shouldBe "NOT_STARTED"
+                status.candidateTime.shouldBeNull()
+            }
+        }
+
+        "manualOverride_usesDefaultMessageWhenMessageMissing" {
+            val text = InceptionDisplayInfo(status = InceptionDisplayStatus.MANUAL_OVERRIDE).toDisplayText()
+
+            text shouldBe "Manual override active."
+        }
+
+        "manualOverride_usesCustomMessageWhenPresent" {
+            val text = InceptionDisplayInfo(
+                status = InceptionDisplayStatus.MANUAL_OVERRIDE,
+                message = "Manual inception applied.",
+            ).toDisplayText()
+
+            text shouldBe "Manual inception applied."
+        }
     }
 }

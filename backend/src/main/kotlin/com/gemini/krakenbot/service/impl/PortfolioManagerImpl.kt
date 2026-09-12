@@ -209,12 +209,15 @@ class PortfolioManagerImpl(
             // Inception resolves before snapshot reconstruction/pruning so
             // prune logic can honor the lifetime retention contract (never
             // prune at or after inception). Burst detection needs trades, so
-            // ledgers + trades sync first.
+            // ledgers + trades sync first. The balance observation is captured
+            // before those syncs so reconstruction's evidence horizon can prove
+            // through the same boundary as the observed balance state.
+            val startupObservation = observeBalancesForAth()
             synchronizeLedgers("on startup")
             synchronizeTrades("on startup")
             recoverInception("on startup")
             resolveInception("on startup")
-            synchronizeHistoricalSnapshots("on startup")
+            synchronizeHistoricalSnapshots("on startup", startupObservation)
         }
 
         try {
@@ -282,7 +285,7 @@ class PortfolioManagerImpl(
                         synchronizeLedgers("during cycle")
                         synchronizeTrades("during cycle")
                         recoverInception("during cycle")
-                        synchronizeHistoricalSnapshots("during cycle")
+                        synchronizeHistoricalSnapshots("during cycle", athObservation)
                         performRebalanceCycleForCycle(cycleId, athObservation)
                     }
                 }
@@ -340,10 +343,10 @@ class PortfolioManagerImpl(
         }
     }
 
-    private suspend fun synchronizeHistoricalSnapshots(context: String) {
+    private suspend fun synchronizeHistoricalSnapshots(context: String, observedBalances: ObservedBalances? = null) {
         try {
             log.info("Checking historical snapshot reconstruction {}...", context)
-            tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded()
+            tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded(observedBalances)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

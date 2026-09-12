@@ -18,6 +18,7 @@ import com.gemini.krakenbot.service.getTradeHistoryUntil
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
@@ -50,9 +51,14 @@ class DynamicKrakenService(
 
     /** Cached after [getTradeHistory] so progress metadata need not downcast the port. */
     private val lastTradeHistoryTotalCount = AtomicInteger(0)
+    private val lastTradeHistoryTotalCountPresent = AtomicBoolean(false)
+    private val lastTradeHistoryPageShapeValid = AtomicBoolean(false)
+    private val lastTradeHistoryRawPageSize = AtomicInteger(0)
 
     /** Cached after [getLedgers] so sync progress metadata need not downcast the port. */
     private val lastLedgerTotalCount = AtomicInteger(0)
+    private val lastLedgerTotalCountPresent = AtomicBoolean(false)
+    private val lastLedgerPageShapeValid = AtomicBoolean(false)
     private val lastLedgerRawPageSize = AtomicInteger(0)
 
     /**
@@ -94,6 +100,9 @@ class DynamicKrakenService(
         val backend = currentBackend()
         val trades = backend.getTradeHistory(startSec, offset)
         lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
+        lastTradeHistoryTotalCountPresent.set(backend.hasLastTradeHistoryTotalCount())
+        lastTradeHistoryPageShapeValid.set(backend.hasLastTradeHistoryPageShape())
+        lastTradeHistoryRawPageSize.set(backend.getLastTradeHistoryRawPageSize())
         return trades
     }
 
@@ -101,6 +110,9 @@ class DynamicKrakenService(
         val backend = currentBackend()
         val trades = backend.getTradeHistoryUntil(startSec, offset, endSec)
         lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
+        lastTradeHistoryTotalCountPresent.set(backend.hasLastTradeHistoryTotalCount())
+        lastTradeHistoryPageShapeValid.set(backend.hasLastTradeHistoryPageShape())
+        lastTradeHistoryRawPageSize.set(backend.getLastTradeHistoryRawPageSize())
         return trades
     }
 
@@ -108,6 +120,9 @@ class DynamicKrakenService(
         val backend = currentBackend()
         val trades = backend.getRecoveryTradeHistoryUntil(startSec, offset, endSec)
         lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
+        lastTradeHistoryTotalCountPresent.set(backend.hasLastTradeHistoryTotalCount())
+        lastTradeHistoryPageShapeValid.set(backend.hasLastTradeHistoryPageShape())
+        lastTradeHistoryRawPageSize.set(backend.getLastTradeHistoryRawPageSize())
         return trades
     }
 
@@ -115,6 +130,12 @@ class DynamicKrakenService(
         currentBackend().getOHLC(pair, interval, since)
 
     override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount.get()
+
+    override fun hasLastTradeHistoryTotalCount(): Boolean = lastTradeHistoryTotalCountPresent.get()
+
+    override fun hasLastTradeHistoryPageShape(): Boolean = lastTradeHistoryPageShapeValid.get()
+
+    override fun getLastTradeHistoryRawPageSize(): Int = lastTradeHistoryRawPageSize.get()
 
     override suspend fun getLedgers(
         startSec: Long?,
@@ -125,11 +146,17 @@ class DynamicKrakenService(
         val backend = currentBackend()
         val ledgers = backend.getLedgers(startSec, offset, endSec, types)
         lastLedgerTotalCount.set(backend.getLastLedgerTotalCount())
+        lastLedgerTotalCountPresent.set(backend.hasLastLedgerTotalCount())
+        lastLedgerPageShapeValid.set(backend.hasLastLedgerPageShape())
         lastLedgerRawPageSize.set(backend.getLastLedgerRawPageSize())
         return ledgers
     }
 
     override fun getLastLedgerTotalCount(): Int = lastLedgerTotalCount.get()
+
+    override fun hasLastLedgerTotalCount(): Boolean = lastLedgerTotalCountPresent.get()
+
+    override fun hasLastLedgerPageShape(): Boolean = lastLedgerPageShapeValid.get()
 
     override fun getLastLedgerRawPageSize(): Int = lastLedgerRawPageSize.get()
 

@@ -516,6 +516,15 @@ object RebalancerComparisonCalculator {
                 unavailableAt = invalidFeeLedger.time,
             )
         }
+        val invalidAmountLedger = ledgers.firstOrNull {
+            it.type in externalBalanceLedgerTypes && !LedgerFlowClassifier.hasValidAmountShape(it)
+        }
+        if (invalidAmountLedger != null) {
+            return TrackedBalanceValidation.Failed(
+                reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                unavailableAt = invalidAmountLedger.time,
+            )
+        }
         val startObservationTime = snapshots.first().balancesObservedAt
             ?: snapshots.first().timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
         val lastSnapshot = snapshots.last()
@@ -1070,6 +1079,17 @@ object RebalancerComparisonCalculator {
         if (trades.any { it.symbol.uppercase() in trackedAssets }) return false
         val trackedLedgers = ledgers.filter {
             Asset.normalizeLedgerAsset(it.asset).uppercase() in trackedAssets
+        }
+        // A staking row's balance may belong to a non-Spot wallet. Without an explicit wallet
+        // scope, using it as a Spot correction can make an unrelated staking checkpoint appear
+        // reconciled. Internal scope markers have the same ambiguity and must use ledger
+        // economics, which fails closed when the Spot snapshot does not reflect the row.
+        if (trackedLedgers.any {
+                it.type.equals(KrakenApiConstants.LEDGER_TYPE_STAKING, ignoreCase = true) ||
+                    LedgerFlowClassifier.isDocumentedInternalScopeMarker(it)
+            }
+        ) {
+            return false
         }
         return trackedLedgers.isNotEmpty() &&
             trackedLedgers.all(LedgerEvent::hasAuthoritativeBalance) &&

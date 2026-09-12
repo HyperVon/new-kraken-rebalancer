@@ -30,7 +30,22 @@ data class TradeRecord(
     val tradeId: String? = null,
     val clientOrderId: String? = null,
     val submissionState: OrderSubmissionState? = null,
+    /**
+     * Raw numeric validity captured at the Kraken parser boundary. Malformed raw economics
+     * must never become valid-looking zeros: a supported-market row with any false flag is
+     * retained evidence but fails closed in replay/comparison.
+     *
+     * Legacy rows written before raw source text was preserved default to true (assumed valid);
+     * see TradeTable migration docs. New parser rows set these explicitly.
+     */
+    val hasValidVolume: Boolean = true,
+    val hasValidCost: Boolean = true,
+    val hasValidPrice: Boolean = true,
+    val hasValidFee: Boolean = true,
 )
+
+/** True only when all raw economic fields parsed cleanly at ingestion. */
+fun TradeRecord.hasValidEconomicFields(): Boolean = hasValidVolume && hasValidCost && hasValidPrice && hasValidFee
 
 enum class OrderSubmissionState {
     PENDING,
@@ -51,6 +66,10 @@ fun TradeRecord.effectiveSource(): TradeSource? = source ?: when {
 fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
     this.symbol.equals(other.symbol, ignoreCase = true) &&
         this.side.equals(other.side, ignoreCase = true)
+
+/** True when the trade represents a supported USD-quoted pair. */
+fun TradeRecord.isSupportedMarket(allocations: List<String> = emptyList()): Boolean =
+    Asset.fromTradingPair(pair, allocations) != null || Asset.matchesUsdQuotedPair(pair, symbol)
 
 /** Exact pair identity, or one of Kraken's known USD pair aliases for the same symbol. */
 fun TradeRecord.hasCompatiblePairIdentity(other: TradeRecord): Boolean =
