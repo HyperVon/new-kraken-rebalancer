@@ -56,6 +56,16 @@ object SnapshotHistoryCalculator {
         reconstructionStart: Instant? = null,
     ): List<TimelineEvent> {
         requireCompleteConversions(historicalRewards)
+        // Fail closed on unknown raw ledger evidence: the repository is raw/unprojected, so any
+        // type outside EXTERNAL_BALANCE_TYPES (except `trade` checkpoints) must block timeline
+        // construction rather than being silently filtered out here.
+        val unknownReward = historicalRewards.firstOrNull {
+            it.type !in externalLedgerTypes &&
+                !it.type.equals(KrakenApiConstants.LEDGER_TYPE_TRADE, ignoreCase = true)
+        }
+        require(unknownReward == null) {
+            "Cannot build timeline with unknown raw ledger type: ${unknownReward?.type} (${unknownReward?.ledgerId})"
+        }
         val events = historicalTrades
             .map { TimelineEvent.TradeEvent(it.timestamp, it) }
             .toMutableList<TimelineEvent>()

@@ -1,12 +1,14 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.domain.RawBalances
 import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.resolveBalance
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.hasValidEconomicFields
 import com.gemini.krakenbot.model.isSupportedMarket
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -35,16 +37,29 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "10"
+        const val CURRENT_RECONSTRUCTION_VERSION = "11"
 
         /**
-         * Grace window allowing a coverage horizon taken at sync query time to satisfy a
-         * reconstruction anchor captured after the sync completes. Sync pagination and trade
-         * reconciliation can take minutes on large histories; without tolerance the post-sync
-         * horizon (queryNow) would false-reject against the later anchor and reconstruction
-         * would never trigger.
+         * Historical fail-closed anchor contract (v11).
+         *
+         * One explicit [reconstructionAnchor] must flow through coverage check, event range,
+         * balance state, and reconstruction metadata. The balance observation (live balances
+         * when no durable snapshot exists, otherwise the oldest retained snapshot) is assumed
+         * observed at the anchor; raw TradesHistory and raw ledger coverage horizons must prove
+         * through at least the anchor second. A grace window for timestamp matching is limited
+         * to sub-second/second precision via epoch-second comparison — never 300s — because a
+         * lagging horizon can hide an economically meaningful trade between evidence end and the
+         * balance observation and corrupt reverse reconstruction.
+         *
+         * Callers must capture the anchor once and pass it to [canRebuildSnapshots] and
+         * [reconstructHistoricalSnapshots]/[rebuildHistoricalSnapshots]; wall-clock movement after
+         * the captured anchor must not change the decision. [SNAPSHOT_RECONSTRUCTION_THROUGH]
+         * is written as the anchor itself, never a later arbitrary `now`.
+         *
+         * Legacy [RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS] is retained as 0 for binary/source
+         * compatibility and must not be used to accept stale evidence.
          */
-        const val RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS = 300L
+        const val RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS = 0L
     }
 
     suspend fun canRebuildSnapshots(
@@ -79,13 +94,16 @@ class TradeHistoryReconstructionService(
             .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
             ?.toLongOrNull()
 
-        val anchorFloorSec = anchor.epochSecond - RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS
-        if (ledgerHorizonSec == null || ledgerHorizonSec < anchorFloorSec ||
+        // Strict common-boundary invariant: both evidence horizons must reach the balance anchor.
+        // Evidence newer than the anchor is accepted; evidence even one second behind rejects.
+        // Second precision is the only tolerance (timestamp matching), not accounting tolerance.
+        val anchorSec = anchor.epochSecond
+        if (ledgerHorizonSec == null || ledgerHorizonSec < anchorSec ||
             ledgerHorizonSec < effectiveStart.epochSecond
         ) {
             return false
         }
-        if (tradeHorizonSec == null || tradeHorizonSec < anchorFloorSec ||
+        if (tradeHorizonSec == null || tradeHorizonSec < anchorSec ||
             tradeHorizonSec < effectiveStart.epochSecond
         ) {
             return false
@@ -143,17 +161,31 @@ class TradeHistoryReconstructionService(
         config: AppConfig,
         backend: KrakenService,
         reconstructionAnchor: Instant,
-    ) = reconstructHistoricalSnapshots(config, backend, replaceExisting = false, anchorOverride = reconstructionAnchor)
+        startingBalances: RawBalances? = null,
+    ) = reconstructHistoricalSnapshots(
+        config,
+        backend,
+        replaceExisting = false,
+        anchorOverride = reconstructionAnchor,
+        startingBalances = startingBalances,
+    )
 
     suspend fun rebuildHistoricalSnapshots(
         config: AppConfig,
         backend: KrakenService,
         reconstructionAnchor: Instant = nowProvider(),
+        startingBalances: RawBalances? = null,
     ) {
         check(canRebuildSnapshots(config, reconstructionAnchor = reconstructionAnchor)) {
             "Cannot rebuild historical snapshots before ledger synchronization, trade synchronization, and coverage migration complete"
         }
-        reconstructHistoricalSnapshots(config, backend, replaceExisting = true, anchorOverride = reconstructionAnchor)
+        reconstructHistoricalSnapshots(
+            config,
+            backend,
+            replaceExisting = true,
+            anchorOverride = reconstructionAnchor,
+            startingBalances = startingBalances,
+        )
     }
 
     private suspend fun reconstructHistoricalSnapshots(
@@ -161,6 +193,7 @@ class TradeHistoryReconstructionService(
         backend: KrakenService,
         replaceExisting: Boolean,
         anchorOverride: Instant? = null,
+        startingBalances: RawBalances? = null,
     ) {
         val reconstructionNow = anchorOverride ?: nowProvider()
         val parsedInception = config.settings.inceptionDate
@@ -181,15 +214,18 @@ class TradeHistoryReconstructionService(
 
         val cutoffTime = oldestSnapshot?.timestamp ?: reconstructionNow
 
-        val fetchedLiveBalances =
-            try {
-                backend.getBalances()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.error("Failed to fetch balances for snapshot reconstruction", e)
-                emptyMap()
-            }
+        // Anchor contract: a caller-supplied observation shares the exact balance state and
+        // timestamp that the coverage horizons were proven against, so the live balance fetch is
+        // skipped and the returned balances are used as-is. Only a caller without a durable
+        // observation falls back to an ad-hoc live fetch.
+        val fetchedLiveBalances = startingBalances ?: try {
+            backend.getBalances()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to fetch balances for snapshot reconstruction", e)
+            emptyMap()
+        }
 
         if (oldestSnapshot == null && fetchedLiveBalances.isEmpty()) {
             log.warn("Aborting historical snapshot reconstruction: starting balances unavailable.")
@@ -279,8 +315,39 @@ class TradeHistoryReconstructionService(
             )
             return
         }
+        // Malformed supported-market economics must fail closed, never become zero-value fills.
+        val invalidTrade = historicalTrades.firstOrNull {
+            it.isSupportedMarket(allocationSymbols) && !it.hasValidEconomicFields()
+        }
+        if (invalidTrade != null) {
+            log.warn(
+                "Skipping historical snapshot reconstruction: malformed trade economics retained as evidence " +
+                    "(pair: {}, tradeId: {}, validV={} validC={} validP={} validF={}).",
+                invalidTrade.pair,
+                invalidTrade.tradeId,
+                invalidTrade.hasValidVolume,
+                invalidTrade.hasValidCost,
+                invalidTrade.hasValidPrice,
+                invalidTrade.hasValidFee,
+            )
+            return
+        }
 
         val allLedgers = ledgerRepository.getLedgersInRange(since, reconstructionNow)
+        // Raw-evidence contract: unknown top-level ledger types must fail closed, never disappear.
+        // `trade` rows are continuity checkpoints only (TradesHistory is authoritative for economics).
+        val unknownLedger = allLedgers.firstOrNull {
+            it.type !in LedgerEvent.EXTERNAL_BALANCE_TYPES &&
+                !it.type.equals(KrakenApiConstants.LEDGER_TYPE_TRADE, ignoreCase = true)
+        }
+        if (unknownLedger != null) {
+            log.warn(
+                "Skipping historical snapshot reconstruction: unknown raw ledger type {} (ledgerId={}) in evidence interval.",
+                unknownLedger.type,
+                unknownLedger.ledgerId,
+            )
+            return
+        }
         val validation = AuthoritativeLedgerBalanceValidator.validate(allLedgers)
         if (!validation.isValid) {
             log.warn(

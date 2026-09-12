@@ -899,6 +899,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 emptyList()
             }
             fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
 
             val syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
@@ -1225,6 +1226,10 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             val syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1242,6 +1247,10 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             val syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1259,6 +1268,10 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             val syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1276,6 +1289,10 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             val syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1293,6 +1310,10 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             val syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1310,6 +1331,10 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             val syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1326,6 +1351,10 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             var syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1337,6 +1366,10 @@ class TradeHistoryCoverageTest : StringSpec() {
                 recoveryHorizon = fixedNow.plusSeconds(300),
             )
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1354,6 +1387,10 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             var syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1367,6 +1404,10 @@ class TradeHistoryCoverageTest : StringSpec() {
                 tradeOldest = inception.plusSeconds(100),
             )
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1384,6 +1425,10 @@ class TradeHistoryCoverageTest : StringSpec() {
             )
 
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             var syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1397,6 +1442,10 @@ class TradeHistoryCoverageTest : StringSpec() {
                 ledgerOldest = inception.plusSeconds(100),
             )
             fakeKraken.getTradeHistoryCallCount = 0
+            fakeKraken.tradeHistoryTotalCountOverride = 0
+            fakeKraken.tradeHistoryTotalCountAvailable = true
+            fakeKraken.ledgerTotalCountOverride = 0
+            fakeKraken.ledgerTotalCountAvailable = true
             syncService = service(fakeKraken, fixedNow)
             syncService.syncTradesFromKraken()
             fakeKraken.getTradeHistoryCallCount shouldBe 1
@@ -1453,24 +1502,35 @@ class TradeHistoryCoverageTest : StringSpec() {
             val futureAnchor = fixedNow.plusSeconds(3600)
             reconstructionService.canRebuildSnapshots(appConfig, inception, futureAnchor) shouldBe false
 
-            // Ledger horizon within the post-sync grace window: true. A horizon taken at
-            // sync query time must still satisfy an anchor captured after pagination.
+            // Strict common-boundary invariant (v11): no stale-evidence tolerance. A horizon even
+            // 60s behind the balance anchor rejects, because an intervening trade would corrupt
+            // reverse reconstruction. Evidence newer than the anchor accepts.
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
                 fixedNow.minusSeconds(60).epochSecond.toString(),
             )
-            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe true
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe false
 
-            // Ledger horizon beyond the grace window: false
+            // Ledger horizon 180s behind anchor with intervening trade: rejected (blocker 1).
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
-                fixedNow.minusSeconds(
-                    TradeHistoryReconstructionService.RECONSTRUCTION_ANCHOR_TOLERANCE_SECONDS + 60,
-                ).epochSecond.toString(),
+                fixedNow.minusSeconds(180).epochSecond.toString(),
             )
             reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe false
 
-            // Restore ledger horizon, trade horizon within grace window: true (symmetry).
+            // Evidence reaches anchor: accepted. Evidence newer than anchor: accepted.
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe true
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.plusSeconds(60).epochSecond.toString(),
+            )
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe true
+
+            // Restore ledger horizon, trade horizon 60s behind anchor: rejected (symmetry).
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
                 fixedNow.epochSecond.toString(),
@@ -1479,7 +1539,7 @@ class TradeHistoryCoverageTest : StringSpec() {
                 SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
                 fixedNow.minusSeconds(60).epochSecond.toString(),
             )
-            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe true
+            reconstructionService.canRebuildSnapshots(appConfig, inception, fixedNow) shouldBe false
 
             // Trade horizon beyond the grace window: false
             repository.setSyncMetadata(

@@ -15,6 +15,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.getRecoveryTradeHistoryUntil
 import com.gemini.krakenbot.service.getTradeHistoryUntil
 import com.gemini.krakenbot.service.withExecutionSession
@@ -45,6 +46,21 @@ class TradeHistorySyncService(
 
     companion object {
         const val CURRENT_TRADE_COVERAGE_VERSION = "1"
+
+        /**
+         * Coverage-certification vs incremental-refresh distinction.
+         *
+         * CERTIFICATION promotes [CURRENT_TRADE_COVERAGE_VERSION]/start/horizon and therefore
+         * requires authoritative completeness proof on every page: valid envelope, authoritative
+         * `count`, raw occupancy consistent with count, and stable pagination. A count-less or
+         * malformed page fails the entire migration and leaves the previous marker unchanged.
+         *
+         * INCREMENTAL is an ordinary refresh that may safely retry a weaker response later.
+         */
+        enum class CoverageSyncMode {
+            INCREMENTAL,
+            COVERAGE_CERTIFICATION,
+        }
     }
 
     suspend fun syncTradesFromKraken() = syncMutex.withLock {
@@ -76,13 +92,22 @@ class TradeHistorySyncService(
         result
     }
 
-    suspend fun rebuildHistoricalSnapshotsIfNeeded() {
+    /**
+     * Rebuilds historical snapshots when the reconstruction contract is stale.
+     *
+     * [observedBalances] is the balance observation captured before this cycle's evidence sync.
+     * Using its timestamp as the reconstruction anchor — and its balances as the starting state —
+     * guarantees that trade/ledger coverage, proven at a later request horizon, reaches the same
+     * boundary as the balance state. Without it the anchor degrades to the wall clock, which
+     * cannot prove a common boundary and fails closed.
+     */
+    suspend fun rebuildHistoricalSnapshotsIfNeeded(observedBalances: ObservedBalances? = null) {
         val config = configService.getConfig()
         if (config.settings.simulation) return
 
         val parsedInception = config.settings.inceptionDate
             ?.let(InceptionDiscoveryService::parseInceptionDate)
-        val reconstructionAnchor = nowProvider()
+        val reconstructionAnchor = observedBalances?.observedAt ?: nowProvider()
         val canRebuild = reconstructionService.canRebuildSnapshots(config, parsedInception, reconstructionAnchor)
         val storedContinuousStart = repository
             .getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
@@ -110,7 +135,12 @@ class TradeHistorySyncService(
             val pinnedConfig = configService.getConfig()
             if (pinnedConfig.settings.simulation) return@withExecutionSession
             krakenService.withStableBackend { backend ->
-                reconstructionService.rebuildHistoricalSnapshots(pinnedConfig, backend, reconstructionAnchor)
+                reconstructionService.rebuildHistoricalSnapshots(
+                    pinnedConfig,
+                    backend,
+                    reconstructionAnchor,
+                    observedBalances?.balances,
+                )
             }
         }
     }
@@ -201,10 +231,12 @@ class TradeHistorySyncService(
                     isSeeded = true,
                     originalLocalTrades = originalLocalTrades,
                     allocations = allocations,
+                    mode = CoverageSyncMode.COVERAGE_CERTIFICATION,
                 )
             } else if (recoveredCoverageThrough.isBefore(queryNow)) {
                 // Completed recovery proves the historical prefix. Only refresh the unproven tail;
-                // never repaginate the already recovered inception-to-horizon range.
+                // never repaginate the already recovered inception-to-horizon range. The tail itself
+                // is still a certifying scan: it must carry authoritative count proof.
                 val originalLocalTrades = repository
                     .getTradesInRange(recoveredCoverageThrough.minusSeconds(300), queryEnd)
                     .toMutableList()
@@ -215,6 +247,7 @@ class TradeHistorySyncService(
                     isSeeded = true,
                     originalLocalTrades = originalLocalTrades,
                     allocations = allocations,
+                    mode = CoverageSyncMode.COVERAGE_CERTIFICATION,
                 )
             } else {
                 0 to 0
@@ -270,6 +303,7 @@ class TradeHistorySyncService(
             isSeeded = isSeeded,
             originalLocalTrades = originalLocalTrades,
             allocations = allocations,
+            mode = if (isSeeded) CoverageSyncMode.INCREMENTAL else CoverageSyncMode.COVERAGE_CERTIFICATION,
         )
 
         // Persist the successful request horizon, not the later completion timestamp. A slow
@@ -297,13 +331,14 @@ class TradeHistorySyncService(
         isSeeded: Boolean,
         originalLocalTrades: MutableList<TradeRecord>,
         allocations: List<String>,
+        mode: CoverageSyncMode = CoverageSyncMode.INCREMENTAL,
     ): Pair<Int, Int> {
         var totalAdded = 0
         var totalReconciled = 0
         val seenApiFillKeys = mutableSetOf<String>()
         val orderMetadataByTxid = buildOrderMetadata(originalLocalTrades)
 
-        getTradeHistoryPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
+        getTradeHistoryPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded, mode = mode)
             .collect { apiTrades ->
                 val result = processApiTradeBatch(
                     apiTrades = apiTrades,
@@ -978,84 +1013,94 @@ class TradeHistorySyncService(
     private fun canonicalDecimal(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
 
     /** Cold paginated Kraken history; progress is durable until the first seed completes. */
-    private fun getTradeHistoryPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<TradeRecord>> =
-        flow {
-            var offset = 0
-            var priorTotal = repository
-                .getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
-                ?.toIntOrNull()
-                ?.coerceAtLeast(0)
-                ?: 0
+    private fun getTradeHistoryPaginated(
+        startSec: Long?,
+        endSec: Long,
+        isSeeded: Boolean,
+        mode: CoverageSyncMode = CoverageSyncMode.INCREMENTAL,
+    ): Flow<List<TradeRecord>> = flow {
+        var offset = 0
+        var priorTotal = repository
+            .getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
+            ?.toIntOrNull()
+            ?.coerceAtLeast(0)
+            ?: 0
 
-            while (true) {
-                log.info("Fetching trade history batch with offset={}", offset)
-                val apiTrades = krakenService.getRecoveryTradeHistoryUntil(
-                    startSec = startSec,
-                    offset = offset,
-                    endSec = endSec,
-                )
-                val totalCount = krakenService.getLastTradeHistoryTotalCount().coerceAtLeast(0)
-                val hasAuthoritativeTotal = krakenService.hasLastTradeHistoryTotalCount()
-                if (!krakenService.hasLastTradeHistoryPageShape()) {
-                    throw IllegalStateException("Kraken returned a malformed trade page envelope")
-                }
-                val rawPageSize = krakenService.getLastTradeHistoryRawPageSize().coerceAtLeast(apiTrades.size)
-                val expectedPageSize = (totalCount - offset)
-                    .takeIf { it > 0 }
-                    ?.coerceAtMost(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
-                val pageMatchesReportedTotal = when {
-                    !hasAuthoritativeTotal -> true
-
-                    totalCount == 0 -> apiTrades.isEmpty() && rawPageSize == 0
-
-                    else ->
-                        expectedPageSize != null &&
-                            rawPageSize == expectedPageSize &&
-                            apiTrades.size <= expectedPageSize
-                }
-                if (hasAuthoritativeTotal && !pageMatchesReportedTotal) {
-                    throw IllegalStateException(
-                        "Kraken trade page occupancy disagreed with count " +
-                            "(offset=$offset, count=$totalCount, rawPageSize=$rawPageSize)",
-                    )
-                }
-                if (!isSeeded && !hasAuthoritativeTotal && rawPageSize == 0 && apiTrades.isEmpty()) {
-                    throw IllegalStateException(
-                        "Cannot finalize an unseeded trade sync from an unknown empty page " +
-                            "(offset=$offset)",
-                    )
-                }
-
-                val paginationShifted = hasAuthoritativeTotal && (
-                    (priorTotal > 0 && totalCount != priorTotal) ||
-                        (priorTotal == 0 && offset > 0)
-                    )
-                priorTotal = if (hasAuthoritativeTotal) totalCount else priorTotal
-
-                if (!isSeeded) {
-                    repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, offset.toString())
-                    repository.setSyncMetadata(
-                        SyncMetadataKeys.SYNC_TOTAL,
-                        if (hasAuthoritativeTotal) totalCount.toString() else (offset + apiTrades.size).toString(),
-                    )
-                }
-
-                if (apiTrades.isNotEmpty()) emit(apiTrades)
-
-                val nextOffset = if (paginationShifted && offset > 0) {
-                    0
-                } else {
-                    offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
-                }
-                val hasMorePages = !paginationShifted && if (hasAuthoritativeTotal) {
-                    nextOffset < totalCount
-                } else {
-                    rawPageSize >= KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
-                }
-                if (!hasMorePages) break
-                offset = nextOffset
+        while (true) {
+            log.info("Fetching trade history batch with offset={}", offset)
+            val apiTrades = krakenService.getRecoveryTradeHistoryUntil(
+                startSec = startSec,
+                offset = offset,
+                endSec = endSec,
+            )
+            val totalCount = krakenService.getLastTradeHistoryTotalCount().coerceAtLeast(0)
+            val hasAuthoritativeTotal = krakenService.hasLastTradeHistoryTotalCount()
+            if (!krakenService.hasLastTradeHistoryPageShape()) {
+                throw IllegalStateException("Kraken returned a malformed trade page envelope")
             }
+            val rawPageSize = krakenService.getLastTradeHistoryRawPageSize().coerceAtLeast(apiTrades.size)
+            if (!isSeeded && !hasAuthoritativeTotal && rawPageSize == 0 && apiTrades.isEmpty()) {
+                throw IllegalStateException(
+                    "Cannot finalize an unseeded trade sync from an unknown empty page " +
+                        "(offset=$offset)",
+                )
+            }
+            if (mode == CoverageSyncMode.COVERAGE_CERTIFICATION && !hasAuthoritativeTotal) {
+                throw IllegalStateException(
+                    "Cannot certify trade coverage from a count-less page " +
+                        "(offset=$offset): authoritative count is required for coverage promotion",
+                )
+            }
+            val expectedPageSize = (totalCount - offset)
+                .takeIf { it > 0 }
+                ?.coerceAtMost(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
+            val pageMatchesReportedTotal = when {
+                !hasAuthoritativeTotal -> true
+
+                totalCount == 0 -> apiTrades.isEmpty() && rawPageSize == 0
+
+                else ->
+                    expectedPageSize != null &&
+                        rawPageSize == expectedPageSize &&
+                        apiTrades.size <= expectedPageSize
+            }
+            if (hasAuthoritativeTotal && !pageMatchesReportedTotal) {
+                throw IllegalStateException(
+                    "Kraken trade page occupancy disagreed with count " +
+                        "(offset=$offset, count=$totalCount, rawPageSize=$rawPageSize)",
+                )
+            }
+
+            val paginationShifted = hasAuthoritativeTotal && (
+                (priorTotal > 0 && totalCount != priorTotal) ||
+                    (priorTotal == 0 && offset > 0)
+                )
+            priorTotal = if (hasAuthoritativeTotal) totalCount else priorTotal
+
+            if (!isSeeded) {
+                repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, offset.toString())
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.SYNC_TOTAL,
+                    if (hasAuthoritativeTotal) totalCount.toString() else (offset + apiTrades.size).toString(),
+                )
+            }
+
+            if (apiTrades.isNotEmpty()) emit(apiTrades)
+
+            val nextOffset = if (paginationShifted && offset > 0) {
+                0
+            } else {
+                offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
+            }
+            val hasMorePages = !paginationShifted && if (hasAuthoritativeTotal) {
+                nextOffset < totalCount
+            } else {
+                rawPageSize >= KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
+            }
+            if (!hasMorePages) break
+            offset = nextOffset
         }
+    }
 
     suspend fun getSyncMetadata(key: String): String? = repository.getSyncMetadata(key)
 

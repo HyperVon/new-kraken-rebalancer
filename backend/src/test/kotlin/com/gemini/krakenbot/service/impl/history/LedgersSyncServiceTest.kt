@@ -245,13 +245,12 @@ class LedgersSyncServiceTest : StringSpec() {
         "deduplicates the newest-first offset overlap across pages" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            every { krakenService.hasLastLedgerTotalCount() } returns false
 
             val pageOne = (0 until 50).map { event(it) }
             val pageTwo = listOf(event(49)) + (50 until 74).map { event(it) }
             coEvery { krakenService.getLedgers(any(), 0, any(), any()) } returns pageOne
             coEvery { krakenService.getLedgers(any(), 50, any(), any()) } returns pageTwo
-            coEvery { krakenService.getLastLedgerTotalCount() } returns 74
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 75
 
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
@@ -581,7 +580,7 @@ class LedgersSyncServiceTest : StringSpec() {
         "existing seeded stale-coverage database triggers bounded backfill across 96 days for newly supported types" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            every { krakenService.hasLastLedgerTotalCount() } returns false
+            every { krakenService.hasLastLedgerTotalCount() } returns true
             repository.setLedgersSeeded(true)
             // Stale coverage version (v1 or v2)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "2")
@@ -620,7 +619,8 @@ class LedgersSyncServiceTest : StringSpec() {
                     amount = BigDecimal("1000.00000000"),
                 )
 
-            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 9
+            every { krakenService.getLastLedgerRawPageSize() } returns 9
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns listOf(
                 depositEvent,
                 withdrawalEvent,
@@ -1141,7 +1141,7 @@ class LedgersSyncServiceTest : StringSpec() {
         "partial backfill retries safely without duplicating persisted pages" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
-            every { krakenService.hasLastLedgerTotalCount() } returns false
+            every { krakenService.hasLastLedgerTotalCount() } returns true
             repository.setLedgersSeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "2")
 
@@ -1153,7 +1153,7 @@ class LedgersSyncServiceTest : StringSpec() {
             coEvery { krakenService.getLastLedgerTotalCount() } coAnswers { lastTotalCount }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
                 val offset = secondArg<Int?>() ?: 0
-                lastTotalCount = 100
+                lastTotalCount = 51
                 when (offset) {
                     0 -> firstPage
                     50 -> if (failureEnabled) throw failure else secondPage
@@ -1181,10 +1181,19 @@ class LedgersSyncServiceTest : StringSpec() {
         "earn pagination continues across raw pages when early pages contain zero earn rows" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
+            every { krakenService.hasLastLedgerTotalCount() } returns false
             repository.setLedgersSeeded(true)
             repository.setSyncMetadata(
                 SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
                 LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                fixedNow.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
             )
 
             val earnEvent1 = LedgerEvent(
@@ -1210,7 +1219,7 @@ class LedgersSyncServiceTest : StringSpec() {
             coEvery { krakenService.getLastLedgerRawPageSize() } coAnswers { lastRawPageSize }
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } coAnswers {
                 val offset = secondArg<Int?>() ?: 0
-                lastTotalCount = 100
+                lastTotalCount = 51
                 when (offset) {
                     0 -> {
                         lastRawPageSize = 50

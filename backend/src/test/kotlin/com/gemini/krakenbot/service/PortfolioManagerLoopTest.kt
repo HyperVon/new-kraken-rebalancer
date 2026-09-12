@@ -105,7 +105,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.stopRebalancingLoop()
                 job.cancel()
 
-                krakenService.getBalancesCallCount shouldBe 1
+                // Startup observation + the cycle's pre-rebalance fetch.
+                krakenService.getBalancesCallCount shouldBe 2
             }
         }
 
@@ -146,7 +147,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.stopRebalancingLoop()
                 job.cancel()
 
-                krakenService.getBalancesCallCount shouldBe 1
+                // Startup observation + the cycle's rebalance-phase fetch (which throws).
+                krakenService.getBalancesCallCount shouldBe 2
             }
         }
 
@@ -215,7 +217,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 job.join()
 
                 coVerify(atLeast = 1) { tradeHistoryService.syncTradesFromKraken() }
-                krakenService.getBalancesCallCount shouldBe 1
+                krakenService.getBalancesCallCount shouldBe 2
                 portfolioManager.getOperationalStatus().lastCycleSyncWarning shouldContain
                     "Ledger synchronization"
             }
@@ -228,7 +230,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 every { configService.getConfig() } returns config
                 krakenService.balanceSupplier = { emptyMap() }
                 coEvery {
-                    tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded()
+                    tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded(any())
                 } throws RuntimeException("Snapshot rebuild error!")
 
                 portfolioManager.startRebalancingLoop()
@@ -237,7 +239,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
-                krakenService.getBalancesCallCount shouldBe 1
+                // Startup observation + the cycle's rebalance-phase fetch.
+                krakenService.getBalancesCallCount shouldBe 2
             }
         }
 
@@ -257,8 +260,9 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 shouldThrow<CancellationException> { portfolioManager.runLoop() }
 
-                // Swallowing cancellation here would log it and start rebalancing anyway.
-                krakenService.getBalancesCallCount shouldBe 0
+                // The startup observation is the only fetch: if cancellation were swallowed the
+                // cycle would proceed and fetch again.
+                krakenService.getBalancesCallCount shouldBe 1
                 portfolioManager.isLoopRunning() shouldBe false
             }
         }
@@ -281,7 +285,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.startRebalancingLoop()
                 portfolioManager.runLoop()
 
-                krakenService.getBalancesCallCount shouldBe 0
+                // Only the startup observation ran; the cycle aborted at the in-cycle sync
+                // before the rebalance fetch.
+                krakenService.getBalancesCallCount shouldBe 1
             }
         }
 
@@ -303,7 +309,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                 runCurrent()
 
                 val cyclesBeforeChange = krakenService.getBalancesCallCount
-                cyclesBeforeChange shouldBe 1
+                // Startup observation + one cycle.
+                cyclesBeforeChange shouldBe 2
 
                 // Emitted while the loop is parked in the 1h delay: collectLatest must cancel and
                 // restart the cycle immediately with the new settings.

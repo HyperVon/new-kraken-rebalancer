@@ -47,11 +47,12 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     portfolioManager.runLoop()
                 }
                 delay(10.milliseconds)
-                krakenService.getBalancesCallCount shouldBe 1
+                // Startup observation + one cycle; the 60s delay parks the second cycle.
+                krakenService.getBalancesCallCount shouldBe 2
 
                 portfolioManager.stopRebalancingLoop()
                 job.cancel()
-                krakenService.getBalancesCallCount shouldBe 1
+                krakenService.getBalancesCallCount shouldBe 2
             }
         }
 
@@ -589,7 +590,8 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 }
                 delay(10.milliseconds)
 
-                krakenService.getBalancesCallCount shouldBe 1
+                // Startup observation + one cycle.
+                krakenService.getBalancesCallCount shouldBe 2
 
                 portfolioManager.stopRebalancingLoop()
                 job.cancel()
@@ -631,7 +633,9 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 }
                 delay(10.milliseconds)
 
-                krakenService.getBalancesCallCount shouldBe 1
+                // Startup observation + one cycle; this manager is wired to krakenService, so the
+                // cycle observation at performCycleWithStableSession supplies the rebalance fetch.
+                krakenService.getBalancesCallCount shouldBe 2
 
                 managerWithoutInception.stopRebalancingLoop()
                 job.cancel()

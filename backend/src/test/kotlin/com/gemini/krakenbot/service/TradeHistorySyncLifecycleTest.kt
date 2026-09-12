@@ -39,6 +39,9 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                     currentScopeDigest = "verified-account",
                 )
 
+                every { krakenService.hasLastLedgerTotalCount() } returns true
+                coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+                every { krakenService.getLastLedgerRawPageSize() } returns 0
                 TradeHistoryServiceImpl(
                     repository,
                     statsRepository,

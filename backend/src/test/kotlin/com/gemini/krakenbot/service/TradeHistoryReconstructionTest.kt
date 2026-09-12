@@ -125,6 +125,8 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     fee = BigDecimal("5.00"),
                 )
 
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 1
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
@@ -220,6 +222,8 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     fee = BigDecimal("5.00"),
                 )
 
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 1
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
@@ -289,6 +293,8 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     price = BigDecimal("30000.00"),
                     fee = BigDecimal("15.00"),
                 )
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 1
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
@@ -554,6 +560,8 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     price = BigDecimal("30000.00"),
                     fee = BigDecimal("15.00"),
                 )
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 1
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)

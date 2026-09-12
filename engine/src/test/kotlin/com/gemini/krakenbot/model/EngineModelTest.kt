@@ -57,6 +57,23 @@ class EngineModelTest : StringSpec() {
             (defaultFailure as OrderResult.Failure).errorMessage shouldBe "Unknown error"
         }
 
+        "hasValidEconomicFields reflects raw parser flags" {
+            val now = Instant.now()
+            val valid = EngineTestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = java.math.BigDecimal.ONE,
+                usdAmount = java.math.BigDecimal("50000.00"),
+            )
+            valid.hasValidEconomicFields() shouldBe true
+            valid.copy(hasValidVolume = false).hasValidEconomicFields() shouldBe false
+            valid.copy(hasValidCost = false).hasValidEconomicFields() shouldBe false
+            valid.copy(hasValidPrice = false).hasValidEconomicFields() shouldBe false
+            valid.copy(hasValidFee = false).hasValidEconomicFields() shouldBe false
+        }
+
         "testTradeRecordExtensions" {
             val now = Instant.now()
             val t1 =

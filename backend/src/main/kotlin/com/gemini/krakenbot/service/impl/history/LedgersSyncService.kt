@@ -21,12 +21,11 @@ import java.time.temporal.ChronoUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Pulls Kraken's balance-affecting ledger entries into the local database: staking, dividend, earn,
- * promotion rewards, deposit, withdrawal, transfer, adjustment, observed conversion rows,
- * consumer-transaction spend/receive rows, and the margin-family balance rows (margin, rollover,
- * settled, and credit). The live adapter maps promotion rewards, Earn, and conversion to Kraken's
- * `all` query and filters response types locally; it maps consumer rows to the documented `sale`
- * query filter.
+ * Pulls Kraken's raw ledger entries into the local database with `types = null` (unprojected
+ * evidence). The repository is raw evidence; the classifier/replay layer
+ * ([LedgerFlowClassifier], comparison, reconstruction) is the semantic projection — never the
+ * query layer. Unknown top-level types and `trade` checkpoint rows are retained; downstream
+ * replay fails closed on unsupported/ambiguous rows instead of the sync layer dropping them.
  *
  * Ledger entries are insert-only: identity is the unique (ledger id, timestamp, asset, type) tuple,
  * so re-fetched pages (including the Kraken newest-first offset overlap) are deduplicated by the
@@ -46,6 +45,16 @@ class LedgersSyncService(
 
     companion object {
         const val CURRENT_LEDGER_COVERAGE_VERSION = "9"
+
+        /**
+         * Coverage-certification vs incremental distinction (mirrors TradeHistorySyncService).
+         * Certification promotes coverage version/start/horizon and requires authoritative
+         * `count` proof on every page; a count-less or malformed page fails the migration.
+         */
+        enum class LedgerCoverageSyncMode {
+            INCREMENTAL,
+            COVERAGE_CERTIFICATION,
+        }
         val SUPPORTED_LEDGER_TYPES = listOf(
             KrakenApiConstants.LEDGER_TYPE_TRADE,
             KrakenApiConstants.LEDGER_TYPE_STAKING,
@@ -150,14 +159,17 @@ class LedgersSyncService(
                     startSec = coverageBackfillBound.minusSeconds(1).epochSecond,
                     endSec = queryNow.epochSecond,
                     isSeeded = true,
+                    mode = LedgerCoverageSyncMode.COVERAGE_CERTIFICATION,
                 )
             } else if (recoveredCoverageThrough.isBefore(queryNow)) {
                 // Completed recovery proves the historical prefix. Only refresh the unproven tail;
-                // never repaginate the already recovered inception-to-horizon range.
+                // never repaginate the already recovered inception-to-horizon range. The tail is
+                // still certifying and requires authoritative count proof.
                 processLedgerPages(
                     startSec = recoveredCoverageThrough.minusSeconds(300).epochSecond,
                     endSec = queryNow.epochSecond,
                     isSeeded = true,
+                    mode = LedgerCoverageSyncMode.COVERAGE_CERTIFICATION,
                 )
             } else {
                 0
@@ -222,6 +234,10 @@ class LedgersSyncService(
             startSec = paginationStartSec,
             endSec = queryNow.epochSecond,
             isSeeded = isSeeded,
+            // An unseeded first pass promotes coverage version/start/horizon, so it must
+            // certify against the authoritative `count`. Ordinary incremental refresh of an
+            // already-certified store stays retryable and does not re-promote coverage.
+            mode = if (isSeeded) LedgerCoverageSyncMode.INCREMENTAL else LedgerCoverageSyncMode.COVERAGE_CERTIFICATION,
         )
 
         // A simulation run that found no ledger rows must not mark the store seeded: the emulator
@@ -328,11 +344,16 @@ class LedgersSyncService(
         return watermarkInstant ?: latestLedgerTime
     }
 
-    private suspend fun processLedgerPages(startSec: Long?, endSec: Long, isSeeded: Boolean): Int {
+    private suspend fun processLedgerPages(
+        startSec: Long?,
+        endSec: Long,
+        isSeeded: Boolean,
+        mode: LedgerCoverageSyncMode = LedgerCoverageSyncMode.INCREMENTAL,
+    ): Int {
         var totalAdded = 0
         // Cross-page duplicates are dropped by the unique (ledger id, timestamp, asset, type)
         // index; saveLedgers returns the number of rows actually inserted.
-        getLedgersPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
+        getLedgersPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded, mode = mode)
             .collect { apiLedgers ->
                 invalidateReconstructionIfStale(apiLedgers)
                 totalAdded += repository.saveLedgers(apiLedgers)
@@ -471,7 +492,12 @@ class LedgersSyncService(
         ?.takeIf { it >= 0 }
 
     /** Cold paginated Kraken ledger history — unified raw coverage stream. */
-    private fun getLedgersPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<LedgerEvent>> = flow {
+    private fun getLedgersPaginated(
+        startSec: Long?,
+        endSec: Long,
+        isSeeded: Boolean,
+        mode: LedgerCoverageSyncMode = LedgerCoverageSyncMode.INCREMENTAL,
+    ): Flow<List<LedgerEvent>> = flow {
         var offset = 0
         var priorTotal = repository
             .getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL)
@@ -493,6 +519,18 @@ class LedgersSyncService(
                 throw IllegalStateException("Kraken returned a malformed ledger page envelope")
             }
             val rawPageSize = krakenService.getLastLedgerRawPageSize().coerceAtLeast(page.size)
+            if (!isSeeded && !hasAuthoritativeTotal && rawPageSize == 0 && page.isEmpty()) {
+                throw IllegalStateException(
+                    "Cannot finalize an unseeded ledger sync from an unknown empty page " +
+                        "(offset=$offset)",
+                )
+            }
+            if (mode == LedgerCoverageSyncMode.COVERAGE_CERTIFICATION && !hasAuthoritativeTotal) {
+                throw IllegalStateException(
+                    "Cannot certify ledger coverage from a count-less page " +
+                        "(offset=$offset): authoritative count is required for coverage promotion",
+                )
+            }
             val expectedPageSize = (totalCount - offset)
                 .takeIf { it > 0 }
                 ?.coerceAtMost(KrakenApiConstants.LEDGER_PAGE_SIZE)
@@ -510,12 +548,6 @@ class LedgersSyncService(
                 throw IllegalStateException(
                     "Kraken ledger page occupancy disagreed with count " +
                         "(offset=$offset, count=$totalCount, rawPageSize=$rawPageSize)",
-                )
-            }
-            if (!isSeeded && !hasAuthoritativeTotal && rawPageSize == 0 && page.isEmpty()) {
-                throw IllegalStateException(
-                    "Cannot finalize an unseeded ledger sync from an unknown empty page " +
-                        "(offset=$offset)",
                 )
             }
             val paginationShifted = hasAuthoritativeTotal && (

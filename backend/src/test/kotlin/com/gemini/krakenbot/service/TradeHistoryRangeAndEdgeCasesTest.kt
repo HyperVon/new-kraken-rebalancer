@@ -683,6 +683,8 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     totalFeesPaid = BigDecimal.ZERO,
                     latestSnapshotTime = null,
                 )
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 1
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)

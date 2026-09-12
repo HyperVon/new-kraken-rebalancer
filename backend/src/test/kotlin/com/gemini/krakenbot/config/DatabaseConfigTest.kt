@@ -98,6 +98,7 @@ class DatabaseConfigTest : StringSpec() {
                         10 to "ledger-provenance-flags",
                         11 to "inception-inference-evidence",
                         12 to "ledger-amount-validity",
+                        13 to "trade-economic-validity",
                     )
 
                     val expectedTables = setOf(

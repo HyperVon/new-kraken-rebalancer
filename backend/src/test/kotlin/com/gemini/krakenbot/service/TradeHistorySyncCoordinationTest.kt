@@ -1054,6 +1054,8 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     fee = BigDecimal("7.00"),
                 )
 
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 2
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade1, apiTrade2)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
 

@@ -103,6 +103,18 @@ object KrakenParsers {
 
             val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
             val side = type.uppercase()
+            // Raw numeric validity: malformed economics must never become valid-looking zeros.
+            // Rows are retained as evidence with explicit invalid flags and fail closed downstream.
+            val parsedVol = volStr.takeIf(String::isNotBlank)?.let { runCatching { BigDecimal(it) }.getOrNull() }
+            val hasValidVolume = parsedVol != null && parsedVol.signum() > 0
+            val parsedCost = costStr.takeIf(String::isNotBlank)?.let { runCatching { BigDecimal(it) }.getOrNull() }
+            // Unsupported markets force cost to zero (never interpret foreign cost as USD); validity
+            // for cost is therefore only meaningful for supported markets.
+            val hasValidCost = if (!isSupportedMarket) true else (parsedCost != null && parsedCost.signum() >= 0)
+            val parsedPrice = priceStr.takeIf(String::isNotBlank)?.let { runCatching { BigDecimal(it) }.getOrNull() }
+            val hasValidPrice = parsedPrice != null && parsedPrice.signum() > 0
+            val parsedFee = feeStr.takeIf(String::isNotBlank)?.let { runCatching { BigDecimal(it) }.getOrNull() }
+            val hasValidFee = feeStr.isBlank() || (parsedFee != null && parsedFee.signum() >= 0)
             val volume = safeParseBigDecimal(volStr, PrecisionConstants.SCALE_CRYPTO)
             val usdAmount = if (isSupportedMarket) {
                 safeParseBigDecimal(costStr, PrecisionConstants.SCALE_USD)
@@ -131,6 +143,10 @@ object KrakenParsers {
                     source = TradeSource.API_FILL,
                     orderTxid = orderTxid,
                     tradeId = tradeId.ifBlank { null },
+                    hasValidVolume = hasValidVolume,
+                    hasValidCost = hasValidCost,
+                    hasValidPrice = hasValidPrice,
+                    hasValidFee = hasValidFee,
                 ),
             )
         }

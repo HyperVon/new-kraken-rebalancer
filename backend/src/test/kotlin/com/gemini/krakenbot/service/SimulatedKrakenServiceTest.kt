@@ -359,6 +359,35 @@ class SimulatedKrakenServiceTest : StringSpec() {
             history.size shouldBe 0
         }
 
+        "should skip history seeding when allocations have no usd side" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns
+                TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                    allocations = listOf(Allocation(Asset.BTC, 100.0)),
+                )
+
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getBalances()[Asset.BTC] shouldNotBe null
+            simulatedService.getTradeHistory(null, null).size shouldBe 0
+        }
+
+        "should not seed history when allocations turn usd-only mid initialization" {
+            val configService = mockk<ConfigService>()
+            val usdOnly =
+                TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+            // First read drives the seeding trigger; the later seed passes re-read the config
+            // and must bail out instead of dividing by an empty non-USD allocation list.
+            every { configService.getConfig() } returnsMany listOf(btcUsdConfig, usdOnly, usdOnly)
+
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getBalances()[Asset.BTC] shouldNotBe null
+            simulatedService.getTradeHistory(null, null).size shouldBe 0
+        }
+
         "should handle unknown symbols and missing balances/prices in edge cases" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns

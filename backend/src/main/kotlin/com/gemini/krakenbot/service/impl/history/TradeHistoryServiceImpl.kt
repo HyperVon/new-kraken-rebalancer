@@ -17,6 +17,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.ObservedBalances
 import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
@@ -128,7 +129,8 @@ class TradeHistoryServiceImpl(
 
     override suspend fun syncLedgersFromKraken() = ledgersSyncService.syncLedgersFromKraken()
 
-    override suspend fun rebuildHistoricalSnapshotsIfNeeded() = syncService.rebuildHistoricalSnapshotsIfNeeded()
+    override suspend fun rebuildHistoricalSnapshotsIfNeeded(observedBalances: ObservedBalances?) =
+        syncService.rebuildHistoricalSnapshotsIfNeeded(observedBalances)
 
     override suspend fun getSyncMetadata(key: String): String? = syncService.getSyncMetadata(key)
 

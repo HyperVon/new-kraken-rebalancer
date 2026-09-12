@@ -37,6 +37,10 @@ class TradeHistorySyncServiceTest : StringSpec() {
     private val krakenService = mockk<KrakenService>(relaxed = true).also {
         every { it.hasLastTradeHistoryPageShape() } returns true
         every { it.hasLastTradeHistoryTotalCount() } returns false
+        // Match Kraken's TradesHistory contract: an authoritative `count` is always
+        // present, so coverage certification can prove completeness. Individual tests
+        // override this to exercise count-less or malformed responses.
+        every { it.getLastTradeHistoryTotalCount() } returns 0
     }
     private val configService = mockk<ConfigService>(relaxed = true)
     private val reconstructionService = mockk<TradeHistoryReconstructionService>(relaxed = true)
@@ -64,7 +68,8 @@ class TradeHistorySyncServiceTest : StringSpec() {
             block(krakenService)
         }
         every { krakenService.hasLastTradeHistoryPageShape() } returns true
-        every { krakenService.hasLastTradeHistoryTotalCount() } returns false
+        every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+        every { krakenService.getLastTradeHistoryTotalCount() } returns 0
     }
 
     private fun stubConfig(config: AppConfig = appConfig) {
@@ -248,13 +253,26 @@ class TradeHistorySyncServiceTest : StringSpec() {
             error.message shouldContain "page occupancy"
         }
 
-        "fails closed when an unseeded sync sees an unknown empty trade page" {
+        "fails closed when an unseeded sync sees an unknown empty page" {
             stubStableBackend()
             stubConfig()
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns false
             coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
 
             val error = shouldThrow<IllegalStateException> { service().syncTradesFromKraken() }
             error.message shouldContain "unknown empty page"
+        }
+
+        "fails closed when an unseeded sync cannot certify coverage from a count-less page" {
+            stubStableBackend()
+            stubConfig()
+            every { krakenService.hasLastTradeHistoryTotalCount() } returns false
+            coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiFill(0))
+
+            val error = shouldThrow<IllegalStateException> { service().syncTradesFromKraken() }
+            error.message shouldContain "Cannot certify trade coverage from a count-less page"
+            service().isHistorySeeded() shouldBe false
+            repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe null
         }
 
         "reconciled materially-changed fill inside reconstruction interval invalidates snapshots" {
@@ -476,7 +494,7 @@ class TradeHistorySyncServiceTest : StringSpec() {
             error.message shouldContain "page occupancy"
         }
 
-        "seeds across multiple pages without an authoritative total" {
+        "an unseeded multi-page seed without an authoritative total cannot promote coverage" {
             stubStableBackend()
             stubConfig()
             val pageOne = (0 until 50).map { apiFill(it) }
@@ -486,30 +504,32 @@ class TradeHistorySyncServiceTest : StringSpec() {
             every { krakenService.getLastTradeHistoryRawPageSize() } returnsMany listOf(50, 1)
 
             val sync = service()
-            sync.syncTradesFromKraken()
+            shouldThrow<IllegalStateException> { sync.syncTradesFromKraken() }
 
-            repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 51
-            sync.isHistorySeeded() shouldBe true
+            sync.isHistorySeeded() shouldBe false
+            sync.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) shouldBe null
+            sync.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) shouldBe null
         }
 
-        "seeds the collected pages when an authoritative total appears mid-sync" {
+        "incremental sync retries when an authoritative total appears mid-sync" {
             stubStableBackend()
             stubConfig()
-            // First page arrives without a count, the second carries one that
-            // contradicts the unknown progress: pagination stops, and the seed
-            // finalizes over the pages that proved consistent with the total.
+            // A certified store already owns a legitimate coverage marker, so an ordinary
+            // incremental pass retries from offset zero when the newly-appeared total proves
+            // the in-flight progress inconsistent.
+            repository.setHistorySeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "1")
             val pageOne = (0 until 50).map { apiFill(it) }
             coEvery { krakenService.getTradeHistory(any(), 0) } returns pageOne
             coEvery { krakenService.getTradeHistory(any(), 50) } returns listOf(apiFill(50))
-            every { krakenService.hasLastTradeHistoryTotalCount() } returnsMany listOf(false, true)
-            every { krakenService.getLastTradeHistoryTotalCount() } returnsMany listOf(0, 51)
-            every { krakenService.getLastTradeHistoryRawPageSize() } returnsMany listOf(50, 1)
+            every { krakenService.hasLastTradeHistoryTotalCount() } returnsMany listOf(false, true, true, true)
+            every { krakenService.getLastTradeHistoryTotalCount() } returnsMany listOf(0, 51, 51, 51)
+            every { krakenService.getLastTradeHistoryRawPageSize() } returnsMany listOf(50, 1, 50, 1)
 
             val sync = service()
             sync.syncTradesFromKraken()
 
             sync.isHistorySeeded() shouldBe true
-            sync.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
             repository.getTradesInRange(Instant.EPOCH, fixedNow).size shouldBe 51
         }
 
@@ -617,6 +637,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, "50")
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, "75")
             coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
@@ -715,6 +751,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
             repository.saveTrade(apiFill(0, time = baseTime))
 
             var now = fixedNow
@@ -799,6 +851,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -892,6 +960,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -974,6 +1058,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1028,6 +1128,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local1 = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1099,6 +1215,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val localCompatible = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1169,6 +1301,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             // Persist a settled API fill for O1 (LINK SELL)
             val settledFill = TestFixtures.tradeRecord(
@@ -1225,6 +1373,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val unassociatedApiFill = TestFixtures.tradeRecord(
                 timestamp = baseTime.plusMillis(100),
@@ -1261,6 +1425,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local1 = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1327,6 +1507,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             // Persist conflicting settled API fills under O1
             val fill1 = TestFixtures.tradeRecord(
@@ -1396,6 +1592,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val local = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1450,6 +1662,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val fill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1489,6 +1717,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1544,6 +1788,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1597,6 +1857,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1664,6 +1940,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1714,6 +2006,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1855,6 +2163,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val fill1 = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1909,6 +2233,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val unkeyedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1941,6 +2281,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val fill1 = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -1991,6 +2347,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val legacyFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -2023,6 +2395,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val legacyFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -2059,6 +2447,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val persistedFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,
@@ -2119,6 +2523,22 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                baseTime.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                baseTime.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                AccountHistoryScopeGuard.digestAccountScope("test-account"),
+            )
 
             val blankTxidFill = TestFixtures.tradeRecord(
                 timestamp = baseTime,

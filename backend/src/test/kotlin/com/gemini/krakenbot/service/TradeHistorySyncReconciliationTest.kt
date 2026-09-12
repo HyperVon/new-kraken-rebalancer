@@ -105,6 +105,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     ),
                 )
                 coEvery { krakenService.getTradeHistory(any(), any()) } returns apiTrades andThen emptyList()
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 1
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
 
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
@@ -140,6 +142,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     usdAmount = BigDecimal.TEN,
                 )
 
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 2
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(duplicateTrade, newTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
 
@@ -563,6 +567,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     ),
                 )
 
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 51
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
                 coEvery { krakenService.getTradeHistory(expectedSeedStart, 0) } returns batch1
                 coEvery { krakenService.getTradeHistory(expectedSeedStart, 50) } returns batch2
 
@@ -731,6 +737,77 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     coVerify(exactly = 2) { configService.beginExecutionSession() }
                     coVerify(exactly = 2) { configService.endExecutionSession() }
                 }
+            }
+        }
+
+        "already-persisted fills outside the reconstruction interval keep the reconstruction marker" {
+            runTest {
+                val now = Instant.parse("2033-05-01T12:00:00Z")
+                val persistedTrade = TestFixtures.tradeRecord(
+                    timestamp = now.minusSeconds(3_600),
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    source = TradeSource.API_FILL,
+                    tradeId = "TRADE-DUP",
+                )
+                val persistedTrades = mutableListOf(persistedTrade)
+                val metadata = mutableMapOf(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION to "10",
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC to
+                        now.minusSeconds(10_800).epochSecond.toString(),
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to
+                        now.minusSeconds(7_200).epochSecond.toString(),
+                )
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(
+                        dryRun = false,
+                        simulation = true,
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        minimumOrderSizeUSD = 5.0,
+                    ),
+                    allocations = emptyList(),
+                )
+                every { configService.getConfig() } returns appConfig
+                coEvery { repository.isHistorySeeded() } returns true
+                coEvery { repository.getLatestTradeTime() } returns persistedTrade.timestamp
+                coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                    metadata[firstArg<String>()]
+                }
+                coEvery { repository.setSyncMetadata(any(), any()) } coAnswers {
+                    metadata[firstArg<String>()] = secondArg<String>()
+                }
+                coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
+                    val from = firstArg<Instant>()
+                    val to = secondArg<Instant>()
+                    persistedTrades
+                        .filter { !it.timestamp.isBefore(from) && !it.timestamp.isAfter(to) }
+                        .sortedByDescending(TradeRecord::timestamp)
+                }
+                coEvery { repository.load() } returns emptyList()
+                coEvery { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 0L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null,
+                )
+                every { krakenService.hasLastTradeHistoryTotalCount() } returns true
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 1
+                every { krakenService.getLastTradeHistoryRawPageSize() } returns 1
+                coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(persistedTrade)
+
+                createService(syncNowProvider = { now }).syncTradesFromKraken()
+
+                metadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION] shouldBe "10"
+                metadata[SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS] shouldBe null
+                coVerify(exactly = 0) { repository.saveTrade(any()) }
             }
         }
 
