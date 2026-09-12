@@ -1736,6 +1736,72 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "a retained non-USD historical market cannot be valued as USD" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(1),
+                        pair = "ATOMUSDT",
+                        side = OrderSide.BUY.apiValue,
+                        symbol = "ATOM",
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("999.00"),
+                        price = BigDecimal("2.00"),
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "atom-filter-cycle",
+                        orderTxid = "atom-filter-order",
+                        tradeId = "atom-filter-trade",
+                    ),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "seed-atom",
+                            time = Instant.parse("2025-12-31T00:00:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                            asset = "ATOM",
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal.ONE,
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "seed-usdt",
+                            time = Instant.parse("2025-12-31T00:00:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                            asset = "USDT",
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal.ONE,
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                krakenService.ohlcSupplier = { pair, _, _ ->
+                    if (pair == "ATOMUSDT") {
+                        listOf(botTime.minusSeconds(2 * 24 * 60 * 60L).epochSecond to BigDecimal("2.00"))
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                status.reason shouldBe "historical price unavailable for ATOM"
+            }
+        }
+
         "production-shaped BTC fills with base-denominated fees reconstruct exact balances" {
             runTest {
                 val botTime = Instant.parse("2026-01-02T00:00:00Z")
@@ -2186,7 +2252,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
         }
 
         "baseline replay version reflects historical universe semantics" {
-            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "12"
+            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "13"
         }
 
         "recovery rejects unsupported trade economics" {
@@ -3336,7 +3402,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                status.reason shouldBe "historical price unavailable for ETH"
             }
         }
 
@@ -3354,10 +3420,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.saveTrade(localEstimate(botTime, bot))
                 repository.saveTrade(
                     localEstimate(
-                        botTime.plusSeconds(1),
+                        botTime.plusSeconds(3600),
                         apiTrade(
                             "eth-zero-price",
-                            botTime.plusSeconds(1),
+                            botTime.plusSeconds(3600),
                             symbol = Asset.ETH,
                             volume = BigDecimal("0.1"),
                             usdAmount = BigDecimal("10.00"),
@@ -3369,7 +3435,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val anchor = anchorSnapshot(
                     balances = mapOf(
                         Asset.BTC to BigDecimal("0.5"),
-                        Asset.ETH to BigDecimal("0.1"),
+                        Asset.ETH to BigDecimal("0.2"),
                         Asset.USD to BigDecimal("949.70"),
                     ),
                     prices = mapOf(
@@ -3400,6 +3466,55 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 status.status shouldBe InceptionRecoveryStatus.CONFIRMED
                 krakenService.getOHLCCallCount shouldBe 1
+            }
+        }
+
+        "a historical-only dust position is valued from its retained USD market" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "ada-dustsweep",
+                            time = Instant.parse("2026-01-02T00:10:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                            subtype = "dustsweeping",
+                            asset = Asset.ADA,
+                            amount = BigDecimal("-1.12464668"),
+                            balance = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.02"), Asset.USD to BigDecimal("1000.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+
+                val unavailable = newService().recoverOneBoundedRun()
+
+                unavailable.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                unavailable.reason shouldBe "historical price unavailable for ADA"
+
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    listOf(botTime.minusSeconds(2 * 24 * 60 * 60L).epochSecond to BigDecimal("0.415796"))
+                }
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)?.toInt()
+                    ?: error("baseline snapshot id is missing")
+                val baseline = repository.getSnapshotById(baselineId) ?: error("baseline snapshot is missing")
+                val ada = baseline.assets.getValue(Asset.ADA)
+                ada.balance shouldBeEqualComparingTo BigDecimal("1.12464668")
+                ada.price shouldBeEqualComparingTo BigDecimal("0.415796")
             }
         }
 
@@ -3443,7 +3558,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val first = newService().recoverOneBoundedRun()
 
                 first.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                first.reason shouldBe "historical price unavailable"
+                first.reason shouldBe "historical price source error for ETH"
                 val tradeHistoryCalls = krakenService.getTradeHistoryCallCount
 
                 ohlcAvailable = true
@@ -3494,7 +3609,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                status.reason shouldBe "historical price unavailable for ETH"
             }
         }
 
@@ -3911,7 +4026,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                status.reason shouldBe "historical price unavailable for ETH"
             }
         }
 
@@ -3953,14 +4068,17 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val candleOpenSec = Instant.parse("2026-01-02T00:00:00Z").epochSecond
                 krakenService.ohlcSupplier = { pair, interval, _ ->
                     pair shouldBe Asset.ETH_USD_PAIR
-                    interval shouldBe 15
-                    listOf(candleOpenSec to BigDecimal("200.00"))
+                    if (interval == 15) {
+                        listOf(candleOpenSec to BigDecimal("200.00"))
+                    } else {
+                        emptyList()
+                    }
                 }
 
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                status.reason shouldBe "historical price unavailable for ETH"
             }
         }
 

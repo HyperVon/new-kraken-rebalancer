@@ -1314,16 +1314,50 @@ class InceptionRecoveryService(
         }
         runningBalances.replaceAll { _, balance -> balance.max(BigDecimal.ZERO) }
 
-        val prices = resolveHistoricalPrices(
-            universe = historicalUniverse,
-            baselineTime = baselineTime,
-            candidatePriceEvidence = candidatePriceEvidence,
-            runningBalances = runningBalances,
-            backend = backend,
-        ) ?: return BaselineResult.Failure(
-            InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
-            HISTORICAL_PRICE_UNAVAILABLE_REASON,
-        )
+        // Retained USD-quoted pairs keyed by normalized base cover historical markets that are no
+        // longer listed today (for example a delisted token that was genuinely held at inception).
+        // Non-USD quotes are ignored because the resolver returns exchange prices as-is; a
+        // USDT/USDC price must never be treated as USD without a proven conversion.
+        val retainedPairsByBase = historicalTrades
+            .mapNotNull { trade ->
+                val split = Asset.splitTradingPair(trade.pair)
+                if (split == null || split.quote != Asset.USD) {
+                    null
+                } else {
+                    split.base to split.rawPair
+                }
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, pairs) -> pairs.distinct() }
+        val prices = when (
+            val priceResolution = resolveHistoricalPrices(
+                universe = historicalUniverse,
+                baselineTime = baselineTime,
+                candidatePriceEvidence = candidatePriceEvidence,
+                runningBalances = runningBalances,
+                backend = backend,
+                marketPairsByBase = retainedPairsByBase,
+            )
+        ) {
+            is PriceResolution.Success -> priceResolution.prices
+
+            is PriceResolution.Unavailable -> return BaselineResult.Failure(
+                InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
+                "historical price unavailable for ${priceResolution.symbol}".take(MAX_REASON_LENGTH),
+            )
+
+            is PriceResolution.SourceError -> {
+                log.warn(
+                    "Historical price source failure for {}: {}",
+                    priceResolution.symbol,
+                    priceResolution.message,
+                )
+                return BaselineResult.Failure(
+                    InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
+                    "historical price source error for ${priceResolution.symbol}".take(MAX_REASON_LENGTH),
+                )
+            }
+        }
         val targetPercents = allocations.associate { allocation ->
             Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase() to
                 BigDecimal.valueOf(allocation.targetPercent)
@@ -1463,13 +1497,22 @@ class InceptionRecoveryService(
         return true
     }
 
+    private sealed interface PriceResolution {
+        data class Success(val prices: Map<String, BigDecimal>) : PriceResolution
+
+        data class Unavailable(val symbol: String) : PriceResolution
+
+        data class SourceError(val symbol: String, val message: String) : PriceResolution
+    }
+
     private suspend fun resolveHistoricalPrices(
         universe: Set<String>,
         baselineTime: Instant,
         candidatePriceEvidence: Pair<String, BigDecimal>?,
         runningBalances: Map<String, BigDecimal>,
         backend: KrakenService,
-    ): Map<String, BigDecimal>? {
+        marketPairsByBase: Map<String, List<String>>,
+    ): PriceResolution {
         val evidenceSymbol = candidatePriceEvidence?.first
         val prices = mutableMapOf<String, BigDecimal>()
         for (symbol in universe) {
@@ -1478,27 +1521,36 @@ class InceptionRecoveryService(
                 continue
             }
             val balance = runningBalances[symbol] ?: BigDecimal.ZERO
+            // Only proven positive holdings need a market price; a zero reconstructed balance
+            // must not trigger (or fail on) a lookup for a market that may no longer exist.
+            if (balance <= BigDecimal.ZERO) {
+                prices[symbol] = BigDecimal.ZERO
+                continue
+            }
             val candidateException = if (symbol == evidenceSymbol && candidatePriceEvidence.second.signum() > 0) {
                 candidatePriceEvidence.second
             } else {
                 null
             }
-            val resolvedPrice = HistoricalPriceResolver.resolveHistoricalPrice(
-                asset = symbol,
-                eventTime = baselineTime,
-                tradesRepo = repository,
-                krakenService = backend,
-                candidatePriceException = candidateException,
-            )
+            val resolvedPrice = try {
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    asset = symbol,
+                    eventTime = baselineTime,
+                    tradesRepo = repository,
+                    krakenService = backend,
+                    candidatePriceException = candidateException,
+                    marketPairs = marketPairsByBase[symbol].orEmpty(),
+                )
+            } catch (e: HistoricalPriceSourceException) {
+                return PriceResolution.SourceError(symbol, e.message ?: "historical price source failed")
+            }
             if (resolvedPrice != null && resolvedPrice > BigDecimal.ZERO) {
                 prices[symbol] = resolvedPrice
-            } else if (balance <= BigDecimal.ZERO) {
-                prices[symbol] = BigDecimal.ZERO
             } else {
-                return null
+                return PriceResolution.Unavailable(symbol)
             }
         }
-        return prices
+        return PriceResolution.Success(prices)
     }
 
     private fun classifyTradeForRecovery(trade: TradeRecord, knownRebalancerOrderTxids: Set<String>): TradeOwnership =
@@ -1832,7 +1884,8 @@ class InceptionRecoveryService(
      * remain terminal until their local evidence or recovery scope changes.
      */
     private fun isTransientApprovedBaselineFailure(reason: String?): Boolean =
-        reason == HISTORICAL_PRICE_UNAVAILABLE_REASON ||
+        reason?.startsWith("historical price unavailable", ignoreCase = true) == true ||
+            reason?.startsWith("historical price source error", ignoreCase = true) == true ||
             reason?.startsWith("ledger provenance unresolved:", ignoreCase = true) == true ||
             reason?.contains("unresolved funding provenance", ignoreCase = true) == true ||
             reason?.startsWith("Funding legs in card group cannot be proven", ignoreCase = true) == true
@@ -1971,7 +2024,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "12"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "13"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L
@@ -1984,7 +2037,6 @@ class InceptionRecoveryService(
             InceptionRecoveryStatus.AMBIGUOUS,
             InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
         )
-        private const val HISTORICAL_PRICE_UNAVAILABLE_REASON = "historical price unavailable"
         private const val APPROVED_BASELINE_READY_REASON = "approved-start baseline ready"
 
         private const val STREAM_COMPLETE = "COMPLETE"

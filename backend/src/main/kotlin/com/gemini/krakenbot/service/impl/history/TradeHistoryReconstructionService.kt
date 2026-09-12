@@ -37,7 +37,7 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "13"
+        const val CURRENT_RECONSTRUCTION_VERSION = "14"
 
         /**
          * Historical fail-closed anchor contract (v11).
@@ -305,7 +305,12 @@ class TradeHistoryReconstructionService(
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
         val allocationSymbols = allocations.map { it.symbol.value }
-        val unsupportedTrade = historicalTrades.firstOrNull { !it.isSupportedMarket(allocationSymbols) }
+        // A retained historical market stays reconstructable even when the pair is delisted or
+        // the base is outside the live allocations, as long as the pair carries real base/quote
+        // semantics. Truly unsplittable pairs still fail closed.
+        val unsupportedTrade = historicalTrades.firstOrNull { trade ->
+            !trade.isSupportedMarket(allocationSymbols) && Asset.splitTradingPair(trade.pair) == null
+        }
         if (unsupportedTrade != null) {
             log.warn(
                 "Skipping historical snapshot reconstruction: unsupported historical trade found without reliable " +
@@ -316,8 +321,9 @@ class TradeHistoryReconstructionService(
             return
         }
         // Malformed supported-market economics must fail closed, never become zero-value fills.
-        val invalidTrade = historicalTrades.firstOrNull {
-            it.isSupportedMarket(allocationSymbols) && !it.hasValidEconomicFields()
+        val invalidTrade = historicalTrades.firstOrNull { trade ->
+            (trade.isSupportedMarket(allocationSymbols) || Asset.splitTradingPair(trade.pair) != null) &&
+                !trade.hasValidEconomicFields()
         }
         if (invalidTrade != null) {
             log.warn(

@@ -3196,7 +3196,7 @@ class AthTrustAndIdempotencyTest : StringSpec() {
                 tradeRepository.saveTrade(
                     TestFixtures.tradeRecord(
                         timestamp = t70.minusSeconds(1),
-                        pair = "USDBTC",
+                        pair = "XBTUSD",
                         side = "buy",
                         symbol = "BTC",
                         volume = BigDecimal("0.1"),

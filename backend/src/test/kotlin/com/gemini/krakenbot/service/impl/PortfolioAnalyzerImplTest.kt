@@ -2320,7 +2320,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
 
                 coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns emptyList()
                 coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
-                    fixedTime.minusSeconds(86401).epochSecond to BigDecimal("70000.00"),
+                    fixedTime.minusSeconds(172_801).epochSecond to BigDecimal("70000.00"),
                     fixedTime.minusSeconds(60).epochSecond to BigDecimal("60000.00"),
                     fixedTime.minusSeconds(900).epochSecond to BigDecimal.ZERO,
                 )

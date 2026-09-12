@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.59] - 2026-09-12
+
+### Fixed
+
+- **Historical-only holdings are valued from trustworthy USD market evidence**: the approved-start
+  baseline now prices every reconstructed positive balance, including assets that are no longer
+  configured targets, from a bounded evidence ladder — a USD-quoted execution within 180 seconds of the
+  valuation instant, an at-or-before USD snapshot within the same window, then Kraken OHLC at 15 m, 60 m,
+  240 m, and daily intervals, accepting only completed candles whose close is at most one bucket before
+  the valuation instant. The daily tier reaches the approved start; finer tiers win when available, and
+  reconstructed balances at or below zero skip valuation entirely.
+- **Only USD-quoted evidence can prove a USD price**: trade-tier and retained historical pairs are
+  restricted to USD-quoted markets because TradesHistory reports non-USD quote costs in the quote
+  currency. A delisted USD pair (for example `STRCZUSD`) still counts, while a market that only ever
+  quoted in USDT/USDC without a proven conversion fails closed with `historical price unavailable for
+  <symbol>` instead of treating the quote amount as USD. Operational OHLC failures surface separately as
+  `historical price source error for <symbol>`.
+- **Baseline and snapshot reconstruction share the historical-market contract**: the snapshot walk now
+  accepts any trade whose pair has valid base/quote semantics instead of rejecting out-of-allocation
+  markets, so a delisted USD market recorded in retained history no longer skips snapshot reconstruction.
+  Baseline replay version `13` and snapshot reconstruction version `14` rebuild derived state in place
+  from retained history without re-downloading it.
+
 ## [6.17.58] - 2026-09-12
 
 ### Fixed
