@@ -10,6 +10,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Same-instant replay follows the recorded checkpoint chain**: snapshot reconstruction orders events
+  that share one instant onto their authoritative ledger-checkpoint links before inverting them — a
+  fill is undone only while its recorded post-entry balance is the current state, while events without
+  checkpoint evidence keep repository order after the chain. A recorded balance effect can no longer be
+  emitted at an earlier instant, so an older snapshot (for example the Dec 19 SOL reward row) no longer
+  inherits a newer fill's balance. Snapshot reconstruction version `15` rebuilds derived snapshots in
+  place; the baseline replay version is unchanged.
 - **Historical-only holdings are valued from trustworthy USD market evidence**: the approved-start
   baseline now prices every reconstructed positive balance, including assets that are no longer
   configured targets, from a bounded evidence ladder — a USD-quoted execution within 180 seconds of the

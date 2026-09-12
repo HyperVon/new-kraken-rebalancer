@@ -18,6 +18,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.PriorityQueue
 import kotlin.math.abs
 
 /**
@@ -43,8 +44,8 @@ object SnapshotHistoryCalculator {
         data class DailyCloseEvent(override val timestamp: Instant) : TimelineEvent()
 
         // Newest first — [calculateHistoricalSnapshots] undoes trades after each snapshot.
-        // Ledger rows sort before trades at the same instant so a fill's recorded post-balances
-        // are restored before its wallet effect is inverted.
+        // Same-instant events are re-ordered onto their authoritative ledger checkpoint chain
+        // before the walk; ledger rows themselves are not timeline events.
         override fun compareTo(other: TimelineEvent): Int {
             val byTime = other.timestamp.compareTo(this.timestamp)
             if (byTime != 0) return byTime
@@ -154,10 +155,11 @@ object SnapshotHistoryCalculator {
         tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
     ): List<PortfolioSnapshot> {
         val rawPoints = mutableListOf<RawHistoricalPoint>()
+        val orderedEvents = orderSameInstantEvents(events, runningBalances, resolvedScopes, tradeLegsByRefId)
 
         // [runningBalances] starts at the reconstruction cutoff (the oldest retained snapshot, or current balances
         // when none exists); after each trade snapshot, undo that fill so older points see pre-trade balances.
-        for (ev in events) {
+        for (ev in orderedEvents) {
             val snapshotTimestamp = ev.timestamp
             var exactPortfolioValue = BigDecimal.ZERO
 
@@ -229,6 +231,137 @@ object SnapshotHistoryCalculator {
         } else {
             runningBalances.getValue(symbol).subtract(netDelta)
         }
+    }
+
+    private data class ChainPoint(val asset: String, val pre: BigDecimal, val post: BigDecimal)
+
+    /**
+     * Reorders same-instant events onto their recorded checkpoint chain so the newest-first walk
+     * inverts an authoritative leg only when the running balance has reached its post-entry
+     * checkpoint. Events without checkpoint evidence keep their repository order after the chain.
+     * [runningBalances] is only read here; the walk remains the sole mutator.
+     */
+    private fun orderSameInstantEvents(
+        events: List<TimelineEvent>,
+        runningBalances: Map<String, BigDecimal>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
+    ): List<TimelineEvent> {
+        if (events.size < 2 || events.zipWithNext().none { (a, b) -> a.timestamp == b.timestamp }) return events
+        val replays = events.filterIsInstance<TimelineEvent.TradeEvent>().associateWith { tradeEvent ->
+            runCatching { TradeLedgerReplay.classify(tradeEvent.trade, tradeLegsByRefId) }.getOrNull()
+        }
+        val trackedSymbols = runningBalances.keys.toMutableSet()
+        replays.values.filterIsInstance<TradeLedgerReplay.Classification.Replayable>().forEach {
+            trackedSymbols += it.base
+            trackedSymbols += it.quote
+        }
+        val ordered = ArrayList<TimelineEvent>(events.size)
+        var start = 0
+        while (start < events.size) {
+            var end = start + 1
+            while (end < events.size && events[end].timestamp == events[start].timestamp) end++
+            val group = events.subList(start, end)
+            ordered += if (group.size < 2) {
+                group
+            } else {
+                orderInstantGroup(group, trackedSymbols, replays, resolvedScopes)
+            }
+            start = end
+        }
+        return ordered
+    }
+
+    private fun orderInstantGroup(
+        group: List<TimelineEvent>,
+        trackedSymbols: Set<String>,
+        replays: Map<TimelineEvent.TradeEvent, TradeLedgerReplay.Classification?>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+    ): List<TimelineEvent> {
+        val chainPoints = group.map { chainPoints(it, trackedSymbols, replays, resolvedScopes) }
+        val anchored = group.indices.filter { chainPoints[it].isNotEmpty() }
+        val successors = Array(group.size) { mutableSetOf<Int>() }
+        val predecessors = Array(group.size) { mutableSetOf<Int>() }
+        for (older in anchored) {
+            for (newer in anchored) {
+                if (older == newer || newer in successors[older] || older in successors[newer]) continue
+                val forward =
+                    chainPoints[older].any { a ->
+                        chainPoints[newer].any { b -> a.asset == b.asset && a.post == b.pre }
+                    }
+                val backward =
+                    chainPoints[newer].any { b ->
+                        chainPoints[older].any { a -> b.asset == a.asset && b.post == a.pre }
+                    }
+                when {
+                    forward && !backward -> {
+                        successors[older].add(newer)
+                        predecessors[newer].add(older)
+                    }
+
+                    backward && !forward -> {
+                        successors[newer].add(older)
+                        predecessors[older].add(newer)
+                    }
+                }
+            }
+        }
+        // Walk newest first: emit an event only once every newer linked event has been undone, so each
+        // authoritative post-entry checkpoint is still the current state when its delta is inverted.
+        val remaining = IntArray(group.size) { successors[it].size }
+        val available = PriorityQueue<Int>()
+        anchored.filter { remaining[it] == 0 }.forEach(available::add)
+        val ordered = ArrayList<TimelineEvent>(group.size)
+        val emitted = BooleanArray(group.size)
+        while (available.isNotEmpty()) {
+            val newest = available.poll()
+            emitted[newest] = true
+            ordered += group[newest]
+            predecessors[newest].forEach { older ->
+                if (--remaining[older] == 0) available.add(older)
+            }
+        }
+        group.indices.filter { !emitted[it] }.forEach { ordered += group[it] }
+        return ordered
+    }
+
+    private fun chainPoints(
+        event: TimelineEvent,
+        trackedSymbols: Set<String>,
+        replays: Map<TimelineEvent.TradeEvent, TradeLedgerReplay.Classification?>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+    ): List<ChainPoint> = when (event) {
+        is TimelineEvent.TradeEvent -> {
+            val replay = replays[event] as? TradeLedgerReplay.Classification.Replayable
+            val effect = replay?.ledgerEffect
+            if (replay == null || effect == null) {
+                emptyList()
+            } else {
+                listOfNotNull(
+                    effect.baseCheckpoint?.takeIf { effect.baseNetDelta.signum() != 0 }?.let {
+                        ChainPoint(replay.base, it.subtract(effect.baseNetDelta), it)
+                    },
+                    effect.quoteCheckpoint?.takeIf { effect.quoteNetDelta.signum() != 0 }?.let {
+                        ChainPoint(replay.quote, it.subtract(effect.quoteNetDelta), it)
+                    },
+                )
+            }
+        }
+
+        is TimelineEvent.RewardEvent -> {
+            val symbol = Asset.normalizeLedgerAsset(event.event.asset).uppercase()
+            val scope = resolvedScopes[event.event.ledgerId]
+            val delta = event.event.netBalanceDelta()
+            if (scope != null && scope != AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT) {
+                emptyList()
+            } else if (event.event.hasAuthoritativeBalance && delta.signum() != 0 && symbol in trackedSymbols) {
+                listOf(ChainPoint(symbol, event.event.balance.subtract(delta), event.event.balance))
+            } else {
+                emptyList()
+            }
+        }
+
+        is TimelineEvent.DailyCloseEvent -> emptyList()
     }
 
     private fun getPriceForTimestamp(

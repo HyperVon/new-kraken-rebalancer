@@ -549,7 +549,10 @@ retained ledger sequence against Kraken's post-entry balances. It includes autho
 rows as continuity checkpoints for this validation, and replay matches each trade to those same
 rows by execution identity so the leg's recorded net wallet movement supplies the balance effect,
 while `TradesHistory` remains the source of trade economics. Rows for one normalized asset and timestamp are validated as a
-bounded unordered group rather than by lexically sorting ledger IDs. Documented Spot/staking,
+bounded unordered group rather than by lexically sorting ledger IDs. Snapshot reconstruction orders
+same-instant events onto those recorded checkpoint links (newest first) and leaves events without
+checkpoint evidence in repository order, so a recorded balance effect is never emitted at an instant
+before it exists. Documented Spot/staking,
 Spot/Futures, and Spot/Spot transfer markers use their mapped wallet scopes; staking rows that do
 not identify a scope are resolved against all compatible known scopes, or seed a new opaque scope
 only when their own balance matches their net delta within the applicable precision envelope.
