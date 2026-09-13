@@ -2021,7 +2021,11 @@ object RebalancerComparisonCalculator {
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
     ) {
         val trial = balances.toMutableMap()
-        if (!applyRealizedTrade(trial, event.trade, event.usdNotional, balances.keys, tradeLegsByRefId)) {
+        // A quote the basket does not hold still has to reach attribution. Seeding it at zero lets
+        // applyQuoteLeg record the drawdown, so the movement is skipped or scaled by its
+        // basket-held share instead of mirroring the base at full size with no funding leg.
+        Asset.splitTradingPair(event.trade.pair)?.quote?.let { quote -> trial.putIfAbsent(quote, BigDecimal.ZERO) }
+        if (!applyRealizedTrade(trial, event.trade, event.usdNotional, trial.keys, tradeLegsByRefId)) {
             return
         }
         val deltas = trial.mapNotNull { (symbol, value) ->

@@ -644,7 +644,7 @@ seconds, eliminating historical coverage gaps and enabling continuous Rebalancer
 comparison across the entire strategy lifecycle. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
 and not Trades history, so the comparison does not try to deduplicate these ledger
-rows against `TradesHistory`. Reconstruction version `11` records the continuous history start and
+rows against `TradesHistory`. Reconstruction version `16` records the continuous history start and
 is paired with the ledger and trade coverage versions it replayed, so a coverage migration cannot suppress
 the required rebuild. Each reconstruction trigger captures a single time anchor that flows through
 coverage check, event range, balance state, and `SNAPSHOT_RECONSTRUCTION_THROUGH` (which equals the

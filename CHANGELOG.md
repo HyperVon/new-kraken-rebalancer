@@ -65,7 +65,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Baseline and snapshot reconstruction share the historical-market contract**: the snapshot walk now
   accepts any trade whose pair has valid base/quote semantics instead of rejecting out-of-allocation
   markets, so a delisted USD market recorded in retained history no longer skips snapshot reconstruction.
-  Baseline replay version `13` and snapshot reconstruction version `14` rebuild derived state in place
+  Baseline replay version `13` and snapshot reconstruction version `15` rebuild derived state in place
   from retained history without re-downloading it.
 - **Approved-start and inception baselines survive snapshot-series rewrites**: the snapshots referenced by
   the inception, recovered-baseline, approved-baseline, and accepted comparison-start metadata keys are now
