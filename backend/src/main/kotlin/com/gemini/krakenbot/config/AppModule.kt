@@ -113,6 +113,7 @@ val coreModule =
                 orderIntentRepository = get(),
                 inceptionDiscoveryService = get(),
                 fundingProvenanceResolver = get(),
+                krakenService = get(),
             )
         }
         single {

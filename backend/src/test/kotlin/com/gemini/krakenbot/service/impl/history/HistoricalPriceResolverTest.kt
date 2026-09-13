@@ -304,6 +304,153 @@ class HistoricalPriceResolverTest : StringSpec() {
                 queriedPairs.contains("STRCZUSD") shouldBe true
             }
         }
+
+        "a non-USD quoted candle is converted through the quote asset's historical USD rate" {
+            runTest {
+                val usdtTrade = trade(
+                    price = BigDecimal("0.9992"),
+                    volume = BigDecimal("1.0"),
+                    usd = BigDecimal("0.9992"),
+                )
+                    .copy(pair = "USDTUSD", symbol = "USDT")
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(usdtTrade)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } answers {
+                    if (firstArg<String>() == "XLMUSDT") {
+                        listOf(eventTime.minusSeconds(900).epochSecond to BigDecimal("0.25"))
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    "XLM",
+                    eventTime,
+                    repository,
+                    krakenService,
+                    marketPairs = listOf("XLMUSDT"),
+                )!! shouldBeEqualComparingTo BigDecimal("0.24980000")
+            }
+        }
+
+        "a non-USD quote without its own historical USD rate stays unresolved" {
+            runTest {
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                val queriedPairs = mutableListOf<String>()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } answers {
+                    queriedPairs += firstArg<String>()
+                    if (firstArg<String>() == "XLMUSDT") {
+                        listOf(eventTime.minusSeconds(900).epochSecond to BigDecimal("0.25"))
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    "XLM",
+                    eventTime,
+                    repository,
+                    krakenService,
+                    marketPairs = listOf("XLMUSDT"),
+                ) shouldBe null
+                queriedPairs.contains("USDTUSD") shouldBe true
+            }
+        }
+
+        "a widened trade window admits a contribution-time fill outside the default window" {
+            runTest {
+                val farTrade = trade(
+                    price = BigDecimal("0.239635"),
+                    volume = BigDecimal("1.0"),
+                    usd = BigDecimal("0.239635"),
+                )
+                    .copy(symbol = "XLM", pair = "XLMUSD", timestamp = eventTime.plusSeconds(4858))
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(farTrade)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    "XLM",
+                    eventTime,
+                    repository,
+                    krakenService,
+                ) shouldBe null
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    "XLM",
+                    eventTime,
+                    repository,
+                    krakenService,
+                    tradeWindowSeconds = 21_600L,
+                )!! shouldBeEqualComparingTo BigDecimal("0.239635")
+            }
+        }
+
+        "blank market pair entries are ignored while a usable retained pair still prices" {
+            runTest {
+                val usdtTrade = trade(
+                    price = BigDecimal("0.9992"),
+                    volume = BigDecimal("1.0"),
+                    usd = BigDecimal("0.9992"),
+                )
+                    .copy(pair = "USDTUSD", symbol = "USDT")
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(usdtTrade)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } answers {
+                    if (firstArg<String>() == "XLMUSDT") {
+                        listOf(eventTime.minusSeconds(900).epochSecond to BigDecimal("0.25"))
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    "XLM",
+                    eventTime,
+                    repository,
+                    krakenService,
+                    marketPairs = listOf("   ", "XLMUSDT"),
+                )!! shouldBeEqualComparingTo BigDecimal("0.24980000")
+            }
+        }
+
+        "candles opened before the lookback window or closing in the future are ignored" {
+            runTest {
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    eventTime.minusSeconds(100_000).epochSecond to BigDecimal("1.00"),
+                    eventTime.epochSecond to BigDecimal("2.00"),
+                    eventTime.minusSeconds(900).epochSecond to BigDecimal("98.00"),
+                )
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    Asset.BTC,
+                    eventTime,
+                    repository,
+                    krakenService,
+                )!! shouldBeEqualComparingTo BigDecimal("98.00")
+            }
+        }
+
+        "a snapshot observation time at or before the instant still supplies its price" {
+            runTest {
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(
+                    snapshot(eventTime.minusSeconds(30))
+                        .copy(balancesObservedAt = eventTime.minusSeconds(10)),
+                )
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    Asset.BTC,
+                    eventTime,
+                    repository,
+                    krakenService,
+                )!! shouldBeEqualComparingTo BigDecimal("99.00")
+            }
+        }
     }
 
     private fun trade(price: BigDecimal, volume: BigDecimal, usd: BigDecimal): TradeRecord = TestFixtures.tradeRecord(

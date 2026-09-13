@@ -580,12 +580,22 @@ recorded movement. Missing, duplicated, unexpected, or direction-contradictory l
 closed, and a missing leg is accepted only when its reported movement is provably zero. Complete
 conversions retain their explicit strategy-neutral two-leg replay and do not affect owner capital,
 rewards, ATH, or Buy & Hold scaling. Baseline replay version `13` and snapshot reconstruction
-version `14` invalidate only the derived baseline and snapshot results, so completed recovery
+version `16` invalidate only the derived baseline and snapshot results, so completed recovery
 trade/ledger streams and their offsets remain reusable. The reconstruction
 universe is derived per run: configured allocations plus every replayable trade base and quote plus
 non-zero-delta Spot ledger assets. Historical-only balances are seeded from the latest authoritative
 retained ledger balance at or before the anchor; a missing seed fails closed as
 `no authoritative balance for historical asset <symbol>`.
+
+Pre-inception retention can prune a fill from `TradesHistory` while both of its `type=trade`
+ledger legs survive. Those authoritative orphan legs are replayed into reconstruction so a
+recorded execution is never silently dropped from a reconstructed historical balance. A leg group
+is replayable only when it is structurally proven: either a single leg whose net movement is
+provably zero, or two legs with distinct assets, one debit and one credit, a spread within one
+second, an authoritative post balance, a valid fee, and a valid amount shape, resolved to
+`SPOT`. A group already matched to a retained trade identity is
+not replayed twice. Incomplete or contradictory groups fail reconstruction closed, and non-Spot
+groups are left out, because neither can be proven to have moved the strategy wallet.
 
 The implementation was validated against a sanitized forensic copy containing
 conversion, funding, reward, trade, and documented transfer activity. No
@@ -842,10 +852,23 @@ the same external capital over time:
   weights** (existing synthetic holdings untouched); only the new money moves.
   Confirmed card Buy Crypto transactions collapse into a single net owner contribution
   allocated by inception weights; any USD funding plumbing netting to zero fails closed
-  as ambiguous. Contribution prices come only from recorded snapshots near the event —
-  never a live ticker for an old contribution — and missing prices fail closed.
+  as ambiguous. Contribution prices come only from recorded history near the event —
+  never a live ticker for an old contribution — and missing prices fail closed. The
+  evidence ladder is the same bounded historical ladder used elsewhere: a USD-quoted
+  execution inside the contribution window, an at-or-before recorded snapshot, a
+  completed Kraken OHLC candle, or a trustworthy cross-quote conversion through the
+  quote asset's own historical USD rate. A contribution in a historical-only asset is
+  valued in USD and allocated across the configured targets only; it never receives a
+  benchmark weight and never becomes a live rebalance target.
 - **Owner withdrawals scale the whole synthetic portfolio proportionally by
   market value**, so the cash event itself creates no artificial alpha either way.
+- **Replayed movements are attributed to what the synthetic basket actually holds.**
+  A trade, conversion, or balance movement that draws down an asset the basket never
+  received is mirrored only for the basket-held share. An owner contribution is
+  invested by inception weights rather than held in the contributed asset, so a later
+  spend of that asset cannot create an impossible negative synthetic holding or count
+  the same value twice; the remainder is skipped instead. This keeps every contribution
+  counted exactly once while partial holdings still mirror their real proportion.
 - Investment returns (staking, dividends, observed top-level promotion rewards,
   `earn/reward`, and adjustments) replay in-kind;
   complete conversions replay as neutral per-asset transformations;

@@ -57,6 +57,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         historyTruncated: Boolean = false,
         priceProvider: HistoricalPriceProvider? = null,
         provenanceResolver: FundingProvenanceResolver = testProvenanceResolver,
+        inceptionUnavailableReason: ComparisonUnavailableReason? = null,
     ): RebalancerComparison = RebalancerComparisonCalculator.calculate(
         snapshots = snapshots,
         trades = trades,
@@ -68,6 +69,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         historyTruncated = historyTruncated,
         priceProvider = priceProvider,
         provenanceResolver = provenanceResolver,
+        inceptionUnavailableReason = inceptionUnavailableReason,
     )
 
     init {
@@ -4375,8 +4377,109 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("120060.00")
-            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-20.00")
+            // The deposit is already recognized as owner capital and invested by inception
+            // weights, so the basket never holds the deposited cash. The uncorrelated spend
+            // therefore cannot draw the synthetic account negative; it stays a separate,
+            // unmirrored movement instead of a phantom negative cash balance.
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("120120.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-80.00")
+        }
+
+        "a manual sale of a target asset the basket never held is not mirrored into a negative position" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(60)
+            val t2 = t0.plusSeconds(120)
+            val t3 = t0.plusSeconds(180)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "10000.00",
+                        mapOf(
+                            "BTC" to assetRow("0.0", "100000.00", "0.00"),
+                            "USD" to assetRow("10000.00", "1.0", "10000.00"),
+                        ),
+                    ),
+                    snapshot(
+                        t3,
+                        "110000.00",
+                        mapOf(
+                            "BTC" to assetRow("0.0", "100000.00", "0.00"),
+                            "USD" to assetRow("110000.00", "1.0", "110000.00"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(t2, side = "sell", symbol = "BTC", volume = "1.0", usdAmount = "100000.00"),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "1.0",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "BTC-DEPOSIT",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            // The deposited BTC is owner capital invested by inception weights (all USD), so the
+            // basket never holds the deposited base. Mirroring the sale would create an impossible
+            // negative position; the movement is skipped instead.
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("0.00")
+        }
+
+        "proportional attribution mirrors only the basket-held share of a movement" {
+            val skipped = mutableMapOf("BTC" to BigDecimal("0.00"), "USD" to BigDecimal("0.00"))
+            RebalancerComparisonCalculator.applyAttributedMovement(
+                balances = skipped,
+                deltas = mapOf("BTC" to BigDecimal("-1.0"), "USD" to BigDecimal("100.00")),
+            )
+            skipped.getValue("BTC") shouldBeEqualComparingTo BigDecimal("0.00")
+            skipped.getValue("USD") shouldBeEqualComparingTo BigDecimal("0.00")
+
+            val partial = mutableMapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("50.00"))
+            RebalancerComparisonCalculator.applyAttributedMovement(
+                balances = partial,
+                deltas = mapOf("BTC" to BigDecimal("0.002"), "USD" to BigDecimal("-80.00")),
+            )
+            partial.getValue("BTC") shouldBeEqualComparingTo BigDecimal("0.50125")
+            partial.getValue("USD") shouldBeEqualComparingTo BigDecimal("0.00")
+
+            val full = mutableMapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("80.00"))
+            RebalancerComparisonCalculator.applyAttributedMovement(
+                balances = full,
+                deltas = mapOf("BTC" to BigDecimal("0.002"), "USD" to BigDecimal("-80.00")),
+            )
+            full.getValue("BTC") shouldBeEqualComparingTo BigDecimal("0.502")
+            full.getValue("USD") shouldBeEqualComparingTo BigDecimal("0.00")
+
+            val creditsOnly = mutableMapOf("BTC" to BigDecimal("0.50"), "USD" to BigDecimal("0.00"))
+            RebalancerComparisonCalculator.applyAttributedMovement(
+                balances = creditsOnly,
+                deltas = mapOf("BTC" to BigDecimal("0.25"), "USD" to BigDecimal("10.00")),
+            )
+            creditsOnly.getValue("BTC") shouldBeEqualComparingTo BigDecimal("0.75")
+            creditsOnly.getValue("USD") shouldBeEqualComparingTo BigDecimal("10.00")
+        }
+
+        "fail-closed reasons still resolve without any recorded observations" {
+            val coverageGap = calculate(
+                snapshots = emptyList(),
+                inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+            )
+            coverageGap.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            coverageGap.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
+            coverageGap.points shouldBe emptyList()
+
+            val truncated = calculate(snapshots = emptyList(), historyTruncated = true)
+            truncated.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_HISTORY_TRUNCATED
+
+            val pruned = calculate(snapshots = emptyList(), knownInceptionTime = now)
+            pruned.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED
         }
 
         "Same-timestamp same-sign funding plumbing is never netted into owner capital" {
@@ -5347,6 +5450,388 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val contribution = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
             contribution.contributionUsd shouldBeEqualComparingTo BigDecimal("48.97")
             contribution.sourceLedgerIds shouldContainExactlyInAnyOrder listOf("lone-card-deposit")
+        }
+
+        "an out-of-universe XLM owner-capital deposit is valued into benchmark capital without an XLM weight" {
+            val depTime = now.plusSeconds(600)
+            val xlmRef = "XLM-EXTERNAL-DEPOSIT-2026-07-01T1210Z"
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = depTime,
+                    asset = "XLM",
+                    amount = "820.770368",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = xlmRef,
+                    ledgerId = "xlm-external-deposit",
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = xlmRef,
+                        txid = "xlm-external-deposit-tx",
+                        asset = "XLM",
+                        amount = BigDecimal("820.770368"),
+                        time = depTime,
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                ),
+            )
+
+            val builtEvents = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = ledgers,
+                baseline = snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                inceptionWeights = mapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("0.5")),
+                priceProvider = mapPriceProvider(
+                    mapOf("XLM" to BigDecimal("0.239635"), "BTC" to BigDecimal("50000.00")),
+                ),
+                provenanceResolver = provenance,
+            )
+
+            // The historical-only deposit becomes USD capital, not a benchmark holding.
+            builtEvents.filterIsInstance<BenchmarkEvent.ExternalBalance>() shouldBe emptyList()
+            val contribution = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
+            contribution.contributionUsd shouldBeEqualComparingTo BigDecimal("196.68530713568")
+            contribution.sourceLedgerIds shouldContainExactlyInAnyOrder listOf("xlm-external-deposit")
+            // The contribution is funded only into the configured benchmark targets.
+            contribution.allocations.keys shouldBe setOf("BTC", "USD")
+        }
+
+        "stablecoin owner-capital deposits use their historical USD rate instead of assuming one dollar" {
+            val depTime = now.plusSeconds(900)
+            val usdtRef = "USDT-EXTERNAL-DEPOSIT-2026-07-01T1215Z"
+            val usdcRef = "USDC-EXTERNAL-DEPOSIT-2026-07-01T1215Z"
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = depTime,
+                    asset = "USDT",
+                    amount = "2754.929533",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = usdtRef,
+                    ledgerId = "usdt-external-deposit",
+                ),
+                ledgerEvent(
+                    timestamp = depTime.plusSeconds(1),
+                    asset = "USDC",
+                    amount = "492.34",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = usdcRef,
+                    ledgerId = "usdc-external-deposit",
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = usdtRef,
+                        txid = "usdt-external-deposit-tx",
+                        asset = "USDT",
+                        amount = BigDecimal("2754.929533"),
+                        time = depTime,
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                    DepositStatusRecord(
+                        refid = usdcRef,
+                        txid = "usdc-external-deposit-tx",
+                        asset = "USDC",
+                        amount = BigDecimal("492.34"),
+                        time = depTime.plusSeconds(1),
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                ),
+            )
+
+            val builtEvents = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = ledgers,
+                baseline = snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                inceptionWeights = mapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("0.5")),
+                priceProvider = mapPriceProvider(
+                    mapOf(
+                        "USDT" to BigDecimal("0.9992"),
+                        "USDC" to BigDecimal("0.9998"),
+                        "BTC" to BigDecimal("50000.00"),
+                    ),
+                ),
+                provenanceResolver = provenance,
+            )
+
+            val contributions = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>()
+            contributions.size shouldBe 2
+            val byAsset = contributions.associateBy { it.event.asset }
+            byAsset.getValue("USDT").contributionUsd shouldBeEqualComparingTo BigDecimal("2752.7255893736")
+            byAsset.getValue("USDC").contributionUsd shouldBeEqualComparingTo BigDecimal("492.241532")
+            contributions.forEach { contribution ->
+                contribution.allocations.keys shouldBe setOf("BTC", "USD")
+            }
+        }
+
+        "historical-only funding never creates a benchmark holding or target weight" {
+            val depTime = now.plusSeconds(1200)
+            val xlmRef = "XLM-HISTORICAL-ONLY-2026-07-01T1220Z"
+            val usdtRef = "USDT-HISTORICAL-ONLY-2026-07-01T1220Z"
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = depTime,
+                    asset = "XLM",
+                    amount = "100.0",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = xlmRef,
+                    ledgerId = "xlm-historical-only",
+                ),
+                ledgerEvent(
+                    timestamp = depTime.plusSeconds(1),
+                    asset = "USDT",
+                    amount = "250.0",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = usdtRef,
+                    ledgerId = "usdt-historical-only",
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = xlmRef,
+                        txid = "xlm-historical-only-tx",
+                        asset = "XLM",
+                        amount = BigDecimal("100.0"),
+                        time = depTime,
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                    DepositStatusRecord(
+                        refid = usdtRef,
+                        txid = "usdt-historical-only-tx",
+                        asset = "USDT",
+                        amount = BigDecimal("250.0"),
+                        time = depTime.plusSeconds(1),
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                ),
+            )
+
+            val builtEvents = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = ledgers,
+                baseline = snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                inceptionWeights = mapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("0.5")),
+                priceProvider = mapPriceProvider(
+                    mapOf("XLM" to BigDecimal("0.25"), "USDT" to BigDecimal("1.0"), "BTC" to BigDecimal("50000.00")),
+                ),
+                provenanceResolver = provenance,
+            )
+
+            builtEvents.filterIsInstance<BenchmarkEvent.ExternalBalance>() shouldBe emptyList()
+            val contributions = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>()
+            contributions.size shouldBe 2
+            contributions.flatMap { it.allocations.keys }.toSet() shouldBe setOf("BTC", "USD")
+        }
+
+        "each owner-capital contribution from a historical-only asset is counted exactly once" {
+            val depTime = now.plusSeconds(1500)
+            val firstRef = "XLM-ONCE-DEPOSIT-A-2026-07-01"
+            val secondRef = "XLM-ONCE-DEPOSIT-B-2026-07-01"
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = depTime,
+                    asset = "XLM",
+                    amount = "100.0",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = firstRef,
+                    ledgerId = "xlm-once-deposit-a",
+                ),
+                ledgerEvent(
+                    timestamp = depTime.plusSeconds(2),
+                    asset = "XLM",
+                    amount = "300.0",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = secondRef,
+                    ledgerId = "xlm-once-deposit-b",
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = firstRef,
+                        txid = "xlm-once-tx-a",
+                        asset = "XLM",
+                        amount = BigDecimal("100.0"),
+                        time = depTime,
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                    DepositStatusRecord(
+                        refid = secondRef,
+                        txid = "xlm-once-tx-b",
+                        asset = "XLM",
+                        amount = BigDecimal("300.0"),
+                        time = depTime.plusSeconds(2),
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                ),
+            )
+
+            val builtEvents = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = ledgers,
+                baseline = snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                inceptionWeights = mapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("0.5")),
+                priceProvider = mapPriceProvider(mapOf("XLM" to BigDecimal("0.25"), "BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            )
+
+            builtEvents.filterIsInstance<BenchmarkEvent.ExternalBalance>() shouldBe emptyList()
+            val contributions = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>()
+            contributions.size shouldBe 2
+            val total = contributions.fold(BigDecimal.ZERO) { acc, contribution -> acc + contribution.contributionUsd }
+            // 100 XLM + 300 XLM, each valued once at 0.25 USD.
+            total shouldBeEqualComparingTo BigDecimal("100.0000")
+        }
+
+        "an owner withdrawal from a historical-only asset uses the same historical price policy" {
+            val wdTime = now.plusSeconds(3600)
+            val wdRef = "XLM-EXTERNAL-WITHDRAWAL-2026-07-01T1300Z"
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+                snapshot(
+                    wdTime.plusSeconds(60),
+                    "50000.00",
+                    mapOf(
+                        "BTC" to assetRow("0.50", "50000.00", "25000.00"),
+                        "USD" to assetRow("25000.00", "1.0", "25000.00"),
+                    ),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = wdTime,
+                    asset = "XLM",
+                    amount = "-410.0",
+                    type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    refid = wdRef,
+                    ledgerId = "xlm-external-withdrawal",
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                withdrawals = listOf(
+                    WithdrawStatusRecord(
+                        refid = wdRef,
+                        txid = "xlm-external-withdrawal-tx",
+                        asset = "XLM",
+                        amount = BigDecimal("410.0"),
+                        time = wdTime,
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = ledgers,
+                priceProvider = mapPriceProvider(mapOf("XLM" to BigDecimal("0.24"), "BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            )
+
+            // A historical-only asset never appears in recorded snapshots, so tracked balances stay
+            // consistent while the synthetic benchmark alone values and applies the withdrawal:
+            // 410 XLM at 0.24 USD = 98.40 USD.
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("50000.00")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("49901.60")
+            val builtEvents = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = ledgers,
+                baseline = snapshots.first(),
+                inceptionWeights = mapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("0.5")),
+                priceProvider = mapPriceProvider(mapOf("XLM" to BigDecimal("0.24"), "BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            )
+            val withdrawal = builtEvents.filterIsInstance<BenchmarkEvent.OwnerWithdrawal>().single()
+            withdrawal.withdrawalUsd shouldBeEqualComparingTo BigDecimal("98.4000")
+        }
+
+        "an unpriceable historical-only owner contribution still fails closed" {
+            val depTime = now.plusSeconds(600)
+            val xlmRef = "XLM-UNPRICEABLE-DEPOSIT-2026-07-01T1210Z"
+            val snapshots = listOf(
+                snapshot(now, "50000.00", mapOf("BTC" to assetRow("0.50", "50000.00", "25000.00"))),
+                snapshot(
+                    depTime.plusSeconds(60),
+                    "50000.00",
+                    mapOf("BTC" to assetRow("0.50", "50000.00", "25000.00")),
+                ),
+            )
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = depTime,
+                    asset = "XLM",
+                    amount = "820.770368",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = xlmRef,
+                    ledgerId = "xlm-unpriceable-deposit",
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = xlmRef,
+                        txid = "xlm-unpriceable-tx",
+                        asset = "XLM",
+                        amount = BigDecimal("820.770368"),
+                        time = depTime,
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = ledgers,
+                priceProvider = mapPriceProvider(emptyMap()),
+                provenanceResolver = provenance,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+            result.unavailableAt shouldBe depTime
         }
 
         "Scenario BB: card Buy Crypto legs with sub-second and several-second offsets are linked within 120s" {

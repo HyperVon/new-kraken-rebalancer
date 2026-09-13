@@ -59,6 +59,7 @@ class TradeHistoryServiceImpl(
             ledgerRepository = ledgerRepository,
             orderIntentRepository = orderIntentRepository,
             nowProvider = syncNowProvider,
+            krakenService = krakenService,
         ),
         syncService =
         TradeHistorySyncService(

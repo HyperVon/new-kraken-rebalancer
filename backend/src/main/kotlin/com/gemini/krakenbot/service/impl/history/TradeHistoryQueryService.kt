@@ -21,7 +21,9 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.downsampleSnapshots
 import com.gemini.krakenbot.service.ComparisonStartProposal
+import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.util.PrecisionConstants
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.math.BigDecimal
@@ -38,6 +40,7 @@ class TradeHistoryQueryService(
     private val inceptionDiscoveryService: InceptionDiscoveryService? = null,
     private val fundingProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
     private val nowProvider: () -> Instant = Instant::now,
+    private val krakenService: KrakenService? = null,
 ) {
     private val proposalSearchMutex = Mutex()
 
@@ -860,24 +863,48 @@ class TradeHistoryQueryService(
             BigDecimal.ONE
         } else {
             val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
-            repository.getSnapshotsInRange(
-                time.minusSeconds(CONTRIBUTION_PRICE_LOOKUP_SECONDS),
-                time,
-            ).mapNotNull { snapshot ->
-                val price = snapshot.assets.entries.firstOrNull { (asset, _) ->
-                    Asset.normalizeLedgerAsset(asset).uppercase() == normalizedSymbol
-                }?.value?.price
-                val observationTime = snapshot.balancesObservedAt ?: snapshot.timestamp
-                if (price != null && price.signum() > 0 && !observationTime.isAfter(time)) {
-                    snapshot.timestamp to price
-                } else {
+            val fromHistory = krakenService?.let { service ->
+                try {
+                    HistoricalPriceResolver.resolveHistoricalPrice(
+                        asset = normalizedSymbol,
+                        eventTime = time,
+                        tradesRepo = repository,
+                        krakenService = service,
+                        tradeWindowSeconds = CONTRIBUTION_PRICE_LOOKUP_SECONDS,
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // A source outage is not evidence that no price exists, so fall through to the
+                    // retained snapshots and otherwise fail the comparison closed.
                     null
                 }
-            }.minByOrNull { (timestamp, _) ->
-                kotlin.math.abs(timestamp.toEpochMilli() - time.toEpochMilli())
-            }?.second
+            }
+            fromHistory ?: snapshotContributionPrice(normalizedSymbol, time)
         }
     }
+
+    /**
+     * Retained-snapshot fallback for contribution-time pricing: the nearest recorded observation at
+     * or before the funding instant inside the same bounded lookup window, never a live ticker.
+     */
+    private suspend fun snapshotContributionPrice(normalizedSymbol: String, time: Instant): BigDecimal? =
+        repository.getSnapshotsInRange(
+            time.minusSeconds(CONTRIBUTION_PRICE_LOOKUP_SECONDS),
+            time,
+        ).mapNotNull { snapshot ->
+            val price = snapshot.assets.entries.firstOrNull { (asset, _) ->
+                Asset.normalizeLedgerAsset(asset).uppercase() == normalizedSymbol
+            }?.value?.price
+            val observationTime = snapshot.balancesObservedAt ?: snapshot.timestamp
+            if (price != null && price.signum() > 0 && !observationTime.isAfter(time)) {
+                snapshot.timestamp to price
+            } else {
+                null
+            }
+        }.minByOrNull { (timestamp, _) ->
+            kotlin.math.abs(timestamp.toEpochMilli() - time.toEpochMilli())
+        }?.second
 
     private fun Instant.minusMillisIfLegacyObservation(
         anchorSnapshot: PortfolioSnapshot?,

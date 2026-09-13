@@ -39,6 +39,8 @@ object HistoricalPriceResolver {
         krakenService: KrakenService,
         candidatePriceException: BigDecimal? = null,
         marketPairs: List<String> = emptyList(),
+        tradeWindowSeconds: Long = MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS,
+        quoteConversionDepth: Int = 0,
     ): BigDecimal? {
         val normalizedAsset = Asset.normalizeLedgerAsset(asset).uppercase()
         if (normalizedAsset == Asset.USD) {
@@ -51,9 +53,10 @@ object HistoricalPriceResolver {
         }
 
         // 2. Authoritative execution price inside a bounded window around the valuation instant:
-        //    a fill booked shortly after the instant still proves the market price there.
-        val tradeWindowStart = eventTime.minusSeconds(MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS)
-        val tradeWindowEnd = eventTime.plusSeconds(MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS)
+        //    a fill booked shortly after the instant still proves the market price there. Owner-flow
+        //    valuation widens this window when a just-executed rebalance trade proves the price.
+        val tradeWindowStart = eventTime.minusSeconds(tradeWindowSeconds)
+        val tradeWindowEnd = eventTime.plusSeconds(tradeWindowSeconds)
         val recentTrade = tradesRepo.getTradesInRange(tradeWindowStart, tradeWindowEnd)
             .filter {
                 it.success &&
@@ -139,8 +142,26 @@ object HistoricalPriceResolver {
                 }
                     .maxByOrNull { it.first }
                 if (matched != null && matched.second > BigDecimal.ZERO) {
-                    resolved = matched.second
-                    break
+                    // A candle in a non-USD market proves a USD price only through a trustworthy
+                    // conversion of the quote leg; without one the price stays unresolved.
+                    val quote = Asset.splitTradingPair(pair)?.quote
+                    val converted = if (quote == null || quote == Asset.USD) {
+                        matched.second
+                    } else {
+                        convertQuoteToUsd(
+                            quote = quote,
+                            quotePrice = matched.second,
+                            eventTime = eventTime,
+                            tradesRepo = tradesRepo,
+                            krakenService = krakenService,
+                            tradeWindowSeconds = tradeWindowSeconds,
+                            quoteConversionDepth = quoteConversionDepth,
+                        )
+                    }
+                    if (converted != null) {
+                        resolved = converted
+                        break
+                    }
                 }
             }
             if (resolved != null) {
@@ -155,5 +176,34 @@ object HistoricalPriceResolver {
         }
 
         return null
+    }
+
+    /**
+     * Converts a quote-leg price into USD by pricing the quote asset itself. One conversion hop is
+     * allowed so a stablecoin-quoted candle can prove a USD price from the stablecoin's own
+     * historical USD rate; deeper chains stay unresolved rather than compounding weak evidence.
+     */
+    private suspend fun convertQuoteToUsd(
+        quote: String,
+        quotePrice: BigDecimal,
+        eventTime: Instant,
+        tradesRepo: TradeRepository,
+        krakenService: KrakenService,
+        tradeWindowSeconds: Long,
+        quoteConversionDepth: Int,
+    ): BigDecimal? {
+        if (quoteConversionDepth >= 1) return null
+        val quoteUsdPrice = resolveHistoricalPrice(
+            asset = quote,
+            eventTime = eventTime,
+            tradesRepo = tradesRepo,
+            krakenService = krakenService,
+            tradeWindowSeconds = tradeWindowSeconds,
+            quoteConversionDepth = quoteConversionDepth + 1,
+        ) ?: return null
+        if (quoteUsdPrice <= BigDecimal.ZERO) return null
+        return quotePrice
+            .multiply(quoteUsdPrice)
+            .setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
     }
 }

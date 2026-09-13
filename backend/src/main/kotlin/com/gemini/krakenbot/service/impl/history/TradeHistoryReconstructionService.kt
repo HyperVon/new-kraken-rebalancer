@@ -37,7 +37,7 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "15"
+        const val CURRENT_RECONSTRUCTION_VERSION = "16"
 
         /**
          * Historical fail-closed anchor contract (v11).
@@ -384,10 +384,24 @@ class TradeHistoryReconstructionService(
             .filter { !it.refid.isNullOrBlank() }
             .groupBy { it.refid!!.trim() }
 
+        val orphanTradeLedgerEvents = AuthoritativeTradeLedgerEvents.collect(allLedgers, trades, resolvedScopes)
+        if (orphanTradeLedgerEvents.incompleteRefIds.isNotEmpty() ||
+            orphanTradeLedgerEvents.contradictoryRefIds.isNotEmpty()
+        ) {
+            log.warn(
+                "Cannot reconstruct snapshots with incomplete or contradictory orphan trade " +
+                    "ledger groups: incomplete={} contradictory={}",
+                orphanTradeLedgerEvents.incompleteRefIds.size,
+                orphanTradeLedgerEvents.contradictoryRefIds.size,
+            )
+            return
+        }
+
         val events =
             SnapshotHistoryCalculator.buildTimelineEvents(
                 historicalTrades = historicalTrades,
                 historicalRewards = historicalRewards,
+                authoritativeTradeLegs = orphanTradeLedgerEvents.replayableLegs.filter { it.time.isBefore(cutoffTime) },
                 cutoffTime = cutoffTime,
                 now = reconstructionNow,
                 reconstructionStart = parsedInception,

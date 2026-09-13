@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.60] - 2026-09-13
+
+### Fixed
+
+- **Reconstruction keeps authoritative trade ledger legs whose retained fill was pruned**: pre-inception retention can
+  remove a `TradesHistory` fill while both `type=trade` ledger legs survive, which previously left a reconstructed
+  balance missing a recorded execution. Structurally proven orphan groups (a provably zero single leg, or two legs with
+  distinct assets, one debit and one credit, within one second, with an authoritative post balance, a valid fee, and a
+  valid amount shape resolved to `SPOT`) are now replayed once into snapshot reconstruction. A group matched to a
+  retained trade identity is never applied twice, incomplete or contradictory groups fail reconstruction closed, and
+  non-Spot groups are left out. Snapshot reconstruction version `16` rebuilds derived snapshots in place; the baseline
+  replay version is unchanged.
+- **Buy & Hold no longer creates impossible negative holdings or double-counts owner capital**: an owner contribution is
+  invested by inception weights instead of being held in the contributed asset, so a later manual trade, conversion, or
+  balance movement that spends that asset previously drove the synthetic basket negative and blocked the comparison
+  with `UNEXPLAINED_BALANCE_CHANGE`. Replayed movements are now attributed to the basket-held share: the mirrored
+  portion is scaled to what the basket actually holds, a movement against a zero holding is skipped, and the
+  already-counted contributed value is never applied twice.
+
+### Changed
+
+- **Contribution prices use the shared bounded historical ladder**: the live comparison path now resolves
+  contribution-time prices through the same evidence ladder used for historical-only valuation — a USD-quoted
+  execution inside the contribution window, an at-or-before recorded snapshot, a completed Kraken OHLC candle, or a
+  cross-quote conversion through the quote asset's own historical USD rate — instead of recorded snapshots alone. A
+  contribution in a historical-only asset is valued in USD and allocated across the configured targets only; it never
+  receives a benchmark weight or a live rebalance target, and a genuinely unpriceable contribution still fails closed
+  with `MISSING_PRICE`.
+- **The comparison replays ledger, conversion, and mirrored manual-trade events in reconstruction's chronological
+  order**: events that share one instant keep the recorded ledger-before-trade ordering, so an authoritative checkpoint
+  is evaluated against the state that existed at its timestamp instead of reporting a spurious mismatch.
+
 ## [6.17.59] - 2026-09-12
 
 ### Fixed

@@ -25,6 +25,7 @@ import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.FakeKrakenService
+import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -840,6 +841,219 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
+            }
+        }
+
+        "getRebalancerComparison_OwnerCryptoDeposit_UsesSharedHistoricalLadderWhenGatewayAvailable" {
+            runTest {
+                val t0 = now.minusSeconds(86400 * 30)
+                val tMid = now.plusSeconds(1800)
+                val snap0 = snapshot(
+                    t0,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = t0,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "125000.00",
+                    btc = "1.5" to "50000.00",
+                    usdBalance = "50000.00",
+                )
+                val nearContributionSnapshot = snap1.copy(
+                    timestamp = tMid.minusSeconds(60),
+                    balancesObservedAt = tMid.minusSeconds(60),
+                )
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } answers {
+                    if (secondArg<Instant>() == tMid) {
+                        listOf(nearContributionSnapshot)
+                    } else {
+                        listOf(snap1, snap2)
+                    }
+                }
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        ledgerEvent(
+                            ledgerId = "qs-ladder-btc",
+                            timestamp = tMid,
+                            asset = "BTC",
+                            amount = "0.50000000",
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ),
+                    )
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                    fundingProvenanceResolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                refid = "tx-qs-ladder-btc",
+                                txid = "0xladder123",
+                                asset = "BTC",
+                                amount = BigDecimal("0.50000000"),
+                                time = tMid,
+                                status = "Success",
+                                method = "Bitcoin",
+                            ),
+                        ),
+                    ),
+                    krakenService = mockk<KrakenService>(relaxed = true),
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
+            }
+        }
+
+        "getRebalancerComparison_KrakenGatewayOutageFallsBackToRecordedSnapshots" {
+            runTest {
+                val t0 = now.minusSeconds(86400 * 30)
+                val tMid = now.plusSeconds(1800)
+                val snap0 = snapshot(
+                    t0,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = t0,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "125000.00",
+                    btc = "1.5" to "50000.00",
+                    usdBalance = "50000.00",
+                )
+                val outageGateway = mockk<KrakenService>(relaxed = true)
+                coEvery { outageGateway.getOHLC(any(), any(), any()) } throws
+                    IllegalStateException("gateway outage")
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        ledgerEvent(
+                            ledgerId = "qs-outage-btc",
+                            timestamp = tMid,
+                            asset = "BTC",
+                            amount = "0.50000000",
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ),
+                    )
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                    fundingProvenanceResolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                refid = "tx-qs-outage-btc",
+                                txid = "0xoutage123",
+                                asset = "BTC",
+                                amount = BigDecimal("0.50000000"),
+                                time = tMid,
+                                status = "Success",
+                                method = "Bitcoin",
+                            ),
+                        ),
+                    ),
+                    krakenService = outageGateway,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
+            }
+        }
+
+        "getRebalancerComparison_UnpriceableOwnerCryptoDepositFailsClosed" {
+            runTest {
+                val t0 = now.minusSeconds(86400 * 30)
+                val tMid = now.plusSeconds(1800)
+                val snap0 = snapshot(
+                    t0,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = t0,
+                )
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                )
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = true,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns
+                    listOf(
+                        ledgerEvent(
+                            ledgerId = "qs-xlm-deposit",
+                            timestamp = tMid,
+                            asset = "XLM",
+                            amount = "1.00000000",
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ),
+                    )
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                    fundingProvenanceResolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                refid = "tx-qs-xlm-deposit",
+                                txid = "0xxlm123",
+                                asset = "XLM",
+                                amount = BigDecimal("1.00000000"),
+                                time = tMid,
+                                status = "Success",
+                                method = "Bitcoin",
+                            ),
+                        ),
+                    ),
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
             }
         }
 

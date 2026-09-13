@@ -67,6 +67,7 @@ object SnapshotHistoryCalculator {
         cutoffTime: Instant,
         now: Instant = Instant.now(),
         reconstructionStart: Instant? = null,
+        authoritativeTradeLegs: List<LedgerEvent> = emptyList(),
     ): List<TimelineEvent> {
         requireCompleteConversions(historicalRewards)
         // Fail closed on unknown raw ledger evidence: the repository is raw/unprojected, so any
@@ -85,6 +86,7 @@ object SnapshotHistoryCalculator {
         events += historicalRewards
             .filter { it.type in externalLedgerTypes }
             .map { TimelineEvent.RewardEvent(it.time, it) }
+        events += authoritativeTradeLegs.map { TimelineEvent.RewardEvent(it.time, it) }
         val daysBack = maxOf(
             PrecisionConstants.HISTORICAL_DAYS_BACK.toLong(),
             reconstructionStart?.let {
@@ -154,19 +156,37 @@ object SnapshotHistoryCalculator {
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
         tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
     ): List<PortfolioSnapshot> {
-        val rawPoints = mutableListOf<RawHistoricalPoint>()
         val orderedEvents = orderSameInstantEvents(events, runningBalances, resolvedScopes, tradeLegsByRefId)
 
         // [runningBalances] starts at the reconstruction cutoff (the oldest retained snapshot, or current balances
-        // when none exists); after each trade snapshot, undo that fill so older points see pre-trade balances.
+        // when none exists). Invert every event first to derive the state that precedes the oldest point, then
+        // replay forward so each emitted point is the state after the events at or before its timestamp. A later
+        // authoritative checkpoint can therefore never leak backwards into an older point.
         for (ev in orderedEvents) {
+            if (ev is TimelineEvent.TradeEvent) {
+                reverseApplyTrade(ev.trade, runningBalances, tradeLegsByRefId)
+            } else if (ev is TimelineEvent.RewardEvent) {
+                reverseApplyReward(ev.event, runningBalances, resolvedScopes)
+            }
+        }
+
+        // Replay from a copy so [runningBalances] keeps the pre-history state callers rely on.
+        val forwardBalances = runningBalances.toMutableMap()
+        val rawPoints = mutableListOf<RawHistoricalPoint>()
+        for (ev in orderedEvents.asReversed()) {
+            if (ev is TimelineEvent.TradeEvent) {
+                applyForwardTrade(ev.trade, forwardBalances, tradeLegsByRefId)
+            } else if (ev is TimelineEvent.RewardEvent) {
+                applyForwardReward(ev.event, forwardBalances, resolvedScopes)
+            }
+
             val snapshotTimestamp = ev.timestamp
             var exactPortfolioValue = BigDecimal.ZERO
 
             val calculatedAssets =
                 allocations.map { alloc ->
                     val symbol = alloc.symbol.value.uppercase()
-                    val rawBal = runningBalances[symbol] ?: BigDecimal.ZERO
+                    val rawBal = forwardBalances[symbol] ?: BigDecimal.ZERO
                     val balance = if (rawBal.isNegative) BigDecimal.ZERO else rawBal
                     val price = getPriceForTimestamp(symbol, snapshotTimestamp, ohlcData, tradePrices, currentPrices)
                     val valueUSD = balance.multiply(price)
@@ -175,15 +195,9 @@ object SnapshotHistoryCalculator {
                 }
 
             rawPoints.add(RawHistoricalPoint(snapshotTimestamp, exactPortfolioValue, calculatedAssets))
-
-            if (ev is TimelineEvent.TradeEvent) {
-                reverseApplyTrade(ev.trade, runningBalances, tradeLegsByRefId)
-            } else if (ev is TimelineEvent.RewardEvent) {
-                reverseApplyReward(ev.event, runningBalances, resolvedScopes)
-            }
         }
 
-        return buildSnapshotsChronological(rawPoints, allocations, settings, currentAth)
+        return buildSnapshotsChronological(rawPoints.asReversed(), allocations, settings, currentAth)
     }
 
     /**
@@ -230,6 +244,62 @@ object SnapshotHistoryCalculator {
             event.balance.subtract(netDelta)
         } else {
             runningBalances.getValue(symbol).subtract(netDelta)
+        }
+    }
+
+    /**
+     * Apply one fill forward through the shared trade replay contract. Authoritative retained
+     * ledger legs advance the state to their recorded post-entry checkpoints; trades without
+     * retained legs fall back to the TradeRecord economics. This is the exact inverse of
+     * [reverseApplyTrade], so replaying forward keeps every emitted point equal to the state
+     * after its own event instead of inheriting a later checkpoint.
+     */
+    private fun applyForwardTrade(
+        trade: TradeRecord,
+        runningBalances: MutableMap<String, BigDecimal>,
+        tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
+    ) {
+        val replay = when (val classification = TradeLedgerReplay.classify(trade, tradeLegsByRefId)) {
+            is TradeLedgerReplay.Classification.Replayable -> classification
+
+            is TradeLedgerReplay.Classification.Unsupported ->
+                throw IllegalArgumentException(classification.reason)
+        }
+        runningBalances.putIfAbsent(replay.base, BigDecimal.ZERO)
+        runningBalances.putIfAbsent(replay.quote, BigDecimal.ZERO)
+        val baseBalance = runningBalances.getValue(replay.base)
+        val quoteBalance = runningBalances.getValue(replay.quote)
+        val effect = replay.ledgerEffect
+        if (effect != null) {
+            runningBalances[replay.base] = effect.baseCheckpoint ?: baseBalance.add(effect.baseNetDelta)
+            runningBalances[replay.quote] = effect.quoteCheckpoint ?: quoteBalance.add(effect.quoteNetDelta)
+        } else if (replay.isBuy) {
+            runningBalances[replay.base] = baseBalance.add(replay.volume)
+            runningBalances[replay.quote] = quoteBalance.subtract(replay.quoteCost).subtract(replay.fee)
+        } else {
+            runningBalances[replay.base] = baseBalance.subtract(replay.volume)
+            runningBalances[replay.quote] = quoteBalance.add(replay.quoteCost).subtract(replay.fee)
+        }
+    }
+
+    /** Apply one external ledger balance delta forward, respecting the resolved wallet scope. */
+    private fun applyForwardReward(
+        event: LedgerEvent,
+        runningBalances: MutableMap<String, BigDecimal>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
+    ) {
+        val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
+        if (symbol !in runningBalances) return
+        val scope = resolvedScopes[event.ledgerId]
+        if (scope != null && scope != AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT) {
+            return
+        }
+        runningBalances[symbol] = if (event.hasAuthoritativeBalance) {
+            // An authoritative row records the post-entry balance, so the forward replay advances
+            // straight to that checkpoint instead of accumulating per-row rounding drift.
+            event.balance
+        } else {
+            runningBalances.getValue(symbol).add(event.netBalanceDelta())
         }
     }
 
