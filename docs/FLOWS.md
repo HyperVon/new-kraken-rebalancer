@@ -589,7 +589,8 @@ wallet scopes that change aggregate balances, incomplete internal-transfer group
 duplicate identities,
 unsupported transfer scopes, and unresolved balance differences. Changing this derived replay
 contract advances the baseline replay version. The validator's resolved per-ledger wallet scope is
-passed directly to baseline replay: trade rows are ignored because `TradesHistory` is authoritative;
+passed directly to baseline replay: trade-type rows are consumed as wallet-effect evidence only,
+while trade economics come from `TradesHistory`;
 every non-conversion row resolved to Spot is reversed against the configured balance; staking,
 Futures, and opaque-staking rows are excluded from the Spot snapshot balance; and unresolved
 nonzero rows fail closed. Zero-net rows may remain unresolved because they cannot mutate the

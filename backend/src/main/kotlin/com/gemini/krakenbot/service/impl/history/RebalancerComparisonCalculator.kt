@@ -2178,7 +2178,9 @@ object RebalancerComparisonCalculator {
     /**
      * Applies the quote leg of a recorded trade: the leg is invisible when the quote never
      * belongs to the recorded universe, while a tracked quote without a recorded balance is a
-     * genuine gap that fails closed.
+     * genuine gap that fails closed. Benchmark trade mirroring seeds an unheld quote at zero
+     * before calling this, so the drawdown still reaches proportional attribution instead of
+     * being dropped.
      */
     private fun applyQuoteLeg(
         balances: MutableMap<String, BigDecimal>,
