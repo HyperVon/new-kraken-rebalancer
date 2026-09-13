@@ -22,6 +22,10 @@ internal object AuthoritativeTradeLedgerEvents {
         val incompleteRefIds: Set<String>,
         val contradictoryRefIds: Set<String>,
         val nonSpotRefIds: Set<String>,
+        /** Refids that claim more than one retained durable trade identity. */
+        val ambiguousIdentityRefIds: Set<String> = emptySet(),
+        /** Secondary identity bindings for a retained trade's authoritative ledger legs. */
+        val tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>> = emptyMap(),
     )
 
     fun collect(
@@ -44,12 +48,40 @@ internal object AuthoritativeTradeLedgerEvents {
         val incompleteRefIds = linkedSetOf<String>()
         val contradictoryRefIds = linkedSetOf<String>()
         val nonSpotRefIds = linkedSetOf<String>()
+        val ambiguousIdentityRefIds = linkedSetOf<String>()
+        val tradeLegsByTradeIdentity = mutableMapOf<String, List<LedgerEvent>>()
+        val refIdByTradeIdentity = mutableMapOf<String, String>()
 
         for ((refId, legs) in groups) {
             if (refId in matchedTradeIds) continue
             val scopes = legs.map { resolvedScopes[it.ledgerId] }
             if (scopes.any { it != null && it != AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT }) {
                 nonSpotRefIds += refId
+                continue
+            }
+            val durableMatches = trades.filter { trade ->
+                trade.success && !trade.dryRun &&
+                    setOfNotNull(trade.orderTxid?.trim(), trade.clientOrderId?.trim()).contains(refId)
+            }
+            if (durableMatches.size > 1) {
+                ambiguousIdentityRefIds += refId
+                continue
+            }
+            if (durableMatches.size == 1) {
+                val trade = durableMatches.single()
+                // A durable match necessarily has a non-blank order/client identity, so the
+                // shared key cannot be null here.
+                val identityKey = TradeLedgerReplay.identityKey(trade)!!
+                val previousRefId = refIdByTradeIdentity[identityKey]
+                if (previousRefId != null) {
+                    ambiguousIdentityRefIds += refId
+                    ambiguousIdentityRefIds += previousRefId
+                    refIdByTradeIdentity.remove(identityKey)
+                    tradeLegsByTradeIdentity.remove(identityKey)
+                    continue
+                }
+                refIdByTradeIdentity[identityKey] = refId
+                tradeLegsByTradeIdentity[identityKey] = legs
                 continue
             }
 
@@ -90,6 +122,8 @@ internal object AuthoritativeTradeLedgerEvents {
             incompleteRefIds = incompleteRefIds,
             contradictoryRefIds = contradictoryRefIds,
             nonSpotRefIds = nonSpotRefIds,
+            ambiguousIdentityRefIds = ambiguousIdentityRefIds,
+            tradeLegsByTradeIdentity = tradeLegsByTradeIdentity.toMap(),
         )
     }
 }

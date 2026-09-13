@@ -167,4 +167,97 @@ class AuthoritativeTradeLedgerEventsTest :
             inventory.replayableRefIds shouldContainExactlyInAnyOrder setOf("trade-legs")
             inventory.replayableLegs.map(LedgerEvent::ledgerId) shouldContainExactlyInAnyOrder listOf("l1", "l2")
         }
+
+        "a unique durable order identity binds retained ledger legs to the trade" {
+            val legs = listOf(
+                leg("l1", "ORDER-1", Asset.USD, "-100.00"),
+                leg("l2", "ORDER-1", Asset.BTC, "0.001", time = t0.plusMillis(100)),
+            )
+            val inventory = AuthoritativeTradeLedgerEvents.collect(
+                ledgers = legs,
+                trades = listOf(trade(null).copy(id = 7, orderTxid = "ORDER-1")),
+                resolvedScopes = emptyMap(),
+            )
+
+            inventory.replayableLegs shouldBe emptyList()
+            inventory.replayableRefIds shouldBe emptySet()
+            inventory.tradeLegsByTradeIdentity shouldBe mapOf("db-id:7" to legs)
+            inventory.ambiguousIdentityRefIds shouldBe emptySet()
+        }
+
+        "order and client identities bind when no database id or trade id is retained" {
+            val orderLegs = listOf(
+                leg("order-usd", "ORDER-1", Asset.USD, "-100.00"),
+                leg("order-btc", "ORDER-1", Asset.BTC, "0.001", time = t0.plusMillis(100)),
+            )
+            val clientLegs = listOf(
+                leg("client-usd", "CLIENT-1", Asset.USD, "-50.00"),
+                leg("client-btc", "CLIENT-1", Asset.BTC, "0.0005", time = t0.plusMillis(100)),
+            )
+            val inventory = AuthoritativeTradeLedgerEvents.collect(
+                ledgers = orderLegs + clientLegs,
+                trades = listOf(
+                    trade(null).copy(orderTxid = "ORDER-1"),
+                    trade(null).copy(clientOrderId = "CLIENT-1"),
+                ),
+                resolvedScopes = emptyMap(),
+            )
+
+            inventory.tradeLegsByTradeIdentity shouldBe mapOf(
+                "order-txid:ORDER-1" to orderLegs,
+                "client-order-id:CLIENT-1" to clientLegs,
+            )
+            inventory.ambiguousIdentityRefIds shouldBe emptySet()
+        }
+
+        "one durable trade claiming two ledger refids marks both bindings ambiguous" {
+            val inventory = AuthoritativeTradeLedgerEvents.collect(
+                ledgers = listOf(
+                    leg("l1", "ORDER-1", Asset.USD, "-100.00"),
+                    leg("l2", "CLIENT-1", Asset.BTC, "0.001", time = t0.plusMillis(100)),
+                ),
+                trades = listOf(trade(null).copy(orderTxid = "ORDER-1", clientOrderId = "CLIENT-1")),
+                resolvedScopes = emptyMap(),
+            )
+
+            inventory.ambiguousIdentityRefIds shouldContainExactlyInAnyOrder setOf("ORDER-1", "CLIENT-1")
+            inventory.tradeLegsByTradeIdentity shouldBe emptyMap()
+        }
+
+        "failed and dry-run identities are not treated as settled durable matches" {
+            val inventory = AuthoritativeTradeLedgerEvents.collect(
+                ledgers = listOf(
+                    leg("failed-usd", "FAILED-1", Asset.USD, "-100.00"),
+                    leg("failed-btc", "FAILED-1", Asset.BTC, "0.001", time = t0.plusMillis(100)),
+                    leg("dry-usd", "DRY-1", Asset.USD, "-50.00"),
+                    leg("dry-btc", "DRY-1", Asset.BTC, "0.0005", time = t0.plusMillis(100)),
+                ),
+                trades = listOf(
+                    trade(null).copy(orderTxid = "FAILED-1", success = false),
+                    trade(null).copy(orderTxid = "DRY-1", dryRun = true),
+                ),
+                resolvedScopes = emptyMap(),
+            )
+
+            inventory.replayableRefIds shouldContainExactlyInAnyOrder setOf("FAILED-1", "DRY-1")
+            inventory.tradeLegsByTradeIdentity shouldBe emptyMap()
+        }
+
+        "colliding durable order identities fail closed instead of guessing a ledger owner" {
+            val inventory = AuthoritativeTradeLedgerEvents.collect(
+                ledgers = listOf(
+                    leg("l1", "ORDER-1", Asset.USD, "-100.00"),
+                    leg("l2", "ORDER-1", Asset.BTC, "0.001", time = t0.plusMillis(100)),
+                ),
+                trades = listOf(
+                    trade(null).copy(id = 7, orderTxid = "ORDER-1"),
+                    trade(null).copy(id = 8, orderTxid = "ORDER-1"),
+                ),
+                resolvedScopes = emptyMap(),
+            )
+
+            inventory.ambiguousIdentityRefIds shouldBe setOf("ORDER-1")
+            inventory.tradeLegsByTradeIdentity shouldBe emptyMap()
+            inventory.replayableRefIds shouldBe emptySet()
+        }
     })

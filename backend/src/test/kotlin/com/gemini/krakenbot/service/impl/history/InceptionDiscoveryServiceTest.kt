@@ -143,6 +143,57 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
+        "resolveInception accepts a configured baseline with retained historical-only holdings" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val snap = dummySnapshot(configuredInstant).copy(
+                    totalValueUSD = BigDecimal("10005.00"),
+                    assets = dummySnapshot(configuredInstant).assets + (
+                        Asset.ADA to TestFixtures.assetSnapshot(
+                            symbol = Asset.ADA,
+                            balance = BigDecimal("5.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("5.00"),
+                            targetPercent = BigDecimal.ZERO,
+                        )
+                        ),
+                )
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+                coEvery { tradeRepository.getSnapshotId(snap.timestamp) } returns 102
+
+                val result = service.resolveInception()
+
+                result.inceptionSnapshot shouldBe snap
+                result.inceptionTime shouldBe configuredInstant
+                result.confidence shouldBe InceptionConfidence.CONFIDENT
+            }
+        }
+
+        "resolveInception rejects a configured baseline with a positive-target extra asset" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val snap = dummySnapshot(configuredInstant).copy(
+                    assets = dummySnapshot(configuredInstant).assets + (
+                        Asset.ADA to TestFixtures.assetSnapshot(
+                            symbol = Asset.ADA,
+                            balance = BigDecimal("5.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("5.00"),
+                            targetPercent = BigDecimal("5.0"),
+                        )
+                        ),
+                )
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(snap)
+
+                val result = service.resolveInception()
+
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.TRUNCATED
+            }
+        }
+
         "resolveInception prefers the recorded snapshot when a preserved anchor shares the configured instant" {
             runTest {
                 val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
@@ -172,6 +223,45 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 val result = service.resolveInception()
 
                 result.inceptionSnapshot shouldBe recorded
+            }
+        }
+
+        "resolveInception collapses value-identical anchor and recorded candidates" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val recorded = dummySnapshot(configuredInstant)
+                coEvery {
+                    tradeRepository.getSnapshotsInRange(configuredInstant, configuredInstant)
+                } returns listOf(recorded, recorded.copy())
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                } returns "7"
+                coEvery { tradeRepository.getSnapshotById(7) } returns recorded
+
+                val result = service.resolveInception()
+
+                result.inceptionSnapshot shouldBe recorded
+            }
+        }
+
+        "resolveInception does not select a distinct third same-time candidate" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val recorded = dummySnapshot(configuredInstant)
+                val third = recorded.copy(totalValueUSD = BigDecimal("10001.00"))
+                coEvery {
+                    tradeRepository.getSnapshotsInRange(configuredInstant, configuredInstant)
+                } returns listOf(recorded, recorded.copy(), third)
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                } returns "7"
+                coEvery { tradeRepository.getSnapshotById(7) } returns recorded
+
+                val result = service.resolveInception()
+
+                result.inceptionSnapshot shouldBe null
             }
         }
 

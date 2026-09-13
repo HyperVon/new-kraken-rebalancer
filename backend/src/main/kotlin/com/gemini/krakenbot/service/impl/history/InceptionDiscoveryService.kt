@@ -64,7 +64,13 @@ class InceptionDiscoveryService(
         val expectedUniverse = config.allocations
             .map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
             .toSet()
-        return snapshot.assets.keys.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet() == expectedUniverse
+        val observedUniverse = snapshot.assets.keys
+            .map { Asset.normalizeLedgerAsset(it).uppercase() }
+            .toSet()
+        val unexpectedTarget = snapshot.assets.any { (symbol, asset) ->
+            Asset.normalizeLedgerAsset(symbol).uppercase() !in expectedUniverse && asset.targetPercent.signum() > 0
+        }
+        return observedUniverse.containsAll(expectedUniverse) && !unexpectedTarget
     }
 
     /**
@@ -469,8 +475,17 @@ class InceptionDiscoveryService(
             .filter { hasExactBaselineObservation(it, targetTime) }
         // A preserved identity anchor can share the instant with the recorded series row; the
         // series row is the comparable observation, so it wins when both exist.
-        val recordedSnapshots = exactSnapshots.filterNot { it in tradeRepository.snapshotIdentityAnchors() }
-        return recordedSnapshots.singleOrNull() ?: exactSnapshots.singleOrNull()
+        val recordedSnapshots = exactSnapshots.toMutableList()
+        // An anchor and its reconstructed twin can be value-identical. Equality intentionally does
+        // not include the database row id, so remove only one matching occurrence per anchor and
+        // collapse identical candidates only; any remaining distinct row keeps the result
+        // ambiguous and fail-closed.
+        tradeRepository.snapshotIdentityAnchors().forEach { anchor ->
+            recordedSnapshots.indexOfFirst { it == anchor }
+                .takeIf { it >= 0 }
+                ?.let(recordedSnapshots::removeAt)
+        }
+        return recordedSnapshots.distinct().singleOrNull() ?: exactSnapshots.distinct().singleOrNull()
     }
 
     companion object {

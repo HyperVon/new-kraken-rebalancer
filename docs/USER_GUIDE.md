@@ -375,9 +375,12 @@ achieved against a **synthetic buy-and-hold** strategy:
   exchange/local clock skew, accepting events only when the complete tracked balance change
   reconciles. API fills use precise `price × volume` first; historical rounded costs are
   accepted per interval only when they represent the same fill and all tracked balances match.
-- Historical flow pricing excludes future trades, future snapshots, and active OHLC candles. It
-  uses a completed 15-minute candle only when its end is at or before the event (an exact end is
-  valid); a live ticker is allowed only within 300 seconds of the balance observation.
+- Historical flow pricing prefers retained USD executions before the event, admits only a small
+  bounded future execution skew when no past execution exists, then uses at-or-before snapshots and
+  completed 15-minute/60-minute/240-minute/daily OHLC candles. Future snapshots and active candles
+  are excluded; non-USD candles require a retained historical quote conversion, and a source outage
+  remains distinct from `MISSING_PRICE`. A live ticker is allowed only within 300 seconds of the
+  balance observation.
 - Same-source-timestamp USD-only funding plumbing is netted only after original classification and
   retains its source ledger IDs. A linked mixed-asset card purchase collapses via centralized normalization
 into one owner capital contribution net of fees (with non-USD fees valued at event-time historical prices),

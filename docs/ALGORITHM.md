@@ -573,14 +573,16 @@ non-conversion row resolved to `SPOT` changes the reconstructed configured balan
 `STAKING`, `FUTURES`, and `OPAQUE_STAKING` rows are skipped. A zero-net row may remain
 intentionally unresolved because it cannot mutate the reconstructed balance, but an unresolved
 nonzero row fails closed. Trade-type rows are consumed through one shared `TradeLedgerReplay`
-contract: a trade is matched to its legs by execution identity and inverted from each leg's
+contract: a trade is matched to its legs by `tradeId` first, then by one exact durable `orderTxid`
+or `clientOrderId` binding when the fill identity was pruned, and inverted from each leg's
 recorded net movement, so a fee charged in the base asset is applied to the base balance exactly
 once instead of being replayed as its rounded quote equivalent, and leg rounding follows the
-recorded movement. Missing, duplicated, unexpected, or direction-contradictory leg shapes fail
-closed, and a missing leg is accepted only when its reported movement is provably zero. Complete
+  recorded movement. Missing, duplicated, unexpected, or direction-contradictory leg shapes fail
+  closed, and an ambiguous identity or missing leg is never resolved with amount/time similarity;
+  a missing leg is accepted only when its reported movement is provably zero. Complete
 conversions retain their explicit strategy-neutral two-leg replay and do not affect owner capital,
-rewards, ATH, or Buy & Hold scaling. Baseline replay version `13` and snapshot reconstruction
-version `16` invalidate only the derived baseline and snapshot results, so completed recovery
+rewards, ATH, or Buy & Hold scaling. Baseline replay version `14` and snapshot reconstruction
+version `17` invalidate only the derived baseline and snapshot results, so completed recovery
 trade/ledger streams and their offsets remain reusable. The reconstruction
 universe is derived per run: configured allocations plus every replayable trade base and quote plus
 non-zero-delta Spot ledger assets. Historical-only balances are seeded from the latest authoritative
@@ -644,7 +646,7 @@ seconds, eliminating historical coverage gaps and enabling continuous Rebalancer
 comparison across the entire strategy lifecycle. Kraken
 states that Buy Crypto Widget and Kraken app transactions appear in Ledger history
 and not Trades history, so the comparison does not try to deduplicate these ledger
-rows against `TradesHistory`. Reconstruction version `16` records the continuous history start and
+rows against `TradesHistory`. Reconstruction version `17` records the continuous history start and
 is paired with the ledger and trade coverage versions it replayed, so a coverage migration cannot suppress
 the required rebuild. Each reconstruction trigger captures a single time anchor that flows through
 coverage check, event range, balance state, and `SNAPSHOT_RECONSTRUCTION_THROUGH` (which equals the
@@ -796,13 +798,16 @@ the same external capital over time:
   and evidence metadata are written atomically. Existing valid baseline identities are reused rather
   than overwritten.
 - **Historical prices only.** Baseline valuation uses a retained successful non-dry trade or balance
-  snapshot no more than 180 seconds before the baseline, or a completed 15-minute OHLC candle whose
-  close is before the baseline and no more than 15 minutes old. OHLC lookup is bounded to 24 hours;
-  the current ticker is never used for an old price. The candidate asset may use only its own
-  execution price at the candidate-minus-one-millisecond baseline. Missing historical prices,
-  missing retained anchors, negative reconstructed balances, a non-positive total baseline, a
-  snapshot that drops a configured baseline asset, or incomplete funding groups leave the
-  comparison unavailable.
+  snapshot no more than 180 seconds before the baseline, then completed 15-minute, 60-minute,
+  240-minute, or daily OHLC candles whose close is at or before the baseline and no more than one
+  bucket old. Retained pair identities allow historical or delisted markets; non-USD quotes require
+  the same bounded historical USD conversion ladder. The current ticker is never used for an old
+  price, and a future trade or candle cannot outrank past evidence. The candidate asset may use only
+  its own execution price at the candidate-minus-one-millisecond baseline. Missing historical prices
+  remain `MISSING_PRICE`; an operational historical-source outage remains a distinct retryable
+  source error. Missing retained anchors, negative reconstructed balances, a non-positive total
+  baseline, a snapshot that drops a configured baseline asset, or incomplete funding groups leave
+  the comparison unavailable.
 - **Resolution and retention states are durable.** `IN_PROGRESS` and `FAILED` retain resumable
   coverage; `AMBIGUOUS`, `COMPLETE_NO_BOT_EVIDENCE`, and `BASELINE_UNAVAILABLE` explain why no
   lifetime baseline was confirmed; `CONFIRMED` records the candidate, source, baseline identity,
@@ -828,7 +833,9 @@ the same external capital over time:
   benchmark weights is restricted to assets with a positive `targetPercent` (keep-all fallback only
   when no asset has a target), so historical-only holdings reconstructed for accounting stay out of
   the benchmark basket and weights; the comparison difference then starts non-zero by the excluded
-  value instead of silently absorbing it.
+  value instead of silently absorbing it. The actual side still uses the full approved inception
+  wallet, including those historical-only holdings. If a reconstructed configured-only row shares
+  the inception timestamp, that row cannot erase the full-wallet value from the first actual point.
 - **Comparison reconciles actual holdings through recorded base/quote semantics.** Every successful
   trade in the interval is replayed through `Asset.splitTradingPair`, so a delisted or no longer
   configured USD market (for example `STRCZUSD`) adjusts the tracked quote balance and its base
@@ -854,10 +861,10 @@ the same external capital over time:
   allocated by inception weights; any USD funding plumbing netting to zero fails closed
   as ambiguous. Contribution prices come only from recorded history near the event —
   never a live ticker for an old contribution — and missing prices fail closed. The
-  evidence ladder is the same bounded historical ladder used elsewhere: a USD-quoted
-  execution inside the contribution window, an at-or-before recorded snapshot, a
-  completed Kraken OHLC candle, or a trustworthy cross-quote conversion through the
-  quote asset's own historical USD rate. A contribution in a historical-only asset is
+  evidence ladder is the same bounded historical ladder used elsewhere: a retained USD-quoted
+  execution in the wide past window (with only a small future skew when no past execution exists),
+  an at-or-before recorded snapshot, a completed Kraken OHLC candle, or a trustworthy cross-quote
+  conversion through the quote asset's own historical USD rate. A contribution in a historical-only asset is
   valued in USD and allocated across the configured targets only; it never receives a
   benchmark weight and never becomes a live rebalance target.
 - **Owner withdrawals scale the whole synthetic portfolio proportionally by

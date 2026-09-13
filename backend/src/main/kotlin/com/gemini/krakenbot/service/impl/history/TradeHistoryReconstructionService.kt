@@ -37,7 +37,7 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "16"
+        const val CURRENT_RECONSTRUCTION_VERSION = "17"
 
         /**
          * Historical fail-closed anchor contract (v11).
@@ -382,21 +382,29 @@ class TradeHistoryReconstructionService(
         val tradeLedgerLegs = allLedgers
             .filter { it.type.equals(KrakenApiConstants.LEDGER_TYPE_TRADE, ignoreCase = true) }
             .filter { !it.refid.isNullOrBlank() }
+            .filter { event ->
+                resolvedScopes[event.ledgerId] !in setOf(
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING,
+                )
+            }
             .groupBy { it.refid!!.trim() }
 
         val orphanTradeLedgerEvents = AuthoritativeTradeLedgerEvents.collect(allLedgers, trades, resolvedScopes)
         if (orphanTradeLedgerEvents.incompleteRefIds.isNotEmpty() ||
-            orphanTradeLedgerEvents.contradictoryRefIds.isNotEmpty()
+            orphanTradeLedgerEvents.contradictoryRefIds.isNotEmpty() ||
+            orphanTradeLedgerEvents.ambiguousIdentityRefIds.isNotEmpty()
         ) {
             log.warn(
-                "Cannot reconstruct snapshots with incomplete or contradictory orphan trade " +
-                    "ledger groups: incomplete={} contradictory={}",
+                "Cannot reconstruct snapshots with incomplete, contradictory, or ambiguously " +
+                    "identified orphan trade ledger groups: incomplete={} contradictory={} ambiguous={}",
                 orphanTradeLedgerEvents.incompleteRefIds.size,
                 orphanTradeLedgerEvents.contradictoryRefIds.size,
+                orphanTradeLedgerEvents.ambiguousIdentityRefIds.size,
             )
             return
         }
-
         val events =
             SnapshotHistoryCalculator.buildTimelineEvents(
                 historicalTrades = historicalTrades,
@@ -449,6 +457,7 @@ class TradeHistoryReconstructionService(
                 currentAth = currentAth,
                 resolvedScopes = resolvedScopes,
                 tradeLegsByRefId = tradeLedgerLegs,
+                tradeLegsByTradeIdentity = orphanTradeLedgerEvents.tradeLegsByTradeIdentity,
             )
 
         if (snapshotsToSave.isNotEmpty()) {

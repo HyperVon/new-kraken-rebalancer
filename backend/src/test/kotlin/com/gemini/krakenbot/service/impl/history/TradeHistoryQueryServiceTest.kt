@@ -307,11 +307,17 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     cycleId = null,
                     clientOrderId = null,
                 )
-                val queriedTradesTo = slot<Instant>()
-                val queriedLedgersTo = slot<Instant>()
+                val queriedTradesTo = mutableListOf<Instant>()
+                val queriedLedgersTo = mutableListOf<Instant>()
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
-                coEvery { repository.getTradesInRange(any(), capture(queriedTradesTo)) } returns listOf(trade)
-                coEvery { ledgerRepository.getLedgersInRange(any(), capture(queriedLedgersTo)) } returns emptyList()
+                coEvery { repository.getTradesInRange(any(), any()) } answers {
+                    queriedTradesTo += secondArg<Instant>()
+                    listOf(trade)
+                }
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } answers {
+                    queriedLedgersTo += secondArg<Instant>()
+                    emptyList()
+                }
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
                     RebalancerOrderIdentities()
 
@@ -319,8 +325,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
-                queriedTradesTo.captured shouldBe last.plusMillis(1_000)
-                queriedLedgersTo.captured shouldBe last.plusMillis(1_000)
+                queriedTradesTo.contains(last.plusMillis(1_000)) shouldBe true
+                queriedLedgersTo.contains(last.plusMillis(1_000)) shouldBe true
                 comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
             }
         }
@@ -353,12 +359,18 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     clientOrderId = null,
                 )
 
-                val queriedTradesFrom = slot<Instant>()
-                val queriedLedgersFrom = slot<Instant>()
+                val queriedTradesFrom = mutableListOf<Instant>()
+                val queriedLedgersFrom = mutableListOf<Instant>()
                 coEvery { repository.getSnapshotBefore(now) } returns anchor
                 coEvery { repository.getSnapshotsInRange(now, now.plusSeconds(3600)) } returns listOf(snap1, snap2)
-                coEvery { repository.getTradesInRange(capture(queriedTradesFrom), any()) } returns listOf(trade)
-                coEvery { ledgerRepository.getLedgersInRange(capture(queriedLedgersFrom), any()) } returns emptyList()
+                coEvery { repository.getTradesInRange(any(), any()) } answers {
+                    queriedTradesFrom += firstArg<Instant>()
+                    listOf(trade)
+                }
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } answers {
+                    queriedLedgersFrom += firstArg<Instant>()
+                    emptyList()
+                }
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
                     RebalancerOrderIdentities()
 
@@ -366,8 +378,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
-                queriedTradesFrom.captured shouldBe anchorTime
-                queriedLedgersFrom.captured shouldBe anchorTime
+                queriedTradesFrom.contains(anchorTime) shouldBe true
+                queriedLedgersFrom.contains(anchorTime) shouldBe true
                 comparison.points.size shouldBe 2
                 comparison.baselineTimestamp shouldBe now
                 comparison.points[0].timestamp shouldBe now
@@ -1054,6 +1066,36 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+
+                val outageGateway = mockk<KrakenService>(relaxed = true)
+                coEvery { outageGateway.getOHLC(any(), any(), any()) } throws
+                    IllegalStateException("historical source outage")
+                val outageService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                    fundingProvenanceResolver = SimpleFundingProvenanceResolver(
+                        deposits = listOf(
+                            DepositStatusRecord(
+                                refid = "tx-qs-xlm-deposit",
+                                txid = "0xxlm123",
+                                asset = "XLM",
+                                amount = BigDecimal("1.00000000"),
+                                time = tMid,
+                                status = "Success",
+                                method = "Bitcoin",
+                            ),
+                        ),
+                    ),
+                    krakenService = outageGateway,
+                )
+
+                val outageComparison = outageService.getRebalancerComparison(now, now.plusSeconds(3600))
+
+                outageComparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                outageComparison.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR
             }
         }
 

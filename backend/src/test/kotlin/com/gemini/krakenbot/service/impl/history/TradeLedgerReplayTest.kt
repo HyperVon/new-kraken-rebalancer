@@ -544,6 +544,84 @@ class TradeLedgerReplayTest : StringSpec() {
             balances.getValue("USD") shouldBeEqualComparingTo BigDecimal("900.10")
         }
 
+        "secondary identity selection covers order, client, and blank fallback keys" {
+            val base = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "BTCUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("100.00"),
+            )
+
+            TradeLedgerReplay.identityKey(base.copy(id = null, tradeId = null, orderTxid = "ORDER-1")) shouldBe
+                "order-txid:ORDER-1"
+            TradeLedgerReplay.identityKey(
+                base.copy(id = null, tradeId = null, orderTxid = " ", clientOrderId = "CLIENT-1"),
+            ) shouldBe "client-order-id:CLIENT-1"
+            TradeLedgerReplay.identityKey(
+                base.copy(id = null, tradeId = null, orderTxid = " ", clientOrderId = " "),
+            ) shouldBe null
+        }
+
+        "a proven secondary order identity applies authoritative legs once" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "BTCUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.5"),
+                usdAmount = BigDecimal("100.00"),
+                price = BigDecimal("200"),
+                fee = BigDecimal.ZERO,
+                id = 7,
+                orderTxid = "ORDER-1",
+                tradeId = null,
+            )
+            val base = leg("base", "XXBT", "0.5", balance = "1.5", refid = "ORDER-1")
+            val quote = leg("quote", "ZUSD", "-100.00", balance = "899.90", refid = "ORDER-1")
+
+            val replay = TradeLedgerReplay.classify(
+                trade,
+                emptyMap(),
+                mapOf("db-id:7" to listOf(base, quote)),
+            ).shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+            val effect = replay.ledgerEffect ?: error("expected an authoritative ledger effect")
+            effect.baseNetDelta shouldBeEqualComparingTo BigDecimal("0.5")
+            effect.quoteNetDelta shouldBeEqualComparingTo BigDecimal("-100.00")
+
+            val isolatedReplay = TradeLedgerReplay.classify(
+                trade,
+                emptyMap(),
+                mapOf("db-id:7" to listOf(base, quote)),
+            ).shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+            isolatedReplay.ledgerEffect shouldBe effect
+        }
+
+        "an opaque refid equal to a synthetic identity key is not a secondary binding" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "BTCUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.5"),
+                usdAmount = BigDecimal("100.00"),
+                price = BigDecimal("200"),
+                fee = BigDecimal.ZERO,
+                id = 7,
+                orderTxid = null,
+                clientOrderId = null,
+                tradeId = null,
+            )
+            val base = leg("base", "XXBT", "0.5", balance = "1.5", refid = "db-id:7")
+            val quote = leg("quote", "ZUSD", "-100.00", balance = "899.90", refid = "db-id:7")
+
+            val replay = TradeLedgerReplay.classify(trade, legMap(base, quote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+
+            replay.ledgerEffect shouldBe null
+        }
+
         "reverse apply rejects malformed quote cost and fee values" {
             val trade = TestFixtures.tradeRecord(
                 timestamp = now,
@@ -616,6 +694,40 @@ class TradeLedgerReplayTest : StringSpec() {
             TradeLedgerReplay.reverseApply(replay, balances).shouldBeTrue()
             balances.getValue("BTC") shouldBeEqualComparingTo BigDecimal("1.0")
             balances.getValue("USD") shouldBeEqualComparingTo BigDecimal("999.90")
+
+            val nonUsdTrade = trade.copy(
+                pair = "XLMUSDT",
+                symbol = "XLM",
+                price = BigDecimal("0.25"),
+                tradeId = "TRADE-XLM",
+            )
+            val nonUsdZeroMovement = TradeLedgerReplay.classify(
+                nonUsdTrade,
+                legMap(
+                    leg("base-xlm", "XXLM", "0", balance = "0", refid = "TRADE-XLM"),
+                    refid = "TRADE-XLM",
+                ),
+            ).shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+            val nonUsdEffect = nonUsdZeroMovement.ledgerEffect ?: error("expected an authoritative ledger effect")
+            nonUsdEffect.quoteNetDelta shouldBeEqualComparingTo BigDecimal.ZERO
+
+            val zeroVolumeQuoteMovement = TradeLedgerReplay.classify(
+                trade,
+                legMap(
+                    leg("base-zero-volume", "XXBT", "0", balance = "1.0"),
+                    leg("quote-zero-volume", "ZUSD", "0.01", balance = "999.91"),
+                ),
+            ).shouldBeInstanceOf<TradeLedgerReplay.Classification.Unsupported>()
+            zeroVolumeQuoteMovement.reason shouldBe "zero-volume historical trade moved a wallet balance"
+
+            val quoteMovement = TradeLedgerReplay.classify(
+                trade.copy(volume = BigDecimal("0.5"), usdAmount = BigDecimal("100.00")),
+                legMap(
+                    leg("base-zero", "XXBT", "0", balance = "1.0"),
+                    leg("quote-moved", "ZUSD", "0.01", balance = "999.91"),
+                ),
+            ).shouldBeInstanceOf<TradeLedgerReplay.Classification.Unsupported>()
+            quoteMovement.reason shouldBe "contradictory historical trade ledger effect"
         }
 
         "contradictory leg directions fail closed for both sides" {

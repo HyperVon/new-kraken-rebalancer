@@ -586,8 +586,9 @@ classifier requires the same complete linked two-leg shape for internal transfer
 marker cannot be silently skipped by ordinary comparison. Parser amount validity and obvious credit/debit
 direction violations are persisted/checked before replay. It preserves fail-closed behavior for ambiguous
 wallet scopes that change aggregate balances, incomplete internal-transfer groups, malformed fees,
-duplicate identities,
-unsupported transfer scopes, and unresolved balance differences. Changing this derived replay
+duplicate identities, including a pruned fill whose exact `orderTxid` or `clientOrderId` could bind
+to more than one retained trade or ledger refid, unsupported transfer scopes, and unresolved
+balance differences. No amount/time fuzzy match is used. Changing this derived replay
 contract advances the baseline replay version. The validator's resolved per-ledger wallet scope is
 passed directly to baseline replay: trade-type rows are consumed as wallet-effect evidence only,
 while trade economics come from `TradesHistory`;

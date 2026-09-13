@@ -109,12 +109,12 @@ class TradeHistoryQueryService(
 
     companion object {
         /**
-         * Contribution-time prices must come from recorded snapshots near the
-         * event. Six hours matches the historical reconstruction grid, so an
-         * old contribution still finds its era's prices while a pruned era
-         * fails closed instead of borrowing a modern price.
+         * Contribution-time prices may look back across the retained reconstruction grid, but
+         * only a small forward execution skew is admitted by [HistoricalPriceResolver].
          */
         const val CONTRIBUTION_PRICE_LOOKUP_SECONDS = 21600L
+        const val CONTRIBUTION_PRICE_FUTURE_SKEW_SECONDS =
+            HistoricalPriceResolver.MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS
 
         /**
          * Comparison-start reasons where an accepted later anchor can genuinely
@@ -377,10 +377,11 @@ class TradeHistoryQueryService(
             ?.getKnownRebalancerOrderIdentities(candidateOrderTxids, candidateClientOrderIds)
             ?.orderTxids
             .orEmpty()
-        // Contribution-time prices come only from recorded snapshots near the
-        // event (never a live ticker for an old contribution). Absent prices
-        // fail the comparison closed inside the calculator.
-        val priceProvider = historicalPriceProvider()
+        // Contribution-time prices use the same retained market identities as inception recovery,
+        // including pairs whose only fill predates the displayed comparison window. No pair is
+        // guessed for a historical-only asset, and no live ticker participates in an old comparison.
+        val retainedMarketTrades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
+        val priceProvider = historicalPriceProvider(retainedMarketPairsByBase(retainedMarketTrades + trades))
         return RebalancerComparisonCalculator.calculate(
             snapshots = orderedSnapshots,
             trades = trades,
@@ -858,11 +859,24 @@ class TradeHistoryQueryService(
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
-    private fun historicalPriceProvider() = HistoricalPriceProvider { symbol, time ->
+    private fun retainedMarketPairsByBase(trades: List<TradeRecord>): Map<String, List<String>> = trades
+        .asSequence()
+        .filter { it.success && !it.dryRun && it.hasValidEconomicFields() }
+        .mapNotNull { trade ->
+            Asset.splitTradingPair(trade.pair)?.let { split -> split.base to split.rawPair }
+        }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, pairs) -> pairs.distinct() }
+
+    private fun historicalPriceProvider(marketPairsByBase: Map<String, List<String>>) = HistoricalPriceProvider {
+            symbol,
+            time,
+        ->
         if (Asset.normalizeLedgerAsset(symbol).uppercase() == Asset.USD) {
             BigDecimal.ONE
         } else {
             val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+            var sourceFailure: HistoricalPriceSourceException? = null
             val fromHistory = krakenService?.let { service ->
                 try {
                     HistoricalPriceResolver.resolveHistoricalPrice(
@@ -870,17 +884,21 @@ class TradeHistoryQueryService(
                         eventTime = time,
                         tradesRepo = repository,
                         krakenService = service,
-                        tradeWindowSeconds = CONTRIBUTION_PRICE_LOOKUP_SECONDS,
+                        marketPairs = marketPairsByBase[normalizedSymbol].orEmpty(),
+                        tradeLookbackSeconds = CONTRIBUTION_PRICE_LOOKUP_SECONDS,
+                        futureTradeSkewSeconds = CONTRIBUTION_PRICE_FUTURE_SKEW_SECONDS,
+                        marketPairsByBase = marketPairsByBase,
                     )
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: Exception) {
-                    // A source outage is not evidence that no price exists, so fall through to the
-                    // retained snapshots and otherwise fail the comparison closed.
+                } catch (e: HistoricalPriceSourceException) {
+                    // A source outage is not evidence that no price exists. A retained snapshot
+                    // may still prove the price; if it cannot, preserve the typed outage below.
+                    sourceFailure = e
                     null
                 }
             }
-            fromHistory ?: snapshotContributionPrice(normalizedSymbol, time)
+            fromHistory ?: snapshotContributionPrice(normalizedSymbol, time) ?: sourceFailure?.let { throw it }
         }
     }
 

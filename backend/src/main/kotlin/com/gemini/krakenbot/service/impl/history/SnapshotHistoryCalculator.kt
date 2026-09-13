@@ -155,8 +155,15 @@ object SnapshotHistoryCalculator {
         currentAth: BigDecimal = BigDecimal.ZERO,
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
         tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
+        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>> = emptyMap(),
     ): List<PortfolioSnapshot> {
-        val orderedEvents = orderSameInstantEvents(events, runningBalances, resolvedScopes, tradeLegsByRefId)
+        val orderedEvents = orderSameInstantEvents(
+            events,
+            runningBalances,
+            resolvedScopes,
+            tradeLegsByRefId,
+            tradeLegsByTradeIdentity,
+        )
 
         // [runningBalances] starts at the reconstruction cutoff (the oldest retained snapshot, or current balances
         // when none exists). Invert every event first to derive the state that precedes the oldest point, then
@@ -164,7 +171,7 @@ object SnapshotHistoryCalculator {
         // authoritative checkpoint can therefore never leak backwards into an older point.
         for (ev in orderedEvents) {
             if (ev is TimelineEvent.TradeEvent) {
-                reverseApplyTrade(ev.trade, runningBalances, tradeLegsByRefId)
+                reverseApplyTrade(ev.trade, runningBalances, tradeLegsByRefId, tradeLegsByTradeIdentity)
             } else if (ev is TimelineEvent.RewardEvent) {
                 reverseApplyReward(ev.event, runningBalances, resolvedScopes)
             }
@@ -175,7 +182,7 @@ object SnapshotHistoryCalculator {
         val rawPoints = mutableListOf<RawHistoricalPoint>()
         for (ev in orderedEvents.asReversed()) {
             if (ev is TimelineEvent.TradeEvent) {
-                applyForwardTrade(ev.trade, forwardBalances, tradeLegsByRefId)
+                applyForwardTrade(ev.trade, forwardBalances, tradeLegsByRefId, tradeLegsByTradeIdentity)
             } else if (ev is TimelineEvent.RewardEvent) {
                 applyForwardReward(ev.event, forwardBalances, resolvedScopes)
             }
@@ -210,8 +217,15 @@ object SnapshotHistoryCalculator {
         trade: TradeRecord,
         runningBalances: MutableMap<String, BigDecimal>,
         tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
+        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>> = emptyMap(),
     ) {
-        val replay = when (val classification = TradeLedgerReplay.classify(trade, tradeLegsByRefId)) {
+        val replay = when (
+            val classification = TradeLedgerReplay.classify(
+                trade,
+                tradeLegsByRefId,
+                tradeLegsByTradeIdentity,
+            )
+        ) {
             is TradeLedgerReplay.Classification.Replayable -> classification
 
             is TradeLedgerReplay.Classification.Unsupported ->
@@ -258,8 +272,15 @@ object SnapshotHistoryCalculator {
         trade: TradeRecord,
         runningBalances: MutableMap<String, BigDecimal>,
         tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
+        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>> = emptyMap(),
     ) {
-        val replay = when (val classification = TradeLedgerReplay.classify(trade, tradeLegsByRefId)) {
+        val replay = when (
+            val classification = TradeLedgerReplay.classify(
+                trade,
+                tradeLegsByRefId,
+                tradeLegsByTradeIdentity,
+            )
+        ) {
             is TradeLedgerReplay.Classification.Replayable -> classification
 
             is TradeLedgerReplay.Classification.Unsupported ->
@@ -316,10 +337,13 @@ object SnapshotHistoryCalculator {
         runningBalances: Map<String, BigDecimal>,
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
+        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
     ): List<TimelineEvent> {
         if (events.size < 2 || events.zipWithNext().none { (a, b) -> a.timestamp == b.timestamp }) return events
         val replays = events.filterIsInstance<TimelineEvent.TradeEvent>().associateWith { tradeEvent ->
-            runCatching { TradeLedgerReplay.classify(tradeEvent.trade, tradeLegsByRefId) }.getOrNull()
+            runCatching {
+                TradeLedgerReplay.classify(tradeEvent.trade, tradeLegsByRefId, tradeLegsByTradeIdentity)
+            }.getOrNull()
         }
         val trackedSymbols = runningBalances.keys.toMutableSet()
         replays.values.filterIsInstance<TradeLedgerReplay.Classification.Replayable>().forEach {

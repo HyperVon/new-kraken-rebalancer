@@ -98,7 +98,7 @@ class HistoricalPriceResolverTest : StringSpec() {
             runTest {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns
-                    listOf(snapshot(eventTime.minusSeconds(60)))
+                    listOf(snapshot(eventTime.minusSeconds(60)).copy(balancesObservedAt = null))
 
                 HistoricalPriceResolver.resolveHistoricalPrice(
                     Asset.BTC,
@@ -279,6 +279,24 @@ class HistoricalPriceResolverTest : StringSpec() {
             }
         }
 
+        "a retained past execution wins over a later future execution" {
+            runTest {
+                val earlier = trade(price = BigDecimal("99.00"), volume = BigDecimal("0.01"), usd = BigDecimal("0.99"))
+                    .copy(timestamp = eventTime.minusSeconds(1_000))
+                val later = trade(price = BigDecimal("101.00"), volume = BigDecimal("0.01"), usd = BigDecimal("1.01"))
+                    .copy(timestamp = eventTime.plusSeconds(30))
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(earlier, later)
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    Asset.BTC,
+                    eventTime,
+                    repository,
+                    krakenService,
+                    tradeLookbackSeconds = 2_000L,
+                )!! shouldBeEqualComparingTo BigDecimal("99.00")
+            }
+        }
+
         "retained market pairs are consulted when the default pair has no history" {
             runTest {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
@@ -307,19 +325,13 @@ class HistoricalPriceResolverTest : StringSpec() {
 
         "a non-USD quoted candle is converted through the quote asset's historical USD rate" {
             runTest {
-                val usdtTrade = trade(
-                    price = BigDecimal("0.9992"),
-                    volume = BigDecimal("1.0"),
-                    usd = BigDecimal("0.9992"),
-                )
-                    .copy(pair = "USDTUSD", symbol = "USDT")
-                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(usdtTrade)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
                 coEvery { krakenService.getOHLC(any(), any(), any()) } answers {
-                    if (firstArg<String>() == "XLMUSDT") {
-                        listOf(eventTime.minusSeconds(900).epochSecond to BigDecimal("0.25"))
-                    } else {
-                        emptyList()
+                    when (firstArg<String>()) {
+                        "XLMUSDT" -> listOf(eventTime.minusSeconds(900).epochSecond to BigDecimal("0.25"))
+                        "USDTZUSD" -> listOf(eventTime.minusSeconds(900).epochSecond to BigDecimal("0.9992"))
+                        else -> emptyList()
                     }
                 }
 
@@ -329,6 +341,7 @@ class HistoricalPriceResolverTest : StringSpec() {
                     repository,
                     krakenService,
                     marketPairs = listOf("XLMUSDT"),
+                    marketPairsByBase = mapOf("USDT" to listOf("USDTZUSD")),
                 )!! shouldBeEqualComparingTo BigDecimal("0.24980000")
             }
         }
@@ -358,6 +371,37 @@ class HistoricalPriceResolverTest : StringSpec() {
             }
         }
 
+        "unparseable retained markets and nested quote conversion stay fail closed" {
+            runTest {
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } answers {
+                    if (firstArg<String>() == "NOT_A_MARKET" || firstArg<String>() == "XLMUSDT") {
+                        listOf(eventTime.minusSeconds(900).epochSecond to BigDecimal("0.25"))
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    "XLM",
+                    eventTime,
+                    repository,
+                    krakenService,
+                    marketPairs = listOf("NOT_A_MARKET"),
+                ) shouldBe null
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    "XLM",
+                    eventTime,
+                    repository,
+                    krakenService,
+                    marketPairs = listOf("XLMUSDT"),
+                    quoteConversionDepth = 1,
+                ) shouldBe null
+            }
+        }
+
         "a widened trade window admits a contribution-time fill outside the default window" {
             runTest {
                 val farTrade = trade(
@@ -365,7 +409,7 @@ class HistoricalPriceResolverTest : StringSpec() {
                     volume = BigDecimal("1.0"),
                     usd = BigDecimal("0.239635"),
                 )
-                    .copy(symbol = "XLM", pair = "XLMUSD", timestamp = eventTime.plusSeconds(4858))
+                    .copy(symbol = "XLM", pair = "XLMUSD", timestamp = eventTime.minusSeconds(4858))
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(farTrade)
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
                 coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
@@ -382,7 +426,7 @@ class HistoricalPriceResolverTest : StringSpec() {
                     eventTime,
                     repository,
                     krakenService,
-                    tradeWindowSeconds = 21_600L,
+                    tradeLookbackSeconds = 21_600L,
                 )!! shouldBeEqualComparingTo BigDecimal("0.239635")
             }
         }

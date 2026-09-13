@@ -16,7 +16,8 @@ import java.time.Instant
  * evidence simply contains no trustworthy price. Callers must not persist the former as a
  * permanent "no price exists" conclusion.
  */
-class HistoricalPriceSourceException(val asset: String, message: String) : RuntimeException(message)
+class HistoricalPriceSourceException(val asset: String, message: String, val eventTime: Instant) :
+    RuntimeException(message)
 
 object HistoricalPriceResolver {
     private val log = LoggerFactory.getLogger(HistoricalPriceResolver::class.java)
@@ -39,7 +40,9 @@ object HistoricalPriceResolver {
         krakenService: KrakenService,
         candidatePriceException: BigDecimal? = null,
         marketPairs: List<String> = emptyList(),
-        tradeWindowSeconds: Long = MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS,
+        tradeLookbackSeconds: Long = MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS,
+        futureTradeSkewSeconds: Long = MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS,
+        marketPairsByBase: Map<String, List<String>> = emptyMap(),
         quoteConversionDepth: Int = 0,
     ): BigDecimal? {
         val normalizedAsset = Asset.normalizeLedgerAsset(asset).uppercase()
@@ -52,23 +55,37 @@ object HistoricalPriceResolver {
             return candidatePriceException
         }
 
-        // 2. Authoritative execution price inside a bounded window around the valuation instant:
-        //    a fill booked shortly after the instant still proves the market price there. Owner-flow
-        //    valuation widens this window when a just-executed rebalance trade proves the price.
-        val tradeWindowStart = eventTime.minusSeconds(tradeWindowSeconds)
-        val tradeWindowEnd = eventTime.plusSeconds(tradeWindowSeconds)
-        val recentTrade = tradesRepo.getTradesInRange(tradeWindowStart, tradeWindowEnd)
+        // 2. Prefer a near execution, allowing only a small forward skew. A wide lookback is
+        // useful for retained contribution evidence, but it must never widen the future side of
+        // the valuation window and introduce look-ahead.
+        val tradeLookbackStart = eventTime.minusSeconds(tradeLookbackSeconds)
+        val tradeFutureEnd = eventTime.plusSeconds(futureTradeSkewSeconds)
+        val candidateTrades = tradesRepo.getTradesInRange(tradeLookbackStart, tradeFutureEnd)
             .filter {
                 it.success &&
                     !it.dryRun &&
-                    !it.timestamp.isBefore(tradeWindowStart) &&
-                    !it.timestamp.isAfter(tradeWindowEnd) &&
+                    !it.timestamp.isBefore(tradeLookbackStart) &&
+                    !it.timestamp.isAfter(tradeFutureEnd) &&
                     // TradesHistory reports non-USD quote costs in the quote currency, so only
                     // USD-quoted executions prove a USD price without a conversion contract.
                     Asset.splitTradingPair(it.pair)?.quote == Asset.USD &&
                     Asset.normalizeLedgerAsset(it.symbol).equals(normalizedAsset, ignoreCase = true)
             }
-            .minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
+        val recentPastTrade = candidateTrades
+            .filter {
+                !it.timestamp.isAfter(eventTime) &&
+                    !it.timestamp.isBefore(
+                        eventTime.minusSeconds(MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS),
+                    )
+            }
+            .maxByOrNull { it.timestamp }
+        val earlierPastTrade = candidateTrades
+            .filter { !it.timestamp.isAfter(eventTime) }
+            .maxByOrNull { it.timestamp }
+        val recentFutureTrade = candidateTrades
+            .filter { it.timestamp.isAfter(eventTime) }
+            .minByOrNull { it.timestamp }
+        val recentTrade = recentPastTrade ?: earlierPastTrade ?: recentFutureTrade
 
         if (recentTrade != null) {
             if (recentTrade.volume > BigDecimal.ZERO && recentTrade.usdAmount > BigDecimal.ZERO) {
@@ -87,9 +104,10 @@ object HistoricalPriceResolver {
         val snapshotWindowStart = eventTime.minusSeconds(MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS)
         val nearestSnap = tradesRepo.getSnapshotsInRange(snapshotWindowStart, eventTime)
             .filter {
+                val observation = it.balancesObservedAt ?: Instant.MIN
                 !it.timestamp.isBefore(snapshotWindowStart) &&
                     !it.timestamp.isAfter(eventTime) &&
-                    !(it.balancesObservedAt ?: it.timestamp).isAfter(eventTime)
+                    !observation.isAfter(eventTime)
             }
             .minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
 
@@ -144,8 +162,8 @@ object HistoricalPriceResolver {
                 if (matched != null && matched.second > BigDecimal.ZERO) {
                     // A candle in a non-USD market proves a USD price only through a trustworthy
                     // conversion of the quote leg; without one the price stays unresolved.
-                    val quote = Asset.splitTradingPair(pair)?.quote
-                    val converted = if (quote == null || quote == Asset.USD) {
+                    val quote = Asset.splitTradingPair(pair)?.quote ?: continue
+                    val converted = if (quote == Asset.USD) {
                         matched.second
                     } else {
                         convertQuoteToUsd(
@@ -154,7 +172,9 @@ object HistoricalPriceResolver {
                             eventTime = eventTime,
                             tradesRepo = tradesRepo,
                             krakenService = krakenService,
-                            tradeWindowSeconds = tradeWindowSeconds,
+                            tradeLookbackSeconds = tradeLookbackSeconds,
+                            futureTradeSkewSeconds = futureTradeSkewSeconds,
+                            marketPairsByBase = marketPairsByBase,
                             quoteConversionDepth = quoteConversionDepth,
                         )
                     }
@@ -172,6 +192,7 @@ object HistoricalPriceResolver {
             throw HistoricalPriceSourceException(
                 normalizedAsset,
                 "Historical OHLC sources failed for $normalizedAsset at $eventTime",
+                eventTime,
             )
         }
 
@@ -189,7 +210,9 @@ object HistoricalPriceResolver {
         eventTime: Instant,
         tradesRepo: TradeRepository,
         krakenService: KrakenService,
-        tradeWindowSeconds: Long,
+        tradeLookbackSeconds: Long,
+        futureTradeSkewSeconds: Long,
+        marketPairsByBase: Map<String, List<String>>,
         quoteConversionDepth: Int,
     ): BigDecimal? {
         if (quoteConversionDepth >= 1) return null
@@ -198,10 +221,12 @@ object HistoricalPriceResolver {
             eventTime = eventTime,
             tradesRepo = tradesRepo,
             krakenService = krakenService,
-            tradeWindowSeconds = tradeWindowSeconds,
+            tradeLookbackSeconds = tradeLookbackSeconds,
+            futureTradeSkewSeconds = futureTradeSkewSeconds,
+            marketPairs = marketPairsByBase[quote].orEmpty(),
+            marketPairsByBase = marketPairsByBase,
             quoteConversionDepth = quoteConversionDepth + 1,
         ) ?: return null
-        if (quoteUsdPrice <= BigDecimal.ZERO) return null
         return quotePrice
             .multiply(quoteUsdPrice)
             .setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)

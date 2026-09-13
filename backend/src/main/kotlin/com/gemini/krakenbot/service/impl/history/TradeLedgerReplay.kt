@@ -41,10 +41,15 @@ internal object TradeLedgerReplay {
 
     /**
      * Classify one retained trade. [tradeLegsByRefid] maps a trade identity (the ledger `refid`)
-     * to its retained trade-type ledger legs; a trade whose identity has no entry keeps the
-     * legacy TradeRecord economics.
+     * to its retained trade-type ledger legs. [tradeLegsByTradeIdentity] contains only secondary
+     * bindings proven by [AuthoritativeTradeLedgerEvents]: one durable order/client identity maps
+     * to one ledger group. A trade whose identity has no entry keeps the TradeRecord economics.
      */
-    fun classify(trade: TradeRecord, tradeLegsByRefid: Map<String, List<LedgerEvent>>): Classification {
+    fun classify(
+        trade: TradeRecord,
+        tradeLegsByRefid: Map<String, List<LedgerEvent>>,
+        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>> = emptyMap(),
+    ): Classification {
         val split = Asset.splitTradingPair(trade.pair)
             ?: return Classification.Unsupported(
                 "unsupported historical market ${trade.pair.trim().uppercase()}",
@@ -68,7 +73,12 @@ internal object TradeLedgerReplay {
 
             else -> return Classification.Unsupported("missing historical trade cost")
         }
-        val legs = trade.tradeId?.trim()?.takeIf(String::isNotEmpty)?.let(tradeLegsByRefid::get)
+        val directLegs = trade.tradeId?.trim()?.takeIf(String::isNotEmpty)?.let(tradeLegsByRefid::get)
+        // Secondary bindings are deliberately kept separate from raw refids. A ledger refid is
+        // opaque and may legitimately equal a synthetic identity key such as `db-id:7`; treating
+        // the two maps as interchangeable could bind an unrelated orphan group to a trade.
+        val secondaryLegs = identityKey(trade)?.let(tradeLegsByTradeIdentity::get)
+        val legs = directLegs ?: secondaryLegs
         val effect: LedgerEffect?
         if (legs == null) {
             effect = null
@@ -87,6 +97,15 @@ internal object TradeLedgerReplay {
             fee = trade.fee,
             ledgerEffect = effect,
         )
+    }
+
+    /** Stable key used only after an exact durable identity has bound a trade to ledger rows. */
+    internal fun identityKey(trade: TradeRecord): String? = when {
+        trade.id != null -> "db-id:${trade.id}"
+        !trade.tradeId.isNullOrBlank() -> "trade-id:${trade.tradeId!!.trim()}"
+        !trade.orderTxid.isNullOrBlank() -> "order-txid:${trade.orderTxid!!.trim()}"
+        !trade.clientOrderId.isNullOrBlank() -> "client-order-id:${trade.clientOrderId!!.trim()}"
+        else -> null
     }
 
     /**
@@ -134,7 +153,10 @@ internal object TradeLedgerReplay {
         val baseLegs = normalized.filter { (asset, _) -> asset == base }
         val quoteLegs = normalized.filter { (asset, _) -> asset == quote }
         val unknown = normalized.count { (asset, _) -> asset != base && asset != quote }
-        if (unknown > 0 || baseLegs.size > 1 || quoteLegs.size > 1 || legs.size > 2 || legs.isEmpty()) {
+        // Once unknown assets and duplicate base/quote legs are ruled out, a two-asset trade
+        // cannot contain more than two legs; the empty-list check handles the only remaining
+        // shape that has neither a base nor a quote leg.
+        if (unknown > 0 || baseLegs.size > 1 || quoteLegs.size > 1 || legs.isEmpty()) {
             return EffectOutcome.Rejected("unexpected historical trade ledger legs")
         }
         val baseLeg = baseLegs.singleOrNull()?.second

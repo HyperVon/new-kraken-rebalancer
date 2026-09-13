@@ -3507,9 +3507,20 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     "USD" to assetRow("500.00", "1.0", "500.00"),
                 ),
             )
+            // The series can contain a reconstructed configured-only twin at the exact
+            // inception instant. The approved inception anchor still owns the full actual
+            // wallet, including the retained historical-only holding.
+            val reconstructedTwin = snapshot(
+                t0,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("0.005", "100000.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.0", "500.00"),
+                ),
+            )
 
             val result = calculate(
-                snapshots = listOf(s1, s2),
+                snapshots = listOf(reconstructedTwin, s1, s2),
                 trades = emptyList(),
                 rewards = emptyList(),
                 inceptionSnapshot = inceptionBaseline,
@@ -3523,6 +3534,41 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[0].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("1005.00")
             result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
             result.points[0].differenceUSD shouldBeEqualComparingTo BigDecimal("5.00")
+        }
+
+        "a configured-target value above the full inception total fails closed" {
+            val t0 = now
+            val t1 = now.plusSeconds(3600)
+            val assets = mapOf(
+                "BTC" to assetRow("0.005", "100000.00", "500.00"),
+                "USD" to assetRow("500.00", "1.0", "500.00"),
+            )
+            val inceptionBaseline = snapshot(t0, "999.999", assets).copy(
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("0.005"),
+                        price = BigDecimal("100000.00"),
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                    "USD" to assetSnapshot(
+                        symbol = "USD",
+                        balance = BigDecimal("500.00"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(snapshot(t0, "1000.00", assets), snapshot(t1, "1000.00", assets)),
+                inceptionSnapshot = inceptionBaseline,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.BASELINE_MISMATCH
         }
 
         "Crypto contribution is valued at event time then invested by inception weights" {
@@ -5832,6 +5878,79 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
             result.unavailableAt shouldBe depTime
+        }
+
+        "a historical price source outage is not persisted as missing price evidence" {
+            val depTime = now.plusSeconds(600)
+            val xlmRef = "XLM-SOURCE-OUTAGE-DEPOSIT-2026-07-01T1210Z"
+            val snapshots = listOf(
+                snapshot(now, "50000.00", mapOf("BTC" to assetRow("0.50", "50000.00", "25000.00"))),
+                snapshot(
+                    depTime.plusSeconds(60),
+                    "50000.00",
+                    mapOf("BTC" to assetRow("0.50", "50000.00", "25000.00")),
+                ),
+            )
+            val ledger = ledgerEvent(
+                timestamp = depTime,
+                asset = "XLM",
+                amount = "820.770368",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                refid = xlmRef,
+                ledgerId = "xlm-source-outage-deposit",
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = xlmRef,
+                        txid = "xlm-source-outage-tx",
+                        asset = "XLM",
+                        amount = BigDecimal("820.770368"),
+                        time = depTime,
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = listOf(ledger),
+                priceProvider = HistoricalPriceProvider { _, timestamp ->
+                    throw HistoricalPriceSourceException("XLM", "source unavailable", timestamp)
+                },
+                provenanceResolver = provenance,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR
+            result.unavailableAt shouldBe depTime
+        }
+
+        "an orphan trade ledger group with no retained fill fails closed at its ledger time" {
+            val orphanTime = now.plusSeconds(900)
+            val snapshots = listOf(
+                snapshot(now, "1000.00", mapOf("USD" to assetRow("1000.00", "1.00", "1000.00"))),
+                snapshot(
+                    orphanTime.plusSeconds(60),
+                    "1000.00",
+                    mapOf("USD" to assetRow("1000.00", "1.00", "1000.00")),
+                ),
+            )
+            val orphan = ledgerEvent(
+                timestamp = orphanTime,
+                asset = Asset.BTC,
+                amount = "0.01",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                ledgerId = "orphan-trade-ledger",
+                refid = "orphan-trade-refid",
+            )
+
+            val result = calculate(snapshots = snapshots, rewards = listOf(orphan))
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe orphanTime
         }
 
         "Scenario BB: card Buy Crypto legs with sub-second and several-second offsets are linked within 120s" {

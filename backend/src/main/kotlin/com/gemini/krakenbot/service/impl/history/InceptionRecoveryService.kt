@@ -1219,9 +1219,42 @@ class InceptionRecoveryService(
         val tradeLedgerLegs = historicalLedgers
             .filter { event -> event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true) }
             .filter { event -> !event.refid.isNullOrBlank() }
+            .filter { event ->
+                balanceValidation.resolvedScopes[event.ledgerId] !in setOf(
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING,
+                )
+            }
             .groupBy { event -> event.refid!!.trim() }
+        val orphanTradeLedgerEvents = AuthoritativeTradeLedgerEvents.collect(
+            ledgers = historicalLedgers,
+            trades = historicalTrades,
+            resolvedScopes = balanceValidation.resolvedScopes,
+        )
+        if (orphanTradeLedgerEvents.incompleteRefIds.isNotEmpty() ||
+            orphanTradeLedgerEvents.contradictoryRefIds.isNotEmpty() ||
+            orphanTradeLedgerEvents.ambiguousIdentityRefIds.isNotEmpty()
+        ) {
+            log.warn(
+                "Cannot replay inception history with incomplete, contradictory, or ambiguously " +
+                    "identified trade ledger groups: incomplete={} contradictory={} ambiguous={}",
+                orphanTradeLedgerEvents.incompleteRefIds.size,
+                orphanTradeLedgerEvents.contradictoryRefIds.size,
+                orphanTradeLedgerEvents.ambiguousIdentityRefIds.size,
+            )
+            return BaselineResult.Failure(
+                InceptionRecoveryStatus.AMBIGUOUS,
+                "trade ledger identity or shape is ambiguous",
+            )
+        }
+        val orphanTradeLedgerIds = orphanTradeLedgerEvents.replayableLegs.mapTo(linkedSetOf()) { it.ledgerId }
         val tradeReplays = accountingTrades.associate { trade ->
-            trade.id!! to TradeLedgerReplay.classify(trade, tradeLedgerLegs)
+            trade.id!! to TradeLedgerReplay.classify(
+                trade,
+                tradeLedgerLegs,
+                orphanTradeLedgerEvents.tradeLegsByTradeIdentity,
+            )
         }
         val unsupportedTrade = accountingTrades.firstOrNull { trade ->
             tradeReplays.getValue(trade.id!!) is TradeLedgerReplay.Classification.Unsupported
@@ -1245,7 +1278,10 @@ class InceptionRecoveryService(
                         !event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true) &&
                         balanceValidation.resolvedScopes[event.ledgerId] ==
                         AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
-                }.map { event -> Asset.normalizeLedgerAsset(event.asset).uppercase() }
+                }.map { event -> Asset.normalizeLedgerAsset(event.asset).uppercase() } +
+                orphanTradeLedgerEvents.replayableLegs
+                    .filter { it.netBalanceDelta().signum() != 0 }
+                    .map { event -> Asset.normalizeLedgerAsset(event.asset).uppercase() }
             ).toSet() - expectedUniverse
 
         val runningBalances = anchor.assets.mapKeys { (symbol, _) ->
@@ -1294,6 +1330,7 @@ class InceptionRecoveryService(
                             expectedUniverse = historicalUniverse,
                             flowCategories = flowCategories,
                             resolvedScopes = balanceValidation.resolvedScopes,
+                            orphanTradeLedgerIds = orphanTradeLedgerIds,
                         )
                     ) {
                         return BaselineResult.Failure(
@@ -1314,18 +1351,13 @@ class InceptionRecoveryService(
         }
         runningBalances.replaceAll { _, balance -> balance.max(BigDecimal.ZERO) }
 
-        // Retained USD-quoted pairs keyed by normalized base cover historical markets that are no
-        // longer listed today (for example a delisted token that was genuinely held at inception).
-        // Non-USD quotes are ignored because the resolver returns exchange prices as-is; a
-        // USDT/USDC price must never be treated as USD without a proven conversion.
+        // Retained pairs keyed by normalized base cover historical markets that are no longer
+        // listed today (for example a delisted token or an XLMUSDT-only market). The resolver
+        // accepts non-USD quotes only through its bounded historical quote conversion ladder.
         val retainedPairsByBase = historicalTrades
             .mapNotNull { trade ->
                 val split = Asset.splitTradingPair(trade.pair)
-                if (split == null || split.quote != Asset.USD) {
-                    null
-                } else {
-                    split.base to split.rawPair
-                }
+                split?.let { it.base to it.rawPair }
             }
             .groupBy({ it.first }, { it.second })
             .mapValues { (_, pairs) -> pairs.distinct() }
@@ -1436,11 +1468,29 @@ class InceptionRecoveryService(
         expectedUniverse: Set<String>,
         flowCategories: Map<String, FlowCategory>,
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        orphanTradeLedgerIds: Set<String> = emptySet(),
     ): Boolean {
-        if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) {
+        val isTrade = event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)
+        if (isTrade && event.ledgerId !in orphanTradeLedgerIds) {
             // Trade economics are replayed from the authoritative TradeRecord; the ledger row is
             // only a duplicate checkpoint of the same fill and is not re-applied here so the
             // recorded balance can never be inverted against the wrong side of a fill.
+            return true
+        }
+        if (isTrade) {
+            // A structurally complete orphan group has no retained TradeRecord to replay. Its
+            // authoritative legs are the only durable execution evidence, so invert each leg once
+            // from its own post-entry checkpoint. The collector has already proved the group is
+            // Spot-scoped and non-ambiguous.
+            val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
+            val delta = event.netBalanceDelta()
+            if (delta.signum() == 0) return true
+            val balance = balances[symbol] ?: return false
+            // A nonzero orphan can enter this path only after the collector proved a complete
+            // two-leg group with authoritative post-entry balances. The reconstruction universe
+            // is seeded from every such leg before replay, so the running balance is a guard for
+            // an unexpected key while the checkpoint remains the source of truth.
+            balances[symbol] = event.balance.subtract(delta)
             return true
         }
         val isConversion = event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
@@ -1540,6 +1590,7 @@ class InceptionRecoveryService(
                     krakenService = backend,
                     candidatePriceException = candidateException,
                     marketPairs = marketPairsByBase[symbol].orEmpty(),
+                    marketPairsByBase = marketPairsByBase,
                 )
             } catch (e: HistoricalPriceSourceException) {
                 return PriceResolution.SourceError(symbol, e.message ?: "historical price source failed")
@@ -2024,7 +2075,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "13"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "14"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

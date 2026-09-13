@@ -83,20 +83,22 @@ class RebalancerComparisonTest : StringSpec() {
         "available comparison rejects invalid point collections" {
             shouldThrow<IllegalArgumentException> { available(points = listOf(point())) }
             shouldThrow<IllegalArgumentException> {
-                available(points = listOf(point(difference = BigDecimal.ONE), point(later)))
-            }
-            shouldThrow<IllegalArgumentException> {
-                available(points = listOf(point(differencePercent = BigDecimal.ONE), point(later)))
-            }
-            shouldThrow<IllegalArgumentException> {
-                available(points = listOf(point(rebalancer = BigDecimal("101.00")), point(later)))
-            }
-            shouldThrow<IllegalArgumentException> {
                 available(baselineTimestamp = later)
             }
             shouldThrow<IllegalArgumentException> {
                 available(points = listOf(point(later), point(baseline)))
             }
+        }
+
+        "available comparison permits a legitimate nonzero starting divergence" {
+            val excluded = point(
+                rebalancer = BigDecimal("105.00"),
+                buyAndHold = value,
+                difference = BigDecimal("5.00"),
+                differencePercent = BigDecimal("5.00"),
+            )
+
+            available(points = listOf(excluded, point(later)))
         }
 
         "unavailable comparison rejects available-only fields" {

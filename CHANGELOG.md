@@ -16,8 +16,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   distinct assets, one debit and one credit, within one second, with an authoritative post balance, a valid fee, and a
   valid amount shape resolved to `SPOT`) are now replayed once into snapshot reconstruction. A group matched to a
   retained trade identity is never applied twice, incomplete or contradictory groups fail reconstruction closed, and
-  non-Spot groups are left out. Snapshot reconstruction version `16` rebuilds derived snapshots in place; the baseline
-  replay version is unchanged.
+  non-Spot groups are left out. A retained fill may bind through one exact durable `orderTxid` or `clientOrderId`
+  when its `tradeId` is absent; multiple owners or refids fail closed. Snapshot reconstruction version `17` rebuilds
+  derived snapshots in place, and baseline replay version `14` rebuilds the historical baseline.
 - **Buy & Hold no longer creates impossible negative holdings or double-counts owner capital**: an owner contribution is
   invested by inception weights instead of being held in the contributed asset, so a later manual trade, conversion, or
   balance movement that spends that asset previously drove the synthetic basket negative and blocked the comparison
@@ -28,12 +29,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Contribution prices use the shared bounded historical ladder**: the live comparison path now resolves
-  contribution-time prices through the same evidence ladder used for historical-only valuation — a USD-quoted
-  execution inside the contribution window, an at-or-before recorded snapshot, a completed Kraken OHLC candle, or a
-  cross-quote conversion through the quote asset's own historical USD rate — instead of recorded snapshots alone. A
-  contribution in a historical-only asset is valued in USD and allocated across the configured targets only; it never
-  receives a benchmark weight or a live rebalance target, and a genuinely unpriceable contribution still fails closed
-  with `MISSING_PRICE`.
+  contribution-time prices through retained successful USD executions in a wide past-only lookup, a small bounded
+  future execution skew only when no past execution exists, an at-or-before recorded snapshot, a completed Kraken
+  OHLC candle, or a cross-quote conversion through the quote asset's own historical USD rate. Retained market-pair
+  identities cover delisted and historical-only markets without guessing symbols. A contribution in a historical-only
+  asset is valued in USD and allocated across the configured targets only; it never receives a benchmark weight or a
+  live rebalance target. Missing evidence remains `MISSING_PRICE`, while an OHLC source outage remains a distinct
+  retryable `HISTORICAL_PRICE_SOURCE_ERROR`.
 - **The comparison replays ledger, conversion, and mirrored manual-trade events in reconstruction's chronological
   order**: events that share one instant keep the recorded ledger-before-trade ordering, so an authoritative checkpoint
   is evaluated against the state that existed at its timestamp instead of reporting a spurious mismatch.

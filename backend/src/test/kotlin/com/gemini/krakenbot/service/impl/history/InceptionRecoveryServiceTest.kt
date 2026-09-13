@@ -2015,6 +2015,78 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "orphan trade ledger legs are reversed exactly once during baseline recovery" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade(
+                    id = "bot",
+                    timestamp = botTime,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                    fee = BigDecimal("0.50"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+
+                val orphanTime = botTime.plusSeconds(3600)
+                val orphanRefId = "orphan-ledger-ref"
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "orphan-btc",
+                            refid = orphanRefId,
+                            time = orphanTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.10"),
+                            balance = BigDecimal("0.60"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "orphan-usd",
+                            refid = orphanRefId,
+                            time = orphanTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-10.00"),
+                            balance = BigDecimal("939.50"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "orphan-zero",
+                            refid = "orphan-zero-ref",
+                            time = orphanTime.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal("0.60"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.60"), Asset.USD to BigDecimal("939.50")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = requireNotNull(
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)?.toIntOrNull(),
+                )
+                val baseline = requireNotNull(repository.getSnapshotById(baselineId))
+                // The orphan's +0.10 BTC/-10 USD movement is removed once before the bot fill;
+                // applying it twice would produce a visibly different pre-inception balance.
+                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal.ZERO
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("1000.00")
+                baseline.totalValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            }
+        }
+
         "recovery rejects trades on unsupported historical markets" {
             runTest {
                 val botTime = Instant.parse("2026-01-02T00:00:00Z")
@@ -2252,7 +2324,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
         }
 
         "baseline replay version reflects historical universe semantics" {
-            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "13"
+            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "14"
         }
 
         "recovery rejects unsupported trade economics" {

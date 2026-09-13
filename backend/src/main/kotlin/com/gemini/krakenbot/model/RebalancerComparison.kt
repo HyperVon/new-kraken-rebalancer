@@ -50,17 +50,9 @@ data class RebalancerComparison(
                 require(baselineTimestamp <= first.timestamp) {
                     "Baseline timestamp must not be after the first point"
                 }
-                if (first.timestamp == baselineTimestamp) {
-                    require(first.differenceUSD.compareTo(BigDecimal.ZERO) == 0) {
-                        "First point must have zero difference"
-                    }
-                    require(first.differencePercent.compareTo(BigDecimal.ZERO) == 0) {
-                        "First point must have zero percentage difference"
-                    }
-                    require(first.rebalancerValueUSD.compareTo(first.buyAndHoldValueUSD) == 0) {
-                        "First point must have equal values"
-                    }
-                }
+                // A strict configured-target benchmark can intentionally start below the full
+                // actual wallet when the approved inception snapshot retains historical-only
+                // holdings. The initial difference is therefore evidence, not an invalid state.
                 for (i in 1 until points.size) {
                     require(points[i].timestamp >= points[i - 1].timestamp) {
                         "Points must be in ascending timestamp order"
