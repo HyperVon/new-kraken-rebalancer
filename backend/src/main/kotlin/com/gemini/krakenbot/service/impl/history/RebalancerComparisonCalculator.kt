@@ -14,6 +14,7 @@ import com.gemini.krakenbot.model.NormalizedFundingTransaction
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RebalancerComparisonPoint
+import com.gemini.krakenbot.model.ResolvedOrderOwnership
 import com.gemini.krakenbot.model.TradeOwnership
 import com.gemini.krakenbot.model.TradeOwnershipClassifier
 import com.gemini.krakenbot.model.TradeRecord
@@ -297,11 +298,16 @@ object RebalancerComparisonCalculator {
         val orphanTradeLedgerIds = orphanTradeLedgerEvents.replayableLegs.mapTo(linkedSetOf()) { it.ledgerId }
         val tradeLegsByTradeIdentity = orphanTradeLedgerEvents.tradeLegsByTradeIdentity
 
+        val resolvedOrderOwnership = TradeOwnershipClassifier.resolveOrderOwnership(
+            trades = trades,
+            knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+        )
+
         val balanceResult = validateTrackedBalanceChanges(
             snapshots = validationSnapshots,
             trades = trades,
             ledgers = spotRewards,
-            knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+            orderOwnership = resolvedOrderOwnership,
             baseline = reconciliationBaseline,
             tradeLegsByRefId = tradeLegsByRefId,
             tradeLegsByTradeIdentity = tradeLegsByTradeIdentity,
@@ -380,10 +386,7 @@ object RebalancerComparisonCalculator {
                     !it.dryRun &&
                     it.timestamp > baseline.timestamp &&
                     it.timestamp <= windowObservationStart &&
-                    TradeOwnershipClassifier.classify(
-                        it,
-                        knownRebalancerOrderTxids,
-                    ) == TradeOwnership.MANUAL_OR_EXTERNAL
+                    resolvedOrderOwnership.classify(it) == TradeOwnership.MANUAL_OR_EXTERNAL
             }.map { ReconciledTrade(it, it.timestamp, it.usdAmount) }
         } else {
             emptyList()
@@ -416,7 +419,7 @@ object RebalancerComparisonCalculator {
                 ledgers = intermediateLedgers + reconciledLedgers.filterNot {
                     it.ledger.ledgerId in orphanTradeLedgerIds
                 },
-                knownRebalancerOrderTxids = knownRebalancerOrderTxids,
+                orderOwnership = resolvedOrderOwnership,
                 baseline = reconciliationBaseline,
                 inceptionWeights = inceptionWeights,
                 priceProvider = priceProvider,
@@ -739,7 +742,7 @@ object RebalancerComparisonCalculator {
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
         ledgers: List<LedgerEvent>,
-        knownRebalancerOrderTxids: Set<String>,
+        orderOwnership: ResolvedOrderOwnership,
         baseline: PortfolioSnapshot,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
@@ -800,10 +803,7 @@ object RebalancerComparisonCalculator {
             .map { Asset.normalizeLedgerAsset(it).uppercase() }
             .toSet()
         for ((_, trade) in indexedTrades.filter { (_, trade) -> trade.timestamp <= lastObservationTime }) {
-            val ownership = TradeOwnershipClassifier.classify(
-                trade = trade,
-                knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-            )
+            val ownership = orderOwnership.classify(trade)
             if (ownership == TradeOwnership.UNKNOWN && tradeTouchesAssets(trade, baselineAssetSymbols)) {
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
@@ -989,10 +989,7 @@ object RebalancerComparisonCalculator {
             }
 
             for ((_, lateTrade) in lateTradeCandidates) {
-                val ownership = TradeOwnershipClassifier.classify(
-                    trade = lateTrade,
-                    knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-                )
+                val ownership = orderOwnership.classify(lateTrade)
                 if (ownership == TradeOwnership.UNKNOWN) {
                     return TrackedBalanceValidation.Failed(
                         reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
@@ -1030,10 +1027,7 @@ object RebalancerComparisonCalculator {
 
             if (hasUnknownObservation) {
                 for ((_, boundaryTrade) in legacyBoundaryTradeCandidates) {
-                    val ownership = TradeOwnershipClassifier.classify(
-                        trade = boundaryTrade,
-                        knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-                    )
+                    val ownership = orderOwnership.classify(boundaryTrade)
                     if (ownership == TradeOwnership.UNKNOWN) {
                         return TrackedBalanceValidation.Failed(
                             reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
@@ -1091,10 +1085,7 @@ object RebalancerComparisonCalculator {
 
             if (initialTradeCandidates.isNotEmpty() || initialLedgerCandidates.isNotEmpty()) {
                 for ((_, initialTrade) in initialTradeCandidates) {
-                    val ownership = TradeOwnershipClassifier.classify(
-                        trade = initialTrade,
-                        knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-                    )
+                    val ownership = orderOwnership.classify(initialTrade)
                     if (ownership == TradeOwnership.UNKNOWN) {
                         return TrackedBalanceValidation.Failed(
                             reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
@@ -1834,7 +1825,7 @@ object RebalancerComparisonCalculator {
     private suspend fun buildBenchmarkEvents(
         trades: List<ReconciledTrade>,
         ledgers: List<ReconciledLedger>,
-        knownRebalancerOrderTxids: Set<String>,
+        orderOwnership: ResolvedOrderOwnership,
         baseline: PortfolioSnapshot,
         inceptionWeights: Map<String, BigDecimal>,
         priceProvider: HistoricalPriceProvider?,
@@ -2103,10 +2094,7 @@ object RebalancerComparisonCalculator {
                 reconciledTrade.timestamp > baseline.timestamp &&
                 (baseline.balancesObservedAt == null || trade.timestamp > baseline.balancesObservedAt)
             ) {
-                val ownership = TradeOwnershipClassifier.classify(
-                    trade = trade,
-                    knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-                )
+                val ownership = orderOwnership.classify(trade)
                 events += BenchmarkEvent.Trade(
                     timestamp = reconciledTrade.timestamp,
                     trade = trade,
@@ -2781,7 +2769,7 @@ object RebalancerComparisonCalculator {
         return buildBenchmarkEvents(
             trades = emptyList(),
             ledgers = reconciled,
-            knownRebalancerOrderTxids = emptySet(),
+            orderOwnership = TradeOwnershipClassifier.resolveOrderOwnership(emptyList()),
             baseline = baseline,
             inceptionWeights = inceptionWeights,
             priceProvider = priceProvider,

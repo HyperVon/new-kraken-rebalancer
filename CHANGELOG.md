@@ -11,6 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Historical trade ownership now fails closed**: an authoritative `API_FILL` without local cycle/client metadata or a durable rebalancer order-intent match remains `UNKNOWN` instead of being inferred as manual/external. `MANUAL_OR_EXTERNAL` now requires explicit `TradeSource.MANUAL` evidence, and an unknown trade touching a tracked base or quote makes the comparison unavailable.
+- **Exact order sibling fill propagation and conflict fail-closed**: positive bot evidence (cycle ID, client order ID, local estimate, durable order intent) or manual evidence propagates to sibling fills sharing an exact `orderTxid`. If conflicting evidence exists for an order, it fails closed to `UNKNOWN` and comparison remains unavailable.
 - **Synthetic Buy & Hold replay now preserves linked balance economics**: complete refid-linked consumer `spend`/`receive` groups, including supported multi-leg groups, replay atomically and skip as a whole when their debit cannot be sourced from the synthetic basket. Positive rewards in assets the basket does not hold remain actual-only instead of creating synthetic value.
 
 ## [6.17.62] - 2026-09-14
