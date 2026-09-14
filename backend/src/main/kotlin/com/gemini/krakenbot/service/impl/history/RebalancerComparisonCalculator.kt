@@ -113,6 +113,14 @@ object RebalancerComparisonCalculator {
         val hasConfiguredBenchmark = inceptionSnapshot?.assets?.any { (_, asset) ->
             asset.targetPercent.signum() > 0
         } == true
+        val requiredReconciliationSymbols = if (hasConfiguredBenchmark) {
+            inceptionSnapshot.assets.keys
+                .filter { symbol -> inceptionSnapshot.assets.getValue(symbol).targetPercent.signum() > 0 }
+                .map { Asset.normalizeLedgerAsset(it).uppercase() }
+                .toSet()
+        } else {
+            emptySet()
+        }
         val (baseline, effectiveSnapshots) = if (benchmarkInception != null) {
             val trimmed = if (!hasConfiguredBenchmark) {
                 if (orderedSnapshots.first().timestamp < benchmarkInception.timestamp) {
@@ -150,7 +158,21 @@ object RebalancerComparisonCalculator {
                         listOf(inceptionSnapshot) + orderedSnapshots
                     }
 
-                    else -> orderedSnapshots
+                    else -> {
+                        val first = orderedSnapshots.first()
+                        val firstSymbols = first.assets.keys
+                            .map { Asset.normalizeLedgerAsset(it).uppercase() }
+                            .toSet()
+                        val completeRecordedTwin = first != inceptionSnapshot &&
+                            firstSymbols.containsAll(requiredReconciliationSymbols)
+                        if (completeRecordedTwin) {
+                            listOf(inceptionSnapshot) + orderedSnapshots.dropWhile {
+                                it.timestamp == benchmarkInception.timestamp
+                            }
+                        } else {
+                            orderedSnapshots
+                        }
+                    }
                 }
             }
             if (trimmed.size < 2) {
@@ -177,25 +199,37 @@ object RebalancerComparisonCalculator {
         // The recorded series still supplies the target universe and the wallet balance transitions
         // used for reconciliation. It is deliberately separate from the economic inception above:
         // reconstructed target percentages are current-plan projections, not historical weights.
+        // A retained history may contain both an approved full-wallet anchor and a same-time
+        // recorded twin. Prefer the same-time row that contains every current target key so a
+        // stale twin's historical target metadata cannot drop a zero-valued configured asset.
         val reconciliationBaseline = if (benchmarkInception != null) {
-            effectiveSnapshots
-                .firstOrNull { it.timestamp == benchmarkInception.timestamp }
-                ?.restrictToBenchmarkTargets()
-                ?: if (hasConfiguredBenchmark) {
-                    inceptionSnapshot.restrictToBenchmarkTargets()
+            val sameTimestampSnapshots = effectiveSnapshots.filter {
+                it.timestamp == benchmarkInception.timestamp
+            }
+            val exactSeriesSnapshot = if (hasConfiguredBenchmark) {
+                sameTimestampSnapshots.firstOrNull { snapshot ->
+                    snapshot.assets.keys
+                        .map { Asset.normalizeLedgerAsset(it).uppercase() }
+                        .toSet()
+                        .containsAll(requiredReconciliationSymbols)
+                } ?: sameTimestampSnapshots.firstOrNull()
+            } else {
+                sameTimestampSnapshots.firstOrNull()
+            }
+            exactSeriesSnapshot?.let {
+                if (hasConfiguredBenchmark) {
+                    it.restrictToReconciliationSymbols(requiredReconciliationSymbols)
+                } else {
+                    it.restrictToBenchmarkTargets()
+                }
+            }
+                ?: if (hasConfiguredBenchmark && sameTimestampSnapshots.isEmpty()) {
+                    inceptionSnapshot.restrictToReconciliationSymbols(requiredReconciliationSymbols)
                 } else {
                     benchmarkInception
                 }
         } else {
             baseline
-        }
-        val requiredReconciliationSymbols = if (hasConfiguredBenchmark) {
-            inceptionSnapshot.assets.keys
-                .filter { symbol -> inceptionSnapshot.assets.getValue(symbol).targetPercent.signum() > 0 }
-                .map { Asset.normalizeLedgerAsset(it).uppercase() }
-                .toSet()
-        } else {
-            emptySet()
         }
         val reconciliationSymbols = reconciliationBaseline.assets.keys
             .map { Asset.normalizeLedgerAsset(it).uppercase() }
@@ -1699,6 +1733,23 @@ object RebalancerComparisonCalculator {
                 },
             )
         }
+    }
+
+    /**
+     * Keep the configured reconciliation rows by symbol, including zero-valued targets. A
+     * same-time recorded twin may carry an older target projection where a configured cash row
+     * has target zero; its presence is still required for balance reconciliation.
+     */
+    private fun PortfolioSnapshot.restrictToReconciliationSymbols(symbols: Set<String>): PortfolioSnapshot {
+        val retained = assets.filterKeys { symbol ->
+            Asset.normalizeLedgerAsset(symbol).uppercase() in symbols
+        }
+        return copy(
+            assets = retained,
+            totalValueUSD = retained.values.fold(BigDecimal.ZERO) { total, asset ->
+                total.add(asset.valueUSD)
+            },
+        )
     }
 
     /**

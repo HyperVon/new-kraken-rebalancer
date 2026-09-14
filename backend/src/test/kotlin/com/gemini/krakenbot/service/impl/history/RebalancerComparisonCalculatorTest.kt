@@ -3734,6 +3734,50 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableAt shouldBe t0
         }
 
+        "same-time recorded twin keeps the approved full-wallet inception point" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inception = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("200.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val recordedTwin = inception.copy(
+                balancesObservedAt = t0,
+                assets = mapOf(
+                    "BTC" to inception.assets.getValue("BTC"),
+                    "ETH" to inception.assets.getValue("ETH").copy(targetPercent = BigDecimal.ZERO),
+                ),
+            )
+            val result = calculate(
+                snapshots = listOf(recordedTwin, recordedTwin.copy(timestamp = t1, balancesObservedAt = t1)),
+                inceptionSnapshot = inception,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.first().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
+            result.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
+        }
+
         "zero-balance target receives no synthetic inception capital" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
