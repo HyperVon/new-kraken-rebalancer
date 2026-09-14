@@ -15,10 +15,10 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
     override fun compareTo(other: BenchmarkEvent): Int = this.timestamp.compareTo(other.timestamp)
 
     /**
-     * Strategy-neutral external balance movement (rewards, adjustments, or
-     * consumer-transaction spend/receive legs). Replays in-kind: the Buy & Hold
-     * portfolio absorbs the same balance change. Owner capital and internal
-     * moves have their own categories below.
+     * Strategy-neutral external balance movement (rewards, adjustments, or an unlinked
+     * consumer-transaction leg). Replays in-kind when the movement belongs to the synthetic
+     * thesis; reward credits in an asset the basket never held are actual-only. Linked
+     * spend/receive legs use [InternalConversion] so their debit and credit stay atomic.
      */
     data class ExternalBalance(
         override val timestamp: Instant,
@@ -30,9 +30,10 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
     ) : BenchmarkEvent()
 
     /**
-     * A complete refid-linked cross-asset conversion. This is a balance transformation, not an
-     * owner contribution: Buy & Hold applies the exact per-leg net deltas once, including any
-     * ledger fees, without creating a synthetic investment basis.
+     * A complete refid-linked balance transformation, including top-level conversions and
+     * consumer spend/receive groups. This is not an owner contribution: Buy & Hold applies the
+     * aggregated per-asset net deltas once, including ledger fees, and skips the whole movement
+     * when its debit side cannot be sourced from the synthetic basket.
      */
     data class InternalConversion(
         override val timestamp: Instant,

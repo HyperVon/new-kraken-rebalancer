@@ -64,7 +64,7 @@ class TradeOwnershipClassifierTest : StringSpec() {
             TradeOwnershipClassifier.classify(tradeUnknown) shouldBe TradeOwnership.UNKNOWN
 
             val tradeManual = sampleTrade(
-                source = TradeSource.API_FILL,
+                source = TradeSource.MANUAL,
                 cycleId = "",
                 clientOrderId = " ",
                 orderTxid = "TX-MANUAL",
@@ -79,15 +79,15 @@ class TradeOwnershipClassifierTest : StringSpec() {
                 TradeOwnership.REBALANCER
         }
 
-        "classifies authoritative API_FILL without bot marks as MANUAL_OR_EXTERNAL" {
-            val trade = sampleTrade(source = TradeSource.API_FILL, orderTxid = "TX-MANUAL", tradeId = "TR-MANUAL")
+        "classifies explicit MANUAL evidence as MANUAL_OR_EXTERNAL" {
+            val trade = sampleTrade(source = TradeSource.MANUAL, orderTxid = "TX-MANUAL", tradeId = "TR-MANUAL")
             TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.MANUAL_OR_EXTERNAL
         }
 
-        "classifies API_FILL with orderTxid not in knownRebalancerOrderTxids as MANUAL_OR_EXTERNAL" {
+        "does not infer manual ownership from an unmatched API_FILL identity" {
             val trade = sampleTrade(source = TradeSource.API_FILL, orderTxid = "TX-MANUAL", tradeId = "TR-MANUAL")
             TradeOwnershipClassifier.classify(trade, knownRebalancerOrderTxids = setOf("TX-OTHER")) shouldBe
-                TradeOwnership.MANUAL_OR_EXTERNAL
+                TradeOwnership.UNKNOWN
         }
 
         "classifies trade with null source as UNKNOWN" {
@@ -110,9 +110,9 @@ class TradeOwnershipClassifierTest : StringSpec() {
             TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.UNKNOWN
         }
 
-        "classifies API_FILL with only non-blank tradeId as MANUAL_OR_EXTERNAL" {
+        "classifies API_FILL with only non-blank tradeId as UNKNOWN" {
             val trade = sampleTrade(source = TradeSource.API_FILL, orderTxid = null, tradeId = "TR-123")
-            TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.MANUAL_OR_EXTERNAL
+            TradeOwnershipClassifier.classify(trade) shouldBe TradeOwnership.UNKNOWN
         }
 
         "classifies persisted clientOrderId enrichment as REBALANCER" {

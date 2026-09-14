@@ -24,7 +24,8 @@ object TradeOwnershipClassifier {
      * Non-blank [TradeRecord.clientOrderId] or [TradeRecord.cycleId] values on a trade record originate exclusively
      * from this application's local order execution and reconciliation workflow, establishing positive bot ownership.
      * For raw API fills where local metadata was not attached, [knownRebalancerOrderTxids] matches against the
-     * durable [OrderIntent] journal.
+     * durable [OrderIntent] journal. A raw API fill that matches neither source is intentionally UNKNOWN;
+     * exchange identity proves settlement, not who initiated the order.
      *
      * @param trade the trade record to classify
      * @param knownRebalancerOrderTxids set of order transaction IDs known to belong to bot executions
@@ -40,7 +41,7 @@ object TradeOwnershipClassifier {
         if (txid != null && txid in knownRebalancerOrderTxids) {
             return TradeOwnership.REBALANCER
         }
-        if (trade.source == TradeSource.API_FILL && trade.hasAuthoritativeIdentity()) {
+        if (trade.source == TradeSource.MANUAL) {
             return TradeOwnership.MANUAL_OR_EXTERNAL
         }
         return TradeOwnership.UNKNOWN

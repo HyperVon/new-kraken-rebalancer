@@ -319,7 +319,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     emptyList()
                 }
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
-                    RebalancerOrderIdentities()
+                    RebalancerOrderIdentities(orderTxids = setOf("TERMINAL-LATE-ORDER"))
 
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, last.plusSeconds(1))
 
@@ -372,7 +372,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     emptyList()
                 }
                 coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
-                    RebalancerOrderIdentities()
+                    RebalancerOrderIdentities(orderTxids = setOf("O-SKEW"))
 
                 val comparison = service.getRebalancerComparison(now, now.plusSeconds(3600))
 
@@ -496,7 +496,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal.ZERO,
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     tradeId = "MANUAL-T1",
                     orderTxid = "MANUAL-O1",
                     cycleId = null,

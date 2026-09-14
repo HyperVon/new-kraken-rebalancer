@@ -329,8 +329,14 @@ achieved against a **synthetic buy-and-hold** strategy:
 
 - **Buy & Hold** starts as an equal-capital counterfactual from the effective comparison baseline snapshot across all view windows: the strategy inception baseline unless you explicitly accept a verified later comparison start. The actual side includes the full approved wallet. The synthetic basket contains only configured assets that held positive value at inception; its starting units are funded from the full actual starting value and allocated by the original inception value weights at historical inception prices. Current target edits do not rewrite those weights. Zero-valued targets and historical-only holdings remain actual-only with zero B&H units; historical-only value is represented once through the original holdings, so the initial difference normally starts at zero within rounding tolerance.
   Strategy-neutral flows (legacy staking rewards, crypto dividends, top-level promotion `reward` credits, modern `earn/reward`, USD cash
-  dividends, adjustments, complete linked `conversion` transformations, consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
-  identically to the actual portfolio. Genuine owner contributions after the effective comparison baseline are instead
+  dividends, and adjustments) continue to replay under their documented external-balance rules. Positive reward credits replay in-kind
+  only when the synthetic basket already holds the credited asset; a positive reward in an otherwise unheld asset remains actual-only.
+  Complete linked `spend`/`receive` groups replay as one atomic balance transformation,
+  including multi-leg groups; if the synthetic basket cannot source the debit, the whole group is skipped. Singleton or unlinked
+  passthrough rows retain their existing external-balance treatment, and incomplete linked groups remain unavailable. Explicitly
+  evidenced manual user trades are mirrorable under this user-action-adjusted comparison; a raw settled API fill without positive bot
+  or manual evidence remains ambiguous rather than being inferred as manual.
+  Genuine owner contributions after the effective comparison baseline are instead
   invested by the fixed original inception value weights, and owner withdrawals shrink the whole synthetic
   portfolio proportionally — so the cash event itself never invents alpha for either side.
   When a documented card purchase links an external funding row, USD spend, and purchased-asset
@@ -368,6 +374,11 @@ achieved against a **synthetic buy-and-hold** strategy:
   `INTERNAL_MOVE`: each leg's authoritative balance delta and fee is replayed once,
   with no owner-capital, reward, or Buy & Hold scaling effect. Incomplete or
   contradictory conversion groups keep the comparison unavailable.
+- Complete refid-linked consumer `spend`/`receive` groups are treated as one atomic
+  `InternalConversion`, so a tracked receive cannot be replayed while an unheld debit is
+  silently dropped. The group is skipped when its debit is outside the synthetic basket;
+  incomplete multi-row groups keep the comparison unavailable, while standalone rows retain
+  their existing external-balance behavior.
 - Modern `earn` rows are explicit: `reward` is replayed as performance, while `allocation`,
   `deallocation`, `autoallocate`, and `migration` are internal and excluded from the rewards chart.
   Unknown Earn subtypes keep the comparison unavailable.
@@ -375,6 +386,8 @@ achieved against a **synthetic buy-and-hold** strategy:
   exchange/local clock skew, accepting events only when the complete tracked balance change
   reconciles. API fills use precise `price × volume` first; historical rounded costs are
   accepted per interval only when they represent the same fill and all tracked balances match.
+  An API fill with no positive ownership evidence remains ambiguous when its base or quote is
+  tracked; exchange identity alone does not prove that it was manual.
 - Historical flow pricing prefers retained USD executions before the event, admits only a small
   bounded future execution skew when no past execution exists, then uses at-or-before snapshots and
   completed 15-minute/60-minute/240-minute/daily OHLC candles. Future snapshots and active candles
@@ -415,7 +428,7 @@ The comparison cannot be computed when:
 | Missing price | An asset lacks a price in a snapshot. |
 | Asset universe changed | An asset was added or removed during the window, or the window assets differ from the inception baseline. |
 | Unsupported trade | A trade with a side other than BUY or SELL or non-USD quotes. |
-| Ambiguous trade ownership | A tracked trade, including a late fill, cannot be proven to belong to the bot or an external/manual source. |
+| Ambiguous trade ownership | A tracked trade, including a late fill, has neither positive bot ownership evidence nor explicit manual/external evidence; exchange trade or order IDs alone do not prove who initiated it. |
 | Unexplained balance change | A tracked balance changed without a matching authoritative trade or supported ledger event, a known event does not reconcile to the next snapshot, or interacting owner/conversion/trade events share a source timestamp whose order cannot be proven. |
 | Inception snapshot pruned | The strategy start is known but no trustworthy baseline snapshot survives at or near it; Settings offers the earliest verified later comparison start instead. |
 | Unsupported ledger type | A ledger entry of a type outside Kraken's documented set blocks safe comparison. |

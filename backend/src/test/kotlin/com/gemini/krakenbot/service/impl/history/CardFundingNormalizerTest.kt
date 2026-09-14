@@ -123,6 +123,95 @@ class CardFundingNormalizerTest : StringSpec() {
             CardFundingNormalizer.isPassthroughLeg(event("2", "receive", "1.00")) shouldBe true
             CardFundingNormalizer.isPassthroughLeg(event("3", "deposit", "100.00")) shouldBe false
 
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("spend", "spend", "-75.63", asset = "USDC"),
+                    event("receive", "receive", "75.61", asset = "USD"),
+                ),
+            ) shouldBe true
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("dust-spend", "spend", "-0.01", asset = "USDC"),
+                    event("main-spend", "spend", "-75.62", asset = "USDC"),
+                    event("receive-multi", "receive", "75.61", asset = "USD"),
+                ),
+            ) shouldBe true
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(event("only-receive", "receive", "75.61", asset = "USD")),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("bad-spend", "spend", "1.00", asset = "USDC"),
+                    event("receive", "receive", "1.00", asset = "USD"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("deposit", "deposit", "1.00"),
+                    event("receive-non-passthrough", "receive", "1.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("duplicate", "spend", "-1.00"),
+                    event("duplicate", "receive", "1.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("invalid-amount", "spend", "-1.00").copy(hasValidAmount = false),
+                    event("invalid-amount-receive", "receive", "1.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("invalid-fee", "spend", "-1.00").copy(hasValidFee = false),
+                    event("invalid-fee-receive", "receive", "1.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("negative-fee", "spend", "-1.00", fee = "-1.00"),
+                    event("negative-fee-receive", "receive", "1.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("receive-only-1", "receive", "1.00"),
+                    event("receive-only-2", "receive", "1.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("spend-only-1", "spend", "-1.00"),
+                    event("spend-only-2", "spend", "-1.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("negative-receive-spend", "spend", "-1.00"),
+                    event("negative-receive", "receive", "-1.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("fee-receive-spend", "spend", "-1.00"),
+                    event("fee-receive", "receive", "1.00", fee = "2.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("zero-spend", "spend", "0.00"),
+                    event("zero-spend-receive", "receive", "1.00"),
+                ),
+            ) shouldBe false
+            CardFundingNormalizer.isCompletePassthroughGroup(
+                listOf(
+                    event("zero-receive-spend", "spend", "-1.00"),
+                    event("zero-receive", "receive", "0.00"),
+                ),
+            ) shouldBe false
+
             CardFundingNormalizer.isUsd("USD") shouldBe true
             CardFundingNormalizer.isUsd("ZUSD") shouldBe true
             CardFundingNormalizer.isUsd("usd") shouldBe true

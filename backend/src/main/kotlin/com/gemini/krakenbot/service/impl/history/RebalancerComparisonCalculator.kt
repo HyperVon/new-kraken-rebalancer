@@ -796,13 +796,15 @@ object RebalancerComparisonCalculator {
             effectiveLedgerDeltas = externalEvents.map(LedgerEvent::netBalanceDelta).toMutableList(),
         )
 
+        val baselineAssetSymbols = baseline.assets.keys
+            .map { Asset.normalizeLedgerAsset(it).uppercase() }
+            .toSet()
         for ((_, trade) in indexedTrades.filter { (_, trade) -> trade.timestamp <= lastObservationTime }) {
             val ownership = TradeOwnershipClassifier.classify(
                 trade = trade,
                 knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             )
-            val tradeBase = Asset.splitTradingPair(trade.pair)?.base ?: trade.symbol.uppercase()
-            if (ownership == TradeOwnership.UNKNOWN && tradeBase in baseline.assets.keys) {
+            if (ownership == TradeOwnership.UNKNOWN && tradeTouchesAssets(trade, baselineAssetSymbols)) {
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
                     unavailableAt = trade.timestamp,
@@ -821,10 +823,7 @@ object RebalancerComparisonCalculator {
             // is tracked directly, and a supported quote is tracked whenever the quote asset is
             // part of the baseline (USD always is). Historical-only bases therefore still settle
             // their quote leg instead of being skipped.
-            fun affectsTrackedBalances(trade: TradeRecord): Boolean {
-                val split = Asset.splitTradingPair(trade.pair) ?: return false
-                return split.base in baseline.assets.keys || split.quote in baseline.assets.keys
-            }
+            fun affectsTrackedBalances(trade: TradeRecord): Boolean = tradeTouchesAssets(trade, baselineAssetSymbols)
             val assignedLedgerIndexes = attempt.assignedLedgerIndexes
             val embeddedTradeIndexes = attempt.embeddedTradeIndexes
             val embeddedLedgerIndexes = attempt.embeddedLedgerIndexes
@@ -1352,6 +1351,15 @@ object RebalancerComparisonCalculator {
 
     private fun balanceScale(symbol: String): Int =
         if (symbol == Asset.USD) PrecisionConstants.SCALE_USD else PrecisionConstants.SCALE_CRYPTO
+
+    private fun tradeTouchesAssets(trade: TradeRecord, trackedAssets: Set<String>): Boolean {
+        val split = Asset.splitTradingPair(trade.pair)
+        return if (split == null) {
+            Asset.normalizeLedgerAsset(trade.symbol).uppercase() in trackedAssets
+        } else {
+            split.base in trackedAssets || split.quote in trackedAssets
+        }
+    }
 
     private fun balancesMatchSnapshot(
         expectedBalances: Map<String, BigDecimal>,
@@ -1983,6 +1991,39 @@ object RebalancerComparisonCalculator {
         }
 
         val unconsumedPostBaseline = postBaseline.filter { it.ledger.ledgerId !in consumedLedgerIds }
+
+        // A refid-linked spend/receive group is one balance transformation, not two independent
+        // external credits/debits. Replaying the rows separately can credit a tracked receive
+        // while silently dropping a spend whose source asset is outside the synthetic basket.
+        // Preserve atomicity for complete groups and fail closed for linked passthrough groups
+        // whose shape is incomplete; unlinked rows retain their existing external-balance policy.
+        val passthroughGroups = unconsumedPostBaseline
+            .filter { reconciled ->
+                !reconciled.ledger.refid.isNullOrBlank() &&
+                    CardFundingNormalizer.isPassthroughLeg(reconciled.ledger)
+            }
+            .groupBy { it.ledger.refid!!.trim() }
+        for ((_, group) in passthroughGroups) {
+            // A lone row may be a genuine standalone external movement; without a sibling leg
+            // there is no positive evidence that it is a conversion whose counterpart is missing.
+            if (group.size == 1) continue
+            val groupAt = group.minOf { it.timestamp }
+            if (!CardFundingNormalizer.isCompletePassthroughGroup(group.map { it.ledger })) {
+                return BuiltEvents(
+                    events = emptyList(),
+                    unpriceableAt = null,
+                    ambiguousAt = groupAt,
+                )
+            }
+            events += BenchmarkEvent.InternalConversion(
+                timestamp = groupAt,
+                legs = group
+                    .sortedWith(compareBy({ it.ledger.time }, { it.ledger.ledgerId }))
+                    .map { BenchmarkEvent.ConversionLeg(it.ledger, it.netBalanceDelta) },
+            )
+            consumedLedgerIds += group.map { it.ledger.ledgerId }
+        }
+
         for ((timestamp, group) in unconsumedPostBaseline.groupBy { it.ledger.time }) {
             val hasOwnerFunding = group.any {
                 classifications[it.ledger.ledgerId] == FlowCategory.OWNER_CAPITAL
@@ -2353,17 +2394,25 @@ object RebalancerComparisonCalculator {
         when (event) {
             is BenchmarkEvent.ExternalBalance -> {
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-                // Yield in a new asset is a real benchmark holding. Dropping
-                // it because the baseline lacked the symbol understates Buy &
-                // Hold and creates phantom cash drag.
-                applyAttributedMovement(balances, mapOf(symbol to event.netAmount))
+                // A reward is benchmark entitlement only when the synthetic basket already held
+                // that asset. A reward in an otherwise unheld asset belongs to the actual account
+                // but cannot be attributed to the fixed original B&H thesis without entitlement
+                // evidence; skip it instead of creating synthetic capital.
+                val isUnheldReward = LedgerEvent.isRewardEvent(event.event) &&
+                    event.netAmount.signum() > 0 &&
+                    (balances[symbol]?.signum() ?: 0) <= 0
+                if (!isUnheldReward) {
+                    applyAttributedMovement(balances, mapOf(symbol to event.netAmount))
+                }
             }
 
             is BenchmarkEvent.InternalConversion -> {
                 // Apply each leg exactly once. No raw amount netting is attempted across assets;
                 // the persisted per-leg net delta already includes that leg's authoritative fee.
-                val deltas = event.legs.associate { leg ->
-                    Asset.normalizeLedgerAsset(leg.event.asset).uppercase() to leg.netBalanceDelta
+                val deltas = event.legs.groupingBy { leg ->
+                    Asset.normalizeLedgerAsset(leg.event.asset).uppercase()
+                }.fold(BigDecimal.ZERO) { total, leg ->
+                    total.add(leg.netBalanceDelta)
                 }
                 applyAttributedMovement(balances, deltas)
             }
@@ -2636,14 +2685,15 @@ object RebalancerComparisonCalculator {
     }
 
     private fun realizedUsdNotional(trade: TradeRecord, accountingMode: TradeAccountingMode): BigDecimal {
-        val preciseNotional = if (trade.source == TradeSource.API_FILL && trade.price.signum() > 0) {
+        val hasSettledFillEconomics = trade.source == TradeSource.API_FILL || trade.source == TradeSource.MANUAL
+        val preciseNotional = if (hasSettledFillEconomics && trade.price.signum() > 0) {
             trade.price.multiply(trade.volume)
         } else {
             trade.usdAmount
         }
         return if (
             accountingMode == TradeAccountingMode.PERSISTED_ROUNDED_COST &&
-            trade.source == TradeSource.API_FILL &&
+            hasSettledFillEconomics &&
             trade.price.signum() > 0 &&
             preciseNotional.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
                 .compareTo(trade.usdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)) == 0

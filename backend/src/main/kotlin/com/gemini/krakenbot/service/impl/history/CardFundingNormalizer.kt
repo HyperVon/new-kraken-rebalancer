@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.LedgerFlowClassifier
 import com.gemini.krakenbot.model.NormalizedFundingTransaction
 import com.gemini.krakenbot.model.TimedAssetDelta
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -73,6 +74,25 @@ object CardFundingNormalizer {
         event.type.equals(KrakenApiConstants.LEDGER_TYPE_RECEIVE, ignoreCase = true)
 
     fun isPassthroughLeg(event: LedgerEvent): Boolean = isSpendLeg(event) || isReceiveLeg(event)
+
+    /**
+     * True when a linked spend/receive group has enough balance-shape evidence to replay as one
+     * atomic transformation. Zero-net legs are tolerated because Kraken can include harmless
+     * dust rows in a multi-leg sweep, but the group must contain at least one debit and one credit.
+     */
+    fun isCompletePassthroughGroup(group: List<LedgerEvent>): Boolean {
+        if (group.size < 2 || group.any { !isPassthroughLeg(it) }) return false
+        if (group.map(LedgerEvent::ledgerId).toSet().size != group.size) return false
+        if (group.any { !LedgerFlowClassifier.hasValidAmountShape(it) || !it.hasValidFee || it.fee.signum() < 0 }) {
+            return false
+        }
+        val spends = group.filter(::isSpendLeg)
+        val receives = group.filter(::isReceiveLeg)
+        if (spends.isEmpty() || receives.isEmpty()) return false
+        if (receives.any { it.netBalanceDelta().signum() < 0 }) return false
+        return group.any { it.netBalanceDelta().signum() < 0 } &&
+            group.any { it.netBalanceDelta().signum() > 0 }
+    }
 
     fun isUsd(asset: String): Boolean {
         val norm = Asset.normalizeLedgerAsset(asset).uppercase()

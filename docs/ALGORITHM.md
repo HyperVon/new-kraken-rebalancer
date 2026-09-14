@@ -863,6 +863,12 @@ the same external capital over time:
   The same source-time and target-asset interaction rule applies to a complete internal conversion
   paired with an owner contribution or mirrorable manual/external trade; disjoint historical-only
   trades are not treated as synthetic ordering conflicts.
+- **Manual trade replay is evidence-bound.** This is a user-action-adjusted Buy & Hold comparison:
+  only an explicitly recorded manual/external trade is mirrorable. A settled `API_FILL` with no
+  local cycle/client metadata and no durable rebalancer order-intent match remains `UNKNOWN`, even
+  when it has exchange trade or order IDs; those IDs prove settlement, not who initiated the fill.
+  An unknown trade that touches a tracked base or quote fails closed as
+  `AMBIGUOUS_TRADE_OWNERSHIP`, while positively identified bot fills are never mirrored.
 - **Owner contributions after inception are invested by the fixed original inception value
   weights** (existing synthetic holdings untouched); only the new money moves. This is the same
   weighting policy used to capitalize the full actual inception value.
@@ -885,12 +891,19 @@ the same external capital over time:
   spend of that asset cannot create an impossible negative synthetic holding or count
   the same value twice; the remainder is skipped instead. This keeps every contribution
   counted exactly once while partial holdings still mirror their real proportion.
-- Investment returns (staking, dividends, observed top-level promotion rewards,
-  `earn/reward`, and adjustments) replay in-kind;
-  complete conversions with at least one tracked leg replay as neutral per-asset transformations;
-  conversions wholly outside the recorded spot universe are validated but not replayed;
-  other internal moves are ignored; unrecognized or ambiguous ledger rows fail closed
-  (`UNSUPPORTED_LEDGER_TYPE`, `AMBIGUOUS_LEDGER_TYPE`).
+- Positive investment returns (staking, dividends, observed top-level promotion rewards,
+  and `earn/reward`) replay in-kind only while the synthetic basket holds that asset. A positive
+  reward in an otherwise unheld asset remains actual-only because the retained history does not
+  prove that the fixed thesis was entitled to it. Other supported balance adjustments retain
+  their external-balance treatment. Complete conversions with at
+  least one tracked leg replay as neutral per-asset transformations; conversions wholly outside
+  the recorded spot universe are validated but not replayed. Complete refid-linked consumer
+  `spend`/`receive` groups are one atomic `InternalConversion` (including multi-leg groups and
+  per-asset aggregation); if their debit cannot be sourced from synthetic holdings, the whole
+  movement is skipped. Singleton or unlinked passthrough rows retain their external-balance
+  treatment, while incomplete linked multi-row groups fail closed. Other internal moves are
+  ignored; unrecognized or ambiguous ledger rows fail closed (`UNSUPPORTED_LEDGER_TYPE`,
+  `AMBIGUOUS_LEDGER_TYPE`).
 
 ### Trade economics & slippage lifecycle
 
@@ -898,6 +911,8 @@ Each executed order creates a **local estimate** row at rebalance time:
 
 - **`TradeSource.LOCAL_ESTIMATE`** — `expectedPrice` from the ticker snapshot used for planning; fee from the fixed local planning estimate (`PrecisionConstants.FEE_RATE_ESTIMATE` = **0.006**); slippage computed vs that expected price.
 - **`TradeSource.API_FILL`** — Kraken `/0/private/TradesHistory` fills (or reconciled rows after sync).
+- **`TradeSource.MANUAL`** — explicit user/external trade evidence. It is not inferred from a
+  settled exchange fill merely because local bot evidence is absent.
 - **`TradeSource.LEGACY_UNKNOWN`** — a successful historical row written before
   explicit provenance, where the stored shape cannot safely distinguish a
   local estimate from an exchange fill.

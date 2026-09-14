@@ -463,8 +463,10 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   `reward`, and `conversion`; it filters returned rows by their actual response type.
 - Inception recovery separately requests unfiltered ledger pages. If Kraken
   returns an observed top-level `type=reward` row there, it is persisted and
-  replayed as an in-kind external balance event. Ordinary synchronization uses
-  the same local response-type filtering for future reward rows. Durable trade
+  replayed as an in-kind actual balance event; Buy & Hold mirrors a positive
+  credit only when the synthetic basket already holds that asset, so a newly
+  credited unheld asset remains actual-only in the counterfactual.
+  Ordinary synchronization uses the same local response-type filtering for future reward rows. Durable trade
   coverage version `1` records start epoch sec, horizon epoch sec, and verified account
   scope digest, enabling start-aware reconstruction without relying on forward trade watermarks.
 - Invalid live credentials skip the sync without opening an execution session;
@@ -477,9 +479,10 @@ amounts to portfolio snapshots and values them with each snapshot's prices. Earn
 allocation mechanics are internal and remain out of the rewards series. The
 comparison and reverse snapshot reconstruction consume all supported persisted
 ledger types, including observed top-level promotion `reward` rows returned by
-unfiltered recovery, with `amount - fee` where applicable;
-consumer Buy Crypto `spend`/`receive` legs remain separate ledger events. Kraken
-documents those app transactions in Ledger history rather than Trades history.
+unfiltered recovery, with `amount - fee` where applicable. Raw consumer Buy Crypto
+`spend`/`receive` rows remain separate persisted ledger events, but a complete linked
+group is one atomic comparison transformation; incomplete linked groups fail closed.
+Kraken documents those app transactions in Ledger history rather than Trades history.
 The ATH path prepares one immutable funding-provenance snapshot for the retained
 ledger batch and shares it across classification, card normalization, and basis
 replay. Confirmed card funding waits for its complete refid-linked shape; an

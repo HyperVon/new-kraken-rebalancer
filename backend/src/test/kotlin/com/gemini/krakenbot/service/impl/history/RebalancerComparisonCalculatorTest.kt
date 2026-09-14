@@ -929,7 +929,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.5",
                     usdAmount = "25000.00",
                     fee = "26.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-1",
                     orderTxid = "MANUAL-ORDER-1",
@@ -970,7 +970,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     symbol = "BTC",
                     volume = "0.3",
                     usdAmount = "15000.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-3",
                     orderTxid = "MANUAL-ORDER-3",
@@ -982,7 +982,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     symbol = "BTC",
                     volume = "0.4",
                     usdAmount = "20000.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-4",
                     orderTxid = "MANUAL-ORDER-4",
@@ -1032,7 +1032,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.5",
                     usdAmount = "25000.00",
                     fee = "26.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-5",
                     orderTxid = "MANUAL-ORDER-5",
@@ -1074,7 +1074,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.5",
                     usdAmount = "25000.00",
                     fee = "26.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-6",
                     orderTxid = "MANUAL-ORDER-6",
@@ -1087,7 +1087,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.5",
                     usdAmount = "25000.00",
                     fee = "26.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-7",
                     orderTxid = "MANUAL-ORDER-7",
@@ -1177,7 +1177,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.5",
                     usdAmount = "25000.00",
                     fee = "26.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-8",
                     orderTxid = "MANUAL-ORDER-8",
@@ -1232,7 +1232,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.5",
                     usdAmount = "25000.00",
                     fee = "26.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-9",
                     orderTxid = "MANUAL-ORDER-9",
@@ -1244,7 +1244,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     symbol = "BTC",
                     volume = "0.5",
                     usdAmount = "25000.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-10",
                     orderTxid = "MANUAL-ORDER-10",
@@ -1324,7 +1324,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     symbol = "BTC",
                     volume = "0.5",
                     usdAmount = "25000.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-13",
                     orderTxid = "MANUAL-ORDER-13",
@@ -1366,7 +1366,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.5",
                     usdAmount = "25000.00",
                     fee = "26.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-11",
                     orderTxid = "MANUAL-ORDER-11",
@@ -1378,7 +1378,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     symbol = "DOGE",
                     volume = "100.0",
                     usdAmount = "10.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-12",
                     orderTxid = "MANUAL-ORDER-12",
@@ -1420,7 +1420,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.5",
                     usdAmount = "25000.00",
                     fee = "26.00",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-BURST-$index",
                     orderTxid = "MANUAL-ORDER-BURST-$index",
@@ -1462,7 +1462,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.00481599",
                     usdAmount = "21.00",
                     fee = "0.126",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "MANUAL-FILL-2",
                     orderTxid = "MANUAL-ORDER-2",
@@ -1504,7 +1504,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     volume = "0.00481599",
                     usdAmount = "21.00",
                     fee = "0.126",
-                    source = TradeSource.API_FILL,
+                    source = TradeSource.MANUAL,
                     cycleId = null,
                     tradeId = "LEGACY-ROUNDED-FILL",
                     orderTxid = "LEGACY-ROUNDED-ORDER",
@@ -1925,7 +1925,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
-            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100800.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("50.00")
         }
 
         "legacy observation burst with multiple valid ledger assignments fails closed" {
@@ -2702,7 +2703,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
-        "Scenario C: Zero-baseline reward values newly credited asset at subsequent market prices" {
+        "Scenario C: Zero-baseline reward in a newly credited asset remains actual-only" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2735,8 +2736,9 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("106000.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("106000.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("6000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("6000.00")
         }
 
         "Scenario D: Manual authoritative BUY replays into Buy & Hold and creates zero divergence" {
@@ -4456,7 +4458,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 symbol = "MORPHO",
                 volume = "300.00000000",
                 usdAmount = "300.00",
-                source = TradeSource.API_FILL,
+                source = TradeSource.MANUAL,
                 cycleId = null,
                 tradeId = "external-morpho-sale",
                 orderTxid = "external-morpho-order",
@@ -6150,6 +6152,40 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
         }
 
+        "UNKNOWN trade affecting only the tracked quote remains unavailable" {
+            val t0 = now
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100.00",
+                        mapOf("USD" to assetRow("100.00", "1.0", "100.00")),
+                    ),
+                    snapshot(
+                        t0.plusSeconds(3600),
+                        "90.00",
+                        mapOf("USD" to assetRow("90.00", "1.0", "90.00")),
+                    ),
+                ),
+                trades = listOf(
+                    trade(
+                        timestamp = t0.plusSeconds(1800),
+                        side = "BUY",
+                        symbol = "DOGE",
+                        volume = "1.0",
+                        usdAmount = "10.00",
+                        source = TradeSource.API_FILL,
+                        cycleId = null,
+                        tradeId = "UNKNOWN-QUOTE-ONLY",
+                        orderTxid = null,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+        }
+
         "UNKNOWN multi-fill order makes comparison unavailable with AMBIGUOUS_TRADE_OWNERSHIP" {
             val snapshots = listOf(
                 snapshot(
@@ -6443,6 +6479,100 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("11000.00")
             result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "linked spend and receive replay atomically when the debit asset is outside the basket" {
+            val refid = "LINKED-PASSTHROUGH-OUTSIDE-BASKET"
+            val baseline = snapshot(
+                now,
+                "10000.00",
+                mapOf("USD" to assetRow("10000.00", "1.0", "10000.00")),
+            )
+            val receive = ledgerEvent(
+                timestamp = now.plusSeconds(1800),
+                asset = "USD",
+                amount = "75.61",
+                type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                refid = refid,
+                ledgerId = "linked-receive",
+            )
+            val spend = ledgerEvent(
+                timestamp = now.plusSeconds(1800),
+                asset = "USDC",
+                amount = "-75.63",
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                refid = refid,
+                ledgerId = "linked-spend",
+            )
+            val built = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = listOf(receive, spend),
+                baseline = baseline,
+                inceptionWeights = mapOf("USD" to BigDecimal.ONE),
+                priceProvider = null,
+                provenanceResolver = FundingProvenanceResolver.NONE,
+            )
+            built.filterIsInstance<BenchmarkEvent.ExternalBalance>() shouldBe emptyList()
+            built.filterIsInstance<BenchmarkEvent.InternalConversion>().single()
+                .sourceLedgerIds shouldContainExactlyInAnyOrder listOf("linked-receive", "linked-spend")
+
+            val result = calculate(
+                snapshots = listOf(
+                    baseline,
+                    baseline.copy(
+                        timestamp = now.plusSeconds(3600),
+                        totalValueUSD = BigDecimal("10075.61"),
+                        assets = mapOf(
+                            "USD" to baseline.assets.getValue("USD").copy(
+                                balance = BigDecimal("10075.61"),
+                                valueUSD = BigDecimal("10075.61"),
+                            ),
+                        ),
+                        balancesObservedAt = now.plusSeconds(3600),
+                    ),
+                ),
+                rewards = listOf(receive, spend),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("75.61")
+        }
+
+        "incomplete linked passthrough groups remain unavailable" {
+            val baseline = snapshot(
+                now,
+                "10000.00",
+                mapOf("USD" to assetRow("10000.00", "1.0", "10000.00")),
+            )
+            val refid = "INCOMPLETE-PASSTHROUGH"
+            val result = calculate(
+                snapshots = listOf(
+                    baseline,
+                    baseline.copy(timestamp = now.plusSeconds(3600), balancesObservedAt = now.plusSeconds(3600)),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1800),
+                        asset = "USDC",
+                        amount = "-75.63",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        ledgerId = "incomplete-spend-1",
+                        refid = refid,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1800),
+                        asset = "USDC",
+                        amount = "-0.01",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        ledgerId = "incomplete-spend-2",
+                        refid = refid,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+            result.unavailableAt shouldBe now.plusSeconds(1800)
         }
 
         "Scenario BB: confirmed card Buy Crypto applies only inception-weighted net owner contribution" {
@@ -9149,7 +9279,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 symbol = "BTC",
                 volume = "0.1",
                 usdAmount = "4000.00",
-                source = TradeSource.API_FILL,
+                source = TradeSource.MANUAL,
                 cycleId = null,
                 tradeId = "MANUAL-1",
             )
@@ -10046,7 +10176,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 symbol = "BTC",
                 volume = "1",
                 usdAmount = cost,
-                source = TradeSource.API_FILL,
+                source = TradeSource.MANUAL,
                 cycleId = null,
                 tradeId = "MIXED-COST-FILL-$index",
                 price = price,
@@ -10142,7 +10272,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         dryRun = false,
         price = BigDecimal.ZERO,
         fee = BigDecimal(fee),
-        source = TradeSource.API_FILL,
+        source = TradeSource.MANUAL,
         cycleId = null,
         clientOrderId = null,
         tradeId = tradeId,

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.63] - 2026-09-14
+
+### Fixed
+
+- **Historical trade ownership now fails closed**: an authoritative `API_FILL` without local cycle/client metadata or a durable rebalancer order-intent match remains `UNKNOWN` instead of being inferred as manual/external. `MANUAL_OR_EXTERNAL` now requires explicit `TradeSource.MANUAL` evidence, and an unknown trade touching a tracked base or quote makes the comparison unavailable.
+- **Synthetic Buy & Hold replay now preserves linked balance economics**: complete refid-linked consumer `spend`/`receive` groups, including supported multi-leg groups, replay atomically and skip as a whole when their debit cannot be sourced from the synthetic basket. Positive rewards in assets the basket does not hold remain actual-only instead of creating synthetic value.
+
 ## [6.17.62] - 2026-09-14
 
 ### Fixed

@@ -329,15 +329,18 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   realistic cumulative history; `dividend` entries for tracked assets are now
   mirrored in the rewards chart, comparison math, and historical reconstruction
   (like staking), while dividends for untracked assets remain external inflows.
-- Modern `earn/reward` rows are mirrored as performance in the rewards chart,
-  ATH basis reconstruction, and Buy & Hold; `earn` allocation mechanics replay
-  only where needed to reconstruct account balances and remain neutral in
-  strategy accounting. Unknown Earn subtypes remain unavailable.
+- Modern `earn/reward` rows are reflected as performance in the rewards chart and
+  actual ATH reconstruction; Buy & Hold mirrors a positive credit only when the
+  synthetic basket already holds the rewarded asset, so a newly credited unheld
+  asset remains actual-only there. `earn` allocation mechanics replay only where
+  needed to reconstruct account balances and remain neutral in strategy accounting.
+  Unknown Earn subtypes remain unavailable.
 - Observed top-level `reward` rows from Kraken promotions or contests, and documented
   `transfer/airdrop` credits, are
   retained by ordinary synchronization and unfiltered inception recovery, then
-  replayed as in-kind external balance changes and shown in the rewards chart; they never count as owner
-  capital. Unknown top-level ledger types remain fail-closed.
+  replayed as in-kind actual balance changes and shown in the rewards chart; Buy & Hold mirrors
+  a positive credit only when the synthetic basket already holds the credited asset. They never
+  count as owner capital. Unknown top-level ledger types remain fail-closed.
 - Observed top-level `conversion` rows are retained and require a complete two-leg,
   non-blank-`refid` cross-asset debit/credit group with authoritative balances and fees.
   The group replays each per-asset `amount - fee` delta once as an internal transformation;
@@ -349,11 +352,11 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   amounts and impossible obvious credit/debit directions fail closed rather than becoming zero
   flows. Legacy rows retain their pre-existing interpretation because SQLite does not retain the
   original amount text.
-- Rebalancer vs Buy & Hold replays every supported external ledger type using
-  `amount - fee`; ATH basis reconstruction separately replays the actual
-  event-time asset effects. Consumer Buy Crypto activity is
-  represented by its ledger `spend`/`receive` legs; it is not inferred from
-  `TradesHistory`. A card-style external deposit plus USD `spend` and purchased
+- Rebalancer vs Buy & Hold replays supported external ledger events using
+  `amount - fee` under their ownership and attribution rules; ATH basis reconstruction separately
+  replays the actual event-time asset effects. Consumer Buy Crypto activity is represented by its
+  ledger `spend`/`receive` legs, which comparison collapses atomically when a complete linked group
+  is retained; it is not inferred from `TradesHistory`. A card-style external deposit plus USD `spend` and purchased
   asset `receive` is retained as a weighted owner contribution plus one linked
   conversion only when all legs share one non-blank refid and the complete
   shape is present; a card deposit-only or partial group stays pending, while
