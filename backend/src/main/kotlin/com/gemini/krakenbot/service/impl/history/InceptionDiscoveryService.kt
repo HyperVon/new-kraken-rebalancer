@@ -83,6 +83,22 @@ class InceptionDiscoveryService(
         snapshot.timestamp == targetTime &&
             snapshot.balancesObservedAt?.let { it == targetTime } != false
 
+    private data class ApprovedBaselineState(val metadataId: String?, val snapshot: PortfolioSnapshot?)
+
+    private suspend fun readApprovedBaselineState(targetTime: Instant, config: AppConfig): ApprovedBaselineState {
+        val metadataId = tradeRepository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val snapshot = metadataId
+            ?.toIntOrNull()
+            ?.let { tradeRepository.getSnapshotById(it) }
+            ?.takeIf {
+                hasExactBaselineObservation(it, targetTime) && matchesConfiguredUniverse(it, config)
+            }
+        return ApprovedBaselineState(metadataId = metadataId, snapshot = snapshot)
+    }
+
     suspend fun resolveInception(): InceptionResolution {
         val config = configService.getConfig()
         val settings = config.settings
@@ -124,6 +140,11 @@ class InceptionDiscoveryService(
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
                 )
             }
+            // The approved baseline is the full actual wallet at the configured strategy start.
+            // A reconstructed series twin may share the instant, but its target percentages are
+            // current-plan projections and cannot serve as the economic inception baseline.
+            val approvedBaselineState = readApprovedBaselineState(configured, config)
+            val approvedBaseline = approvedBaselineState.snapshot
             val snapshot = (
                 if (comparisonStart != null) {
                     // An accepted proposal is an exact snapshot choice, not a request to substitute
@@ -134,26 +155,38 @@ class InceptionDiscoveryService(
                     // it cannot itself be blessed as the requested baseline. Discovery therefore uses
                     // an exact timestamp only; the recovery service owns reconstruction when it is
                     // absent.
-                    findExactConfiguredSnapshot(effectiveStart)
+                    approvedBaseline ?: findExactConfiguredSnapshot(effectiveStart)
                 }
                 )
                 ?.takeIf { matchesConfiguredUniverse(it, config) }
             if (snapshot != null) {
-                // Re-check approved state immediately before persisting: recovery confirms
-                // its baseline under its own mutex, so this re-read keeps a just-confirmed
-                // approved baseline from being re-labelled as configured detection.
-                val approvedBaselineNow = tradeRepository
-                    .getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
-                    ?.takeIf(String::isNotBlank)
-                if (approvedBaselineNow == null) {
-                    persistDetection(configured, snapshot, source = INCEPTION_SOURCE_CONFIGURED)
-                    log.info("Using configured inception date: {} (comparison anchor: {})", configured, effectiveStart)
+                // Recovery owns the approval write under its mutex, but this request cannot hold
+                // that mutex across the snapshot read. Compare both the identity and validated
+                // row before returning; a concurrent approval change fails closed instead of
+                // returning a snapshot selected under an earlier recovery state.
+                val approvedBaselineNow = readApprovedBaselineState(configured, config)
+                if (approvedBaselineNow != approvedBaselineState) {
+                    log.warn("Approved inception baseline changed while resolving {}", configured)
+                    return InceptionResolution(
+                        inceptionTime = configured,
+                        inceptionSnapshot = null,
+                        isAutoDetected = false,
+                        confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                        unavailableReason = ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
+                    )
                 }
-                // Either the nearby snapshot IS the approved baseline persisted by the
-                // recovery service, or approved state exists and this is an accepted later
-                // anchor; either way re-detecting would overwrite approved provenance
-                // with the configured source.
-                log.info("Using approved-start baseline established at {}", configured)
+                if (approvedBaselineNow.snapshot == null) {
+                    // An invalid or stale approval marker must not suppress the normal configured
+                    // provenance write and make a fallback row look approved.
+                    persistDetection(configured, snapshot, source = INCEPTION_SOURCE_CONFIGURED)
+                    log.info(
+                        "Using configured inception date: {} (comparison anchor: {})",
+                        configured,
+                        effectiveStart,
+                    )
+                } else {
+                    log.info("Using approved-start baseline established at {}", configured)
+                }
                 return InceptionResolution(
                     inceptionTime = effectiveStart,
                     inceptionSnapshot = snapshot,
@@ -163,14 +196,20 @@ class InceptionDiscoveryService(
             if (recoveryService != null && comparisonStart == null) {
                 // The approved baseline was persisted by the recovery service with its own
                 // provenance; re-detecting here would overwrite it with the configured source.
-                val approvedId = tradeRepository
-                    .getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
-                    ?.toIntOrNull()
-                val approved = approvedId
-                    ?.let { tradeRepository.getSnapshotById(it) }
-                    ?.takeIf {
-                        hasExactBaselineObservation(it, configured) && matchesConfiguredUniverse(it, config)
-                    }
+                // Re-read the validated state before the missing-anchor fallback so a concurrent
+                // recovery write cannot turn this request into a stale decision.
+                val approvedBaselineNow = readApprovedBaselineState(configured, config)
+                if (approvedBaselineNow != approvedBaselineState) {
+                    log.warn("Approved inception baseline changed while resolving {}", configured)
+                    return InceptionResolution(
+                        inceptionTime = configured,
+                        inceptionSnapshot = null,
+                        isAutoDetected = false,
+                        confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                        unavailableReason = ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
+                    )
+                }
+                val approved = approvedBaselineNow.snapshot
                 if (approved != null) {
                     log.info("Using approved-start baseline established at {}", configured)
                     return InceptionResolution(

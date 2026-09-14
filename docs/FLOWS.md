@@ -488,9 +488,10 @@ confirmed Wire/ACH deposit remains an owner-capital event. Card normalization
 keeps synthetic net owner capital separate from exact per-leg asset deltas:
 Buy & Hold uses the synthetic amount, and later ATH basis reconstruction replays
 the actual deltas and fees once. At inception, the synthetic basket uses the
-full actual economic value and allocates it across configured positive targets;
-historical-only holdings remain actual-only and are represented once through
-that target-weighted capitalization. Old decided ambiguous groups do not block an
+full actual economic value and allocates it across configured assets with positive
+inception value using their original value weights; zero-valued targets and
+historical-only holdings remain actual-only, with historical-only value represented
+once through that value-weighted capitalization. Old decided ambiguous groups do not block an
 unrelated undecided bank flow, but a group split between decided and newly
 arrived rows fails closed rather than applying a partial sibling.
 If an owner contribution and a manual/external trade share the same source

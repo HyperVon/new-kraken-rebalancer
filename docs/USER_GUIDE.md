@@ -327,15 +327,15 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 The first chart below the summary cards compares what the rebalancer actually
 achieved against a **synthetic buy-and-hold** strategy:
 
-- **Buy & Hold** starts as an equal-capital counterfactual from the effective comparison baseline snapshot across all view windows: the strategy inception baseline unless you explicitly accept a verified later comparison start. The actual side includes the full reconstructed wallet. The synthetic basket contains only assets with a positive configured target, but its starting units are funded from the full actual starting value and allocated by normalized target weights at historical inception prices. Historical-only holdings present at the baseline remain actual-only and have zero B&H units; their value is represented once through the configured-target allocation, so the initial difference normally starts at zero within rounding tolerance.
+- **Buy & Hold** starts as an equal-capital counterfactual from the effective comparison baseline snapshot across all view windows: the strategy inception baseline unless you explicitly accept a verified later comparison start. The actual side includes the full approved wallet. The synthetic basket contains only configured assets that held positive value at inception; its starting units are funded from the full actual starting value and allocated by the original inception value weights at historical inception prices. Current target edits do not rewrite those weights. Zero-valued targets and historical-only holdings remain actual-only with zero B&H units; historical-only value is represented once through the original holdings, so the initial difference normally starts at zero within rounding tolerance.
   Strategy-neutral flows (legacy staking rewards, crypto dividends, top-level promotion `reward` credits, modern `earn/reward`, USD cash
   dividends, adjustments, complete linked `conversion` transformations, consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
   identically to the actual portfolio. Genuine owner contributions after the effective comparison baseline are instead
-  invested by the configured positive-target benchmark weights, and owner withdrawals shrink the whole synthetic
+  invested by the fixed original inception value weights, and owner withdrawals shrink the whole synthetic
   portfolio proportionally — so the cash event itself never invents alpha for either side.
   When a documented card purchase links an external funding row, USD spend, and purchased-asset
   receive row with one shared refid (within a 120-second proximity window), the benchmark collapses
-  them into a single net owner contribution allocated strictly by configured positive-target benchmark weights; the conversion
+  them into a single net owner contribution allocated strictly by the fixed original inception value weights; the conversion
   legs are consumed as plumbing evidence and not replayed into Buy & Hold. A confirmed card deposit with
   partial plumbing remains pending: ATH defers with `AMBIGUOUS_FUNDING`, and no ledger identity is journaled
   until the complete group arrives. Confirmed ordinary Wire/ACH deposits without card plumbing continue
@@ -384,7 +384,7 @@ achieved against a **synthetic buy-and-hold** strategy:
 - Same-source-timestamp USD-only funding plumbing is netted only after original classification and
   retains its source ledger IDs. A linked mixed-asset card purchase collapses via centralized normalization
 into one owner capital contribution net of fees (with non-USD fees valued at event-time historical prices),
-  allocated strictly by configured positive-target benchmark weights (spend/receive legs are consumed as plumbing evidence without
+  allocated strictly by the fixed original inception value weights (spend/receive legs are consumed as plumbing evidence without
   being replayed into Buy & Hold). Legs must share a refid within a 120-second proximity window; incomplete shapes
   or unpriceable fees keep the comparison unavailable. Mixed-sign or overdrawn groups are not reclassified
   into an opposite owner-flow direction.

@@ -212,7 +212,7 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
       fees from blocking new ordinary bank deposits.
    - **Synthetic Capital vs Actual Effects**: `NormalizedFundingTransaction.OwnerContribution` and
        `OwnerWithdrawal` carry both `netOwnerCapitalUsd` (the synthetic amount used for ATH scaling and Buy & Hold
-       configured-target allocation) and exact per-leg `TimedAssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
+       original-inception allocation) and exact per-leg `TimedAssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
        Each delta maintains its ledger ID and timestamp so that basis reconstruction at an arbitrary target time never
        replays future card legs prematurely. Buy & Hold consumes only the synthetic amount and never replays the conversion legs.
        ATH basis reconstruction replays completed card actual deltas, including fees, exactly once and excludes both the
@@ -698,8 +698,8 @@ subtypes, or any group with a sibling leg.
 Non-USD leg fees (such as BTC receive fees) are converted to USD at event-time historical prices
 before deducting from gross capital; unpriceable fees fail closed (`HISTORICAL_PRICE_UNAVAILABLE`
 for ATH, `MISSING_PRICE` for B&H). The confirmed transaction collapses into a single owner contribution
-net of all fees ($5,000 gross deposit - $20 spend fee = $4,980 net) and allocates it strictly by configured
-positive-target benchmark weights; spend and receive legs are consumed as plumbing evidence and are not replayed
+net of all fees ($5,000 gross deposit - $20 spend fee = $4,980 net) and allocates it strictly by the fixed
+original inception value weights; spend and receive legs are consumed as plumbing evidence and are not replayed
 into B&H. This preserves counterfactual neutrality between the rebalancer and B&H without double-counting
 assets, inventing conversion alpha, or treating transaction fees as performance drawdown.
 A provenance preparation failure is reported separately as `FUNDING_PROVENANCE_UNAVAILABLE`.
@@ -830,14 +830,15 @@ the same external capital over time:
   by pruning or contains a gap exceeding 24 hours, comparison availability reports `HISTORICAL_COVERAGE_GAP`
   and no retained snapshot is presented as the earliest trustworthy start.
 - **Buy & Hold is an equal-capital counterfactual.** The basket is restricted to configured assets
-  with a positive `targetPercent` (with the existing keep-all fallback only for planless snapshots),
-  but its inception units are funded from the full approved actual-wallet value. Positive target
-  percentages are normalized to the project precision and applied to that full value at each
-  target's historical inception price. Historical-only holdings reconstructed for accounting remain
-  actual-only with zero B&H units; their value is represented once as configured-target capital, not
-  silently dropped or carried in kind. Consequently the first actual and B&H values normally match
-  within rounding tolerance. If a reconstructed configured-only row shares the inception timestamp,
-  that row cannot erase the full-wallet value from the first actual point.
+  that had positive actual value at inception (with the existing keep-all fallback only for planless
+  snapshots), but its inception units are funded from the full approved actual-wallet value. The
+  original value proportions of those held configured assets are normalized to project precision and
+  applied at their historical inception prices; current `targetPercent` values are not a historical
+  allocation record. Zero-valued targets and historical-only holdings reconstructed for accounting
+  remain actual-only with zero B&H units, while historical-only value is redistributed over the
+  original holdings exactly once. Consequently the first actual and B&H values normally match within
+  rounding tolerance. If a reconstructed configured-only row shares the inception timestamp, that
+  row cannot erase the full-wallet value from the first actual point.
 - **Comparison reconciles actual holdings through recorded base/quote semantics.** Every successful
   trade in the interval is replayed through `Asset.splitTradingPair`, so a delisted or no longer
   configured USD market (for example `STRCZUSD`) adjusts the tracked quote balance and its base
@@ -862,31 +863,32 @@ the same external capital over time:
   The same source-time and target-asset interaction rule applies to a complete internal conversion
   paired with an owner contribution or mirrorable manual/external trade; disjoint historical-only
   trades are not treated as synthetic ordering conflicts.
-- **Owner contributions after inception are invested by the configured positive-target benchmark
+- **Owner contributions after inception are invested by the fixed original inception value
   weights** (existing synthetic holdings untouched); only the new money moves. This is the same
   weighting policy used to capitalize the full actual inception value.
   Confirmed card Buy Crypto transactions collapse into a single net owner contribution
-  allocated by configured positive-target benchmark weights; any USD funding plumbing netting to zero fails closed
+  allocated by those fixed original weights; any USD funding plumbing netting to zero fails closed
   as ambiguous. Contribution prices come only from recorded history near the event —
   never a live ticker for an old contribution — and missing prices fail closed. The
   evidence ladder is the same bounded historical ladder used elsewhere: a retained USD-quoted
   execution in the wide past window (with only a small future skew when no past execution exists),
   an at-or-before recorded snapshot, a completed Kraken OHLC candle, or a trustworthy cross-quote
   conversion through the quote asset's own historical USD rate. A contribution in a historical-only asset is
-  valued in USD and allocated across the configured targets only; it never receives a
+  valued in USD and allocated across the original inception holdings only; it never receives a
   benchmark weight and never becomes a live rebalance target.
 - **Owner withdrawals scale the whole synthetic portfolio proportionally by
   market value**, so the cash event itself creates no artificial alpha either way.
 - **Replayed movements are attributed to what the synthetic basket actually holds.**
   A trade, conversion, or balance movement that draws down an asset the basket never
   received is mirrored only for the basket-held share. An owner contribution is
-  invested by configured benchmark weights rather than held in the contributed asset, so a later
+  invested by fixed original inception value weights rather than held in the contributed asset, so a later
   spend of that asset cannot create an impossible negative synthetic holding or count
   the same value twice; the remainder is skipped instead. This keeps every contribution
   counted exactly once while partial holdings still mirror their real proportion.
 - Investment returns (staking, dividends, observed top-level promotion rewards,
   `earn/reward`, and adjustments) replay in-kind;
-  complete conversions replay as neutral per-asset transformations;
+  complete conversions with at least one tracked leg replay as neutral per-asset transformations;
+  conversions wholly outside the recorded spot universe are validated but not replayed;
   other internal moves are ignored; unrecognized or ambiguous ledger rows fail closed
   (`UNSUPPORTED_LEDGER_TYPE`, `AMBIGUOUS_LEDGER_TYPE`).
 

@@ -194,7 +194,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
-        "resolveInception prefers the recorded snapshot when a preserved anchor shares the configured instant" {
+        "resolveInception uses the approved full anchor when a series twin shares the configured instant" {
             runTest {
                 val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
@@ -214,7 +214,7 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 )
                 coEvery {
                     tradeRepository.getSnapshotsInRange(configuredInstant, configuredInstant)
-                } returns listOf(anchor, recorded)
+                } returns listOf(recorded, anchor)
                 coEvery {
                     tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
                 } returns "7"
@@ -222,7 +222,111 @@ class InceptionDiscoveryServiceTest : StringSpec() {
 
                 val result = service.resolveInception()
 
+                result.inceptionSnapshot shouldBe anchor
+            }
+        }
+
+        "resolveInception falls back when the approved anchor has a positive-target extra asset" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val recorded = dummySnapshot(configuredInstant)
+                val invalidApproved = recorded.copy(
+                    assets = recorded.assets + (
+                        Asset.ADA to TestFixtures.assetSnapshot(
+                            symbol = Asset.ADA,
+                            balance = BigDecimal("1"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal.ONE,
+                            targetPercent = BigDecimal("5.0"),
+                        )
+                        ),
+                )
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                } returns "7"
+                coEvery { tradeRepository.getSnapshotById(7) } returns invalidApproved
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(recorded)
+
+                val result = service.resolveInception()
+
                 result.inceptionSnapshot shouldBe recorded
+                coVerify(atLeast = 1) { tradeRepository.getSnapshotById(7) }
+            }
+        }
+
+        "resolveInception fails closed when the approved anchor changes during selection" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val anchor = dummySnapshot(configuredInstant).copy(balancesObservedAt = null)
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                } returnsMany listOf("7", "8")
+                coEvery { tradeRepository.getSnapshotById(7) } returns anchor
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val result = serviceWithRecovery.resolveInception()
+
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                result.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
+            }
+        }
+
+        "resolveInception fails closed when approval changes before missing-anchor fallback" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val staleApproved = dummySnapshot(configuredInstant.plusSeconds(1))
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                } returnsMany listOf("7", "8")
+                coEvery { tradeRepository.getSnapshotById(7) } returns staleApproved
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                val recoveryService = mockk<InceptionRecoveryService>(relaxed = true)
+                coEvery { recoveryService.prepareForCurrentConfigurationResult(any()) } returns
+                    InceptionRecoveryService.InceptionPreparationResult.valid(changed = false)
+                val serviceWithRecovery = InceptionDiscoveryService(
+                    tradeRepository,
+                    configService,
+                    nowProvider = { fixedNow },
+                    recoveryService = recoveryService,
+                )
+
+                val result = serviceWithRecovery.resolveInception()
+
+                result.inceptionSnapshot shouldBe null
+                result.confidence shouldBe InceptionConfidence.RECOVERY_INCOMPLETE
+                result.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
+                coVerify(exactly = 0) { tradeRepository.setSyncMetadata(any(), any()) }
+            }
+        }
+
+        "resolveInception rejects an approved anchor from a different instant" {
+            runTest {
+                val configuredInstant = Instant.parse("2026-06-06T00:00:00Z")
+                coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2026-06-06")
+                val recorded = dummySnapshot(configuredInstant)
+                val staleApproved = recorded.copy(timestamp = configuredInstant.plusSeconds(1))
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                } returns "7"
+                coEvery { tradeRepository.getSnapshotById(7) } returns staleApproved
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(recorded)
+
+                val result = service.resolveInception()
+
+                result.inceptionSnapshot shouldBe recorded
+                coVerify(atLeast = 1) { tradeRepository.getSnapshotById(7) }
             }
         }
 
@@ -1176,6 +1280,32 @@ class InceptionDiscoveryServiceTest : StringSpec() {
             }
         }
 
+        "an accepted comparison start does not trust a malformed approval marker" {
+            runTest {
+                val configuredStart = Instant.parse("2025-12-05T00:00:00Z")
+                val acceptedStart = Instant.parse("2026-01-15T10:30:00Z")
+                coEvery { configService.getConfig() } returns testConfig(
+                    inceptionDate = configuredStart.toString(),
+                    comparisonStartDate = acceptedStart.toString(),
+                )
+                val laterAnchor = dummySnapshot(acceptedStart)
+                coEvery { tradeRepository.getSnapshotsInRange(any(), any()) } returns listOf(laterAnchor)
+                coEvery {
+                    tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                } returns "not-an-id"
+
+                val resolution = service.resolveInception()
+
+                resolution.inceptionSnapshot shouldBe laterAnchor
+                coVerify {
+                    tradeRepository.setSyncMetadata(
+                        SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                        configuredStart.toEpochMilli().toString(),
+                    )
+                }
+            }
+        }
+
         "an approved-start baseline anchors the comparison when no nearby snapshot is retained" {
             runTest {
                 coEvery { configService.getConfig() } returns testConfig(inceptionDate = "2025-12-05")
@@ -1217,6 +1347,8 @@ class InceptionDiscoveryServiceTest : StringSpec() {
                 coEvery {
                     tradeRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
                 } returns "7"
+                coEvery { tradeRepository.getSnapshotById(7) } returns
+                    dummySnapshot(Instant.parse("2025-12-05T00:00:00Z"))
                 coEvery { tradeRepository.getSnapshotId(anchorSnapshot.timestamp) } returns 555
 
                 val result = service.resolveInception()

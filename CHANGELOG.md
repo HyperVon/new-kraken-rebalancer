@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.62] - 2026-09-14
+
+### Fixed
+
+- **Buy & Hold now preserves the historical inception thesis**: an approved full-wallet baseline
+  uses the actual value proportions of configured assets that held value at inception, redistributes
+  historical-only capital across those original holdings, and gives zero-valued targets no synthetic
+  units. Current target edits cannot rewrite the historical basket, and later owner contributions keep
+  the same fixed inception weights.
+- **Reconciliation separates economic inception from the reconstructed target-only series**: complete
+  conversions whose two legs are outside that recorded universe are validated but not replayed into the
+  synthetic basket, so an untracked USD stablecoin plumbing conversion cannot collide with a tracked
+  owner deposit at the same source timestamp.
+
 ## [6.17.61] - 2026-09-13
 
 ### Fixed

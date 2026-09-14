@@ -28,7 +28,7 @@ import java.time.Instant
  *   + non-USD receive. Incomplete plumbing fails closed as [NormalizedFundingTransaction.Ambiguous].
  * - Cross-asset fees are converted to USD at event-time historical prices before subtraction.
  * - Synthetic Buy & Hold invests [NormalizedFundingTransaction.OwnerContribution.netOwnerCapitalUsd]
- *   strictly by configured positive-target benchmark weights; actual asset conversion legs are
+ *   strictly by the fixed original inception value weights; actual asset conversion legs are
  *   consumed as plumbing evidence and are never replayed.
  */
 object CardFundingNormalizer {

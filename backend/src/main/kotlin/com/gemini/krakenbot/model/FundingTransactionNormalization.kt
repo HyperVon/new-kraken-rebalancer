@@ -73,8 +73,8 @@ sealed interface NormalizedFundingTransaction {
 
     /**
      * Confirmed external capital entering the portfolio via card/consumer purchase.
-     * Synthetic Buy & Hold invests [netOwnerCapitalUsd] strictly by configured positive-target
-     * benchmark weights;
+     * Synthetic Buy & Hold invests [netOwnerCapitalUsd] strictly by the fixed original inception
+     * value weights;
      * ATH scales its high-water mark by [netOwnerCapitalUsd].
      */
     data class OwnerContribution(
