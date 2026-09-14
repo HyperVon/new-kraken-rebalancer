@@ -101,6 +101,7 @@ KrakenApiConstants:
   LEDGER_TYPE_CREDIT: "credit"
   ERROR_INVALID_NONCE: "Invalid nonce"
   ERROR_RATE_LIMIT_EXCEEDED: "Rate limit exceeded"
+  ERROR_TOO_MANY_REQUESTS: "Too many requests"
   ERROR_TEMPORARY_LOCKOUT: "Temporary lockout"
   ERROR_PUBLIC_API_PREFIX: "Kraken Public API Error: "
   ERROR_API_PREFIX: "Kraken API Error: "

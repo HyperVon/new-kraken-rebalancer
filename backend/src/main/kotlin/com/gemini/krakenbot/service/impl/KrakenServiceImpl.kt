@@ -113,6 +113,7 @@ class KrakenServiceImpl(
         maxRateLimitBackoffMs: Long = 60_000,
         initialLockoutBackoffMs: Long = 10_000,
         maxLockoutBackoffMs: Long = 15.minutes.inWholeMilliseconds,
+        retryTooManyRequests: Boolean = false,
         block: suspend () -> T,
     ): T = flow {
         var currentBackoff = initialBackoffMs
@@ -132,7 +133,12 @@ class KrakenServiceImpl(
                 val isRawRateLimit = status == 429
                 val isRawLockout = status == 503
                 val isRateLimit =
-                    isRawRateLimit || e.message?.contains(KrakenApiConstants.ERROR_RATE_LIMIT_EXCEEDED) == true
+                    isRawRateLimit ||
+                        e.message?.contains(KrakenApiConstants.ERROR_RATE_LIMIT_EXCEEDED) == true ||
+                        (
+                            retryTooManyRequests &&
+                                e.message?.contains(KrakenApiConstants.ERROR_TOO_MANY_REQUESTS) == true
+                            )
                 val isLockout = isRawLockout || e.message?.contains(KrakenApiConstants.ERROR_TEMPORARY_LOCKOUT) == true
                 val isRetryableHttp = status == 429 || (status != null && status in 500..504)
                 val isNetworkOrTransient = e is IOException
@@ -688,7 +694,10 @@ class KrakenServiceImpl(
         return KrakenParsers.parseOHLC(root, pair)
     }
 
-    private suspend fun queryPublic(path: String): JsonNode = retryWithFlow("queryPublic($path)") {
+    private suspend fun queryPublic(path: String): JsonNode = retryWithFlow(
+        actionName = "queryPublic($path)",
+        retryTooManyRequests = true,
+    ) {
         transport.queryPublic(path)
     }
 

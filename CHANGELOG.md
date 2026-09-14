@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.17.61] - 2026-09-13
 
+### Fixed
+
+- **Kraken public `EGeneral:Too many requests` responses now use the existing bounded rate-limit retry** instead of immediately surfacing as a historical price source error.
+
 ### Changed
 
 - **Buy & Hold now uses equal-capital inception semantics**: the synthetic benchmark starts with
