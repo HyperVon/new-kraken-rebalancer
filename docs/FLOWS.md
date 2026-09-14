@@ -487,9 +487,17 @@ incomplete card group defers ATH and is not journaled, while an ordinary
 confirmed Wire/ACH deposit remains an owner-capital event. Card normalization
 keeps synthetic net owner capital separate from exact per-leg asset deltas:
 Buy & Hold uses the synthetic amount, and later ATH basis reconstruction replays
-the actual deltas and fees once. Old decided ambiguous groups do not block an
+the actual deltas and fees once. At inception, the synthetic basket uses the
+full actual economic value and allocates it across configured positive targets;
+historical-only holdings remain actual-only and are represented once through
+that target-weighted capitalization. Old decided ambiguous groups do not block an
 unrelated undecided bank flow, but a group split between decided and newly
 arrived rows fails closed rather than applying a partial sibling.
+If an owner contribution and a manual/external trade share the same source
+timestamp, comparison also remains unavailable because the trade sequence cannot
+be proven from the retained evidence. The same fail-closed rule covers a complete
+target-asset conversion colliding with an owner contribution or mirrorable
+manual/external trade; disjoint historical-only trades do not create this conflict.
 Dividends for untracked assets remain excluded from the rewards series. It is a
 normal suspend query, not a background flow. Before the comparison renders, each
 tracked interval must reconcile against authoritative trades and supported ledger

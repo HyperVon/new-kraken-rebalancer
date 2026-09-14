@@ -3454,7 +3454,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal("-1300.00")
         }
 
-        "a historical-only asset in the inception baseline is excluded from the benchmark" {
+        "a historical-only asset in the inception baseline is represented by target-weighted capital" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-10T12:00:00Z")
             val t2 = Instant.parse("2026-06-11T12:00:00Z")
@@ -3497,6 +3497,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 mapOf(
                     "BTC" to assetRow("0.005", "100000.00", "500.00"),
                     "USD" to assetRow("500.00", "1.0", "500.00"),
+                    "SEI" to assetRow("10.00", "0.50", "5.00"),
                 ),
             )
             val s2 = snapshot(
@@ -3505,6 +3506,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 mapOf(
                     "BTC" to assetRow("0.005", "100000.00", "500.00"),
                     "USD" to assetRow("500.00", "1.0", "500.00"),
+                    "SEI" to assetRow("10.00", "0.50", "5.00"),
                 ),
             )
             // The series can contain a reconstructed configured-only twin at the exact
@@ -3516,6 +3518,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 mapOf(
                     "BTC" to assetRow("0.005", "100000.00", "500.00"),
                     "USD" to assetRow("500.00", "1.0", "500.00"),
+                    "SEI" to assetRow("10.00", "0.50", "5.00"),
                 ),
             )
 
@@ -3528,12 +3531,898 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            // The benchmark opens at the configured-target basket (BTC + USD = $1,000)
-            // while the bot still carries the $5 historical-only holding, so the
-            // comparison intentionally starts with a disclosed $5 difference.
+            // The benchmark opens at the full actual $1,005, but only as BTC + USD.
+            // The $5 SEI value is represented by additional BTC/USD capital, not held in SEI.
             result.points[0].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("1005.00")
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1005.00")
+            result.points[0].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "equal-capital benchmark uses configured target weights and excludes historical-only assets" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val t2 = Instant.parse("2026-06-03T12:00:00Z")
+            val inceptionBaseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("3.00000000"),
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal("60.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal("20.00000000"),
+                        price = BigDecimal("20.00"),
+                        valueUSD = BigDecimal("400.00"),
+                        targetPercent = BigDecimal("40.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("300.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+
+            fun revalue(timestamp: Instant, total: String, btcPrice: String, morphoPrice: String): PortfolioSnapshot =
+                inceptionBaseline.copy(
+                    timestamp = timestamp,
+                    totalValueUSD = BigDecimal(total),
+                    balancesObservedAt = timestamp,
+                    assets = inceptionBaseline.assets + mapOf(
+                        "BTC" to inceptionBaseline.assets.getValue("BTC").copy(
+                            price = BigDecimal(btcPrice),
+                            valueUSD = BigDecimal("300.00") * BigDecimal(btcPrice) / BigDecimal("100.00"),
+                        ),
+                        "ETH" to inceptionBaseline.assets.getValue("ETH").copy(
+                            price = BigDecimal("20.00"),
+                            valueUSD = BigDecimal("400.00"),
+                        ),
+                        "MORPHO" to inceptionBaseline.assets.getValue("MORPHO").copy(
+                            price = BigDecimal(morphoPrice),
+                            valueUSD = BigDecimal("300.00") * BigDecimal(morphoPrice),
+                        ),
+                    ),
+                )
+
+            val result = calculate(
+                snapshots = listOf(
+                    revalue(t0, "1000.00", "100.00", "1.00"),
+                    revalue(t1, "1600.00", "100.00", "2.00"),
+                    revalue(t2, "2200.00", "200.00", "2.00"),
+                ),
+                inceptionSnapshot = inceptionBaseline,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[0].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
             result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
-            result.points[0].differenceUSD shouldBeEqualComparingTo BigDecimal("5.00")
+            result.points[0].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            // The $300 MORPHO holding is actual-only: its price doubling affects actual, not B&H.
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("1600.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            // B&H began with $600 BTC-equivalent and $400 ETH-equivalent (60/40), so BTC doubling
+            // raises it to $1,600; MORPHO remains absent from the synthetic basket.
+            result.points[2].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("2200.00")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1600.00")
+        }
+
+        "configured target weights preserve full capital when normalization needs a residual" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inceptionBaseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("100000000.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("33333333.33"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("33333333.33"),
+                        targetPercent = BigDecimal.ONE,
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal("33333333.33"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("33333333.33"),
+                        targetPercent = BigDecimal.ONE,
+                    ),
+                    "SOL" to assetSnapshot(
+                        symbol = "SOL",
+                        balance = BigDecimal("33333333.34"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("33333333.34"),
+                        targetPercent = BigDecimal.ONE,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+
+            val result = calculate(
+                snapshots = listOf(inceptionBaseline, inceptionBaseline.copy(timestamp = t1)),
+                inceptionSnapshot = inceptionBaseline,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000000.00")
+            result.points[0].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "zero-balance target uses a historical inception price for synthetic units" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inceptionBaseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("3.00000000"),
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal("60.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal("40.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("700.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("700.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val later = inceptionBaseline.copy(
+                timestamp = t1,
+                balancesObservedAt = t1,
+                assets = inceptionBaseline.assets + mapOf(
+                    "ETH" to inceptionBaseline.assets.getValue("ETH").copy(price = BigDecimal("40.00")),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(inceptionBaseline, later),
+                inceptionSnapshot = inceptionBaseline,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100.00"), "ETH" to BigDecimal("20.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1400.00")
+        }
+
+        "all-zero configured targets still use positive historical-only inception capital" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inceptionBaseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal("60.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal("40.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("1000.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("1000.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val later = inceptionBaseline.copy(
+                timestamp = t1,
+                balancesObservedAt = t1,
+                assets = inceptionBaseline.assets + mapOf(
+                    "BTC" to inceptionBaseline.assets.getValue("BTC").copy(price = BigDecimal("110.00")),
+                    "ETH" to inceptionBaseline.assets.getValue("ETH").copy(price = BigDecimal("22.00")),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(inceptionBaseline, later),
+                inceptionSnapshot = inceptionBaseline,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "ETH" to BigDecimal("20.00")),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1100.00")
+        }
+
+        "owner contribution and target conversion fail closed without sequence evidence" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val t2 = Instant.parse("2026-06-03T12:00:00Z")
+            val inception = snapshot(
+                t0,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("0.01000000", "50000.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.0", "500.00"),
+                ),
+            ).copy(
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("0.01000000"),
+                        price = BigDecimal("50000.00"),
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                    "USD" to assetSnapshot(
+                        symbol = "USD",
+                        balance = BigDecimal("500.00"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                ),
+            )
+            val afterEvents = inception.copy(
+                timestamp = t1,
+                totalValueUSD = BigDecimal("1100.00"),
+                balancesObservedAt = t1,
+                assets = inception.assets + mapOf(
+                    "BTC" to inception.assets.getValue("BTC").copy(
+                        balance = BigDecimal("0.02100000"),
+                        valueUSD = BigDecimal("1050.00"),
+                    ),
+                    "USD" to inception.assets.getValue("USD").copy(
+                        balance = BigDecimal("50.00"),
+                        valueUSD = BigDecimal("50.00"),
+                    ),
+                ),
+            )
+            val later = afterEvents.copy(
+                timestamp = t2,
+                totalValueUSD = BigDecimal("1310.00"),
+                balancesObservedAt = t2,
+                assets = afterEvents.assets + mapOf(
+                    "BTC" to afterEvents.assets.getValue("BTC").copy(
+                        price = BigDecimal("60000.00"),
+                        valueUSD = BigDecimal("1260.00"),
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(inception, afterEvents, later),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "OWNER-CONTRIBUTION-CONVERSION",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "-550.00",
+                        balance = "0.00",
+                        ledgerId = "conversion-source-owner",
+                        refid = "OWNER-CONVERSION",
+                        type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        hasAuthoritativeFee = true,
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "0.01100000",
+                        balance = "0.02200000",
+                        ledgerId = "conversion-destination-owner",
+                        refid = "OWNER-CONVERSION",
+                        type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+                inceptionSnapshot = inception,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe t1
+        }
+
+        "target conversion and manual trade fail closed without sequence evidence" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val t2 = Instant.parse("2026-06-03T12:00:00Z")
+            val inception = snapshot(
+                t0,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("0.01000000", "50000.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.0", "500.00"),
+                ),
+            ).copy(
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("0.01000000"),
+                        price = BigDecimal("50000.00"),
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                    "USD" to assetSnapshot(
+                        symbol = "USD",
+                        balance = BigDecimal("500.00"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                ),
+            )
+            val afterEvents = inception.copy(
+                timestamp = t1,
+                balancesObservedAt = t1,
+                assets = inception.assets + mapOf(
+                    "BTC" to inception.assets.getValue("BTC").copy(
+                        balance = BigDecimal("0.01100000"),
+                        valueUSD = BigDecimal("550.00"),
+                    ),
+                    "USD" to inception.assets.getValue("USD").copy(
+                        balance = BigDecimal("450.00"),
+                        valueUSD = BigDecimal("450.00"),
+                    ),
+                ),
+            )
+            val later = afterEvents.copy(
+                timestamp = t2,
+                totalValueUSD = BigDecimal("1110.00"),
+                balancesObservedAt = t2,
+                assets = afterEvents.assets + mapOf(
+                    "BTC" to afterEvents.assets.getValue("BTC").copy(
+                        price = BigDecimal("60000.00"),
+                        valueUSD = BigDecimal("660.00"),
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(inception, afterEvents, later),
+                trades = listOf(manualTrade(t1, "sell", "BTC", "0.01000000", "500.00")),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "-550.00",
+                        balance = "450.00",
+                        ledgerId = "conversion-source-trade",
+                        refid = "CONVERSION-TRADE",
+                        type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        hasAuthoritativeFee = true,
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "0.01100000",
+                        balance = "0.01100000",
+                        ledgerId = "conversion-destination-trade",
+                        refid = "CONVERSION-TRADE",
+                        type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                        hasAuthoritativeFee = true,
+                    ),
+                ),
+                inceptionSnapshot = inception,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe t1
+        }
+
+        "card withdrawal source-leg collision with target trade fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val fundingTime = Instant.parse("2026-06-02T12:00:00Z")
+            val collisionTime = fundingTime.plusSeconds(5)
+            val receiveTime = fundingTime.plusSeconds(10)
+            val t2 = Instant.parse("2026-06-03T12:00:00Z")
+            val cardRef = "CARD-WITHDRAWAL-SOURCE-COLLISION"
+            val inception = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("1.00000000"),
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                    "USD" to assetSnapshot(
+                        symbol = "USD",
+                        balance = BigDecimal("900.00"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("900.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = t0,
+            )
+            val later = inception.copy(
+                timestamp = t2,
+                totalValueUSD = BigDecimal("900.00"),
+                balancesObservedAt = t2,
+                assets = inception.assets + mapOf(
+                    "USD" to inception.assets.getValue("USD").copy(
+                        balance = BigDecimal("800.00"),
+                        valueUSD = BigDecimal("800.00"),
+                    ),
+                ),
+            )
+            val cardLedgers = listOf(
+                ledgerEvent(
+                    timestamp = fundingTime,
+                    asset = "USD",
+                    amount = "-100.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    refid = cardRef,
+                    ledgerId = "card-withdrawal-funding",
+                ),
+                ledgerEvent(
+                    timestamp = collisionTime,
+                    asset = "BTC",
+                    amount = "-0.10000000",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    refid = cardRef,
+                    ledgerId = "card-withdrawal-spend",
+                ),
+                ledgerEvent(
+                    timestamp = receiveTime,
+                    asset = "USD",
+                    amount = "10.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    refid = cardRef,
+                    ledgerId = "card-withdrawal-receive",
+                ),
+            )
+            val cardProvenance = SimpleFundingProvenanceResolver(
+                withdrawals = listOf(
+                    WithdrawStatusRecord(
+                        refid = cardRef,
+                        txid = "card-withdrawal-tx",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = fundingTime,
+                        status = "Success",
+                        method = "Visa",
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(inception, later),
+                trades = listOf(manualTrade(collisionTime, "buy", "BTC", "0.10000000", "10.00")),
+                rewards = cardLedgers,
+                inceptionSnapshot = inception,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("100.00"))),
+                provenanceResolver = cardProvenance,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe fundingTime
+        }
+
+        "owner withdrawal ignores a disjoint historical-only trade" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val tradeTime = Instant.parse("2026-06-02T12:00:00Z")
+            val withdrawalTime = tradeTime.plusMillis(500)
+            val t2 = Instant.parse("2026-06-03T12:00:00Z")
+            val inception = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("3.00000000"),
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal("60.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal("20.00000000"),
+                        price = BigDecimal("20.00"),
+                        valueUSD = BigDecimal("400.00"),
+                        targetPercent = BigDecimal("40.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("300.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                    "USD" to assetSnapshot(
+                        symbol = "USD",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = t0,
+            )
+            val later = inception.copy(
+                timestamp = t2,
+                totalValueUSD = BigDecimal("950.00"),
+                balancesObservedAt = t2,
+                assets = inception.assets + mapOf(
+                    "MORPHO" to inception.assets.getValue("MORPHO").copy(
+                        balance = BigDecimal("200.00000000"),
+                        valueUSD = BigDecimal("200.00"),
+                    ),
+                    "USD" to inception.assets.getValue("USD").copy(
+                        balance = BigDecimal("50.00"),
+                        valueUSD = BigDecimal("50.00"),
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(inception, later),
+                trades = listOf(manualTrade(tradeTime, "sell", "MORPHO", "100.00000000", "100.00")),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = withdrawalTime,
+                        asset = "USD",
+                        amount = "-50.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    ),
+                ),
+                inceptionSnapshot = inception,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "ETH" to BigDecimal("20.00")),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("950.00")
+        }
+
+        "zero-balance target price failures remain unavailable" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inceptionBaseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("3.00000000"),
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal("60.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal("40.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("700.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("700.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val later = inceptionBaseline.copy(
+                timestamp = t1,
+                balancesObservedAt = t1,
+                assets = inceptionBaseline.assets + mapOf(
+                    "ETH" to inceptionBaseline.assets.getValue("ETH").copy(price = BigDecimal("40.00")),
+                ),
+            )
+            val snapshots = listOf(inceptionBaseline, later)
+
+            val missingPrice = calculate(snapshots, inceptionSnapshot = inceptionBaseline)
+            missingPrice.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            missingPrice.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+
+            val sourceError = calculate(
+                snapshots,
+                inceptionSnapshot = inceptionBaseline,
+                priceProvider = HistoricalPriceProvider { _, time ->
+                    throw HistoricalPriceSourceException("ETH", "historical source unavailable", time)
+                },
+            )
+            sourceError.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            sourceError.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR
+            sourceError.unavailableAt shouldBe t0
+        }
+
+        "later historical-only liquidation does not recapitalize Buy & Hold" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inceptionBaseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("3.00000000"),
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal("60.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal("20.00000000"),
+                        price = BigDecimal("20.00"),
+                        valueUSD = BigDecimal("400.00"),
+                        targetPercent = BigDecimal("40.0"),
+                    ),
+                    "USD" to assetSnapshot(
+                        symbol = "USD",
+                        balance = BigDecimal("0.00"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("300.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val afterSale = inceptionBaseline.copy(
+                timestamp = t1,
+                assets = inceptionBaseline.assets - "MORPHO" + mapOf(
+                    "USD" to inceptionBaseline.assets.getValue("USD").copy(
+                        balance = BigDecimal("300.00"),
+                        valueUSD = BigDecimal("300.00"),
+                    ),
+                ),
+                balancesObservedAt = t1,
+            )
+            val sale = trade(
+                timestamp = t0.plusSeconds(1800),
+                side = "sell",
+                symbol = "MORPHO",
+                volume = "300.00000000",
+                usdAmount = "300.00",
+                source = TradeSource.API_FILL,
+                cycleId = null,
+                tradeId = "external-morpho-sale",
+                orderTxid = "external-morpho-order",
+                price = "1.00",
+            )
+
+            val result = calculate(
+                snapshots = listOf(inceptionBaseline, afterSale),
+                trades = listOf(sale),
+                inceptionSnapshot = inceptionBaseline,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "later owner contributions use configured target weights after equal-capital inception" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val t2 = Instant.parse("2026-06-03T12:00:00Z")
+            val inceptionBaseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("3.00000000"),
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal("60.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal("20.00000000"),
+                        price = BigDecimal("20.00"),
+                        valueUSD = BigDecimal("400.00"),
+                        targetPercent = BigDecimal("40.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("300.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("300.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val contribution = ledgerEvent(
+                timestamp = t0.plusSeconds(1800),
+                asset = "BTC",
+                amount = "1.00000000",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+            )
+            val afterContribution = inceptionBaseline.copy(
+                timestamp = t1,
+                totalValueUSD = BigDecimal("1100.00"),
+                balancesObservedAt = t1,
+                assets = inceptionBaseline.assets + mapOf(
+                    "BTC" to inceptionBaseline.assets.getValue("BTC").copy(
+                        balance = BigDecimal("4.00000000"),
+                        valueUSD = BigDecimal("400.00"),
+                    ),
+                ),
+            )
+            val rally = afterContribution.copy(
+                timestamp = t2,
+                totalValueUSD = BigDecimal("1500.00"),
+                balancesObservedAt = t2,
+                assets = afterContribution.assets + mapOf(
+                    "BTC" to afterContribution.assets.getValue("BTC").copy(
+                        price = BigDecimal("200.00"),
+                        valueUSD = BigDecimal("800.00"),
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(inceptionBaseline, afterContribution, rally),
+                rewards = listOf(contribution),
+                inceptionSnapshot = inceptionBaseline,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "ETH" to BigDecimal("20.00")),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            // The $100 contribution is allocated $60 BTC-equivalent + $40 ETH-equivalent, not by
+            // the baseline's actual $300/$400 holding split.
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1100.00")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1760.00")
+        }
+
+        "same-timestamp owner contribution and target trade fail closed without sequence evidence" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val t2 = Instant.parse("2026-06-03T12:00:00Z")
+            val inception = snapshot(
+                t0,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("0.01000000", "50000.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.0", "500.00"),
+                ),
+            ).copy(
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal("0.01000000"),
+                        price = BigDecimal("50000.00"),
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                    "USD" to assetSnapshot(
+                        symbol = "USD",
+                        balance = BigDecimal("500.00"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("500.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                ),
+            )
+            val afterEvents = inception.copy(
+                timestamp = t1,
+                totalValueUSD = BigDecimal("1100.00"),
+                balancesObservedAt = t1,
+                assets = inception.assets + mapOf(
+                    "BTC" to inception.assets.getValue("BTC").copy(
+                        balance = BigDecimal("0.02100000"),
+                        valueUSD = BigDecimal("1050.00"),
+                    ),
+                    "USD" to inception.assets.getValue("USD").copy(
+                        balance = BigDecimal("50.00"),
+                        valueUSD = BigDecimal("50.00"),
+                    ),
+                ),
+            )
+            val later = afterEvents.copy(
+                timestamp = t2,
+                totalValueUSD = BigDecimal("1310.00"),
+                balancesObservedAt = t2,
+                assets = afterEvents.assets + mapOf(
+                    "BTC" to afterEvents.assets.getValue("BTC").copy(
+                        price = BigDecimal("60000.00"),
+                        valueUSD = BigDecimal("1260.00"),
+                    ),
+                ),
+            )
+            val result = calculate(
+                snapshots = listOf(inception, afterEvents, later),
+                trades = listOf(manualTrade(t1, "buy", "BTC", "0.01100000", "550.00")),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                ),
+                inceptionSnapshot = inception,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe t1
         }
 
         "a configured-target value above the full inception total fails closed" {
@@ -5449,6 +6338,18 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val contribution = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
             contribution.contributionUsd shouldBeEqualComparingTo BigDecimal("4980.00")
             contribution.sourceLedgerIds shouldContainExactlyInAnyOrder ledgers.map { it.ledgerId }
+
+            val variedLegTimes = ledgers.mapIndexed { index, ledger ->
+                if (index == 2) ledger.copy(time = cardTime.plusSeconds(1)) else ledger
+            }
+            val variedContribution = RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = variedLegTimes,
+                baseline = snapshots.first(),
+                inceptionWeights = mapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("0.5")),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            ).filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
+            variedContribution.sourceEventTimestamps shouldBe setOf(cardTime, cardTime.plusSeconds(1))
         }
 
         "a lone card deposit contributes its net balance once to buy and hold" {

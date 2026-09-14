@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.61] - 2026-09-13
+
+### Changed
+
+- **Buy & Hold now uses equal-capital inception semantics**: the synthetic benchmark starts with
+  the full reconstructed actual-wallet value, allocates it across configured positive-target assets
+  using normalized target weights and historical inception prices, and keeps historical-only assets
+  actual-only. Their value is represented once through the configured target basket rather than
+  dropped or counted again when the actual holding is later disposed.
+- **Comparison fails closed for same-source-timestamp owner funding and manual trades** when the
+  retained evidence cannot prove whether the trade consumed the newly contributed capital.
+- **Comparison fails closed for source-time collisions between target conversions and owner or
+  manual/external target events** when replay order cannot be established from retained evidence.
+
 ## [6.17.60] - 2026-09-13
 
 ### Fixed

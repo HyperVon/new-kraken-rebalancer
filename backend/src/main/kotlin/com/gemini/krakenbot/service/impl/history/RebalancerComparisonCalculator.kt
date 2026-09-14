@@ -107,7 +107,7 @@ object RebalancerComparisonCalculator {
         val orderedSnapshots = snapshots.sortedBy(PortfolioSnapshot::timestamp)
         // The benchmark only tracks configured target assets. Reconstructed inception baselines
         // may carry historical-only holdings recovered for accounting; they stay out of the B&H
-        // basket and its inception weights (strict configured-target benchmark).
+        // basket, while their economic value remains part of the benchmark's starting capital.
         val benchmarkInception = inceptionSnapshot?.restrictToBenchmarkTargets()
         val (baseline, effectiveSnapshots) = if (benchmarkInception != null) {
             val trimmed = if (orderedSnapshots.first().timestamp < benchmarkInception.timestamp) {
@@ -144,12 +144,12 @@ object RebalancerComparisonCalculator {
         } else {
             orderedSnapshots.first() to orderedSnapshots
         }
-        val excludedInceptionValue = if (benchmarkInception != null) {
+        val historicalOnlyInceptionValue = if (benchmarkInception != null) {
             inceptionSnapshot.excludedBenchmarkValue(benchmarkInception)
         } else {
             BigDecimal.ZERO
         }
-        if (excludedInceptionValue.signum() < 0) {
+        if (historicalOnlyInceptionValue.signum() < 0) {
             return unavailable(
                 reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
                 unavailableAt = baseline.timestamp,
@@ -160,7 +160,11 @@ object RebalancerComparisonCalculator {
         val universeError = validateAssetUniverse(effectiveSnapshots, baseline)
         if (universeError != null) return universeError
 
-        val baselineError = validateBaseline(baseline)
+        // A configured baseline is restricted to target assets for benchmark validation, but the
+        // full reconstructed wallet supplies the capital that the synthetic basket represents.
+        val baselineError = validateBaseline(
+            if (inceptionSnapshot != null && benchmarkInception != null) inceptionSnapshot else baseline,
+        )
         if (baselineError != null) return baselineError
 
         val priceError = validatePrices(effectiveSnapshots, baseline)
@@ -302,9 +306,8 @@ object RebalancerComparisonCalculator {
             emptyList()
         }
 
-        // Original inception value weights: every later owner contribution is
-        // invested by these weights so the benchmark preserves the inception
-        // thesis instead of leaving new money in cash.
+        // Configured positive target weights define the benchmark thesis. Every later owner
+        // contribution is invested by the same weights instead of leaving new money in cash.
         val inceptionWeights = baselineValueWeights(baseline)
 
         val feePriceProvider = CardFeePriceProvider { feeAsset, timestamp ->
@@ -372,7 +375,35 @@ object RebalancerComparisonCalculator {
             )
         }
 
-        val baselineBalances = extractBaselineBalances(baseline)
+        val syntheticBaseline = if (inceptionSnapshot != null && benchmarkInception != null &&
+            inceptionSnapshot.assets.any { (_, asset) -> asset.targetPercent.signum() > 0 }
+        ) {
+            try {
+                syntheticBaselineBalances(
+                    fullBaseline = inceptionSnapshot,
+                    benchmarkBaseline = benchmarkInception,
+                    weights = inceptionWeights,
+                    priceProvider = priceProvider,
+                )
+            } catch (e: HistoricalPriceSourceException) {
+                return unavailable(
+                    reason = ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+                    unavailableAt = e.eventTime,
+                    baselineTimestamp = baseline.timestamp,
+                )
+            } ?: return unavailable(
+                reason = ComparisonUnavailableReason.MISSING_PRICE,
+                unavailableAt = baseline.timestamp,
+                baselineTimestamp = baseline.timestamp,
+            )
+        } else {
+            null
+        }
+        val baselineBalances = syntheticBaseline?.balances ?: run {
+            // Planless fixtures and legacy snapshots have no configured target weights. Preserve
+            // their established keep-all behavior until a real configured benchmark is present.
+            extractBaselineBalances(baseline)
+        }
         val runningSyntheticBalances = baselineBalances.toMutableMap()
         var eventIndex = 0
 
@@ -404,7 +435,12 @@ object RebalancerComparisonCalculator {
                 eventIndex++
             }
 
-            val buyAndHoldValue = calculateBuyAndHoldValue(runningSyntheticBalances, snapshot)
+            val buyAndHoldValue = calculateBuyAndHoldValue(
+                syntheticBalances = runningSyntheticBalances,
+                snapshot = snapshot,
+                baselineTimestamp = baseline.timestamp,
+                baselinePrices = syntheticBaseline?.prices.orEmpty(),
+            )
             if (buyAndHoldValue.signum() <= 0) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.NON_POSITIVE_BASELINE,
@@ -439,7 +475,10 @@ object RebalancerComparisonCalculator {
             val firstDiffFromCalc = baselineFirstPoint.rebalancerValueUSD
                 .subtract(baselineFirstPoint.buyAndHoldValueUSD)
                 .abs()
-            val expectedInitialDifference = excludedInceptionValue.setScale(
+            // Both sides represent the same economic capital at inception. Historical-only
+            // holdings are transformed into configured-target units in [baselineBalances], not
+            // dropped from the benchmark, so the expected initial difference is zero.
+            val expectedInitialDifference = BigDecimal.ZERO.setScale(
                 PrecisionConstants.SCALE_USD,
                 RoundingMode.HALF_UP,
             )
@@ -453,13 +492,13 @@ object RebalancerComparisonCalculator {
         }
 
         val correctedPoints = points.mapIndexed { index, point ->
-            if (index == 0 && isStartingAtBaseline && excludedInceptionValue.signum() == 0) {
+            if (index == 0 && isStartingAtBaseline && historicalOnlyInceptionValue.signum() == 0) {
                 point.copy(
-                    rebalancerValueUSD = baseline.totalValueUSD.setScale(
+                    rebalancerValueUSD = (inceptionSnapshot?.totalValueUSD ?: baseline.totalValueUSD).setScale(
                         PrecisionConstants.SCALE_USD,
                         RoundingMode.HALF_UP,
                     ),
-                    buyAndHoldValueUSD = baseline.totalValueUSD.setScale(
+                    buyAndHoldValueUSD = (inceptionSnapshot?.totalValueUSD ?: baseline.totalValueUSD).setScale(
                         PrecisionConstants.SCALE_USD,
                         RoundingMode.HALF_UP,
                     ),
@@ -595,11 +634,16 @@ object RebalancerComparisonCalculator {
                     baselineTimestamp = baseline.timestamp,
                 )
                 if (assetRow.price.signum() <= 0) {
-                    return unavailable(
-                        reason = ComparisonUnavailableReason.MISSING_PRICE,
-                        unavailableAt = snapshot.timestamp,
-                        baselineTimestamp = baseline.timestamp,
-                    )
+                    val zeroBalanceTargetAtBaseline = snapshot.timestamp == baseline.timestamp &&
+                        assetRow.balance.signum() == 0 &&
+                        (baseline.assets[symbol]?.targetPercent?.signum() ?: 0) > 0
+                    if (!zeroBalanceTargetAtBaseline) {
+                        return unavailable(
+                            reason = ComparisonUnavailableReason.MISSING_PRICE,
+                            unavailableAt = snapshot.timestamp,
+                            baselineTimestamp = baseline.timestamp,
+                        )
+                    }
                 }
             }
         }
@@ -1595,8 +1639,40 @@ object RebalancerComparisonCalculator {
     private fun PortfolioSnapshot.excludedBenchmarkValue(benchmark: PortfolioSnapshot): BigDecimal =
         totalValueUSD.subtract(benchmark.totalValueUSD)
 
-    /** Original inception value weights (normalized symbol to fraction, renormalized to 1). */
+    /**
+     * Configured positive-target weights (normalized symbol to fraction, summing exactly to one
+     * at [WEIGHT_DIVISION_SCALE]). With no configured targets, retain the legacy value-weight
+     * fallback used by planless fixtures and older snapshots.
+     */
     private fun baselineValueWeights(baseline: PortfolioSnapshot): Map<String, BigDecimal> {
+        val targetAssets = baseline.assets
+            .filterValues { it.targetPercent.signum() > 0 }
+            .toSortedMap()
+        if (targetAssets.isNotEmpty()) {
+            val targetPercentTotal = targetAssets.values.fold(BigDecimal.ZERO) { total, asset ->
+                total.add(asset.targetPercent)
+            }
+            if (targetPercentTotal.signum() > 0) {
+                val normalized = linkedMapOf<String, BigDecimal>()
+                var allocated = BigDecimal.ZERO.setScale(WEIGHT_DIVISION_SCALE)
+                val finalSymbol = targetAssets.keys.last()
+                for ((symbol, asset) in targetAssets) {
+                    if (symbol == finalSymbol) break
+                    val weight = asset.targetPercent.divide(
+                        targetPercentTotal,
+                        WEIGHT_DIVISION_SCALE,
+                        RoundingMode.DOWN,
+                    )
+                    normalized[symbol] = weight
+                    allocated = allocated.add(weight)
+                }
+                normalized[finalSymbol] = BigDecimal.ONE
+                    .setScale(WEIGHT_DIVISION_SCALE)
+                    .subtract(allocated)
+                return normalized
+            }
+        }
+
         val total = baseline.totalValueUSD
         if (total.signum() <= 0) return emptyMap()
         val raw = baseline.assets.mapValues { (_, asset) ->
@@ -1605,6 +1681,43 @@ object RebalancerComparisonCalculator {
         val sum = raw.values.fold(BigDecimal.ZERO) { acc, weight -> acc.add(weight) }
         if (sum.signum() <= 0) return emptyMap()
         return raw.mapValues { (_, weight) -> weight.divide(sum, WEIGHT_DIVISION_SCALE, RoundingMode.HALF_UP) }
+    }
+
+    /**
+     * Converts full actual inception capital into synthetic units of the configured benchmark
+     * targets. Historical-only assets are intentionally absent: their value is represented by
+     * these target-weighted units exactly once at the comparison anchor.
+     */
+    private data class SyntheticBaseline(val balances: Map<String, BigDecimal>, val prices: Map<String, BigDecimal>)
+
+    private suspend fun syntheticBaselineBalances(
+        fullBaseline: PortfolioSnapshot,
+        benchmarkBaseline: PortfolioSnapshot,
+        weights: Map<String, BigDecimal>,
+        priceProvider: HistoricalPriceProvider?,
+    ): SyntheticBaseline? {
+        val totalCapital = fullBaseline.totalValueUSD
+        if (totalCapital.signum() <= 0) return null
+        val prices = mutableMapOf<String, BigDecimal>()
+        for ((symbol, _) in weights) {
+            val asset = benchmarkBaseline.assets[symbol] ?: return null
+            val price = if (symbol == Asset.USD) {
+                BigDecimal.ONE
+            } else {
+                asset.price.takeIf { it.signum() > 0 }
+                    ?: priceProvider?.priceAt(symbol, fullBaseline.timestamp)
+            }
+            if (price == null || price.signum() <= 0) return null
+            prices[symbol] = price
+        }
+        return SyntheticBaseline(
+            balances = weights.mapValues { (symbol, weight) ->
+                totalCapital
+                    .multiply(weight)
+                    .divide(prices.getValue(symbol), ALLOCATION_UNIT_SCALE, RoundingMode.HALF_UP)
+            },
+            prices = prices,
+        )
     }
 
     private suspend fun buildBenchmarkEvents(
@@ -1717,6 +1830,8 @@ object RebalancerComparisonCalculator {
                             inceptionWeights = inceptionWeights,
                             priceProvider = priceProvider,
                             sourceLedgerIds = norm.sourceLedgerIds,
+                            sourceEventTimestamps = norm.actualPortfolioDeltas.map { it.timestamp }.toSet()
+                                .ifEmpty { setOf(representative.ledger.time) },
                         )
                     ) {
                         is OwnerFlowBuild.Event -> events += built.event
@@ -1737,6 +1852,8 @@ object RebalancerComparisonCalculator {
                             inceptionWeights = inceptionWeights,
                             priceProvider = priceProvider,
                             sourceLedgerIds = norm.sourceLedgerIds,
+                            sourceEventTimestamps = norm.actualPortfolioDeltas.map { it.timestamp }.toSet()
+                                .ifEmpty { setOf(representative.ledger.time) },
                         )
                     ) {
                         is OwnerFlowBuild.Event -> events += built.event
@@ -1851,8 +1968,9 @@ object RebalancerComparisonCalculator {
     /**
      * Event timestamps alone do not establish whether a balance movement was
      * applied before or after a trade or owner flow. Additive movements in
-     * established baseline assets are safe, but owner withdrawals, trades on
-     * unallocated assets, and non-plumbing balance changes are not commutative.
+     * established baseline assets are safe, but owner withdrawals, same-instant
+     * owner contributions paired with trades, trades on unallocated assets, and
+     * non-plumbing balance changes are not commutative.
      * Passthrough USD legs are exempt because [CardFundingNormalizer] has
      * already collapsed their typed economics into one owner event where that
      * is safe; otherwise defer instead of replaying an arbitrary sort order.
@@ -1868,22 +1986,61 @@ object RebalancerComparisonCalculator {
         val externalBalances = events.filterIsInstance<BenchmarkEvent.ExternalBalance>()
         val internalConversions = events.filterIsInstance<BenchmarkEvent.InternalConversion>()
         val balanceMovements: List<BenchmarkEvent> = externalBalances + internalConversions
-        val unallocatedTrades = trades.filter { trade ->
-            Asset.normalizeLedgerAsset(trade.trade.symbol).uppercase() !in baselineAssetSymbols
+        val movementAssetsByEvent = buildMap<BenchmarkEvent, Set<String>> {
+            externalBalances.forEach { event ->
+                put(event, setOf(Asset.normalizeLedgerAsset(event.asset).uppercase()))
+            }
+            internalConversions.forEach { event ->
+                put(
+                    event,
+                    event.legs.map {
+                        Asset.normalizeLedgerAsset(it.event.asset).uppercase()
+                    }.toSet(),
+                )
+            }
         }
 
-        fun movementAssets(event: BenchmarkEvent): Set<String> = when (event) {
-            is BenchmarkEvent.ExternalBalance -> setOf(Asset.normalizeLedgerAsset(event.asset).uppercase())
+        fun syntheticTradeAssets(event: BenchmarkEvent.Trade): Set<String> =
+            listOfNotNull(Asset.splitTradingPair(event.trade.pair))
+                .filter { it.base in baselineAssetSymbols }
+                .flatMap { listOf(it.base, it.quote) }
+                .toSet()
 
-            is BenchmarkEvent.InternalConversion -> event.legs.map {
-                Asset.normalizeLedgerAsset(it.event.asset).uppercase()
-            }.toSet()
-
-            else -> emptySet()
+        val unallocatedTrades = trades.filter { trade ->
+            Asset.normalizeLedgerAsset(trade.trade.symbol).uppercase() !in baselineAssetSymbols &&
+                syntheticTradeAssets(trade).isNotEmpty()
         }
 
         fun eventDistanceMillis(first: BenchmarkEvent, second: BenchmarkEvent): Long =
             kotlin.math.abs(first.timestamp.toEpochMilli() - second.timestamp.toEpochMilli())
+
+        data class SourceInteraction(
+            val timestamp: Instant,
+            val sourceEventTimestamps: Set<Instant>,
+            val assets: Set<String>,
+        )
+
+        val ownerContributionInteractions = ownerContributions.map { event ->
+            SourceInteraction(
+                timestamp = event.timestamp,
+                sourceEventTimestamps = event.sourceEventTimestamps,
+                assets = event.allocations.keys,
+            )
+        }
+        val ownerWithdrawalInteractions = ownerWithdrawals.map { event ->
+            SourceInteraction(
+                timestamp = event.timestamp,
+                sourceEventTimestamps = event.sourceEventTimestamps,
+                assets = baselineAssetSymbols,
+            )
+        }
+        val tradeInteractions = trades.map { event ->
+            SourceInteraction(
+                timestamp = event.timestamp,
+                sourceEventTimestamps = setOf(event.trade.timestamp),
+                assets = syntheticTradeAssets(event),
+            )
+        }
 
         fun earliestNearPairTimestamp(first: List<BenchmarkEvent>, second: List<BenchmarkEvent>): Instant? =
             first.asSequence()
@@ -1899,27 +2056,79 @@ object RebalancerComparisonCalculator {
                 }
                 .minOrNull()
 
+        fun earliestSourceOverlapPairTimestamp(
+            first: List<SourceInteraction>,
+            second: List<SourceInteraction>,
+        ): Instant? = first.asSequence()
+            .flatMap { left ->
+                second.asSequence()
+                    .filter { right ->
+                        left !== right &&
+                            left.sourceEventTimestamps.any { it in right.sourceEventTimestamps } &&
+                            left.assets.any {
+                                it in right.assets
+                            }
+                    }
+                    .map { right -> minOf(left.timestamp, right.timestamp) }
+            }
+            .minOrNull()
+
         val unorderedTimes = mutableListOf<Instant>()
-        earliestNearPairTimestamp(ownerWithdrawals, trades + balanceMovements)?.let(unorderedTimes::add)
-        // Baseline-asset trades were historically safe in the comparison
-        // replay when the balance reconciliation established their placement.
-        // New/unallocated assets are not safe because a contribution may be
-        // before or after the first purchase. Card plumbing legs have
-        // already been collapsed by [CardFundingNormalizer] into single owner
-        // events; owner contributions and strategy-neutral balance changes are
-        // both additive, so their relative order does not alter holdings.
+        val withdrawalTradeCandidates = trades.filter { trade ->
+            syntheticTradeAssets(trade).isNotEmpty()
+        }
+        val withdrawalMovementCandidates = balanceMovements.filter { movement ->
+            movementAssetsByEvent.getValue(movement).any { it in baselineAssetSymbols }
+        }
+        earliestNearPairTimestamp(
+            ownerWithdrawals,
+            withdrawalTradeCandidates + withdrawalMovementCandidates,
+        )?.let(unorderedTimes::add)
+        // Contributions are allocated across the configured target basket, so
+        // a mirrorable target trade may consume newly contributed capital. A
+        // source-time collision has no exchange sequence evidence and remains
+        // order-dependent. New/unallocated assets retain the existing bounded
+        // clock-skew guard. Card plumbing legs have already been collapsed by
+        // [CardFundingNormalizer] into one owner event; strategy-neutral
+        // balance changes remain additive.
         earliestNearPairTimestamp(ownerContributions, unallocatedTrades)?.let(unorderedTimes::add)
         earliestNearPairTimestamp(ownerContributions, ownerWithdrawals)?.let(unorderedTimes::add)
 
+        val targetAssetConversions = internalConversions.filter { conversion ->
+            movementAssetsByEvent.getValue(conversion).any { it in baselineAssetSymbols }
+        }
+        val targetConversionInteractions = targetAssetConversions.map { event ->
+            SourceInteraction(
+                timestamp = event.timestamp,
+                sourceEventTimestamps = event.legs.map { it.event.time }.toSet(),
+                assets = movementAssetsByEvent.getValue(event).intersect(baselineAssetSymbols),
+            )
+        }
+        // Internal conversions can consume synthetic target units. When their source timestamp
+        // is indistinguishable from an owner contribution or target trade, replay order is not
+        // evidence-backed; defer instead of selecting the construction order's outcome.
+        earliestSourceOverlapPairTimestamp(ownerWithdrawalInteractions, ownerContributionInteractions)
+            ?.let(unorderedTimes::add)
+        earliestSourceOverlapPairTimestamp(ownerWithdrawalInteractions, targetConversionInteractions)
+            ?.let(unorderedTimes::add)
+        earliestSourceOverlapPairTimestamp(ownerWithdrawalInteractions, tradeInteractions)
+            ?.let(unorderedTimes::add)
+        earliestSourceOverlapPairTimestamp(ownerContributionInteractions, tradeInteractions)
+            ?.let(unorderedTimes::add)
+        earliestSourceOverlapPairTimestamp(ownerContributionInteractions, targetConversionInteractions)
+            ?.let(unorderedTimes::add)
+        earliestSourceOverlapPairTimestamp(targetConversionInteractions, tradeInteractions)
+            ?.let(unorderedTimes::add)
+
         val newAssetBalanceMovements = balanceMovements.filter { movement ->
-            movementAssets(movement).any { it !in baselineAssetSymbols }
+            movementAssetsByEvent.getValue(movement).any { it !in baselineAssetSymbols }
         }
         earliestNearPairTimestamp(
             newAssetBalanceMovements,
             trades.filter { trade ->
                 val symbol = Asset.normalizeLedgerAsset(trade.trade.symbol).uppercase()
                 newAssetBalanceMovements.any { movement ->
-                    symbol in movementAssets(movement)
+                    symbol in movementAssetsByEvent.getValue(movement)
                 }
             },
         )?.let(unorderedTimes::add)
@@ -1929,7 +2138,7 @@ object RebalancerComparisonCalculator {
 
     /**
      * Maps a genuine owner-capital ledger row to a typed benchmark event.
-     * Contributions are invested by original inception weights at
+     * Contributions are invested by the configured positive-target benchmark weights at
      * contribution-time prices; withdrawals become proportional reductions.
      * Returns [OwnerFlowBuild.Unpriceable] when recorded history cannot price
      * the event — callers fail closed rather than using a live ticker for an
@@ -1943,6 +2152,7 @@ object RebalancerComparisonCalculator {
         inceptionWeights: Map<String, BigDecimal>,
         priceProvider: HistoricalPriceProvider?,
         sourceLedgerIds: List<String>,
+        sourceEventTimestamps: Set<Instant> = setOf(ledger.time),
     ): OwnerFlowBuild {
         val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
         val unitPrice = if (symbol == Asset.USD) {
@@ -1976,6 +2186,7 @@ object RebalancerComparisonCalculator {
                         allocations = allocations,
                         event = ledger,
                         sourceLedgerIds = sourceLedgerIds,
+                        sourceEventTimestamps = sourceEventTimestamps,
                     ),
                 )
             }
@@ -1989,6 +2200,7 @@ object RebalancerComparisonCalculator {
                         withdrawalUsd = withdrawalUsd,
                         event = ledger,
                         sourceLedgerIds = sourceLedgerIds,
+                        sourceEventTimestamps = sourceEventTimestamps,
                     ),
                 )
             }
@@ -2140,7 +2352,7 @@ object RebalancerComparisonCalculator {
     /**
      * Applies balance deltas only for the fraction the basket already holds of every asset being
      * drawn down. A shortfall means the quantity entered the account outside the synthetic basket
-     * — owner capital already valued and allocated by inception weights, or historical-only
+     * — owner capital already valued and allocated by configured benchmark weights, or historical-only
      * holdings excluded from the basket — so replaying it would create impossible negative
      * holdings and count the same value twice. The whole movement, including its counter-legs, is
      * scaled by the smallest available fraction or skipped entirely.
@@ -2332,6 +2544,8 @@ object RebalancerComparisonCalculator {
     private fun calculateBuyAndHoldValue(
         syntheticBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
+        baselineTimestamp: Instant? = null,
+        baselinePrices: Map<String, BigDecimal> = emptyMap(),
     ): BigDecimal {
         var total = BigDecimal.ZERO
         for ((symbol, balance) in syntheticBalances) {
@@ -2341,7 +2555,12 @@ object RebalancerComparisonCalculator {
                 // New-asset deposits after baseline legitimately lack a
                 // baseline price; skip symbols the current snapshot cannot
                 // price rather than crashing the comparison.
-                snapshot.assets[symbol]?.price ?: continue
+                val snapshotPrice = snapshot.assets[symbol]?.price?.takeIf { it.signum() > 0 }
+                when {
+                    snapshotPrice != null -> snapshotPrice
+                    snapshot.timestamp == baselineTimestamp -> baselinePrices[symbol] ?: continue
+                    else -> continue
+                }
             }
             val product = balance.multiply(price)
             total = total.add(product)

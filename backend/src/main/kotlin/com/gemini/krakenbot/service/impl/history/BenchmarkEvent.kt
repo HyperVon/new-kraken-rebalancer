@@ -44,8 +44,8 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
     data class ConversionLeg(val event: LedgerEvent, val netBalanceDelta: BigDecimal)
 
     /**
-     * Genuine owner contribution after inception, allocated by ORIGINAL
-     * inception value weights (never added to the contributed asset alone:
+     * Genuine owner contribution after inception, allocated by the configured
+     * positive-target benchmark weights (never added to the contributed asset alone:
      * that would leave new money in cash and invent Rebalancer alpha).
      * Existing synthetic holdings are untouched. [allocations] maps normalized
      * asset symbol to units bought at contribution-time prices.
@@ -57,6 +57,8 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
         val event: LedgerEvent,
         /** Original ledger identities represented by this economic event. */
         val sourceLedgerIds: List<String> = listOf(event.ledgerId),
+        /** Source times of every ledger leg represented by this economic event. */
+        val sourceEventTimestamps: Set<Instant> = setOf(event.time),
     ) : BenchmarkEvent()
 
     /**
@@ -70,6 +72,8 @@ sealed class BenchmarkEvent : Comparable<BenchmarkEvent> {
         val event: LedgerEvent,
         /** Original ledger identities represented by this economic event. */
         val sourceLedgerIds: List<String> = listOf(event.ledgerId),
+        /** Source times of every ledger leg represented by this economic event. */
+        val sourceEventTimestamps: Set<Instant> = setOf(event.time),
     ) : BenchmarkEvent()
 
     /**

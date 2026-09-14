@@ -238,9 +238,9 @@ class ApprovedStartComparisonIntegrationTest :
                 comparison.points.map { it.buyAndHoldValueUSD } shouldBe listOf(
                     BigDecimal("1002.01"),
                     BigDecimal("1002.01"),
-                    BigDecimal("1004.01"),
+                    BigDecimal("1503.02"),
                 )
-                requireNotNull(comparison.latestDifferenceUSD) shouldBeEqualComparingTo BigDecimal("0.99")
+                requireNotNull(comparison.latestDifferenceUSD) shouldBeEqualComparingTo BigDecimal("-498.02")
             }
         }
 

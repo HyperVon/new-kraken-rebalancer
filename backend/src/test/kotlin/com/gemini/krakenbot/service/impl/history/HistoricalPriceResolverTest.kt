@@ -297,6 +297,36 @@ class HistoricalPriceResolverTest : StringSpec() {
             }
         }
 
+        "bounded future execution skew is allowed only when no past execution exists" {
+            runTest {
+                val nearFuture = trade(
+                    price = BigDecimal("101.00"),
+                    volume = BigDecimal("0.01"),
+                    usd = BigDecimal("1.01"),
+                )
+                    .copy(timestamp = eventTime.plusSeconds(30))
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(nearFuture)
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    Asset.BTC,
+                    eventTime,
+                    repository,
+                    krakenService,
+                )!! shouldBeEqualComparingTo BigDecimal("101.00")
+
+                val tooLate = nearFuture.copy(timestamp = eventTime.plusSeconds(181))
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(tooLate)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    Asset.BTC,
+                    eventTime,
+                    repository,
+                    krakenService,
+                ) shouldBe null
+            }
+        }
+
         "retained market pairs are consulted when the default pair has no history" {
             runTest {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
