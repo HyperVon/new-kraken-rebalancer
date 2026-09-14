@@ -158,21 +158,7 @@ object RebalancerComparisonCalculator {
                         listOf(inceptionSnapshot) + orderedSnapshots
                     }
 
-                    else -> {
-                        val first = orderedSnapshots.first()
-                        val firstSymbols = first.assets.keys
-                            .map { Asset.normalizeLedgerAsset(it).uppercase() }
-                            .toSet()
-                        val completeRecordedTwin = first != inceptionSnapshot &&
-                            firstSymbols.containsAll(requiredReconciliationSymbols)
-                        if (completeRecordedTwin) {
-                            listOf(inceptionSnapshot) + orderedSnapshots.dropWhile {
-                                it.timestamp == benchmarkInception.timestamp
-                            }
-                        } else {
-                            orderedSnapshots
-                        }
-                    }
+                    else -> orderedSnapshots
                 }
             }
             if (trimmed.size < 2) {
