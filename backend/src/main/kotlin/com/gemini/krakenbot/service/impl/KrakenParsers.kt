@@ -17,7 +17,22 @@ import java.math.BigDecimal
 import java.time.Instant
 
 /** One page of a legacy Kraken funding-status response. */
-data class FundingStatusPage<T>(val records: List<T>, val nextCursor: String? = null)
+data class FundingStatusPage<T>(val records: List<T>, val nextCursor: String? = null, val rawCount: Int = records.size)
+
+/** One Funding (Beta) deposit or withdrawal record. */
+data class FundingV1Record(
+    val id: String,
+    val methodId: String?,
+    val status: String,
+    val asset: String,
+    val amount: BigDecimal,
+    val fee: BigDecimal,
+    val hasAuthoritativeFee: Boolean,
+    val time: Instant,
+)
+
+/** One Funding (Beta) funding-method entry. */
+data class FundingMethodRecord(val methodId: String, val methodName: String)
 
 object KrakenParsers {
     private val log = LoggerFactory.getLogger(KrakenParsers::class.java)
@@ -280,6 +295,69 @@ object KrakenParsers {
             )
         }
 
+    fun parseFundingV1Page(
+        result: JsonNode,
+        containerField: String,
+        idField: String,
+    ): FundingStatusPage<FundingV1Record> {
+        val resultNode = unwrapResult(result)
+        val entries = resultNode.path(containerField).takeIf { it.isArray }?.toList() ?: emptyList()
+        val records = entries.mapNotNull { node ->
+            if (!node.isObject) return@mapNotNull null
+            val id = node.path(idField).asText().trim()
+            val amountNode = node.path(KrakenApiConstants.FIELD_AMOUNT)
+            val amount = parseRawDecimal(amountNode, KrakenApiConstants.FIELD_AMOUNT)
+            val time = runCatching {
+                Instant.parse(node.path(KrakenApiConstants.FIELD_CREATE_TIME).asText().trim())
+            }.getOrNull()
+            if (id.isBlank() || amount == null || amount.signum() < 0 || time == null) return@mapNotNull null
+            val feeNode = node.path(KrakenApiConstants.FIELD_FEE)
+            val parsedFee = parseRawDecimal(feeNode, KrakenApiConstants.FIELD_AMOUNT)
+            val feeRaw = feeNode.path(KrakenApiConstants.FIELD_AMOUNT).asText().trim()
+            val hasValidFee = feeRaw.isBlank() || (parsedFee != null && parsedFee.signum() >= 0)
+            if (!hasValidFee) return@mapNotNull null
+            FundingV1Record(
+                id = id,
+                methodId = optionalText(node, KrakenApiConstants.FIELD_METHOD_ID),
+                status = node.path(KrakenApiConstants.FIELD_STATUS).asText(),
+                asset = Asset.normalizeLedgerAsset(
+                    amountNode.path(KrakenApiConstants.FIELD_ASSET).path(KrakenApiConstants.FIELD_NAME).asText(),
+                ),
+                amount = amount,
+                fee = parsedFee ?: BigDecimal.ZERO,
+                hasAuthoritativeFee = feeRaw.isNotBlank() && parsedFee != null,
+                time = time,
+            )
+        }
+        return FundingStatusPage(
+            records = records,
+            nextCursor = optionalText(resultNode, KrakenApiConstants.FIELD_NEXT_CURSOR),
+            rawCount = entries.size,
+        )
+    }
+
+    fun parseFundingMethodsPage(result: JsonNode): FundingStatusPage<FundingMethodRecord> {
+        val resultNode = unwrapResult(result)
+        val entries = resultNode.path(KrakenApiConstants.FIELD_METHODS).takeIf { it.isArray }?.toList() ?: emptyList()
+        val records = entries.mapNotNull { node ->
+            val methodId = optionalText(node, KrakenApiConstants.FIELD_METHOD_ID)
+            val methodName = optionalText(node, KrakenApiConstants.FIELD_METHOD_NAME)
+            if (methodId == null || methodName == null) null else FundingMethodRecord(methodId, methodName)
+        }
+        return FundingStatusPage(
+            records = records,
+            nextCursor = optionalText(resultNode, KrakenApiConstants.FIELD_NEXT_CURSOR),
+            rawCount = entries.size,
+        )
+    }
+
+    private fun unwrapResult(result: JsonNode): JsonNode =
+        if (result.isObject && result.has(KrakenApiConstants.FIELD_RESULT)) {
+            result.path(KrakenApiConstants.FIELD_RESULT)
+        } else {
+            result
+        }
+
     private fun <T> parseFundingStatusPage(
         result: JsonNode,
         preferredField: String,
@@ -323,8 +401,9 @@ object KrakenParsers {
                 }
             }
         }
-        val cursor = optionalText(resultNode, KrakenApiConstants.FIELD_CURSOR)
-        return FundingStatusPage(records = records, nextCursor = cursor)
+        val cursor = optionalText(resultNode, KrakenApiConstants.FIELD_NEXT_CURSOR)
+            ?: optionalText(resultNode, KrakenApiConstants.FIELD_CURSOR)
+        return FundingStatusPage(records = records, nextCursor = cursor, rawCount = entries.size)
     }
 
     private fun parseFundingTime(node: JsonNode): Instant? {

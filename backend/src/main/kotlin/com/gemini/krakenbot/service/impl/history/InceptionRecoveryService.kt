@@ -12,7 +12,6 @@ import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.LedgerFlowClassifier
-import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeOwnership
@@ -1158,8 +1157,21 @@ class InceptionRecoveryService(
         )
 
         val cardGroups = CardFundingNormalizer.identifyCandidateGroups(ledgerContext)
-        for ((refid, group) in cardGroups) {
-            if (group.none { it.time > baselineTime && !it.time.isAfter(anchorObservation) }) continue
+        val loneFundingRefIds = cardGroups.filterValues { group ->
+            val leg = group.singleOrNull()
+            leg != null &&
+                CardFundingNormalizer.isFundingLeg(leg) &&
+                leg.time > baselineTime &&
+                !leg.time.isAfter(anchorObservation)
+        }.keys
+        val retainedCardGroups = if (loneFundingRefIds.isEmpty()) {
+            emptyMap()
+        } else {
+            CardFundingNormalizer.identifyCandidateGroups(ledgerRepository.getLedgersByRefIds(loneFundingRefIds))
+        }
+        for ((refid, contextGroup) in cardGroups) {
+            if (contextGroup.none { it.time > baselineTime && !it.time.isAfter(anchorObservation) }) continue
+            val group = retainedCardGroups[refid] ?: contextGroup
             when (val parsed = CardFundingNormalizer.parseCardFundingGroup(refid, group, preparedProvenance)) {
                 is CardFundingNormalizer.ParsedGroup.Ambiguous -> {
                     return BaselineResult.Failure(
@@ -1177,9 +1189,15 @@ class InceptionRecoveryService(
             flowCategories[event.ledgerId] == FlowCategory.AMBIGUOUS
         }
         if (ambiguousLedger != null) {
+            val detail = preparedProvenance.explain(ambiguousLedger)?.takeIf(String::isNotBlank)
+            val reason = if (detail == null) {
+                "ledger provenance unresolved: ${ambiguousLedger.type}"
+            } else {
+                "ledger provenance unresolved: ${ambiguousLedger.type}: $detail"
+            }
             return BaselineResult.Failure(
                 InceptionRecoveryStatus.AMBIGUOUS,
-                "ledger provenance unresolved: ${ambiguousLedger.type}".take(MAX_REASON_LENGTH),
+                reason.take(MAX_REASON_LENGTH),
             )
         }
         val unsupportedClassifiedLedger = historicalLedgers.firstOrNull { event ->
@@ -1192,64 +1210,191 @@ class InceptionRecoveryService(
             )
         }
 
-        val runningBalances = anchor.assets.mapKeys { (symbol, _) ->
-            Asset.normalizeLedgerAsset(symbol).uppercase()
-        }.mapValuesTo(mutableMapOf()) { (_, row) -> row.balance }
-
         val duplicateTradeIds = TradeDeduplicator.findDuplicateTradeIds(historicalTrades)
         // getTradesInRange returns persisted rows, whose database identity is required for
         // duplicate selection and durable recovery evidence.
         val accountingTrades = historicalTrades.filterNot { it.id!! in duplicateTradeIds }
-        val unknownTrade = accountingTrades.firstOrNull {
-            Asset.normalizeLedgerAsset(it.symbol).uppercase() !in expectedUniverse &&
-                it.volume.signum() != 0
-        }
-        if (unknownTrade != null) {
-            return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "trade outside configured universe")
-        }
-        for (trade in accountingTrades.sortedWith(
-            compareByDescending<TradeRecord> { it.timestamp }.thenByDescending {
-                it.id
-                    ?: 0
-            },
-        )) {
-            if (!reverseApplyTrade(trade, runningBalances, expectedUniverse)) {
-                return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "unsupported trade economics")
-            }
-        }
-        for (event in historicalLedgers.sortedByDescending { it.time }) {
-            if (!reverseApplyLedger(
-                    event = event,
-                    balances = runningBalances,
-                    expectedUniverse = expectedUniverse,
-                    flowCategories = flowCategories,
-                    resolvedScopes = balanceValidation.resolvedScopes,
+        // Trade-type ledger rows are continuity checkpoints for their TradeRecord, keyed by the
+        // shared execution identity. They are never a second economic trade.
+        val tradeLedgerLegs = historicalLedgers
+            .filter { event -> event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true) }
+            .filter { event -> !event.refid.isNullOrBlank() }
+            .filter { event ->
+                balanceValidation.resolvedScopes[event.ledgerId] !in setOf(
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING,
                 )
-            ) {
-                return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "ledger changed tracked universe")
+            }
+            .groupBy { event -> event.refid!!.trim() }
+        val orphanTradeLedgerEvents = AuthoritativeTradeLedgerEvents.collect(
+            ledgers = historicalLedgers,
+            trades = historicalTrades,
+            resolvedScopes = balanceValidation.resolvedScopes,
+        )
+        if (orphanTradeLedgerEvents.incompleteRefIds.isNotEmpty() ||
+            orphanTradeLedgerEvents.contradictoryRefIds.isNotEmpty() ||
+            orphanTradeLedgerEvents.ambiguousIdentityRefIds.isNotEmpty()
+        ) {
+            log.warn(
+                "Cannot replay inception history with incomplete, contradictory, or ambiguously " +
+                    "identified trade ledger groups: incomplete={} contradictory={} ambiguous={}",
+                orphanTradeLedgerEvents.incompleteRefIds.size,
+                orphanTradeLedgerEvents.contradictoryRefIds.size,
+                orphanTradeLedgerEvents.ambiguousIdentityRefIds.size,
+            )
+            return BaselineResult.Failure(
+                InceptionRecoveryStatus.AMBIGUOUS,
+                "trade ledger identity or shape is ambiguous",
+            )
+        }
+        val orphanTradeLedgerIds = orphanTradeLedgerEvents.replayableLegs.mapTo(linkedSetOf()) { it.ledgerId }
+        val tradeReplays = accountingTrades.associate { trade ->
+            trade.id!! to TradeLedgerReplay.classify(
+                trade,
+                tradeLedgerLegs,
+                orphanTradeLedgerEvents.tradeLegsByTradeIdentity,
+            )
+        }
+        val unsupportedTrade = accountingTrades.firstOrNull { trade ->
+            tradeReplays.getValue(trade.id!!) is TradeLedgerReplay.Classification.Unsupported
+        }
+        if (unsupportedTrade != null) {
+            val reason = (tradeReplays.getValue(unsupportedTrade.id!!) as TradeLedgerReplay.Classification.Unsupported)
+                .reason
+            return BaselineResult.Failure(
+                InceptionRecoveryStatus.AMBIGUOUS,
+                reason.take(MAX_REASON_LENGTH),
+            )
+        }
+        val replayableTrades = accountingTrades.map { trade ->
+            trade to (tradeReplays.getValue(trade.id!!) as TradeLedgerReplay.Classification.Replayable)
+        }
+        val historicalOnlyUniverse = (
+            replayableTrades.filter { (_, replay) -> replay.volume.signum() != 0 }
+                .flatMap { (_, replay) -> listOf(replay.base, replay.quote) } +
+                historicalLedgers.filter { event ->
+                    event.netBalanceDelta().signum() != 0 &&
+                        !event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true) &&
+                        balanceValidation.resolvedScopes[event.ledgerId] ==
+                        AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+                }.map { event -> Asset.normalizeLedgerAsset(event.asset).uppercase() } +
+                orphanTradeLedgerEvents.replayableLegs
+                    .filter { it.netBalanceDelta().signum() != 0 }
+                    .map { event -> Asset.normalizeLedgerAsset(event.asset).uppercase() }
+            ).toSet() - expectedUniverse
+
+        val runningBalances = anchor.assets.mapKeys { (symbol, _) ->
+            Asset.normalizeLedgerAsset(symbol).uppercase()
+        }.mapValuesTo(mutableMapOf()) { (_, row) -> row.balance }
+        if (historicalOnlyUniverse.isNotEmpty()) {
+            val seeded = ledgerRepository.getLatestAuthoritativeBalances(historicalOnlyUniverse, anchorObservation)
+            val missing = historicalOnlyUniverse.filterNot(seeded::containsKey).sorted()
+            if (missing.isNotEmpty()) {
+                return BaselineResult.Failure(
+                    InceptionRecoveryStatus.AMBIGUOUS,
+                    "no authoritative balance for historical asset ${missing.first()}".take(MAX_REASON_LENGTH),
+                )
+            }
+            runningBalances.putAll(seeded)
+        }
+        val historicalUniverse = expectedUniverse + historicalOnlyUniverse
+
+        // A single newest-first walk keeps the reconstruction exactly inverse to the validator's
+        // forward chain. Ledger checkpoints sort before trades at the same instant because a
+        // trade's own ledger rows carry the post-fill balances its delta is inverted from, and
+        // authoritative rows snap to the recorded post-entry balance instead of letting the
+        // validator's allowed per-row rounding difference accumulate across the walk.
+        val replaySteps = buildList {
+            replayableTrades.forEach { (trade, replay) ->
+                add(ReplayStep.Trade(trade.timestamp, trade.id ?: 0, replay))
+            }
+            historicalLedgers.forEach { event -> add(ReplayStep.Ledger(event)) }
+        }.sortedWith(
+            compareByDescending<ReplayStep> { it.time }
+                .thenByDescending { it.isCheckpoint }
+                .thenByDescending { it.tieBreak },
+        )
+        for (step in replaySteps) {
+            when (step) {
+                is ReplayStep.Trade -> {
+                    if (!TradeLedgerReplay.reverseApply(step.replay, runningBalances)) {
+                        return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "unsupported trade economics")
+                    }
+                }
+
+                is ReplayStep.Ledger -> {
+                    if (!reverseApplyLedger(
+                            event = step.event,
+                            balances = runningBalances,
+                            expectedUniverse = historicalUniverse,
+                            flowCategories = flowCategories,
+                            resolvedScopes = balanceValidation.resolvedScopes,
+                            orphanTradeLedgerIds = orphanTradeLedgerIds,
+                        )
+                    ) {
+                        return BaselineResult.Failure(
+                            InceptionRecoveryStatus.AMBIGUOUS,
+                            "ledger changed tracked universe",
+                        )
+                    }
+                }
             }
         }
 
-        if (runningBalances.values.any { it < NEGATIVE_BALANCE_TOLERANCE.negate() }) {
+        val negativeBalance = runningBalances.entries.firstOrNull { it.value < NEGATIVE_BALANCE_TOLERANCE.negate() }
+        if (negativeBalance != null) {
             return BaselineResult.Failure(
                 InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
-                "negative reconstructed balance",
+                "negative reconstructed balance for ${negativeBalance.key}",
             )
         }
         runningBalances.replaceAll { _, balance -> balance.max(BigDecimal.ZERO) }
 
-        val prices = resolveHistoricalPrices(
-            allocations = allocations,
-            baselineTime = baselineTime,
-            candidatePriceEvidence = candidatePriceEvidence,
-            runningBalances = runningBalances,
-            backend = backend,
-        ) ?: return BaselineResult.Failure(
-            InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
-            HISTORICAL_PRICE_UNAVAILABLE_REASON,
-        )
-        val total = allocations.sumOf { allocation ->
-            val symbol = Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase()
+        // Retained pairs keyed by normalized base cover historical markets that are no longer
+        // listed today (for example a delisted token or an XLMUSDT-only market). The resolver
+        // accepts non-USD quotes only through its bounded historical quote conversion ladder.
+        val retainedPairsByBase = historicalTrades
+            .mapNotNull { trade ->
+                val split = Asset.splitTradingPair(trade.pair)
+                split?.let { it.base to it.rawPair }
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, pairs) -> pairs.distinct() }
+        val prices = when (
+            val priceResolution = resolveHistoricalPrices(
+                universe = historicalUniverse,
+                baselineTime = baselineTime,
+                candidatePriceEvidence = candidatePriceEvidence,
+                runningBalances = runningBalances,
+                backend = backend,
+                marketPairsByBase = retainedPairsByBase,
+            )
+        ) {
+            is PriceResolution.Success -> priceResolution.prices
+
+            is PriceResolution.Unavailable -> return BaselineResult.Failure(
+                InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
+                "historical price unavailable for ${priceResolution.symbol}".take(MAX_REASON_LENGTH),
+            )
+
+            is PriceResolution.SourceError -> {
+                log.warn(
+                    "Historical price source failure for {}: {}",
+                    priceResolution.symbol,
+                    priceResolution.message,
+                )
+                return BaselineResult.Failure(
+                    InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
+                    "historical price source error for ${priceResolution.symbol}".take(MAX_REASON_LENGTH),
+                )
+            }
+        }
+        val targetPercents = allocations.associate { allocation ->
+            Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase() to
+                BigDecimal.valueOf(allocation.targetPercent)
+        }
+        val total = historicalUniverse.sumOf { symbol ->
             runningBalances.getValue(symbol).multiply(prices.getValue(symbol))
         }
         if (total <= BigDecimal.ZERO) {
@@ -1259,17 +1404,16 @@ class InceptionRecoveryService(
             )
         }
 
-        val assetSnapshots = allocations.associate { allocation ->
-            val symbol = Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase()
+        val assetSnapshots = historicalUniverse.associateWith { symbol ->
             val balance = runningBalances.getValue(symbol).max(BigDecimal.ZERO)
             val price = prices.getValue(symbol)
             val value = balance.multiply(price)
-            symbol to PortfolioCalculations.createAssetSnapshot(
+            PortfolioCalculations.createAssetSnapshot(
                 symbol = symbol,
                 balance = balance,
                 price = price,
                 valueUSD = value,
-                targetPercent = BigDecimal.valueOf(allocation.targetPercent),
+                targetPercent = targetPercents[symbol] ?: BigDecimal.ZERO,
                 totalPortfolioValueUSD = total,
             )
         }
@@ -1292,25 +1436,30 @@ class InceptionRecoveryService(
         )
     }
 
-    private fun reverseApplyTrade(
-        trade: TradeRecord,
-        balances: MutableMap<String, BigDecimal>,
-        expectedUniverse: Set<String>,
-    ): Boolean {
-        val symbol = Asset.normalizeLedgerAsset(trade.symbol).uppercase()
-        if (symbol !in expectedUniverse || (!OrderSide.isBuy(trade.side) && !OrderSide.isSell(trade.side))) return false
-        val usd = Asset.USD
-        val assetBalance = balances.getValue(symbol)
-        val usdBalance = balances.getValue(usd)
-        if (trade.volume.signum() < 0 || trade.usdAmount.signum() < 0 || trade.fee.signum() < 0) return false
-        if (OrderSide.isBuy(trade.side)) {
-            balances[symbol] = assetBalance.subtract(trade.volume)
-            balances[usd] = usdBalance.add(trade.usdAmount).add(trade.fee)
-        } else {
-            balances[symbol] = assetBalance.add(trade.volume)
-            balances[usd] = usdBalance.subtract(trade.usdAmount).add(trade.fee)
+    /**
+     * One step of the merged newest-first reconstruction walk. Ledger rows are checkpoints that
+     * sort before trades at the same instant, so a fill's recorded post-balances are restored
+     * before its delta is inverted. [tieBreak] keeps equal-timestamp ordering deterministic.
+     */
+    private sealed interface ReplayStep {
+        val time: Instant
+        val isCheckpoint: Boolean
+        val tieBreak: String
+
+        data class Trade(
+            override val time: Instant,
+            val id: Int,
+            val replay: TradeLedgerReplay.Classification.Replayable,
+        ) : ReplayStep {
+            override val isCheckpoint: Boolean = false
+            override val tieBreak: String = id.toString()
         }
-        return true
+
+        data class Ledger(val event: LedgerEvent) : ReplayStep {
+            override val time: Instant = event.time
+            override val isCheckpoint: Boolean = true
+            override val tieBreak: String = event.ledgerId
+        }
     }
 
     private fun reverseApplyLedger(
@@ -1319,8 +1468,31 @@ class InceptionRecoveryService(
         expectedUniverse: Set<String>,
         flowCategories: Map<String, FlowCategory>,
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        orphanTradeLedgerIds: Set<String> = emptySet(),
     ): Boolean {
-        if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) return true
+        val isTrade = event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)
+        if (isTrade && event.ledgerId !in orphanTradeLedgerIds) {
+            // Trade economics are replayed from the authoritative TradeRecord; the ledger row is
+            // only a duplicate checkpoint of the same fill and is not re-applied here so the
+            // recorded balance can never be inverted against the wrong side of a fill.
+            return true
+        }
+        if (isTrade) {
+            // A structurally complete orphan group has no retained TradeRecord to replay. Its
+            // authoritative legs are the only durable execution evidence, so invert each leg once
+            // from its own post-entry checkpoint. The collector has already proved the group is
+            // Spot-scoped and non-ambiguous.
+            val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
+            val delta = event.netBalanceDelta()
+            if (delta.signum() == 0) return true
+            val balance = balances[symbol] ?: return false
+            // A nonzero orphan can enter this path only after the collector proved a complete
+            // two-leg group with authoritative post-entry balances. The reconstruction universe
+            // is seeded from every such leg before replay, so the running balance is a guard for
+            // an unexpected key while the checkpoint remains the source of truth.
+            balances[symbol] = event.balance.subtract(delta)
+            return true
+        }
         val isConversion = event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
         if (!isConversion) {
             when (resolvedScopes[event.ledgerId]) {
@@ -1364,47 +1536,72 @@ class InceptionRecoveryService(
                 event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
         }
         val balance = balances.getValue(symbol)
-        balances[symbol] = balance.subtract(delta)
+        balances[symbol] = if (event.hasAuthoritativeBalance) {
+            // The validator advanced this scope to the recorded post-entry balance; inverting the
+            // delta from that authoritative post-state keeps replay exactly inverse instead of
+            // letting per-row rounding differences accumulate into the reconstructed balance.
+            event.balance.subtract(delta)
+        } else {
+            balance.subtract(delta)
+        }
         return true
     }
 
+    private sealed interface PriceResolution {
+        data class Success(val prices: Map<String, BigDecimal>) : PriceResolution
+
+        data class Unavailable(val symbol: String) : PriceResolution
+
+        data class SourceError(val symbol: String, val message: String) : PriceResolution
+    }
+
     private suspend fun resolveHistoricalPrices(
-        allocations: List<Allocation>,
+        universe: Set<String>,
         baselineTime: Instant,
         candidatePriceEvidence: Pair<String, BigDecimal>?,
         runningBalances: Map<String, BigDecimal>,
         backend: KrakenService,
-    ): Map<String, BigDecimal>? {
+        marketPairsByBase: Map<String, List<String>>,
+    ): PriceResolution {
         val evidenceSymbol = candidatePriceEvidence?.first
         val prices = mutableMapOf<String, BigDecimal>()
-        for (allocation in allocations) {
-            val symbol = Asset.normalizeLedgerAsset(allocation.symbol.value).uppercase()
+        for (symbol in universe) {
             if (symbol == Asset.USD) {
                 prices[symbol] = BigDecimal.ONE
                 continue
             }
             val balance = runningBalances[symbol] ?: BigDecimal.ZERO
+            // Only proven positive holdings need a market price; a zero reconstructed balance
+            // must not trigger (or fail on) a lookup for a market that may no longer exist.
+            if (balance <= BigDecimal.ZERO) {
+                prices[symbol] = BigDecimal.ZERO
+                continue
+            }
             val candidateException = if (symbol == evidenceSymbol && candidatePriceEvidence.second.signum() > 0) {
                 candidatePriceEvidence.second
             } else {
                 null
             }
-            val resolvedPrice = HistoricalPriceResolver.resolveHistoricalPrice(
-                asset = symbol,
-                eventTime = baselineTime,
-                tradesRepo = repository,
-                krakenService = backend,
-                candidatePriceException = candidateException,
-            )
+            val resolvedPrice = try {
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    asset = symbol,
+                    eventTime = baselineTime,
+                    tradesRepo = repository,
+                    krakenService = backend,
+                    candidatePriceException = candidateException,
+                    marketPairs = marketPairsByBase[symbol].orEmpty(),
+                    marketPairsByBase = marketPairsByBase,
+                )
+            } catch (e: HistoricalPriceSourceException) {
+                return PriceResolution.SourceError(symbol, e.message ?: "historical price source failed")
+            }
             if (resolvedPrice != null && resolvedPrice > BigDecimal.ZERO) {
                 prices[symbol] = resolvedPrice
-            } else if (balance <= BigDecimal.ZERO) {
-                prices[symbol] = BigDecimal.ZERO
             } else {
-                return null
+                return PriceResolution.Unavailable(symbol)
             }
         }
-        return prices
+        return PriceResolution.Success(prices)
     }
 
     private fun classifyTradeForRecovery(trade: TradeRecord, knownRebalancerOrderTxids: Set<String>): TradeOwnership =
@@ -1738,7 +1935,8 @@ class InceptionRecoveryService(
      * remain terminal until their local evidence or recovery scope changes.
      */
     private fun isTransientApprovedBaselineFailure(reason: String?): Boolean =
-        reason == HISTORICAL_PRICE_UNAVAILABLE_REASON ||
+        reason?.startsWith("historical price unavailable", ignoreCase = true) == true ||
+            reason?.startsWith("historical price source error", ignoreCase = true) == true ||
             reason?.startsWith("ledger provenance unresolved:", ignoreCase = true) == true ||
             reason?.contains("unresolved funding provenance", ignoreCase = true) == true ||
             reason?.startsWith("Funding legs in card group cannot be proven", ignoreCase = true) == true
@@ -1877,7 +2075,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "7"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "14"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L
@@ -1890,7 +2088,6 @@ class InceptionRecoveryService(
             InceptionRecoveryStatus.AMBIGUOUS,
             InceptionRecoveryStatus.BASELINE_UNAVAILABLE,
         )
-        private const val HISTORICAL_PRICE_UNAVAILABLE_REASON = "historical price unavailable"
         private const val APPROVED_BASELINE_READY_REASON = "approved-start baseline ready"
 
         private const val STREAM_COMPLETE = "COMPLETE"

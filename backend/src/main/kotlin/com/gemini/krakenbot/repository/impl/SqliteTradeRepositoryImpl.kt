@@ -5,11 +5,13 @@ import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.OrderIntentState
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SNAPSHOT_IDENTITY_METADATA_KEYS
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
+import com.gemini.krakenbot.repository.downsampleSnapshots
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
@@ -48,7 +50,6 @@ import java.time.Instant
 
 class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepository {
     private companion object {
-        const val MAX_SNAPSHOT_POINTS = 300
         const val SQLITE_IN_CHUNK_SIZE = 500
         const val DELIMITER = ","
     }
@@ -66,11 +67,18 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
     override suspend fun replaceSnapshots(history: List<PortfolioSnapshot>) {
         database.safeTransactionIO(log, "Failed to replace snapshot history") {
+            val protectedIds = SNAPSHOT_IDENTITY_METADATA_KEYS
+                .mapNotNull { readSyncMetadataInTransaction(it)?.toIntOrNull() }
+                .toSet()
             val snapshotIds = PortfolioSnapshotTable.select(PortfolioSnapshotTable.id)
                 .map { it[PortfolioSnapshotTable.id] }
-            if (snapshotIds.isNotEmpty()) {
+            (protectedIds - snapshotIds.toSet()).forEach { missingId ->
+                log.warn("Snapshot {} is referenced by identity metadata but no longer exists", missingId)
+            }
+            val replaceableIds = snapshotIds.filterNot { it in protectedIds }
+            if (replaceableIds.isNotEmpty()) {
                 // Children first even with ON DELETE CASCADE — keeps SQLite FK order explicit.
-                snapshotIds.chunked(SQLITE_IN_CHUNK_SIZE).forEach { chunk ->
+                replaceableIds.chunked(SQLITE_IN_CHUNK_SIZE).forEach { chunk ->
                     AssetSnapshotTable.deleteWhere { snapshotId inList chunk }
                     ActionLogTable.deleteWhere { snapshotId inList chunk }
                     PortfolioSnapshotTable.deleteWhere { id inList chunk }
@@ -178,20 +186,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
             if (allIds.isEmpty()) return@readTransactionIO emptyList()
 
-            // Keep both range endpoints while evenly sampling the interior for stable chart payloads.
-            val downsampledIds =
-                if (allIds.size <= MAX_SNAPSHOT_POINTS) {
-                    allIds
-                } else {
-                    List(MAX_SNAPSHOT_POINTS) { sampleIndex ->
-                        val sourceIndex =
-                            (
-                                sampleIndex.toLong() * allIds.lastIndex.toLong() /
-                                    (MAX_SNAPSHOT_POINTS - 1).toLong()
-                                ).toInt()
-                        allIds[sourceIndex]
-                    }
-                }
+            val downsampledIds = allIds.downsampleSnapshots()
 
             val snapshotRows =
                 PortfolioSnapshotTable

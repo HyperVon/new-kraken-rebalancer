@@ -6,6 +6,226 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.63] - 2026-09-14
+
+### Fixed
+
+- **Historical trade ownership now fails closed**: an authoritative `API_FILL` without local cycle/client metadata or a durable rebalancer order-intent match remains `UNKNOWN` instead of being inferred as manual/external. `MANUAL_OR_EXTERNAL` now requires explicit `TradeSource.MANUAL` evidence, and an unknown trade touching a tracked base or quote makes the comparison unavailable.
+- **Exact order sibling fill propagation and conflict fail-closed**: positive bot evidence (cycle ID, client order ID, local estimate, durable order intent) or manual evidence propagates to sibling fills sharing an exact `orderTxid`. If conflicting evidence exists for an order, it fails closed to `UNKNOWN` and comparison remains unavailable.
+- **Pure Buy & Hold now preserves the recorded anchor thesis**: complete refid-linked consumer `spend`/`receive` groups and top-level conversions are validated and consumed as plumbing, not replayed as synthetic trades or conversions. Positive holding-dependent rewards in assets the basket does not hold remain actual-only, while explicitly classified account-level credits may introduce their credited asset.
+
+### Changed
+
+- **Unresolved lifetime inception no longer blocks a bounded passive benchmark**: when recovery cannot prove the historical strategy start, the comparison may re-anchor only to the earliest genuinely recorded portfolio snapshot on or after its evidence floor. The exact recorded balances and prices become fixed anchor lots; current target percentages, later trades, trade ownership labels, internal conversions, and unlinked consumer-transaction legs do not rewrite those lots.
+- **Owner-flow and reward semantics are explicit for the pure benchmark**: confirmed contributions are valued at event time and allocated using the fixed recorded-anchor value weights, withdrawals reduce synthetic NAV proportionally, holding-dependent rewards are mirrored only for anchor-held assets, explicitly classified account-level credits may introduce an unheld credited asset, and equity/cash-dividend credits are excluded from the crypto/cash thesis. Reconciliation still validates actual balance changes and fails closed on unsupported or unexplained history.
+
+## [6.17.62] - 2026-09-14
+
+### Fixed
+
+- **Buy & Hold keeps the recorded anchor basket regardless of later configuration**: current target
+  edits cannot rewrite the frozen anchor holdings, zero-valued targets receive no synthetic units, and
+  later owner contributions keep the same fixed anchor weights.
+- **Reconciliation separates economic inception from the reconstructed target-only series**: complete
+  conversions whose two legs are outside that recorded universe are validated but not replayed into the
+  synthetic basket, so an untracked USD stablecoin plumbing conversion cannot collide with a tracked
+  owner deposit at the same source timestamp.
+
+## [6.17.61] - 2026-09-13
+
+### Fixed
+
+- **Kraken public `EGeneral:Too many requests` responses now use the existing bounded rate-limit retry** instead of immediately surfacing as a historical price source error.
+
+### Changed
+
+- **Comparison fails closed for same-source-timestamp owner funding and manual trades** when the
+  retained evidence cannot prove whether the trade consumed the newly contributed capital.
+- **Comparison fails closed for source-time collisions between target conversions and owner or
+  manual/external target events** when replay order cannot be established from retained evidence.
+
+## [6.17.60] - 2026-09-13
+
+### Fixed
+
+- **Reconstruction keeps authoritative trade ledger legs whose retained fill was pruned**: pre-inception retention can
+  remove a `TradesHistory` fill while both `type=trade` ledger legs survive, which previously left a reconstructed
+  balance missing a recorded execution. Structurally proven orphan groups (a provably zero single leg, or two legs with
+  distinct assets, one debit and one credit, within one second, with an authoritative post balance, a valid fee, and a
+  valid amount shape resolved to `SPOT`) are now replayed once into snapshot reconstruction. A group matched to a
+  retained trade identity is never applied twice, incomplete or contradictory groups fail reconstruction closed, and
+  non-Spot groups are left out. A retained fill may bind through one exact durable `orderTxid` or `clientOrderId`
+  when its `tradeId` is absent; multiple owners or refids fail closed. Snapshot reconstruction version `17` rebuilds
+  derived snapshots in place, and baseline replay version `14` rebuilds the historical baseline.
+- **Buy & Hold no longer creates impossible negative holdings or double-counts owner capital**: an owner contribution is
+  allocated across the fixed recorded-anchor weights instead of being held in the contributed asset, so a later manual
+  trade, conversion, or balance movement that spends that asset previously drove the synthetic basket negative and
+  blocked the comparison with `UNEXPLAINED_BALANCE_CHANGE`. A credited movement is never mirrored beyond the held
+  share, a movement against a zero holding is skipped, and the already-counted contributed value is never applied twice.
+
+### Changed
+
+- **Contribution prices use the shared bounded historical ladder**: the live comparison path now resolves
+  contribution-time prices through retained successful USD executions in a wide past-only lookup, a small bounded
+  future execution skew only when no past execution exists, an at-or-before recorded snapshot, a completed Kraken
+  OHLC candle, or a cross-quote conversion through the quote asset's own historical USD rate. Retained market-pair
+  identities cover delisted and historical-only markets without guessing symbols. A contribution in an asset outside
+  the anchor basket is valued in USD and allocated across the fixed anchor weights only; it never adds a new benchmark
+  holding and never receives a live rebalance target. Missing evidence remains `MISSING_PRICE`, while an OHLC source
+  outage remains a distinct retryable `HISTORICAL_PRICE_SOURCE_ERROR`.
+- **The actual series keeps reconstruction's equal-instant ledger-before-trade ordering**: events that share one instant
+  keep the recorded ordering, so an authoritative checkpoint is evaluated against the state that existed at its
+  timestamp instead of reporting a spurious mismatch. Ledger, conversion, and manual-trade rows stay reconciliation
+  evidence for the actual series and are never mirrored into the passive basket.
+
+## [6.17.59] - 2026-09-12
+
+### Fixed
+
+- **Same-instant replay follows the recorded checkpoint chain**: snapshot reconstruction orders events
+  that share one instant onto their authoritative ledger-checkpoint links before inverting them — a
+  fill is undone only while its recorded post-entry balance is the current state, while events without
+  checkpoint evidence keep repository order after the chain. A recorded balance effect can no longer be
+  emitted at an earlier instant, so an older snapshot (for example the Dec 19 SOL reward row) no longer
+  inherits a newer fill's balance. Snapshot reconstruction version `15` rebuilds derived snapshots in
+  place; the baseline replay version is unchanged.
+- **Historical-only holdings are valued from trustworthy USD market evidence**: the approved-start
+  baseline now prices every reconstructed positive balance, including assets that are no longer
+  configured targets, from a bounded evidence ladder — a USD-quoted execution within 180 seconds of the
+  valuation instant, an at-or-before USD snapshot within the same window, then Kraken OHLC at 15 m, 60 m,
+  240 m, and daily intervals, accepting only completed candles whose close is at most one bucket before
+  the valuation instant. The daily tier reaches the approved start; finer tiers win when available, and
+  reconstructed balances at or below zero skip valuation entirely.
+- **Only USD-quoted evidence can prove a USD price**: trade-tier and retained historical pairs are
+  restricted to USD-quoted markets because TradesHistory reports non-USD quote costs in the quote
+  currency. A delisted USD pair (for example `STRCZUSD`) still counts, while a market that only ever
+  quoted in USDT/USDC without a proven conversion fails closed with `historical price unavailable for
+  <symbol>` instead of treating the quote amount as USD. Operational OHLC failures surface separately as
+  `historical price source error for <symbol>`.
+- **Baseline and snapshot reconstruction share the historical-market contract**: the snapshot walk now
+  accepts any trade whose pair has valid base/quote semantics instead of rejecting out-of-allocation
+  markets, so a delisted USD market recorded in retained history no longer skips snapshot reconstruction.
+  Baseline replay version `13` and snapshot reconstruction version `15` rebuild derived state in place
+  from retained history without re-downloading it.
+- **Approved-start and inception baselines survive snapshot-series rewrites**: the snapshots referenced by
+  the inception, recovered-baseline, approved-baseline, and accepted comparison-start metadata keys are now
+  excluded from the wholesale replacement performed by reconstruction, so a rebuilt series no longer leaves
+  those references dangling and a restart confirms the existing baseline instead of replaying it again. The
+  recorded series still exposes only the reconstructed history: a preserved anchor is hidden when a
+  recorded snapshot shares its instant, and the inception resolution prefers the recorded snapshot when a
+  preserved anchor occupies the configured start.
+- **The comparison accepts delisted and no-longer-configured markets through their recorded base/quote
+  semantics**: every successful trade in the interval now replays its true base and quote via
+  `Asset.splitTradingPair`, so a delisted USD market such as `STRCZUSD` adjusts the actual holdings instead
+  of making the whole comparison unavailable; pairs with unknown quotes and malformed economics still fail
+  closed. Snapshot universes may grow with explained historical-only holdings while a dropped configured
+  asset still reports `ASSET_UNIVERSE_CHANGED`; the strict target basket keeps historical-only assets out
+  of Buy & Hold, and any non-zero holding that no replayed baseline, trade, or ledger event produces fails
+  closed. Comparison results are computed live and the reconstruction acceptance set is unchanged, so no
+  replay/reconstruction version constant changes.
+- **The recorded history exposes one final state per instant and only spot-wallet effects**: reconstruction
+  persists a row per replayed event, so several cumulative rows can share a millisecond; the chart and
+  comparison now keep the first row written for an instant (the state after every event of that instant)
+  before down-sampling. Ledger rows resolved to Kraken's staking or futures wallet scopes no longer move
+  comparison balances, matching the recorded series, while linked internal-transfer pairs are still
+  classified over the full ledger set. A trade whose quote asset never enters the recorded universe settles
+  only its tracked leg, a tracked quote without a recorded balance still fails closed, and a one-unit crypto
+  quantity offset left by backward replay from live balances is tolerated while quote cash stays cent-exact.
+
+## [6.17.58] - 2026-09-12
+
+### Fixed
+
+- **Trade-type ledger legs now own the wallet effect during reverse replay**: the approved-start baseline
+  and the reconstructed-snapshot walk share one `TradeLedgerReplay` contract that matches each trade to its
+  trade-type ledger legs by the execution identity (`trade_id`/`refid`) and inverts the recorded net wallet
+  movement instead of assuming a quote-denominated fee. Kraken charges some fills in the base asset while
+  TradesHistory reports only the rounded quote equivalent, so replaying the quote-side fee and gross volume
+  moved the base balance by the wrong amount; the base-denominated fees on those fills are now inverted from
+  the authoritative base-leg delta exactly once, and any leg-level rounding is taken from the leg amount.
+- **Trade ledger rows stay checkpoints, never a second trade**: trade-type rows are grouped by identity and
+  consumed as wallet-effect evidence only; the TradeRecord remains the economic trade. Missing, duplicated,
+  unexpected, contradictory, or zero-volume-with-movement leg shapes fail closed with bounded reasons
+  (`missing historical trade ledger leg`, `unexpected historical trade ledger legs`, `contradictory
+  historical trade ledger effect`, `zero-volume historical trade moved a wallet balance`), and a missing leg
+  is accepted only when its reported movement is provably zero. Non-USD quote pairs keep their true quote
+  economics with the fee charged in the asset that actually carried it.
+- **Replay versions advanced**: baseline replay version `12` and snapshot reconstruction version `13`, so
+  retained trades and ledgers are replayed in place with the corrected trade accounting without
+  re-downloading history.
+
+## [6.17.57] - 2026-09-12
+
+### Fixed
+
+- **Baseline and snapshot reverse replay restore authoritative balance checkpoints**: the approved-start
+  baseline walk and the reconstructed-snapshot walk now invert each authoritative wallet-scope ledger row
+  from its recorded post-entry balance (the exact inverse of the validator's forward checkpoint) instead
+  of folding per-row rounding differences into reconstructed balances. The baseline replay merges trades
+  and ledger rows into one newest-first walk with ledger checkpoints ordered ahead of same-instant trades,
+  so a fill's recorded post-balances are restored before its delta is inverted. Wallet scope still comes
+  from `AuthoritativeLedgerBalanceValidator`, so staking, opaque-staking, and futures rows never move
+  reconstructed spot holdings. Reconstructed spot balances now match the validated chain exactly (the
+  SOL staking-era chain that previously produced a tiny negative reconstructed balance now lands on the
+  authoritative pre-window value), and the baseline replay version plus the snapshot reconstruction
+  version advanced so retained history is rebuilt in place without re-downloading it.
+
+## [6.17.56] - 2026-09-12
+
+### Fixed
+
+- **Historical reconstruction splits the live and replay universes**: approved-start replay no longer
+  requires every historical trade to belong to the configured allocations. Each trade replays with its
+  real base/quote pair (`Asset.splitTradingPair`), the reconstruction-only universe is derived from those
+  bases and quotes plus non-zero-delta Spot ledger assets, and historical-only balances are seeded from
+  the latest authoritative retained ledger balance at or before the anchor. Missing evidence fails closed
+  as `no authoritative balance for historical asset <symbol>`; unsupported quotes, malformed economics, and
+  missing historical cost keep failing closed with bounded reasons. Historical-only assets receive no target
+  allocation and never appear in live snapshots or orders.
+- **Buy & Hold keeps the strict configured-target benchmark**: the inception baseline is restricted to
+  assets with a positive `targetPercent` (keep-all fallback when none), so historical-only holdings are
+  excluded from benchmark weights and basket. When excluded holdings have value, the comparison difference
+  legitimately starts non-zero by that amount instead of being silently absorbed. Baseline replay version
+  advanced to `10` so retained history is reclassified in place without re-downloading it.
+
+## [6.17.55] - 2026-09-12
+
+### Fixed
+
+- **Lone card/payment-method deposits are accepted as owner capital when no plumbing exists**: a confirmed
+  card deposit on a cash-like asset (USD, ZUSD, USDC, USDT) with authoritative external provenance and no
+  spend/receive plumbing anywhere in retained history is treated as an ordinary owner contribution at its net
+  balance delta (`amount - fee`), so the PayPal deposit that previously blocked the approved-start baseline now
+  establishes owner capital exactly once. Partial plumbing, non-cash-like assets, internal subtypes, invalid
+  amount/fee shapes, unresolved provenance, duplicate evidence, and withdrawals keep failing closed with
+  distinct bounded reasons.
+- **Card identity checks read the retained ledger, not only the reconstruction context**: a lone card deposit
+  is re-grouped from all retained rows sharing its `refid` (new `LedgerRepository.getLedgersByRefIds`), so a
+  distant same-refid sibling still joins the group and fails closed through the existing span and plumbing
+  validations instead of being silently accepted. Baseline replay version advanced to `9` so retained history
+  is reclassified in place without re-downloading it.
+
+## [6.17.54] - 2026-09-12
+
+### Fixed
+
+- **Funding provenance reads Kraken Funding (Beta) history**: the production resolver now retrieves
+  authenticated `GET /funding/v1/deposits` and `GET /funding/v1/withdrawals` pages with `start_time`/
+  `end_time`, header-based signing, and `next_cursor` pagination under a bounded page budget, resolving
+  `method_id` through `GET /funding/v1/methods/{deposit|withdraw}`. Deprecated
+  `DepositStatus`/`WithdrawStatus` calls are used only to enrich records whose modern method metadata is
+  unavailable; a legacy page at the request limit or with unparseable entries is discarded instead of
+  partially trusted, and incomplete modern pagination fails closed rather than looking like "no funding".
+- **Direct funding identity tolerates Kraken booking lag**: a ledger `refid` equal to the funding record
+  id still validates family, normalized asset, direction, amount, fee, and terminal status, but no longer
+  rejects a match solely because the ledger posted minutes after the funding record; representation-level
+  amount drift (for example 8-decimal funding amounts against 6-decimal ledger amounts) is also accepted.
+  Fuzzy correlation without a matching id keeps the strict 180-second window and absolute tolerance.
+- **Funding provenance failures explain themselves**: unresolved rows now append a bounded reason
+  (`ledger provenance unresolved: <type>: <reason>`, for example `no funding record matched` or
+  `funding record is not in a terminal status`) without exposing identifiers. Baseline replay version
+  advanced to `8` so retained history is reclassified in place without re-downloading it.
+
 ## [6.17.53] - 2026-09-12
 
 ### Fixed

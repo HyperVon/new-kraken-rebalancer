@@ -88,6 +88,13 @@ fun interface FundingProvenanceResolver {
 
     fun isCardFunding(event: LedgerEvent): Boolean = false
 
+    /**
+     * Bounded human-readable reason why [resolve] could not produce a funded
+     * classification, or null when no detail is available. Implementations
+     * must never include raw identifiers.
+     */
+    fun explain(event: LedgerEvent): String? = null
+
     /** Non-null when the immutable evidence snapshot could not be prepared. */
     val preparationFailure: FundingProvenanceFailure?
         get() = null
@@ -114,6 +121,14 @@ fun interface FundingProvenanceResolver {
             object : FundingProvenanceResolver {
                 override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
 
+                override fun explain(event: LedgerEvent): String? = when (failure.reason) {
+                    FundingProvenanceFailureReason.PERMISSION_DENIED ->
+                        "funding evidence unavailable: permission denied"
+
+                    FundingProvenanceFailureReason.REQUEST_FAILED ->
+                        "funding evidence unavailable: request failed"
+                }
+
                 override val preparationFailure: FundingProvenanceFailure = failure
             }
     }
@@ -124,7 +139,10 @@ fun interface FundingProvenanceResolver {
  *
  * Direct reference matches are still validated against the ledger family,
  * normalized asset, direction, amount/net amount, fee (when both sides know
- * it), timestamp, and terminal status. Fuzzy correlation is accepted only for
+ * it), and terminal status. An exact funding identity does not require the
+ * booking timestamp to match, because Kraken ledgers can lag the funding
+ * record by minutes, and it tolerates representation-level amount drift
+ * between the funding history and the ledger. Fuzzy correlation is accepted only for
  * exactly one compatible candidate; duplicate candidates and external/internal
  * conflicts remain unresolved. A status record is treated as external only
  * when it has a confirmed terminal state and a non-internal transaction proof;
@@ -170,7 +188,7 @@ class SimpleFundingProvenanceResolver(
             if (directRecords.isNotEmpty()) {
                 if (directRecords.size != 1) return FundingEvidence.UNRESOLVED
                 val directRecord = directRecords.single()
-                val directCandidate = compatibleCandidate(event, directRecord)
+                val directCandidate = compatibleCandidate(event, directRecord, CorrelationMode.DIRECT)
                     ?: return FundingEvidence.UNRESOLVED
                 // An exact refid is strong identity evidence, but it must not
                 // hide a second, independently matching internal-transfer
@@ -178,7 +196,7 @@ class SimpleFundingProvenanceResolver(
                 // to classify as owner capital on one source alone.
                 val competingEvidence = allRecords.asSequence()
                     .filterNot { it === directRecord }
-                    .mapNotNull { compatibleCandidate(event, it)?.evidence }
+                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.DIRECT)?.evidence }
                     .toSet()
                 if (competingEvidence.any { it != directCandidate.evidence }) {
                     return FundingEvidence.UNRESOLVED
@@ -187,12 +205,56 @@ class SimpleFundingProvenanceResolver(
             }
         }
 
-        val fuzzyCandidates = allRecords.mapNotNull { compatibleCandidate(event, it) }
+        val fuzzyCandidates = allRecords.mapNotNull { compatibleCandidate(event, it, CorrelationMode.FUZZY) }
         return if (fuzzyCandidates.size == 1) {
             fuzzyCandidates.single().evidence
         } else {
             // 0, duplicate, or external/internal conflict are all fail-closed.
             FundingEvidence.UNRESOLVED
+        }
+    }
+
+    override fun explain(event: LedgerEvent): String? {
+        if (event.type.lowercase() !in SUPPORTED_FUNDING_TYPES) return null
+        val refid = event.refid?.trim()?.takeIf(String::isNotEmpty)
+        if (refid != null) {
+            val directRecords = allRecords.filter { recordRefid(it)?.trim() == refid }
+            if (directRecords.size > 1) return "multiple funding records share the ledger reference"
+            if (directRecords.size == 1) {
+                val directRecord = directRecords.single()
+                val directCandidate = compatibleCandidate(event, directRecord, CorrelationMode.DIRECT)
+                    ?: return "direct funding record does not match the ledger row"
+                val competing = allRecords.asSequence()
+                    .filterNot { it === directRecord }
+                    .mapNotNull { compatibleCandidate(event, it, CorrelationMode.DIRECT)?.evidence }
+                    .toSet()
+                if (competing.any { it != directCandidate.evidence }) return "conflicting funding evidence"
+                return unresolvedDetail(directRecord, directCandidate.evidence)
+            }
+        }
+        val fuzzy = allRecords.mapNotNull { record ->
+            compatibleCandidate(event, record, CorrelationMode.FUZZY)?.let { candidate ->
+                record to candidate.evidence
+            }
+        }
+        return when {
+            fuzzy.size > 1 -> "multiple funding records matched"
+            fuzzy.isEmpty() -> "no funding record matched"
+            else -> unresolvedDetail(fuzzy.single().first, fuzzy.single().second)
+        }
+    }
+
+    private fun unresolvedDetail(record: Any, evidence: FundingEvidence): String? {
+        if (evidence != FundingEvidence.UNRESOLVED) return null
+        val status = when (record) {
+            is DepositStatusRecord -> record.status
+            is WithdrawStatusRecord -> record.status
+            else -> return "funding evidence unresolved"
+        }
+        return if (isStatusConfirmed(status)) {
+            "funding record lacks external proof"
+        } else {
+            "funding record is not in a terminal status"
         }
     }
 
@@ -211,78 +273,103 @@ class SimpleFundingProvenanceResolver(
                     recordHasFee = it.hasAuthoritativeFee,
                     recordTime = it.time,
                     eventType = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    mode = CorrelationMode.FUZZY,
                 )
             }
         }
         if (matchingDeposits.size != 1) return false
         val deposit = matchingDeposits.single()
-        if (compatibleCandidate(event, deposit)?.evidence != FundingEvidence.EXTERNAL) return false
+        if (compatibleCandidate(event, deposit, CorrelationMode.DIRECT)?.evidence != FundingEvidence.EXTERNAL) {
+            return false
+        }
         val method = deposit.method?.lowercase() ?: return false
         return CARD_METHOD_MARKERS.any(method::contains)
     }
 
-    private fun compatibleCandidate(event: LedgerEvent, record: Any): Candidate? = when (record) {
-        is DepositStatusRecord -> if (event.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, true)) {
-            if (matchesFundingRecord(
-                    event = event,
-                    recordAsset = record.asset,
-                    recordAmount = record.amount,
-                    recordFee = record.fee,
-                    recordHasFee = record.hasAuthoritativeFee,
-                    recordTime = record.time,
-                    eventType = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
-                )
-            ) {
-                Candidate(
-                    if (isConfirmedExternalDeposit(record)) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED,
-                )
-            } else {
-                null
-            }
-        } else {
-            null
-        }
-
-        is WithdrawStatusRecord -> if (event.type.equals(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL, true)) {
-            if (matchesFundingRecord(
-                    event = event,
-                    recordAsset = record.asset,
-                    recordAmount = record.amount,
-                    recordFee = record.fee,
-                    recordHasFee = record.hasAuthoritativeFee,
-                    recordTime = record.time,
-                    eventType = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
-                )
-            ) {
-                Candidate(
-                    if (isConfirmedExternalWithdrawal(record)) FundingEvidence.EXTERNAL else FundingEvidence.UNRESOLVED,
-                )
-            } else {
-                null
-            }
-        } else {
-            null
-        }
-
-        is InternalTransferRecord -> if (
-            matchesInternalLedgerType(event.type, record.ledgerType) &&
-            matchesFundingRecord(
-                event = event,
-                recordAsset = record.asset,
-                recordAmount = record.amount,
-                recordFee = BigDecimal.ZERO,
-                recordHasFee = false,
-                recordTime = record.time,
-                eventType = event.type,
-            )
-        ) {
-            Candidate(FundingEvidence.INTERNAL)
-        } else {
-            null
-        }
-
-        else -> null
+    /**
+     * Identity matches use the ledger refid as the funding transaction id and
+     * therefore tolerate booking-time lag and representation-level amount
+     * drift. Fuzzy matches keep the strict window and absolute tolerance.
+     */
+    private enum class CorrelationMode(val direct: Boolean) {
+        DIRECT(true),
+        FUZZY(false),
     }
+
+    private fun compatibleCandidate(event: LedgerEvent, record: Any, mode: CorrelationMode): Candidate? =
+        when (record) {
+            is DepositStatusRecord -> if (event.type.equals(KrakenApiConstants.LEDGER_TYPE_DEPOSIT, true)) {
+                if (matchesFundingRecord(
+                        event = event,
+                        recordAsset = record.asset,
+                        recordAmount = record.amount,
+                        recordFee = record.fee,
+                        recordHasFee = record.hasAuthoritativeFee,
+                        recordTime = record.time,
+                        eventType = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        mode = mode,
+                    )
+                ) {
+                    Candidate(
+                        if (isConfirmedExternalDeposit(record)) {
+                            FundingEvidence.EXTERNAL
+                        } else {
+                            FundingEvidence.UNRESOLVED
+                        },
+                    )
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+
+            is WithdrawStatusRecord -> if (event.type.equals(KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL, true)) {
+                if (matchesFundingRecord(
+                        event = event,
+                        recordAsset = record.asset,
+                        recordAmount = record.amount,
+                        recordFee = record.fee,
+                        recordHasFee = record.hasAuthoritativeFee,
+                        recordTime = record.time,
+                        eventType = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        mode = mode,
+                    )
+                ) {
+                    Candidate(
+                        if (isConfirmedExternalWithdrawal(record)) {
+                            FundingEvidence.EXTERNAL
+                        } else {
+                            FundingEvidence.UNRESOLVED
+                        },
+                    )
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+
+            is InternalTransferRecord -> if (
+                matchesInternalLedgerType(event.type, record.ledgerType) &&
+                matchesFundingRecord(
+                    event = event,
+                    recordAsset = record.asset,
+                    recordAmount = record.amount,
+                    recordFee = BigDecimal.ZERO,
+                    recordHasFee = false,
+                    recordTime = record.time,
+                    eventType = event.type,
+                    mode = mode,
+                )
+            ) {
+                Candidate(FundingEvidence.INTERNAL)
+            } else {
+                null
+            }
+
+            else -> null
+        }
 
     private fun matchesFundingRecord(
         event: LedgerEvent,
@@ -292,6 +379,7 @@ class SimpleFundingProvenanceResolver(
         recordHasFee: Boolean,
         recordTime: Instant,
         eventType: String,
+        mode: CorrelationMode,
     ): Boolean {
         if (!event.type.equals(eventType, ignoreCase = true)) return false
         if (!event.hasValidFee) return false
@@ -311,9 +399,12 @@ class SimpleFundingProvenanceResolver(
         ) {
             return false
         }
-        if (!amountCompatible(event, recordAmount, recordFee, recordHasFee, eventType)) return false
+        if (!amountCompatible(event, recordAmount, recordFee, recordHasFee, eventType, mode)) return false
         if (!feeCompatible(event, recordFee, recordHasFee)) return false
-        return Duration.between(event.time, recordTime).abs() <= CORRELATION_WINDOW
+        // An exact funding identity is stronger than the booking timestamp:
+        // Kraken ledgers can lag the funding record by minutes or hours
+        // (on-chain confirmations, ACH settlement).
+        return mode.direct || Duration.between(event.time, recordTime).abs() <= CORRELATION_WINDOW
     }
 
     private fun matchesInternalLedgerType(eventType: String, recordType: String?): Boolean =
@@ -326,6 +417,7 @@ class SimpleFundingProvenanceResolver(
         recordFee: BigDecimal,
         recordHasFee: Boolean,
         eventType: String,
+        mode: CorrelationMode,
     ): Boolean {
         val eventViews = listOf(event.amount.abs(), event.netBalanceDelta().abs())
         val recordViews = buildList {
@@ -345,17 +437,28 @@ class SimpleFundingProvenanceResolver(
                 add(recordNetAmount.abs())
             }
         }
-        return eventViews.any { eventView -> recordViews.any { recordView -> closeEnough(eventView, recordView) } }
+        // An exact funding identity tolerates representation-level amount
+        // drift (the funding history can carry more decimals than the
+        // ledger); fuzzy matching stays at the absolute tolerance.
+        val tolerance = if (mode.direct) {
+            val magnitude = maxOf(eventViews.maxOf { it.abs() }, recordViews.maxOf { it.abs() })
+            maxOf(AMOUNT_TOLERANCE, magnitude.multiply(RELATIVE_AMOUNT_TOLERANCE))
+        } else {
+            AMOUNT_TOLERANCE
+        }
+        return eventViews.any { eventView ->
+            recordViews.any { recordView -> closeEnough(eventView, recordView, tolerance) }
+        }
     }
 
     private fun feeCompatible(event: LedgerEvent, recordFee: BigDecimal, recordHasFee: Boolean): Boolean {
         if (event.fee.signum() < 0 || recordFee.signum() < 0) return false
         if (!event.hasAuthoritativeFee || !recordHasFee) return true
-        return closeEnough(event.fee.abs(), recordFee.abs())
+        return closeEnough(event.fee.abs(), recordFee.abs(), AMOUNT_TOLERANCE)
     }
 
-    private fun closeEnough(left: BigDecimal, right: BigDecimal): Boolean =
-        left.subtract(right).abs() <= AMOUNT_TOLERANCE
+    private fun closeEnough(left: BigDecimal, right: BigDecimal, tolerance: BigDecimal): Boolean =
+        left.subtract(right).abs() <= tolerance
 
     private fun recordRefid(record: Any): String? = when (record) {
         is DepositStatusRecord -> record.refid
@@ -388,6 +491,8 @@ class SimpleFundingProvenanceResolver(
 
     private companion object {
         @JvmField val AMOUNT_TOLERANCE = BigDecimal("0.00000001")
+
+        @JvmField val RELATIVE_AMOUNT_TOLERANCE = BigDecimal("0.00000001")
 
         @JvmField val INTERNAL_METHOD_MARKERS = setOf("futures", "internal", "wallet", "spot")
 

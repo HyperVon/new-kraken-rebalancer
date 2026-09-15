@@ -106,6 +106,85 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
             }
         }
 
+        "explain stays null until preparation succeeds" {
+            runTest {
+                val krakenService = FakeKrakenService()
+                val resolver = KrakenFundingProvenanceResolver(krakenService)
+                val event = fundingEvent("explain", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+
+                resolver.explain(event) shouldBe null
+
+                val prepared = resolver.prepare(listOf(event))
+
+                prepared.explain(event) shouldBe "no funding record matched"
+            }
+        }
+
+        "reuses prepared funding evidence within the cache window" {
+            runTest {
+                val krakenService = FakeKrakenService()
+                val resolver = KrakenFundingProvenanceResolver(krakenService)
+                val event = fundingEvent("cache", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+
+                resolver.prepare(listOf(event))
+                resolver.prepare(listOf(event))
+
+                krakenService.getDepositStatusCallCount shouldBe 1
+            }
+        }
+
+        "funding range coerces the lower bound and rounds the upper bound" {
+            val krakenService = FakeKrakenService()
+            var capturedStart: Long? = null
+            var capturedEnd: Long? = null
+            krakenService.depositStatusSupplier = { startSec, endSec ->
+                capturedStart = startSec
+                capturedEnd = endSec
+                emptyList()
+            }
+            val resolver = KrakenFundingProvenanceResolver(krakenService)
+            val event = LedgerEvent(
+                ledgerId = "L-RANGE",
+                refid = "REF-RANGE",
+                time = Instant.ofEpochSecond(10, 500_000_000),
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("1.0"),
+            )
+
+            resolver.prepare(listOf(event))
+
+            capturedStart shouldBe 0L
+            capturedEnd shouldBe 191L
+        }
+
+        "preparation refetches when the funding families grow" {
+            val krakenService = FakeKrakenService()
+            val resolver = KrakenFundingProvenanceResolver(krakenService)
+            val deposit = LedgerEvent(
+                ledgerId = "L-FAM-D",
+                refid = "FAM-D",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("1.0"),
+            )
+            val withdrawal = LedgerEvent(
+                ledgerId = "L-FAM-W",
+                refid = "FAM-W",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                asset = "ETH",
+                amount = BigDecimal("-1.0"),
+            )
+
+            resolver.prepare(listOf(deposit))
+            krakenService.getWithdrawStatusCallCount shouldBe 0
+
+            resolver.prepare(listOf(deposit, withdrawal))
+            krakenService.getWithdrawStatusCallCount shouldBe 1
+        }
+
         "a funding-source failure leaves provenance unresolved" {
             runTest {
                 val krakenService = FakeKrakenService()

@@ -9,7 +9,7 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.hasValidEconomicFields
-import com.gemini.krakenbot.model.isSupportedMarket
+import com.gemini.krakenbot.model.isHistoricallyReplayable
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
@@ -37,7 +37,9 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "11"
+        // v18: reverse replay carries each authoritative row's validator rounding allowance
+        // instead of aborting on Kraken's rounded amount/fee representations.
+        const val CURRENT_RECONSTRUCTION_VERSION = "18"
 
         /**
          * Historical fail-closed anchor contract (v11).
@@ -304,8 +306,12 @@ class TradeHistoryReconstructionService(
                 }
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
-        val allocationSymbols = allocations.map { it.symbol.value }
-        val unsupportedTrade = historicalTrades.firstOrNull { !it.isSupportedMarket(allocationSymbols) }
+        // A retained historical market stays reconstructable even when the pair is delisted or
+        // the base is outside the live allocations, as long as the pair carries real base/quote
+        // semantics. Truly unsplittable pairs still fail closed.
+        val unsupportedTrade = historicalTrades.firstOrNull { trade ->
+            !trade.isHistoricallyReplayable()
+        }
         if (unsupportedTrade != null) {
             log.warn(
                 "Skipping historical snapshot reconstruction: unsupported historical trade found without reliable " +
@@ -316,8 +322,8 @@ class TradeHistoryReconstructionService(
             return
         }
         // Malformed supported-market economics must fail closed, never become zero-value fills.
-        val invalidTrade = historicalTrades.firstOrNull {
-            it.isSupportedMarket(allocationSymbols) && !it.hasValidEconomicFields()
+        val invalidTrade = historicalTrades.firstOrNull { trade ->
+            trade.isHistoricallyReplayable() && !trade.hasValidEconomicFields()
         }
         if (invalidTrade != null) {
             log.warn(
@@ -372,11 +378,40 @@ class TradeHistoryReconstructionService(
         }
         val externalLedgers = allLedgers.filter { it.type in LedgerEvent.EXTERNAL_BALANCE_TYPES }
         val historicalRewards = externalLedgers.filter { it.time.isBefore(cutoffTime) }
+        // Trade-type ledger rows are wallet-effect checkpoints for their TradeRecord identity;
+        // they are handed to the replay so base-denominated fees and leg rounding follow the
+        // authoritative balance movement instead of the quote-only TradeRecord economics.
+        val tradeLedgerLegs = allLedgers
+            .filter { it.type.equals(KrakenApiConstants.LEDGER_TYPE_TRADE, ignoreCase = true) }
+            .filter { !it.refid.isNullOrBlank() }
+            .filter { event ->
+                resolvedScopes[event.ledgerId] !in setOf(
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING,
+                )
+            }
+            .groupBy { it.refid!!.trim() }
 
+        val orphanTradeLedgerEvents = AuthoritativeTradeLedgerEvents.collect(allLedgers, trades, resolvedScopes)
+        if (orphanTradeLedgerEvents.incompleteRefIds.isNotEmpty() ||
+            orphanTradeLedgerEvents.contradictoryRefIds.isNotEmpty() ||
+            orphanTradeLedgerEvents.ambiguousIdentityRefIds.isNotEmpty()
+        ) {
+            log.warn(
+                "Cannot reconstruct snapshots with incomplete, contradictory, or ambiguously " +
+                    "identified orphan trade ledger groups: incomplete={} contradictory={} ambiguous={}",
+                orphanTradeLedgerEvents.incompleteRefIds.size,
+                orphanTradeLedgerEvents.contradictoryRefIds.size,
+                orphanTradeLedgerEvents.ambiguousIdentityRefIds.size,
+            )
+            return
+        }
         val events =
             SnapshotHistoryCalculator.buildTimelineEvents(
                 historicalTrades = historicalTrades,
                 historicalRewards = historicalRewards,
+                authoritativeTradeLegs = orphanTradeLedgerEvents.replayableLegs.filter { it.time.isBefore(cutoffTime) },
                 cutoffTime = cutoffTime,
                 now = reconstructionNow,
                 reconstructionStart = parsedInception,
@@ -423,6 +458,8 @@ class TradeHistoryReconstructionService(
                 settings = settings,
                 currentAth = currentAth,
                 resolvedScopes = resolvedScopes,
+                tradeLegsByRefId = tradeLedgerLegs,
+                tradeLegsByTradeIdentity = orphanTradeLedgerEvents.tradeLegsByTradeIdentity,
             )
 
         if (snapshotsToSave.isNotEmpty()) {

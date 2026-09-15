@@ -14,6 +14,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
 import io.ktor.client.network.sockets.SocketTimeoutException
@@ -22,9 +23,13 @@ import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import java.io.IOException
 import java.math.BigDecimal
 import java.util.*
@@ -197,6 +202,137 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
                 val balances = service.getBalances()
                 balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
                 attempt shouldBe 2
+            }
+        }
+
+        "retryOnTooManyRequests_SucceedsOnSecondAttempt" {
+            runTest {
+                var attempt = 0
+                val service = configuredService(
+                    MockEngine {
+                        if (attempt++ == 0) {
+                            respond(
+                                content = "{\"error\":[\"EGeneral:Too many requests\"]}",
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        } else {
+                            respond(
+                                content =
+                                "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1700000000,\"1\",\"2\",\"3\",\"50000.0\",\"4\",\"5\",6]],\"last\":1700000000}}",
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        }
+                    },
+                )
+
+                service.getOHLC(TestFixtures.XXBTZUSD, 1440, null).size shouldBe 1
+                attempt shouldBe 2
+                currentTime shouldBe 10_000L
+            }
+        }
+
+        "retryOnTooManyRequests_FailsExhaustedWithBoundedAttempts" {
+            runTest {
+                var attempt = 0
+                val service = configuredService(
+                    MockEngine {
+                        attempt++
+                        respond(
+                            content = "{\"error\":[\"EGeneral:Too many requests\"]}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+
+                val thrown = shouldThrow<RuntimeException> {
+                    service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
+                }
+
+                thrown.message shouldBe
+                    KrakenApiConstants.ERROR_PUBLIC_API_PREFIX + "[\"EGeneral:Too many requests\"]"
+                attempt shouldBe 5
+                // Four retries: 10+20+40+60 seconds, with the rate-limit backoff cap applied.
+                currentTime shouldBe 130_000L
+            }
+        }
+
+        "privateTooManyRequests_doesNotRetryWithoutExplicitPolicy" {
+            runTest {
+                var attempt = 0
+                val service = configuredService(
+                    MockEngine {
+                        attempt++
+                        respond(
+                            content = "{\"error\":[\"EGeneral:Too many requests\"]}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+
+                val thrown = shouldThrow<RuntimeException> { service.getBalances() }
+
+                thrown.message shouldBe
+                    KrakenApiConstants.ERROR_API_PREFIX + "[\"EGeneral:Too many requests\"]"
+                attempt shouldBe 1
+                currentTime shouldBe 0L
+            }
+        }
+
+        "publicNonRateErrorWithoutMessage_isNotRetried" {
+            runTest {
+                var attempt = 0
+                val service = configuredService(
+                    MockEngine {
+                        attempt++
+                        throw RuntimeException()
+                    },
+                )
+
+                val thrown = shouldThrow<RuntimeException> {
+                    service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
+                }
+
+                thrown.message shouldBe null
+                attempt shouldBe 1
+                currentTime shouldBe 0L
+            }
+        }
+
+        "retryOnTooManyRequests_CancellationDuringBackoffIsPropagated" {
+            runTest {
+                var attempt = 0
+                val firstAttemptCompleted = CompletableDeferred<Unit>()
+                val service = configuredService(
+                    MockEngine {
+                        if (attempt++ == 0) {
+                            firstAttemptCompleted.complete(Unit)
+                            respond(
+                                content = "{\"error\":[\"EGeneral:Too many requests\"]}",
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        } else {
+                            respond(
+                                content =
+                                "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1700000000,\"1\",\"2\",\"3\",\"50000.0\",\"4\",\"5\",6]],\"last\":1700000000}}",
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        }
+                    },
+                )
+
+                val request = launch { service.getOHLC(TestFixtures.XXBTZUSD, 1440, null) }
+                firstAttemptCompleted.await()
+                yield()
+                request.cancelAndJoin()
+
+                attempt shouldBe 1
+                currentTime shouldBe 0L
             }
         }
 

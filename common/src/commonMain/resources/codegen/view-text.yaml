@@ -243,6 +243,7 @@ ViewText:
   UNAVAILABLE_NON_POSITIVE_BASELINE: "The comparison needs a positive starting portfolio value."
   UNAVAILABLE_BASELINE_MISMATCH: "Starting holdings do not reconcile with the recorded portfolio value."
   UNAVAILABLE_MISSING_PRICE: "A required historical asset price is missing."
+  UNAVAILABLE_HISTORICAL_PRICE_SOURCE_ERROR: "Historical price data could not be fetched; the comparison will retry when the source is available."
   UNAVAILABLE_ASSET_UNIVERSE_CHANGED: "The configured asset set changed during this range."
   UNAVAILABLE_UNSUPPORTED_TRADE: "A recorded trade cannot be reconciled safely."
   UNAVAILABLE_AMBIGUOUS_TRADE_OWNERSHIP: "A recorded trade has ambiguous ownership and cannot be attributed safely."

@@ -326,8 +326,8 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             val mockLedgers = mockk<com.gemini.krakenbot.repository.LedgerRepository>(relaxed = true)
             val reconStart = fixedNow.minusSeconds(86400)
             val reconThrough = fixedNow.plusSeconds(86400)
-            val live1 = contractSnapshot(reconThrough.plusSeconds(1000))
-            val live2 = contractSnapshot(reconThrough.plusSeconds(4600))
+            val live1 = contractSnapshot(reconThrough.plusSeconds(1000)).copy(balancesObservedAt = null)
+            val live2 = contractSnapshot(reconThrough.plusSeconds(4600)).copy(balancesObservedAt = null)
             val staleInception = contractSnapshot(reconThrough.minusSeconds(600))
             val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
             coEvery { inceptionService.resolveInception() } returns
@@ -361,8 +361,8 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             val svc = TradeHistoryQueryService(mockTrades, mockStats, mockLedgers, null)
             val reconStart = fixedNow.minusSeconds(86400)
             val reconThrough = fixedNow.plusSeconds(86400)
-            val live1 = contractSnapshot(reconThrough.plusSeconds(1000))
-            val live2 = contractSnapshot(reconThrough.plusSeconds(4600))
+            val live1 = contractSnapshot(reconThrough.plusSeconds(1000)).copy(balancesObservedAt = null)
+            val live2 = contractSnapshot(reconThrough.plusSeconds(4600)).copy(balancesObservedAt = null)
             val stalePredecessor = contractSnapshot(reconThrough.minusSeconds(60))
             coEvery { mockTrades.getSnapshotsInRange(any(), any()) } returns listOf(live1, live2)
             coEvery { mockTrades.getAllSnapshotsInRange(any(), any()) } returns listOf(live1, live2)
@@ -506,8 +506,11 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
                     inceptionResolution = null,
                 )
 
-                proposal.status shouldBe ComparisonProposalStatus.EXHAUSTED
-                proposal.timestamp shouldBe null
+                // Passive re-anchor contract: verification pivots on a live recorded-anchor
+                // candidate after the stale interval, so the stale predecessor never becomes
+                // a verified baseline — the proposal verifies against the post-window row.
+                proposal.status shouldBe ComparisonProposalStatus.VERIFIED
+                proposal.timestamp shouldBe c1.timestamp
             }
         }
         "proposal fingerprint changes when the reconstruction contract changes" {

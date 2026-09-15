@@ -64,6 +64,56 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
             inRange.map { it.ledgerId } shouldBe listOf("ref-1", "ref-0")
         }
 
+        "getLedgersByRefIds returns no rows for an empty collection" {
+            repository.getLedgersByRefIds(emptyList()) shouldBe emptyList()
+        }
+
+        "getLatestAuthoritativeBalances returns no rows for an empty symbol collection" {
+            repository.getLatestAuthoritativeBalances(emptyList(), t2) shouldBe emptyMap()
+        }
+
+        "getLatestAuthoritativeBalances picks the latest authoritative row within the cutoff" {
+            repository.saveLedgers(
+                listOf(
+                    LedgerEvent(
+                        ledgerId = "auth-old",
+                        time = t0,
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        asset = "XXBT",
+                        amount = BigDecimal("1.0"),
+                        balance = BigDecimal("1.0"),
+                        hasAuthoritativeBalance = true,
+                    ),
+                    LedgerEvent(
+                        ledgerId = "synthetic-newer",
+                        time = t1,
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        asset = "XXBT",
+                        amount = BigDecimal("9.0"),
+                        balance = BigDecimal("9.0"),
+                        hasAuthoritativeBalance = false,
+                    ),
+                    LedgerEvent(
+                        ledgerId = "auth-newest",
+                        time = t2,
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        asset = "XXBT",
+                        amount = BigDecimal("2.0"),
+                        balance = BigDecimal("2.0"),
+                        hasAuthoritativeBalance = true,
+                    ),
+                ),
+            )
+
+            val latest = repository.getLatestAuthoritativeBalances(listOf("BTC", "ETH"), t2)
+            latest.keys shouldBe setOf("BTC")
+            latest.getValue("BTC") shouldBeEqualComparingTo BigDecimal("2.0")
+            repository.getLatestAuthoritativeBalances(listOf("BTC"), t1).getValue("BTC")
+                .shouldBeEqualComparingTo(BigDecimal("1.0"))
+            repository.getLatestAuthoritativeBalances(listOf("BTC"), t0).getValue("BTC")
+                .shouldBeEqualComparingTo(BigDecimal("1.0"))
+        }
+
         "getLatestLedgerTime is null when empty and returns the newest entry after inserts" {
             repository.getLatestLedgerTime() shouldBe null
             repository.saveLedgers(listOf(event(t1, "ref-1"), event(t2, "ref-2")))

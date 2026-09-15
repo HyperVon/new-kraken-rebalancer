@@ -728,6 +728,29 @@ object AuthoritativeLedgerBalanceValidator {
             // reject valid histories where Kraken continues the Spot scope for staking activity.
             val preferredCandidates = candidates.toMutableList()
 
+            // An explicitly documented cross-asset staking reward (BTC -> BABY) pays the
+            // reward token in kind into the exchange Spot wallet. With no prior wallet for
+            // the reward asset, the deterministic entitlement mapping authorizes a zero-based
+            // Spot sub-ledger; anything outside the mapping keeps failing closed.
+            if (
+                flexibleKind == FlexibleKind.STAKING &&
+                preferredCandidates.isEmpty() &&
+                event.hasAuthoritativeBalance &&
+                RewardEntitlements.qualifyingSourceAsset(event) != null &&
+                within(event.netBalanceDelta(), event.balance, allowedDifference(event))
+            ) {
+                preferredCandidates += applyToScope(
+                    asset = asset,
+                    event = event,
+                    state = state,
+                    scope = SPOT_SCOPE,
+                    sameTimestampGroup = sameTimestampGroup,
+                    linkedGroup = linkedGroup,
+                    flexible = true,
+                    allowNonAuthoritativeZero = false,
+                ).candidates
+            }
+
             if (flexibleKind == FlexibleKind.STAKING && preferredCandidates.isEmpty() &&
                 event.hasAuthoritativeBalance &&
                 within(event.netBalanceDelta(), event.balance, allowedDifference(event))
@@ -1035,7 +1058,13 @@ object AuthoritativeLedgerBalanceValidator {
         else -> error("unknown ledger wallet scope")
     }
 
-    private fun allowedDifference(event: LedgerEvent): BigDecimal =
+    /**
+     * Evidence contract for one authoritative ledger row: how far a nominal reconstruction may
+     * legitimately differ from the recorded post-entry balance because Kraken rounds the persisted
+     * amount/fee fields. Reverse reconstruction consumes the same envelope so both directions of
+     * one chain agree.
+     */
+    internal fun allowedDifference(event: LedgerEvent): BigDecimal =
         BALANCE_ROUNDING_ALLOWANCE.add(feeRoundingAllowance(event))
 
     /**

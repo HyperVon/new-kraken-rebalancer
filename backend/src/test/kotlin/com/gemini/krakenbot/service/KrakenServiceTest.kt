@@ -9,7 +9,11 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
+import com.gemini.krakenbot.service.impl.KrakenApiPermissionDeniedException
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
+import com.gemini.krakenbot.service.impl.KrakenTransport
+import com.gemini.krakenbot.service.impl.PublicRateLimiter
+import com.gemini.krakenbot.service.impl.RateLimiter
 import com.gemini.krakenbot.test.TestConstants
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -19,6 +23,8 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
+import io.ktor.client.plugins.ResponseException
+import io.ktor.client.request.HttpRequestData
 import io.ktor.http.*
 import io.ktor.http.content.TextContent
 import io.mockk.every
@@ -27,7 +33,9 @@ import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
 import java.security.MessageDigest
+import java.time.Instant
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -126,7 +134,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
-        "getFundingStatus_UsesAuthenticatedPagesAndFollowsCursor" {
+        "getFundingHistory_UsesFundingApiPagesAndEnrichesFromLegacyStatus" {
             runTest {
                 val objectMapper = jacksonObjectMapper()
                 configService = mockk(relaxed = true)
@@ -143,60 +151,89 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val responses = listOf(
                     """
                     {
+                      "deposits": [{
+                        "deposit_id": "DEP-PAGE-1",
+                        "method_id": "method-1",
+                        "status": "success",
+                        "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "100.00"},
+                        "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                        "create_time": "2023-11-14T22:13:20Z"
+                      }],
+                      "next_cursor": "next-page"
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "deposits": [{
+                        "deposit_id": "DEP-PAGE-2",
+                        "method_id": "method-2",
+                        "status": "success",
+                        "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "50.00"},
+                        "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": ""},
+                        "create_time": "2023-11-14T22:15:00Z"
+                      }]
+                    }
+                    """.trimIndent(),
+                    """
+                    {
                       "error": [],
-                      "result": {
-                        "deposit": [{
+                      "result": [
+                        {
                           "method": "Wire",
                           "asset": "USD",
                           "refid": "DEP-PAGE-1",
+                          "txid": "tx-1",
                           "amount": "100.00",
                           "fee": "0.00",
                           "time": 1700000000,
                           "status": "Success"
-                        }],
-                        "cursor": "next-page"
-                      }
-                    }
-                    """.trimIndent(),
-                    """
-                    {
-                      "error": [],
-                      "result": {
-                        "deposit": [{
+                        },
+                        {
                           "method": "Wire",
                           "asset": "USD",
                           "refid": "DEP-PAGE-2",
+                          "txid": "tx-2",
                           "amount": "50.00",
-                          "fee": "",
+                          "fee": "0.00",
                           "time": 1700000100,
                           "status": "Settled"
-                        }],
-                        "cursor": "   "
-                      }
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "withdrawals": [{
+                        "withdrawal_id": "WITH-PAGE-1",
+                        "method_id": "method-w1",
+                        "status": "success",
+                        "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "25.00"},
+                        "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                        "create_time": "2023-11-14T22:16:40Z"
+                      }]
                     }
                     """.trimIndent(),
                     """
                     {
                       "error": [],
-                      "result": {
-                        "withdrawal": [{
-                          "method": "Wire",
-                          "asset": "USD",
-                          "refid": "WITH-PAGE-1",
-                          "amount": "25.00",
-                          "fee": "0.00",
-                          "time": 1700000200,
-                          "status": "Success"
-                        }]
-                      }
+                      "result": [{
+                        "method": "Wire",
+                        "asset": "USD",
+                        "refid": "WITH-PAGE-1",
+                        "txid": "tx-w1",
+                        "amount": "25.00",
+                        "fee": "0.00",
+                        "time": 1700000200,
+                        "status": "Success"
+                      }]
                     }
                     """.trimIndent(),
                 )
-                val bodies = mutableListOf<String>()
+                val requests = mutableListOf<HttpRequestData>()
                 var requestIndex = 0
                 val client = HttpClient(
                     MockEngine { request ->
-                        bodies += (request.body as TextContent).text
+                        requests += request
                         respond(
                             content = responses[requestIndex++],
                             status = HttpStatusCode.OK,
@@ -210,17 +247,36 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val withdrawals = service.getWithdrawStatus()
 
                 deposits.map { it.refid } shouldBe listOf("DEP-PAGE-1", "DEP-PAGE-2")
+                deposits[0].method shouldBe "Wire"
+                deposits[0].txid shouldBe "tx-1"
+                deposits[0].status shouldBe "success"
+                deposits[0].asset shouldBe "USD"
+                deposits[0].hasAuthoritativeFee.shouldBeTrue()
+                deposits[1].method shouldBe "Wire"
+                deposits[1].txid shouldBe "tx-2"
+                deposits[1].hasAuthoritativeFee.shouldBeFalse()
                 withdrawals.single().refid shouldBe "WITH-PAGE-1"
-                bodies[0].contains("start=100").shouldBeTrue()
-                bodies[0].contains("end=200").shouldBeTrue()
-                bodies[0].contains("cursor=true").shouldBeTrue()
-                bodies[0].contains("limit=25").shouldBeTrue()
-                bodies[1].contains("cursor=next-page").shouldBeTrue()
-                bodies[2].contains("cursor=true").shouldBeTrue()
+                withdrawals.single().method shouldBe "Wire"
+                withdrawals.single().txid shouldBe "tx-w1"
+
+                requests[0].url.encodedPath shouldBe KrakenApiConstants.PATH_FUNDING_DEPOSITS
+                requests[0].url.parameters["start_time"] shouldBe Instant.ofEpochSecond(100L).toString()
+                requests[0].url.parameters["end_time"] shouldBe Instant.ofEpochSecond(200L).toString()
+                requests[0].url.parameters["limit"] shouldBe "500"
+                requests[1].url.parameters["cursor"] shouldBe "next-page"
+                requests[1].url.parameters["start_time"] shouldBe null
+                requests[2].url.encodedPath shouldBe KrakenApiConstants.PATH_DEPOSIT_STATUS
+                val depositEnrichmentBody = (requests[2].body as TextContent).text
+                depositEnrichmentBody.contains("start=100").shouldBeTrue()
+                depositEnrichmentBody.contains("end=200").shouldBeTrue()
+                depositEnrichmentBody.contains("limit=500").shouldBeTrue()
+                depositEnrichmentBody.contains("cursor").shouldBeFalse()
+                requests[3].url.encodedPath shouldBe KrakenApiConstants.PATH_FUNDING_WITHDRAWALS
+                requests[4].url.encodedPath shouldBe KrakenApiConstants.PATH_WITHDRAW_STATUS
             }
         }
 
-        "getFundingStatus_rejects_repeated_cursor_and_missing_credentials" {
+        "getFundingHistory_rejects_repeated_cursor_and_missing_credentials" {
             runTest {
                 val objectMapper = jacksonObjectMapper()
                 configService = mockk(relaxed = true)
@@ -231,11 +287,8 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 )
                 val repeatedResponse = """
                     {
-                      "error": [],
-                      "result": {
-                        "deposit": [],
-                        "cursor": "repeat"
-                      }
+                      "deposits": [],
+                      "next_cursor": "repeat"
                     }
                 """.trimIndent()
                 val client = HttpClient(
@@ -257,6 +310,1028 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     allocations = emptyList(),
                 )
                 shouldThrow<KrakenCredentialsUnavailableException> { service.getWithdrawStatus() }
+            }
+        }
+
+        "getFundingHistory_forwards_end_bound_only" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                val credentials = KrakenCredentials(
+                    apiKey = TestConstants.API_KEY,
+                    privateKey = Base64.getEncoder()
+                        .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = credentials,
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val requests = mutableListOf<HttpRequestData>()
+                val client = HttpClient(
+                    MockEngine { request ->
+                        requests += request
+                        val content = when (request.url.encodedPath) {
+                            KrakenApiConstants.PATH_FUNDING_WITHDRAWALS -> """{"withdrawals":[]}"""
+                            else -> """{"error":[],"result":[]}"""
+                        }
+                        respond(
+                            content = content,
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val records = service.getWithdrawStatus(endSec = 200L)
+
+                records.size shouldBe 0
+                val fundingRequest = requests.first {
+                    it.url.encodedPath == KrakenApiConstants.PATH_FUNDING_WITHDRAWALS
+                }
+                fundingRequest.url.parameters["start_time"] shouldBe null
+                fundingRequest.url.parameters["end_time"] shouldBe Instant.ofEpochSecond(200L).toString()
+            }
+        }
+
+        "getFundingHistory_forwards_partial_time_bounds" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val requests = mutableListOf<HttpRequestData>()
+                val client = HttpClient(
+                    MockEngine { request ->
+                        requests += request
+                        val content = when (request.url.encodedPath) {
+                            KrakenApiConstants.PATH_FUNDING_WITHDRAWALS -> """{"withdrawals":[]}"""
+                            else -> """{"error":[],"result":[]}"""
+                        }
+                        respond(
+                            content = content,
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val records = service.getWithdrawStatus(startSec = 100L, endSec = null)
+
+                records.size shouldBe 0
+                requests.first().url.parameters["start_time"] shouldBe Instant.ofEpochSecond(100L).toString()
+                requests.first().url.parameters["end_time"] shouldBe null
+            }
+        }
+
+        "getWithdrawStatus_reuses_the_method_list_across_records" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                var methodListRequests = 0
+                val client = HttpClient(
+                    MockEngine { request ->
+                        val content = when (request.url.encodedPath) {
+                            KrakenApiConstants.PATH_FUNDING_WITHDRAWALS -> """
+                                {
+                                  "withdrawals": [
+                                    {
+                                      "withdrawal_id": "W-M1",
+                                      "method_id": "m-1",
+                                      "status": "success",
+                                      "amount": {
+                                        "asset": {"class": "currency", "name": "USD"},
+                                        "amount": "10.00"
+                                      },
+                                      "fee": {
+                                        "asset": {"class": "currency", "name": "USD"},
+                                        "amount": "0.00"
+                                      },
+                                      "create_time": "2023-11-14T22:13:20Z"
+                                    },
+                                    {
+                                      "withdrawal_id": "W-M2",
+                                      "method_id": "m-2",
+                                      "status": "success",
+                                      "amount": {
+                                        "asset": {"class": "currency", "name": "USD"},
+                                        "amount": "20.00"
+                                      },
+                                      "fee": {
+                                        "asset": {"class": "currency", "name": "USD"},
+                                        "amount": "0.00"
+                                      },
+                                      "create_time": "2023-11-14T22:14:20Z"
+                                    }
+                                  ]
+                                }
+                            """.trimIndent()
+
+                            KrakenApiConstants.PATH_FUNDING_METHODS_WITHDRAW -> {
+                                methodListRequests++
+                                """
+                                {
+                                  "methods": [
+                                    {"method_id": "m-1", "method_name": "ACH"},
+                                    {"method_id": "m-2", "method_name": "Wire"}
+                                  ]
+                                }
+                                """.trimIndent()
+                            }
+
+                            else -> """{"error":[],"result":[]}"""
+                        }
+                        respond(
+                            content = content,
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val records = service.getWithdrawStatus()
+
+                records.map { it.method } shouldBe listOf("ACH", "Wire")
+                methodListRequests shouldBe 1
+            }
+        }
+
+        "queryPrivateGet_signs_paths_without_query_parameters" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = """{"deposits":[]}""",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val transport = KrakenTransport(
+                    configService = configService,
+                    objectMapper = objectMapper,
+                    httpClient = client,
+                    rateLimiter = RateLimiter(),
+                    nonceGenerator = AtomicLong(System.currentTimeMillis() * 1_000_000L),
+                    publicRateLimiter = PublicRateLimiter(),
+                )
+
+                val result = transport.queryPrivateGet(KrakenApiConstants.PATH_FUNDING_DEPOSITS, emptyMap())
+
+                result.path("deposits").isArray shouldBe true
+            }
+        }
+
+        "queryPrivateGet_rejects_blank_credentials" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials("", ""),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = "{}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val transport = KrakenTransport(
+                    configService,
+                    objectMapper,
+                    client,
+                    RateLimiter(),
+                    AtomicLong(System.currentTimeMillis() * 1_000_000L),
+                    PublicRateLimiter(),
+                )
+
+                shouldThrow<IllegalStateException> {
+                    transport.queryPrivateGet(
+                        KrakenApiConstants.PATH_FUNDING_DEPOSITS,
+                        mapOf(KrakenApiConstants.PARAM_LIMIT to "1"),
+                    )
+                }
+            }
+        }
+
+        "queryPrivateGet_rejects_permission_text_on_unrelated_endpoints" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = """{"error":["EGeneral:Permission denied"]}""",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val transport = KrakenTransport(
+                    configService,
+                    objectMapper,
+                    client,
+                    RateLimiter(),
+                    AtomicLong(System.currentTimeMillis() * 1_000_000L),
+                    PublicRateLimiter(),
+                )
+
+                val error = shouldThrow<RuntimeException> {
+                    transport.queryPrivateGet(KrakenApiConstants.PATH_BALANCE, emptyMap())
+                }
+                (error is KrakenApiPermissionDeniedException) shouldBe false
+            }
+        }
+
+        "queryPrivateGet_skips_rate_limiting_for_unmetered_endpoints" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = "{}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val transport = KrakenTransport(
+                    configService,
+                    objectMapper,
+                    client,
+                    RateLimiter(),
+                    AtomicLong(System.currentTimeMillis() * 1_000_000L),
+                    PublicRateLimiter(),
+                )
+
+                transport.queryPrivateGet(KrakenApiConstants.PATH_ADD_ORDER, emptyMap())
+            }
+        }
+
+        "getFundingHistory_fails_closed_when_invalid_nonce_persists" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = """{"error":["EAPI:Invalid nonce"]}""",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val error = shouldThrow<RuntimeException> { service.getDepositStatus() }
+                error.message?.contains("EAPI:Invalid nonce") shouldBe true
+            }
+        }
+
+        "getWithdrawStatus_leaves_method_null_when_the_method_id_is_unknown" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_WITHDRAWALS to """
+                        {
+                          "withdrawals": [{
+                            "withdrawal_id": "WITH-UNKNOWN",
+                            "method_id": "retired-method",
+                            "status": "success",
+                            "amount": {
+                              "asset": {"class": "currency", "name": "USD"},
+                              "amount": "10.00"
+                            },
+                            "fee": {
+                              "asset": {"class": "currency", "name": "USD"},
+                              "amount": "0.00"
+                            },
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }]
+                        }
+                    """.trimIndent(),
+                    KrakenApiConstants.PATH_WITHDRAW_STATUS to """{"error":[],"result":[]}""",
+                    KrakenApiConstants.PATH_FUNDING_METHODS_WITHDRAW to """
+                        {"methods":[{"method_id":"other-method","method_name":"ACH"}]}
+                    """.trimIndent(),
+                )
+                val client = HttpClient(
+                    MockEngine { request ->
+                        respond(
+                            content = responses.getValue(request.url.encodedPath),
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                service.getWithdrawStatus().single().method shouldBe null
+            }
+        }
+
+        "getFundingHistory_stops_method_pagination_at_the_page_limit" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val depositResponse = """
+                    {
+                      "deposits": [{
+                        "deposit_id": "DEP-METHOD-LIMIT",
+                        "method_id": "method-1",
+                        "status": "success",
+                        "amount": {
+                          "asset": {"class": "currency", "name": "USD"},
+                          "amount": "100.00"
+                        },
+                        "fee": {
+                          "asset": {"class": "currency", "name": "USD"},
+                          "amount": "0.00"
+                        },
+                        "create_time": "2023-11-14T22:13:20Z"
+                      }]
+                    }
+                """.trimIndent()
+                var methodPageCount = 0
+                val client = HttpClient(
+                    MockEngine { request ->
+                        val path = request.url.encodedPath
+                        when (path) {
+                            KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT -> {
+                                methodPageCount++
+                                respond(
+                                    content = """
+                                        {
+                                          "methods": [{"method_id": "method-1", "method_name": "Wire"}],
+                                          "next_cursor": "method-$methodPageCount"
+                                        }
+                                    """.trimIndent(),
+                                    status = HttpStatusCode.OK,
+                                    headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                                )
+                            }
+
+                            KrakenApiConstants.PATH_FUNDING_DEPOSITS -> respond(
+                                content = depositResponse,
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+
+                            else -> respond(
+                                content = """{"error":[],"result":[]}""",
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        }
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                service.getDepositStatus().single().method shouldBe "Wire"
+                methodPageCount shouldBe 20
+            }
+        }
+
+        "getDepositStatus_discards_partial_legacy_metadata" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = TestConstants.API_KEY,
+                        privateKey = Base64.getEncoder()
+                            .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_DEPOSITS to """
+                        {
+                          "deposits": [{
+                            "deposit_id": "DEP-PARTIAL",
+                            "method_id": "method-1",
+                            "status": "success",
+                            "amount": {
+                              "asset": {"class": "currency", "name": "USD"},
+                              "amount": "100.00"
+                            },
+                            "fee": {
+                              "asset": {"class": "currency", "name": "USD"},
+                              "amount": "0.00"
+                            },
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }]
+                        }
+                    """.trimIndent(),
+                    KrakenApiConstants.PATH_DEPOSIT_STATUS to """
+                        {
+                          "error": [],
+                          "result": [
+                            {
+                              "method": "Wire",
+                              "asset": "USD",
+                              "refid": "DEP-PARTIAL",
+                              "txid": "tx-partial",
+                              "amount": "100.00",
+                              "fee": "0.00",
+                              "time": 1700000000,
+                              "status": "Success"
+                            },
+                            {
+                              "asset": "USD",
+                              "amount": "1.00",
+                              "time": 1700000000,
+                              "status": "Success"
+                            }
+                          ]
+                        }
+                    """.trimIndent(),
+                    KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT to """
+                        {"methods":[{"method_id":"method-1","method_name":"ACH"}]}
+                    """.trimIndent(),
+                )
+                val client = HttpClient(
+                    MockEngine { request ->
+                        respond(
+                            content = responses.getValue(request.url.encodedPath),
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val record = service.getDepositStatus().single()
+                record.method shouldBe "ACH"
+                record.txid shouldBe null
+            }
+        }
+
+        "getFundingHistory_retries invalid nonce and then succeeds" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = listOf(
+                    """{"error":["EAPI:Invalid nonce"],"result":null}""",
+                    """
+                    {
+                      "deposits": [{
+                        "deposit_id": "DEP-RETRY",
+                        "status": "success",
+                        "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "10.00"},
+                        "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                        "create_time": "2023-11-14T22:13:20Z"
+                      }]
+                    }
+                    """.trimIndent(),
+                    """{"error":[],"result":[]}""",
+                )
+                var requestIndex = 0
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = responses[requestIndex++],
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val deposits = service.getDepositStatus(startSec = 100L, endSec = 200L)
+
+                deposits.single().refid shouldBe "DEP-RETRY"
+                deposits.single().method shouldBe null
+                requestIndex shouldBe 3
+            }
+        }
+
+        "getFundingHistory_rejects_non_permission_api_errors" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = """{"error":["EGeneral:Invalid arguments:asset"]}""",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val error = shouldThrow<RuntimeException> { service.getDepositStatus() }
+
+                error.message?.contains("EGeneral:Invalid arguments") shouldBe true
+            }
+        }
+
+        "getFundingHistory_reports_http_failures" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = "upstream unavailable",
+                            status = HttpStatusCode.InternalServerError,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                shouldThrow<ResponseException> { service.getDepositStatus() }
+            }
+        }
+
+        "getFundingHistory_reports_malformed_payloads" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val client = HttpClient(
+                    MockEngine {
+                        respond(
+                            content = "not-json",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                shouldThrow<RuntimeException> { service.getDepositStatus() }
+            }
+        }
+
+        "getWithdrawStatus_resolves_method_names_from_the_method_list" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_WITHDRAWALS to
+                        """
+                        {
+                          "withdrawals": [{
+                            "withdrawal_id": "WITH-METHOD",
+                            "method_id": "method-w1",
+                            "status": "success",
+                            "amount": {"asset": {"class": "currency", "name": "XXBT"}, "amount": "0.25"},
+                            "fee": {"asset": {"class": "currency", "name": "XXBT"}, "amount": "0.0002"},
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }]
+                        }
+                        """.trimIndent(),
+                    KrakenApiConstants.PATH_WITHDRAW_STATUS to """{"error":[],"result":[]}""",
+                    KrakenApiConstants.PATH_FUNDING_METHODS_WITHDRAW to
+                        """
+                        {
+                          "methods": [
+                            {"method_id": "method-w1", "method_name": "ACH"},
+                            {"method_name": "missing identifier"}
+                          ]
+                        }
+                        """.trimIndent(),
+                )
+                val client = HttpClient(
+                    MockEngine { request ->
+                        respond(
+                            content = responses.getValue(request.url.encodedPath),
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val records = service.getWithdrawStatus()
+
+                records.single().refid shouldBe "WITH-METHOD"
+                records.single().method shouldBe "ACH"
+            }
+        }
+
+        "getWithdrawStatus_leaves_method_null_without_metadata" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_WITHDRAWALS to
+                        """
+                        {
+                          "withdrawals": [{
+                            "withdrawal_id": "WITH-NO-METHOD",
+                            "status": "success",
+                            "amount": {"asset": {"class": "currency", "name": "XXBT"}, "amount": "0.25"},
+                            "fee": {"asset": {"class": "currency", "name": "XXBT"}, "amount": "0.0002"},
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }]
+                        }
+                        """.trimIndent(),
+                    KrakenApiConstants.PATH_WITHDRAW_STATUS to """{"error":[],"result":[]}""",
+                )
+                var requestCount = 0
+                val client = HttpClient(
+                    MockEngine { request ->
+                        requestCount++
+                        respond(
+                            content = responses.getValue(request.url.encodedPath),
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val records = service.getWithdrawStatus()
+
+                records.single().method shouldBe null
+                requestCount shouldBe 2
+            }
+        }
+
+        "getDepositStatus_reuses_a_single_method_list_across_records" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_DEPOSITS to
+                        """
+                        {
+                          "deposits": [{
+                            "deposit_id": "DEP-M1",
+                            "method_id": "method-1",
+                            "status": "success",
+                            "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "10.00"},
+                            "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }, {
+                            "deposit_id": "DEP-M2",
+                            "method_id": "method-2",
+                            "status": "success",
+                            "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "20.00"},
+                            "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                            "create_time": "2023-11-14T22:13:30Z"
+                          }]
+                        }
+                        """.trimIndent(),
+                    KrakenApiConstants.PATH_DEPOSIT_STATUS to """{"error":[],"result":[]}""",
+                    KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT to
+                        """
+                        {
+                          "methods": [
+                            {"method_id": "method-1", "method_name": "Wire"},
+                            {"method_id": "method-2", "method_name": "ACH"}
+                          ]
+                        }
+                        """.trimIndent(),
+                )
+                var methodListRequests = 0
+                val client = HttpClient(
+                    MockEngine { request ->
+                        if (request.url.encodedPath == KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT) {
+                            methodListRequests++
+                        }
+                        respond(
+                            content = responses.getValue(request.url.encodedPath),
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val deposits = service.getDepositStatus()
+
+                deposits.map { it.method } shouldBe listOf("Wire", "ACH")
+                methodListRequests shouldBe 1
+            }
+        }
+
+        "getFundingHistory_fails_closed_when_pagination_does_not_terminate" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                var pageCount = 0
+                val client = HttpClient(
+                    MockEngine {
+                        pageCount++
+                        respond(
+                            content = """{"deposits":[],"next_cursor":"cursor-$pageCount"}""",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                shouldThrow<IllegalStateException> { service.getDepositStatus() }
+                pageCount shouldBe 20
+            }
+        }
+
+        "getFundingHistory_degrades_when_legacy_enrichment_fails" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_DEPOSITS to
+                        """
+                        {
+                          "deposits": [{
+                            "deposit_id": "DEP-LEGACY-FAIL",
+                            "method_id": "method-1",
+                            "status": "success",
+                            "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "10.00"},
+                            "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }]
+                        }
+                        """.trimIndent(),
+                    KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT to
+                        """{"methods":[{"method_id":"method-1","method_name":"Wire"}]}""",
+                )
+                val client = HttpClient(
+                    MockEngine { request ->
+                        if (request.url.encodedPath == KrakenApiConstants.PATH_DEPOSIT_STATUS) {
+                            respond(
+                                content = "legacy unavailable",
+                                status = HttpStatusCode.InternalServerError,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        } else {
+                            respond(
+                                content = responses.getValue(request.url.encodedPath),
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        }
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val deposits = service.getDepositStatus(startSec = 100L, endSec = 200L)
+
+                deposits.single().method shouldBe "Wire"
+            }
+        }
+
+        "getFundingHistory_stops_method_pagination_on_repeated_cursor" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_DEPOSITS to
+                        """
+                        {
+                          "deposits": [{
+                            "deposit_id": "DEP-CURSOR",
+                            "method_id": "method-1",
+                            "status": "success",
+                            "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "10.00"},
+                            "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }]
+                        }
+                        """.trimIndent(),
+                    KrakenApiConstants.PATH_DEPOSIT_STATUS to """{"error":[],"result":[]}""",
+                    KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT to
+                        """
+                        {
+                          "methods": [{"method_id": "method-1", "method_name": "Wire"}],
+                          "next_cursor": "same"
+                        }
+                        """.trimIndent(),
+                )
+                val client = HttpClient(
+                    MockEngine { request ->
+                        respond(
+                            content = responses.getValue(request.url.encodedPath),
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val deposits = service.getDepositStatus()
+
+                deposits.single().method shouldBe "Wire"
+            }
+        }
+
+        "getFundingHistory_survives_method_list_failures" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        TestConstants.API_KEY,
+                        Base64.getEncoder().encodeToString(TestConstants.API_SECRET.toByteArray()),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                val responses = mapOf(
+                    KrakenApiConstants.PATH_FUNDING_DEPOSITS to
+                        """
+                        {
+                          "deposits": [{
+                            "deposit_id": "DEP-NO-METHODS",
+                            "method_id": "method-1",
+                            "status": "success",
+                            "amount": {"asset": {"class": "currency", "name": "USD"}, "amount": "10.00"},
+                            "fee": {"asset": {"class": "currency", "name": "USD"}, "amount": "0.00"},
+                            "create_time": "2023-11-14T22:13:20Z"
+                          }]
+                        }
+                        """.trimIndent(),
+                    KrakenApiConstants.PATH_DEPOSIT_STATUS to """{"error":[],"result":[]}""",
+                )
+                val client = HttpClient(
+                    MockEngine { request ->
+                        if (request.url.encodedPath == KrakenApiConstants.PATH_FUNDING_METHODS_DEPOSIT) {
+                            respond(
+                                content = "method list unavailable",
+                                status = HttpStatusCode.InternalServerError,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        } else {
+                            respond(
+                                content = responses.getValue(request.url.encodedPath),
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        }
+                    },
+                )
+                val service = KrakenServiceImpl(configService, objectMapper, client)
+
+                val deposits = service.getDepositStatus()
+
+                deposits.single().method shouldBe null
             }
         }
 

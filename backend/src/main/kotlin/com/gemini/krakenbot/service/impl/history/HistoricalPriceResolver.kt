@@ -10,13 +10,28 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 
+/**
+ * Operational price-source failure (network, rate limit, malformed response). Distinct from
+ * [HistoricalPriceResolver.resolveHistoricalPrice] returning null, which means the available
+ * evidence simply contains no trustworthy price. Callers must not persist the former as a
+ * permanent "no price exists" conclusion.
+ */
+class HistoricalPriceSourceException(val asset: String, message: String, val eventTime: Instant) :
+    RuntimeException(message)
+
 object HistoricalPriceResolver {
     private val log = LoggerFactory.getLogger(HistoricalPriceResolver::class.java)
 
     const val MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS = 180L
     const val HISTORICAL_OHLC_INTERVAL_MINUTES = 15
     const val MAX_OHLC_LOOKBACK_SECONDS = 86400L
-    const val MAX_COMPLETED_OHLC_AGE_SECONDS = HISTORICAL_OHLC_INTERVAL_MINUTES * 60L
+
+    /**
+     * Fine-to-coarse candle ladder. Kraken serves only ~720 recent candles per interval, so
+     * older valuation instants (for example an approved start months in the past) are only
+     * reachable through the coarser tiers; the daily tier covers roughly two years.
+     */
+    val HISTORICAL_OHLC_INTERVAL_CANDIDATES = listOf(15, 60, 240, 1440)
 
     suspend fun resolveHistoricalPrice(
         asset: String,
@@ -24,6 +39,11 @@ object HistoricalPriceResolver {
         tradesRepo: TradeRepository,
         krakenService: KrakenService,
         candidatePriceException: BigDecimal? = null,
+        marketPairs: List<String> = emptyList(),
+        tradeLookbackSeconds: Long = MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS,
+        futureTradeSkewSeconds: Long = MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS,
+        marketPairsByBase: Map<String, List<String>> = emptyMap(),
+        quoteConversionDepth: Int = 0,
     ): BigDecimal? {
         val normalizedAsset = Asset.normalizeLedgerAsset(asset).uppercase()
         if (normalizedAsset == Asset.USD) {
@@ -35,17 +55,37 @@ object HistoricalPriceResolver {
             return candidatePriceException
         }
 
-        // 2. Strict recent trade at or before eventTime within 180 seconds
-        val tradeWindowStart = eventTime.minusSeconds(MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS)
-        val recentTrade = tradesRepo.getTradesInRange(tradeWindowStart, eventTime)
+        // 2. Prefer a near execution, allowing only a small forward skew. A wide lookback is
+        // useful for retained contribution evidence, but it must never widen the future side of
+        // the valuation window and introduce look-ahead.
+        val tradeLookbackStart = eventTime.minusSeconds(tradeLookbackSeconds)
+        val tradeFutureEnd = eventTime.plusSeconds(futureTradeSkewSeconds)
+        val candidateTrades = tradesRepo.getTradesInRange(tradeLookbackStart, tradeFutureEnd)
             .filter {
                 it.success &&
                     !it.dryRun &&
-                    !it.timestamp.isBefore(tradeWindowStart) &&
-                    !it.timestamp.isAfter(eventTime) &&
+                    !it.timestamp.isBefore(tradeLookbackStart) &&
+                    !it.timestamp.isAfter(tradeFutureEnd) &&
+                    // TradesHistory reports non-USD quote costs in the quote currency, so only
+                    // USD-quoted executions prove a USD price without a conversion contract.
+                    Asset.splitTradingPair(it.pair)?.quote == Asset.USD &&
                     Asset.normalizeLedgerAsset(it.symbol).equals(normalizedAsset, ignoreCase = true)
             }
-            .minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
+        val recentPastTrade = candidateTrades
+            .filter {
+                !it.timestamp.isAfter(eventTime) &&
+                    !it.timestamp.isBefore(
+                        eventTime.minusSeconds(MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS),
+                    )
+            }
+            .maxByOrNull { it.timestamp }
+        val earlierPastTrade = candidateTrades
+            .filter { !it.timestamp.isAfter(eventTime) }
+            .maxByOrNull { it.timestamp }
+        val recentFutureTrade = candidateTrades
+            .filter { it.timestamp.isAfter(eventTime) }
+            .minByOrNull { it.timestamp }
+        val recentTrade = recentPastTrade ?: earlierPastTrade ?: recentFutureTrade
 
         if (recentTrade != null) {
             if (recentTrade.volume > BigDecimal.ZERO && recentTrade.usdAmount > BigDecimal.ZERO) {
@@ -64,9 +104,10 @@ object HistoricalPriceResolver {
         val snapshotWindowStart = eventTime.minusSeconds(MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS)
         val nearestSnap = tradesRepo.getSnapshotsInRange(snapshotWindowStart, eventTime)
             .filter {
+                val observation = it.balancesObservedAt ?: Instant.MIN
                 !it.timestamp.isBefore(snapshotWindowStart) &&
                     !it.timestamp.isAfter(eventTime) &&
-                    !(it.balancesObservedAt ?: it.timestamp).isAfter(eventTime)
+                    !observation.isAfter(eventTime)
             }
             .minByOrNull { kotlin.math.abs(it.timestamp.toEpochMilli() - eventTime.toEpochMilli()) }
 
@@ -77,34 +118,117 @@ object HistoricalPriceResolver {
             return snapPrice
         }
 
-        // 4. Completed 15-minute intraday OHLC candle within 24 hours
-        try {
-            val pair = Asset(normalizedAsset).tradingPair
-            val sinceSec = eventTime.minusSeconds(MAX_OHLC_LOOKBACK_SECONDS).epochSecond
-            val candles = krakenService.getOHLC(
-                pair = pair,
-                interval = HISTORICAL_OHLC_INTERVAL_MINUTES,
-                since = sinceSec,
+        // 4. Completed candle from the finest interval that covers the valuation instant. Only
+        //    candles that closed at or before eventTime and are at most one bucket old qualify;
+        //    retained historical pairs cover markets that are no longer listed today.
+        val candidatePairs = (listOf(Asset(normalizedAsset).tradingPair) + marketPairs)
+            .map { it.trim().uppercase() }
+            .filter(String::isNotEmpty)
+            .distinct()
+        var sourceFailed = false
+        for (intervalMinutes in HISTORICAL_OHLC_INTERVAL_CANDIDATES) {
+            val candleDurationSeconds = intervalMinutes * 60L
+            val lookbackSeconds = maxOf(MAX_OHLC_LOOKBACK_SECONDS, candleDurationSeconds * 2)
+            val earliestCandleStart = eventTime.minusSeconds(lookbackSeconds)
+            var resolved: BigDecimal? = null
+            for (pair in candidatePairs) {
+                val candles = try {
+                    krakenService.getOHLC(
+                        pair = pair,
+                        interval = intervalMinutes,
+                        since = earliestCandleStart.epochSecond,
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    sourceFailed = true
+                    log.warn(
+                        "Failed to fetch OHLC price for asset {} pair {} interval {}: {}",
+                        normalizedAsset,
+                        pair,
+                        intervalMinutes,
+                        e.message,
+                    )
+                    continue
+                }
+                val matched = candles.filter {
+                    val candleStart = Instant.ofEpochSecond(it.first)
+                    val candleClose = candleStart.plusSeconds(candleDurationSeconds)
+                    !candleStart.isBefore(earliestCandleStart) &&
+                        candleClose <= eventTime &&
+                        eventTime.epochSecond - candleClose.epochSecond <= candleDurationSeconds
+                }
+                    .maxByOrNull { it.first }
+                if (matched != null && matched.second > BigDecimal.ZERO) {
+                    // A candle in a non-USD market proves a USD price only through a trustworthy
+                    // conversion of the quote leg; without one the price stays unresolved.
+                    val quote = Asset.splitTradingPair(pair)?.quote ?: continue
+                    val converted = if (quote == Asset.USD) {
+                        matched.second
+                    } else {
+                        convertQuoteToUsd(
+                            quote = quote,
+                            quotePrice = matched.second,
+                            eventTime = eventTime,
+                            tradesRepo = tradesRepo,
+                            krakenService = krakenService,
+                            tradeLookbackSeconds = tradeLookbackSeconds,
+                            futureTradeSkewSeconds = futureTradeSkewSeconds,
+                            marketPairsByBase = marketPairsByBase,
+                            quoteConversionDepth = quoteConversionDepth,
+                        )
+                    }
+                    if (converted != null) {
+                        resolved = converted
+                        break
+                    }
+                }
+            }
+            if (resolved != null) {
+                return resolved
+            }
+        }
+        if (sourceFailed) {
+            throw HistoricalPriceSourceException(
+                normalizedAsset,
+                "Historical OHLC sources failed for $normalizedAsset at $eventTime",
+                eventTime,
             )
-            val candleDurationSeconds = HISTORICAL_OHLC_INTERVAL_MINUTES * 60L
-            val earliestCandleStart = eventTime.minusSeconds(MAX_OHLC_LOOKBACK_SECONDS)
-            val matched = candles.filter {
-                val candleStart = Instant.ofEpochSecond(it.first)
-                val candleClose = candleStart.plusSeconds(candleDurationSeconds)
-                !candleStart.isBefore(earliestCandleStart) &&
-                    candleClose <= eventTime &&
-                    eventTime.epochSecond - candleClose.epochSecond <= MAX_COMPLETED_OHLC_AGE_SECONDS
-            }
-                .maxByOrNull { it.first }
-            if (matched != null && matched.second > BigDecimal.ZERO) {
-                return matched.second
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Failed to fetch OHLC price for asset {} at {}: {}", normalizedAsset, eventTime, e.message)
         }
 
         return null
+    }
+
+    /**
+     * Converts a quote-leg price into USD by pricing the quote asset itself. One conversion hop is
+     * allowed so a stablecoin-quoted candle can prove a USD price from the stablecoin's own
+     * historical USD rate; deeper chains stay unresolved rather than compounding weak evidence.
+     */
+    private suspend fun convertQuoteToUsd(
+        quote: String,
+        quotePrice: BigDecimal,
+        eventTime: Instant,
+        tradesRepo: TradeRepository,
+        krakenService: KrakenService,
+        tradeLookbackSeconds: Long,
+        futureTradeSkewSeconds: Long,
+        marketPairsByBase: Map<String, List<String>>,
+        quoteConversionDepth: Int,
+    ): BigDecimal? {
+        if (quoteConversionDepth >= 1) return null
+        val quoteUsdPrice = resolveHistoricalPrice(
+            asset = quote,
+            eventTime = eventTime,
+            tradesRepo = tradesRepo,
+            krakenService = krakenService,
+            tradeLookbackSeconds = tradeLookbackSeconds,
+            futureTradeSkewSeconds = futureTradeSkewSeconds,
+            marketPairs = marketPairsByBase[quote].orEmpty(),
+            marketPairsByBase = marketPairsByBase,
+            quoteConversionDepth = quoteConversionDepth + 1,
+        ) ?: return null
+        return quotePrice
+            .multiply(quoteUsdPrice)
+            .setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
     }
 }

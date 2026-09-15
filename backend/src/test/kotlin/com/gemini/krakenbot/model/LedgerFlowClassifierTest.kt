@@ -2,6 +2,7 @@ package com.gemini.krakenbot.model
 
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
@@ -75,6 +76,70 @@ class LedgerFlowClassifierTest : StringSpec() {
                 event("1", "deposit", "100.00", refid = "DEP-FIAT-1"),
                 resolver,
             ) shouldBe FlowCategory.OWNER_CAPITAL
+        }
+
+        "lone card deposit resolves as owner capital with its net balance delta" {
+            val resolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "PAYPAL-1",
+                        asset = "USD",
+                        amount = BigDecimal("50.00"),
+                        fee = BigDecimal("1.03"),
+                        time = now,
+                        status = "Success",
+                        method = "PayPal",
+                    ),
+                ),
+            )
+            val event = event("1", "deposit", "50.00", refid = "PAYPAL-1", fee = "1.03")
+
+            LedgerFlowClassifier.classify(event, resolver) shouldBe FlowCategory.OWNER_CAPITAL
+            event.netBalanceDelta() shouldBeEqualComparingTo BigDecimal("48.97")
+        }
+
+        "card deposits with nonterminal or duplicated funding evidence stay ambiguous" {
+            val pendingResolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "CARD-PENDING-1",
+                        asset = "USD",
+                        amount = BigDecimal("50.00"),
+                        time = now,
+                        status = "Pending",
+                        method = "PayPal",
+                    ),
+                ),
+            )
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "50.00", refid = "CARD-PENDING-1"),
+                pendingResolver,
+            ) shouldBe FlowCategory.AMBIGUOUS
+
+            val duplicatedResolver = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = "CARD-DUP-1",
+                        asset = "USD",
+                        amount = BigDecimal("50.00"),
+                        time = now,
+                        status = "Success",
+                        method = "PayPal",
+                    ),
+                    DepositStatusRecord(
+                        refid = "CARD-DUP-1",
+                        asset = "USD",
+                        amount = BigDecimal("50.00"),
+                        time = now,
+                        status = "Success",
+                        method = "PayPal",
+                    ),
+                ),
+            )
+            LedgerFlowClassifier.classify(
+                event("1", "deposit", "50.00", refid = "CARD-DUP-1"),
+                duplicatedResolver,
+            ) shouldBe FlowCategory.AMBIGUOUS
         }
 
         "confirmed external funding keeps owner provenance through same-refid spend plumbing" {

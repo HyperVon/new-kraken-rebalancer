@@ -206,7 +206,7 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
 | **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Must be positive (any value > 0). |
 | **Drawdown Activation Threshold (%)** | Minimum drawdown before cash deployment begins (deadband). Drawdowns below this deploy 0% cash. Bounded **0–100**. |
-| **Inception Date (Optional)** | Manual strategy-start anchor. Use the UTC date picker and save, or review the compact **Recommended strategy start** row and select **Use estimated start** to approve the exact timestamp in one step. Select **Show evidence** when you want the supporting history details; they stay collapsed by default to keep the form compact. The estimate remains explicitly user-approved evidence, not automatic proof of bot ownership. If empty, the app recovers bounded Kraken trade/ledger history and confirms inception only when coverage, bot ownership, funding provenance, and a historical-price baseline all agree. Stale evidence from another account or simulation scope is withheld, display reads never trigger Kraken recovery, and allocation changes do not falsely claim a new strategy start. Approving a start also rebuilds the Buy & Hold baseline from Kraken history. A confirmed baseline can still have an unavailable comparison if later ownership or accounting cannot be reconciled; Settings then offers the earliest verified later comparison start when one is found. |
+| **Inception Date (Optional)** | Manual strategy-start anchor. Use the UTC date picker and save, or review the compact **Recommended strategy start** row and select **Use estimated start** to approve the exact timestamp in one step. Select **Show evidence** when you want the supporting history details; they stay collapsed by default to keep the form compact. The estimate remains explicitly user-approved evidence, not automatic proof of bot ownership. If empty, the app recovers bounded Kraken trade/ledger history and confirms inception only when coverage, bot ownership, funding provenance, and a historical-price baseline all agree. Stale evidence from another account or simulation scope is withheld, display reads never trigger Kraken recovery, and allocation changes do not falsely claim a new strategy start. Approving a start also rebuilds the Buy & Hold baseline from Kraken history. A confirmed baseline can still have an unavailable comparison if later balance reconciliation cannot be completed; when lifetime recovery is ambiguous or truncated, History may instead show a bounded passive report from the earliest genuinely recorded post-floor snapshot. That report does not approve or rewrite strategy inception. |
 | **Comparison Start (Optional)** | UTC anchor for the Buy & Hold comparison. Set automatically when you accept a verified start proposal. The form displays a UTC date, while an accepted proposal preserves its exact UTC timestamp. Requires an inception date at or before it. |
 
 ### Safety modes
@@ -327,31 +327,47 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 The first chart below the summary cards compares what the rebalancer actually
 achieved against a **synthetic buy-and-hold** strategy:
 
-- **Buy & Hold** starts from the effective comparison baseline snapshot across all view windows: the strategy inception baseline unless you explicitly accept a verified later comparison start.
-  Strategy-neutral flows (legacy staking rewards, crypto dividends, top-level promotion `reward` credits, modern `earn/reward`, USD cash
-  dividends, adjustments, complete linked `conversion` transformations, consumer Buy Crypto `spend`/`receive` legs, and manual user trades) are replayed into Buy & Hold
-  identically to the actual portfolio. Genuine owner contributions after the effective comparison baseline are instead
-  invested by the original inception weights, and owner withdrawals shrink the whole synthetic
+- **Buy & Hold** starts from the exact recorded comparison anchor across all view windows: the
+  trusted strategy baseline when one exists, or—when lifetime recovery is unresolved—the earliest
+  genuinely recorded snapshot on or after the bounded passive evidence floor. Every positive anchor
+  holding keeps its recorded balance, historical price, and normalized value weight. Current target
+  edits, later configuration changes, trade ownership labels, and internal conversions do not rewrite
+  those lots, so the initial difference normally starts at zero within rounding tolerance.
+  Successful trades are still reconciled against the actual snapshots, but no trade is mirrored into
+  the passive basket. Holding-dependent rewards replay in-kind only when the basket already holds the
+  credited asset; an otherwise unheld reward remains actual-only. Explicitly classified account-level
+  promotion or airdrop credits may introduce an unheld credited asset. Generic USD/equity cash
+  dividends are excluded because the crypto/cash thesis has no underlying equity position.
+  Complete conversions and complete linked `spend`/`receive` groups are validated and consumed as
+  plumbing, not replayed as synthetic transformations. Unlinked or singleton consumer passthrough
+  rows are excluded from the passive event stream because their missing counterpart cannot prove an
+  independent movement; incomplete linked groups remain unavailable.
+  Genuine owner contributions after the effective comparison baseline are instead
+  invested by the fixed recorded-anchor value weights, and owner withdrawals shrink the whole synthetic
   portfolio proportionally — so the cash event itself never invents alpha for either side.
   When a documented card purchase links an external funding row, USD spend, and purchased-asset
   receive row with one shared refid (within a 120-second proximity window), the benchmark collapses
-  them into a single net owner contribution allocated strictly by original inception weights; the conversion
-  legs are consumed as plumbing evidence and not replayed into Buy & Hold. A confirmed card deposit that
-  arrives before its spend/receive legs remains pending: ATH defers with `AMBIGUOUS_FUNDING`, and no
-  ledger identity is journaled until the complete group arrives. Confirmed ordinary Wire/ACH deposits
-  without card plumbing continue through the ordinary owner-capital path. The normalized event keeps
+  them into a single net owner contribution allocated strictly by the fixed recorded-anchor value weights; the conversion
+  legs are consumed as plumbing evidence and not replayed into Buy & Hold. A confirmed card deposit with
+  partial plumbing remains pending: ATH defers with `AMBIGUOUS_FUNDING`, and no ledger identity is journaled
+  until the complete group arrives. Confirmed ordinary Wire/ACH deposits without card plumbing continue
+  through the ordinary owner-capital path, and a lone cash-like (USD, ZUSD, USDC, USDT) card deposit with
+  authoritative external provenance and no spend/receive legs anywhere in retained history is treated the
+  same way at its net `amount - fee`. The normalized event keeps
   synthetic `netOwnerCapitalUsd` separate from actual per-leg asset effects; only the synthetic amount
   is allocated by Buy & Hold, while ATH basis reconstruction replays the actual effects and fees once.
   Unproven or incomplete relationships remain unavailable rather than guessed.
   Kraken app/Buy Crypto activity is read from Ledger history, including both asset legs, rather
   than inferred from the trade-history feed.
 - Funding rows count as owner capital only when the production resolver finds one confirmed,
-  matching Kraken funding-status record. The resolver batches and caches authenticated
-  `DepositStatus`/`WithdrawStatus` lookups for the history range; asset, direction, amount/net
-  amount, known fee, time, and terminal status must agree. Deposit credits allow the record's
-  amount or `amount - fee`; withdrawal debits allow the record's amount or `amount + fee` in
-  magnitude. Missing or conflicting records, and Spot/Futures transfers without explicit internal
-  evidence, keep the comparison unavailable.
+  matching Kraken funding-history record. The resolver batches and caches authenticated
+  Funding (Beta) deposit/withdrawal lookups for the history range, and reads deprecated status
+  records only to enrich method metadata when needed; asset, direction, amount/net
+  amount, known fee, time, and terminal status must agree. Direct reference matches also tolerate
+  Kraken's ledger booking delay and minor representation rounding, while fuzzy matches keep the
+  strict window. Deposit credits allow the record's amount or `amount - fee`; withdrawal debits
+  allow the record's amount or `amount + fee` in magnitude. Missing or conflicting records, and
+  Spot/Futures transfers without explicit internal evidence, keep the comparison unavailable.
 - `transfer` is not automatically internal: an exact documented internal subtype, authoritative
   internal evidence, or same-asset zero-net paired movement can prove `INTERNAL_MOVE`; documented
   `reward` and observed/documented `airdrop` credits are `EXTERNAL_BALANCE`. Undocumented prose descriptions
@@ -361,9 +377,14 @@ achieved against a **synthetic buy-and-hold** strategy:
   are also in-kind `EXTERNAL_BALANCE` events and never count as owner capital.
   Unknown top-level ledger types remain unavailable rather than guessed.
 - A complete two-leg, refid-linked `conversion` between distinct assets is an
-  `INTERNAL_MOVE`: each leg's authoritative balance delta and fee is replayed once,
-  with no owner-capital, reward, or Buy & Hold scaling effect. Incomplete or
-  contradictory conversion groups keep the comparison unavailable.
+  `INTERNAL_MOVE`: actual-history reconstruction replays each leg's authoritative balance delta
+  and fee once, while pure Buy & Hold validates and consumes the group without emitting a
+  synthetic transformation, trade, or owner flow. Incomplete or contradictory conversion groups
+  keep the comparison unavailable.
+- Complete refid-linked consumer `spend`/`receive` groups are likewise validated and consumed as
+  plumbing; they are not a synthetic conversion event. Unlinked or singleton passthrough rows
+  are excluded from the passive event stream because their missing counterpart cannot prove an
+  independent movement. Incomplete multi-row groups keep the comparison unavailable.
 - Modern `earn` rows are explicit: `reward` is replayed as performance, while `allocation`,
   `deallocation`, `autoallocate`, and `migration` are internal and excluded from the rewards chart.
   Unknown Earn subtypes keep the comparison unavailable.
@@ -371,13 +392,19 @@ achieved against a **synthetic buy-and-hold** strategy:
   exchange/local clock skew, accepting events only when the complete tracked balance change
   reconciles. API fills use precise `price × volume` first; historical rounded costs are
   accepted per interval only when they represent the same fill and all tracked balances match.
-- Historical flow pricing excludes future trades, future snapshots, and active OHLC candles. It
-  uses a completed 15-minute candle only when its end is at or before the event (an exact end is
-  valid); a live ticker is allowed only within 300 seconds of the balance observation.
+  Trade ownership does not affect pure Buy & Hold because no trade is mirrored; exchange identity
+  alone still does not prove who initiated a fill, and an unreconciled actual balance change fails
+  closed.
+- Historical flow pricing prefers retained USD executions before the event, admits only a small
+  bounded future execution skew when no past execution exists, then uses at-or-before snapshots and
+  completed 15-minute/60-minute/240-minute/daily OHLC candles. Future snapshots and active candles
+  are excluded; non-USD candles require a retained historical quote conversion, and a source outage
+  remains distinct from `MISSING_PRICE`. A live ticker is allowed only within 300 seconds of the
+  balance observation.
 - Same-source-timestamp USD-only funding plumbing is netted only after original classification and
   retains its source ledger IDs. A linked mixed-asset card purchase collapses via centralized normalization
 into one owner capital contribution net of fees (with non-USD fees valued at event-time historical prices),
-  allocated strictly by original inception weights (spend/receive legs are consumed as plumbing evidence without
+  allocated strictly by the fixed recorded-anchor value weights (spend/receive legs are consumed as plumbing evidence without
   being replayed into Buy & Hold). Legs must share a refid within a 120-second proximity window; incomplete shapes
   or unpriceable fees keep the comparison unavailable. Mixed-sign or overdrawn groups are not reclassified
   into an opposite owner-flow direction.
@@ -392,11 +419,13 @@ A caption below the chart reads: *Based on stored snapshots and recorded trades.
 Starting quantities are anchored to the effective comparison baseline; the original strategy inception remains preserved separately.*
 
 The strategy inception and comparison start are separate. A confirmed strategy
-baseline can remain unavailable for comparison when later trade ownership or
-balance reconciliation is still uncertain. In that case, History may show the
-earliest verified later start, or report that the bounded search is still in
-progress or has exhausted the retained candidates. Refreshing continues an
-incomplete search; it does not move the strategy inception automatically.
+baseline can remain unavailable for comparison when later balance reconciliation
+is still uncertain. When lifetime recovery is ambiguous or truncated, History may
+instead show a clearly bounded pure Buy & Hold report from the earliest genuinely
+recorded snapshot on or after the passive evidence floor. That re-anchor does not
+approve or rewrite the strategy inception. Pending recovery and unreconciled
+post-anchor history remain unavailable; refreshing continues recovery rather than
+silently inventing an earlier baseline.
 
 The comparison cannot be computed when:
 
@@ -408,18 +437,18 @@ The comparison cannot be computed when:
 | Missing price | An asset lacks a price in a snapshot. |
 | Asset universe changed | An asset was added or removed during the window, or the window assets differ from the inception baseline. |
 | Unsupported trade | A trade with a side other than BUY or SELL or non-USD quotes. |
-| Ambiguous trade ownership | A tracked trade, including a late fill, cannot be proven to belong to the bot or an external/manual source. |
-| Unexplained balance change | A tracked balance changed without a matching authoritative trade or supported ledger event, or a known event does not reconcile to the next snapshot. |
-| Inception snapshot pruned | The strategy start is known but no trustworthy baseline snapshot survives at or near it; Settings offers the earliest verified later comparison start instead. |
+| Ambiguous trade ownership | Trade ownership labels do not affect pure Buy & Hold; the passive basket never mirrors a trade. The overall comparison still remains unavailable when actual-history reconciliation cannot explain a tracked fill or balance change. |
+| Unexplained balance change | A tracked balance changed without a matching authoritative trade or supported ledger event, a known event does not reconcile to the next snapshot, or owner-flow source evidence has an unprovable order. |
+| Inception snapshot pruned | The strategy start is known but no trustworthy baseline snapshot survives at or near it; a bounded passive anchor may still be used only when a genuinely recorded post-floor snapshot is available. |
 | Unsupported ledger type | A ledger entry of a type outside Kraken's documented set blocks safe comparison. |
 | Ambiguous ledger type | A ledger entry cannot be classified as owner capital or an internal movement. |
-| Funding provenance unavailable | Deposit/withdrawal status evidence could not be retrieved; funding is not guessed. |
-| Inception recovery incomplete | Bounded Kraken history recovery is still pending or a page failed; no lifetime number is produced. |
-| Ambiguous inception | Historical activity cannot be assigned uniquely to this strategy. |
-| No bot evidence | Recovered history contains no positively identified non-dry-run bot fill. |
-| Inception baseline unavailable | A retained balance anchor, historical price, or complete event replay is missing. |
-| Inception history truncated | Legacy retained history cannot prove the lifetime baseline; set the strategy inception date in Settings. |
-| Historical coverage incomplete | Retention removed part of the strategy period, so the earliest trustworthy comparison start cannot be determined. |
+| Funding provenance unavailable | Funding-history evidence could not be retrieved; funding is not guessed. |
+| Inception recovery incomplete | Bounded Kraken history recovery is still pending or a page failed; no lifetime number is produced, and passive re-anchoring waits for an eligible resolved state. |
+| Ambiguous inception | Historical activity cannot be assigned uniquely to this strategy; a separate bounded passive anchor may still be available. |
+| No bot evidence | Recovered history contains no positively identified non-dry-run bot fill; a bounded passive report can still use a genuinely recorded post-floor anchor when one exists. |
+| Inception baseline unavailable | A retained lifetime balance anchor, historical price, authoritative balance, or complete event replay is missing; a recorded post-floor passive anchor may still be usable. |
+| Inception history truncated | Legacy retained history cannot prove the lifetime baseline; a bounded passive report can use a genuinely recorded post-floor anchor when one exists, otherwise set the strategy inception date in Settings. |
+| Historical coverage incomplete | Retention removed part of the strategy period, so the earliest trustworthy lifetime start cannot be determined; this does not by itself invalidate a complete bounded passive anchor. |
 
 When an unavailability reason applies, the chart hides and a message explains why.
 There is no estimated numeric fallback for an unexplained tracked balance change:
@@ -530,9 +559,11 @@ badges instead.
 
 1. Provide Kraken API keys with **Query Funds**, **Query Closed Orders & Trades**,
    **Query Ledgers**, and **Create & Modify Orders**. Funding provenance also
-   reads `DepositStatus` (Funds: Query, covered by Query Funds) and
-   `WithdrawStatus` (Funds: Withdraw or Data: Query ledger entries, covered by
-   Query Ledgers); no withdrawal-placement permission is needed.
+   reads Kraken Funding (Beta) deposit and withdrawal history (Funds: Query,
+   covered by Query Funds) and only falls back to `DepositStatus`/`WithdrawStatus`
+   records for method metadata (Funds: Query; Funds: Withdraw or Data: Query
+   ledger entries); fallback failure never blocks the read-only comparison, and
+   no withdrawal-placement permission is needed.
 2. Leave **Simulation** off; enable **Dry Run**.
 3. Confirm Dashboard prices and History sync look right before considering live
    mode.

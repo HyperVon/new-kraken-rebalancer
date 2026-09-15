@@ -36,6 +36,11 @@
       "url": "https://mcp.grep.app",
       "enabled": true
     },
+    "intellij": {
+      "type": "remote",
+      "url": "http://127.0.0.1:64342/sse",
+      "enabled": true
+    },
     "playwright": {
       "type": "local",
       "command": [

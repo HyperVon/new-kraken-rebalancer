@@ -48,6 +48,7 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 
 class InceptionRecoveryServiceTest : StringSpec() {
@@ -1147,7 +1148,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             subtype = "spotfromfutures",
                             asset = Asset.USD,
                             amount = BigDecimal("100.00"),
-                            balance = BigDecimal("100.00"),
+                            balance = BigDecimal("1049.70"),
                             refid = "internal-wallet-transfer",
                             hasAuthoritativeBalance = true,
                         ),
@@ -1618,7 +1619,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "recovery rejects nonzero trades outside the configured universe" {
+        "recovery rejects nonzero trades outside the configured universe without an authoritative balance" {
             runTest {
                 val botTime = Instant.parse("2026-01-02T00:00:00Z")
                 val bot = apiTrade("bot", botTime)
@@ -1648,8 +1649,684 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "trade outside configured universe"
+                status.reason shouldBe "no authoritative balance for historical asset ETH"
             }
+        }
+
+        "historical-only trades replay with their real quote asset and remain untargeted" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(1),
+                        pair = "ATOMUSDT",
+                        side = OrderSide.BUY.apiValue,
+                        symbol = "ATOM",
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("999.00"),
+                        price = BigDecimal("2.00"),
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "atom-buy-cycle",
+                        orderTxid = "atom-buy-order",
+                        tradeId = "atom-buy-trade",
+                    ),
+                )
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(2),
+                        pair = "ATOMUSDT",
+                        side = OrderSide.SELL.apiValue,
+                        symbol = "ATOM",
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("999.00"),
+                        price = BigDecimal("2.00"),
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "atom-sell-cycle",
+                        orderTxid = "atom-sell-order",
+                        tradeId = "atom-sell-trade",
+                    ),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "seed-atom",
+                            time = Instant.parse("2025-12-31T00:00:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                            asset = "ATOM",
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "seed-usdt",
+                            time = Instant.parse("2025-12-31T00:00:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                            asset = "USDT",
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                    ?.toInt() ?: error("baseline snapshot id is missing")
+                val baseline = repository.getSnapshotById(baselineId)
+                baseline.shouldNotBeNull()
+                baseline.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.01"))
+                baseline.assets.getValue(Asset.USD).balance.shouldBeEqualComparingTo(BigDecimal("1000.01"))
+                baseline.assets.getValue("ATOM").balance.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                baseline.assets.getValue("ATOM").targetPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                baseline.assets.getValue("USDT").balance.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                baseline.assets.getValue("USDT").targetPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
+        }
+
+        "a retained non-USD historical market cannot be valued as USD" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(1),
+                        pair = "ATOMUSDT",
+                        side = OrderSide.BUY.apiValue,
+                        symbol = "ATOM",
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("999.00"),
+                        price = BigDecimal("2.00"),
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "atom-filter-cycle",
+                        orderTxid = "atom-filter-order",
+                        tradeId = "atom-filter-trade",
+                    ),
+                )
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "seed-atom",
+                            time = Instant.parse("2025-12-31T00:00:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                            asset = "ATOM",
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal.ONE,
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "seed-usdt",
+                            time = Instant.parse("2025-12-31T00:00:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                            asset = "USDT",
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal.ONE,
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                krakenService.ohlcSupplier = { pair, _, _ ->
+                    if (pair == "ATOMUSDT") {
+                        listOf(botTime.minusSeconds(2 * 24 * 60 * 60L).epochSecond to BigDecimal("2.00"))
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                status.reason shouldBe "historical price unavailable for ATOM"
+            }
+        }
+
+        "production-shaped BTC fills with base-denominated fees reconstruct exact balances" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+
+                val fills = listOf(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(1),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00703085"),
+                        usdAmount = BigDecimal("461.14"),
+                        price = BigDecimal("65588"),
+                        fee = BigDecimal("0.9223"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-1218-cycle",
+                        orderTxid = "btc-fill-1218-order",
+                        tradeId = "btc-fill-1218",
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(2),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00456718"),
+                        usdAmount = BigDecimal("354.87"),
+                        price = BigDecimal("77700"),
+                        fee = BigDecimal("0.7097"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-2997-cycle",
+                        orderTxid = "btc-fill-2997-order",
+                        tradeId = "btc-fill-2997",
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(3),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00022827"),
+                        usdAmount = BigDecimal("19.91"),
+                        price = BigDecimal("87218.7"),
+                        fee = BigDecimal("0.0398"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-4352-cycle",
+                        orderTxid = "btc-fill-4352-order",
+                        tradeId = "btc-fill-4352",
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(4),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00400203"),
+                        usdAmount = BigDecimal("361.56"),
+                        price = BigDecimal("90343.4"),
+                        fee = BigDecimal("1.2655"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-4440-cycle",
+                        orderTxid = "btc-fill-4440-order",
+                        tradeId = "btc-fill-4440",
+                    ),
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(5),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.SELL.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.00223943"),
+                        usdAmount = BigDecimal("200"),
+                        price = BigDecimal("89308.6"),
+                        fee = BigDecimal("0.7"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "btc-fill-4532-cycle",
+                        orderTxid = "btc-fill-4532-order",
+                        tradeId = "btc-fill-4532",
+                    ),
+                )
+                fills.forEach { repository.saveTrade(it) }
+
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "btc-fill-1218-base",
+                            refid = "btc-fill-1218",
+                            time = botTime.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.00703085"),
+                            fee = BigDecimal("0.00001406"),
+                            balance = BigDecimal("0.01701679"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-1218-quote",
+                            refid = "btc-fill-1218",
+                            time = botTime.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-461.14"),
+                            balance = BigDecimal("1000.00"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-2997-base",
+                            refid = "btc-fill-2997",
+                            time = botTime.plusSeconds(2),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.00456718"),
+                            fee = BigDecimal("0.00000913"),
+                            balance = BigDecimal("0.02157484"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-2997-quote",
+                            refid = "btc-fill-2997",
+                            time = botTime.plusSeconds(2),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-354.87"),
+                            balance = BigDecimal("645.13"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4352-base",
+                            refid = "btc-fill-4352",
+                            time = botTime.plusSeconds(3),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.00022827"),
+                            fee = BigDecimal("0.00000046"),
+                            balance = BigDecimal("0.02180265"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4352-quote",
+                            refid = "btc-fill-4352",
+                            time = botTime.plusSeconds(3),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-19.91"),
+                            balance = BigDecimal("625.22"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4440-base",
+                            refid = "btc-fill-4440",
+                            time = botTime.plusSeconds(4),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.00400203"),
+                            fee = BigDecimal("0.00001401"),
+                            balance = BigDecimal("0.02579067"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4440-quote",
+                            refid = "btc-fill-4440",
+                            time = botTime.plusSeconds(4),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-361.56"),
+                            balance = BigDecimal("263.66"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4532-base",
+                            refid = "btc-fill-4532",
+                            time = botTime.plusSeconds(5),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("-0.00223943"),
+                            fee = BigDecimal("0.00000784"),
+                            balance = BigDecimal("0.02354340"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "btc-fill-4532-quote",
+                            refid = "btc-fill-4532",
+                            time = botTime.plusSeconds(5),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("200.00"),
+                            balance = BigDecimal("463.66"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.02354340"), Asset.USD to BigDecimal("463.66")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                    ?.toInt() ?: error("baseline snapshot id is missing")
+                val baseline = repository.getSnapshotById(baselineId)
+                baseline.shouldNotBeNull()
+                // The anchor matches the latest authoritative checkpoint. The five fills net to
+                // the recorded pre-fill balance: the old quote-fee replay dropped 0.00004550 BTC
+                // of base-denominated fees and went negative.
+                baseline.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                baseline.assets.getValue(Asset.USD).balance.shouldBeEqualComparingTo(BigDecimal("1462.15"))
+                baseline.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1462.15"))
+            }
+        }
+
+        "orphan trade ledger legs are reversed exactly once during baseline recovery" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade(
+                    id = "bot",
+                    timestamp = botTime,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                    fee = BigDecimal("0.50"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+
+                val orphanTime = botTime.plusSeconds(3600)
+                val orphanRefId = "orphan-ledger-ref"
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "orphan-btc",
+                            refid = orphanRefId,
+                            time = orphanTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal("0.10"),
+                            balance = BigDecimal("0.60"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "orphan-usd",
+                            refid = orphanRefId,
+                            time = orphanTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-10.00"),
+                            balance = BigDecimal("939.50"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "orphan-zero",
+                            refid = "orphan-zero-ref",
+                            time = orphanTime.plusSeconds(1),
+                            type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                            asset = Asset.BTC,
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal("0.60"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.60"), Asset.USD to BigDecimal("939.50")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = requireNotNull(
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)?.toIntOrNull(),
+                )
+                val baseline = requireNotNull(repository.getSnapshotById(baselineId))
+                // The orphan's +0.10 BTC/-10 USD movement is removed once before the bot fill;
+                // applying it twice would produce a visibly different pre-inception balance.
+                baseline.assets.getValue(Asset.BTC).balance shouldBeEqualComparingTo BigDecimal.ZERO
+                baseline.assets.getValue(Asset.USD).balance shouldBeEqualComparingTo BigDecimal("1000.00")
+                baseline.totalValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            }
+        }
+
+        "recovery rejects trades on unsupported historical markets" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime.plusSeconds(1),
+                        pair = "ADAEUR",
+                        side = OrderSide.BUY.apiValue,
+                        symbol = "ADA",
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("10.00"),
+                        price = BigDecimal("100.00"),
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "unsupported-market-cycle",
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldBe "unsupported historical market ADAEUR"
+            }
+        }
+
+        "recovery rejects trades without a replayable historical cost" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = botTime,
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        fee = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        cycleId = "missing-cost-cycle",
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 0
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldBe "missing historical trade cost"
+            }
+        }
+
+        "ambiguous funding rows surface the bounded provenance reason" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "ambiguous-deposit",
+                            refid = "AMBIGUOUS-REF",
+                            time = botTime.plusSeconds(3600),
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = "USD",
+                            amount = BigDecimal("100.00"),
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                val resolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+                    override fun explain(event: LedgerEvent): String? = "no candidate"
+                }
+
+                val status = newService(fundingProvenanceResolver = resolver).recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldBe "ledger provenance unresolved: deposit: no candidate"
+            }
+        }
+
+        "interleaved staking-wallet chains reconstruct spot exactly" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+
+                // The recorded balances interleave the spot and staking-wallet chains for the
+                // same asset. The early staking reward's checkpoint misses the chain by -0.00004,
+                // which its non-zero fee makes tolerable; a non-snapping replay folds that drift
+                // into the pre-window spot balance and fails on a tiny negative SOL balance.
+                fun solEvent(
+                    id: String,
+                    offsetSeconds: Long,
+                    type: String,
+                    subtype: String?,
+                    amount: String,
+                    fee: String,
+                    balance: String,
+                    refid: String? = null,
+                ) = LedgerEvent(
+                    ledgerId = id,
+                    refid = refid,
+                    time = botTime.plusSeconds(offsetSeconds),
+                    type = type,
+                    subtype = subtype,
+                    asset = "SOL",
+                    amount = BigDecimal(amount),
+                    fee = BigDecimal(fee),
+                    balance = BigDecimal(balance),
+                    hasAuthoritativeBalance = true,
+                )
+
+                ledgerRepository.saveLedgers(
+                    listOf(
+                        solEvent(
+                            "sol-spot-start",
+                            1,
+                            KrakenApiConstants.LEDGER_TYPE_REWARD,
+                            "welcomebonus",
+                            "0.01",
+                            "0",
+                            "0.01",
+                        ),
+                        solEvent(
+                            "sol-early-reward",
+                            2,
+                            KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            null,
+                            "0.0201",
+                            "0.0001",
+                            "0.02996",
+                        ),
+                        solEvent(
+                            "sol-spot-stake-out",
+                            3,
+                            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            "spottostaking",
+                            "-0.02996",
+                            "0",
+                            "0.00",
+                            refid = "sol-stake-move-1",
+                        ),
+                        solEvent(
+                            "sol-stake-in",
+                            3,
+                            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            "spottostaking",
+                            "0.02996",
+                            "0",
+                            "0.02996",
+                            refid = "sol-stake-move-1",
+                        ),
+                        solEvent(
+                            "sol-stake-reward",
+                            4,
+                            KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            null,
+                            "0.0001",
+                            "0",
+                            "0.03006",
+                        ),
+                        solEvent(
+                            "sol-stake-spot-out",
+                            5,
+                            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            "stakingtospot",
+                            "-0.03006",
+                            "0",
+                            "0.00",
+                            refid = "sol-stake-move-2",
+                        ),
+                        solEvent(
+                            "sol-spot-in",
+                            5,
+                            KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                            "stakingtospot",
+                            "0.03006",
+                            "0",
+                            "0.03006",
+                            refid = "sol-stake-move-2",
+                        ),
+                        solEvent(
+                            "sol-late-reward",
+                            6,
+                            KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            null,
+                            "0.0001",
+                            "0",
+                            "0.03016",
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)?.toInt()
+                    ?: error("baseline snapshot id is missing")
+                val baseline = repository.getSnapshotById(baselineId) ?: error("baseline snapshot is missing")
+                baseline.assets.getValue(Asset.SOL).balance shouldBeEqualComparingTo BigDecimal.ZERO
+            }
+        }
+
+        "baseline replay version reflects historical universe semantics" {
+            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "14"
         }
 
         "recovery rejects unsupported trade economics" {
@@ -1679,7 +2356,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "unsupported trade economics"
+                status.reason shouldBe "malformed historical trade economics"
             }
         }
 
@@ -1711,7 +2388,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "unsupported trade economics"
+                status.reason shouldBe "unsupported historical trade side"
             }
         }
 
@@ -1769,7 +2446,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "negative reconstructed balance"
+                status.reason shouldBe "negative reconstructed balance for BTC"
             }
         }
 
@@ -1796,7 +2473,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "unsupported trade economics"
+                status.reason shouldBe "malformed historical trade economics"
             }
         }
 
@@ -1823,7 +2500,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
-                status.reason shouldBe "unsupported trade economics"
+                status.reason shouldBe "malformed historical trade economics"
             }
         }
 
@@ -2325,7 +3002,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             type = "deposit",
                             asset = Asset.USD,
                             amount = BigDecimal("100.00"),
-                            balance = BigDecimal("100.00"),
+                            balance = BigDecimal("1049.50"),
                             hasAuthoritativeBalance = true,
                         ),
                         LedgerEvent(
@@ -2361,7 +3038,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             asset = Asset.USD,
                             amount = BigDecimal("-20.00"),
                             fee = BigDecimal("0.20"),
-                            balance = BigDecimal("79.80"),
+                            balance = BigDecimal("1029.30"),
                             hasAuthoritativeBalance = true,
                             hasAuthoritativeFee = true,
                         ),
@@ -2535,6 +3212,101 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "a lone card deposit without retained plumbing is accepted as owner capital" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade(
+                    "bot",
+                    botTime,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                    fee = BigDecimal("0.50"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "lone-card-deposit",
+                            refid = "lone-card-ref",
+                            time = botTime.plusSeconds(3600),
+                            type = "deposit",
+                            asset = Asset.USD,
+                            amount = BigDecimal("100.00"),
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("1.00"), Asset.USD to BigDecimal("949.50")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ).copy(balancesObservedAt = null),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                val cardResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+                    override fun isCardFunding(event: LedgerEvent): Boolean = true
+                }
+
+                val status = newService(fundingProvenanceResolver = cardResolver).recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+            }
+        }
+
+        "a card deposit with a distant retained sibling fails the lone-deposit gate" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade(
+                    "bot",
+                    botTime,
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("50.00"),
+                    fee = BigDecimal("0.50"),
+                )
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "lone-card-spend",
+                            refid = "lone-card-ref",
+                            time = botTime.minusSeconds(1800),
+                            type = "spend",
+                            asset = Asset.USD,
+                            amount = BigDecimal("-100.00"),
+                        ),
+                        LedgerEvent(
+                            ledgerId = "lone-card-deposit",
+                            refid = "lone-card-ref",
+                            time = botTime.plusSeconds(3600),
+                            type = "deposit",
+                            asset = Asset.USD,
+                            amount = BigDecimal("100.00"),
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("899.50")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ).copy(balancesObservedAt = null),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                val cardResolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+                    override fun isCardFunding(event: LedgerEvent): Boolean = true
+                }
+
+                val status = newService(fundingProvenanceResolver = cardResolver).recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldContain "exceeding maximum"
+            }
+        }
+
         "a funding provenance preparation failure falls back conservatively for non-funding rows" {
             runTest {
                 val botTime = Instant.parse("2026-01-02T00:00:00Z")
@@ -2704,7 +3476,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                status.reason shouldBe "historical price unavailable for ETH"
             }
         }
 
@@ -2722,10 +3494,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.saveTrade(localEstimate(botTime, bot))
                 repository.saveTrade(
                     localEstimate(
-                        botTime.plusSeconds(1),
+                        botTime.plusSeconds(3600),
                         apiTrade(
                             "eth-zero-price",
-                            botTime.plusSeconds(1),
+                            botTime.plusSeconds(3600),
                             symbol = Asset.ETH,
                             volume = BigDecimal("0.1"),
                             usdAmount = BigDecimal("10.00"),
@@ -2737,7 +3509,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val anchor = anchorSnapshot(
                     balances = mapOf(
                         Asset.BTC to BigDecimal("0.5"),
-                        Asset.ETH to BigDecimal("0.1"),
+                        Asset.ETH to BigDecimal("0.2"),
                         Asset.USD to BigDecimal("949.70"),
                     ),
                     prices = mapOf(
@@ -2768,6 +3540,55 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 status.status shouldBe InceptionRecoveryStatus.CONFIRMED
                 krakenService.getOHLCCallCount shouldBe 1
+            }
+        }
+
+        "a historical-only dust position is valued from its retained USD market" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                val bot = apiTrade("bot", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "ada-dustsweep",
+                            time = Instant.parse("2026-01-02T00:10:00Z"),
+                            type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                            subtype = "dustsweeping",
+                            asset = Asset.ADA,
+                            amount = BigDecimal("-1.12464668"),
+                            balance = BigDecimal.ZERO,
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.02"), Asset.USD to BigDecimal("1000.00")),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+
+                val unavailable = newService().recoverOneBoundedRun()
+
+                unavailable.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                unavailable.reason shouldBe "historical price unavailable for ADA"
+
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    listOf(botTime.minusSeconds(2 * 24 * 60 * 60L).epochSecond to BigDecimal("0.415796"))
+                }
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)?.toInt()
+                    ?: error("baseline snapshot id is missing")
+                val baseline = repository.getSnapshotById(baselineId) ?: error("baseline snapshot is missing")
+                val ada = baseline.assets.getValue(Asset.ADA)
+                ada.balance shouldBeEqualComparingTo BigDecimal("1.12464668")
+                ada.price shouldBeEqualComparingTo BigDecimal("0.415796")
             }
         }
 
@@ -2811,7 +3632,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val first = newService().recoverOneBoundedRun()
 
                 first.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                first.reason shouldBe "historical price unavailable"
+                first.reason shouldBe "historical price source error for ETH"
                 val tradeHistoryCalls = krakenService.getTradeHistoryCallCount
 
                 ohlcAvailable = true
@@ -2862,7 +3683,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                status.reason shouldBe "historical price unavailable for ETH"
             }
         }
 
@@ -3279,7 +4100,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                status.reason shouldBe "historical price unavailable for ETH"
             }
         }
 
@@ -3321,14 +4142,17 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val candleOpenSec = Instant.parse("2026-01-02T00:00:00Z").epochSecond
                 krakenService.ohlcSupplier = { pair, interval, _ ->
                     pair shouldBe Asset.ETH_USD_PAIR
-                    interval shouldBe 15
-                    listOf(candleOpenSec to BigDecimal("200.00"))
+                    if (interval == 15) {
+                        listOf(candleOpenSec to BigDecimal("200.00"))
+                    } else {
+                        emptyList()
+                    }
                 }
 
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "historical price unavailable"
+                status.reason shouldBe "historical price unavailable for ETH"
             }
         }
 
@@ -4693,7 +5517,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
         val total = assets.values.fold(BigDecimal.ZERO) { sum, asset -> sum.add(asset.valueUSD) }
         return PortfolioSnapshot(
             timestamp = timestamp,
-            totalValueUSD = total.setScale(2),
+            totalValueUSD = total.setScale(2, RoundingMode.HALF_UP),
             assets = assets,
             actions = emptyList(),
             drawdownPercent = BigDecimal.ZERO,

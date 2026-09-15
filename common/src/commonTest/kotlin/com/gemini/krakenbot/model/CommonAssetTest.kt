@@ -94,6 +94,33 @@ class CommonAssetTest {
     }
 
     @Test
+    fun splitTradingPairResolvesKnownQuotes() {
+        assertEquals(TradingPairSplit("SEI", "USD", "SEIUSD"), Asset.splitTradingPair("SEIUSD"))
+        assertEquals(TradingPairSplit("BTC", "USD", "XXBTZUSD"), Asset.splitTradingPair("XXBTZUSD"))
+        assertEquals(TradingPairSplit("ATOM", "USDT", "ATOMUSDT"), Asset.splitTradingPair("ATOMUSDT"))
+        assertEquals(TradingPairSplit("USDG", "USDC", "USDGUSDC"), Asset.splitTradingPair("USDGUSDC"))
+        assertEquals(TradingPairSplit("USDT", "USD", "USDTZUSD"), Asset.splitTradingPair("USDTZUSD"))
+        assertEquals(TradingPairSplit("SOL", "USDT", "SOLUSDT"), Asset.splitTradingPair("solusdt"))
+    }
+
+    @Test
+    fun splitTradingPairKeepsModernBasesEndingInZ() {
+        assertEquals(TradingPairSplit("CHZ", "USD", "CHZUSD"), Asset.splitTradingPair("CHZUSD"))
+        assertEquals(TradingPairSplit("XTZ", "USD", "XTZUSD"), Asset.splitTradingPair("XTZUSD"))
+        assertEquals(TradingPairSplit("STRC", "USD", "STRCZUSD"), Asset.splitTradingPair("STRCZUSD"))
+    }
+
+    @Test
+    fun splitTradingPairRejectsUnknownQuotesAndDegeneratePairs() {
+        assertNull(Asset.splitTradingPair("ADAEUR"))
+        assertNull(Asset.splitTradingPair("BTCEUR"))
+        assertNull(Asset.splitTradingPair("USD"))
+        assertNull(Asset.splitTradingPair(""))
+        assertNull(Asset.splitTradingPair("   "))
+        assertNull(Asset.splitTradingPair("USDCUSDC"))
+    }
+
+    @Test
     fun krakenAssetAliasesTickerMapping() {
         assertEquals("XBT", KRAKEN_TICKER_BY_SYMBOL[KrakenAssetAliases.BTC])
         assertEquals("XDG", KRAKEN_TICKER_BY_SYMBOL[KrakenAssetAliases.DOGE])
