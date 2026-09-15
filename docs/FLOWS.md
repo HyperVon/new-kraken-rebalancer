@@ -463,9 +463,10 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   `reward`, and `conversion`; it filters returned rows by their actual response type.
 - Inception recovery separately requests unfiltered ledger pages. If Kraken
   returns an observed top-level `type=reward` row there, it is persisted and
-  replayed as an in-kind actual balance event; Buy & Hold mirrors a positive
-  credit only when the synthetic basket already holds that asset, so a newly
-  credited unheld asset remains actual-only in the counterfactual.
+  replayed as an in-kind actual balance event; Buy & Hold mirrors explicitly
+  classified account-level credits even when the synthetic basket did not already
+  hold that asset. Other holding-dependent reward credits remain actual-only when
+  the credited asset was unheld in the counterfactual.
   Ordinary synchronization uses the same local response-type filtering for future reward rows. Durable trade
   coverage version `1` records start epoch sec, horizon epoch sec, and verified account
   scope digest, enabling start-aware reconstruction without relying on forward trade watermarks.
@@ -477,11 +478,14 @@ The History rewards query filters the persisted ledger range to `staking`,
 `dividend`, top-level promotion `reward`, transfer `airdrop` credits, and `earn/reward` rows for tracked assets, then aligns cumulative
 amounts to portfolio snapshots and values them with each snapshot's prices. Earn
 allocation mechanics are internal and remain out of the rewards series. The
-comparison and reverse snapshot reconstruction consume all supported persisted
-ledger types, including observed top-level promotion `reward` rows returned by
-unfiltered recovery, with `amount - fee` where applicable. Raw consumer Buy Crypto
-`spend`/`receive` rows remain separate persisted ledger events, but a complete linked
-group is one atomic comparison transformation; incomplete linked groups fail closed.
+actual comparison and reverse snapshot reconstruction consume all supported
+persisted ledger types, including observed top-level promotion `reward` rows
+returned by unfiltered recovery, with `amount - fee` where applicable. For pure
+Buy & Hold, complete conversions and complete refid-linked consumer `spend`/`receive`
+groups are validated and consumed as plumbing but emit no synthetic conversion,
+trade, or owner-flow event. Unlinked or singleton consumer passthrough rows are
+excluded from the passive event stream because their missing counterpart cannot
+prove an independent credit or charge; incomplete linked groups fail closed.
 Kraken documents those app transactions in Ledger history rather than Trades history.
 The ATH path prepares one immutable funding-provenance snapshot for the retained
 ledger batch and shares it across classification, card normalization, and basis
@@ -490,18 +494,17 @@ incomplete card group defers ATH and is not journaled, while an ordinary
 confirmed Wire/ACH deposit remains an owner-capital event. Card normalization
 keeps synthetic net owner capital separate from exact per-leg asset deltas:
 Buy & Hold uses the synthetic amount, and later ATH basis reconstruction replays
-the actual deltas and fees once. At inception, the synthetic basket uses the
-full actual economic value and allocates it across configured assets with positive
-inception value using their original value weights; zero-valued targets and
-historical-only holdings remain actual-only, with historical-only value represented
-once through that value-weighted capitalization. Old decided ambiguous groups do not block an
-unrelated undecided bank flow, but a group split between decided and newly
-arrived rows fails closed rather than applying a partial sibling.
-If an owner contribution and a manual/external trade share the same source
-timestamp, comparison also remains unavailable because the trade sequence cannot
-be proven from the retained evidence. The same fail-closed rule covers a complete
-target-asset conversion colliding with an owner contribution or mirrorable
-manual/external trade; disjoint historical-only trades do not create this conflict.
+the actual deltas and fees once. At inception, the pure benchmark starts with
+the exact positive holdings in the selected recorded anchor and their normalized
+recorded value weights; it does not reconstruct current target percentages. When
+lifetime inception recovery is unresolved, the selected anchor may instead be the
+earliest genuinely recorded snapshot on or after the bounded passive evidence floor.
+Zero-valued assets and assets absent from that anchor receive no synthetic units,
+while later owner capital uses the same fixed anchor weights. Old decided ambiguous
+groups do not block an unrelated undecided bank flow, but a group split between
+decided and newly arrived rows fails closed rather than applying a partial sibling.
+Owner-flow ordering remains fail-closed when a withdrawal overlaps a tracked balance
+reduction or contribution/withdrawal source evidence whose sequence cannot be proven.
 Dividends for untracked assets remain excluded from the rewards series. It is a
 normal suspend query, not a background flow. Before the comparison renders, each
 tracked interval must reconcile against authoritative trades and supported ledger

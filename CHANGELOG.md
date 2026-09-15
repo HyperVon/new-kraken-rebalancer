@@ -12,17 +12,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Historical trade ownership now fails closed**: an authoritative `API_FILL` without local cycle/client metadata or a durable rebalancer order-intent match remains `UNKNOWN` instead of being inferred as manual/external. `MANUAL_OR_EXTERNAL` now requires explicit `TradeSource.MANUAL` evidence, and an unknown trade touching a tracked base or quote makes the comparison unavailable.
 - **Exact order sibling fill propagation and conflict fail-closed**: positive bot evidence (cycle ID, client order ID, local estimate, durable order intent) or manual evidence propagates to sibling fills sharing an exact `orderTxid`. If conflicting evidence exists for an order, it fails closed to `UNKNOWN` and comparison remains unavailable.
-- **Synthetic Buy & Hold replay now preserves linked balance economics**: complete refid-linked consumer `spend`/`receive` groups, including supported multi-leg groups, replay atomically and skip as a whole when their debit cannot be sourced from the synthetic basket. Positive rewards in assets the basket does not hold remain actual-only instead of creating synthetic value.
+- **Pure Buy & Hold now preserves the recorded anchor thesis**: complete refid-linked consumer `spend`/`receive` groups and top-level conversions are validated and consumed as plumbing, not replayed as synthetic trades or conversions. Positive holding-dependent rewards in assets the basket does not hold remain actual-only, while explicitly classified account-level credits may introduce their credited asset.
+
+### Changed
+
+- **Unresolved lifetime inception no longer blocks a bounded passive benchmark**: when recovery cannot prove the historical strategy start, the comparison may re-anchor only to the earliest genuinely recorded portfolio snapshot on or after its evidence floor. The exact recorded balances and prices become fixed anchor lots; current target percentages, later trades, trade ownership labels, internal conversions, and unlinked consumer-transaction legs do not rewrite those lots.
+- **Owner-flow and reward semantics are explicit for the pure benchmark**: confirmed contributions are valued at event time and allocated using the fixed recorded-anchor value weights, withdrawals reduce synthetic NAV proportionally, holding-dependent rewards are mirrored only for anchor-held assets, explicitly classified account-level credits may introduce an unheld credited asset, and equity/cash-dividend credits are excluded from the crypto/cash thesis. Reconciliation still validates actual balance changes and fails closed on unsupported or unexplained history.
 
 ## [6.17.62] - 2026-09-14
 
 ### Fixed
 
-- **Buy & Hold now preserves the historical inception thesis**: an approved full-wallet baseline
-  uses the actual value proportions of configured assets that held value at inception, redistributes
-  historical-only capital across those original holdings, and gives zero-valued targets no synthetic
-  units. Current target edits cannot rewrite the historical basket, and later owner contributions keep
-  the same fixed inception weights.
+- **Buy & Hold keeps the recorded anchor basket regardless of later configuration**: current target
+  edits cannot rewrite the frozen anchor holdings, zero-valued targets receive no synthetic units, and
+  later owner contributions keep the same fixed anchor weights.
 - **Reconciliation separates economic inception from the reconstructed target-only series**: complete
   conversions whose two legs are outside that recorded universe are validated but not replayed into the
   synthetic basket, so an untracked USD stablecoin plumbing conversion cannot collide with a tracked
@@ -36,11 +39,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Buy & Hold now uses equal-capital inception semantics**: the synthetic benchmark starts with
-  the full reconstructed actual-wallet value, allocates it across configured positive-target assets
-  using normalized target weights and historical inception prices, and keeps historical-only assets
-  actual-only. Their value is represented once through the configured target basket rather than
-  dropped or counted again when the actual holding is later disposed.
 - **Comparison fails closed for same-source-timestamp owner funding and manual trades** when the
   retained evidence cannot prove whether the trade consumed the newly contributed capital.
 - **Comparison fails closed for source-time collisions between target conversions and owner or
@@ -60,11 +58,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   when its `tradeId` is absent; multiple owners or refids fail closed. Snapshot reconstruction version `17` rebuilds
   derived snapshots in place, and baseline replay version `14` rebuilds the historical baseline.
 - **Buy & Hold no longer creates impossible negative holdings or double-counts owner capital**: an owner contribution is
-  invested by inception weights instead of being held in the contributed asset, so a later manual trade, conversion, or
-  balance movement that spends that asset previously drove the synthetic basket negative and blocked the comparison
-  with `UNEXPLAINED_BALANCE_CHANGE`. Replayed movements are now attributed to the basket-held share: the mirrored
-  portion is scaled to what the basket actually holds, a movement against a zero holding is skipped, and the
-  already-counted contributed value is never applied twice.
+  allocated across the fixed recorded-anchor weights instead of being held in the contributed asset, so a later manual
+  trade, conversion, or balance movement that spends that asset previously drove the synthetic basket negative and
+  blocked the comparison with `UNEXPLAINED_BALANCE_CHANGE`. A credited movement is never mirrored beyond the held
+  share, a movement against a zero holding is skipped, and the already-counted contributed value is never applied twice.
 
 ### Changed
 
@@ -72,13 +69,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   contribution-time prices through retained successful USD executions in a wide past-only lookup, a small bounded
   future execution skew only when no past execution exists, an at-or-before recorded snapshot, a completed Kraken
   OHLC candle, or a cross-quote conversion through the quote asset's own historical USD rate. Retained market-pair
-  identities cover delisted and historical-only markets without guessing symbols. A contribution in a historical-only
-  asset is valued in USD and allocated across the configured targets only; it never receives a benchmark weight or a
-  live rebalance target. Missing evidence remains `MISSING_PRICE`, while an OHLC source outage remains a distinct
-  retryable `HISTORICAL_PRICE_SOURCE_ERROR`.
-- **The comparison replays ledger, conversion, and mirrored manual-trade events in reconstruction's chronological
-  order**: events that share one instant keep the recorded ledger-before-trade ordering, so an authoritative checkpoint
-  is evaluated against the state that existed at its timestamp instead of reporting a spurious mismatch.
+  identities cover delisted and historical-only markets without guessing symbols. A contribution in an asset outside
+  the anchor basket is valued in USD and allocated across the fixed anchor weights only; it never adds a new benchmark
+  holding and never receives a live rebalance target. Missing evidence remains `MISSING_PRICE`, while an OHLC source
+  outage remains a distinct retryable `HISTORICAL_PRICE_SOURCE_ERROR`.
+- **The actual series keeps reconstruction's equal-instant ledger-before-trade ordering**: events that share one instant
+  keep the recorded ordering, so an authoritative checkpoint is evaluated against the state that existed at its
+  timestamp instead of reporting a spurious mismatch. Ledger, conversion, and manual-trade rows stay reconciliation
+  evidence for the actual series and are never mirrored into the passive basket.
 
 ## [6.17.59] - 2026-09-12
 

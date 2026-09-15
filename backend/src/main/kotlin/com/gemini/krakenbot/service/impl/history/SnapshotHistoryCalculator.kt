@@ -216,8 +216,8 @@ object SnapshotHistoryCalculator {
     private fun reverseApplyTrade(
         trade: TradeRecord,
         runningBalances: MutableMap<String, BigDecimal>,
-        tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
-        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>> = emptyMap(),
+        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
+        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
     ) {
         val replay = when (
             val classification = TradeLedgerReplay.classify(
@@ -231,8 +231,13 @@ object SnapshotHistoryCalculator {
             is TradeLedgerReplay.Classification.Unsupported ->
                 throw IllegalArgumentException(classification.reason)
         }
-        runningBalances.putIfAbsent(replay.base, BigDecimal.ZERO)
-        runningBalances.putIfAbsent(replay.quote, BigDecimal.ZERO)
+        val effect = replay.ledgerEffect
+        if (effect == null || effect.baseCheckpoint == null) {
+            runningBalances.putIfAbsent(replay.base, BigDecimal.ZERO)
+        }
+        if (effect == null || effect.quoteCheckpoint == null) {
+            runningBalances.putIfAbsent(replay.quote, BigDecimal.ZERO)
+        }
         require(TradeLedgerReplay.reverseApply(replay, runningBalances)) {
             "Missing tracked balance during historical reconstruction for ${trade.symbol}"
         }
@@ -242,7 +247,7 @@ object SnapshotHistoryCalculator {
     private fun reverseApplyReward(
         event: LedgerEvent,
         runningBalances: MutableMap<String, BigDecimal>,
-        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
     ) {
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         if (symbol !in runningBalances) return
@@ -271,8 +276,8 @@ object SnapshotHistoryCalculator {
     private fun applyForwardTrade(
         trade: TradeRecord,
         runningBalances: MutableMap<String, BigDecimal>,
-        tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
-        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>> = emptyMap(),
+        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
+        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
     ) {
         val replay = when (
             val classification = TradeLedgerReplay.classify(
@@ -307,7 +312,7 @@ object SnapshotHistoryCalculator {
     private fun applyForwardReward(
         event: LedgerEvent,
         runningBalances: MutableMap<String, BigDecimal>,
-        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
     ) {
         val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         if (symbol !in runningBalances) return
@@ -335,9 +340,9 @@ object SnapshotHistoryCalculator {
     private fun orderSameInstantEvents(
         events: List<TimelineEvent>,
         runningBalances: Map<String, BigDecimal>,
-        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
-        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
-        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
+        tradeLegsByRefId: Map<String, List<LedgerEvent>> = emptyMap(),
+        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>> = emptyMap(),
     ): List<TimelineEvent> {
         if (events.size < 2 || events.zipWithNext().none { (a, b) -> a.timestamp == b.timestamp }) return events
         val replays = events.filterIsInstance<TimelineEvent.TradeEvent>().associateWith { tradeEvent ->
@@ -370,7 +375,7 @@ object SnapshotHistoryCalculator {
         group: List<TimelineEvent>,
         trackedSymbols: Set<String>,
         replays: Map<TimelineEvent.TradeEvent, TradeLedgerReplay.Classification?>,
-        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
     ): List<TimelineEvent> {
         val chainPoints = group.map { chainPoints(it, trackedSymbols, replays, resolvedScopes) }
         val anchored = group.indices.filter { chainPoints[it].isNotEmpty() }
@@ -423,7 +428,7 @@ object SnapshotHistoryCalculator {
         event: TimelineEvent,
         trackedSymbols: Set<String>,
         replays: Map<TimelineEvent.TradeEvent, TradeLedgerReplay.Classification?>,
-        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope> = emptyMap(),
     ): List<ChainPoint> = when (event) {
         is TimelineEvent.TradeEvent -> {
             val replay = replays[event] as? TradeLedgerReplay.Classification.Replayable
@@ -553,6 +558,9 @@ object SnapshotHistoryCalculator {
                     drawdownPercent = drawdownPct,
                     fiatDeploymentPercent = fiatDeploymentPct,
                     effectiveUsdTargetPercent = effectiveUsdTarget,
+                    // These rows are derived by replaying retained trades and ledgers; they are
+                    // not a balance request captured from Kraken at this timestamp.
+                    balancesObservedAt = null,
                 )
 
             snapshotsChronological.add(snapshot)

@@ -212,7 +212,7 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
       fees from blocking new ordinary bank deposits.
    - **Synthetic Capital vs Actual Effects**: `NormalizedFundingTransaction.OwnerContribution` and
        `OwnerWithdrawal` carry both `netOwnerCapitalUsd` (the synthetic amount used for ATH scaling and Buy & Hold
-       original-inception allocation) and exact per-leg `TimedAssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
+       recorded-anchor allocation) and exact per-leg `TimedAssetDelta` values derived from `LedgerEvent.netBalanceDelta()`.
        Each delta maintains its ledger ID and timestamp so that basis reconstruction at an arbitrary target time never
        replays future card legs prematurely. Buy & Hold consumes only the synthetic amount and never replays the conversion legs.
        ATH basis reconstruction replays completed card actual deltas, including fees, exactly once and excludes both the
@@ -580,8 +580,8 @@ once instead of being replayed as its rounded quote equivalent, and leg rounding
   recorded movement. Missing, duplicated, unexpected, or direction-contradictory leg shapes fail
   closed, and an ambiguous identity or missing leg is never resolved with amount/time similarity;
   a missing leg is accepted only when its reported movement is provably zero. Complete
-conversions retain their explicit strategy-neutral two-leg replay and do not affect owner capital,
-rewards, ATH, or Buy & Hold scaling. Baseline replay version `14` and snapshot reconstruction
+conversions retain their explicit strategy-neutral two-leg replay for actual-history reconstruction;
+the pure Buy & Hold path consumes them as plumbing without synthetic scaling. Baseline replay version `14` and snapshot reconstruction
 version `17` invalidate only the derived baseline and snapshot results, so completed recovery
 trade/ledger streams and their offsets remain reusable. The reconstruction
 universe is derived per run: configured allocations plus every replayable trade base and quote plus
@@ -626,15 +626,16 @@ Earn allocation mechanics are persisted for account reconstruction but are not
 performance rewards; unknown Earn subtypes remain fail-closed. Dividend entries
 for untracked assets remain persisted but excluded as external inflows.
 
-For ATH and benchmark accounting, all supported persisted ledger types—including
+For ATH and actual-history accounting, all supported persisted ledger types—including
 observed top-level promotion `reward` rows recovered from unfiltered pages—are
 classified before application and use `amount - fee` where replayed, preserving
 both legs of a consumer transaction. Top-level `reward` and `earn/reward` are
 in-kind performance events; Earn allocation mechanics are internal and ignored
 by ATH and Buy & Hold. A complete `conversion` group is an internal transformation:
-each source and destination leg is replayed once with its own balance delta and
-fee, but the group contributes no owner capital, reward, or synthetic Buy & Hold
-scaling. Incomplete or contradictory conversion groups fail closed.
+the actual-history path replays each source and destination leg once with its own
+balance delta and fee. The pure Buy & Hold path validates and consumes the group
+as plumbing but emits no synthetic conversion or trade event. Incomplete or
+contradictory conversion groups fail closed.
 Historical snapshot reconstruction replays the corresponding account-balance
 legs so reconstructed Spot balances remain faithful. For internal wallet moves, a Spot debit is
 reversed into the earlier balance and a Spot credit is reversed out; non-Spot counterpart legs are
@@ -670,12 +671,16 @@ deposit/withdrawal plus `spend`/`receive`) carries the original typed category
 and every source ledger ID; it is never represented by a synthetic row that is
 classified a second time. USD-only plumbing may collapse to its net economics,
 while mixed-asset card plumbing collapses confirmed card transactions into net owner capital via
-centralized normalization, as described below. Internal moves remain neutral and unresolved
+centralized normalization, as described below. Complete conversions and complete
+refid-linked consumer groups are validated and consumed as plumbing; they do not
+become synthetic Buy & Hold events. Unlinked consumer passthrough rows are also
+excluded from the passive event stream because their missing counterpart cannot
+prove an independent credit or charge. Internal moves remain neutral and unresolved
 funding remains unavailable. A mixed-sign or overdrawn funding/plumbing group is
 left separate rather than being reclassified as the opposite owner-flow
-direction. Where a trade, owner flow, or non-plumbing balance movement shares a
-timestamp and the economic order cannot be proven, the comparison returns
-unavailable rather than imposing a lexical order.
+direction. Where owner flows or non-plumbing balance movements share a timestamp
+and the economic order cannot be proven, the comparison returns unavailable rather
+than imposing a lexical order.
 
 For card-funded Buy Crypto transactions, a centralized normalizer (`CardFundingNormalizer`)
 governs both ATH neutralization and Buy & Hold accounting, guaranteeing identical economic
@@ -699,18 +704,21 @@ Non-USD leg fees (such as BTC receive fees) are converted to USD at event-time h
 before deducting from gross capital; unpriceable fees fail closed (`HISTORICAL_PRICE_UNAVAILABLE`
 for ATH, `MISSING_PRICE` for B&H). The confirmed transaction collapses into a single owner contribution
 net of all fees ($5,000 gross deposit - $20 spend fee = $4,980 net) and allocates it strictly by the fixed
-original inception value weights; spend and receive legs are consumed as plumbing evidence and are not replayed
+recorded-anchor value weights; spend and receive legs are consumed as plumbing evidence and are not replayed
 into B&H. This preserves counterfactual neutrality between the rebalancer and B&H without double-counting
 assets, inventing conversion alpha, or treating transaction fees as performance drawdown.
 A provenance preparation failure is reported separately as `FUNDING_PROVENANCE_UNAVAILABLE`.
 
-Before rendering benchmark points, each interval replays every successful
-authoritative trade, supported external ledger event, and fee into the previous
-tracked balances. If any tracked asset still differs from the next snapshot after
-rounding USD to scale 2 and crypto to scale 8, the comparison is unavailable with
-`UNEXPLAINED_BALANCE_CHANGE` at that next snapshot's timestamp. It never emits
-estimated numeric alpha for an unexplained tracked mutation; untracked assets remain
-outside this validation boundary.
+Before rendering benchmark points, each interval validates and reconciles every
+successful authoritative trade, supported external ledger event, and fee against
+the previous tracked balances. If any tracked asset still differs from the next
+snapshot after rounding USD to scale 2 and crypto to scale 8, the comparison is
+unavailable with `UNEXPLAINED_BALANCE_CHANGE` at that next snapshot's timestamp.
+Trades and internal conversions are reconciliation evidence for the actual series,
+not synthetic Buy & Hold events; the passive path applies only eligible external
+movements and normalized owner flows. It never emits estimated numeric alpha for
+an unexplained tracked mutation; untracked assets remain outside this validation
+boundary.
 
 Snapshots track an explicit `balancesObservedAt` timestamp representing the local
 balance-request start boundary, distinct from the snapshot creation/display
@@ -739,8 +747,10 @@ the persisted USD-scale cost only when that cost is the rounded representation o
 fill. Observation-marker presence does not select cost precision: reconstructed and live
 rows can use different accounting despite both lacking the marker. Each attempt starts
 from the preceding reconciled event assignments; failed attempts are discarded. Every
-interval must reconcile, and the selected representation is reused during Buy & Hold
-replay. An error identifies the first interval that remains unexplained after the retry.
+interval must reconcile, and the selected representation is retained only for the
+actual balance replay. Pure Buy & Hold does not replay the successful fill or internal
+conversion as a synthetic trade. An error identifies the first interval that remains
+unexplained after the retry.
 
 Kraken ledger fees are denominated in the ledger asset and are persisted at crypto
 precision; they must not use the four-decimal fiat trade-fee scale. Existing rows
@@ -750,15 +760,17 @@ event's persisted post-ledger balance to derive the exact tracked delta. This
 compatibility path is intentionally not used for mixed or repeated same-asset
 events, where absolute post-event balances could be order-dependent. A genuine
 zero post-event balance is intentionally treated as non-authoritative because
-legacy rows used zero as the missing-balance sentinel. The accepted
-delta is reused for Buy & Hold replay, and the comparison remains fail-closed when
-the event sequence cannot be reconciled.
+legacy rows used zero as the missing-balance sentinel. The accepted delta is reused
+for actual balance replay and for any eligible external ledger movement in the
+passive benchmark; trade and conversion deltas are never turned into synthetic Buy
+& Hold events. The comparison remains fail-closed when the event sequence cannot be
+reconciled.
 
 ### Strategy inception & Buy & Hold benchmark semantics
 
 The Buy & Hold benchmark answers whether the user would have more money today by
-running the rebalancer versus holding the original inception investment thesis with
-the same external capital over time:
+running the rebalancer versus holding the recorded anchor basket with the same
+external capital over time:
 
 - **Inception recovery is separate from ordinary sync.** On startup and during the normal loop,
   the shared account-scope guard must validate the active Kraken scope before any private history,
@@ -824,21 +836,25 @@ the same external capital over time:
   bounded search advances through retained snapshots and persists `VERIFIED`, `INCOMPLETE`, or
   `EXHAUSTED` progress. A verified later timestamp is an optional comparison anchor only; accepting
   it preserves the original strategy inception and makes the same anchor explicit in configuration.
+- **A bounded passive anchor is separate from strategy-inception approval.** If lifetime recovery is
+  ambiguous, truncated, or has no trustworthy historical baseline, the comparison may use the
+  earliest genuinely recorded portfolio snapshot on or after the configured passive evidence floor.
+  The exact retained timestamp, observation marker, balances, prices, and provenance are the anchor;
+  this does not confirm the old strategy start, and a pending recovery state remains unavailable.
 - **Coverage gaps fail closed.** Later-start proposal search is allowed only when retained snapshots cover
   the relevant strategy period continuously without missing historical eras. In upgraded installations with legacy
   pruning, continuous history start is tracked monotonically in metadata; if older candidate coverage was destroyed
   by pruning or contains a gap exceeding 24 hours, comparison availability reports `HISTORICAL_COVERAGE_GAP`
-  and no retained snapshot is presented as the earliest trustworthy start.
-- **Buy & Hold is an equal-capital counterfactual.** The basket is restricted to configured assets
-  that had positive actual value at inception (with the existing keep-all fallback only for planless
-  snapshots), but its inception units are funded from the full approved actual-wallet value. The
-  original value proportions of those held configured assets are normalized to project precision and
-  applied at their historical inception prices; current `targetPercent` values are not a historical
-  allocation record. Zero-valued targets and historical-only holdings reconstructed for accounting
-  remain actual-only with zero B&H units, while historical-only value is redistributed over the
-  original holdings exactly once. Consequently the first actual and B&H values normally match within
-  rounding tolerance. If a reconstructed configured-only row shares the inception timestamp, that
-  row cannot erase the full-wallet value from the first actual point.
+  and no retained snapshot is presented as the earliest trustworthy lifetime strategy start. A
+  bounded passive anchor can still be available when the retained post-floor snapshots themselves
+  are complete and reconcile.
+- **Buy & Hold preserves the recorded anchor thesis.** The basket starts with every positive holding
+  in the selected recorded anchor, using its actual balance, historical price, and value proportion
+  normalized to project precision. It is not an equal-capital recreation of current targets: the
+  target percentages, later configuration changes, trade ownership labels, internal conversions,
+  and consumer-transaction plumbing never rewrite the anchor lots. Consequently the first actual and
+  B&H values normally match within rounding tolerance. A passive re-anchor uses the same rule; it is
+  a bounded recorded-state comparison, not an approval of the historical strategy inception.
 - **Comparison reconciles actual holdings through recorded base/quote semantics.** Every successful
   trade in the interval is replayed through `Asset.splitTradingPair`, so a delisted or no longer
   configured USD market (for example `STRCZUSD`) adjusts the tracked quote balance and its base
@@ -857,53 +873,49 @@ the same external capital over time:
   a tracked quote without a recorded balance fails closed. A one-unit crypto quantity offset
   left by backward replay from live balances is tolerated, while quote cash stays cent-exact;
   the comparison remains fail-closed (`UNEXPLAINED_BALANCE_CHANGE`) when the recorded series
-  is inconsistent with retained trade and ledger evidence. It also defers when an owner
-  contribution and manual/external trade share the same source timestamp, because the exchange
-  does not provide enough sequence evidence to know whether the trade consumed the new capital.
-  The same source-time and target-asset interaction rule applies to a complete internal conversion
-  paired with an owner contribution or mirrorable manual/external trade; disjoint historical-only
-  trades are not treated as synthetic ordering conflicts.
-- **Manual trade replay is evidence-bound.** This is a user-action-adjusted Buy & Hold comparison:
-  only an explicitly recorded manual/external trade is mirrorable. A settled `API_FILL` with no
-  local cycle/client metadata and no durable rebalancer order-intent match remains `UNKNOWN`, even
-  when it has exchange trade or order IDs; those IDs prove settlement, not who initiated the fill.
-  An unknown trade that touches a tracked base or quote fails closed as
-  `AMBIGUOUS_TRADE_OWNERSHIP`, while positively identified bot fills are never mirrored.
-- **Owner contributions after inception are invested by the fixed original inception value
+  is inconsistent with retained trade and ledger evidence. Owner-flow ordering is also
+  fail-closed when a withdrawal overlaps a tracked balance reduction, or when contribution and
+  withdrawal plumbing share source evidence whose sequence cannot be proven. Trades and internal
+  conversions do not create synthetic benchmark events and therefore do not introduce a passive
+  ordering conflict.
+- **Trade ownership is not passive allocation input.** Every successful non-dry-run fill that can
+  affect the tracked Spot balances is still validated against authoritative ledger legs and the
+  recorded snapshots. `REBALANCER`, `MANUAL`, and `UNKNOWN` labels do not change pure Buy & Hold:
+  the benchmark never mirrors a trade. Exchange trade or order IDs prove settlement, not who
+  initiated it; ownership ambiguity alone does not block a re-anchored passive report. A fill that
+  cannot reconcile to the actual recorded balance series still fails closed as an unexplained
+  balance change.
+- **Owner contributions after the selected anchor are invested by the fixed recorded-anchor value
   weights** (existing synthetic holdings untouched); only the new money moves. This is the same
-  weighting policy used to capitalize the full actual inception value.
+  weighting policy used to capitalize the exact recorded anchor value.
   Confirmed card Buy Crypto transactions collapse into a single net owner contribution
-  allocated by those fixed original weights; any USD funding plumbing netting to zero fails closed
+  allocated by those fixed anchor weights; any USD funding plumbing netting to zero fails closed
   as ambiguous. Contribution prices come only from recorded history near the event —
   never a live ticker for an old contribution — and missing prices fail closed. The
   evidence ladder is the same bounded historical ladder used elsewhere: a retained USD-quoted
   execution in the wide past window (with only a small future skew when no past execution exists),
   an at-or-before recorded snapshot, a completed Kraken OHLC candle, or a trustworthy cross-quote
   conversion through the quote asset's own historical USD rate. A contribution in a historical-only asset is
-  valued in USD and allocated across the original inception holdings only; it never receives a
+  valued in USD and allocated across the recorded anchor holdings only; it never receives a
   benchmark weight and never becomes a live rebalance target.
 - **Owner withdrawals scale the whole synthetic portfolio proportionally by
   market value**, so the cash event itself creates no artificial alpha either way.
 - **Replayed movements are attributed to what the synthetic basket actually holds.**
-  A trade, conversion, or balance movement that draws down an asset the basket never
-  received is mirrored only for the basket-held share. An owner contribution is
-  invested by fixed original inception value weights rather than held in the contributed asset, so a later
-  spend of that asset cannot create an impossible negative synthetic holding or count
-  the same value twice; the remainder is skipped instead. This keeps every contribution
-  counted exactly once while partial holdings still mirror their real proportion.
-- Positive investment returns (staking, dividends, observed top-level promotion rewards,
-  and `earn/reward`) replay in-kind only while the synthetic basket holds that asset. A positive
-  reward in an otherwise unheld asset remains actual-only because the retained history does not
-  prove that the fixed thesis was entitled to it. Other supported balance adjustments retain
-  their external-balance treatment. Complete conversions with at
-  least one tracked leg replay as neutral per-asset transformations; conversions wholly outside
-  the recorded spot universe are validated but not replayed. Complete refid-linked consumer
-  `spend`/`receive` groups are one atomic `InternalConversion` (including multi-leg groups and
-  per-asset aggregation); if their debit cannot be sourced from synthetic holdings, the whole
-  movement is skipped. Singleton or unlinked passthrough rows retain their external-balance
-  treatment, while incomplete linked multi-row groups fail closed. Other internal moves are
-  ignored; unrecognized or ambiguous ledger rows fail closed (`UNSUPPORTED_LEDGER_TYPE`,
-  `AMBIGUOUS_LEDGER_TYPE`).
+  Owner contributions are valued in USD at the event time and invested by fixed anchor value
+  weights rather than held in the contributed asset. Withdrawals scale the whole synthetic NAV
+  proportionally. Holding-dependent rewards are mirrored in-kind only while the synthetic basket
+  holds that asset; a positive reward in an otherwise unheld asset remains actual-only. Explicitly
+  classified account-level credits may introduce their credited asset even when it was absent at
+  the anchor. A generic USD/equity cash dividend is excluded because the crypto/cash thesis has no
+  underlying equity position. Other supported independent charges and external balance movements
+  retain their attributable treatment.
+- **Conversions and consumer plumbing stay neutral in pure Buy & Hold.** Complete conversions with
+  at least one tracked leg, and complete refid-linked consumer `spend`/`receive` groups, are
+  validated and consumed once for actual-history continuity but emit no synthetic transformation,
+  trade, or owner flow. Unlinked or singleton consumer passthrough rows are excluded from the
+  passive event stream because their missing counterpart cannot prove an independent movement;
+  incomplete linked multi-row groups fail closed. Other internal moves are ignored; unrecognized or
+  ambiguous ledger rows fail closed (`UNSUPPORTED_LEDGER_TYPE`, `AMBIGUOUS_LEDGER_TYPE`).
 
 ### Trade economics & slippage lifecycle
 
@@ -942,7 +954,7 @@ The behavior is controlled by `rebalancer-config.json`:
 | `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
 | `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
 | `fiatDeploymentThresholdPercent` | Deadband threshold below which no fiat is deployed (0.0 to 100.0). Prevents micro-deployments during small drawdowns. |
-| `inceptionDate` | Optional manual strategy start (ISO-8601 string or `YYYY-MM-DD`). When blank, bounded recovery seeks complete Kraken coverage plus positive local bot-ownership evidence and a reconstructable baseline. Future-dated values are ignored. An explicit date remains a manual override and still needs a retained baseline anchor for comparison. |
+| `inceptionDate` | Optional manual strategy start (ISO-8601 string or `YYYY-MM-DD`). When blank, bounded recovery seeks complete Kraken coverage plus positive local bot-ownership evidence and a reconstructable baseline; if lifetime recovery remains ambiguous or truncated, pure Buy & Hold may use an exact recorded snapshot on or after its separate passive evidence floor. Future-dated values are ignored. An explicit date remains a manual override and still needs a retained baseline anchor for comparison. |
 
 ## Precision
 

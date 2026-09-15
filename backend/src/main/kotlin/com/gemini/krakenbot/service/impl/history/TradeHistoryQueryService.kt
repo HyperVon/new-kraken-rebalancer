@@ -41,6 +41,8 @@ class TradeHistoryQueryService(
     private val fundingProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
     private val nowProvider: () -> Instant = Instant::now,
     private val krakenService: KrakenService? = null,
+    /** Evidence boundary used when the lifetime inception recovery cannot be trusted. */
+    private val pureBenchmarkAnchorFloor: Instant = PURE_BENCHMARK_ANCHOR_FLOOR,
 ) {
     private val proposalSearchMutex = Mutex()
 
@@ -117,6 +119,13 @@ class TradeHistoryQueryService(
             HistoricalPriceResolver.MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS
 
         /**
+         * The earliest retained period accepted for the re-anchored pure Buy & Hold report.
+         * The exact anchor is resolved from a recorded snapshot at runtime; this is only the
+         * evidence floor, not a fabricated timestamp or balance state.
+         */
+        val PURE_BENCHMARK_ANCHOR_FLOOR: Instant = Instant.parse("2026-06-08T00:00:00Z")
+
+        /**
          * Comparison-start reasons where an accepted later anchor can genuinely
          * fix the failure: the baseline itself is unverifiable or an
          * ownership/reconciliation conflict sits between the requested start
@@ -128,13 +137,12 @@ class TradeHistoryQueryService(
                 ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
                 ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED,
-                ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
                 ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
             )
 
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
-        private const val PROPOSAL_SEARCH_VERSION = "6"
+        private const val PROPOSAL_SEARCH_VERSION = "7"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
         /**
@@ -157,8 +165,10 @@ class TradeHistoryQueryService(
         // Stale reconstructed history must never appear VERIFIED: if the reconstruction contract
         // was invalidated (unknown/new historical event cleared the version marker) the retained
         // reconstructed snapshots in [START, THROUGH] are unavailable until rebuilt. Live snapshots
-        // after THROUGH do not depend on reconstruction metadata and remain usable.
-        if (overlapsStaleReconstruction(orderedSnapshots)) {
+        // after THROUGH do not depend on reconstruction metadata and remain usable. Rows before the
+        // first recorded row can never become the comparison baseline, so an invalidated
+        // reconstruction behind them cannot hide the recorded evidence that follows.
+        if (overlapsStaleReconstruction(orderedSnapshots.participatingFromFirstRecordedRow())) {
             return RebalancerComparisonCalculator.calculate(
                 snapshots = orderedSnapshots,
                 trades = emptyList(),
@@ -175,7 +185,11 @@ class TradeHistoryQueryService(
             result.unavailableReason in PROPOSAL_ELIGIBLE_REASONS &&
             inceptionResolution?.isAutoDetected != true
         ) {
-            val strategyStart = inceptionResolution?.inceptionTime
+            // The pure benchmark may have deliberately re-anchored after an unresolved
+            // lifetime inception. Use the baseline that actually produced the result for the
+            // continuity check; applying the obsolete strategy start here would turn a genuine
+            // post-anchor reconciliation failure into a misleading historical-coverage gap.
+            val strategyStart = result.baselineTimestamp ?: inceptionResolution?.inceptionTime
             if (strategyStart != null && historicalCoverageGapExists(strategyStart)) {
                 // A later retained snapshot may reconcile locally while an earlier retained era
                 // is missing. Without continuity across the retention boundary there is no proof
@@ -244,7 +258,14 @@ class TradeHistoryQueryService(
         val firstObservationTime = firstSnapshot.balancesObservedAt ?: firstTimestamp
         val lastObservationTime = lastSnapshot.balancesObservedAt ?: lastTimestamp
 
-        if (inceptionResolution?.confidence == InceptionConfidence.RECOVERY_INCOMPLETE) {
+        // An ambiguous/rebuilt strategy inception blocks a lifetime reconstruction, but it need
+        // not block a clearly-labelled passive benchmark. Re-anchor only at an actual recorded
+        // post-floor snapshot; pending recovery and other unresolved states remain unavailable.
+        val recordedBenchmarkAnchor = findPureBenchmarkAnchor(inceptionResolution)
+
+        if (inceptionResolution?.confidence == InceptionConfidence.RECOVERY_INCOMPLETE &&
+            recordedBenchmarkAnchor == null
+        ) {
             return RebalancerComparisonCalculator.calculate(
                 snapshots = orderedSnapshots,
                 trades = emptyList(),
@@ -254,7 +275,7 @@ class TradeHistoryQueryService(
                     ?: ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE,
             )
         }
-        if (inceptionResolution?.confidence == InceptionConfidence.TRUNCATED) {
+        if (inceptionResolution?.confidence == InceptionConfidence.TRUNCATED && recordedBenchmarkAnchor == null) {
             // Migrated install whose early history was removed by a previous
             // retention era: no window-anchored number may stand in for a
             // lifetime baseline. The UI text tells the user to configure
@@ -263,14 +284,13 @@ class TradeHistoryQueryService(
                 snapshots = orderedSnapshots,
                 trades = emptyList(),
                 rewards = emptyList(),
-                knownRebalancerOrderTxids = emptySet(),
                 anchorSnapshot = null,
                 inceptionSnapshot = null,
                 knownInceptionTime = inceptionResolution.inceptionTime,
                 historyTruncated = true,
             )
         }
-        val inceptionSnapshot = inceptionResolution?.inceptionSnapshot
+        val inceptionSnapshot = recordedBenchmarkAnchor ?: inceptionResolution?.inceptionSnapshot
             ?: inceptionResolution?.inceptionTime?.let { time ->
                 // Bounded fallback: only accept a snapshot within the same
                 // +/-300s discovery window used by InceptionDiscoveryService.
@@ -289,7 +309,16 @@ class TradeHistoryQueryService(
                 }
             }
 
-        val anchorSnapshot = repository.getSnapshotBefore(firstTimestamp)
+        // A pre-anchor predecessor belongs to the unresolved history and must not re-enter
+        // reconciliation once the passive report has deliberately started at the recorded row.
+        val anchorSnapshot = if (recordedBenchmarkAnchor == null) {
+            repository.getSnapshotBefore(firstTimestamp)
+        } else {
+            null
+        }
+        val comparisonBaselineTimestamp = recordedBenchmarkAnchor?.timestamp
+            ?: inceptionResolution?.inceptionTime
+            ?: firstTimestamp
         // Stale-history policy: a displayed window may start after an invalidated reconstruction
         // interval while the lifetime comparison still resolves an inception or predecessor
         // baseline inside it. Any required snapshot dependency that is stale fails the whole
@@ -309,7 +338,14 @@ class TradeHistoryQueryService(
             firstObservationTime,
         ).minOrNull() ?: firstObservationTime
 
-        val queryFrom = eventQueryStart.minusMillisIfLegacyObservation(anchorSnapshot, firstSnapshot)
+        // A passive re-anchor deliberately discards all pre-anchor history. Do not load earlier
+        // trade/ledger rows into classifier or provenance preparation: an unrelated unresolved
+        // event before the recorded anchor must not make the bounded passive report unavailable.
+        val queryFrom = if (recordedBenchmarkAnchor != null) {
+            recordedBenchmarkAnchor.timestamp
+        } else {
+            eventQueryStart.minusMillisIfLegacyObservation(anchorSnapshot, firstSnapshot)
+        }
         val queryTo = maxOf(lastTimestamp, lastObservationTime)
             .plusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
 
@@ -337,7 +373,7 @@ class TradeHistoryQueryService(
             return RebalancerComparison(
                 availability = ComparisonAvailability.UNAVAILABLE,
                 confidence = null,
-                baselineTimestamp = inceptionResolution?.inceptionTime ?: orderedSnapshots.first().timestamp,
+                baselineTimestamp = comparisonBaselineTimestamp,
                 points = emptyList(),
                 latestDifferenceUSD = null,
                 latestDifferencePercent = null,
@@ -355,7 +391,7 @@ class TradeHistoryQueryService(
             return RebalancerComparison(
                 availability = ComparisonAvailability.UNAVAILABLE,
                 confidence = null,
-                baselineTimestamp = inceptionResolution?.inceptionTime ?: orderedSnapshots.first().timestamp,
+                baselineTimestamp = comparisonBaselineTimestamp,
                 points = emptyList(),
                 latestDifferenceUSD = null,
                 latestDifferencePercent = null,
@@ -363,36 +399,115 @@ class TradeHistoryQueryService(
                 unavailableAt = invalidTrade.timestamp,
             )
         }
-        // The calculator prepares one immutable provenance snapshot for this
-        // complete history query and uses that same snapshot for classification
-        // and card normalization.
-        val candidateTrades = trades.filter { it.success && !it.dryRun }
-        val candidateOrderTxids = candidateTrades.mapNotNull {
-            it.orderTxid?.trim()?.takeIf(String::isNotBlank)
-        }.toSet()
-        val candidateClientOrderIds = candidateTrades.mapNotNull {
-            it.clientOrderId?.trim()?.takeIf(String::isNotBlank)
-        }.toSet()
-        val knownRebalancerOrderTxids = orderIntentRepository
-            ?.getKnownRebalancerOrderIdentities(candidateOrderTxids, candidateClientOrderIds)
-            ?.orderTxids
-            .orEmpty()
         // Contribution-time prices use the same retained market identities as inception recovery,
         // including pairs whose only fill predates the displayed comparison window. No pair is
-        // guessed for a historical-only asset, and no live ticker participates in an old comparison.
+        // guessed for an asset absent from the anchor, and no live ticker participates in an old
+        // comparison.
         val retainedMarketTrades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
         val priceProvider = historicalPriceProvider(retainedMarketPairsByBase(retainedMarketTrades + trades))
         return RebalancerComparisonCalculator.calculate(
             snapshots = orderedSnapshots,
             trades = trades,
             rewards = ledgers,
-            knownRebalancerOrderTxids = knownRebalancerOrderTxids,
             anchorSnapshot = anchorSnapshot,
             inceptionSnapshot = inceptionSnapshot,
-            knownInceptionTime = inceptionResolution?.inceptionTime,
+            knownInceptionTime = recordedBenchmarkAnchor?.timestamp ?: inceptionResolution?.inceptionTime,
             priceProvider = priceProvider,
             provenanceResolver = preparedFundingProvenance ?: fundingProvenanceResolver,
         )
+    }
+
+    /**
+     * Finds the earliest trustworthy recorded portfolio state at or after the evidence floor.
+     * Reconstructed rows are intentionally excluded because their balances are derived from the
+     * same unresolved trade/ledger history that made the original inception unusable; see
+     * [isRecordedAnchorCandidate] for how recorded rows are told apart from derived rows.
+     */
+    private suspend fun findPureBenchmarkAnchor(resolution: InceptionResolution?): PortfolioSnapshot? {
+        if (!isPureBenchmarkReanchorEligible(resolution)) return null
+        val now = nowProvider()
+        val window = reconstructionWindow()
+        return repository
+            .getAllSnapshotsInRange(pureBenchmarkAnchorFloor, OPEN_ENDED_RANGE_END)
+            .asSequence()
+            .filter { snapshot ->
+                !snapshot.timestamp.isBefore(pureBenchmarkAnchorFloor) &&
+                    !snapshot.timestamp.isAfter(now) &&
+                    isRecordedAnchorCandidate(snapshot, window) &&
+                    snapshot.totalValueUSD.signum() > 0 &&
+                    snapshot.assets.any { (_, asset) -> asset.balance.signum() > 0 } &&
+                    snapshot.assets.all { (symbol, asset) ->
+                        val normalized = Asset.normalizeLedgerAsset(symbol).uppercase()
+                        asset.balance.signum() >= 0 &&
+                            asset.valueUSD.signum() >= 0 &&
+                            (asset.balance.signum() == 0 || normalized == Asset.USD || asset.price.signum() > 0)
+                    }
+            }
+            .minWithOrNull(compareBy(PortfolioSnapshot::timestamp))
+    }
+
+    /**
+     * A retained snapshot is an evidence anchor only when its row was genuinely recorded by a live
+     * balance observation instead of derived by a reconstruction pass:
+     *
+     * - a missing observation marker marks a derived row;
+     * - an observation strictly before the row timestamp is the live-write signature
+     *   (`PortfolioAnalyzerImpl` persists the row after the balance response) and is accepted even
+     *   inside a recorded reconstruction range;
+     * - without any reconstruction on record, every marker-carrying row is a live row;
+     * - otherwise a marked row is recorded only outside a well-formed reconstruction range. A
+     *   legacy reconstruction marker without a usable range cannot classify rows by metadata alone,
+     *   so those rows are never promoted.
+     */
+    private fun isRecordedAnchorCandidate(snapshot: PortfolioSnapshot, window: ReconstructionWindow): Boolean {
+        if (snapshot.isProvablyRecorded()) return true
+        if (snapshot.balancesObservedAt == null) return false
+        return when (window) {
+            ReconstructionWindow.None -> true
+            is ReconstructionWindow.Known -> !window.range.contains(snapshot.timestamp)
+            ReconstructionWindow.Unclassifiable -> false
+        }
+    }
+
+    /** True when the row carries the live-write observation signature rather than a legacy default. */
+    private fun PortfolioSnapshot.isProvablyRecorded(): Boolean = balancesObservedAt?.isBefore(timestamp) == true
+
+    /**
+     * Snapshot rows a comparison can actually use: everything from the first provably recorded row
+     * onward. Rows before it cannot become the comparison baseline, so a stale reconstruction
+     * behind them must not hide the recorded evidence that follows.
+     */
+    private fun List<PortfolioSnapshot>.participatingFromFirstRecordedRow(): List<PortfolioSnapshot> {
+        val firstRecorded = indexOfFirst { it.isProvablyRecorded() }
+        return if (firstRecorded <= 0) this else drop(firstRecorded)
+    }
+
+    /** Provenance of retained snapshot rows relative to the recorded snapshot reconstruction. */
+    private sealed interface ReconstructionWindow {
+        /** No reconstruction was ever recorded, so every marked row is a live observation. */
+        data object None : ReconstructionWindow
+
+        /** A reconstruction range was persisted; retained rows inside it are derived. */
+        data class Known(val range: ClosedRange<Instant>) : ReconstructionWindow
+
+        /**
+         * A legacy reconstruction marker exists without a usable range. Legacy writers defaulted
+         * the observation marker to the row timestamp, so derived rows cannot be told apart from
+         * recorded rows by metadata alone.
+         */
+        data object Unclassifiable : ReconstructionWindow
+    }
+
+    private fun isPureBenchmarkReanchorEligible(resolution: InceptionResolution?): Boolean {
+        if (resolution == null) return false
+        if (resolution.confidence == InceptionConfidence.TRUNCATED) return true
+        return resolution.confidence == InceptionConfidence.RECOVERY_INCOMPLETE &&
+            resolution.unavailableReason in setOf(
+                ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
+                ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
+                ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED,
+                ComparisonUnavailableReason.INCEPTION_NO_BOT_EVIDENCE,
+            )
     }
 
     /**
@@ -475,7 +590,20 @@ class TradeHistoryQueryService(
                     val storedSnapshotId = repository.getSyncMetadata(
                         SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
                     )?.toIntOrNull()
-                    if (verifiedIndex != null && verifiedIndex >= 0 && storedSnapshotId != null) {
+                    val storedCursorValue = storedCursor?.let(ProposalCursor::parse)
+                    val durableSnapshotId = if (verifiedIndex != null && verifiedIndex >= 0 &&
+                        storedCursorValue != null
+                    ) {
+                        repository.getSnapshotId(
+                            candidates[verifiedIndex].timestamp,
+                            storedCursorValue.ordinal,
+                        )
+                    } else {
+                        null
+                    }
+                    if (verifiedIndex != null && verifiedIndex >= 0 &&
+                        storedSnapshotId != null && durableSnapshotId == storedSnapshotId
+                    ) {
                         return@withLock ComparisonStartProposal(
                             status = ComparisonProposalStatus.VERIFIED,
                             timestamp = candidates[verifiedIndex].timestamp,
@@ -495,13 +623,20 @@ class TradeHistoryQueryService(
                 storedCursor?.let(ProposalCursor::parse)?.let { cursor ->
                     val verifiedIndex = candidates.indexOfProposalCursor(cursor)
                     if (verifiedIndex >= 0) {
-                        return@withLock ComparisonStartProposal(
-                            status = ComparisonProposalStatus.VERIFIED,
-                            timestamp = candidates[verifiedIndex].timestamp,
-                            snapshotId = repository.getSyncMetadata(
-                                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
-                            )?.toIntOrNull(),
+                        val storedSnapshotId = repository.getSyncMetadata(
+                            SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
+                        )?.toIntOrNull()
+                        val durableSnapshotId = repository.getSnapshotId(
+                            candidates[verifiedIndex].timestamp,
+                            cursor.ordinal,
                         )
+                        if (storedSnapshotId != null && durableSnapshotId == storedSnapshotId) {
+                            return@withLock ComparisonStartProposal(
+                                status = ComparisonProposalStatus.VERIFIED,
+                                timestamp = candidates[verifiedIndex].timestamp,
+                                snapshotId = storedSnapshotId,
+                            )
+                        }
                     }
                 }
             }
@@ -668,22 +803,84 @@ class TradeHistoryQueryService(
                 ledgerCoverage == LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION &&
                 tradeCoverage == TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
         if (isCurrent) return null
-        val throughSec = repository.getSyncMetadata(
+        val throughRaw = repository.getSyncMetadata(
             SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
-        )?.toLongOrNull() ?: return null
+        )
+        val throughSec = throughRaw?.toLongOrNull()
+        if (throughSec == null) {
+            return if (version.isNullOrBlank() && throughRaw.isNullOrBlank()) {
+                null
+            } else {
+                Instant.MIN to Instant.MAX
+            }
+        }
         // Version blank with no through means never reconstructed — live snapshots only.
         if (version.isNullOrBlank() && throughSec == 0L) return null
         val startSec = repository.getSyncMetadata(
             SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
         )?.toLongOrNull() ?: Instant.EPOCH.epochSecond
-        return Instant.ofEpochSecond(startSec) to Instant.ofEpochSecond(throughSec)
+        if (throughSec <= 0L || startSec < 0L || startSec > throughSec) {
+            return Instant.MIN to Instant.MAX
+        }
+        return try {
+            // Reconstruction metadata is persisted in epoch seconds, while trade and snapshot
+            // timestamps retain milliseconds. Include the complete terminal second so a derived
+            // row at e.g. 12:00:00.608Z cannot escape the stale-history guard.
+            Instant.ofEpochSecond(startSec) to Instant.ofEpochSecond(throughSec, 999_999_999)
+        } catch (_: RuntimeException) {
+            // Malformed metadata must not make reconstructed history appear trustworthy.
+            Instant.MIN to Instant.MAX
+        }
     }
 
-    /** True when any provided snapshot falls inside an invalidated reconstruction interval. */
+    /**
+     * Reads the interval written by the last snapshot reconstruction, regardless of whether that
+     * reconstruction is still current. Older writers defaulted [PortfolioSnapshot]'s observation
+     * marker to the row timestamp, so the interval remains necessary to exclude those legacy
+     * derived rows from a recorded-only passive anchor search.
+     *
+     * A marker without a persisted range is [ReconstructionWindow.Unclassifiable] rather than a
+     * blanket exclusion, because rows carrying the live-observation signature are recorded evidence
+     * regardless of reconstruction metadata.
+     */
+    private suspend fun reconstructionWindow(): ReconstructionWindow {
+        val version = repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+        val throughRaw = repository.getSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC,
+        )
+        val throughSec = throughRaw?.toLongOrNull()
+        if (version.isNullOrBlank() && (throughRaw.isNullOrBlank() || throughSec == 0L)) {
+            return ReconstructionWindow.None
+        }
+        if (throughSec == null || throughSec <= 0L) return ReconstructionWindow.Unclassifiable
+        val startSec = repository.getSyncMetadata(
+            SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,
+        )?.toLongOrNull()
+        if (startSec == null || startSec < 0L || startSec > throughSec) {
+            return ReconstructionWindow.Unclassifiable
+        }
+        return try {
+            // The persisted endpoint has second precision; cover that entire second because
+            // snapshot rows retain sub-second precision.
+            ReconstructionWindow.Known(
+                Instant.ofEpochSecond(startSec)..Instant.ofEpochSecond(throughSec, 999_999_999),
+            )
+        } catch (_: RuntimeException) {
+            // Malformed metadata must not make reconstructed history appear trustworthy.
+            ReconstructionWindow.Unclassifiable
+        }
+    }
+
+    /**
+     * True when any provided snapshot is stale reconstruction output. A provably recorded row is
+     * live evidence even when it falls inside an invalidated reconstruction interval.
+     */
     private suspend fun overlapsStaleReconstruction(snapshots: List<PortfolioSnapshot>): Boolean {
         val stale = staleReconstructedInterval() ?: return false
         val (reconStart, reconThrough) = stale
-        return snapshots.any { !it.timestamp.isBefore(reconStart) && !it.timestamp.isAfter(reconThrough) }
+        return snapshots.any {
+            !it.isProvablyRecorded() && !it.timestamp.isBefore(reconStart) && !it.timestamp.isAfter(reconThrough)
+        }
     }
 
     /**
@@ -694,6 +891,9 @@ class TradeHistoryQueryService(
      */
     private suspend fun isSnapshotStale(snapshot: PortfolioSnapshot?): Boolean {
         if (snapshot == null) return false
+        // A row with the live-observation signature is recorded evidence, not reconstruction
+        // output, so an invalidated reconstruction window cannot make it stale.
+        if (snapshot.isProvablyRecorded()) return false
         val stale = staleReconstructedInterval() ?: return false
         val (reconStart, reconThrough) = stale
         return !snapshot.timestamp.isBefore(reconStart) && !snapshot.timestamp.isAfter(reconThrough)
@@ -747,14 +947,6 @@ class TradeHistoryQueryService(
     ): String {
         val trades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
         val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
-        val candidateTrades = trades.filter { it.success && !it.dryRun }
-        val knownOrderTxids = orderIntentRepository
-            ?.getKnownRebalancerOrderIdentities(
-                orderTxids = candidateTrades.mapNotNull { it.orderTxid?.takeIf(String::isNotBlank) }.toSet(),
-                clientOrderIds = candidateTrades.mapNotNull { it.clientOrderId?.takeIf(String::isNotBlank) }.toSet(),
-            )
-            ?.orderTxids
-            .orEmpty()
         val material = buildString {
             append(PROPOSAL_SEARCH_VERSION).append('\u0000')
             append(startAfter).append('\u0000')
@@ -809,7 +1001,6 @@ class TradeHistoryQueryService(
                 .forEach { appendTradeDigest(it) }
             ledgers.sortedWith(compareBy({ it.time }, { it.ledgerId }))
                 .forEach { appendLedgerDigest(it) }
-            knownOrderTxids.sorted().forEach { append("order=$it\n") }
         }
         return sha256Hex(material)
     }

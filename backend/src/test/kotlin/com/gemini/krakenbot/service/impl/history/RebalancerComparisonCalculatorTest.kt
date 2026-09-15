@@ -50,7 +50,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord> = emptyList(),
         rewards: List<LedgerEvent> = emptyList(),
-        knownRebalancerOrderTxids: Set<String> = emptySet(),
         anchorSnapshot: PortfolioSnapshot? = null,
         inceptionSnapshot: PortfolioSnapshot? = null,
         knownInceptionTime: Instant? = null,
@@ -62,7 +61,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         snapshots = snapshots,
         trades = trades,
         rewards = rewards,
-        knownRebalancerOrderTxids = knownRebalancerOrderTxids,
         anchorSnapshot = anchorSnapshot,
         inceptionSnapshot = inceptionSnapshot,
         knownInceptionTime = knownInceptionTime,
@@ -100,7 +98,11 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     )
                     result.availability shouldBe ComparisonAvailability.AVAILABLE
                     result.points.size shouldBe size
-                    result.points.forEach { it.differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO }
+                    result.points.first().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+                    result.points.drop(1).forEach {
+                        it.buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("103.00")
+                        it.differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+                    }
                 }
             }
         }
@@ -119,12 +121,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val result = calculate(
                 listOf(first, next),
-                listOf(manualTrade(now.plusMillis(11001), "buy", "BTC", "1", "1")),
+                listOf(manualTrade(now.plusSeconds(13), "buy", "BTC", "1", "1")),
+                emptyList(),
             )
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
             result.unavailableAt shouldBe next.timestamp
-            result.points shouldBe emptyList()
         }
 
         "initial and late candidates share one search budget" {
@@ -154,6 +156,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 if (initialCount == 6) {
                     result.availability shouldBe ComparisonAvailability.AVAILABLE
                     result.points.size shouldBe 2
+                    result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("164.00")
                     result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
                 } else {
                     result.availability shouldBe ComparisonAvailability.UNAVAILABLE
@@ -179,7 +182,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.points.size shouldBe 2
-            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points.forEach { it.differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO }
         }
 
         "twelve distinct boundary events reconcile uniquely but thirteen exceed the search budget" {
@@ -207,6 +210,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 if (count <= 12) {
                     result.availability shouldBe ComparisonAvailability.AVAILABLE
                     result.points.size shouldBe 2
+                    result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo
+                        BigDecimal(1 + totalReward)
                     result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
                 } else {
                     result.availability shouldBe ComparisonAvailability.UNAVAILABLE
@@ -395,7 +400,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
         }
 
-        "historical-only asset purchase is available and stays out of the benchmark basket" {
+        "post-baseline purchase of an unheld asset affects actual value only" {
             val t0 = now
             val t1 = now.plusSeconds(1800)
             val t2 = now.plusSeconds(3600)
@@ -436,7 +441,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             last.differenceUSD shouldBeEqualComparingTo BigDecimal("3002.10")
         }
 
-        "historical-only asset liquidation to zero keeps the comparison available" {
+        "purchase and liquidation of an unheld asset remain actual-only" {
             val t0 = now
             val t2 = now.plusSeconds(3600)
             val t3 = now.plusSeconds(5400)
@@ -495,7 +500,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             last.differenceUSD shouldBeEqualComparingTo BigDecimal("3002.10")
         }
 
-        "historical-only liquidation of a holding absent from the series stays out of the benchmark" {
+        "liquidation of an unheld asset remains outside the benchmark" {
             val t0 = now
             val t1 = now.plusSeconds(1800)
             val t2 = now.plusSeconds(3600)
@@ -941,7 +946,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("99974.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("-26.00")
         }
 
         "multiple fills may lag a terminal snapshot when their combined change reconciles" {
@@ -1137,17 +1143,18 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
-            result.unavailableAt shouldBe now.plusMillis(1250)
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("-26.00")
 
             val lowercaseSymbolResult = calculate(
                 snapshots = snapshots,
                 trades = trades.map { it.copy(symbol = "btc", pair = "btcUSD") },
             )
 
-            lowercaseSymbolResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            lowercaseSymbolResult.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+            lowercaseSymbolResult.availability shouldBe ComparisonAvailability.AVAILABLE
+            lowercaseSymbolResult.confidence shouldBe ComparisonConfidence.RECONCILED
         }
 
         "valid terminal fill plus unknown terminal fill remains unavailable" {
@@ -1201,8 +1208,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
-            result.unavailableAt shouldBe now.plusMillis(1500)
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(1)
         }
 
         "valid terminal fill plus unsupported terminal fill remains unavailable" {
@@ -1293,9 +1300,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
-            result.unavailableAt shouldBe now.plusMillis(1500)
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
         }
 
         "unsupported tracked terminal candidate is validated even when snapshot balances already match" {
@@ -1390,7 +1396,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
-            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("99974.00")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-26.00")
         }
 
         "too many late-fill candidates fail closed" {
@@ -1516,7 +1523,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
-            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-0.12")
 
             val legacyObservationResult = calculate(
                 snapshots = snapshots.map { it.copy(balancesObservedAt = null) },
@@ -1525,7 +1532,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             legacyObservationResult.availability shouldBe ComparisonAvailability.AVAILABLE
             legacyObservationResult.confidence shouldBe ComparisonConfidence.RECONCILED
-            legacyObservationResult.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            legacyObservationResult.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-0.12")
 
             val incompatiblePersistedCostResult = calculate(
                 snapshots = snapshots.map { it.copy(balancesObservedAt = null) },
@@ -1535,6 +1542,67 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             incompatiblePersistedCostResult.availability shouldBe ComparisonAvailability.UNAVAILABLE
             incompatiblePersistedCostResult.unavailableReason shouldBe
                 ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "legacy rounded cost fallback keeps the authoritative base leg" {
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "200.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "100", "100.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "199.99",
+                        mapOf(
+                            "BTC" to assetRow("1.10000000", "100", "110.00"),
+                            "USD" to assetRow("89.99", "1", "89.99"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    trade(
+                        timestamp = now.plusSeconds(5),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "10.00",
+                        fee = "0.01",
+                        source = TradeSource.MANUAL,
+                        cycleId = null,
+                        tradeId = "ROUNDED-TRADE",
+                        price = "100",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(5),
+                        asset = "XXBT",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                        refid = "ROUNDED-TRADE",
+                        ledgerId = "ROUNDED-BASE",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(5),
+                        asset = "ZUSD",
+                        amount = "-10.001",
+                        fee = "0.01",
+                        type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                        refid = "ROUNDED-TRADE",
+                        ledgerId = "ROUNDED-QUOTE",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("199.99")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-0.01")
         }
 
         "mixed rounded and precise fill costs reconcile each interval independently" {
@@ -1547,9 +1615,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 result.availability shouldBe ComparisonAvailability.AVAILABLE
                 result.confidence shouldBe ComparisonConfidence.RECONCILED
                 result.points.size shouldBe 4
-                result.points.forEach { point ->
-                    point.differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
-                }
+                result.points.first().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+                result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-4.00")
             }
         }
 
@@ -1589,10 +1656,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points.size shouldBe 2
+            // The held BTC reward is part of the passive thesis; the authoritative post-event
+            // balance also absorbs the legacy fee-rounding difference, so both sides remain equal.
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
-        "top-level promotion reward remains available as an in-kind comparison event" {
+        "top-level promotion reward remains available when it credits an anchor holding" {
             val result = calculate(
                 snapshots = listOf(
                     snapshot(
@@ -1925,6 +1994,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
+            // The SOL reward is excluded because the anchor held no SOL; BTC and ETH rewards are
+            // holding-dependent and therefore remain in the passive basket.
             result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100800.00")
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("50.00")
         }
@@ -2348,7 +2419,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
         }
 
-        "later non-positive buy-and-hold value: returns NON_POSITIVE_BASELINE" {
+        "negative baseline holding fails closed before non-positive replay" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2370,9 +2441,9 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = calculate(snapshots, emptyList())
 
-            result.unavailableReason shouldBe ComparisonUnavailableReason.NON_POSITIVE_BASELINE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
             result.baselineTimestamp shouldBe now
-            result.unavailableAt shouldBe now.plusSeconds(3600)
+            result.unavailableAt shouldBe now
         }
 
         "down-sampled interval shape: several trades between two snapshots reconcile" {
@@ -2504,6 +2575,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("105000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
         "rewards before the baseline do not affect the comparison" {
@@ -2626,7 +2698,671 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
         // --- SECTION 15 REGRESSION & DOMAIN SCENARIO SUITE ---
 
-        "Scenario A: USD cash dividend maintains zero difference and RECONCILED confidence (original production bug)" {
+        "reward classifiers separate holding-dependent credits from account-level credits" {
+            fun event(type: String, subtype: String? = null) =
+                ledgerEvent(now, "BTC", "1", type = type, subtype = subtype)
+
+            RebalancerComparisonCalculator.isHoldingDependentReward(
+                event(KrakenApiConstants.LEDGER_TYPE_DIVIDEND),
+            ) shouldBe true
+            RebalancerComparisonCalculator.isHoldingDependentReward(
+                event(KrakenApiConstants.LEDGER_TYPE_STAKING),
+            ) shouldBe true
+            RebalancerComparisonCalculator.isHoldingDependentReward(
+                event(KrakenApiConstants.LEDGER_TYPE_EARN),
+            ) shouldBe true
+            RebalancerComparisonCalculator.isHoldingDependentReward(
+                event(KrakenApiConstants.LEDGER_TYPE_REWARD, "equityfpsl"),
+            ) shouldBe true
+            RebalancerComparisonCalculator.isHoldingDependentReward(
+                event(KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT, "cashdividend"),
+            ) shouldBe true
+            RebalancerComparisonCalculator.isHoldingDependentReward(
+                event(KrakenApiConstants.LEDGER_TYPE_REWARD),
+            ) shouldBe true
+            RebalancerComparisonCalculator.isHoldingDependentReward(
+                event(KrakenApiConstants.LEDGER_TYPE_REWARD, "welcomebonus"),
+            ) shouldBe false
+            RebalancerComparisonCalculator.isHoldingDependentReward(
+                event(KrakenApiConstants.LEDGER_TYPE_TRANSFER, "airdrop"),
+            ) shouldBe false
+            RebalancerComparisonCalculator.isHoldingDependentReward(
+                event(KrakenApiConstants.LEDGER_TYPE_DEPOSIT),
+            ) shouldBe false
+
+            RebalancerComparisonCalculator.isAccountLevelIndependentCredit(
+                event(KrakenApiConstants.LEDGER_TYPE_REWARD, "welcomebonus"),
+            ) shouldBe true
+            RebalancerComparisonCalculator.isAccountLevelIndependentCredit(
+                event(KrakenApiConstants.LEDGER_TYPE_TRANSFER, "airdrop"),
+            ) shouldBe true
+            RebalancerComparisonCalculator.isAccountLevelIndependentCredit(
+                event(KrakenApiConstants.LEDGER_TYPE_TRANSFER, "reward"),
+            ) shouldBe true
+            RebalancerComparisonCalculator.isAccountLevelIndependentCredit(
+                event(KrakenApiConstants.LEDGER_TYPE_REWARD),
+            ) shouldBe false
+            RebalancerComparisonCalculator.isAccountLevelIndependentCredit(
+                event(KrakenApiConstants.LEDGER_TYPE_DIVIDEND, "cashdividend"),
+            ) shouldBe false
+            RebalancerComparisonCalculator.isAccountLevelIndependentCredit(
+                event(KrakenApiConstants.LEDGER_TYPE_TRANSFER),
+            ) shouldBe false
+        }
+
+        "attributed movement scales every leg to the smallest held fraction" {
+            val balances = mutableMapOf("BTC" to BigDecimal("0.5"), "USD" to BigDecimal("100.00"))
+
+            RebalancerComparisonCalculator.applyAttributedMovement(
+                balances,
+                mapOf("BTC" to BigDecimal("-1.0"), "USD" to BigDecimal("100.00")),
+            )
+
+            balances.getValue("BTC") shouldBeEqualComparingTo BigDecimal.ZERO
+            balances.getValue("USD") shouldBeEqualComparingTo BigDecimal("150.00")
+        }
+
+        "attributed movement is skipped entirely when a drawn asset is not held" {
+            val balances = mutableMapOf("BTC" to BigDecimal.ZERO, "USD" to BigDecimal("100.00"))
+
+            RebalancerComparisonCalculator.applyAttributedMovement(
+                balances,
+                mapOf("BTC" to BigDecimal("-1.0"), "USD" to BigDecimal("100.00")),
+            )
+
+            balances.getValue("BTC") shouldBeEqualComparingTo BigDecimal.ZERO
+            balances.getValue("USD") shouldBeEqualComparingTo BigDecimal("100.00")
+        }
+
+        "attributed movement applies full deltas once a new asset enters the basket" {
+            val balances = mutableMapOf("BTC" to BigDecimal("2.0"))
+
+            RebalancerComparisonCalculator.applyAttributedMovement(
+                balances,
+                mapOf("BTC" to BigDecimal("-1.0"), "USD" to BigDecimal("10.00")),
+            )
+
+            balances.getValue("BTC") shouldBeEqualComparingTo BigDecimal("1.0")
+            balances.getValue("USD") shouldBeEqualComparingTo BigDecimal("10.00")
+        }
+
+        "equity-labelled reward credits stay actual-only for the USD benchmark" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100025.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50025.00", "1.0", "50025.00"),
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots,
+                emptyList(),
+                listOf(
+                    ledgerEvent(
+                        now.plusSeconds(1800),
+                        "USD",
+                        "25.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                        subtype = "equityfpsl",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("25.00")
+        }
+
+        "cash-dividend labelled reward credits stay actual-only for the USD benchmark" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100025.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50025.00", "1.0", "50025.00"),
+                    ),
+                ),
+            )
+
+            val result = calculate(
+                snapshots,
+                emptyList(),
+                listOf(
+                    ledgerEvent(
+                        now.plusSeconds(1800),
+                        "USD",
+                        "25.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                        subtype = "cashdividend",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("25.00")
+        }
+
+        "negative mid-series snapshot values fail the whole window" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "500", "500"),
+                    "USD" to assetRow("500", "1", "500"),
+                ),
+            )
+            val negativeTotal = snapshot(
+                now.plusSeconds(60),
+                "-1.00",
+                mapOf(
+                    "BTC" to assetRow("1", "500", "500"),
+                    "USD" to assetRow("-501", "1", "-501"),
+                ),
+            )
+            val negativeValue = snapshot(
+                now.plusSeconds(90),
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "500", "500"),
+                    "USD" to assetRow("500", "1", "500"),
+                    "XRP" to assetRow("10", "2", "-20"),
+                ),
+            )
+            val later = snapshot(
+                now.plusSeconds(120),
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "500", "500"),
+                    "USD" to assetRow("500", "1", "500"),
+                ),
+            )
+
+            val totalFailure = calculate(listOf(baseline, negativeTotal, later))
+            totalFailure.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            totalFailure.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+
+            val valueFailure = calculate(listOf(baseline, negativeValue, later))
+            valueFailure.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            valueFailure.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "negative baseline value fails closed" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "500", "500"),
+                    "USD" to assetRow("500", "1", "-20"),
+                ),
+            )
+            val later = snapshot(
+                now.plusSeconds(60),
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "500", "500"),
+                    "USD" to assetRow("500", "1", "500"),
+                ),
+            )
+
+            val result = calculate(listOf(baseline, later))
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "negative stored price fails with a missing-price reason" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "500", "500"),
+                    "USD" to assetRow("500", "1", "500"),
+                ),
+            )
+            val negativePrice = snapshot(
+                now.plusSeconds(60),
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "-1", "500"),
+                    "USD" to assetRow("500", "1", "500"),
+                ),
+            )
+
+            val result = calculate(listOf(baseline, negativePrice))
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+            result.unavailableAt shouldBe now.plusSeconds(60)
+        }
+
+        "stored price gaps fall back to the price provider" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "500", "500"),
+                    "USD" to assetRow("500", "1", "500"),
+                ),
+            )
+            val unpriced = snapshot(
+                now.plusSeconds(60),
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "0", "0"),
+                    "USD" to assetRow("500", "1", "500"),
+                ),
+            )
+            val snapshots = listOf(baseline, unpriced)
+
+            val withProvider = calculate(
+                snapshots,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("600"))),
+            )
+            withProvider.availability shouldBe ComparisonAvailability.AVAILABLE
+            withProvider.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1100.00")
+
+            val withoutProvider = calculate(snapshots, priceProvider = mapPriceProvider(emptyMap()))
+            withoutProvider.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            withoutProvider.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+        }
+
+        "non-USD owner contribution is valued through the historical price provider" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1", "500", "500"),
+                    "USD" to assetRow("500", "1", "500"),
+                ),
+            )
+            val afterContribution = snapshot(
+                now.plusSeconds(60),
+                "1500.00",
+                mapOf(
+                    "BTC" to assetRow("2", "500", "1000"),
+                    "USD" to assetRow("500", "1", "500"),
+                ),
+            )
+            val contribution = ledgerEvent(
+                now.plusSeconds(30),
+                "BTC",
+                "1",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+            )
+
+            val result = calculate(
+                listOf(baseline, afterContribution),
+                rewards = listOf(contribution),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("500"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "zero-balance anchor rows receive no benchmark weight" {
+            val baseline = snapshot(
+                now,
+                "1010.00",
+                mapOf(
+                    "BTC" to assetRow("1.00000000", "500.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.00", "500.00"),
+                    "XRP" to assetRow("5.00000000", "2.00", "0"),
+                    "SOL" to assetRow("0", "3.00", "0"),
+                ),
+            )
+            val afterContribution = snapshot(
+                now.plusSeconds(3600),
+                "1110.00",
+                mapOf(
+                    "BTC" to assetRow("1.00000000", "500.00", "500.00"),
+                    "USD" to assetRow("600.00", "1.00", "600.00"),
+                    "XRP" to assetRow("5.00000000", "2.00", "10.00"),
+                    "SOL" to assetRow("0", "3.00", "0"),
+                ),
+            )
+
+            val result = calculate(
+                listOf(baseline, afterContribution),
+                rewards = listOf(
+                    ledgerEvent(
+                        now.plusSeconds(1800),
+                        "USD",
+                        "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        refid = "ACH-ZERO-WEIGHT",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(
+                    mapOf(
+                        "BTC" to BigDecimal("500"),
+                        "XRP" to BigDecimal("2"),
+                    ),
+                ),
+                provenanceResolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = "ACH-ZERO-WEIGHT",
+                            asset = "USD",
+                            amount = BigDecimal("100.00"),
+                            time = now.plusSeconds(1800),
+                            status = "Success",
+                            method = "ACH",
+                        ),
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1110.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "a zero provider price still fails a stored-price gap closed" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1.00000000", "500.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.00", "500.00"),
+                ),
+            )
+            val stalePrice = snapshot(
+                now.plusSeconds(3600),
+                "500.00",
+                mapOf(
+                    "BTC" to assetRow("1.00000000", "0", "0"),
+                    "USD" to assetRow("500.00", "1.00", "500.00"),
+                ),
+            )
+
+            val result = calculate(
+                listOf(baseline, stalePrice),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal.ZERO)),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+        }
+
+        "a non-USD contribution without a historical price provider fails closed" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1.00000000", "500.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.00", "500.00"),
+                ),
+            )
+            val afterContribution = snapshot(
+                now.plusSeconds(3600),
+                "1500.00",
+                mapOf(
+                    "BTC" to assetRow("2.00000000", "500.00", "1000.00"),
+                    "USD" to assetRow("500.00", "1.00", "500.00"),
+                ),
+            )
+
+            val result = calculate(
+                listOf(baseline, afterContribution),
+                rewards = listOf(
+                    ledgerEvent(
+                        now.plusSeconds(1800),
+                        "BTC",
+                        "1.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+        }
+
+        "a non-reward external credit stays in-kind for a held asset" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1.00000000", "500.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.00", "500.00"),
+                ),
+            )
+            val afterCredit = snapshot(
+                now.plusSeconds(3600),
+                "1030.00",
+                mapOf(
+                    "BTC" to assetRow("1.06000000", "500.00", "530.00"),
+                    "USD" to assetRow("500.00", "1.00", "500.00"),
+                ),
+            )
+
+            val result = calculate(
+                listOf(baseline, afterCredit),
+                rewards = listOf(
+                    ledgerEvent(now.plusSeconds(1800), "BTC", "0.06000000", type = KrakenApiConstants.LEDGER_TYPE_SALE),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1030.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "a negative external adjustment reduces the passive basket" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf(
+                    "BTC" to assetRow("1.00000000", "500.00", "500.00"),
+                    "USD" to assetRow("500.00", "1.00", "500.00"),
+                ),
+            )
+            val afterAdjustment = snapshot(
+                now.plusSeconds(3600),
+                "970.00",
+                mapOf(
+                    "BTC" to assetRow("0.94000000", "500.00", "470.00"),
+                    "USD" to assetRow("500.00", "1.00", "500.00"),
+                ),
+            )
+
+            val result = calculate(
+                listOf(baseline, afterAdjustment),
+                rewards = listOf(
+                    ledgerEvent(
+                        now.plusSeconds(1800),
+                        "BTC",
+                        "-0.06000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("970.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "a zero-amount external ledger row leaves the passive basket unchanged" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf("BTC" to assetRow("1", "500", "500"), "USD" to assetRow("500", "1", "500")),
+            )
+            val later = snapshot(
+                now.plusSeconds(3600),
+                "1000.00",
+                mapOf("BTC" to assetRow("1", "500", "500"), "USD" to assetRow("500", "1", "500")),
+            )
+            val result = calculate(
+                listOf(baseline, later),
+                rewards = listOf(
+                    ledgerEvent(
+                        now.plusSeconds(1800),
+                        "BTC",
+                        "0.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_SALE,
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "a dividend-labelled adjustment credit stays actual-only on a held asset" {
+            val baseline = snapshot(
+                now,
+                "1000.00",
+                mapOf("BTC" to assetRow("1", "500", "500"), "USD" to assetRow("500", "1", "500")),
+            )
+            val later = snapshot(
+                now.plusSeconds(3600),
+                "1030.00",
+                mapOf("BTC" to assetRow("1.06", "500", "530"), "USD" to assetRow("500", "1", "500")),
+            )
+            val result = calculate(
+                listOf(baseline, later),
+                rewards = listOf(
+                    ledgerEvent(
+                        now.plusSeconds(1800),
+                        "BTC",
+                        "0.06000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                        subtype = "cashdividend",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("30.00")
+        }
+
+        "a credited asset the snapshot cannot price is skipped in benchmark valuation" {
+            val baseline = snapshot(
+                now,
+                "100.00",
+                mapOf("BTC" to assetRow("1.00", "100.00", "100.00"), "ETH" to assetRow("0.00", "100.00", "0.00")),
+            )
+            val later = snapshot(
+                now.plusSeconds(3600),
+                "110.00",
+                mapOf("BTC" to assetRow("1.00", "100.00", "100.00"), "ETH" to assetRow("0.10", "0", "0")),
+            )
+            val result = calculate(
+                listOf(baseline, later),
+                rewards = listOf(
+                    ledgerEvent(
+                        now.plusSeconds(1800),
+                        "ETH",
+                        "0.10",
+                        type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                        subtype = "welcomebonus",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(emptyMap()),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("10.00")
+        }
+
+        "a mid-series target change cannot reweight the fixed anchor contribution" {
+            fun configured(
+                btcTargetPercent: String,
+                timestamp: Instant,
+                btcBalance: String,
+                btcPrice: String,
+                usdBalance: String,
+                total: String,
+            ): PortfolioSnapshot = PortfolioSnapshot(
+                timestamp = timestamp,
+                totalValueUSD = BigDecimal(total),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal(btcBalance),
+                        price = BigDecimal(btcPrice),
+                        valueUSD = BigDecimal(btcBalance).multiply(BigDecimal(btcPrice)),
+                        targetPercent = BigDecimal(btcTargetPercent),
+                    ),
+                    "USD" to assetSnapshot(
+                        symbol = "USD",
+                        balance = BigDecimal(usdBalance),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal(usdBalance),
+                        targetPercent = BigDecimal("100.0").subtract(BigDecimal(btcTargetPercent)),
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = timestamp,
+            )
+
+            val result = calculate(
+                snapshots = listOf(
+                    configured("20.0", now, "1.00000000", "500.00", "500.00", "1000.00"),
+                    configured("90.0", now.plusSeconds(3600), "1.00000000", "600.00", "600.00", "1200.00"),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        now.plusSeconds(1800),
+                        "USD",
+                        "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "dep-fixed-weight",
+                        refid = "ACH-FIXED-WEIGHT",
+                    ),
+                ),
+                provenanceResolver = SimpleFundingProvenanceResolver(
+                    deposits = listOf(
+                        DepositStatusRecord(
+                            refid = "ACH-FIXED-WEIGHT",
+                            asset = "USD",
+                            amount = BigDecimal("100.00"),
+                            time = now.plusSeconds(1800),
+                            status = "Success",
+                            method = "ACH",
+                        ),
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("500.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1210.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-10.00")
+        }
+
+        "Scenario A: USD cash dividend is excluded from the crypto-cash benchmark" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2660,12 +3396,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points.size shouldBe 2
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100025.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100025.00")
-            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("25.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("25.00")
         }
 
-        "Scenario B: Cash dividend with fee correctly credits net delta (amount - fee)" {
+        "Scenario B: excluded cash dividend still reconciles its net actual balance delta" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2699,8 +3435,9 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100024.90")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100024.90")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("24.90")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("24.90")
         }
 
         "Scenario C: Zero-baseline reward in a newly credited asset remains actual-only" {
@@ -2741,7 +3478,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("6000.00")
         }
 
-        "Scenario D: Manual authoritative BUY replays into Buy & Hold and creates zero divergence" {
+        "Scenario D: Manual authoritative BUY is reconciled but does not change pure Buy & Hold" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2776,11 +3513,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("5000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("5000.00")
         }
 
-        "Scenario E: Manual authoritative SELL replays into Buy & Hold and creates zero divergence" {
+        "Scenario E: Manual authoritative SELL is reconciled but does not change pure Buy & Hold" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2815,11 +3553,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("120000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("-10000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("-10000.00")
         }
 
-        "Scenario F: Manual trade fee hits both actual and Buy & Hold identically" {
+        "Scenario F: Manual trade fees are reconciled without creating synthetic trades" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2854,8 +3593,9 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("114974.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("114974.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("4974.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("4974.00")
         }
 
         "Scenario G & H: Bot trade is ignored by Buy & Hold and legitimately generates rebalance alpha" {
@@ -2900,7 +3640,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("5000.00")
         }
 
-        "Scenario I: Mixed manual and bot trades in same interval isolate bot divergence" {
+        "Scenario I: Mixed manual and bot trades are both ignored by pure Buy & Hold" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2945,12 +3685,11 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("125000.00")
-            // B&H had baseline 1 BTC + 50k USD, applied manual BUY 0.2 BTC for 10k USD => 1.2 BTC @ 60k + 40k USD = 72k + 40k = 112,000.00
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("112000.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("13000.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("15000.00")
         }
 
-        "Scenario J: Manual multi-fill order replays all fill legs once into Buy & Hold" {
+        "Scenario J: Manual multi-fill order is reconciled without changing pure Buy & Hold" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -2995,8 +3734,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("5000.00")
         }
 
         "Scenario K: Bot multi-fill order is completely ignored by Buy & Hold" {
@@ -3049,7 +3788,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("5000.00")
         }
 
-        "Scenario L: Ambiguous or UNKNOWN tracked trade makes comparison unavailable" {
+        "Scenario L: UNKNOWN trade is reconciled without changing pure Buy & Hold" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -3088,11 +3827,13 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("5000.00")
         }
 
-        "Scenario M: External USD deposit increases both actual and Buy & Hold with zero divergence" {
+        "Scenario M: Genuine USD contribution is allocated by fixed anchor weights" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -3238,7 +3979,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
-        "Scenario O: External crypto deposit increases both holdings and tracks future price movement identically" {
+        "Scenario O: Genuine crypto contribution is allocated by fixed anchor weights" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -3456,7 +4197,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal("-1300.00")
         }
 
-        "historical-only inception value is redistributed over original holdings" {
+        "pure benchmark preserves every positive anchor holding" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
             val inceptionBaseline = PortfolioSnapshot(
@@ -3514,13 +4255,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1200.00")
-            // Original actual values are 60/40, so the $200 MORPHO is redistributed as $120 BTC
-            // and $80 ETH. MORPHO itself never receives synthetic units.
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1920.00")
-            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("-120.00")
+            // Pure Buy & Hold preserves all anchor holdings: 6 BTC ($1200) + 4 ETH ($400) + 200 MORPHO ($200) = $1800.00.
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1800.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("0.00")
         }
 
-        "equal-capital benchmark uses original value weights and excludes historical-only assets" {
+        "pure benchmark preserves all positive anchor holdings despite target edits" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
             val t2 = Instant.parse("2026-06-03T12:00:00Z")
@@ -3590,14 +4330,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[0].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
             result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
             result.points[0].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
-            // The $300 MORPHO holding is actual-only: its price doubling affects actual, not B&H.
+            // Pure Buy & Hold preserves the 300 MORPHO holding: at t1 MORPHO price doubles to $2, total is $1300.
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("1600.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
-            // B&H begins with the actual $300/$400 BTC/ETH split, then redistributes the $300
-            // historical-only capital over that 3/7 and 4/7 split. BTC doubling therefore raises
-            // the benchmark to $1,428.57; MORPHO remains absent from the synthetic basket.
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1300.00")
+            // At t2 BTC doubles to $200 (3 * $200 = $600) + 20 ETH ($400) + 300 MORPHO ($600) = $1600.
             result.points[2].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("2200.00")
-            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1428.57")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1600.00")
         }
 
         "original value weights preserve full capital when normalization needs a residual" {
@@ -3736,7 +4474,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableAt shouldBe t0
         }
 
-        "same-time recorded twin keeps the approved economic anchor without historical-only replay" {
+        "same-time recorded twin keeps the full anchor without synthetic trade replay" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
             val inception = PortfolioSnapshot(
@@ -3772,11 +4510,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val recordedTwin = inception.copy(
                 balancesObservedAt = t0,
-                totalValueUSD = BigDecimal("200.00"),
-                assets = mapOf(
-                    "BTC" to inception.assets.getValue("BTC"),
-                    "ETH" to inception.assets.getValue("ETH").copy(targetPercent = BigDecimal.ZERO),
-                ),
+                totalValueUSD = BigDecimal("225.00"),
+                assets = inception.assets.mapValues { (k, v) ->
+                    if (k == "ETH") v.copy(targetPercent = BigDecimal.ZERO) else v
+                },
             )
             val result = calculate(
                 snapshots = listOf(recordedTwin, recordedTwin.copy(timestamp = t1, balancesObservedAt = t1)),
@@ -3850,7 +4587,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 assets = mapOf(
                     "BTC" to assetSnapshot(
                         symbol = "BTC",
-                        balance = BigDecimal.ZERO,
+                        balance = BigDecimal.ONE,
                         price = BigDecimal.ZERO,
                         valueUSD = BigDecimal("100.00"),
                         targetPercent = BigDecimal("100.0"),
@@ -3893,7 +4630,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 assets = mapOf(
                     "BTC" to assetSnapshot(
                         symbol = "BTC",
-                        balance = BigDecimal.ZERO,
+                        balance = BigDecimal.ONE,
                         price = BigDecimal.ZERO,
                         valueUSD = BigDecimal("100.00"),
                         targetPercent = BigDecimal("100.0"),
@@ -3923,6 +4660,18 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.MISSING_PRICE
+
+            val sourceError = calculate(
+                snapshots = listOf(inceptionBaseline, later),
+                inceptionSnapshot = inceptionBaseline,
+                priceProvider = HistoricalPriceProvider { _, time ->
+                    throw HistoricalPriceSourceException("BTC", "historical source unavailable", time)
+                },
+            )
+
+            sourceError.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            sourceError.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR
+            sourceError.unavailableAt shouldBe t0
         }
 
         "without an original configured holding the benchmark is unavailable" {
@@ -3930,7 +4679,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
             val inceptionBaseline = PortfolioSnapshot(
                 timestamp = t0,
-                totalValueUSD = BigDecimal("1000.00"),
+                totalValueUSD = BigDecimal.ZERO,
                 assets = mapOf(
                     "BTC" to assetSnapshot(
                         symbol = "BTC",
@@ -3948,9 +4697,9 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     ),
                     "MORPHO" to assetSnapshot(
                         symbol = "MORPHO",
-                        balance = BigDecimal("1000.00000000"),
+                        balance = BigDecimal.ZERO,
                         price = BigDecimal.ONE,
-                        valueUSD = BigDecimal("1000.00"),
+                        valueUSD = BigDecimal.ZERO,
                         targetPercent = BigDecimal.ZERO,
                     ),
                 ),
@@ -3972,7 +4721,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 snapshots = listOf(inceptionBaseline, later),
                 inceptionSnapshot = inceptionBaseline,
                 priceProvider = mapPriceProvider(
-                    mapOf("BTC" to BigDecimal("100.00"), "ETH" to BigDecimal("20.00")),
+                    mapOf(
+                        "BTC" to BigDecimal("100.00"),
+                        "ETH" to BigDecimal("20.00"),
+                    ),
                 ),
             )
 
@@ -3980,7 +4732,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.NON_POSITIVE_BASELINE
         }
 
-        "owner contribution and target conversion fail closed without sequence evidence" {
+        "owner contribution is allocated once while a complete conversion stays benchmark-neutral" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
             val t2 = Instant.parse("2026-06-03T12:00:00Z")
@@ -4071,12 +4823,13 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
             )
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
-            result.unavailableAt shouldBe t1
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1100.00")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1210.00")
+            result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal("100.00")
         }
 
-        "target conversion and manual trade fail closed without sequence evidence" {
+        "complete conversion and manual trade do not change pure Buy & Hold" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
             val t2 = Instant.parse("2026-06-03T12:00:00Z")
@@ -4160,9 +4913,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
             )
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
-            result.unavailableAt shouldBe t1
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1100.00")
+            result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal("10.00")
         }
 
         "card withdrawal source-leg collision with target trade fails closed" {
@@ -4257,12 +5011,13 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 provenanceResolver = cardProvenance,
             )
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
-            result.unavailableAt shouldBe fundingTime
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("900.00")
+            result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("900.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
-        "owner withdrawal ignores a disjoint historical-only trade" {
+        "owner withdrawal remains proportional when actual trading is disjoint" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val tradeTime = Instant.parse("2026-06-02T12:00:00Z")
             val withdrawalTime = tradeTime.plusMillis(500)
@@ -4335,7 +5090,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
                 inceptionSnapshot = inception,
                 priceProvider = mapPriceProvider(
-                    mapOf("BTC" to BigDecimal("100.00"), "ETH" to BigDecimal("20.00")),
+                    mapOf("BTC" to BigDecimal("100.00"), "ETH" to BigDecimal("20.00"), "MORPHO" to BigDecimal.ONE),
                 ),
             )
 
@@ -4401,7 +5156,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             sourceError.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1000.00")
         }
 
-        "later historical-only liquidation does not recapitalize Buy & Hold" {
+        "sale of an anchor-held asset does not change pure Buy & Hold" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
             val inceptionBaseline = PortfolioSnapshot(
@@ -4444,7 +5199,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             val afterSale = inceptionBaseline.copy(
                 timestamp = t1,
-                assets = inceptionBaseline.assets - "MORPHO" + mapOf(
+                assets = inceptionBaseline.assets + mapOf(
+                    "MORPHO" to inceptionBaseline.assets.getValue("MORPHO").copy(
+                        balance = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        price = BigDecimal.ONE,
+                    ),
                     "USD" to inceptionBaseline.assets.getValue("USD").copy(
                         balance = BigDecimal("300.00"),
                         valueUSD = BigDecimal("300.00"),
@@ -4547,15 +5307,19 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 rewards = listOf(contribution),
                 inceptionSnapshot = inceptionBaseline,
                 priceProvider = mapPriceProvider(
-                    mapOf("BTC" to BigDecimal("100.00"), "ETH" to BigDecimal("20.00")),
+                    mapOf(
+                        "BTC" to BigDecimal("100.00"),
+                        "ETH" to BigDecimal("20.00"),
+                        "MORPHO" to BigDecimal.ONE,
+                    ),
                 ),
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            // The $100 contribution is allocated by the original $300/$400 BTC/ETH split: $42.86
-            // BTC-equivalent and $57.14 ETH-equivalent. Current target percentages are irrelevant.
+            // The $100 contribution is allocated by the original 30/40/30 BTC/ETH/MORPHO split: $30
+            // BTC, $40 ETH, $30 MORPHO. At t1 total is $1100.00. At t2 BTC doubles to $200, total is $1430.00.
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1100.00")
-            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1571.43")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1430.00")
         }
 
         "same-timestamp owner contribution and target trade fail closed without sequence evidence" {
@@ -4628,9 +5392,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
             )
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
-            result.unavailableAt shouldBe t1
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1100.00")
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1210.00")
+            result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal("100.00")
         }
 
         "a configured-target value above the full inception total fails closed" {
@@ -4660,7 +5425,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             val result = calculate(
-                snapshots = listOf(snapshot(t0, "1000.00", assets), snapshot(t1, "1000.00", assets)),
+                snapshots = listOf(snapshot(t0, "1050.00", assets), snapshot(t1, "1050.00", assets)),
                 inceptionSnapshot = inceptionBaseline,
             )
 
@@ -5288,8 +6053,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("108300.00")
-            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("-300.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("113300.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("-5300.00")
         }
 
         "Same-timestamp funding passthrough preserves a positive typed net contribution" {
@@ -5436,8 +6201,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10050.00")
-            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10150.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-100.00")
         }
 
         "same-timestamp plumbing with a blank passthrough refid stays separately typed" {
@@ -5473,8 +6238,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
-            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10100.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-100.00")
         }
 
         "Same-timestamp opposite plumbing legs without a shared identity stay separate" {
@@ -5668,8 +6433,47 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("120170.00")
-            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-20.00")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("120120.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("30.00")
+        }
+
+        "explicit account-level independent credit may introduce an unheld asset" {
+            val t0 = now
+            val t1 = now.plusSeconds(3600)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00", "100.00", "100.00"),
+                            "ETH" to assetRow("0.00", "100.00", "0.00"),
+                        ),
+                    ),
+                    snapshot(
+                        t1,
+                        "110.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00", "100.00", "100.00"),
+                            "ETH" to assetRow("0.10", "100.00", "10.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(1800),
+                        asset = "ETH",
+                        amount = "0.10",
+                        type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                        subtype = "welcomebonus",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
         "Same-timestamp reward and owner funding are additive and preserve parity" {
@@ -5925,7 +6729,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.baselineTimestamp shouldBe Instant.parse("2026-01-01T12:00:00Z")
         }
 
-        "Scenario S: Untracked stock dividend credited in USD is mirrored in Buy & Hold USD" {
+        "Scenario S: Untracked stock dividend credited in USD stays actual-only" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -5959,8 +6763,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100050.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100050.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("50.00")
         }
 
         "Scenario U: Event exactly at baseline timestamp is already embedded in baseline and not replayed" {
@@ -6049,8 +6853,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("115000.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("110000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("5000.00")
         }
 
         "base-denominated ledger fee settles from the retained trade legs" {
@@ -6111,10 +6915,11 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("99996.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("99996.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("-4.00")
         }
 
-        "UNKNOWN SELL trade makes comparison unavailable with AMBIGUOUS_TRADE_OWNERSHIP" {
+        "UNKNOWN SELL trade does not affect pure Buy & Hold when balances reconcile" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -6148,11 +6953,13 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
-        "UNKNOWN trade affecting only the tracked quote remains unavailable" {
+        "UNKNOWN trade affecting only the tracked quote does not affect pure Buy & Hold" {
             val t0 = now
             val result = calculate(
                 snapshots = listOf(
@@ -6182,11 +6989,13 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 ),
             )
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-10.00")
         }
 
-        "UNKNOWN multi-fill order makes comparison unavailable with AMBIGUOUS_TRADE_OWNERSHIP" {
+        "UNKNOWN multi-fill order does not affect pure Buy & Hold when balances reconcile" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -6229,8 +7038,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
         "UNKNOWN trade outside comparison range does not affect comparison" {
@@ -6333,7 +7144,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = calculate(
                 snapshots = snapshots,
                 trades = trades,
-                knownRebalancerOrderTxids = setOf("BOT-TXID-100"),
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -6423,7 +7233,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
-        "Scenario AA: Manual Buy Crypto with existing cash (USD spend + BTC receive) has zero divergence" {
+        "Scenario AA: Manual Buy Crypto with existing cash is ignored by pure Buy & Hold" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -6476,12 +7286,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
             result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
             result.points[2].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("11000.00")
-            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("11000.00")
-            result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[2].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+            result.points[2].differenceUSD shouldBeEqualComparingTo BigDecimal("1000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("1000.00")
         }
 
-        "linked spend and receive replay atomically when the debit asset is outside the basket" {
+        "linked spend and receive plumbing is consumed without changing pure Buy & Hold" {
             val refid = "LINKED-PASSTHROUGH-OUTSIDE-BASKET"
             val baseline = snapshot(
                 now,
@@ -6512,8 +7322,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 provenanceResolver = FundingProvenanceResolver.NONE,
             )
             built.filterIsInstance<BenchmarkEvent.ExternalBalance>() shouldBe emptyList()
-            built.filterIsInstance<BenchmarkEvent.InternalConversion>().single()
-                .sourceLedgerIds shouldContainExactlyInAnyOrder listOf("linked-receive", "linked-spend")
 
             val result = calculate(
                 snapshots = listOf(
@@ -6779,7 +7587,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 provenanceResolver = provenance,
             )
 
-            // The historical-only deposit becomes USD capital, not a benchmark holding.
+            // The out-of-universe deposit becomes synthetic capital allocated by fixed anchor
+            // weights, not a direct holding in the deposited asset.
             builtEvents.filterIsInstance<BenchmarkEvent.ExternalBalance>() shouldBe emptyList()
             val contribution = builtEvents.filterIsInstance<BenchmarkEvent.OwnerContribution>().single()
             contribution.contributionUsd shouldBeEqualComparingTo BigDecimal("196.68530713568")
@@ -6864,10 +7673,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             }
         }
 
-        "historical-only funding never creates a benchmark holding or target weight" {
+        "out-of-universe funding is allocated by fixed anchor weights" {
             val depTime = now.plusSeconds(1200)
-            val xlmRef = "XLM-HISTORICAL-ONLY-2026-07-01T1220Z"
-            val usdtRef = "USDT-HISTORICAL-ONLY-2026-07-01T1220Z"
+            val xlmRef = "XLM-OUT-OF-UNIVERSE-2026-07-01T1220Z"
+            val usdtRef = "USDT-OUT-OF-UNIVERSE-2026-07-01T1220Z"
             val ledgers = listOf(
                 ledgerEvent(
                     timestamp = depTime,
@@ -6875,7 +7684,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     amount = "100.0",
                     type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     refid = xlmRef,
-                    ledgerId = "xlm-historical-only",
+                    ledgerId = "xlm-out-of-universe",
                 ),
                 ledgerEvent(
                     timestamp = depTime.plusSeconds(1),
@@ -6883,14 +7692,14 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     amount = "250.0",
                     type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                     refid = usdtRef,
-                    ledgerId = "usdt-historical-only",
+                    ledgerId = "usdt-out-of-universe",
                 ),
             )
             val provenance = SimpleFundingProvenanceResolver(
                 deposits = listOf(
                     DepositStatusRecord(
                         refid = xlmRef,
-                        txid = "xlm-historical-only-tx",
+                        txid = "xlm-out-of-universe-tx",
                         asset = "XLM",
                         amount = BigDecimal("100.0"),
                         time = depTime,
@@ -6899,7 +7708,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     ),
                     DepositStatusRecord(
                         refid = usdtRef,
-                        txid = "usdt-historical-only-tx",
+                        txid = "usdt-out-of-universe-tx",
                         asset = "USDT",
                         amount = BigDecimal("250.0"),
                         time = depTime.plusSeconds(1),
@@ -6932,7 +7741,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             contributions.flatMap { it.allocations.keys }.toSet() shouldBe setOf("BTC", "USD")
         }
 
-        "each owner-capital contribution from a historical-only asset is counted exactly once" {
+        "each owner-capital contribution from an out-of-universe asset is counted exactly once" {
             val depTime = now.plusSeconds(1500)
             val firstRef = "XLM-ONCE-DEPOSIT-A-2026-07-01"
             val secondRef = "XLM-ONCE-DEPOSIT-B-2026-07-01"
@@ -7000,7 +7809,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             total shouldBeEqualComparingTo BigDecimal("100.0000")
         }
 
-        "an owner withdrawal from a historical-only asset uses the same historical price policy" {
+        "an owner withdrawal from an out-of-universe asset uses the historical price policy" {
             val wdTime = now.plusSeconds(3600)
             val wdRef = "XLM-EXTERNAL-WITHDRAWAL-2026-07-01T1300Z"
             val snapshots = listOf(
@@ -7052,7 +7861,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 provenanceResolver = provenance,
             )
 
-            // A historical-only asset never appears in recorded snapshots, so tracked balances stay
+            // An out-of-universe asset never appears in recorded snapshots, so tracked balances stay
             // consistent while the synthetic benchmark alone values and applies the withdrawal:
             // 410 XLM at 0.24 USD = 98.40 USD.
             result.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -7070,7 +7879,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             withdrawal.withdrawalUsd shouldBeEqualComparingTo BigDecimal("98.4000")
         }
 
-        "an unpriceable historical-only owner contribution still fails closed" {
+        "an unpriceable out-of-universe owner contribution still fails closed" {
             val depTime = now.plusSeconds(600)
             val xlmRef = "XLM-UNPRICEABLE-DEPOSIT-2026-07-01T1210Z"
             val snapshots = listOf(
@@ -7992,11 +8801,13 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("9940.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("9940.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            // Consumer spend/receive plumbing is actual-account activity, not a passive trade or
+            // owner flow. The original $10,000 cash anchor therefore remains the B&H thesis.
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("10000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("-60.00")
         }
 
-        "Scenario DD: Crypto-to-crypto conversion (ETH spend + BTC receive) maintains exact parity" {
+        "Scenario DD: Crypto-to-crypto conversion does not alter the pure Buy & Hold basket" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -8039,11 +8850,11 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("104958.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("104958.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("105000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("-42.00")
         }
 
-        "Scenario EE: Untracked asset conversion updates tracked asset without injecting untracked asset" {
+        "Scenario EE: Unlinked asset plumbing does not inject a new basket holding" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -8082,8 +8893,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("6500.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("6500.00")
-            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("6000.00")
+            result.latestDifferenceUSD!! shouldBeEqualComparingTo BigDecimal("500.00")
         }
 
         "Case B: trade timestamp before display timestamp but after balance observation belongs to next interval" {
@@ -8254,7 +9065,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[1].rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100025.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100025.00")
+            // A generic USD dividend has no retained underlying equity identity, so it is
+            // actual-only for this crypto/cash benchmark.
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("25.00")
         }
 
         "Case I: ledger event before display timestamp but after balance observation belongs to next interval" {
@@ -8295,7 +9109,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
             result.points[0].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100025.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("25.00")
         }
 
         "Case J: trade and ledger close together reconcile jointly" {
@@ -8342,7 +9157,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
-            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100500.00")
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal("500.00")
         }
 
         "Case N: range rebasing with pre-range anchor does not emit anchor point or alter baseline value" {
@@ -8387,7 +9203,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 snapshots = listOf(s1, s2),
                 trades = trades,
                 anchorSnapshot = s0,
-                knownRebalancerOrderTxids = setOf("BOT-ORDER-EARLY"),
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
@@ -8881,7 +9696,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = calculate(
                 snapshots = listOf(s1, s2),
                 trades = listOf(botTrade),
-                knownRebalancerOrderTxids = setOf("BOT-ORDER-INIT"),
                 anchorSnapshot = null,
             )
 
@@ -8941,7 +9755,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[1].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
-        "No anchor: UNKNOWN trade among initial candidates fails closed" {
+        "No anchor: UNKNOWN trade among initial candidates does not affect pure Buy & Hold" {
             val t0 = now
             val s1 = snapshot(
                 timestamp = t0.plusMillis(500),
@@ -8977,8 +9791,10 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 anchorSnapshot = null,
             )
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
         "No anchor: unsupported initial trade fails closed with UNSUPPORTED_TRADE" {
@@ -9294,7 +10110,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 snapshots = listOf(s1, s2),
                 trades = listOf(manualBuy, failedTrade, dryRunTrade, preInceptionTrade, postObservationTrade, botTrade),
                 rewards = listOf(dep, nonBalanceLedger, tradeRowLedger, preInceptionLedger, postObservationLedger),
-                knownRebalancerOrderTxids = setOf("BOT-ORDER-1"),
                 anchorSnapshot = null,
                 inceptionSnapshot = inceptionSnap,
                 priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
@@ -9452,7 +10267,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points[0].buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("100000.00"))
         }
 
-        "complete top-level conversion transforms Buy & Hold once without owner contribution scaling" {
+        "complete top-level conversion is consumed without changing pure Buy & Hold" {
             val conversionTime = now.plusSeconds(1800)
             val inception = snapshot(
                 timestamp = now,
@@ -9505,15 +10320,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             built.filterIsInstance<BenchmarkEvent.ExternalBalance>() shouldBe emptyList()
             built.filterIsInstance<BenchmarkEvent.OwnerContribution>() shouldBe emptyList()
-            val conversion = built.filterIsInstance<BenchmarkEvent.InternalConversion>().single()
-            conversion.sourceLedgerIds shouldContainExactlyInAnyOrder listOf(
-                "conversion-source",
-                "conversion-destination",
-            )
-            conversion.legs.map { it.netBalanceDelta }.toSet() shouldBe setOf(
-                BigDecimal("-0.51"),
-                BigDecimal("4.98"),
-            )
 
             val result = calculate(
                 snapshots = listOf(inception, after),
@@ -9522,8 +10328,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
-            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("98.80")
-            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-1.20")
         }
 
         "complete conversion outside the tracked reconciliation universe is ignored" {

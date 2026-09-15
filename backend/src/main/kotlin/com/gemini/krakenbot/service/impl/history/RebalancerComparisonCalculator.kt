@@ -14,9 +14,6 @@ import com.gemini.krakenbot.model.NormalizedFundingTransaction
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RebalancerComparisonPoint
-import com.gemini.krakenbot.model.ResolvedOrderOwnership
-import com.gemini.krakenbot.model.TradeOwnership
-import com.gemini.krakenbot.model.TradeOwnershipClassifier
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -31,7 +28,16 @@ object RebalancerComparisonCalculator {
 
     // A HALF_UP four-decimal fee parse can lose at most half of one 4-decimal unit.
     private val legacyLedgerFeeDeltaTolerance = BigDecimal("0.00005")
+
+    // A persisted authoritative balance may be accepted as the gross ledger movement only when
+    // it matches the raw amount at crypto precision; the wider fee tolerance must not turn a
+    // stale checkpoint into a false exact match.
+    private val ledgerGrossDeltaTolerance = BigDecimal("0.00000001")
     private val externalBalanceLedgerTypes = LedgerEvent.EXTERNAL_BALANCE_TYPES
+    private val supportedLedgerTypes =
+        (setOf(KrakenApiConstants.LEDGER_TYPE_TRADE) + externalBalanceLedgerTypes)
+            .map(String::lowercase)
+            .toSet()
 
     // Bounded window (1,000ms) admitting clock skew and exchange timestamp truncation/precision differences
     // when an exchange event was already executed and reflected in observed balances.
@@ -61,7 +67,6 @@ object RebalancerComparisonCalculator {
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
         rewards: List<LedgerEvent> = emptyList(),
-        knownRebalancerOrderTxids: Set<String> = emptySet(),
         anchorSnapshot: PortfolioSnapshot? = null,
         inceptionSnapshot: PortfolioSnapshot? = null,
         knownInceptionTime: Instant? = null,
@@ -106,156 +111,67 @@ object RebalancerComparisonCalculator {
             )
         }
         val orderedSnapshots = snapshots.sortedBy(PortfolioSnapshot::timestamp)
-        // The benchmark starts with the actual value held in configured target assets. Reconstructed
-        // inception baselines may carry historical-only holdings recovered for accounting; they stay
-        // out of the B&H basket, while their economic value remains part of the benchmark's starting
-        // capital. A current target with no inception value contributes no original weight.
-        val benchmarkInception = inceptionSnapshot?.restrictToOriginalBenchmarkHoldings()
-        val hasConfiguredBenchmark = inceptionSnapshot?.assets?.any { (_, asset) ->
-            asset.targetPercent.signum() > 0
-        } == true
-        val requiredReconciliationSymbols = if (hasConfiguredBenchmark) {
-            inceptionSnapshot.assets.keys
-                .filter { symbol -> inceptionSnapshot.assets.getValue(symbol).targetPercent.signum() > 0 }
-                .map { Asset.normalizeLedgerAsset(it).uppercase() }
-                .toSet()
-        } else {
-            emptySet()
-        }
-        val (baseline, effectiveSnapshots) = if (benchmarkInception != null) {
-            val trimmed = if (!hasConfiguredBenchmark) {
-                if (orderedSnapshots.first().timestamp < benchmarkInception.timestamp) {
-                    val postInception = orderedSnapshots.filter { it.timestamp >= benchmarkInception.timestamp }
-                    if (postInception.isEmpty() || postInception.first().timestamp > benchmarkInception.timestamp) {
-                        // Preserve the legacy planless-fixture behavior: the explicit inception
-                        // snapshot still supplies the economic baseline and fills a missing point.
-                        listOf(inceptionSnapshot) + postInception
-                    } else {
-                        postInception
-                    }
+        val (baseline, effectiveSnapshots) = if (inceptionSnapshot != null) {
+            val trimmed = if (orderedSnapshots.first().timestamp < inceptionSnapshot.timestamp) {
+                val postInception = orderedSnapshots.filter { it.timestamp >= inceptionSnapshot.timestamp }
+                if (postInception.isEmpty() || postInception.first().timestamp > inceptionSnapshot.timestamp) {
+                    listOf(inceptionSnapshot) + postInception
                 } else {
-                    // When the first retained point is already at or after the planless baseline,
-                    // retain the existing point sequence and avoid a duplicate synthetic point.
-                    orderedSnapshots
+                    postInception
                 }
             } else {
-                when {
-                    orderedSnapshots.first().timestamp < benchmarkInception.timestamp -> {
-                        val postInception = orderedSnapshots.filter { it.timestamp >= benchmarkInception.timestamp }
-                        if (postInception.isEmpty() || postInception.first().timestamp > benchmarkInception.timestamp) {
-                            // Validation and point replay need the full wallet map (cash and quote
-                            // balances) recorded at inception; only the benchmark weights stay
-                            // restricted to configured targets.
-                            listOf(inceptionSnapshot) + postInception
-                        } else {
-                            postInception
-                        }
-                    }
-
-                    orderedSnapshots.first().timestamp > benchmarkInception.timestamp -> {
-                        // A retained series may begin after the approved anchor. Preserve the full
-                        // actual wallet as the first economic point and use the target-only view below
-                        // for reconciliation, including zero-valued configured targets.
-                        listOf(inceptionSnapshot) + orderedSnapshots
-                    }
-
-                    else -> orderedSnapshots
-                }
+                orderedSnapshots
             }
             if (trimmed.size < 2) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
                     unavailableAt = orderedSnapshots.last().timestamp,
-                    baselineTimestamp = benchmarkInception.timestamp,
+                    baselineTimestamp = inceptionSnapshot.timestamp,
                 )
             }
-            // Universe check runs against the trimmed first snapshot, not a pre-inception one.
-            // Historical-only holdings may extend the series universe; every benchmark target
-            // still has to be observable, while extra assets are legitimate actual-side holdings.
-            if (!trimmed.first().assets.keys.containsAll(benchmarkInception.assets.keys)) {
+            if (!trimmed.first().assets.keys.containsAll(inceptionSnapshot.assets.keys)) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
                     unavailableAt = trimmed.first().timestamp,
-                    baselineTimestamp = benchmarkInception.timestamp,
+                    baselineTimestamp = inceptionSnapshot.timestamp,
                 )
             }
-            benchmarkInception to trimmed
+            inceptionSnapshot to trimmed
         } else {
             orderedSnapshots.first() to orderedSnapshots
         }
-        // The recorded series still supplies the target universe and the wallet balance transitions
-        // used for reconciliation. It is deliberately separate from the economic inception above:
-        // reconstructed target percentages are current-plan projections, not historical weights.
-        // A retained history may contain both an approved full-wallet anchor and a same-time
-        // recorded twin. Prefer the same-time row that contains every current target key so a
-        // stale twin's historical target metadata cannot drop a zero-valued configured asset.
-        val reconciliationBaseline = if (benchmarkInception != null) {
-            val sameTimestampSnapshots = effectiveSnapshots.filter {
-                it.timestamp == benchmarkInception.timestamp
-            }
-            val exactSeriesSnapshot = if (hasConfiguredBenchmark) {
-                sameTimestampSnapshots.firstOrNull { snapshot ->
-                    snapshot.assets.keys
-                        .map { Asset.normalizeLedgerAsset(it).uppercase() }
-                        .toSet()
-                        .containsAll(requiredReconciliationSymbols)
-                } ?: sameTimestampSnapshots.firstOrNull()
-            } else {
-                sameTimestampSnapshots.firstOrNull()
-            }
-            exactSeriesSnapshot?.let {
-                if (hasConfiguredBenchmark) {
-                    it.restrictToReconciliationSymbols(requiredReconciliationSymbols)
-                } else {
-                    it.restrictToBenchmarkTargets()
-                }
-            }
-                ?: if (hasConfiguredBenchmark && sameTimestampSnapshots.isEmpty()) {
-                    inceptionSnapshot.restrictToReconciliationSymbols(requiredReconciliationSymbols)
-                } else {
-                    benchmarkInception
-                }
-        } else {
-            baseline
-        }
-        val reconciliationSymbols = reconciliationBaseline.assets.keys
-            .map { Asset.normalizeLedgerAsset(it).uppercase() }
-            .toSet()
-        if (!reconciliationSymbols.containsAll(requiredReconciliationSymbols)) {
-            return unavailable(
-                reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
-                unavailableAt = reconciliationBaseline.timestamp,
-                baselineTimestamp = baseline.timestamp,
-            )
-        }
-        val historicalOnlyInceptionValue = if (benchmarkInception != null) {
-            inceptionSnapshot.excludedBenchmarkValue(benchmarkInception)
-        } else {
-            BigDecimal.ZERO
-        }
-        if (historicalOnlyInceptionValue.signum() < 0) {
-            return unavailable(
-                reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
-                unavailableAt = baseline.timestamp,
-                baselineTimestamp = baseline.timestamp,
-            )
-        }
 
-        val universeError = validateAssetUniverse(effectiveSnapshots, reconciliationBaseline)
+        val universeError = validateAssetUniverse(effectiveSnapshots, baseline)
         if (universeError != null) return universeError
 
-        // The full inception wallet validates the economic starting capital, while the recorded
-        // series baseline above validates the target-universe balance transitions.
-        val baselineError = validateBaseline(
-            if (inceptionSnapshot != null && benchmarkInception != null) inceptionSnapshot else baseline,
-        )
+        val baselineError = validateBaseline(baseline)
         if (baselineError != null) return baselineError
+        val negativeSnapshot = effectiveSnapshots.firstOrNull { snapshot ->
+            snapshot.totalValueUSD.signum() < 0 || snapshot.assets.values.any { asset ->
+                asset.balance.signum() < 0 || asset.valueUSD.signum() < 0
+            }
+        }
+        if (negativeSnapshot != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                unavailableAt = negativeSnapshot.timestamp,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
 
-        val priceError = validatePrices(effectiveSnapshots, reconciliationBaseline)
+        val priceError = try {
+            validatePrices(effectiveSnapshots, baseline, priceProvider)
+        } catch (e: HistoricalPriceSourceException) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+                unavailableAt = e.eventTime,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
         if (priceError != null) return priceError
 
         val effectiveAnchor = anchorSnapshot?.takeIf {
-            it.timestamp < baseline.timestamp && it.assets.keys.containsAll(reconciliationBaseline.assets.keys)
+            it.timestamp < baseline.timestamp && it.assets.keys.containsAll(baseline.assets.keys)
         }
         val validationSnapshots = if (effectiveAnchor != null) {
             listOf(effectiveAnchor) + effectiveSnapshots
@@ -263,13 +179,57 @@ object RebalancerComparisonCalculator {
             effectiveSnapshots
         }
 
+        // Surface structural ledger errors before balance-continuity validation. The validator
+        // intentionally reports balance evidence failures, while the comparison contract keeps
+        // unsupported conversion/internal-marker shapes distinguishable from those failures.
+        val structuralLedgerClassifications = LedgerFlowClassifier.classifyAll(rewards)
+        val structurallyUnsupportedLedger = rewards.firstOrNull { event ->
+            val normalizedType = event.type.trim().lowercase()
+            structuralLedgerClassifications[event.ledgerId] == FlowCategory.UNSUPPORTED &&
+                (
+                    normalizedType !in supportedLedgerTypes ||
+                        normalizedType == KrakenApiConstants.LEDGER_TYPE_CONVERSION ||
+                        LedgerFlowClassifier.isDocumentedInternalTransfer(event)
+                    )
+        }
+        if (structurallyUnsupportedLedger != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE,
+                unavailableAt = structurallyUnsupportedLedger.time,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
+
         // The recorded series tracks spot-wallet balances: ledger rows resolved to another
         // Kraken wallet scope (staking/futures) never moved the series, so they must not move
         // reconciliation balances either. Unresolved scopes keep the previous behavior.
-        val ledgerScopes = AuthoritativeLedgerBalanceValidator.validate(rewards).resolvedScopes
+        // Non-authoritative owner/plumbing rows have no post-entry checkpoint to resolve and are
+        // therefore deliberately excluded from this wallet-scope search. They remain available
+        // to the provenance/classification path below.
+        val ledgerValidation = AuthoritativeLedgerBalanceValidator.validate(
+            rewards.filter(LedgerEvent::hasAuthoritativeBalance),
+        )
+        ledgerValidation.failure?.let { failure ->
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                unavailableAt = failure.currentTime,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
+        val ledgerScopes = ledgerValidation.resolvedScopes
+        val unresolvedAuthoritativeLedger = rewards.firstOrNull { event ->
+            event.hasAuthoritativeBalance && event.ledgerId !in ledgerScopes
+        }
+        if (unresolvedAuthoritativeLedger != null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                unavailableAt = unresolvedAuthoritativeLedger.time,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
         val spotRewards = rewards.filter { ledger ->
-            val scope = ledgerScopes[ledger.ledgerId]
-            scope == null || scope == AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+            !ledger.hasAuthoritativeBalance ||
+                ledgerScopes[ledger.ledgerId] == AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
         }
         // Kraken charges trade-ledger fees in each leg's own asset (often the base) and ledger
         // amounts can round differently from the reported volume. Retained Spot trade legs are
@@ -298,24 +258,18 @@ object RebalancerComparisonCalculator {
         val orphanTradeLedgerIds = orphanTradeLedgerEvents.replayableLegs.mapTo(linkedSetOf()) { it.ledgerId }
         val tradeLegsByTradeIdentity = orphanTradeLedgerEvents.tradeLegsByTradeIdentity
 
-        val resolvedOrderOwnership = TradeOwnershipClassifier.resolveOrderOwnership(
-            trades = trades,
-            knownRebalancerOrderTxids = knownRebalancerOrderTxids,
-        )
-
         val balanceResult = validateTrackedBalanceChanges(
             snapshots = validationSnapshots,
             trades = trades,
             ledgers = spotRewards,
-            orderOwnership = resolvedOrderOwnership,
-            baseline = reconciliationBaseline,
+            baseline = baseline,
             tradeLegsByRefId = tradeLegsByRefId,
             tradeLegsByTradeIdentity = tradeLegsByTradeIdentity,
             resolvedScopes = ledgerScopes,
             orphanTradeLedgerIds = orphanTradeLedgerIds,
         )
 
-        val (reconciledTrades, reconciledLedgers) = when (balanceResult) {
+        val reconciledLedgers = when (balanceResult) {
             is TrackedBalanceValidation.Failed -> {
                 return unavailable(
                     reason = balanceResult.reason,
@@ -324,7 +278,7 @@ object RebalancerComparisonCalculator {
                 )
             }
 
-            is TrackedBalanceValidation.Passed -> balanceResult.trades to balanceResult.ledgers
+            is TrackedBalanceValidation.Passed -> balanceResult.ledgers
         }
 
         val windowObservationStart = validationSnapshots.first().balancesObservedAt
@@ -380,19 +334,7 @@ object RebalancerComparisonCalculator {
             emptyList()
         }
 
-        val intermediateTrades = if (baseline.timestamp < windowObservationStart) {
-            trades.filter {
-                it.success &&
-                    !it.dryRun &&
-                    it.timestamp > baseline.timestamp &&
-                    it.timestamp <= windowObservationStart &&
-                    resolvedOrderOwnership.classify(it) == TradeOwnership.MANUAL_OR_EXTERNAL
-            }.map { ReconciledTrade(it, it.timestamp, it.usdAmount) }
-        } else {
-            emptyList()
-        }
-
-        // Original inception value weights define the benchmark thesis. Every later owner
+        // Recorded-anchor value weights define the benchmark thesis. Every later owner
         // contribution is invested by the same weights instead of leaving new money in cash.
         val inceptionWeights = baselineValueWeights(baseline)
 
@@ -415,12 +357,10 @@ object RebalancerComparisonCalculator {
 
         val benchmarkBuilt = try {
             buildBenchmarkEvents(
-                trades = intermediateTrades + reconciledTrades,
                 ledgers = intermediateLedgers + reconciledLedgers.filterNot {
                     it.ledger.ledgerId in orphanTradeLedgerIds
                 },
-                orderOwnership = resolvedOrderOwnership,
-                baseline = reconciliationBaseline,
+                baseline = baseline,
                 inceptionWeights = inceptionWeights,
                 priceProvider = priceProvider,
                 classifications = ledgerClassifications,
@@ -451,7 +391,7 @@ object RebalancerComparisonCalculator {
         val benchmarkEvents = benchmarkBuilt.events.sortedBy { it.timestamp }
         val unorderedAt = findUnorderedBenchmarkEventTimestamp(
             events = benchmarkEvents,
-            baselineAssetSymbols = reconciliationBaseline.assets.keys
+            baselineAssetSymbols = baseline.assets.keys
                 .map { Asset.normalizeLedgerAsset(it).uppercase() }
                 .toSet(),
         )
@@ -463,35 +403,7 @@ object RebalancerComparisonCalculator {
             )
         }
 
-        val syntheticBaseline = if (inceptionSnapshot != null && benchmarkInception != null &&
-            inceptionSnapshot.assets.any { (_, asset) -> asset.targetPercent.signum() > 0 }
-        ) {
-            try {
-                syntheticBaselineBalances(
-                    fullBaseline = inceptionSnapshot,
-                    benchmarkBaseline = benchmarkInception,
-                    weights = inceptionWeights,
-                    priceProvider = priceProvider,
-                )
-            } catch (e: HistoricalPriceSourceException) {
-                return unavailable(
-                    reason = ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
-                    unavailableAt = e.eventTime,
-                    baselineTimestamp = baseline.timestamp,
-                )
-            } ?: return unavailable(
-                reason = ComparisonUnavailableReason.MISSING_PRICE,
-                unavailableAt = baseline.timestamp,
-                baselineTimestamp = baseline.timestamp,
-            )
-        } else {
-            null
-        }
-        val baselineBalances = syntheticBaseline?.balances ?: run {
-            // Planless fixtures and legacy snapshots have no configured target weights. Preserve
-            // their established keep-all behavior until a real configured benchmark is present.
-            extractBaselineBalances(baseline)
-        }
+        val baselineBalances = extractBaselineBalances(baseline)
         val runningSyntheticBalances = baselineBalances.toMutableMap()
         var eventIndex = 0
 
@@ -503,8 +415,6 @@ object RebalancerComparisonCalculator {
                         runningSyntheticBalances,
                         benchmarkEvents[eventIndex],
                         priceProvider,
-                        tradeLegsByRefId,
-                        tradeLegsByTradeIdentity,
                     )
                 } catch (e: HistoricalPriceSourceException) {
                     return unavailable(
@@ -527,7 +437,8 @@ object RebalancerComparisonCalculator {
                 syntheticBalances = runningSyntheticBalances,
                 snapshot = snapshot,
                 baselineTimestamp = baseline.timestamp,
-                baselinePrices = syntheticBaseline?.prices.orEmpty(),
+                baselinePrices = baseline.assets.mapValues { it.value.price },
+                priceProvider = priceProvider,
             )
             if (buyAndHoldValue.signum() <= 0) {
                 return unavailable(
@@ -536,16 +447,7 @@ object RebalancerComparisonCalculator {
                     baselineTimestamp = baseline.timestamp,
                 )
             }
-            val rebalancerValue = if (
-                inceptionSnapshot != null && snapshot.timestamp == inceptionSnapshot.timestamp
-            ) {
-                // Series queries hide the preserved identity anchor when a reconstructed row
-                // shares its instant. The anchor still represents the full actual wallet, so a
-                // historical-only holding remains visible on the actual side of the first point.
-                inceptionSnapshot.totalValueUSD
-            } else {
-                snapshot.totalValueUSD
-            }
+            val rebalancerValue = snapshot.totalValueUSD
             val differenceUSD = rebalancerValue.subtract(buyAndHoldValue)
             val differencePercent = calculateDifferencePercent(differenceUSD, buyAndHoldValue)
             points += RebalancerComparisonPoint(
@@ -563,9 +465,6 @@ object RebalancerComparisonCalculator {
             val firstDiffFromCalc = baselineFirstPoint.rebalancerValueUSD
                 .subtract(baselineFirstPoint.buyAndHoldValueUSD)
                 .abs()
-            // Both sides represent the same economic capital at inception. Historical-only
-            // holdings are transformed into configured-target units in [baselineBalances], not
-            // dropped from the benchmark, so the expected initial difference is zero.
             val expectedInitialDifference = BigDecimal.ZERO.setScale(
                 PrecisionConstants.SCALE_USD,
                 RoundingMode.HALF_UP,
@@ -580,13 +479,13 @@ object RebalancerComparisonCalculator {
         }
 
         val correctedPoints = points.mapIndexed { index, point ->
-            if (index == 0 && isStartingAtBaseline && historicalOnlyInceptionValue.signum() == 0) {
+            if (index == 0 && isStartingAtBaseline) {
                 point.copy(
-                    rebalancerValueUSD = (inceptionSnapshot?.totalValueUSD ?: baseline.totalValueUSD).setScale(
+                    rebalancerValueUSD = baseline.totalValueUSD.setScale(
                         PrecisionConstants.SCALE_USD,
                         RoundingMode.HALF_UP,
                     ),
-                    buyAndHoldValueUSD = (inceptionSnapshot?.totalValueUSD ?: baseline.totalValueUSD).setScale(
+                    buyAndHoldValueUSD = baseline.totalValueUSD.setScale(
                         PrecisionConstants.SCALE_USD,
                         RoundingMode.HALF_UP,
                     ),
@@ -617,8 +516,7 @@ object RebalancerComparisonCalculator {
     }
 
     private sealed class TrackedBalanceValidation {
-        data class Passed(val trades: List<ReconciledTrade>, val ledgers: List<ReconciledLedger>) :
-            TrackedBalanceValidation()
+        data class Passed(val ledgers: List<ReconciledLedger>) : TrackedBalanceValidation()
 
         data class Failed(val reason: ComparisonUnavailableReason, val unavailableAt: Instant?) :
             TrackedBalanceValidation()
@@ -627,6 +525,7 @@ object RebalancerComparisonCalculator {
     private enum class TradeAccountingMode {
         PRECISE_FILL_NOTIONAL,
         PERSISTED_ROUNDED_COST,
+        PERSISTED_TRADE_ECONOMICS,
     }
 
     private data class ReconciliationState(
@@ -651,13 +550,6 @@ object RebalancerComparisonCalculator {
         )
     }
 
-    private data class ReconciledTrade(
-        val trade: TradeRecord,
-        val timestamp: Instant,
-        val usdNotional: BigDecimal,
-        val embeddedInBaseline: Boolean = false,
-    )
-
     private data class ReconciledLedger(
         val ledger: LedgerEvent,
         val timestamp: Instant,
@@ -681,6 +573,17 @@ object RebalancerComparisonCalculator {
     )
 
     private fun validateBaseline(baseline: PortfolioSnapshot): RebalancerComparison? {
+        val hasInvalidAsset = baseline.assets.values.any { asset ->
+            asset.balance.signum() < 0 ||
+                asset.valueUSD.signum() < 0
+        }
+        if (hasInvalidAsset) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                unavailableAt = baseline.timestamp,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
         if (baseline.totalValueUSD <= BigDecimal.ZERO) {
             return unavailable(
                 reason = ComparisonUnavailableReason.NON_POSITIVE_BASELINE,
@@ -708,24 +611,28 @@ object RebalancerComparisonCalculator {
         return null
     }
 
-    private fun validatePrices(
+    private suspend fun validatePrices(
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
+        priceProvider: HistoricalPriceProvider?,
     ): RebalancerComparison? {
-        val baselineKeys = baseline.assets.keys
+        val baselineKeys = baseline.assets.filterValues { it.balance.signum() != 0 }.keys
         for (snapshot in snapshots) {
             for (symbol in baselineKeys) {
                 if (symbol == Asset.USD) continue
-                val assetRow = snapshot.assets[symbol] ?: return unavailable(
-                    reason = ComparisonUnavailableReason.MISSING_PRICE,
-                    unavailableAt = snapshot.timestamp,
-                    baselineTimestamp = baseline.timestamp,
-                )
-                if (assetRow.price.signum() <= 0) {
-                    val zeroBalanceTargetAtBaseline = snapshot.timestamp == baseline.timestamp &&
-                        assetRow.balance.signum() == 0 &&
-                        (baseline.assets[symbol]?.targetPercent?.signum() ?: 0) > 0
-                    if (!zeroBalanceTargetAtBaseline) {
+                // Universe validation guarantees every snapshot carries the baseline keys.
+                val assetRow = snapshot.assets.getValue(symbol)
+                if (assetRow.price.signum() < 0) {
+                    return unavailable(
+                        reason = ComparisonUnavailableReason.MISSING_PRICE,
+                        unavailableAt = snapshot.timestamp,
+                        baselineTimestamp = baseline.timestamp,
+                    )
+                }
+                val hasPositivePrice = assetRow.price.signum() > 0
+                if (!hasPositivePrice) {
+                    val historicalPrice = priceProvider?.priceAt(symbol, snapshot.timestamp)
+                    if (historicalPrice == null || historicalPrice.signum() <= 0) {
                         return unavailable(
                             reason = ComparisonUnavailableReason.MISSING_PRICE,
                             unavailableAt = snapshot.timestamp,
@@ -742,7 +649,6 @@ object RebalancerComparisonCalculator {
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
         ledgers: List<LedgerEvent>,
-        orderOwnership: ResolvedOrderOwnership,
         baseline: PortfolioSnapshot,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
@@ -802,15 +708,6 @@ object RebalancerComparisonCalculator {
         val baselineAssetSymbols = baseline.assets.keys
             .map { Asset.normalizeLedgerAsset(it).uppercase() }
             .toSet()
-        for ((_, trade) in indexedTrades.filter { (_, trade) -> trade.timestamp <= lastObservationTime }) {
-            val ownership = orderOwnership.classify(trade)
-            if (ownership == TradeOwnership.UNKNOWN && tradeTouchesAssets(trade, baselineAssetSymbols)) {
-                return TrackedBalanceValidation.Failed(
-                    reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
-                    unavailableAt = trade.timestamp,
-                )
-            }
-        }
 
         fun reconcileInterval(
             i: Int,
@@ -821,7 +718,7 @@ object RebalancerComparisonCalculator {
 
             // A trade can change tracked balances through either leg: a configured-target base
             // is tracked directly, and a supported quote is tracked whenever the quote asset is
-            // part of the baseline (USD always is). Historical-only bases therefore still settle
+            // part of the baseline (USD always is). Bases absent from the anchor therefore still settle
             // their quote leg instead of being skipped.
             fun affectsTrackedBalances(trade: TradeRecord): Boolean = tradeTouchesAssets(trade, baselineAssetSymbols)
             val assignedLedgerIndexes = attempt.assignedLedgerIndexes
@@ -989,13 +886,6 @@ object RebalancerComparisonCalculator {
             }
 
             for ((_, lateTrade) in lateTradeCandidates) {
-                val ownership = orderOwnership.classify(lateTrade)
-                if (ownership == TradeOwnership.UNKNOWN) {
-                    return TrackedBalanceValidation.Failed(
-                        reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
-                        unavailableAt = lateTrade.timestamp,
-                    )
-                }
                 val candidateBalances = impliedBalances.toMutableMap()
                 if (!applyRealizedTrade(
                         candidateBalances,
@@ -1027,13 +917,6 @@ object RebalancerComparisonCalculator {
 
             if (hasUnknownObservation) {
                 for ((_, boundaryTrade) in legacyBoundaryTradeCandidates) {
-                    val ownership = orderOwnership.classify(boundaryTrade)
-                    if (ownership == TradeOwnership.UNKNOWN) {
-                        return TrackedBalanceValidation.Failed(
-                            reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
-                            unavailableAt = boundaryTrade.timestamp,
-                        )
-                    }
                     val candidateBalances = impliedBalances.toMutableMap()
                     if (!applyRealizedTrade(
                             candidateBalances,
@@ -1085,13 +968,6 @@ object RebalancerComparisonCalculator {
 
             if (initialTradeCandidates.isNotEmpty() || initialLedgerCandidates.isNotEmpty()) {
                 for ((_, initialTrade) in initialTradeCandidates) {
-                    val ownership = orderOwnership.classify(initialTrade)
-                    if (ownership == TradeOwnership.UNKNOWN) {
-                        return TrackedBalanceValidation.Failed(
-                            reason = ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP,
-                            unavailableAt = initialTrade.timestamp,
-                        )
-                    }
                     val candidateBalances = impliedBalances.toMutableMap()
                     if (!applyRealizedTrade(
                             candidateBalances,
@@ -1261,7 +1137,7 @@ object RebalancerComparisonCalculator {
                 }
             }
 
-            // A fully liquidated historical-only asset can disappear from the recorded series,
+            // A fully liquidated asset can disappear from the recorded series,
             // so only keys with a materially non-zero balance must still be observable.
             if (impliedBalances.any { (symbol, balance) ->
                     symbol !in curr.assets &&
@@ -1298,18 +1174,25 @@ object RebalancerComparisonCalculator {
             // from its reconciled prefix and discarding all mutations from the failed attempt.
             val legacyAttempt = state.copyForAttempt()
             val legacyFailure = reconcileInterval(i, legacyAttempt, TradeAccountingMode.PERSISTED_ROUNDED_COST)
-            if (legacyFailure != null) return preciseFailure
-            state = legacyAttempt
+            if (legacyFailure == null) {
+                state = legacyAttempt
+                continue
+            }
+
+            // A few retained live snapshots were written from the rounded TradeRecord wallet
+            // economics while their trade ledger legs describe a different fee denomination.
+            // Try that complete reported-fill shape only after both ledger-based modes fail; the
+            // interval still has to match every observed balance before it can pass.
+            val reportedEconomicsAttempt = state.copyForAttempt()
+            val reportedEconomicsFailure = reconcileInterval(
+                i,
+                reportedEconomicsAttempt,
+                TradeAccountingMode.PERSISTED_TRADE_ECONOMICS,
+            )
+            if (reportedEconomicsFailure != null) return preciseFailure
+            state = reportedEconomicsAttempt
         }
 
-        val passedTrades = state.assignedTradeIndexes.sorted().map { index ->
-            ReconciledTrade(
-                trade = successfulTrades[index],
-                timestamp = state.effectiveTradeTimestamps[index],
-                usdNotional = realizedUsdNotional(successfulTrades[index], state.effectiveTradeAccountingModes[index]),
-                embeddedInBaseline = index in state.embeddedTradeIndexes,
-            )
-        }
         val passedLedgers = state.assignedLedgerIndexes.sorted().map { index ->
             ReconciledLedger(
                 ledger = externalEvents[index],
@@ -1318,10 +1201,7 @@ object RebalancerComparisonCalculator {
                 embeddedInBaseline = index in state.embeddedLedgerIndexes,
             )
         }
-        return TrackedBalanceValidation.Passed(
-            trades = passedTrades,
-            ledgers = passedLedgers,
-        )
+        return TrackedBalanceValidation.Passed(ledgers = passedLedgers)
     }
 
     // Request start is a lower bound, not the instant the exchange captured balances.
@@ -1376,7 +1256,7 @@ object RebalancerComparisonCalculator {
         }
         for ((symbol, asset) in snapshot.assets) {
             if (symbol in expectedBalances) continue
-            // A holding the replayed events never produced is unexplained: historical-only
+            // A holding the replayed events never produced is unexplained: anchor-excluded
             // assets are tolerated only when the recorded trades or ledgers acquired them.
             val scale = balanceScale(symbol)
             val tolerance =
@@ -1700,74 +1580,22 @@ object RebalancerComparisonCalculator {
     }
 
     /**
-     * Restrict a reconstructed inception baseline to configured benchmark targets (assets with a
-     * positive target percent). Baselines without any positive target keep all assets so planless
-     * fixtures and legacy snapshots behave exactly as before.
-     */
-    private fun PortfolioSnapshot.restrictToBenchmarkTargets(): PortfolioSnapshot {
-        val targeted = assets.filterValues { asset ->
-            asset.targetPercent.signum() > 0
-        }
-        return if (targeted.isEmpty()) {
-            this
-        } else {
-            copy(
-                assets = targeted,
-                totalValueUSD = targeted.values.fold(BigDecimal.ZERO) { total, asset ->
-                    total.add(asset.valueUSD)
-                },
-            )
-        }
-    }
-
-    /**
-     * Keep the configured reconciliation rows by symbol, including zero-valued targets. A
-     * same-time recorded twin may carry an older target projection where a configured cash row
-     * has target zero; its presence is still required for balance reconciliation.
-     */
-    private fun PortfolioSnapshot.restrictToReconciliationSymbols(symbols: Set<String>): PortfolioSnapshot {
-        val retained = assets.filterKeys { symbol ->
-            Asset.normalizeLedgerAsset(symbol).uppercase() in symbols
-        }
-        return copy(
-            assets = retained,
-            totalValueUSD = retained.values.fold(BigDecimal.ZERO) { total, asset ->
-                total.add(asset.valueUSD)
-            },
-        )
-    }
-
-    /**
-     * Keep only configured target assets that had actual inception value. This is the historical
-     * basket whose value weights seed synthetic Buy & Hold units; zero-valued targets and
-     * historical-only assets must not receive inception capital.
-     */
-    private fun PortfolioSnapshot.restrictToOriginalBenchmarkHoldings(): PortfolioSnapshot {
-        if (assets.none { (_, asset) -> asset.targetPercent.signum() > 0 }) return this
-        val originalHoldings = assets.filterValues { asset ->
-            asset.targetPercent.signum() > 0 && asset.valueUSD.signum() > 0
-        }
-        return copy(
-            assets = originalHoldings,
-            totalValueUSD = originalHoldings.values.fold(BigDecimal.ZERO) { total, asset ->
-                total.add(asset.valueUSD)
-            },
-        )
-    }
-
-    private fun PortfolioSnapshot.excludedBenchmarkValue(benchmark: PortfolioSnapshot): BigDecimal =
-        totalValueUSD.subtract(benchmark.totalValueUSD)
-
-    /**
-     * Original inception value weights (normalized symbol to fraction, summing exactly to one at
+     * Recorded-anchor value weights (normalized symbol to fraction, summing exactly to one at
      * [WEIGHT_DIVISION_SCALE]). Target percentages describe the current plan, not a historical
-     * allocation record, so they must not rewrite the benchmark's inception thesis.
+     * allocation record, so they must not rewrite the benchmark's anchor thesis.
      */
     private fun baselineValueWeights(baseline: PortfolioSnapshot): Map<String, BigDecimal> {
+        // The benchmark owns the holdings that were actually present at the anchor. A row with
+        // zero balance but a stale positive value/target is current-plan metadata, not synthetic
+        // capital. Aggregate normalized aliases before calculating weights so the residual cannot
+        // be assigned to a duplicate symbol.
+        val valuesBySymbol = baseline.assets.entries
+            .filter { (_, asset) -> asset.balance.signum() > 0 && asset.valueUSD.signum() > 0 }
+            .groupingBy { (symbol, _) -> Asset.normalizeLedgerAsset(symbol).uppercase() }
+            .fold(BigDecimal.ZERO) { total, (_, asset) -> total.add(asset.valueUSD) }
         val total = baseline.totalValueUSD
-        if (total.signum() <= 0) return emptyMap()
-        val raw = baseline.assets.mapValues { (_, asset) ->
-            asset.valueUSD.divide(total, WEIGHT_DIVISION_SCALE, RoundingMode.HALF_UP)
+        val raw = valuesBySymbol.mapValues { (_, value) ->
+            value.divide(total, WEIGHT_DIVISION_SCALE, RoundingMode.HALF_UP)
         }.filterValues { it.signum() > 0 }
         val sum = raw.values.fold(BigDecimal.ZERO) { acc, weight -> acc.add(weight) }
         if (sum.signum() <= 0) return emptyMap()
@@ -1785,47 +1613,8 @@ object RebalancerComparisonCalculator {
         }
     }
 
-    /**
-     * Converts full actual inception capital into synthetic units of the original configured
-     * holdings. Historical-only assets and zero-valued targets are intentionally absent; their
-     * value is represented by value-weighted units of the original holdings exactly once.
-     */
-    private data class SyntheticBaseline(val balances: Map<String, BigDecimal>, val prices: Map<String, BigDecimal>)
-
-    private suspend fun syntheticBaselineBalances(
-        fullBaseline: PortfolioSnapshot,
-        benchmarkBaseline: PortfolioSnapshot,
-        weights: Map<String, BigDecimal>,
-        priceProvider: HistoricalPriceProvider?,
-    ): SyntheticBaseline? {
-        val totalCapital = fullBaseline.totalValueUSD
-        if (totalCapital.signum() <= 0) return null
-        val prices = mutableMapOf<String, BigDecimal>()
-        for ((symbol, _) in weights) {
-            val asset = benchmarkBaseline.assets[symbol] ?: return null
-            val price = if (symbol == Asset.USD) {
-                BigDecimal.ONE
-            } else {
-                asset.price.takeIf { it.signum() > 0 }
-                    ?: priceProvider?.priceAt(symbol, fullBaseline.timestamp)
-            }
-            if (price == null || price.signum() <= 0) return null
-            prices[symbol] = price
-        }
-        return SyntheticBaseline(
-            balances = weights.mapValues { (symbol, weight) ->
-                totalCapital
-                    .multiply(weight)
-                    .divide(prices.getValue(symbol), ALLOCATION_UNIT_SCALE, RoundingMode.HALF_UP)
-            },
-            prices = prices,
-        )
-    }
-
     private suspend fun buildBenchmarkEvents(
-        trades: List<ReconciledTrade>,
         ledgers: List<ReconciledLedger>,
-        orderOwnership: ResolvedOrderOwnership,
         baseline: PortfolioSnapshot,
         inceptionWeights: Map<String, BigDecimal>,
         priceProvider: HistoricalPriceProvider?,
@@ -1844,16 +1633,13 @@ object RebalancerComparisonCalculator {
         val events = mutableListOf<BenchmarkEvent>()
         val consumedLedgerIds = mutableSetOf<String>()
 
-        // A complete top-level conversion is one linked economic event. Keep its legs together
-        // so Buy & Hold transforms the same holdings as the actual account without treating the
-        // destination credit as owner capital. A group straddling the baseline is not safely
-        // replayable from one side and therefore remains unavailable.
+        // A complete top-level conversion is one linked economic event. Validate its shape
+        // and consume ledger IDs so they are not treated as external flows, but do not
+        // emit a benchmark event into pure Buy & Hold. A group straddling the baseline is
+        // not safely replayable from one side and therefore remains unavailable.
         val conversionGroups = ledgers
             .filter { isConversionLedger(it.ledger) }
             .groupBy { it.ledger.refid?.trim().orEmpty() }
-        val trackedBaselineSymbols = baseline.assets.keys
-            .map { Asset.normalizeLedgerAsset(it).uppercase() }
-            .toSet()
         for ((refid, group) in conversionGroups) {
             val postGroup = group.filter { postBaselineById.containsKey(it.ledger.ledgerId) }
             if (postGroup.isEmpty()) continue
@@ -1867,22 +1653,6 @@ object RebalancerComparisonCalculator {
                     ambiguousAt = conversionAt,
                 )
             }
-            if (group.none {
-                    Asset.normalizeLedgerAsset(it.ledger.asset).uppercase() in trackedBaselineSymbols
-                }
-            ) {
-                // The reconstructed spot series does not carry conversions wholly outside its
-                // tracked universe (for example USD -> USDG). Do not replay those legs into B&H or
-                // let them collide with an unrelated tracked-asset event at the same instant.
-                consumedLedgerIds += group.map { it.ledger.ledgerId }
-                continue
-            }
-            events += BenchmarkEvent.InternalConversion(
-                timestamp = conversionAt,
-                legs = group
-                    .sortedWith(compareBy({ it.ledger.time }, { it.ledger.ledgerId }))
-                    .map { BenchmarkEvent.ConversionLeg(it.ledger, it.netBalanceDelta) },
-            )
             consumedLedgerIds += group.map { it.ledger.ledgerId }
         }
 
@@ -1941,7 +1711,8 @@ object RebalancerComparisonCalculator {
                             ledger = representative.ledger,
                             ledgerType = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
                             timestamp = representative.timestamp,
-                            netBalanceDelta = norm.netOwnerCapitalUsd,
+                            netBalanceDelta = BigDecimal.ZERO,
+                            cashUsdOverride = norm.netOwnerCapitalUsd,
                             inceptionWeights = inceptionWeights,
                             priceProvider = priceProvider,
                             sourceLedgerIds = norm.sourceLedgerIds,
@@ -1963,7 +1734,8 @@ object RebalancerComparisonCalculator {
                             ledger = representative.ledger,
                             ledgerType = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
                             timestamp = representative.timestamp,
-                            netBalanceDelta = norm.netOwnerCapitalUsd,
+                            netBalanceDelta = BigDecimal.ZERO,
+                            cashUsdOverride = norm.netOwnerCapitalUsd,
                             inceptionWeights = inceptionWeights,
                             priceProvider = priceProvider,
                             sourceLedgerIds = norm.sourceLedgerIds,
@@ -1984,10 +1756,8 @@ object RebalancerComparisonCalculator {
         val unconsumedPostBaseline = postBaseline.filter { it.ledger.ledgerId !in consumedLedgerIds }
 
         // A refid-linked spend/receive group is one balance transformation, not two independent
-        // external credits/debits. Replaying the rows separately can credit a tracked receive
-        // while silently dropping a spend whose source asset is outside the synthetic basket.
-        // Preserve atomicity for complete groups and fail closed for linked passthrough groups
-        // whose shape is incomplete; unlinked rows retain their existing external-balance policy.
+        // external credits/debits. Preserve atomicity for complete groups and fail closed for
+        // linked passthrough groups whose shape is incomplete.
         val passthroughGroups = unconsumedPostBaseline
             .filter { reconciled ->
                 !reconciled.ledger.refid.isNullOrBlank() &&
@@ -2006,12 +1776,6 @@ object RebalancerComparisonCalculator {
                     ambiguousAt = groupAt,
                 )
             }
-            events += BenchmarkEvent.InternalConversion(
-                timestamp = groupAt,
-                legs = group
-                    .sortedWith(compareBy({ it.ledger.time }, { it.ledger.ledgerId }))
-                    .map { BenchmarkEvent.ConversionLeg(it.ledger, it.netBalanceDelta) },
-            )
             consumedLedgerIds += group.map { it.ledger.ledgerId }
         }
 
@@ -2041,7 +1805,7 @@ object RebalancerComparisonCalculator {
             }
             val ledger = reconciledLedger.ledger
             if (isConversionLedger(ledger)) {
-                // Complete groups were emitted atomically above. Any remaining row is a
+                // Complete groups were consumed above. Any remaining row is a
                 // defensive fail-closed path for an incomplete reconciliation result.
                 return BuiltEvents(
                     events = emptyList(),
@@ -2078,6 +1842,13 @@ object RebalancerComparisonCalculator {
                     OwnerFlowBuild.Skip -> Unit
                     OwnerFlowBuild.Unpriceable -> return BuiltEvents(events, reconciledLedger.timestamp)
                 }
+            } else if (CardFundingNormalizer.isPassthroughLeg(ledger)) {
+                // An unlinked spend/receive row is still account plumbing, most commonly a Buy
+                // Crypto transaction whose counterpart identity was not retained. It is not
+                // evidence of an independent passive credit or charge, so exclude it rather than
+                // replaying an actual purchase into the benchmark. Linked groups were consumed
+                // above; incomplete linked groups already fail closed.
+                continue
             } else {
                 events += BenchmarkEvent.ExternalBalance(
                     timestamp = reconciledLedger.timestamp,
@@ -2085,21 +1856,6 @@ object RebalancerComparisonCalculator {
                     netAmount = reconciledLedger.netBalanceDelta,
                     event = ledger,
                     sourceLedgerIds = listOf(ledger.ledgerId),
-                )
-            }
-        }
-        for (reconciledTrade in trades) {
-            val trade = reconciledTrade.trade
-            if (!reconciledTrade.embeddedInBaseline &&
-                reconciledTrade.timestamp > baseline.timestamp &&
-                (baseline.balancesObservedAt == null || trade.timestamp > baseline.balancesObservedAt)
-            ) {
-                val ownership = orderOwnership.classify(trade)
-                events += BenchmarkEvent.Trade(
-                    timestamp = reconciledTrade.timestamp,
-                    trade = trade,
-                    ownership = ownership,
-                    usdNotional = reconciledTrade.usdNotional,
                 )
             }
         }
@@ -2112,13 +1868,9 @@ object RebalancerComparisonCalculator {
 
     /**
      * Event timestamps alone do not establish whether a balance movement was
-     * applied before or after a trade or owner flow. Additive movements in
-     * established baseline assets are safe, but owner withdrawals, same-instant
-     * owner contributions paired with trades, trades on unallocated assets, and
-     * non-plumbing balance changes are not commutative.
-     * Passthrough USD legs are exempt because [CardFundingNormalizer] has
-     * already collapsed their typed economics into one owner event where that
-     * is safe; otherwise defer instead of replaying an arbitrary sort order.
+     * applied before or after an owner flow. Additive movements in established
+     * baseline assets are safe, but owner withdrawals and same-instant owner
+     * contributions are not commutative with balance reductions.
      */
     private fun findUnorderedBenchmarkEventTimestamp(
         events: List<BenchmarkEvent>,
@@ -2126,34 +1878,12 @@ object RebalancerComparisonCalculator {
     ): Instant? {
         val ownerContributions = events.filterIsInstance<BenchmarkEvent.OwnerContribution>()
         val ownerWithdrawals = events.filterIsInstance<BenchmarkEvent.OwnerWithdrawal>()
-        val trades = events.filterIsInstance<BenchmarkEvent.Trade>()
-            .filter { it.ownership == TradeOwnership.MANUAL_OR_EXTERNAL }
         val externalBalances = events.filterIsInstance<BenchmarkEvent.ExternalBalance>()
-        val internalConversions = events.filterIsInstance<BenchmarkEvent.InternalConversion>()
-        val balanceMovements: List<BenchmarkEvent> = externalBalances + internalConversions
+        val balanceMovements: List<BenchmarkEvent> = externalBalances
         val movementAssetsByEvent = buildMap<BenchmarkEvent, Set<String>> {
             externalBalances.forEach { event ->
                 put(event, setOf(Asset.normalizeLedgerAsset(event.asset).uppercase()))
             }
-            internalConversions.forEach { event ->
-                put(
-                    event,
-                    event.legs.map {
-                        Asset.normalizeLedgerAsset(it.event.asset).uppercase()
-                    }.toSet(),
-                )
-            }
-        }
-
-        fun syntheticTradeAssets(event: BenchmarkEvent.Trade): Set<String> =
-            listOfNotNull(Asset.splitTradingPair(event.trade.pair))
-                .filter { it.base in baselineAssetSymbols }
-                .flatMap { listOf(it.base, it.quote) }
-                .toSet()
-
-        val unallocatedTrades = trades.filter { trade ->
-            Asset.normalizeLedgerAsset(trade.trade.symbol).uppercase() !in baselineAssetSymbols &&
-                syntheticTradeAssets(trade).isNotEmpty()
         }
 
         fun eventDistanceMillis(first: BenchmarkEvent, second: BenchmarkEvent): Long =
@@ -2177,13 +1907,6 @@ object RebalancerComparisonCalculator {
                 timestamp = event.timestamp,
                 sourceEventTimestamps = event.sourceEventTimestamps,
                 assets = baselineAssetSymbols,
-            )
-        }
-        val tradeInteractions = trades.map { event ->
-            SourceInteraction(
-                timestamp = event.timestamp,
-                sourceEventTimestamps = setOf(event.trade.timestamp),
-                assets = syntheticTradeAssets(event),
             )
         }
 
@@ -2219,71 +1942,24 @@ object RebalancerComparisonCalculator {
             .minOrNull()
 
         val unorderedTimes = mutableListOf<Instant>()
-        val withdrawalTradeCandidates = trades.filter { trade ->
-            syntheticTradeAssets(trade).isNotEmpty()
-        }
         val withdrawalMovementCandidates = balanceMovements.filter { movement ->
             movementAssetsByEvent.getValue(movement).any { it in baselineAssetSymbols }
         }
         earliestNearPairTimestamp(
             ownerWithdrawals,
-            withdrawalTradeCandidates + withdrawalMovementCandidates,
+            withdrawalMovementCandidates,
         )?.let(unorderedTimes::add)
-        // Contributions are allocated across the original configured inception basket, so
-        // a mirrorable target trade may consume newly contributed capital. A
-        // source-time collision has no exchange sequence evidence and remains
-        // order-dependent. New/unallocated assets retain the existing bounded
-        // clock-skew guard. Card plumbing legs have already been collapsed by
-        // [CardFundingNormalizer] into one owner event; strategy-neutral
-        // balance changes remain additive.
-        earliestNearPairTimestamp(ownerContributions, unallocatedTrades)?.let(unorderedTimes::add)
         earliestNearPairTimestamp(ownerContributions, ownerWithdrawals)?.let(unorderedTimes::add)
 
-        val targetAssetConversions = internalConversions.filter { conversion ->
-            movementAssetsByEvent.getValue(conversion).any { it in baselineAssetSymbols }
-        }
-        val targetConversionInteractions = targetAssetConversions.map { event ->
-            SourceInteraction(
-                timestamp = event.timestamp,
-                sourceEventTimestamps = event.legs.map { it.event.time }.toSet(),
-                assets = movementAssetsByEvent.getValue(event).intersect(baselineAssetSymbols),
-            )
-        }
-        // Internal conversions can consume synthetic target units. When their source timestamp
-        // is indistinguishable from an owner contribution or target trade, replay order is not
-        // evidence-backed; defer instead of selecting the construction order's outcome.
         earliestSourceOverlapPairTimestamp(ownerWithdrawalInteractions, ownerContributionInteractions)
             ?.let(unorderedTimes::add)
-        earliestSourceOverlapPairTimestamp(ownerWithdrawalInteractions, targetConversionInteractions)
-            ?.let(unorderedTimes::add)
-        earliestSourceOverlapPairTimestamp(ownerWithdrawalInteractions, tradeInteractions)
-            ?.let(unorderedTimes::add)
-        earliestSourceOverlapPairTimestamp(ownerContributionInteractions, tradeInteractions)
-            ?.let(unorderedTimes::add)
-        earliestSourceOverlapPairTimestamp(ownerContributionInteractions, targetConversionInteractions)
-            ?.let(unorderedTimes::add)
-        earliestSourceOverlapPairTimestamp(targetConversionInteractions, tradeInteractions)
-            ?.let(unorderedTimes::add)
-
-        val newAssetBalanceMovements = balanceMovements.filter { movement ->
-            movementAssetsByEvent.getValue(movement).any { it !in baselineAssetSymbols }
-        }
-        earliestNearPairTimestamp(
-            newAssetBalanceMovements,
-            trades.filter { trade ->
-                val symbol = Asset.normalizeLedgerAsset(trade.trade.symbol).uppercase()
-                newAssetBalanceMovements.any { movement ->
-                    symbol in movementAssetsByEvent.getValue(movement)
-                }
-            },
-        )?.let(unorderedTimes::add)
 
         return unorderedTimes.minOrNull()
     }
 
     /**
      * Maps a genuine owner-capital ledger row to a typed benchmark event.
-     * Contributions are invested by the fixed original inception value weights at
+     * Contributions are invested by the fixed recorded-anchor value weights at
      * contribution-time prices; withdrawals become proportional reductions.
      * Returns [OwnerFlowBuild.Unpriceable] when recorded history cannot price
      * the event — callers fail closed rather than using a live ticker for an
@@ -2294,19 +1970,22 @@ object RebalancerComparisonCalculator {
         ledgerType: String,
         timestamp: Instant,
         netBalanceDelta: BigDecimal,
+        cashUsdOverride: BigDecimal? = null,
         inceptionWeights: Map<String, BigDecimal>,
         priceProvider: HistoricalPriceProvider?,
         sourceLedgerIds: List<String>,
         sourceEventTimestamps: Set<Instant> = setOf(ledger.time),
     ): OwnerFlowBuild {
         val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
-        val unitPrice = if (symbol == Asset.USD) {
-            BigDecimal.ONE
-        } else {
-            priceProvider?.priceAt(symbol, ledger.time)
+        val cashUsd = cashUsdOverride ?: run {
+            val unitPrice = if (symbol == Asset.USD) {
+                BigDecimal.ONE
+            } else {
+                priceProvider?.priceAt(symbol, ledger.time)
+            }
+            if (unitPrice == null || unitPrice.signum() <= 0) return OwnerFlowBuild.Unpriceable
+            netBalanceDelta.multiply(unitPrice)
         }
-        if (unitPrice == null || unitPrice.signum() <= 0) return OwnerFlowBuild.Unpriceable
-        val cashUsd = netBalanceDelta.multiply(unitPrice)
         return when (ledgerType.lowercase()) {
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT -> {
                 if (cashUsd.signum() <= 0 || inceptionWeights.isEmpty()) {
@@ -2376,33 +2055,17 @@ object RebalancerComparisonCalculator {
         balances: MutableMap<String, BigDecimal>,
         event: BenchmarkEvent,
         priceProvider: HistoricalPriceProvider?,
-        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
-        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
     ): Pair<ComparisonUnavailableReason, Instant>? {
         when (event) {
             is BenchmarkEvent.ExternalBalance -> {
                 val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
-                // A reward is benchmark entitlement only when the synthetic basket already held
-                // that asset. A reward in an otherwise unheld asset belongs to the actual account
-                // but cannot be attributed to the fixed original B&H thesis without entitlement
-                // evidence; skip it instead of creating synthetic capital.
-                val isUnheldReward = LedgerEvent.isRewardEvent(event.event) &&
-                    event.netAmount.signum() > 0 &&
-                    (balances[symbol]?.signum() ?: 0) <= 0
-                if (!isUnheldReward) {
+                if (event.netAmount.signum() > 0) {
+                    if (shouldMirrorPositiveExternalMovement(event.event, symbol, balances)) {
+                        applyAttributedMovement(balances, mapOf(symbol to event.netAmount))
+                    }
+                } else if (event.netAmount.signum() < 0) {
                     applyAttributedMovement(balances, mapOf(symbol to event.netAmount))
                 }
-            }
-
-            is BenchmarkEvent.InternalConversion -> {
-                // Apply each leg exactly once. No raw amount netting is attempted across assets;
-                // the persisted per-leg net delta already includes that leg's authoritative fee.
-                val deltas = event.legs.groupingBy { leg ->
-                    Asset.normalizeLedgerAsset(leg.event.asset).uppercase()
-                }.fold(BigDecimal.ZERO) { total, leg ->
-                    total.add(leg.netBalanceDelta)
-                }
-                applyAttributedMovement(balances, deltas)
             }
 
             is BenchmarkEvent.OwnerContribution -> {
@@ -2455,57 +2118,69 @@ object RebalancerComparisonCalculator {
                     balances[symbol] = balances.getValue(symbol).multiply(factor)
                 }
             }
-
-            is BenchmarkEvent.Trade -> {
-                // Buy & Hold mirrors only trades in its configured-target basket: a
-                // historical-only base must never acquire a synthetic benchmark holding.
-                val base = Asset.splitTradingPair(event.trade.pair)?.base
-                if (event.ownership == TradeOwnership.MANUAL_OR_EXTERNAL && base != null && base in balances) {
-                    applyMirroredTrade(balances, event, tradeLegsByRefId, tradeLegsByTradeIdentity)
-                }
-            }
         }
         return null
     }
 
     /**
-     * Mirrors a manual trade only to the extent the synthetic basket can source it. The trade is
-     * first replayed against a copy so its realized per-asset deltas stay owned by
-     * [applyRealizedTrade]; the copy is then committed through [applyAttributedMovement].
+     * Positive external credits are synthetic only when their economics belong to the anchor
+     * thesis. Cash dividends have no underlying equity position in this crypto/cash benchmark, so
+     * a USD dividend is excluded. Holding-dependent crypto rewards are mirrored only when the
+     * anchor already held the credited asset; explicitly classified account-level credits are
+     * independent of the anchor holdings and may introduce their credited asset without inventing
+     * a position from an ambiguous reward row.
      */
-    private fun applyMirroredTrade(
-        balances: MutableMap<String, BigDecimal>,
-        event: BenchmarkEvent.Trade,
-        tradeLegsByRefId: Map<String, List<LedgerEvent>>,
-        tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
-    ) {
-        val trial = balances.toMutableMap()
-        // A quote the basket does not hold still has to reach attribution. Seeding it at zero lets
-        // applyQuoteLeg record the drawdown, so the movement is skipped or scaled by its
-        // basket-held share instead of mirroring the base at full size with no funding leg.
-        Asset.splitTradingPair(event.trade.pair)?.quote?.let { quote -> trial.putIfAbsent(quote, BigDecimal.ZERO) }
-        if (!applyRealizedTrade(
-                trial,
-                event.trade,
-                event.usdNotional,
-                trial.keys,
-                tradeLegsByRefId,
-                tradeLegsByTradeIdentity,
-            )
+    private fun shouldMirrorPositiveExternalMovement(
+        event: LedgerEvent,
+        symbol: String,
+        balances: Map<String, BigDecimal>,
+    ): Boolean {
+        if (isAccountLevelIndependentCredit(event)) return true
+
+        // Only an explicitly classified account-level credit may introduce an asset the anchor
+        // never held; every other credit stays actual-only for unheld assets.
+        if ((balances[symbol]?.signum() ?: 0) <= 0) return false
+
+        val isReward = LedgerEvent.isRewardEvent(event) || isHoldingDependentReward(event)
+        if (!isReward) return true
+
+        val type = event.type.trim().lowercase()
+        val subtype = event.subtype?.trim()?.lowercase()
+        // Cash dividends and explicitly equity-labelled payouts are never attributable to this
+        // basket: the underlying equity position is not part of the passive thesis. A generic
+        // dividend in a held crypto asset stays holding-dependent and remains mirrored.
+        if (subtype == "cashdividend" || subtype == "equityfpsl") return false
+        if (symbol == Asset.USD && type == KrakenApiConstants.LEDGER_TYPE_DIVIDEND) return false
+        return true
+    }
+
+    internal fun isHoldingDependentReward(event: LedgerEvent): Boolean {
+        val type = event.type.trim().lowercase()
+        val subtype = event.subtype?.trim()?.lowercase()
+        if (type == KrakenApiConstants.LEDGER_TYPE_DIVIDEND) return true
+        if (type == KrakenApiConstants.LEDGER_TYPE_STAKING) return true
+        if (type == KrakenApiConstants.LEDGER_TYPE_EARN) return true
+        if (subtype == "cashdividend" || subtype == "equityfpsl") return true
+        if (type == KrakenApiConstants.LEDGER_TYPE_REWARD && subtype != "welcomebonus") return true
+        return false
+    }
+
+    internal fun isAccountLevelIndependentCredit(event: LedgerEvent): Boolean {
+        val type = event.type.trim().lowercase()
+        val subtype = event.subtype?.trim()?.lowercase()
+        if (type == KrakenApiConstants.LEDGER_TYPE_REWARD && subtype == "welcomebonus") return true
+        if (type == KrakenApiConstants.LEDGER_TYPE_TRANSFER &&
+            (subtype == "airdrop" || subtype == "reward")
         ) {
-            return
+            return true
         }
-        val deltas = trial.mapNotNull { (symbol, value) ->
-            val delta = value.subtract(balances[symbol] ?: BigDecimal.ZERO)
-            if (delta.signum() == 0) null else symbol to delta
-        }.toMap()
-        applyAttributedMovement(balances, deltas)
+        return false
     }
 
     /**
      * Applies balance deltas only for the fraction the basket already holds of every asset being
      * drawn down. A shortfall means the quantity entered the account outside the synthetic basket
-     * — owner capital already valued and allocated by fixed original inception value weights, or historical-only
+     * — owner capital already valued and allocated by fixed recorded-anchor value weights, or anchor-excluded
      * holdings excluded from the basket — so replaying it would create impossible negative
      * holdings and count the same value twice. The whole movement, including its counter-legs, is
      * scaled by the smallest available fraction or skipped entirely.
@@ -2538,7 +2213,7 @@ object RebalancerComparisonCalculator {
     private fun applyLedgerEvent(
         balances: MutableMap<String, BigDecimal>,
         ledger: LedgerEvent,
-        useAuthoritativeBalance: Boolean = false,
+        useAuthoritativeBalance: Boolean,
     ): BigDecimal {
         val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
         if (symbol in balances) {
@@ -2578,6 +2253,7 @@ object RebalancerComparisonCalculator {
         balances,
         trade,
         realizedUsdNotional(trade, accountingMode),
+        accountingMode,
         trackedUniverse,
         tradeLegsByRefId,
         tradeLegsByTradeIdentity,
@@ -2587,6 +2263,7 @@ object RebalancerComparisonCalculator {
         balances: MutableMap<String, BigDecimal>,
         trade: TradeRecord,
         usdNotional: BigDecimal,
+        accountingMode: TradeAccountingMode,
         trackedUniverse: Set<String>,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
@@ -2612,18 +2289,69 @@ object RebalancerComparisonCalculator {
             is TradeLedgerReplay.Classification.Unsupported -> return false
             is TradeLedgerReplay.Classification.Replayable -> classification
         }
+        val canUseReportedTradeEconomics = accountingMode == TradeAccountingMode.PERSISTED_TRADE_ECONOMICS &&
+            replay.quote == Asset.USD &&
+            (trade.source == TradeSource.API_FILL || trade.source == TradeSource.MANUAL) &&
+            trade.price.signum() > 0 &&
+            trade.price.multiply(trade.volume)
+                .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+                .compareTo(trade.usdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)) == 0
+        if (canUseReportedTradeEconomics) {
+            val baseDelta = if (replay.isBuy) trade.volume else trade.volume.negate()
+            val baseBalance = balances[replay.base]
+            when {
+                baseBalance != null -> balances[replay.base] = baseBalance.add(baseDelta)
+
+                replay.isBuy && replay.base in trackedUniverse ->
+                    balances[replay.base] = baseDelta
+            }
+            if (!applyQuoteLeg(
+                    balances,
+                    replay.quote,
+                    trackedUniverse,
+                    persistedQuoteDelta(replay.isBuy, usdNotional, replay.fee),
+                )
+            ) {
+                return false
+            }
+            return true
+        }
         val ledgerEffect = replay.ledgerEffect
         if (ledgerEffect != null) {
             // Kraken charges the fee in the leg's own asset and ledger amounts can round from
-            // the reported volume; the retained legs are the wallet truth.
+            // the reported volume; the retained legs are the wallet truth. Some persisted
+            // snapshots, however, were captured from the two-decimal TradeRecord cost while
+            // the ledger retained a more precise quote debit. The legacy retry keeps the
+            // authoritative base leg and only falls back to the persisted quote economics when
+            // the ledger proves that its quote fee matches the reported fill.
             val baseBalance = balances[replay.base]
+            val baseDelta = effectiveTradeLedgerDelta(
+                currentBalance = baseBalance,
+                checkpoint = ledgerEffect.baseCheckpoint,
+                netDelta = ledgerEffect.baseNetDelta,
+                grossDelta = ledgerEffect.baseGrossDelta,
+            )
             when {
-                baseBalance != null -> balances[replay.base] = baseBalance.add(ledgerEffect.baseNetDelta)
+                baseBalance != null -> balances[replay.base] = baseBalance.add(baseDelta)
 
                 replay.isBuy && replay.base in trackedUniverse ->
-                    balances[replay.base] = ledgerEffect.baseNetDelta
+                    balances[replay.base] = baseDelta
             }
-            if (!applyQuoteLeg(balances, replay.quote, trackedUniverse, ledgerEffect.quoteNetDelta)) {
+            val ledgerQuoteDelta = effectiveTradeLedgerDelta(
+                currentBalance = balances[replay.quote],
+                checkpoint = ledgerEffect.quoteCheckpoint,
+                netDelta = ledgerEffect.quoteNetDelta,
+                grossDelta = ledgerEffect.quoteGrossDelta,
+            )
+            val quoteDelta = if (
+                accountingMode == TradeAccountingMode.PERSISTED_ROUNDED_COST &&
+                shouldUsePersistedQuoteEconomics(trade, replay, ledgerEffect, usdNotional)
+            ) {
+                persistedQuoteDelta(replay.isBuy, usdNotional, replay.fee)
+            } else {
+                ledgerQuoteDelta
+            }
+            if (!applyQuoteLeg(balances, replay.quote, trackedUniverse, quoteDelta)) {
                 return false
             }
             return true
@@ -2639,7 +2367,7 @@ object RebalancerComparisonCalculator {
                 return false
             }
         } else {
-            // Liquidation of a historical-only holding is not an error: reconstruction
+            // Liquidation of a holding absent from the tracked series is not an error: reconstruction
             // settles its quote proceeds without recording the base asset.
             balances[replay.base]?.let { baseBalance ->
                 balances[replay.base] = baseBalance.subtract(replay.volume)
@@ -2652,11 +2380,62 @@ object RebalancerComparisonCalculator {
     }
 
     /**
+     * A persisted snapshot may use TradeRecord's rounded USD cost even when the ledger quote
+     * leg carries the higher-precision fill debit. Keep ledger effects authoritative unless the
+     * quote leg itself proves that it includes the TradeRecord fee; this excludes base-fee fills
+     * whose quote leg intentionally contains no fee.
+     */
+    private fun shouldUsePersistedQuoteEconomics(
+        trade: TradeRecord,
+        replay: TradeLedgerReplay.Classification.Replayable,
+        ledgerEffect: TradeLedgerReplay.LedgerEffect,
+        persistedNotional: BigDecimal,
+    ): Boolean {
+        if (replay.quote != Asset.USD) return false
+        if (trade.source != TradeSource.API_FILL && trade.source != TradeSource.MANUAL) return false
+        if (trade.price.signum() <= 0) return false
+        val preciseNotional = trade.price.multiply(trade.volume)
+        if (
+            preciseNotional.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+                .compareTo(trade.usdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)) != 0
+        ) {
+            return false
+        }
+        val preciseQuoteDelta = persistedQuoteDelta(replay.isBuy, preciseNotional, replay.fee)
+        return ledgerEffect.quoteNetDelta.subtract(preciseQuoteDelta).abs() <= legacyLedgerFeeDeltaTolerance
+    }
+
+    private fun persistedQuoteDelta(isBuy: Boolean, notional: BigDecimal, fee: BigDecimal): BigDecimal =
+        if (isBuy) notional.add(fee).negate() else notional.subtract(fee)
+
+    private fun effectiveTradeLedgerDelta(
+        currentBalance: BigDecimal?,
+        checkpoint: BigDecimal?,
+        netDelta: BigDecimal,
+        grossDelta: BigDecimal,
+    ): BigDecimal {
+        if (currentBalance == null || checkpoint == null) return netDelta
+        val checkpointDelta = checkpoint.subtract(currentBalance)
+        val netDeltaTolerance = if (grossDelta.compareTo(netDelta) == 0) {
+            ledgerGrossDeltaTolerance
+        } else {
+            legacyLedgerFeeDeltaTolerance
+        }
+        return if (
+            checkpointDelta.subtract(netDelta).abs() <= netDeltaTolerance ||
+            checkpointDelta.subtract(grossDelta).abs() <= ledgerGrossDeltaTolerance
+        ) {
+            checkpointDelta
+        } else {
+            netDelta
+        }
+    }
+
+    /**
      * Applies the quote leg of a recorded trade: the leg is invisible when the quote never
      * belongs to the recorded universe, while a tracked quote without a recorded balance is a
-     * genuine gap that fails closed. Benchmark trade mirroring seeds an unheld quote at zero
-     * before calling this, so the drawdown still reaches proportional attribution instead of
-     * being dropped.
+     * genuine gap that fails closed. The passive benchmark does not call this for trade mirroring;
+     * the quote-leg helper remains part of actual balance reconciliation.
      */
     private fun applyQuoteLeg(
         balances: MutableMap<String, BigDecimal>,
@@ -2680,7 +2459,7 @@ object RebalancerComparisonCalculator {
             trade.usdAmount
         }
         return if (
-            accountingMode == TradeAccountingMode.PERSISTED_ROUNDED_COST &&
+            accountingMode != TradeAccountingMode.PRECISE_FILL_NOTIONAL &&
             hasSettledFillEconomics &&
             trade.price.signum() > 0 &&
             preciseNotional.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
@@ -2693,13 +2472,14 @@ object RebalancerComparisonCalculator {
     }
 
     private fun extractBaselineBalances(baseline: PortfolioSnapshot): Map<String, BigDecimal> =
-        baseline.assets.mapValues { (_, asset) -> asset.balance }
+        baseline.assets.filterValues { it.balance.signum() != 0 }.mapValues { (_, asset) -> asset.balance }
 
-    private fun calculateBuyAndHoldValue(
+    private suspend fun calculateBuyAndHoldValue(
         syntheticBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
-        baselineTimestamp: Instant? = null,
-        baselinePrices: Map<String, BigDecimal> = emptyMap(),
+        baselineTimestamp: Instant?,
+        baselinePrices: Map<String, BigDecimal>,
+        priceProvider: HistoricalPriceProvider?,
     ): BigDecimal {
         var total = BigDecimal.ZERO
         for ((symbol, balance) in syntheticBalances) {
@@ -2712,6 +2492,7 @@ object RebalancerComparisonCalculator {
                 val snapshotPrice = snapshot.assets[symbol]?.price?.takeIf { it.signum() > 0 }
                 when {
                     snapshotPrice != null -> snapshotPrice
+                    priceProvider != null -> priceProvider.priceAt(symbol, snapshot.timestamp) ?: continue
                     snapshot.timestamp == baselineTimestamp -> baselinePrices[symbol] ?: continue
                     else -> continue
                 }
@@ -2767,9 +2548,7 @@ object RebalancerComparisonCalculator {
             )
         }
         return buildBenchmarkEvents(
-            trades = emptyList(),
             ledgers = reconciled,
-            orderOwnership = TradeOwnershipClassifier.resolveOrderOwnership(emptyList()),
             baseline = baseline,
             inceptionWeights = inceptionWeights,
             priceProvider = priceProvider,

@@ -357,7 +357,7 @@ class TradeHistorySyncService(
         isSeeded: Boolean,
         originalLocalTrades: MutableList<TradeRecord>,
         allocations: List<String>,
-        mode: CoverageSyncMode = CoverageSyncMode.INCREMENTAL,
+        mode: CoverageSyncMode,
     ): TradeSyncScanOutcome {
         var totalAdded = 0
         var totalReconciled = 0
@@ -427,20 +427,51 @@ class TradeHistorySyncService(
             .getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
         if (reconstructionVersion.isNullOrBlank()) return
 
-        val throughSec = repository
+        val throughRaw = repository
             .getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC)
-            ?.toLongOrNull()
-        val startSec = repository
+        val throughSec = throughRaw?.toLongOrNull()
+        val startRaw = repository
             .getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC)
-            ?.toLongOrNull()
-        val continuousStartMs = repository
+        val startSec = startRaw?.toLongOrNull()
+        val continuousStartRaw = repository
             .getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
-            ?.toLongOrNull()
+        val continuousStartMs = continuousStartRaw?.toLongOrNull()
 
-        val reconstructedThrough = throughSec?.let(Instant::ofEpochSecond)
-            ?: continuousStartMs?.let(Instant::ofEpochMilli)
-            ?: return
-        val reconstructedStart = startSec?.let(Instant::ofEpochSecond) ?: Instant.EPOCH
+        if ((!throughRaw.isNullOrBlank() && throughSec == null) ||
+            (!startRaw.isNullOrBlank() && startSec == null) ||
+            (!continuousStartRaw.isNullOrBlank() && continuousStartMs == null)
+        ) {
+            repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "")
+            return
+        }
+
+        if (throughSec != null &&
+            (throughSec <= 0L || (startSec != null && (startSec < 0L || startSec > throughSec)))
+        ) {
+            repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "")
+            return
+        }
+        if (throughSec == null && continuousStartMs != null && continuousStartMs < 0L) {
+            repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "")
+            return
+        }
+
+        val reconstructedThrough = try {
+            throughSec?.let { Instant.ofEpochSecond(it, 999_999_999) }
+                ?: continuousStartMs?.let(Instant::ofEpochMilli)
+                ?: return
+        } catch (_: RuntimeException) {
+            // Invalid reconstruction metadata cannot certify that an incoming fill is outside
+            // the derived-history interval; invalidate conservatively instead.
+            repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "")
+            return
+        }
+        val reconstructedStart = try {
+            startSec?.let(Instant::ofEpochSecond) ?: Instant.EPOCH
+        } catch (_: RuntimeException) {
+            repository.setSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION, "")
+            return
+        }
 
         fun isInReconstructionInterval(time: Instant): Boolean =
             !time.isBefore(reconstructedStart) && !time.isAfter(reconstructedThrough)
@@ -882,7 +913,7 @@ class TradeHistorySyncService(
         certifiedFromSec: Long?,
         authoritativeCompletenessProven: Boolean,
         extendsCertifiedTail: Boolean,
-        verifiedAccountScopeDigest: String? = null,
+        verifiedAccountScopeDigest: String?,
     ): Boolean {
         val successfulHorizonSec = successfulQueryHorizon.epochSecond
         val storedCoverageHorizonSec = repository
@@ -1087,8 +1118,8 @@ class TradeHistorySyncService(
         startSec: Long?,
         endSec: Long,
         isSeeded: Boolean,
-        mode: CoverageSyncMode = CoverageSyncMode.INCREMENTAL,
-        receipt: ScanCertificationReceipt = ScanCertificationReceipt(),
+        mode: CoverageSyncMode,
+        receipt: ScanCertificationReceipt,
     ): Flow<List<TradeRecord>> = flow {
         var offset = 0
         var priorTotal = repository

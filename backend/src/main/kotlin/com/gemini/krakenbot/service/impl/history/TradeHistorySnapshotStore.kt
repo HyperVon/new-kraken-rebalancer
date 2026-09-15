@@ -246,7 +246,7 @@ class TradeHistorySnapshotStore(
         startInstant: Instant,
         steps: Int,
         stepHours: Long,
-        currentAth: BigDecimal = BigDecimal.ZERO,
+        currentAth: BigDecimal,
     ): List<PortfolioSnapshot> {
         val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
         var step = 0
@@ -281,7 +281,7 @@ class TradeHistorySnapshotStore(
         currentBalances: Map<String, BigDecimal>,
         timestamp: Instant,
         progress: Double,
-        currentAth: BigDecimal = BigDecimal.ZERO,
+        currentAth: BigDecimal,
     ): PortfolioSnapshot {
         val valuedAssets =
             allocations.mapIndexed { index, (symbol, targetPercent) ->
@@ -339,6 +339,9 @@ class TradeHistorySnapshotStore(
             drawdownPercent = drawdownPct,
             fiatDeploymentPercent = fiatDeploymentPct,
             effectiveUsdTargetPercent = effectiveUsdTarget,
+            // Simulation history is generated from seeded balances/trades, not observed from an
+            // account balance request, so it cannot establish a recorded passive anchor.
+            balancesObservedAt = null,
         )
     }
 

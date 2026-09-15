@@ -48,6 +48,7 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 
 class InceptionRecoveryServiceTest : StringSpec() {
@@ -1993,7 +1994,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 )
                 repository.saveSnapshot(
                     anchorSnapshot(
-                        balances = mapOf(Asset.BTC to BigDecimal("0.02"), Asset.USD to BigDecimal("463.66")),
+                        balances = mapOf(Asset.BTC to BigDecimal("0.02354340"), Asset.USD to BigDecimal("463.66")),
                         timestamp = Instant.parse("2026-01-03T00:00:00Z"),
                     ),
                 )
@@ -2007,8 +2008,9 @@ class InceptionRecoveryServiceTest : StringSpec() {
                     ?.toInt() ?: error("baseline snapshot id is missing")
                 val baseline = repository.getSnapshotById(baselineId)
                 baseline.shouldNotBeNull()
-                // The five fills net to exactly the recorded pre-fill balance: the old quote-fee
-                // replay dropped 0.00004550 BTC of base-denominated fees and went negative.
+                // The anchor matches the latest authoritative checkpoint. The five fills net to
+                // the recorded pre-fill balance: the old quote-fee replay dropped 0.00004550 BTC
+                // of base-denominated fees and went negative.
                 baseline.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 baseline.assets.getValue(Asset.USD).balance.shouldBeEqualComparingTo(BigDecimal("1462.15"))
                 baseline.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1462.15"))
@@ -5515,7 +5517,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
         val total = assets.values.fold(BigDecimal.ZERO) { sum, asset -> sum.add(asset.valueUSD) }
         return PortfolioSnapshot(
             timestamp = timestamp,
-            totalValueUSD = total.setScale(2),
+            totalValueUSD = total.setScale(2, RoundingMode.HALF_UP),
             assets = assets,
             actions = emptyList(),
             drawdownPercent = BigDecimal.ZERO,

@@ -168,6 +168,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             )
 
             snapshots.shouldNotBeEmpty()
+            snapshots.forEach { it.balancesObservedAt shouldBe null }
 
             // After reverse-applying the BUY: BTC -= 0.1, USD += 5000 + 13
             runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.4"))

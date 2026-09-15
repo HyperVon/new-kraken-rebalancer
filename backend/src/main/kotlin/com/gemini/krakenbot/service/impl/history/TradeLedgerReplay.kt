@@ -17,10 +17,14 @@ import java.math.BigDecimal
  * trades whose legs are absent from the retained evidence.
  */
 internal object TradeLedgerReplay {
+    private val CHECKPOINT_MATCH_TOLERANCE = BigDecimal("0.00000001")
+
     /** Authoritative wallet movement of one fill, net of each leg's own fee. */
     data class LedgerEffect(
         val baseNetDelta: BigDecimal,
         val quoteNetDelta: BigDecimal,
+        val baseGrossDelta: BigDecimal,
+        val quoteGrossDelta: BigDecimal,
         val baseCheckpoint: BigDecimal?,
         val quoteCheckpoint: BigDecimal?,
     )
@@ -115,25 +119,50 @@ internal object TradeLedgerReplay {
      */
     fun reverseApply(replay: Classification.Replayable, balances: MutableMap<String, BigDecimal>): Boolean {
         if (replay.volume.signum() < 0 || replay.quoteCost.signum() < 0 || replay.fee.signum() < 0) return false
-        val baseBalance = balances[replay.base] ?: return false
-        val quoteBalance = balances[replay.quote] ?: return false
+        val baseBalance = balances[replay.base]
+        val quoteBalance = balances[replay.quote]
         val effect = replay.ledgerEffect
         if (effect != null) {
-            val basePost = effect.baseCheckpoint ?: baseBalance
-            val quotePost = effect.quoteCheckpoint ?: quoteBalance
-            balances[replay.base] = basePost.subtract(effect.baseNetDelta)
-            balances[replay.quote] = quotePost.subtract(effect.quoteNetDelta)
+            val basePost = effect.baseCheckpoint ?: baseBalance ?: return false
+            val quotePost = effect.quoteCheckpoint ?: quoteBalance ?: return false
+            if (effect.baseCheckpoint != null && baseBalance != null &&
+                !matchesCheckpoint(baseBalance, effect.baseCheckpoint)
+            ) {
+                return false
+            }
+            if (effect.quoteCheckpoint != null && quoteBalance != null &&
+                !matchesCheckpoint(quoteBalance, effect.quoteCheckpoint)
+            ) {
+                return false
+            }
+            val baseBefore = basePost.subtract(effect.baseNetDelta)
+            val quoteBefore = quotePost.subtract(effect.quoteNetDelta)
+            if (baseBefore.signum() < 0 || quoteBefore.signum() < 0) return false
+            balances[replay.base] = baseBefore
+            balances[replay.quote] = quoteBefore
             return true
         }
+        val currentBase = baseBalance ?: return false
+        val currentQuote = quoteBalance ?: return false
+        // A fallback reverse walk may pass through a negative intermediate balance when a
+        // retained round-trip has no authoritative legs. The terminal reconstruction check is
+        // the fail-closed guard for that case; authoritative checkpoints are checked above.
         if (replay.isBuy) {
-            balances[replay.base] = baseBalance.subtract(replay.volume)
-            balances[replay.quote] = quoteBalance.add(replay.quoteCost).add(replay.fee)
+            val baseBefore = currentBase.subtract(replay.volume)
+            val quoteBefore = currentQuote.add(replay.quoteCost).add(replay.fee)
+            balances[replay.base] = baseBefore
+            balances[replay.quote] = quoteBefore
         } else {
-            balances[replay.base] = baseBalance.add(replay.volume)
-            balances[replay.quote] = quoteBalance.subtract(replay.quoteCost).add(replay.fee)
+            val baseBefore = currentBase.add(replay.volume)
+            val quoteBefore = currentQuote.subtract(replay.quoteCost).add(replay.fee)
+            balances[replay.base] = baseBefore
+            balances[replay.quote] = quoteBefore
         }
         return true
     }
+
+    private fun matchesCheckpoint(current: BigDecimal, checkpoint: BigDecimal): Boolean =
+        current.subtract(checkpoint).abs().compareTo(CHECKPOINT_MATCH_TOLERANCE) <= 0
 
     private sealed interface EffectOutcome {
         data class Resolved(val effect: LedgerEffect) : EffectOutcome
@@ -174,9 +203,24 @@ internal object TradeLedgerReplay {
         val effect = LedgerEffect(
             baseNetDelta = baseLeg?.netBalanceDelta() ?: BigDecimal.ZERO,
             quoteNetDelta = quoteLeg?.netBalanceDelta() ?: BigDecimal.ZERO,
+            baseGrossDelta = baseLeg?.amount ?: BigDecimal.ZERO,
+            quoteGrossDelta = quoteLeg?.amount ?: BigDecimal.ZERO,
             baseCheckpoint = baseLeg?.takeIf { it.hasAuthoritativeBalance }?.balance,
             quoteCheckpoint = quoteLeg?.takeIf { it.hasAuthoritativeBalance }?.balance,
         )
+        if ((effect.baseCheckpoint?.signum() ?: 0) < 0 || (effect.quoteCheckpoint?.signum() ?: 0) < 0) {
+            return EffectOutcome.Rejected("negative historical trade checkpoint")
+        }
+        if (effect.baseCheckpoint != null &&
+            effect.baseCheckpoint.subtract(effect.baseNetDelta).signum() < 0
+        ) {
+            return EffectOutcome.Rejected("negative historical base balance before trade")
+        }
+        if (effect.quoteCheckpoint != null &&
+            effect.quoteCheckpoint.subtract(effect.quoteNetDelta).signum() < 0
+        ) {
+            return EffectOutcome.Rejected("negative historical quote balance before trade")
+        }
         val reason = directionFailure(effect, isBuy, trade.volume)
         return if (reason == null) EffectOutcome.Resolved(effect) else EffectOutcome.Rejected(reason)
     }

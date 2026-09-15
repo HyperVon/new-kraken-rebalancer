@@ -74,6 +74,226 @@ class TradeLedgerReplayTest : StringSpec() {
             balances.getValue("USD") shouldBeEqualComparingTo BigDecimal("461.1497")
         }
 
+        "partial authoritative legs fail without a seeded wallet or checkpoint" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.00703085"),
+                usdAmount = BigDecimal("461.14"),
+                price = BigDecimal("65588"),
+                fee = BigDecimal("0.9223"),
+                tradeId = "TRADE-1",
+            )
+            val base = leg("base", "XXBT", "0.00703085")
+            val quote = leg("quote", "ZUSD", "-461.1394")
+            val replay = TradeLedgerReplay.classify(trade, legMap(base, quote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+
+            TradeLedgerReplay.reverseApply(replay, mutableMapOf("USD" to BigDecimal("1"))).shouldBeFalse()
+            TradeLedgerReplay.reverseApply(replay, mutableMapOf("BTC" to BigDecimal("1"))).shouldBeFalse()
+        }
+
+        "checkpoint drift rejects the reverse walk" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.00703085"),
+                usdAmount = BigDecimal("461.14"),
+                price = BigDecimal("65588"),
+                fee = BigDecimal("0.9223"),
+                tradeId = "TRADE-1",
+            )
+            val base = leg("base", "XXBT", "0.00703085", balance = "0.06541898")
+            val quote = leg("quote", "ZUSD", "-461.1394", balance = "0.0103")
+            val replay = TradeLedgerReplay.classify(trade, legMap(base, quote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+            val balances = mutableMapOf(
+                "BTC" to BigDecimal("0.90000000"),
+                "USD" to BigDecimal("0.0103"),
+            )
+
+            TradeLedgerReplay.reverseApply(replay, balances).shouldBeFalse()
+        }
+
+        "reverse walk rejects a wallet that cannot cover the replayed fill" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.00703085"),
+                usdAmount = BigDecimal("461.14"),
+                price = BigDecimal("65588"),
+                fee = BigDecimal("0.9223"),
+                tradeId = "TRADE-1",
+            )
+            val base = leg("base", "XXBT", "0.00703085")
+            val quote = leg("quote", "ZUSD", "-461.1394", balance = "0.0103")
+            val replay = TradeLedgerReplay.classify(trade, legMap(base, quote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+            val balances = mutableMapOf(
+                "BTC" to BigDecimal("0.00100000"),
+                "USD" to BigDecimal("0.0103"),
+            )
+
+            TradeLedgerReplay.reverseApply(replay, balances).shouldBeFalse()
+        }
+
+        "negative authoritative checkpoints are rejected as unsupported history" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.00703085"),
+                usdAmount = BigDecimal("461.14"),
+                price = BigDecimal("65588"),
+                fee = BigDecimal("0.9223"),
+                tradeId = "TRADE-1",
+            )
+            val base = leg("base", "XXBT", "0.00703085", balance = "-0.01")
+            val quote = leg("quote", "ZUSD", "-461.1394")
+
+            TradeLedgerReplay.classify(trade, legMap(base, quote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Unsupported>()
+        }
+
+        "trade that would start from a negative wallet is rejected" {
+            val buy = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.00703085"),
+                usdAmount = BigDecimal("461.14"),
+                price = BigDecimal("65588"),
+                fee = BigDecimal("0.9223"),
+                tradeId = "TRADE-1",
+            )
+            val buyBase = leg("base", "XXBT", "0.00703085", balance = "0.00100000")
+            val buyQuote = leg("quote", "ZUSD", "-461.1394")
+
+            TradeLedgerReplay.classify(buy, legMap(buyBase, buyQuote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Unsupported>()
+
+            val sell = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "sell",
+                symbol = "BTC",
+                volume = BigDecimal("0.00223943"),
+                usdAmount = BigDecimal("200.00"),
+                price = BigDecimal("89313.3"),
+                fee = BigDecimal("0"),
+                tradeId = "TRADE-1",
+            )
+            val sellBase = leg("base", "XXBT", "-0.00223943", balance = "0.01000000")
+            val sellQuote = leg("quote", "ZUSD", "200.00", balance = "1")
+
+            TradeLedgerReplay.classify(sell, legMap(sellBase, sellQuote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Unsupported>()
+        }
+
+        "checkpoint-backed base leg walks the fill without a seeded base wallet" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.00703085"),
+                usdAmount = BigDecimal("461.14"),
+                price = BigDecimal("65588"),
+                fee = BigDecimal("0.9223"),
+                tradeId = "TRADE-1",
+            )
+            val base = leg("base", "XXBT", "0.00703085", balance = "0.06541898")
+            val quote = leg("quote", "ZUSD", "-461.1394")
+            val replay = TradeLedgerReplay.classify(trade, legMap(base, quote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+            val balances = mutableMapOf("USD" to BigDecimal("1000.0103"))
+
+            TradeLedgerReplay.reverseApply(replay, balances).shouldBeTrue()
+            balances.getValue("BTC") shouldBeEqualComparingTo BigDecimal("0.05838813")
+            balances.getValue("USD") shouldBeEqualComparingTo BigDecimal("1461.1497")
+        }
+
+        "negative quote checkpoints are rejected as unsupported history" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.00703085"),
+                usdAmount = BigDecimal("461.14"),
+                price = BigDecimal("65588"),
+                fee = BigDecimal("0.9223"),
+                tradeId = "TRADE-1",
+            )
+            val base = leg("base", "XXBT", "0.00703085")
+            val quote = leg("quote", "ZUSD", "-461.1394", balance = "-1")
+
+            TradeLedgerReplay.classify(trade, legMap(base, quote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Unsupported>()
+        }
+
+        "reverse walk rejects a quote side that cannot cover the replayed fill" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "sell",
+                symbol = "BTC",
+                volume = BigDecimal("0.00223943"),
+                usdAmount = BigDecimal("200.00"),
+                price = BigDecimal("89313.3"),
+                fee = BigDecimal("0.25"),
+                tradeId = "TRADE-1",
+            )
+            val base = leg("base", "XXBT", "-0.00223943", balance = "1.00000000")
+            val quote = leg("quote", "ZUSD", "200.00")
+            val replay = TradeLedgerReplay.classify(trade, legMap(base, quote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+            val balances = mutableMapOf(
+                "BTC" to BigDecimal("1.00000000"),
+                "USD" to BigDecimal("1"),
+            )
+
+            TradeLedgerReplay.reverseApply(replay, balances).shouldBeFalse()
+        }
+
+        "quote checkpoints need an observed quote balance to validate" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "XXBTZUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.00703085"),
+                usdAmount = BigDecimal("461.14"),
+                price = BigDecimal("65588"),
+                fee = BigDecimal("0.9223"),
+                tradeId = "TRADE-1",
+            )
+            val base = leg("base", "XXBT", "0.00703085", balance = "0.06541898")
+            val quote = leg("quote", "ZUSD", "-461.1394", balance = "1000.0103")
+            val replay = TradeLedgerReplay.classify(trade, legMap(base, quote))
+                .shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
+            val effect = replay.ledgerEffect ?: error("expected ledger effect")
+
+            val unseededQuote = mutableMapOf("BTC" to effect.baseCheckpoint!!)
+            TradeLedgerReplay.reverseApply(replay, unseededQuote).shouldBeTrue()
+            unseededQuote.getValue("USD") shouldBeEqualComparingTo
+                effect.quoteCheckpoint!!.subtract(effect.quoteNetDelta)
+
+            val driftedQuote = mutableMapOf(
+                "BTC" to effect.baseCheckpoint,
+                "USD" to effect.quoteCheckpoint.add(BigDecimal("1.00")),
+            )
+            TradeLedgerReplay.reverseApply(replay, driftedQuote).shouldBeFalse()
+        }
+
         "base-denominated sell fee inverts the base wallet exactly once" {
             // Production fill id 4532: the sell debit is volume + base fee.
             val trade = TestFixtures.tradeRecord(

@@ -264,12 +264,12 @@ class ApprovedStartComparisonIntegrationTest :
             }
         }
 
-        "confirmed baseline still proposes and accepts a later start when later ownership is unknown" {
+        "confirmed baseline still proposes and accepts a later start when later reconciliation fails" {
             runTest {
                 seedTrade("t0", strategyStart.minusSeconds(60), owned = false)
                 seedTrade("t1", strategyStart.plusSeconds(60), owned = true)
+                seedSnapshot(strategyStart.plusSeconds(1800), "100.00", "0.03", "999.00")
                 val unknownTime = strategyStart.plusSeconds(3_600)
-                seedUnknownTrade(unknownTime)
                 seedSnapshot(unknownTime.plusSeconds(60), "100.00", "0.04", "998.00")
                 val verifiedStart = unknownTime.plusSeconds(120)
                 seedSnapshot(verifiedStart, "100.00", "0.04", "998.00")
@@ -285,7 +285,7 @@ class ApprovedStartComparisonIntegrationTest :
                 val blocked = query.getRebalancerComparison(strategyStart, comparisonEnd)
 
                 blocked.availability shouldBe ComparisonAvailability.UNAVAILABLE
-                blocked.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
+                blocked.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
                 blocked.proposedBaselineTimestamp shouldBe verifiedStart
                 blocked.proposalSearchStatus shouldBe ComparisonProposalStatus.VERIFIED
                 val settingsProposal = query.getComparisonStartProposal(strategyStart)
@@ -434,15 +434,14 @@ class ApprovedStartComparisonIntegrationTest :
         "continuous snapshots across the retention boundary keep later-start proposals working" {
             runTest {
                 seedSnapshot(strategyStart, "100.00", "0.03", "999.00")
-                val unknownTime = strategyStart.plusSeconds(2 * 86_400L + 3_600L)
-                seedUnknownTrade(unknownTime)
                 val days = ((now.epochSecond - strategyStart.epochSecond) / 86_400L).toInt()
                 for (day in 1..days) {
+                    val (btcBal, usdBal) = if (day <= 2) "0.03" to "999.00" else "0.04" to "998.00"
                     seedSnapshot(
                         strategyStart.plusSeconds(day * 86_400L),
                         "100.00",
-                        "0.04",
-                        "998.00",
+                        btcBal,
+                        usdBal,
                     )
                 }
                 krakenService.tradeHistoryTotalCountOverride = 0
@@ -453,8 +452,8 @@ class ApprovedStartComparisonIntegrationTest :
                 val comparison = query.getRebalancerComparison(strategyStart, now)
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
-                comparison.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_TRADE_OWNERSHIP
-                // The candidate immediately after the unknown event still has that event in
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                // The candidate immediately after the unexplained event still has that event in
                 // its reconciliation window; the following retained observation is the first
                 // one that proves a clean comparison start.
                 comparison.proposedBaselineTimestamp shouldBe strategyStart.plusSeconds(4 * 86_400L)

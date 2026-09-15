@@ -339,32 +339,37 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
   `transfer/airdrop` credits, are
   retained by ordinary synchronization and unfiltered inception recovery, then
   replayed as in-kind actual balance changes and shown in the rewards chart; Buy & Hold mirrors
-  a positive credit only when the synthetic basket already holds the credited asset. They never
-  count as owner capital. Unknown top-level ledger types remain fail-closed.
+  explicitly classified account-level credits even when the synthetic basket did not already
+  hold the credited asset. Other holding-dependent reward credits are mirrored only for held
+  assets, so an unheld asset remains actual-only. They never count as owner capital. Unknown
+  top-level ledger types remain fail-closed.
 - Observed top-level `conversion` rows are retained and require a complete two-leg,
   non-blank-`refid` cross-asset debit/credit group with authoritative balances and fees.
-  The group replays each per-asset `amount - fee` delta once as an internal transformation;
-  it is not owner capital, a reward, or a Buy & Hold contribution. Missing, contradictory,
-  or multi-leg shapes remain unavailable rather than being netted by raw token quantity.
+  Actual-history reconstruction replays each per-asset `amount - fee` delta once as an internal
+  transformation; pure Buy & Hold validates and consumes the group as plumbing without emitting
+  a synthetic conversion or trade. It is not owner capital, a reward, or a Buy & Hold contribution.
+  Missing, contradictory, or multi-leg shapes remain unavailable rather than being netted by raw
+  token quantity.
 - Kraken `transfer/airdrop` credits are treated as external balance changes; bare transfers and
   unsupported transfer subtypes remain ambiguous without authoritative provenance.
 - Newly parsed ledger amount validity is preserved at the parser and SQLite boundaries; malformed
   amounts and impossible obvious credit/debit directions fail closed rather than becoming zero
   flows. Legacy rows retain their pre-existing interpretation because SQLite does not retain the
   original amount text.
-- Rebalancer vs Buy & Hold replays supported external ledger events using
-  `amount - fee` under their ownership and attribution rules; ATH basis reconstruction separately
-  replays the actual event-time asset effects. Consumer Buy Crypto activity is represented by its
-  ledger `spend`/`receive` legs, which comparison collapses atomically when a complete linked group
-  is retained; it is not inferred from `TradesHistory`. A card-style external deposit plus USD `spend` and purchased
-  asset `receive` is retained as a weighted owner contribution plus one linked
-  conversion only when all legs share one non-blank refid and the complete
-  shape is present; a card deposit-only or partial group stays pending, while
-  confirmed ordinary Wire/ACH deposits remain ordinary owner capital. The
-  normalized event separates synthetic `netOwnerCapitalUsd` from exact actual
-  per-leg asset deltas: Buy & Hold uses the former, and ATH basis replay uses
-  the latter once. Otherwise comparison remains unavailable. The reconstruction marker records the ledger-coverage
-  version it replayed, so a coverage migration cannot be hidden by an older marker.
+- Rebalancer vs Buy & Hold validates supported external ledger events using
+  `amount - fee` under their attribution rules; successful trades and internal conversions are
+  reconciliation evidence for the actual series, not passive benchmark events. Complete consumer
+  `spend`/`receive` groups are consumed as plumbing, while unlinked or singleton passthrough rows
+  are excluded from the passive event stream because their missing counterpart cannot prove an
+  independent movement. It is not inferred from `TradesHistory`. A card-style external deposit plus
+  USD `spend` and purchased-asset `receive` is retained as a weighted owner contribution only when
+  all legs share one non-blank refid and the complete shape is present; the plumbing is not replayed
+  as a synthetic conversion. A card deposit-only or partial group stays pending, while confirmed
+  ordinary Wire/ACH deposits remain ordinary owner capital. The normalized event separates synthetic
+  `netOwnerCapitalUsd` from exact actual per-leg asset deltas: Buy & Hold uses the former, and ATH
+  basis replay uses the latter once. Otherwise comparison remains unavailable. The reconstruction
+  marker records the ledger-coverage version it replayed, so a coverage migration cannot be hidden
+  by an older marker.
 
 ### Safety & Reliability
 
@@ -449,7 +454,7 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
 - **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
-- **Rebalancer vs Buy & Hold** — compares actual portfolio value against an equal-capital counterfactual whose full approved actual-wallet inception value is allocated across the configured assets that actually held value at inception, using their original value weights and historical inception prices; zero-valued targets and historical-only holdings receive no synthetic units, while later owner capital uses the same fixed weights. Bounded inception recovery uses separate Kraken trade/ledger coverage with durable resume, positive local bot-ownership evidence, funding provenance, and historical prices before confirming a lifetime baseline, while any other tracked balance change that cannot be explained by authoritative trades or supported ledger activity makes the range unavailable
+- **Rebalancer vs Buy & Hold** — compares actual portfolio value against a pure counterfactual anchored to the exact recorded positive holdings and value weights at the selected comparison baseline; current target percentages, later configuration changes, trade ownership labels, and internal conversions never rewrite those lots. When lifetime inception recovery is unresolved, the report may use the earliest genuinely recorded snapshot on or after the bounded passive evidence floor; this does not approve or rewrite strategy inception. Later owner contributions use the fixed recorded-anchor weights and withdrawals scale synthetic NAV proportionally, while holding-dependent rewards are mirrored only for held assets, explicitly classified account-level credits may introduce an unheld credited asset, and generic USD/equity cash dividends remain actual-only. Any tracked balance change that cannot be reconciled against authoritative trades or supported ledger activity makes the range unavailable.
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)

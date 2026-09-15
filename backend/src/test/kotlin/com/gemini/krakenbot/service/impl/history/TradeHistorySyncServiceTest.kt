@@ -431,6 +431,44 @@ class TradeHistorySyncServiceTest : StringSpec() {
             reconstructionVersion() shouldBe ""
         }
 
+        "malformed reconstruction metadata shapes are cleared instead of trusted" {
+            stubStableBackend()
+            stubConfig()
+            val validStart = baseTime.minus(1, ChronoUnit.DAYS)
+            val validThrough = baseTime.plus(1, ChronoUnit.DAYS)
+            val variants = listOf(
+                mapOf(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to "abc"),
+                mapOf(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC to "abc"),
+                mapOf(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS to "abc"),
+                mapOf(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to "0"),
+                mapOf(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC to "-5"),
+                mapOf(
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC to
+                        validThrough.plusSeconds(60).epochSecond.toString(),
+                ),
+            )
+            variants.forEachIndexed { index, variant ->
+                val metadata =
+                    mapOf(
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION to
+                            TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC to
+                            validStart.epochSecond.toString(),
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to
+                            validThrough.epochSecond.toString(),
+                        SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS to
+                            validStart.toEpochMilli().toString(),
+                    ) + variant
+                for ((key, value) in metadata) {
+                    repository.setSyncMetadata(key, value)
+                }
+
+                service().importRecoveredApiTrades(listOf(apiFill(index + 1, fee = BigDecimal("2.00"))))
+
+                reconstructionVersion() shouldBe ""
+            }
+        }
+
         "importing an empty recovery batch returns zero without touching cursors" {
             stubStableBackend()
             stubConfig()
