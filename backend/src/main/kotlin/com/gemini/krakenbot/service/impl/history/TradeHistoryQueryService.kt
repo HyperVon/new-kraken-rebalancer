@@ -41,6 +41,7 @@ class TradeHistoryQueryService(
     private val fundingProvenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
     private val nowProvider: () -> Instant = Instant::now,
     private val krakenService: KrakenService? = null,
+    private val historicalOhlcCache: HistoricalOhlcCache? = null,
     /** Evidence boundary used when the lifetime inception recovery cannot be trusted. */
     private val pureBenchmarkAnchorFloor: Instant = PURE_BENCHMARK_ANCHOR_FLOOR,
 ) {
@@ -1107,6 +1108,7 @@ class TradeHistoryQueryService(
                         tradeLookbackSeconds = CONTRIBUTION_PRICE_LOOKUP_SECONDS,
                         futureTradeSkewSeconds = CONTRIBUTION_PRICE_FUTURE_SKEW_SECONDS,
                         marketPairsByBase = marketPairsByBase,
+                        ohlcCache = historicalOhlcCache,
                     )
                 } catch (e: CancellationException) {
                     throw e

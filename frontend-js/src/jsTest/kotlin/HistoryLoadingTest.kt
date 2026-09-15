@@ -5,6 +5,8 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -99,6 +101,8 @@ class HistoryLoadingTest : StringSpec() {
             val bodyResolvers = mutableMapOf<String, (dynamic) -> Unit>()
             window.asDynamic().fetch = { url: String ->
                 val response: dynamic = json()
+                response.ok = true
+                response.status = 200
                 response.json = {
                     Promise { resolve: (dynamic) -> Unit, _: (Throwable) -> Unit ->
                         bodyResolvers[url] = resolve
@@ -164,6 +168,8 @@ class HistoryLoadingTest : StringSpec() {
             val bodyRejectors = mutableMapOf<String, (Throwable) -> Unit>()
             window.asDynamic().fetch = { url: String ->
                 val response: dynamic = json()
+                response.ok = true
+                response.status = 200
                 response.json = {
                     Promise { resolve: (dynamic) -> Unit, reject: (Throwable) -> Unit ->
                         bodyResolvers[url] = resolve
@@ -220,6 +226,85 @@ class HistoryLoadingTest : StringSpec() {
             }
         }
 
+        "loadAll rejects with the HTTP failure surfaced by the res.ok check" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.historyDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = { url: String ->
+                if (url.contains("snapshots")) {
+                    Promise.resolve(
+                        json("ok" to false, "status" to 503, "json" to { Promise.resolve(json()) }),
+                    )
+                } else {
+                    Promise.resolve(okFetchResponse(json()))
+                }
+            }
+            registerHistoryGlobals()
+
+            try {
+                val failed = loadAll(TimeRange.SEVEN_DAYS.key)
+                try {
+                    failed.await()
+                } catch (error: Throwable) {
+                    (error.message ?: "").startsWith(ViewText.HTTP_FETCH_FAILED) shouldBe true
+                }
+                currentRange shouldBe loadedRange
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "loadAll renders other charts when only the comparison endpoint fails" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.historyDom() +
+                "<div id=\"stat-ath-title\"></div>"
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = { url: String ->
+                if (url.contains("comparison")) {
+                    Promise.reject(RuntimeException("comparison failed"))
+                } else if (url.contains("snapshots")) {
+                    Promise.resolve(okFetchResponse(arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))))
+                } else if (url.contains("trades")) {
+                    Promise.resolve(okFetchResponse(arrayOf(tradeRecordToDynamic(mockTradeRecord()))))
+                } else if (url.contains("rewards")) {
+                    Promise.resolve(okFetchResponse(json()))
+                } else {
+                    Promise.resolve(okFetchResponse(historyStatsToDynamic(mockPortfolioStatsRecord())))
+                }
+            }
+            registerHistoryGlobals()
+
+            try {
+                // The failed range load still rejects (non-silent), but every other chart
+                // rendered because each group loads independently.
+                try {
+                    loadAll(TimeRange.ALL.key).await()
+                } catch (error: Throwable) {
+                    error.message shouldBe "comparison failed"
+                }
+
+                // Core charts still rendered despite the comparison failure.
+                document.getElementById("trade-table-body")?.innerHTML.orEmpty() shouldContain
+                    "${Asset.BTC}/${Asset.USD}"
+                document.getElementById("stat-ath")?.textContent shouldBe "$15,000.50"
+                // Range selection rolled back to the last successful load; the failure
+                // stays isolated to the comparison slot.
+                // Comparison slot shows its own visible error state.
+                (document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as HTMLElement)
+                    .classList.contains(CssClass.Utility.Visible.value) shouldBe true
+                document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
+                    ?.classList?.contains(CssClass.Utility.Hidden.value) shouldBe true
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
         "loadAll keeps the last successful range label when the selected range fails" {
             resetHistoryUiState()
             val container = document.createElement("div")
@@ -245,9 +330,9 @@ class HistoryLoadingTest : StringSpec() {
                     if (url.contains("snapshots")) {
                         Promise.reject(RuntimeException("range request failed"))
                     } else {
-                        val response: dynamic = json()
-                        response.json = { Promise.resolve(json()) }
-                        Promise.resolve(response)
+                        Promise.resolve(
+                            okFetchResponse(historyStatsToDynamic(mockPortfolioStatsRecord(allTimeHigh = "9000"))),
+                        )
                     }
                 }
                 val failed = loadAll(TimeRange.SEVEN_DAYS.key)
@@ -258,7 +343,9 @@ class HistoryLoadingTest : StringSpec() {
                 }
 
                 currentRange shouldBe TimeRange.ALL.key
-                document.getElementById("stat-ath-title")?.textContent shouldBe "All-Time High"
+                // Partial rendering: the failed range's successfully-loaded groups still
+                // rendered; only the range selection rolled back to the last success.
+                document.getElementById("stat-ath-title")?.textContent shouldBe "Period High"
                 document.getElementById("stat-ath")?.textContent shouldBe "$9,000.00"
             } finally {
                 document.body!!.removeChild(container)
@@ -287,9 +374,7 @@ class HistoryLoadingTest : StringSpec() {
                     if (url.contains("snapshots")) {
                         Promise.reject(RuntimeException("preset load failed"))
                     } else {
-                        val response: dynamic = json()
-                        response.json = { Promise.resolve(json()) }
-                        Promise.resolve(response)
+                        Promise.resolve(okFetchResponse(json()))
                     }
                 }
                 val failed = loadAll(TimeRange.TWENTY_FOUR_HOURS.key)

@@ -111,8 +111,18 @@ class SettingsFormComponent {
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
         laterStartProposal: ComparisonStartProposal? = null,
+        laterStartProposalAsync: Boolean = false,
     ) {
-        renderForm(body, config, errorMessage, csrfToken, paused, inceptionDisplay, laterStartProposal)
+        renderForm(
+            body,
+            config,
+            errorMessage,
+            csrfToken,
+            paused,
+            inceptionDisplay,
+            laterStartProposal,
+            laterStartProposalAsync,
+        )
         renderSettingsScript()
     }
 
@@ -124,6 +134,7 @@ class SettingsFormComponent {
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
         laterStartProposal: ComparisonStartProposal? = null,
+        laterStartProposalAsync: Boolean = false,
     ) {
         parent.div(CssClass.Layout.Container) {
             form {
@@ -159,7 +170,7 @@ class SettingsFormComponent {
                 }
 
                 div(CssClass.Layout.GlassPanel) {
-                    renderGlobalParametersSection(config, inceptionDisplay, laterStartProposal)
+                    renderGlobalParametersSection(config, inceptionDisplay, laterStartProposal, laterStartProposalAsync)
                     renderSafetyModesSection(config)
                     renderTargetAllocationsSection(config)
                 }
@@ -171,6 +182,7 @@ class SettingsFormComponent {
         config: AppConfig,
         inceptionDisplay: InceptionDisplayInfo,
         laterStartProposal: ComparisonStartProposal?,
+        laterStartProposalAsync: Boolean,
     ) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div(CssClass.Form.Grid2Col) {
@@ -211,7 +223,7 @@ class SettingsFormComponent {
                             "document.getElementById('${FormFields.COMPARISON_START_DATE}').value=this.value"
                     }
                     p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_COMPARISON_START_HINT }
-                    renderApprovedBaseline(config, inceptionDisplay, laterStartProposal)
+                    renderApprovedBaseline(config, inceptionDisplay, laterStartProposal, laterStartProposalAsync)
                 }
             }
         }
@@ -248,10 +260,44 @@ class SettingsFormComponent {
         }
     }
 
+    /**
+     * Renders the later-start proposal slot. When [async] the slot becomes an HTMX lazy-load
+     * placeholder so Settings HTML never blocks on proposal discovery sync; the fragment
+     * route resolves the proposal out-of-band and swaps this element out.
+     */
+    private fun FlowContent.renderProposalSlot(laterStartProposal: ComparisonStartProposal?, async: Boolean) {
+        if (async) {
+            div {
+                id = HtmlIds.COMPARISON_PROPOSAL_SLOT
+                attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_SETTINGS_PROPOSAL
+                attributes[HtmxAttrs.HX_TRIGGER] = HtmxValues.TRIGGER_LOAD
+                attributes[HtmxAttrs.HX_SWAP] = HtmxValues.SWAP_OUTER_HTML
+            }
+            return
+        }
+        if (laterStartProposal != null) {
+            p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_APPROVED_BASELINE_COMPARISON_BLOCKED }
+            renderLaterStartProposal(laterStartProposal)
+        }
+    }
+
+    /** Fragment response body for the async proposal slot; mirrors the synchronous slot markup. */
+    fun renderProposalSlotFragment(parent: FlowContent, laterStartProposal: ComparisonStartProposal?) {
+        parent.renderProposalContent(laterStartProposal)
+    }
+
+    private fun FlowContent.renderProposalContent(laterStartProposal: ComparisonStartProposal?) {
+        if (laterStartProposal != null) {
+            p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_APPROVED_BASELINE_COMPARISON_BLOCKED }
+            renderLaterStartProposal(laterStartProposal)
+        }
+    }
+
     private fun FlowContent.renderApprovedBaseline(
         config: AppConfig,
         display: InceptionDisplayInfo,
         laterStartProposal: ComparisonStartProposal?,
+        laterStartProposalAsync: Boolean,
     ) {
         when (display.status) {
             InceptionDisplayStatus.APPROVED_PENDING ->
@@ -262,15 +308,12 @@ class SettingsFormComponent {
 
             InceptionDisplayStatus.APPROVED_READY -> {
                 p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
-                if (laterStartProposal != null) {
-                    p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_APPROVED_BASELINE_COMPARISON_BLOCKED }
-                    renderLaterStartProposal(laterStartProposal)
-                }
+                renderProposalSlot(laterStartProposal, laterStartProposalAsync)
             }
 
             InceptionDisplayStatus.APPROVED_UNAVAILABLE -> {
                 p(CssClass.Form.SectionSubtitle) { +display.toDisplayText() }
-                renderLaterStartProposal(laterStartProposal)
+                renderProposalSlot(laterStartProposal, laterStartProposalAsync)
             }
 
             else -> Unit

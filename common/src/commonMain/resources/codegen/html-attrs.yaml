@@ -52,6 +52,8 @@ HtmxValues:
   "TRUE": "true"
   EXT_SSE: "sse"
   TRIGGER_LOAD_SSE_MESSAGE: "load, sse:message"
+  TRIGGER_LOAD: "load"
+  SWAP_OUTER_HTML: "outerHTML"
 CdnUrls:
   HTMX: "https://unpkg.com/htmx.org@2.0.4"
   HTMX_SSE: "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"
@@ -88,6 +90,7 @@ HtmlIds:
   INCEPTION_DATE_PICKER: "inception-date-picker"
   COMPARISON_START_DATE_PICKER: "comparison-start-date-picker"
   INCEPTION_BASELINE_PENDING: "inception-baseline-pending"
+  COMPARISON_PROPOSAL_SLOT: "comparison-proposal-slot"
   LOOP_CONTROL: "loop-control"
   TOTAL_ALLOCATED_DISPLAY: "total-allocated-display"
   ALLOCATIONS_CONTAINER: "allocations-container"
