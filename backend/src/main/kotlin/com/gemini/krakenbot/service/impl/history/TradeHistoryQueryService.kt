@@ -261,7 +261,7 @@ class TradeHistoryQueryService(
         // An ambiguous/rebuilt strategy inception blocks a lifetime reconstruction, but it need
         // not block a clearly-labelled passive benchmark. Re-anchor only at an actual recorded
         // post-floor snapshot; pending recovery and other unresolved states remain unavailable.
-        val recordedBenchmarkAnchor = findPureBenchmarkAnchor(inceptionResolution)
+        val recordedBenchmarkAnchor = findPureBenchmarkAnchor()
 
         if (inceptionResolution?.confidence == InceptionConfidence.RECOVERY_INCOMPLETE &&
             recordedBenchmarkAnchor == null
@@ -342,7 +342,11 @@ class TradeHistoryQueryService(
         // trade/ledger rows into classifier or provenance preparation: an unrelated unresolved
         // event before the recorded anchor must not make the bounded passive report unavailable.
         val queryFrom = if (recordedBenchmarkAnchor != null) {
-            recordedBenchmarkAnchor.timestamp
+            // The anchor state already embodies every event at its own instant, so comparison
+            // events must start strictly after it. Ledger timestamps are millisecond-precision,
+            // which makes a +1ms bound exactly the exclusive boundary: no distinct event can
+            // exist between the anchor instant and this query start.
+            recordedBenchmarkAnchor.timestamp.plusMillis(1)
         } else {
             eventQueryStart.minusMillisIfLegacyObservation(anchorSnapshot, firstSnapshot)
         }
@@ -356,6 +360,12 @@ class TradeHistoryQueryService(
         // LedgerFlowClassifier and fail closed as UNSUPPORTED/AMBIGUOUS instead of disappearing
         // here. `trade` rows are retained as continuity checkpoints and classify as TRADE_IGNORED.
         val ledgers = ledgerRepository.getLedgersInRange(queryFrom, queryTo)
+        val windowLedgerIds = ledgers.associateBy(LedgerEvent::ledgerId)
+        // Validation context: strictly-before rows (inclusive-bound query + identity
+        // dedupe keeps the exact-queryFrom row economic-window-only), used ONLY for
+        // wallet-scope replay of the authoritative validator.
+        val contextLedgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, queryFrom)
+            .filterNot { it.ledgerId in windowLedgerIds }
         // Fail closed on trade markets that recorded history cannot interpret. Coverage-grade
         // ingestion preserves e.g. ADAEUR/XBTUSDT/XBTUSDC; their Kraken `cost` must never be
         // assigned to USD nor silently dropped. Economic replayability is decided by the shared
@@ -409,6 +419,7 @@ class TradeHistoryQueryService(
             snapshots = orderedSnapshots,
             trades = trades,
             rewards = ledgers,
+            ledgerContext = contextLedgers,
             anchorSnapshot = anchorSnapshot,
             inceptionSnapshot = inceptionSnapshot,
             knownInceptionTime = recordedBenchmarkAnchor?.timestamp ?: inceptionResolution?.inceptionTime,
@@ -418,22 +429,28 @@ class TradeHistoryQueryService(
     }
 
     /**
-     * Finds the earliest trustworthy recorded portfolio state at or after the evidence floor.
-     * Reconstructed rows are intentionally excluded because their balances are derived from the
-     * same unresolved trade/ledger history that made the original inception unusable; see
-     * [isRecordedAnchorCandidate] for how recorded rows are told apart from derived rows.
+     * Finds the earliest trustworthy portfolio state at or after the evidence floor. A row
+     * qualifies when it was genuinely recorded by a live balance observation, or when it is the
+     * output of a complete reconstruction under the current reconstruction and coverage contracts:
+     * both prove the same authoritative chain, while a partially reconstructed or stale row stays
+     * excluded. The pure B&H anchor is independent of strategy-inception confidence — inception
+     * stays informational and must not replace or suppress an evidence-proven anchor. See
+     * [isRecordedAnchorCandidate] and [isReconstructedAnchorCandidate].
      */
-    private suspend fun findPureBenchmarkAnchor(resolution: InceptionResolution?): PortfolioSnapshot? {
-        if (!isPureBenchmarkReanchorEligible(resolution)) return null
+    private suspend fun findPureBenchmarkAnchor(): PortfolioSnapshot? {
         val now = nowProvider()
         val window = reconstructionWindow()
+        val reconstructedRange = authoritativelyReconstructedRange(window)
         return repository
             .getAllSnapshotsInRange(pureBenchmarkAnchorFloor, OPEN_ENDED_RANGE_END)
             .asSequence()
             .filter { snapshot ->
                 !snapshot.timestamp.isBefore(pureBenchmarkAnchorFloor) &&
                     !snapshot.timestamp.isAfter(now) &&
-                    isRecordedAnchorCandidate(snapshot, window) &&
+                    (
+                        isRecordedAnchorCandidate(snapshot, window) ||
+                            isReconstructedAnchorCandidate(snapshot, reconstructedRange)
+                        ) &&
                     snapshot.totalValueUSD.signum() > 0 &&
                     snapshot.assets.any { (_, asset) -> asset.balance.signum() > 0 } &&
                     snapshot.assets.all { (symbol, asset) ->
@@ -469,6 +486,29 @@ class TradeHistoryQueryService(
         }
     }
 
+    /**
+     * Reconstruction range whose output is authoritative under the current reconstruction and
+     * coverage contracts: the same signal [staleReconstructedInterval] uses to declare a pass
+     * current. An outdated or partial pass leaves every row ineligible.
+     */
+    private suspend fun authoritativelyReconstructedRange(window: ReconstructionWindow): ClosedRange<Instant>? =
+        when (window) {
+            is ReconstructionWindow.Known -> window.range.takeIf { staleReconstructedInterval() == null }
+            ReconstructionWindow.None, ReconstructionWindow.Unclassifiable -> null
+        }
+
+    /**
+     * A derived row may anchor the benchmark only when it carries no observation marker (the
+     * current reconstruction writer's signature) and falls inside the authoritative range; either
+     * condition alone cannot tell a current derived row apart from a legacy or recorded one.
+     */
+    private fun isReconstructedAnchorCandidate(
+        snapshot: PortfolioSnapshot,
+        authoritativeRange: ClosedRange<Instant>?,
+    ): Boolean = authoritativeRange != null &&
+        snapshot.balancesObservedAt == null &&
+        authoritativeRange.contains(snapshot.timestamp)
+
     /** True when the row carries the live-write observation signature rather than a legacy default. */
     private fun PortfolioSnapshot.isProvablyRecorded(): Boolean = balancesObservedAt?.isBefore(timestamp) == true
 
@@ -496,18 +536,6 @@ class TradeHistoryQueryService(
          * recorded rows by metadata alone.
          */
         data object Unclassifiable : ReconstructionWindow
-    }
-
-    private fun isPureBenchmarkReanchorEligible(resolution: InceptionResolution?): Boolean {
-        if (resolution == null) return false
-        if (resolution.confidence == InceptionConfidence.TRUNCATED) return true
-        return resolution.confidence == InceptionConfidence.RECOVERY_INCOMPLETE &&
-            resolution.unavailableReason in setOf(
-                ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
-                ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
-                ComparisonUnavailableReason.INCEPTION_SNAPSHOT_PRUNED,
-                ComparisonUnavailableReason.INCEPTION_NO_BOT_EVIDENCE,
-            )
     }
 
     /**

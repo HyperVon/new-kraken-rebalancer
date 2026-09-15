@@ -37,7 +37,9 @@ class TradeHistoryReconstructionService(
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "17"
+        // v18: reverse replay carries each authoritative row's validator rounding allowance
+        // instead of aborting on Kraken's rounded amount/fee representations.
+        const val CURRENT_RECONSTRUCTION_VERSION = "18"
 
         /**
          * Historical fail-closed anchor contract (v11).

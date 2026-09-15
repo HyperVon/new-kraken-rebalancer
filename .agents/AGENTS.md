@@ -278,6 +278,10 @@ domain skills.
   entry; typed catalogs remain fine for non-assertion setup.
 - **No ARIA attributes**: Do not introduce `aria-*` attributes (`aria-hidden`, `aria-sort`, `aria-label`, etc.) into HTML DSL templates, `:common` attribute catalogs, or client Kotlin/JS. Rely on standard semantic HTML elements.
 - **No absolute user paths** or machine-specific hostnames in source/tests.
+- **IntelliJ MCP**: prefer `search_symbol` + `analyze_calls`, `rename_refactoring`,
+  and `get_file_problems` for structural work when the IDE server is connected;
+  IDE diagnostics are advisory — Gradle gates remain authoritative
+  (see [OPERATING.md](OPERATING.md) §10 IntelliJ MCP server).
 - **Retrieval routing**: When `zvec_grep_search` is available, prefer it over
   broad grep/read sweeps for architectural, relational, cross-file, or conceptual
   discovery; keep exact single-symbol and literal lookups on native grep/rg

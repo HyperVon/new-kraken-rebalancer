@@ -1019,5 +1019,111 @@ class TradeLedgerReplayTest : StringSpec() {
             balances.getValue("BTC") shouldBeEqualComparingTo BigDecimal("1.0")
             balances.getValue("USD") shouldBeEqualComparingTo BigDecimal("1100.00")
         }
+
+        "bounded rounding carry lets the older checkpoint absorb a rounded staking fee" {
+            // Production SOL chain: the Sep-2 fill posts 28.12245324 while inverting the Sep-3
+            // staking row (amount 0.01426563, fee 0.0043) lands on 28.12247355. The residual is
+            // 0.00002031, which Kraken's rounded fee fields leave inside the validator envelope.
+            val replay = solRoundedFeeReplay()
+            val strict = mutableMapOf(
+                "SOL" to BigDecimal("28.12247355"),
+                "USD" to BigDecimal("597.0624"),
+            )
+            TradeLedgerReplay.reverseApply(replay, strict).shouldBeFalse()
+
+            val carried = mutableMapOf(
+                "SOL" to BigDecimal("28.12247355"),
+                "USD" to BigDecimal("597.0624"),
+            )
+            TradeLedgerReplay.reverseApply(replay, carried, baseUncertainty = BigDecimal("0.000050005"))
+                .shouldBeTrue()
+            carried.getValue("SOL") shouldBeEqualComparingTo BigDecimal("27.90457558")
+            carried.getValue("USD") shouldBeEqualComparingTo BigDecimal("618.433")
+        }
+
+        "rounding carry accepts its boundary and rejects a residual one unit beyond" {
+            val replay = solRoundedFeeReplay()
+            val boundary = mutableMapOf(
+                "SOL" to BigDecimal("28.12247355"),
+                "USD" to BigDecimal("597.0624"),
+            )
+            TradeLedgerReplay.reverseApply(replay, boundary, baseUncertainty = BigDecimal("0.00002030"))
+                .shouldBeTrue()
+
+            val beyond = mutableMapOf(
+                "SOL" to BigDecimal("28.12247355"),
+                "USD" to BigDecimal("597.0624"),
+            )
+            TradeLedgerReplay.reverseApply(replay, beyond, baseUncertainty = BigDecimal("0.00002029"))
+                .shouldBeFalse()
+        }
+
+        "rounding carry stays local to its own asset" {
+            val replay = solRoundedFeeReplay()
+            val baseOnly = mutableMapOf(
+                "SOL" to BigDecimal("28.12247355"),
+                "USD" to BigDecimal("597.06242"),
+            )
+            TradeLedgerReplay.reverseApply(replay, baseOnly, baseUncertainty = BigDecimal("0.000050005"))
+                .shouldBeFalse()
+
+            val quoteCarried = mutableMapOf(
+                "SOL" to BigDecimal("28.12247355"),
+                "USD" to BigDecimal("597.06242"),
+            )
+            TradeLedgerReplay.reverseApply(
+                replay,
+                quoteCarried,
+                baseUncertainty = BigDecimal("0.000050005"),
+                quoteUncertainty = BigDecimal("0.000050005"),
+            ).shouldBeTrue()
+        }
+
+        "rounding allowances follow the persisted fee representation" {
+            val trade = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "BTCUSD",
+                side = "buy",
+                symbol = "BTC",
+                volume = BigDecimal("0.5"),
+                usdAmount = BigDecimal("100.00"),
+                price = BigDecimal("200"),
+                fee = BigDecimal.ZERO,
+                tradeId = "TRADE-1",
+            )
+
+            fun effectFor(baseFee: String): TradeLedgerReplay.LedgerEffect = (
+                TradeLedgerReplay.classify(
+                    trade,
+                    legMap(
+                        leg("base", "XXBT", "0.5", fee = baseFee, balance = "1.5"),
+                        leg("quote", "ZUSD", "-100.00", balance = "900.00"),
+                    ),
+                ).shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>().ledgerEffect
+                ) ?: error("expected an authoritative ledger effect")
+
+            effectFor("0.0043").baseRoundingAllowance shouldBeEqualComparingTo BigDecimal("0.000050005")
+            effectFor("0.00500000").baseRoundingAllowance shouldBeEqualComparingTo BigDecimal("0.000050005")
+            effectFor("0.00438612").baseRoundingAllowance shouldBeEqualComparingTo BigDecimal("0.00000001")
+            effectFor("0").baseRoundingAllowance shouldBeEqualComparingTo BigDecimal("0.000000005")
+        }
+    }
+
+    private fun solRoundedFeeReplay(): TradeLedgerReplay.Classification.Replayable {
+        val trade = TestFixtures.tradeRecord(
+            timestamp = now,
+            pair = "SOLUSD",
+            side = "buy",
+            symbol = "SOL",
+            volume = BigDecimal("0.21787766"),
+            usdAmount = BigDecimal("21.2431"),
+            price = BigDecimal("97.5"),
+            fee = BigDecimal("0.1275"),
+            tradeId = "TRADE-1",
+        )
+        val base = leg("base", "SOL", "0.21787766", balance = "28.12245324")
+        val quote = leg("quote", "ZUSD", "-21.2431", fee = "0.1275", balance = "597.0624")
+        return TradeLedgerReplay.classify(trade, legMap(base, quote))
+            .shouldBeInstanceOf<TradeLedgerReplay.Classification.Replayable>()
     }
 }

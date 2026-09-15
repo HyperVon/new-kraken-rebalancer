@@ -418,6 +418,36 @@ authoritative feedback; set `KILO_DISABLE_LSP_DOWNLOAD=1` to stop
 auto-installs, and flip `"lsp"` back to `true` only if a session genuinely
 benefits from read-time diagnostics.
 
+## 10. IntelliJ MCP server
+
+`.kilo/kilo.json` registers an `intellij` remote MCP server
+(`http://127.0.0.1:64342/sse`). Tool availability is automatic once the IDE is
+open with the *Enable MCP Server* checkbox ticked; the guidance below covers
+routing, not setup.
+
+**Prefer IntelliJ tools for structural work:**
+
+- `search_symbol` + `analyze_calls` (call hierarchy) over text grep when the
+  question is "who calls this" or "where is this symbol" — precise call
+  relationships with less noise than regex sweeps.
+- `rename_refactoring` over manual find-and-replace renames — it updates all
+  references project-wide.
+- `get_file_problems` / `lint_files` for a quick post-edit diagnostic pass.
+- `xdebug_*` tools for JVM debugger sessions; `execute_sql_query` for
+  inspecting the SQLite database.
+
+**Boundaries:**
+
+- IDE diagnostics are advisory. Gradle gates
+  (`./gradlew build jacocoTestCoverageVerification`, `spotlessCheck`) remain
+  the authoritative verification — same rationale as §9: KSP/codegen-heavy
+  code makes IDE indexing stale after model changes, so spurious
+  unresolved-reference warnings can appear.
+- The server is a runtime dependency on a live IDE process. If tools are
+  missing or the connection fails, note it and fall back to native
+  grep/Gradle; do not treat unavailability as a project defect, and never
+  block on it.
+
 ---
 
 ## Cursor-specific projection
@@ -432,6 +462,7 @@ benefits from read-time diagnostics.
 | Lean, contract-aware code | `.cursor/rules/lean-contract-aware-code.mdc` (`alwaysApply`) |
 | Native model selection | `.cursor/rules/cost-aware-model-selection.mdc` (`alwaysApply`) |
 | Optional semantic workspace search | `.cursor/rules/retrieval-routing.mdc` (`alwaysApply`) |
+| IntelliJ MCP server | `.cursor/rules/intellij-mcp.mdc` (`alwaysApply`) |
 | UI change verification | `.cursor/rules/ui-change-verification.mdc` (path globs) |
 
 Each `.cursor/rules/*.mdc` is a thin pointer to the portable section above; the
@@ -456,6 +487,7 @@ pointers automatically and other harnesses still have a single portable source.
 | Lean, contract-aware code | `.clinerules/lean-contract-aware-code.md` (universal) |
 | Native model selection | `.clinerules/cost-aware-model-selection.md` (universal) |
 | Optional semantic workspace search | `.clinerules/retrieval-routing.md` (universal) |
+| IntelliJ MCP server | `.clinerules/intellij-mcp.md` (universal) |
 | UI change verification | `.clinerules/ui-change-verification.md` (path-scoped) |
 
 Each `.clinerules/*.md` is a thin pointer to the portable section above; the

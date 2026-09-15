@@ -24,9 +24,16 @@ import java.time.Instant
 
 object RebalancerComparisonCalculator {
     private val log = LoggerFactory.getLogger(RebalancerComparisonCalculator::class.java)
+
     private val baselineMismatchTolerance = BigDecimal("0.01")
 
     // A HALF_UP four-decimal fee parse can lose at most half of one 4-decimal unit.
+    // This is also the sole envelope under which a persisted authoritative ledger balance may
+    // correct the replayed net delta (amount - fee). When |authoritativeDelta - netDelta|
+    // exceeds it, the authoritative checkpoint is rejected: a Spot-continuing row fails closed
+    // with UNEXPLAINED_BALANCE_CHANGE rather than silently switching to the checkpoint delta,
+    // and a non-Spot row (opaque staking sub-ledger) is excluded from Spot replay so ledger
+    // net-delta economics carry the series. Never widen this without rebalancing both classes.
     private val legacyLedgerFeeDeltaTolerance = BigDecimal("0.00005")
 
     // A persisted authoritative balance may be accepted as the gross ledger movement only when
@@ -74,6 +81,7 @@ object RebalancerComparisonCalculator {
         priceProvider: HistoricalPriceProvider? = null,
         provenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
         inceptionUnavailableReason: ComparisonUnavailableReason? = null,
+        ledgerContext: List<LedgerEvent> = emptyList(),
     ): RebalancerComparison {
         inceptionUnavailableReason?.let { reason ->
             return unavailable(
@@ -207,7 +215,7 @@ object RebalancerComparisonCalculator {
         // therefore deliberately excluded from this wallet-scope search. They remain available
         // to the provenance/classification path below.
         val ledgerValidation = AuthoritativeLedgerBalanceValidator.validate(
-            rewards.filter(LedgerEvent::hasAuthoritativeBalance),
+            (ledgerContext + rewards).filter(LedgerEvent::hasAuthoritativeBalance),
         )
         ledgerValidation.failure?.let { failure ->
             return unavailable(
@@ -688,9 +696,10 @@ object RebalancerComparisonCalculator {
 
         val externalEvents = ledgers
             .filter {
-                (it.type in externalBalanceLedgerTypes || it.ledgerId in orphanTradeLedgerIds) &&
+                val ok = (it.type in externalBalanceLedgerTypes || it.ledgerId in orphanTradeLedgerIds) &&
                     it.time > startObservationTime &&
                     it.time <= maxEventTime
+                ok
             }
             .sortedBy(LedgerEvent::time)
 
@@ -1150,6 +1159,15 @@ object RebalancerComparisonCalculator {
                 )
             }
             if (!balancesMatchSnapshot(impliedBalances, curr)) {
+                val mismatches = impliedBalances.mapNotNull { (symbol, balance) ->
+                    val observed = curr.assets[symbol]?.balance ?: return@mapNotNull null
+                    if (balance.compareTo(observed) != 0) {
+                        "$symbol=${balance.toPlainString()}|observed=${observed.toPlainString()}|" +
+                            "diff=${balance.subtract(observed).toPlainString()}"
+                    } else {
+                        null
+                    }
+                }
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                     unavailableAt = curr.timestamp,
@@ -2126,9 +2144,12 @@ object RebalancerComparisonCalculator {
      * Positive external credits are synthetic only when their economics belong to the anchor
      * thesis. Cash dividends have no underlying equity position in this crypto/cash benchmark, so
      * a USD dividend is excluded. Holding-dependent crypto rewards are mirrored only when the
-     * anchor already held the credited asset; explicitly classified account-level credits are
-     * independent of the anchor holdings and may introduce their credited asset without inventing
-     * a position from an ambiguous reward row.
+     * anchor owns the QUALIFYING SOURCE EXPOSURE that generated the reward, not necessarily the
+     * credited reward asset itself: same-asset rewards qualify through the credited asset, and a
+     * documented cross-asset rule (Kraken BTC staking pays BABY) qualifies through BTC exposure,
+     * allowing BABY to become a legitimate new synthetic holding. Explicitly classified
+     * account-level credits are independent of anchor holdings and may introduce their credited
+     * asset without inventing a position from an ambiguous reward row.
      */
     private fun shouldMirrorPositiveExternalMovement(
         event: LedgerEvent,
@@ -2137,12 +2158,13 @@ object RebalancerComparisonCalculator {
     ): Boolean {
         if (isAccountLevelIndependentCredit(event)) return true
 
-        // Only an explicitly classified account-level credit may introduce an asset the anchor
-        // never held; every other credit stays actual-only for unheld assets.
-        if ((balances[symbol]?.signum() ?: 0) <= 0) return false
-
         val isReward = LedgerEvent.isRewardEvent(event) || isHoldingDependentReward(event)
-        if (!isReward) return true
+        if (!isReward) {
+            // Only an explicitly classified account-level credit may introduce an asset the
+            // anchor never held; every other non-reward credit stays actual-only for unheld assets.
+            if ((balances[symbol]?.signum() ?: 0) <= 0) return false
+            return true
+        }
 
         val type = event.type.trim().lowercase()
         val subtype = event.subtype?.trim()?.lowercase()
@@ -2151,7 +2173,11 @@ object RebalancerComparisonCalculator {
         // dividend in a held crypto asset stays holding-dependent and remains mirrored.
         if (subtype == "cashdividend" || subtype == "equityfpsl") return false
         if (symbol == Asset.USD && type == KrakenApiConstants.LEDGER_TYPE_DIVIDEND) return false
-        return true
+
+        // Entitlement follows the qualifying source exposure under a supported semantic rule
+        // when one exists; otherwise the reward asset itself (existing held-reward-asset rule).
+        val qualifyingAsset = RewardEntitlements.qualifyingSourceAsset(event) ?: symbol
+        return (balances[qualifyingAsset]?.signum() ?: 0) > 0
     }
 
     internal fun isHoldingDependentReward(event: LedgerEvent): Boolean {
@@ -2239,7 +2265,18 @@ object RebalancerComparisonCalculator {
             balances[symbol] = currentBalance.add(delta)
             return delta
         }
-        return ledger.netBalanceDelta()
+        // Approved cross-asset reward entitlement: only an explicitly documented staking-reward
+        // pair (BTC -> BABY) may admit a not-yet-tracked Spot ledger, and only while the
+        // qualifying source exposure was held (in-kind grant into the reward token wallet).
+        // Every unsupported or unqualified new asset keeps failing closed at this checkpoint.
+        val qualifyingAsset = RewardEntitlements.qualifyingSourceAsset(ledger)
+        val qualifies = qualifyingAsset != null && (balances[qualifyingAsset]?.signum() ?: 0) > 0
+        val delta = ledger.netBalanceDelta()
+        if (qualifies && delta.signum() >= 0) {
+            balances[symbol] = delta
+            return delta
+        }
+        return delta
     }
 
     private fun applyRealizedTrade(

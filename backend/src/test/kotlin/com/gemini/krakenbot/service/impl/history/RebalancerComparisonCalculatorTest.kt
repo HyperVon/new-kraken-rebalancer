@@ -1661,6 +1661,199 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
+        // The AVAX staking event family exercises the authoritative-vs-netDelta policy:
+        // an authoritative checkpoint may correct representational rounding only when its
+        // implied delta is compatible with the stored amount-fee economics; otherwise the
+        // replay retains `amount - fee`. Fail-conservative by contract, never silent rounding.
+        //
+        // Envelope note: a Spot-continuing staking row that drifts beyond the fee tolerance is
+        // fail-closed by AuthoritativeLedgerBalanceValidator before the interval walk — the
+        // beyond-tolerance class has no silent fallback at this layer. (This is a synthetic
+        // scalar-class fixture; production diagnosis established the June-11 comparison blocker
+        // was cross-window context loss on a BABY staking credit, since resolved separately.)
+
+        "AVAX-style authoritative delta beyond fee tolerance fails closed at the Spot checkpoint" {
+            // Spot-continuing checkpoint: netDelta +0.03007118 but the authoritative balance
+            // implies +0.02991868 (difference 0.00015250 > 0.00005). The validator refuses the
+            // Spot continuation and there is no consistent fallback scope, so the comparison
+            // fails closed at the event.
+            val seed = ledgerEvent(
+                timestamp = now.minusSeconds(1),
+                asset = "AVAX",
+                amount = "0.04297118",
+                type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                fee = "0",
+                balance = "70.09957609",
+                ledgerId = "avax-spot-seed-beyond",
+            )
+            val eventAt = now.plusSeconds(5)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "70.09957609",
+                        mapOf("AVAX" to assetRow("70.09957609", "1", "70.09957609")),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "70.12949477",
+                        mapOf("AVAX" to assetRow("70.12949477", "1", "70.12949477")),
+                    ),
+                ),
+                rewards = listOf(
+                    seed,
+                    ledgerEvent(
+                        timestamp = eventAt,
+                        asset = "AVAX",
+                        amount = "0.04297118",
+                        fee = "0.0129",
+                        balance = "70.12949477",
+                        ledgerId = "avax-staking-beyond",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe eventAt
+            result.points shouldBe emptyList()
+        }
+
+        "AVAX-style authoritative delta inside fee tolerance applies the authoritative correction" {
+            // Spot-continuing checkpoint: netDelta +0.03007118, authoritative +0.03003118;
+            // difference 0.00004 <= 0.00005, so the checkpoint correction is the applied delta.
+            val seed = ledgerEvent(
+                timestamp = now.minusSeconds(1),
+                asset = "AVAX",
+                amount = "0.04297118",
+                type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                fee = "0",
+                balance = "70.09957609",
+                ledgerId = "avax-spot-seed",
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "70.09957609",
+                        mapOf("AVAX" to assetRow("70.09957609", "1", "70.09957609")),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "70.12960727",
+                        mapOf("AVAX" to assetRow("70.12960727", "1", "70.12960727")),
+                    ),
+                ),
+                rewards = listOf(
+                    seed,
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(5),
+                        asset = "AVAX",
+                        amount = "0.04297118",
+                        fee = "0.0129",
+                        balance = "70.12960727",
+                        ledgerId = "avax-staking-spot",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "AVAX-style authoritative delta exactly at the fee tolerance boundary is accepted" {
+            // difference exactly 0.00005 -> both envelopes are inclusive -> authoritative wins.
+            val seed = ledgerEvent(
+                timestamp = now.minusSeconds(1),
+                asset = "AVAX",
+                amount = "0.04297118",
+                type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                fee = "0",
+                balance = "70.09957609",
+                ledgerId = "avax-spot-seed-inclusive",
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "70.09957609",
+                        mapOf("AVAX" to assetRow("70.09957609", "1", "70.09957609")),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "70.12969727",
+                        mapOf("AVAX" to assetRow("70.12969727", "1", "70.12969727")),
+                    ),
+                ),
+                rewards = listOf(
+                    seed,
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(5),
+                        asset = "AVAX",
+                        amount = "0.04297118",
+                        fee = "0.0129",
+                        balance = "70.12969727",
+                        ledgerId = "avax-staking-inclusive",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "AVAX-style authoritative delta just above the fee tolerance boundary fails closed" {
+            // A Spot continuation 0.00006 above ledger economics is outside both rounding
+            // envelopes: the validator refuses the Spot continuation, and since the row is not
+            // balance-continuous with a zero-based sub-ledger (its authoritative balance
+            // asserts a live Spot holding), no fallback scope manages it. The comparison
+            // therefore fails closed exactly once at the event.
+            val seed = ledgerEvent(
+                timestamp = now.minusSeconds(1),
+                asset = "AVAX",
+                amount = "0.04297118",
+                type = KrakenApiConstants.LEDGER_TYPE_REWARD,
+                fee = "0",
+                balance = "70.09957609",
+                ledgerId = "avax-spot-seed-above",
+            )
+            val eventAt = now.plusSeconds(5)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "70.09957609",
+                        mapOf("AVAX" to assetRow("70.09957609", "1", "70.09957609")),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "70.12970727",
+                        mapOf("AVAX" to assetRow("70.12970727", "1", "70.12970727")),
+                    ),
+                ),
+                rewards = listOf(
+                    seed,
+                    ledgerEvent(
+                        timestamp = eventAt,
+                        asset = "AVAX",
+                        amount = "0.04297118",
+                        fee = "0.0129",
+                        balance = "70.12970727",
+                        ledgerId = "avax-staking-above",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe eventAt
+            result.points shouldBe emptyList()
+        }
+
         "top-level promotion reward remains available when it credits an anchor holding" {
             val result = calculate(
                 snapshots = listOf(
@@ -1786,7 +1979,136 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
-            result.unavailableAt shouldBe last.timestamp
+            result.points shouldBe emptyList()
+        }
+
+        // Approved cross-asset reward entitlement policy: a Kraken BTC staking reward paid in
+        // BABY credits the qualifying exposure owner (BTC balance present at the event), and
+        // the reward is received in kind — only a deterministic documented BABY->BTC mapping
+        // grants cross-asset entitlement; no other asset pair, no heuristic inference.
+        "BABY staking reward credits to qualifying BTC exposure and buys and hold is mirrored in kind" {
+            val eventAt = now.plusSeconds(5)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("99.00", "1", "99.00"),
+                        ),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "100.09",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "BABY" to assetRow("0.50000000", "0.18", "0.09"),
+                            "USD" to assetRow("99.00", "1", "99.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = eventAt,
+                        asset = "BABY",
+                        amount = "0.5",
+                        fee = "0",
+                        balance = "0.5",
+                        ledgerId = "baby-btc-staking-rule",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.unavailableAt shouldBe null
+            result.points.size shouldBe 2
+            result.points.first().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.points.first().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points.last().rebalancerValueUSD shouldBeEqualComparingTo BigDecimal("100.09")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.09")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "BABY staking reward without qualifying BTC exposure fails closed" {
+            val eventAt = now.plusSeconds(5)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "99.00",
+                        mapOf(
+                            "BTC" to assetRow("0.00000000", "1", "0.00"),
+                            "USD" to assetRow("99.00", "1", "99.00"),
+                        ),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "99.09",
+                        mapOf(
+                            "BTC" to assetRow("0.00000000", "1", "0.00"),
+                            "BABY" to assetRow("0.50000000", "0.18", "0.09"),
+                            "USD" to assetRow("99.00", "1", "99.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = eventAt,
+                        asset = "BABY",
+                        amount = "0.5",
+                        fee = "0",
+                        balance = "0.5",
+                        ledgerId = "baby-no-btc-exposure",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(10)
+            result.points shouldBe emptyList()
+        }
+
+        "undocumented asset pair cannot self-invent cross-asset entitlement even with BTC exposure" {
+            val eventAt = now.plusSeconds(5)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("99.00", "1", "99.00"),
+                        ),
+                    ),
+                    snapshot(
+                        now.plusSeconds(10),
+                        "100.09",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "DOGE" to assetRow("100.00000000", "0.0009", "0.09"),
+                            "USD" to assetRow("99.00", "1", "99.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = eventAt,
+                        asset = "DOGE",
+                        amount = "100",
+                        fee = "0",
+                        balance = "100",
+                        ledgerId = "doge-not-documented",
+                    ),
+                ),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe now.plusSeconds(10)
             result.points shouldBe emptyList()
         }
 

@@ -808,6 +808,156 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
         }
 
+        "reverse reconstruction consumes Kraken's rounded staking fee at the older checkpoint" {
+            val now = Instant.parse("2026-09-11T12:00:00Z")
+            val cutoff = now.minus(1, ChronoUnit.HOURS)
+            val tradeTime = Instant.parse("2026-09-02T10:51:32.060Z")
+            val rewardTime = Instant.parse("2026-09-03T00:51:57Z")
+            val refid = "TKFSSQ-MLHDO-E3XTOE"
+            val trade =
+                TestFixtures.tradeRecord(
+                    timestamp = tradeTime,
+                    pair = "SOLUSD",
+                    side = "buy",
+                    symbol = "SOL",
+                    volume = BigDecimal("0.21787766"),
+                    usdAmount = BigDecimal("21.2431"),
+                    price = BigDecimal("97.5"),
+                    fee = BigDecimal("0.1275"),
+                    tradeId = refid,
+                )
+            val staking =
+                LedgerEvent(
+                    ledgerId = "ledger-stake",
+                    time = rewardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "SOL",
+                    amount = BigDecimal("0.01426563"),
+                    fee = BigDecimal("0.0043"),
+                    balance = BigDecimal("28.13243918"),
+                    hasAuthoritativeBalance = true,
+                )
+            val legs =
+                mapOf(
+                    refid to
+                        listOf(
+                            historicalTradeLeg("leg-base", refid, tradeTime, "SOL", "0.21787766", "28.12245324"),
+                            historicalTradeLeg(
+                                "leg-quote",
+                                refid,
+                                tradeTime,
+                                "ZUSD",
+                                "-21.2431",
+                                "597.0624",
+                                fee = "0.1275",
+                            ),
+                        ),
+                )
+            val events =
+                SnapshotHistoryCalculator.buildTimelineEvents(
+                    historicalTrades = listOf(trade),
+                    historicalRewards = listOf(staking),
+                    cutoffTime = cutoff,
+                    now = now,
+                )
+            val runningBalances =
+                mutableMapOf(
+                    "SOL" to BigDecimal("28.13243918"),
+                    "USD" to BigDecimal("597.0624"),
+                )
+
+            val snapshots =
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = events,
+                    allocations = listOf(Allocation(Asset(Asset.SOL), 50.0), Allocation(Asset.USD, 50.0)),
+                    runningBalances = runningBalances,
+                    currentPrices = mapOf("SOL" to BigDecimal.ONE, "USD" to BigDecimal.ONE),
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                    tradeLegsByRefId = legs,
+                )
+
+            snapshots.shouldNotBeEmpty()
+            runningBalances.getValue("SOL") shouldBeEqualComparingTo BigDecimal("27.90457558")
+            runningBalances.getValue("USD") shouldBeEqualComparingTo BigDecimal("618.433")
+            val tradeSnapshotSol = snapshots.first { it.timestamp == tradeTime }.assets.getValue(Asset.SOL).balance
+            tradeSnapshotSol shouldBeEqualComparingTo BigDecimal("28.12245324")
+            val rewardSnapshotSol = snapshots.first { it.timestamp == rewardTime }.assets.getValue(Asset.SOL).balance
+            rewardSnapshotSol shouldBeEqualComparingTo BigDecimal("28.13243918")
+        }
+
+        "reverse reconstruction fails closed when a rounded fee exceeds the validator envelope" {
+            val now = Instant.parse("2026-09-11T12:00:00Z")
+            val cutoff = now.minus(1, ChronoUnit.HOURS)
+            val tradeTime = Instant.parse("2026-09-02T10:51:32.060Z")
+            val rewardTime = Instant.parse("2026-09-03T00:51:57Z")
+            val refid = "TKFSSQ-MLHDO-E3XTOE"
+            val trade =
+                TestFixtures.tradeRecord(
+                    timestamp = tradeTime,
+                    pair = "SOLUSD",
+                    side = "buy",
+                    symbol = "SOL",
+                    volume = BigDecimal("0.21787766"),
+                    usdAmount = BigDecimal("21.2431"),
+                    price = BigDecimal("97.5"),
+                    fee = BigDecimal("0.1275"),
+                    tradeId = refid,
+                )
+            val staking =
+                LedgerEvent(
+                    ledgerId = "ledger-stake",
+                    time = rewardTime,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = "SOL",
+                    amount = BigDecimal("0.01426563"),
+                    fee = BigDecimal("0.002"),
+                    balance = BigDecimal("28.13243918"),
+                    hasAuthoritativeBalance = true,
+                )
+            val legs =
+                mapOf(
+                    refid to
+                        listOf(
+                            historicalTradeLeg("leg-base", refid, tradeTime, "SOL", "0.21787766", "28.12245324"),
+                            historicalTradeLeg(
+                                "leg-quote",
+                                refid,
+                                tradeTime,
+                                "ZUSD",
+                                "-21.2431",
+                                "597.0624",
+                                fee = "0.1275",
+                            ),
+                        ),
+                )
+            val events =
+                SnapshotHistoryCalculator.buildTimelineEvents(
+                    historicalTrades = listOf(trade),
+                    historicalRewards = listOf(staking),
+                    cutoffTime = cutoff,
+                    now = now,
+                )
+
+            shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = events,
+                    allocations = listOf(Allocation(Asset(Asset.SOL), 50.0), Allocation(Asset.USD, 50.0)),
+                    runningBalances =
+                    mutableMapOf(
+                        "SOL" to BigDecimal("28.13243918"),
+                        "USD" to BigDecimal("597.0624"),
+                    ),
+                    currentPrices = mapOf("SOL" to BigDecimal.ONE, "USD" to BigDecimal.ONE),
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                    tradeLegsByRefId = legs,
+                )
+            }.message shouldBe "Missing tracked balance during historical reconstruction for SOL"
+        }
+
         "calculateHistoricalSnapshots floors OHLC price to prior DailyCloseEvent (CQ-18-4)" {
             val now = Instant.parse("2026-08-07T12:00:00Z")
             val cutoff = now.minus(5, ChronoUnit.DAYS)
@@ -2004,6 +2154,712 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
 
             val (reordered, _) = reconstruct(listOf(older, newer))
             solUsdSnapshotSignature(reordered) shouldBe solUsdSnapshotSignature(snapshots)
+        }
+
+        "jan-9 same-instant USD cycle resolves conversion before deposit from the reverse boundary" {
+            val groupTime = Instant.parse("2026-01-09T10:44:15Z")
+            val boundaryTime = Instant.parse("2026-01-09T10:44:59Z")
+            val tradeTime = Instant.parse("2026-01-09T07:41:49.777Z")
+            val refid = "TL63EH-7C4Z3-JESP44"
+            val monTrade = TestFixtures.tradeRecord(
+                timestamp = tradeTime,
+                pair = "MONUSD",
+                side = "sell",
+                symbol = "MON",
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("20.5525"),
+                price = BigDecimal("20.5525"),
+                tradeId = refid,
+            )
+            val deposit = LedgerEvent(
+                ledgerId = "LLEYGS-AG7JV-X2UU6A",
+                time = groupTime,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("1000"),
+                balance = BigDecimal("1389.2793"),
+                hasAuthoritativeBalance = true,
+            )
+            val conversionUsd = LedgerEvent(
+                ledgerId = "L6IOH3-Z5DT7-35QDAV",
+                refid = "JAN9-CONVERSION",
+                time = groupTime,
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                asset = "USD",
+                amount = BigDecimal("-1000"),
+                balance = BigDecimal("389.2793"),
+                hasAuthoritativeBalance = true,
+                hasAuthoritativeFee = true,
+            )
+            val conversionUsdg = LedgerEvent(
+                ledgerId = "L6NCOU-KB3QA-KJTSJN",
+                refid = "JAN9-CONVERSION",
+                time = groupTime,
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                asset = "USDG",
+                amount = BigDecimal("1000"),
+                balance = BigDecimal("1000"),
+                hasAuthoritativeBalance = true,
+                hasAuthoritativeFee = true,
+            )
+            val receiveUsd = LedgerEvent(
+                ledgerId = "a-receive",
+                time = boundaryTime,
+                type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                asset = "USD",
+                amount = BigDecimal("1000"),
+                balance = BigDecimal("1389.2793"),
+                hasAuthoritativeBalance = true,
+            )
+            val spendUsdg = LedgerEvent(
+                ledgerId = "b-spend",
+                time = boundaryTime,
+                type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                asset = "USDG",
+                amount = BigDecimal("-1000"),
+                balance = BigDecimal.ZERO,
+                hasAuthoritativeBalance = true,
+            )
+            val legs = mapOf(
+                refid to listOf(
+                    historicalTradeLeg("L-MON-BASE", refid, tradeTime, "MON", "-1", "29239.47506"),
+                    historicalTradeLeg("L-USD-QUOTE", refid, tradeTime, "USD", "20.5525", "389.2793"),
+                ),
+            )
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = listOf(monTrade),
+                historicalRewards = listOf(deposit, conversionUsd, conversionUsdg, receiveUsd, spendUsdg),
+                cutoffTime = boundaryTime.plusSeconds(1),
+                now = boundaryTime,
+                reconstructionStart = tradeTime.minus(1, ChronoUnit.DAYS),
+            )
+            val running = mutableMapOf(
+                "MON" to BigDecimal("29239.47506"),
+                "USD" to BigDecimal("1389.2793"),
+                "USDG" to BigDecimal.ZERO,
+            )
+
+            val snapshots = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = listOf(Allocation(Asset("MON"), 50.0), Allocation(Asset.USD, 50.0)),
+                runningBalances = running,
+                currentPrices = mapOf("MON" to BigDecimal.ONE, "USD" to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+                tradeLegsByRefId = legs,
+            )
+
+            running.getValue("USD") shouldBeEqualComparingTo BigDecimal("368.7268")
+            running.getValue("USDG") shouldBeEqualComparingTo BigDecimal.ZERO
+            running.getValue("MON") shouldBeEqualComparingTo BigDecimal("29240.47506")
+            snapshots.filter { it.timestamp == groupTime }.first().assets.getValue(Asset.USD).balance
+                .shouldBeEqualComparingTo(BigDecimal("389.2793"))
+            snapshots.first { it.timestamp == tradeTime }.assets.getValue(Asset.USD).balance
+                .shouldBeEqualComparingTo(BigDecimal("389.2793"))
+        }
+
+        "same-instant group fails closed when orderings produce different balances" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val rewardA = LedgerEvent(
+                ledgerId = "amb-a",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = Asset.SOL,
+                amount = BigDecimal("0.00000001").negate(),
+                balance = BigDecimal("100"),
+                hasAuthoritativeBalance = true,
+            )
+            val rewardB = LedgerEvent(
+                ledgerId = "amb-b",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = Asset.SOL,
+                amount = BigDecimal("0.00000002"),
+                balance = BigDecimal("100.00000001"),
+                hasAuthoritativeBalance = true,
+            )
+
+            shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = listOf(
+                        SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, rewardA),
+                        SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, rewardB),
+                    ),
+                    allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                    runningBalances = mutableMapOf(Asset.SOL to BigDecimal("100"), Asset.USD to BigDecimal("1000")),
+                    currentPrices = mapOf(Asset.SOL to BigDecimal.ONE, Asset.USD to BigDecimal.ONE),
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                )
+            }.message shouldBe
+                "Ambiguous same-instant ordering at $time: 2 complete orderings produce different balances"
+        }
+
+        "same-instant group fails closed when no ordering fits the boundary state" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val conflicting = (1..2).map { index ->
+                LedgerEvent(
+                    ledgerId = "no-fit-$index",
+                    time = time,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = Asset.SOL,
+                    amount = BigDecimal("10"),
+                    balance = BigDecimal("100"),
+                    hasAuthoritativeBalance = true,
+                )
+            }
+
+            shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = conflicting.map { SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, it) },
+                    allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                    runningBalances = mutableMapOf(Asset.SOL to BigDecimal("100"), Asset.USD to BigDecimal("1000")),
+                    currentPrices = mapOf(Asset.SOL to BigDecimal.ONE, Asset.USD to BigDecimal.ONE),
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                )
+            }.message shouldBe "No valid same-instant ordering at $time for 2 checkpointed events"
+        }
+
+        "staking-scope transfer twins stay outside the spot same-instant solver" {
+            val time = Instant.parse("2026-12-08T12:00:00Z")
+            val twinA = LedgerEvent(
+                ledgerId = "twin-a",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                subtype = "spottostaking",
+                asset = Asset.SOL,
+                amount = BigDecimal("-4"),
+                balance = BigDecimal("6"),
+                hasAuthoritativeBalance = true,
+            )
+            val twinB = LedgerEvent(
+                ledgerId = "twin-b",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_TRANSFER,
+                subtype = "stakingtospot",
+                asset = Asset.SOL,
+                amount = BigDecimal("4"),
+                balance = BigDecimal("7"),
+                hasAuthoritativeBalance = true,
+            )
+            val running = mutableMapOf(Asset.SOL to BigDecimal("10"), Asset.USD to BigDecimal("1000"))
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = listOf(
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, twinA),
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, twinB),
+                    SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(time.minusSeconds(1)),
+                ),
+                allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                runningBalances = running,
+                currentPrices = mapOf(Asset.SOL to BigDecimal.ONE, Asset.USD to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+                resolvedScopes = mapOf(
+                    "twin-a" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                    "twin-b" to AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                ),
+            )
+
+            running.getValue(Asset.SOL).shouldBeEqualComparingTo(BigDecimal("10"))
+        }
+
+        "same-instant solver respects the fee-rounding allowance between checkpoints" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val stakingA = LedgerEvent(
+                ledgerId = "fee-a",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = Asset.SOL,
+                amount = BigDecimal("0.01426563"),
+                fee = BigDecimal("0.0043"),
+                balance = BigDecimal("100.00000000"),
+                hasAuthoritativeBalance = true,
+            )
+            val stakingB = LedgerEvent(
+                ledgerId = "fee-b",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = Asset.SOL,
+                amount = BigDecimal("0.00002"),
+                balance = BigDecimal("99.99005437"),
+                hasAuthoritativeBalance = true,
+            )
+            val running = mutableMapOf(Asset.SOL to BigDecimal("100.00000000"), Asset.USD to BigDecimal("1000"))
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = listOf(
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, stakingA),
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, stakingB),
+                    SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(time.minusSeconds(1)),
+                ),
+                allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                runningBalances = running,
+                currentPrices = mapOf(Asset.SOL to BigDecimal.ONE, Asset.USD to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+
+            running.getValue(Asset.SOL).shouldBeEqualComparingTo(BigDecimal("99.99003437"))
+        }
+
+        "same-instant solver fails closed when the node budget is exhausted" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            // Same asset with dust deltas: every candidate stays within the checkpoint allowance
+            // no matter which ordering is used, so all 8! complete orders are enumerated before
+            // the commutation pruning can collapse them and the node budget trips first.
+            val rewards = (0 until 8).map { index ->
+                LedgerEvent(
+                    ledgerId = "budget-$index",
+                    time = time,
+                    type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    asset = Asset.SOL,
+                    amount = BigDecimal("0.000000001"),
+                    balance = BigDecimal("100"),
+                    hasAuthoritativeBalance = true,
+                )
+            }
+            val running = mutableMapOf(Asset.SOL to BigDecimal("100"))
+
+            shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = rewards.map { SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, it) },
+                    allocations = listOf(Allocation(Asset.SOL, 100.0)),
+                    runningBalances = running,
+                    currentPrices = mapOf(Asset.SOL to BigDecimal.ONE),
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                )
+            }.message shouldBe "Same-instant ordering search exceeded its 10000-node budget at $time"
+        }
+
+        "same-instant solver tie-breaks identical-terminal orderings on content keys" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val solA = LedgerEvent(
+                ledgerId = "a-sol",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = Asset.SOL,
+                amount = BigDecimal("0.000000001"),
+                balance = BigDecimal("100"),
+                hasAuthoritativeBalance = true,
+            )
+            val solB = LedgerEvent(
+                ledgerId = "b-sol",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = Asset.SOL,
+                amount = BigDecimal("0.000000001"),
+                balance = BigDecimal("100"),
+                hasAuthoritativeBalance = true,
+            )
+            val usdg = LedgerEvent(
+                ledgerId = "c-usdg",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = "USDG",
+                amount = BigDecimal.ONE,
+                balance = BigDecimal("100"),
+                hasAuthoritativeBalance = true,
+            )
+            val xrp = LedgerEvent(
+                ledgerId = "d-xrp",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = "XRP",
+                amount = BigDecimal.ONE,
+                balance = BigDecimal("100"),
+                hasAuthoritativeBalance = true,
+            )
+            val running = mutableMapOf(
+                Asset.SOL to BigDecimal("100"),
+                "USDG" to BigDecimal("100"),
+                "XRP" to BigDecimal("100"),
+            )
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = listOf(solA, solB, usdg, xrp).map {
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, it)
+                },
+                allocations = listOf(Allocation(Asset.SOL, 34.0), Allocation("USDG", 33.0), Allocation("XRP", 33.0)),
+                runningBalances = running,
+                currentPrices = mapOf(Asset.SOL to BigDecimal.ONE, "USDG" to BigDecimal.ONE, "XRP" to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+
+            running.getValue(Asset.SOL).shouldBeEqualComparingTo(BigDecimal("99.999999999"))
+            running.getValue("USDG") shouldBeEqualComparingTo BigDecimal("99")
+            running.getValue("XRP") shouldBeEqualComparingTo BigDecimal("99")
+        }
+
+        "same-instant solver orders a checkpointed trade against the live boundary state" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val refid = "T2-TRADE-REFID"
+            val trade = TestFixtures.tradeRecord(
+                timestamp = time,
+                pair = "SOLUSD",
+                side = "sell",
+                symbol = "SOL",
+                volume = BigDecimal.TEN,
+                usdAmount = BigDecimal("50"),
+                price = BigDecimal("5"),
+                tradeId = refid,
+            )
+            val partnerReward = LedgerEvent(
+                ledgerId = "t2-reward",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = Asset.SOL,
+                amount = BigDecimal("-10"),
+                balance = BigDecimal("110"),
+                hasAuthoritativeBalance = true,
+            )
+            val legs = mapOf(
+                refid to listOf(
+                    historicalTradeLeg("L2-SOL-BASE", refid, time, "SOL", "-10", "100"),
+                    historicalTradeLeg("L2-USD-QUOTE", refid, time, "USD", "50", "50"),
+                ),
+            )
+            val running = mutableMapOf(
+                Asset.SOL to BigDecimal("100"),
+                Asset.USD to BigDecimal("50"),
+            )
+
+            val snapshots = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = listOf(
+                    SnapshotHistoryCalculator.TimelineEvent.TradeEvent(time, trade),
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, partnerReward),
+                ),
+                allocations = listOf(Allocation(Asset.SOL, 50.0), Allocation(Asset.USD, 50.0)),
+                runningBalances = running,
+                currentPrices = mapOf(Asset.SOL to BigDecimal.ONE, Asset.USD to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+                tradeLegsByRefId = legs,
+            )
+
+            running.getValue(Asset.SOL).shouldBeEqualComparingTo(BigDecimal("120"))
+            running.getValue(Asset.USD) shouldBeEqualComparingTo BigDecimal.ZERO
+            val groupRows = snapshots.filter { it.timestamp == time }
+            groupRows.first().assets.getValue(Asset.SOL).balance.shouldBeEqualComparingTo(BigDecimal("100"))
+            groupRows.last().assets.getValue(Asset.SOL).balance.shouldBeEqualComparingTo(BigDecimal("110"))
+        }
+
+        "untracked reward inside a solver group stays outside the ordering search" {
+            val time = Instant.parse("2026-07-10T12:00:00Z")
+            val refid = "T3-TRADE-REFID"
+            val trade = TestFixtures.tradeRecord(
+                timestamp = time,
+                pair = "DOGEUSD",
+                side = "sell",
+                symbol = "DOGE",
+                volume = BigDecimal.TEN,
+                usdAmount = BigDecimal("2"),
+                price = BigDecimal("0.2"),
+                tradeId = refid,
+            )
+            val legs = mapOf(
+                refid to listOf(
+                    historicalTradeLeg("L3-DOGE-BASE", refid, time, "DOGE", "-10", "5"),
+                    historicalTradeLeg("L3-USD-QUOTE", refid, time, "USD", "2", "75"),
+                ),
+            )
+            val untrackedDoge = LedgerEvent(
+                ledgerId = "t3-doge-reward",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = "DOGE",
+                amount = BigDecimal("2"),
+                balance = BigDecimal("5"),
+                hasAuthoritativeBalance = true,
+            )
+            val running = mutableMapOf(Asset.USD to BigDecimal("75"))
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = listOf(
+                    SnapshotHistoryCalculator.TimelineEvent.TradeEvent(time, trade),
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, untrackedDoge),
+                ),
+                allocations = listOf(Allocation(Asset.USD, 100.0)),
+                runningBalances = running,
+                currentPrices = mapOf(Asset.USD to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+                tradeLegsByRefId = legs,
+            )
+
+            running.getValue(Asset.USD) shouldBeEqualComparingTo BigDecimal("73")
+            running.getValue("DOGE") shouldBeEqualComparingTo BigDecimal("3")
+        }
+
+        "uncheckpointed solver trade leg is seeded at zero before its inversion" {
+            val time = Instant.parse("2026-07-11T12:00:00Z")
+            val refid = "T4-TRADE-REFID"
+            val trade = TestFixtures.tradeRecord(
+                timestamp = time,
+                pair = "SOLUSD",
+                side = "sell",
+                symbol = "SOL",
+                volume = BigDecimal.TEN,
+                usdAmount = BigDecimal("50"),
+                price = BigDecimal("5"),
+                tradeId = refid,
+            )
+            val legs = mapOf(
+                refid to listOf(
+                    // Base leg retained without an authoritative balance: inversion seeds SOL at zero.
+                    historicalTradeLeg("L4-SOL-BASE", refid, time, "SOL", "-10", "0", authoritative = false),
+                    historicalTradeLeg("L4-USD-QUOTE", refid, time, "USD", "50", "50"),
+                ),
+            )
+            val running = mutableMapOf(Asset.USD to BigDecimal("50"))
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = listOf(
+                    SnapshotHistoryCalculator.TimelineEvent.TradeEvent(time, trade),
+                ),
+                allocations = listOf(Allocation(Asset.USD, 100.0)),
+                runningBalances = running,
+                currentPrices = mapOf(Asset.USD to BigDecimal.ONE),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+                tradeLegsByRefId = legs,
+            )
+
+            running.getValue(Asset.USD) shouldBeEqualComparingTo BigDecimal.ZERO
+            running.getValue(Asset.SOL) shouldBeEqualComparingTo BigDecimal.TEN
+        }
+
+        "solver fails closed when no trade leg matches the boundary state" {
+            val time = Instant.parse("2026-07-12T12:00:00Z")
+            val refid = "T5-TRADE-REFID"
+            val trade = TestFixtures.tradeRecord(
+                timestamp = time,
+                pair = "SOLUSD",
+                side = "sell",
+                symbol = "SOL",
+                volume = BigDecimal.TEN,
+                usdAmount = BigDecimal("50"),
+                price = BigDecimal("5"),
+                tradeId = refid,
+            )
+            val legs = mapOf(
+                refid to listOf(
+                    historicalTradeLeg("L5-SOL-BASE", refid, time, "SOL", "-10", "100"),
+                    historicalTradeLeg("L5-USD-QUOTE", refid, time, "USD", "50", "50"),
+                ),
+            )
+            val running = mutableMapOf(Asset.USD to BigDecimal("999"))
+
+            shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = listOf(
+                        SnapshotHistoryCalculator.TimelineEvent.TradeEvent(time, trade),
+                    ),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                    runningBalances = running,
+                    currentPrices = mapOf(Asset.USD to BigDecimal.ONE),
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                    tradeLegsByRefId = legs,
+                )
+            }.message shouldBe "Missing tracked balance during historical reconstruction for SOL"
+        }
+
+        "solver treats an unsupported trade as non-constraining and still throws at its walk position" {
+            val time = Instant.parse("2026-07-13T12:00:00Z")
+            val unparseableTrade = TestFixtures.tradeRecord(
+                timestamp = time,
+                pair = "NONSENSE",
+                side = "sell",
+                symbol = "SOL",
+                volume = BigDecimal.TEN,
+                usdAmount = BigDecimal("50"),
+                price = BigDecimal("5"),
+                tradeId = "T6-TRADE-REFID",
+            )
+            val running = mutableMapOf("USDG" to BigDecimal("100"), "XRP" to BigDecimal("100"))
+
+            shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = listOf(
+                        SnapshotHistoryCalculator.TimelineEvent.RewardEvent(
+                            time,
+                            LedgerEvent(
+                                ledgerId = "t6-usdg-reward",
+                                time = time,
+                                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                                asset = "USDG",
+                                amount = BigDecimal.ONE,
+                                balance = BigDecimal("100"),
+                                hasAuthoritativeBalance = true,
+                            ),
+                        ),
+                        SnapshotHistoryCalculator.TimelineEvent.RewardEvent(
+                            time,
+                            LedgerEvent(
+                                ledgerId = "t6-xrp-reward",
+                                time = time,
+                                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                                asset = "XRP",
+                                amount = BigDecimal.ONE,
+                                balance = BigDecimal("100"),
+                                hasAuthoritativeBalance = true,
+                            ),
+                        ),
+                        SnapshotHistoryCalculator.TimelineEvent.TradeEvent(time, unparseableTrade),
+                    ),
+                    allocations = listOf(Allocation("USDG", 50.0), Allocation("XRP", 50.0)),
+                    runningBalances = running,
+                    currentPrices = mapOf("USDG" to BigDecimal.ONE, "XRP" to BigDecimal.ONE),
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                )
+            }.message shouldBe "unsupported historical market NONSENSE"
+        }
+
+        "no-checkpoint rewards inside a solver group stay outside the ordering search" {
+            val time = Instant.parse("2026-07-14T12:00:00Z")
+            val noAuthReward = LedgerEvent(
+                ledgerId = "t7-noauth",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = "SOL",
+                amount = BigDecimal("2"),
+                hasAuthoritativeBalance = false,
+            )
+            val zeroDeltaReward = LedgerEvent(
+                ledgerId = "t7-zero-delta",
+                time = time,
+                type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                asset = "XRP",
+                amount = BigDecimal.ZERO,
+                balance = BigDecimal("10"),
+                hasAuthoritativeBalance = true,
+            )
+            val running = mutableMapOf(
+                Asset.SOL to BigDecimal("10"),
+                Asset.XRP to BigDecimal("10"),
+                "USDG" to BigDecimal("10"),
+            )
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = listOf(
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, noAuthReward),
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(time, zeroDeltaReward),
+                    SnapshotHistoryCalculator.TimelineEvent.RewardEvent(
+                        time,
+                        LedgerEvent(
+                            ledgerId = "t7-usdg-reward",
+                            time = time,
+                            type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                            asset = "USDG",
+                            amount = BigDecimal("3"),
+                            balance = BigDecimal("10"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                    ),
+                ),
+                allocations = listOf(
+                    Allocation(Asset.SOL, 40.0),
+                    Allocation(Asset.XRP, 30.0),
+                    Allocation("USDG", 30.0),
+                ),
+                runningBalances = running,
+                currentPrices = mapOf(
+                    Asset.SOL to BigDecimal.ONE,
+                    Asset.XRP to BigDecimal.ONE,
+                    "USDG" to BigDecimal.ONE,
+                ),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+
+            running.getValue(Asset.SOL) shouldBeEqualComparingTo BigDecimal("8")
+            running.getValue(Asset.XRP) shouldBeEqualComparingTo BigDecimal("10")
+            running.getValue("USDG") shouldBeEqualComparingTo BigDecimal("7")
+        }
+
+        "solver sort key falls back to database id for missing or blank trade ids" {
+            val time = Instant.parse("2026-07-14T12:00:00Z")
+            val nullIdTrade = TestFixtures.tradeRecord(
+                timestamp = time,
+                pair = "SOLUSD",
+                side = "sell",
+                symbol = "SOL",
+                volume = BigDecimal.TEN,
+                usdAmount = BigDecimal("40"),
+                price = BigDecimal("4"),
+                id = 77,
+                tradeId = null,
+            )
+            val blankIdTrade = TestFixtures.tradeRecord(
+                timestamp = time,
+                pair = "XRPUSD",
+                side = "sell",
+                symbol = "XRP",
+                volume = BigDecimal("5"),
+                usdAmount = BigDecimal("5"),
+                price = BigDecimal.ONE,
+                id = 81,
+                tradeId = "   ",
+            )
+            val legs = mapOf(
+                "db-id:77" to listOf(
+                    historicalTradeLeg("L8-SOL-BASE", "T8-TRADE-REFID", time, "SOL", "-10", "100"),
+                    historicalTradeLeg("L8-USD-A", "T8-TRADE-REFID", time, "USD", "40", "45"),
+                ),
+                "db-id:81" to listOf(
+                    historicalTradeLeg("L8-XRP-BASE", "T8-XRP-REFID", time, "XRP", "-5", "85"),
+                    historicalTradeLeg("L8-USD-B", "T8-XRP-REFID", time, "USD", "5", "50"),
+                ),
+            )
+            val running = mutableMapOf(
+                Asset.SOL to BigDecimal("100"),
+                Asset.XRP to BigDecimal("85"),
+                Asset.USD to BigDecimal("50"),
+            )
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = listOf(
+                    SnapshotHistoryCalculator.TimelineEvent.TradeEvent(time, nullIdTrade),
+                    SnapshotHistoryCalculator.TimelineEvent.TradeEvent(time, blankIdTrade),
+                ),
+                allocations = listOf(
+                    Allocation(Asset.SOL, 40.0),
+                    Allocation(Asset.XRP, 30.0),
+                    Allocation(Asset.USD, 30.0),
+                ),
+                runningBalances = running,
+                currentPrices = mapOf(
+                    Asset.SOL to BigDecimal.ONE,
+                    Asset.XRP to BigDecimal.ONE,
+                    Asset.USD to BigDecimal.ONE,
+                ),
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+                tradeLegsByTradeIdentity = legs,
+            )
+
+            running.getValue(Asset.SOL) shouldBeEqualComparingTo BigDecimal("110")
+            running.getValue(Asset.XRP) shouldBeEqualComparingTo BigDecimal("90")
+            running.getValue(Asset.USD) shouldBeEqualComparingTo BigDecimal("5")
         }
     }
 }

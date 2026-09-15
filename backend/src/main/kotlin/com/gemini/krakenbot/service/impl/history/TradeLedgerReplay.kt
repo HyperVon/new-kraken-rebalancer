@@ -27,6 +27,8 @@ internal object TradeLedgerReplay {
         val quoteGrossDelta: BigDecimal,
         val baseCheckpoint: BigDecimal?,
         val quoteCheckpoint: BigDecimal?,
+        val baseRoundingAllowance: BigDecimal = BigDecimal.ZERO,
+        val quoteRoundingAllowance: BigDecimal = BigDecimal.ZERO,
     )
 
     sealed interface Classification {
@@ -116,8 +118,19 @@ internal object TradeLedgerReplay {
      * Inverse of one fill. With authoritative legs the recorded post-entry balances restore each
      * wallet before the leg's own net delta is inverted; without them the legacy TradeRecord
      * economics are inverted. Returns false when a required tracked balance is missing.
+     *
+     * [baseUncertainty] and [quoteUncertainty] carry the bounded rounding allowance accumulated
+     * by rows inverted since the last checkpoint, each contributing its own validator allowance.
+     * With no carry the checkpoint comparison stays at [CHECKPOINT_MATCH_TOLERANCE]. A checkpoint
+     * whose wallet has no running balance yet is adopted without comparison because the recorded
+     * balance is itself the authoritative state; that adoption also resets the wallet's carry.
      */
-    fun reverseApply(replay: Classification.Replayable, balances: MutableMap<String, BigDecimal>): Boolean {
+    fun reverseApply(
+        replay: Classification.Replayable,
+        balances: MutableMap<String, BigDecimal>,
+        baseUncertainty: BigDecimal = BigDecimal.ZERO,
+        quoteUncertainty: BigDecimal = BigDecimal.ZERO,
+    ): Boolean {
         if (replay.volume.signum() < 0 || replay.quoteCost.signum() < 0 || replay.fee.signum() < 0) return false
         val baseBalance = balances[replay.base]
         val quoteBalance = balances[replay.quote]
@@ -126,12 +139,12 @@ internal object TradeLedgerReplay {
             val basePost = effect.baseCheckpoint ?: baseBalance ?: return false
             val quotePost = effect.quoteCheckpoint ?: quoteBalance ?: return false
             if (effect.baseCheckpoint != null && baseBalance != null &&
-                !matchesCheckpoint(baseBalance, effect.baseCheckpoint)
+                !matchesCheckpoint(baseBalance, effect.baseCheckpoint, baseUncertainty)
             ) {
                 return false
             }
             if (effect.quoteCheckpoint != null && quoteBalance != null &&
-                !matchesCheckpoint(quoteBalance, effect.quoteCheckpoint)
+                !matchesCheckpoint(quoteBalance, effect.quoteCheckpoint, quoteUncertainty)
             ) {
                 return false
             }
@@ -161,8 +174,14 @@ internal object TradeLedgerReplay {
         return true
     }
 
-    private fun matchesCheckpoint(current: BigDecimal, checkpoint: BigDecimal): Boolean =
-        current.subtract(checkpoint).abs().compareTo(CHECKPOINT_MATCH_TOLERANCE) <= 0
+    internal fun matchesCheckpoint(
+        current: BigDecimal,
+        checkpoint: BigDecimal,
+        carriedUncertainty: BigDecimal,
+    ): Boolean = current
+        .subtract(checkpoint)
+        .abs()
+        .compareTo(CHECKPOINT_MATCH_TOLERANCE.add(carriedUncertainty)) <= 0
 
     private sealed interface EffectOutcome {
         data class Resolved(val effect: LedgerEffect) : EffectOutcome
@@ -207,6 +226,10 @@ internal object TradeLedgerReplay {
             quoteGrossDelta = quoteLeg?.amount ?: BigDecimal.ZERO,
             baseCheckpoint = baseLeg?.takeIf { it.hasAuthoritativeBalance }?.balance,
             quoteCheckpoint = quoteLeg?.takeIf { it.hasAuthoritativeBalance }?.balance,
+            baseRoundingAllowance = baseLeg?.let(AuthoritativeLedgerBalanceValidator::allowedDifference)
+                ?: BigDecimal.ZERO,
+            quoteRoundingAllowance = quoteLeg?.let(AuthoritativeLedgerBalanceValidator::allowedDifference)
+                ?: BigDecimal.ZERO,
         )
         if ((effect.baseCheckpoint?.signum() ?: 0) < 0 || (effect.quoteCheckpoint?.signum() ?: 0) < 0) {
             return EffectOutcome.Rejected("negative historical trade checkpoint")
