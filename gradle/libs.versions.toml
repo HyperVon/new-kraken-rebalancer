@@ -1,6 +1,6 @@
 [versions]
 kotlin = "2.4.20"
-ksp = "2.3.11"
+ksp = "2.3.12"
 spotless = "8.10.2"
 snakeyaml = "2.7"
 ktor = "3.5.2"
