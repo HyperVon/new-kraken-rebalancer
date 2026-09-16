@@ -9,8 +9,10 @@ import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
+import com.gemini.krakenbot.service.SettingsComparisonStatus
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import kotlinx.html.body
@@ -148,13 +150,22 @@ class SettingsFormComponentTest : StringSpec() {
             html shouldNotContain "Use verified start"
         }
 
-        "an accepted comparison start is echoed in the baseline block" {
+        "the async comparison-status slot is the only place a requested comparison start is shown" {
             val html = render(
                 config(inceptionDate = "2026-01-01T00:00:00Z", comparisonStartDate = "2026-06-07"),
                 InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_READY),
             )
+            html shouldNotContain "Requested comparison start"
 
-            html shouldContain "Requested comparison start: 2026-06-07"
+            val fragment = createHTML().div {
+                SettingsFormComponent().renderProposalSlotFragment(
+                    this,
+                    SettingsComparisonStatus(),
+                    "2026-06-07",
+                )
+            }
+            val occurrences = fragment.split("Requested comparison start").size - 1
+            occurrences shouldBe 1
         }
 
         "the full settings page renders through the body-context entry point" {

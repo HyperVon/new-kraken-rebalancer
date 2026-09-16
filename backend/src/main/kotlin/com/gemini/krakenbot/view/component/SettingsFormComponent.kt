@@ -356,11 +356,6 @@ class SettingsFormComponent {
 
             else -> Unit
         }
-        config.settings.comparisonStartDate?.takeIf(String::isNotBlank)?.let { accepted ->
-            p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.COMPARISON_STATUS_REQUESTED_START_LABEL}: $accepted"
-            }
-        }
     }
 
     private fun FlowContent.renderLaterStartProposal(proposal: ComparisonStartProposal?) {
