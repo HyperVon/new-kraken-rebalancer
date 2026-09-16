@@ -132,36 +132,45 @@ internal fun loadAll(range: String): Promise<Unit> {
 
     // Each dataset renders as soon as its own response resolves: one failing or
     // slow endpoint must not blank the other charts. Only the comparison endpoint
-    // gets its own visible error state; a failure still rolls the range back.
-    return Promise.all(
-        arrayOf(
-            loadGroup(requestGeneration, Routes.API_HISTORY_SNAPSHOTS.withRange(range)) { raw ->
-                val snapshots = parsePortfolioSnapshots(raw)
-                buildPortfolioValueChart(snapshots)
-                buildAssetHoldingsChart(snapshots)
-                buildAllocationDriftChart(snapshots)
-            },
-            loadGroup(requestGeneration, Routes.API_HISTORY_TRADES.withRange(range)) { raw ->
-                val trades = parseTradeRecords(raw)
-                allTrades = trades
-                renderTradeTable(trades)
-                buildCumulativeNetCashFlowChart(trades, showDryRun)
-            },
-            loadGroup(requestGeneration, Routes.API_HISTORY_STATS.withRange(range)) { raw ->
-                updateStats(parseHistoryStats(raw))
-            },
-            loadGroup(
-                requestGeneration,
-                Routes.API_HISTORY_COMPARISON.withRange(range),
-                onError = { showComparisonFetchError() },
-            ) { raw ->
-                buildRebalancerComparisonChart(parseRebalancerComparison(raw))
-            },
-            loadGroup(requestGeneration, Routes.API_HISTORY_REWARDS.withRange(range)) { raw ->
-                buildRewardsChart(parseRewardsOverTime(raw))
-            },
-        ),
+    // gets its own visible error state; a comparison failure stays isolated to the
+    // comparison chart and never rolls the range back — only a core dataset
+    // failure rolls the range controls back to the last successfully loaded range.
+    val corePromises = arrayOf(
+        loadGroup(requestGeneration, Routes.API_HISTORY_SNAPSHOTS.withRange(range)) { raw ->
+            val snapshots = parsePortfolioSnapshots(raw)
+            buildPortfolioValueChart(snapshots)
+            buildAssetHoldingsChart(snapshots)
+            buildAllocationDriftChart(snapshots)
+        },
+        loadGroup(requestGeneration, Routes.API_HISTORY_TRADES.withRange(range)) { raw ->
+            val trades = parseTradeRecords(raw)
+            allTrades = trades
+            renderTradeTable(trades)
+            buildCumulativeNetCashFlowChart(trades, showDryRun)
+        },
+        loadGroup(requestGeneration, Routes.API_HISTORY_STATS.withRange(range)) { raw ->
+            updateStats(parseHistoryStats(raw))
+        },
+        loadGroup(requestGeneration, Routes.API_HISTORY_REWARDS.withRange(range)) { raw ->
+            buildRewardsChart(parseRewardsOverTime(raw))
+        },
     )
+
+    // The comparison chart loads independently: it shows its own error state on
+    // failure and resolves regardless, so it cannot reject the core range load.
+    loadGroup(
+        requestGeneration,
+        Routes.API_HISTORY_COMPARISON.withRange(range),
+        onError = { showComparisonFetchError() },
+    ) { raw ->
+        buildRebalancerComparisonChart(parseRebalancerComparison(raw))
+    }.`catch` { _: dynamic ->
+        // loadGroup already logged the failure and showed the visible error state
+        // for the current generation; a stale-generation failure must NOT reject
+        // (this chain is detached), so swallow it here unconditionally.
+    }
+
+    return Promise.all(corePromises)
         .then {
             if (requestGeneration == historyLoadGeneration) loadedRange = range
         }
