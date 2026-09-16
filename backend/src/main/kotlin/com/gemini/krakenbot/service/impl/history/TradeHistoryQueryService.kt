@@ -720,12 +720,12 @@ class TradeHistoryQueryService(
             )?.toLongOrNull()
             val trades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
             val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
-            val latestRowEpochMillis = listOf(
-                orderedSnapshots.lastOrNull()?.timestamp,
-                predecessorSnapshot?.timestamp,
-                trades.lastOrNull()?.timestamp,
-                ledgers.lastOrNull()?.time,
-            ).filterNotNull().maxOfOrNull { it.toEpochMilli() } ?: 0L
+            val latestRowEpochMillis = maxOf(
+                orderedSnapshots.maxOfOrNull { it.timestamp.toEpochMilli() } ?: 0L,
+                predecessorSnapshot?.timestamp?.toEpochMilli() ?: 0L,
+                trades.maxOfOrNull { it.timestamp.toEpochMilli() } ?: 0L,
+                ledgers.maxOfOrNull { it.time.toEpochMilli() } ?: 0L,
+            )
             // Revalidate the stored prefix under its own horizon first. A match proves every
             // evaluated candidate's evidence is unchanged; only then may the horizon advance to
             // the newest row so the growing tail becomes a fresh segment instead of invalidating
@@ -873,7 +873,9 @@ class TradeHistoryQueryService(
                 // run: those earlier failures may now be curable, while proven non-sensitive
                 // prefix failures stay final.
                 frontierResumeIndex?.let { minOf(it, cursorIndex) } ?: cursorIndex
-            } else if (horizonAdvanced) {
+            } else if (horizonAdvanced && !fundingEvidenceChanged) {
+                // New funding evidence can flip any earlier candidate's outcome, so it bans
+                // frontier/tail shortcuts the same way it bans cursor resumption: rescan.
                 frontierResumeIndex
                     ?: tailResumeIndex
                     // Horizon advanced without a mappable cursor position: re-scan the whole
