@@ -26,6 +26,7 @@ import com.gemini.krakenbot.view.css.CssStyles
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HealthStatusKeys
+import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.QueryParamKeys
@@ -55,6 +56,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.html.div
 import kotlinx.html.h2
+import kotlinx.html.id
 import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import org.slf4j.LoggerFactory
@@ -95,10 +97,11 @@ class DashboardController(
             }
 
             get(Routes.SETTINGS) {
+                // Proposal discovery can require an expensive later-candidate comparison scan;
+                // render immediately and let the HTMX fragment resolve the proposal out-of-band.
                 val config = configService.getConfig()
                 val csrfToken = CsrfProtection.issueToken(call)
                 val inceptionDisplay = tradeHistoryService.getDetectedInceptionDisplayInfo()
-                val laterStartProposal = resolveLaterStartProposal(config.settings)
                 call.respondHtml(HttpStatusCode.OK) {
                     dashboardView.renderSettingsPage(
                         config = config,
@@ -106,13 +109,18 @@ class DashboardController(
                         csrfToken = csrfToken,
                         paused = portfolioManager.isLoopPaused(),
                         inceptionDisplay = inceptionDisplay,
-                        laterStartProposal = laterStartProposal,
+                        laterStartProposal = null,
+                        laterStartProposalAsync = true,
                     )
                 }
             }
 
             post(Routes.SETTINGS) {
                 handlePostSettings()
+            }
+
+            get(Routes.FRAGMENT_SETTINGS_PROPOSAL) {
+                handleGetSettingsProposalFragment()
             }
 
             get(Routes.FRAGMENT_DASHBOARD) {
@@ -489,7 +497,6 @@ class DashboardController(
         status: HttpStatusCode,
     ) {
         val inceptionDisplay = tradeHistoryService.getDetectedInceptionDisplayInfo()
-        val laterStartProposal = resolveLaterStartProposal(config.settings)
         val errHtml =
             createHTML(prettyPrint = false).div {
                 dashboardView.renderSettingsFormFragment(
@@ -499,10 +506,26 @@ class DashboardController(
                     csrfToken,
                     paused,
                     inceptionDisplay,
-                    laterStartProposal,
+                    null,
+                    laterStartProposalAsync = true,
                 )
             }
         call.respondText(errHtml, ContentType.Text.Html, status)
+    }
+
+    /** Async slot body: resolves the later-start proposal without blocking the Settings page. */
+    private suspend fun RoutingContext.handleGetSettingsProposalFragment() {
+        val config = configService.getConfig()
+        val proposal =
+            runCatching { resolveLaterStartProposal(config.settings) }
+                .onFailure { log.warn("Later-start proposal resolution failed in settings fragment", it) }
+                .getOrNull()
+        val html =
+            createHTML(prettyPrint = false).div {
+                id = HtmlIds.COMPARISON_PROPOSAL_SLOT
+                dashboardView.renderSettingsProposalFragment(this, proposal)
+            }
+        call.respondText(html, ContentType.Text.Html)
     }
 
     /**

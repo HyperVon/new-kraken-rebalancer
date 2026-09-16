@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
+import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
@@ -120,6 +121,53 @@ class KrakenParsersTest : StringSpec() {
             ether.symbol shouldBe "ETH"
             ether.side shouldBe "SELL"
             ether.orderTxid shouldBe null
+        }
+
+        "flags malformed supported-market trade economics without dropping the row" {
+            val (trades, _) = KrakenParsers.parseTradeHistory(
+                objectMapper.readTree(
+                    """
+                    {
+                      "count": 2,
+                      "trades": {
+                        "B1": {
+                          "pair": "XXBTZUSD",
+                          "time": 1700000000.0000,
+                          "type": "buy",
+                          "vol": "",
+                          "cost": "",
+                          "price": "",
+                          "fee": ""
+                        },
+                        "B2": {
+                          "pair": "XXBTZUSD",
+                          "time": 1700000005.0000,
+                          "type": "sell",
+                          "vol": "not-a-number",
+                          "cost": "-5",
+                          "price": "also-bad",
+                          "fee": "not-a-number"
+                        }
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+                allocations = listOf("BTC", "USD"),
+            )
+
+            trades.size shouldBe 2
+            val blankRow = trades.single { it.tradeId == "B1" }
+            blankRow.hasValidVolume.shouldBeFalse()
+            blankRow.hasValidCost.shouldBeFalse()
+            blankRow.hasValidPrice.shouldBeFalse()
+            // A blank fee is treated as absence, not invalidity.
+            blankRow.hasValidFee.shouldBeTrue()
+
+            val junkRow = trades.single { it.tradeId == "B2" }
+            junkRow.hasValidVolume.shouldBeFalse()
+            junkRow.hasValidCost.shouldBeFalse()
+            junkRow.hasValidPrice.shouldBeFalse()
+            junkRow.hasValidFee.shouldBeFalse()
         }
 
         "skips malformed and out-of-universe trade history entries" {

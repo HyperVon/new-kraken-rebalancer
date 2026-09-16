@@ -5,6 +5,9 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -99,6 +102,8 @@ class HistoryLoadingTest : StringSpec() {
             val bodyResolvers = mutableMapOf<String, (dynamic) -> Unit>()
             window.asDynamic().fetch = { url: String ->
                 val response: dynamic = json()
+                response.ok = true
+                response.status = 200
                 response.json = {
                     Promise { resolve: (dynamic) -> Unit, _: (Throwable) -> Unit ->
                         bodyResolvers[url] = resolve
@@ -164,6 +169,8 @@ class HistoryLoadingTest : StringSpec() {
             val bodyRejectors = mutableMapOf<String, (Throwable) -> Unit>()
             window.asDynamic().fetch = { url: String ->
                 val response: dynamic = json()
+                response.ok = true
+                response.status = 200
                 response.json = {
                     Promise { resolve: (dynamic) -> Unit, reject: (Throwable) -> Unit ->
                         bodyResolvers[url] = resolve
@@ -179,8 +186,166 @@ class HistoryLoadingTest : StringSpec() {
                 bodyResolvers.getValue("/api/history/stats?range=$range")(
                     historyStatsToDynamic(mockPortfolioStatsRecord()),
                 )
+                bodyResolvers.getValue("/api/history/rewards?range=$range")(
+                    json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
+                )
+            }
+
+            try {
+                // The superseded load never rejects through the range controls: only the
+                // comparison endpoint fails, and its detached chain keeps the stale
+                // rejection from touching the current generation.
+                loadAll(TimeRange.TWENTY_FOUR_HOURS.key)
+                val newest = loadAll(TimeRange.ALL.key)
+                awaitPromiseQueue()
+
+                resolveRange(TimeRange.ALL.key)
+                newest.await()
+
+                bodyRejectors.getValue(
+                    "/api/history/comparison?range=${TimeRange.TWENTY_FOUR_HOURS.key}",
+                )(RuntimeException("obsolete comparison failed"))
+                awaitPromiseQueue()
+
+                currentRange shouldBe TimeRange.ALL.key
+                loadedRange shouldBe TimeRange.ALL.key
+
+                // Core failures still reject the CURRENT range load and roll it back.
+                val current = loadAll(TimeRange.SEVEN_DAYS.key)
+                awaitPromiseQueue()
+                bodyRejectors.getValue(
+                    "/api/history/snapshots?range=${TimeRange.SEVEN_DAYS.key}",
+                )(RuntimeException("current request failed"))
+                try {
+                    current.await()
+                } catch (_: Throwable) {
+                }
+            } finally {
+                resetHistoryUiState()
+            }
+        }
+
+        "loadAll rejects with the HTTP failure surfaced by the res.ok check" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.historyDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = { url: String ->
+                if (url.contains("snapshots")) {
+                    Promise.resolve(
+                        json("ok" to false, "status" to 503, "json" to { Promise.resolve(json()) }),
+                    )
+                } else {
+                    Promise.resolve(okFetchResponse(json()))
+                }
+            }
+            registerHistoryGlobals()
+
+            try {
+                val failed = loadAll(TimeRange.SEVEN_DAYS.key)
+                try {
+                    failed.await()
+                } catch (error: Throwable) {
+                    (error.message ?: "").startsWith(ViewText.HTTP_FETCH_FAILED) shouldBe true
+                }
+                currentRange shouldBe loadedRange
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "loadAll renders other charts when only the comparison endpoint fails" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.historyDom() +
+                "<div id=\"stat-ath-title\"></div>"
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = { url: String ->
+                if (url.contains("comparison")) {
+                    Promise.resolve(
+                        json("ok" to false, "status" to 503, "json" to { Promise.resolve(json()) }),
+                    )
+                } else if (url.contains("snapshots")) {
+                    Promise.resolve(okFetchResponse(arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))))
+                } else if (url.contains("trades")) {
+                    Promise.resolve(okFetchResponse(arrayOf(tradeRecordToDynamic(mockTradeRecord()))))
+                } else if (url.contains("rewards")) {
+                    Promise.resolve(
+                        okFetchResponse(json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>())),
+                    )
+                } else {
+                    Promise.resolve(okFetchResponse(historyStatsToDynamic(mockPortfolioStatsRecord())))
+                }
+            }
+            registerHistoryGlobals()
+
+            try {
+                // The comparison failure never rejects the range load: loadAll resolves
+                // while the comparison slot keeps its own visible error state.
+                loadAll(TimeRange.ALL.key).await()
+
+                // Core charts rendered and the requested range stays selected.
+                document.getElementById("trade-table-body")?.innerHTML.orEmpty() shouldContain
+                    "${Asset.BTC}/${Asset.USD}"
+                document.getElementById("stat-ath")?.textContent shouldBe "$15,000.50"
+                currentRange shouldBe TimeRange.ALL.key
+                loadedRange shouldBe TimeRange.ALL.key
+                // Comparison slot shows its own visible error state.
+                (document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as HTMLElement)
+                    .classList.contains(CssClass.Utility.Visible.value) shouldBe true
+                document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
+                    ?.classList?.contains(CssClass.Utility.Hidden.value) shouldBe true
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "a stale comparison failure cannot overwrite the current generation's range or panel" {
+            resetHistoryUiState()
+            val bodyResolvers = mutableMapOf<String, (dynamic) -> Unit>()
+            val bodyRejectors = mutableMapOf<String, (Throwable) -> Unit>()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.historyDom() +
+                "<div id=\"stat-ath-title\"></div>"
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = { url: String ->
+                val response: dynamic = json()
+                response.ok = true
+                response.status = 200
+                response.json = {
+                    Promise { resolve: (dynamic) -> Unit, reject: (Throwable) -> Unit ->
+                        bodyResolvers[url] = resolve
+                        bodyRejectors[url] = reject
+                    }
+                }
+                Promise.resolve<dynamic>(response)
+            }
+            registerHistoryGlobals()
+
+            fun resolveRange(range: String) {
+                bodyResolvers.getValue("/api/history/snapshots?range=$range")(emptyArray<dynamic>())
+                bodyResolvers.getValue("/api/history/trades?range=$range")(emptyArray<dynamic>())
+                bodyResolvers.getValue("/api/history/stats?range=$range")(
+                    historyStatsToDynamic(mockPortfolioStatsRecord()),
+                )
                 bodyResolvers.getValue("/api/history/comparison?range=$range")(
                     rebalancerComparisonToDynamic(mockAvailableComparison()),
+                )
+                bodyResolvers.getValue("/api/history/rewards?range=$range")(
+                    json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
+                )
+            }
+
+            fun resolveCoreOnly(range: String) {
+                bodyResolvers.getValue("/api/history/snapshots?range=$range")(emptyArray<dynamic>())
+                bodyResolvers.getValue("/api/history/trades?range=$range")(emptyArray<dynamic>())
+                bodyResolvers.getValue("/api/history/stats?range=$range")(
+                    historyStatsToDynamic(mockPortfolioStatsRecord()),
                 )
                 bodyResolvers.getValue("/api/history/rewards?range=$range")(
                     json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
@@ -195,27 +360,62 @@ class HistoryLoadingTest : StringSpec() {
                 resolveRange(TimeRange.ALL.key)
                 newest.await()
 
+                // The superseded generation's comparison rejection must not touch the
+                // current generation's range state or comparison panel. The older core
+                // loads resolve normally; only their comparison request is rejected.
+                resolveCoreOnly(TimeRange.TWENTY_FOUR_HOURS.key)
                 bodyRejectors.getValue(
-                    "/api/history/snapshots?range=${TimeRange.TWENTY_FOUR_HOURS.key}",
-                )(RuntimeException("obsolete request failed"))
+                    "/api/history/comparison?range=${TimeRange.TWENTY_FOUR_HOURS.key}",
+                )(RuntimeException("obsolete comparison failed"))
                 older.await()
 
                 currentRange shouldBe TimeRange.ALL.key
-
-                val current = loadAll(TimeRange.SEVEN_DAYS.key)
-                awaitPromiseQueue()
-                bodyRejectors.getValue(
-                    "/api/history/snapshots?range=${TimeRange.SEVEN_DAYS.key}",
-                )(RuntimeException("current request failed"))
-                val currentFailure =
-                    try {
-                        current.await()
-                        null
-                    } catch (error: Throwable) {
-                        error
-                    }
-                currentFailure?.message shouldBe "current request failed"
+                loadedRange shouldBe TimeRange.ALL.key
+                (document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as HTMLElement)
+                    .classList.contains(CssClass.Utility.Visible.value) shouldBe false
             } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "loadAll rolls back even when a failure value is not a Throwable" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.historyDom() +
+                "<div id=\"stat-ath-title\"></div>"
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = mockFetch { url ->
+                when {
+                    url.contains("snapshots") -> arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))
+                    url.contains("trades") -> arrayOf(tradeRecordToDynamic(mockTradeRecord()))
+                    url.contains("comparison") -> rebalancerComparisonToDynamic(mockAvailableComparison())
+                    else -> historyStatsToDynamic(mockPortfolioStatsRecord(allTimeHigh = "9000"))
+                }
+            }
+            registerHistoryGlobals()
+
+            try {
+                loadAll(TimeRange.ALL.key).await()
+
+                window.asDynamic().fetch = { url: String ->
+                    if (url.contains("snapshots")) {
+                        js("Promise.reject('raw-js-failure')") as Promise<dynamic>
+                    } else {
+                        Promise.resolve(okFetchResponse(emptyArray<dynamic>()))
+                    }
+                }
+                val failed = loadAll(TimeRange.SEVEN_DAYS.key)
+                try {
+                    failed.await()
+                } catch (error: dynamic) {
+                    "$error".contains("raw-js-failure") shouldBe true
+                }
+
+                currentRange shouldBe TimeRange.ALL.key
+            } finally {
+                document.body!!.removeChild(container)
                 resetHistoryUiState()
             }
         }
@@ -245,9 +445,9 @@ class HistoryLoadingTest : StringSpec() {
                     if (url.contains("snapshots")) {
                         Promise.reject(RuntimeException("range request failed"))
                     } else {
-                        val response: dynamic = json()
-                        response.json = { Promise.resolve(json()) }
-                        Promise.resolve(response)
+                        Promise.resolve(
+                            okFetchResponse(historyStatsToDynamic(mockPortfolioStatsRecord(allTimeHigh = "9000"))),
+                        )
                     }
                 }
                 val failed = loadAll(TimeRange.SEVEN_DAYS.key)
@@ -258,7 +458,9 @@ class HistoryLoadingTest : StringSpec() {
                 }
 
                 currentRange shouldBe TimeRange.ALL.key
-                document.getElementById("stat-ath-title")?.textContent shouldBe "All-Time High"
+                // Partial rendering: the failed range's successfully-loaded groups still
+                // rendered; only the range selection rolled back to the last success.
+                document.getElementById("stat-ath-title")?.textContent shouldBe "Period High"
                 document.getElementById("stat-ath")?.textContent shouldBe "$9,000.00"
             } finally {
                 document.body!!.removeChild(container)
@@ -287,9 +489,7 @@ class HistoryLoadingTest : StringSpec() {
                     if (url.contains("snapshots")) {
                         Promise.reject(RuntimeException("preset load failed"))
                     } else {
-                        val response: dynamic = json()
-                        response.json = { Promise.resolve(json()) }
-                        Promise.resolve(response)
+                        Promise.resolve(okFetchResponse(json()))
                     }
                 }
                 val failed = loadAll(TimeRange.TWENTY_FOUR_HOURS.key)

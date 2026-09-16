@@ -3,6 +3,7 @@ Routes:
   SETTINGS: "/settings"
   HISTORY: "/history"
   FRAGMENT_DASHBOARD: "/fragments/dashboard"
+  FRAGMENT_SETTINGS_PROPOSAL: "/fragments/settings-proposal"
   API_ROUTE_PREFIX: "/api"
   API_STATUS_STREAM: "/api/status/stream"
   API_HISTORY_SNAPSHOTS: "/api/history/snapshots"

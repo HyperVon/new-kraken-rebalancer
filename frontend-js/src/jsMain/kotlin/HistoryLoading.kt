@@ -99,53 +99,90 @@ internal fun loadHistoryAfterSync(): Promise<Unit> {
 
 private fun fetchJSON(url: String): Promise<dynamic> = window
     .fetch(url)
-    .then { res -> res.json() }
+    .then { res ->
+        if (!res.ok) {
+            throw Throwable("${ViewText.HTTP_FETCH_FAILED} ${res.status})")
+        }
+        res.json()
+    }
 
-private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> = routes.map { route ->
-    fetchJSON(route.withRange(range))
-}.toTypedArray()
+private fun loadGroup(
+    requestGeneration: Long,
+    url: String,
+    onError: ((Throwable) -> Unit)? = null,
+    onSuccess: (raw: dynamic) -> Unit,
+): Promise<Unit> = fetchJSON(url)
+    .then { raw: dynamic ->
+        if (requestGeneration == historyLoadGeneration) onSuccess(raw)
+    }
+    .`catch` { e: dynamic ->
+        val throwable = e as? Throwable ?: Throwable(e?.toString())
+        console.error("Error loading history data from $url", e)
+        if (requestGeneration == historyLoadGeneration) {
+            onError?.invoke(throwable)
+        }
+        throw throwable
+    }
 
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
     val requestGeneration = ++historyLoadGeneration
 
-    val promises =
-        fetchRanged(
-            Routes.API_HISTORY_SNAPSHOTS,
-            Routes.API_HISTORY_TRADES,
-            Routes.API_HISTORY_STATS,
-            Routes.API_HISTORY_COMPARISON,
-            Routes.API_HISTORY_REWARDS,
-            range = range,
-        )
+    val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
 
-    return Promise.all(promises).then { results ->
-        if (requestGeneration != historyLoadGeneration) return@then
-        val snapshots = parsePortfolioSnapshots(results[0])
-        val trades = parseTradeRecords(results[1])
-        val stats = parseHistoryStats(results[2])
-        val comparison = parseRebalancerComparison(results[3])
-        val rewards = parseRewardsOverTime(results[4])
-        loadedRange = range
-        currentRange = range
-        allTrades = trades
-        buildPortfolioValueChart(snapshots)
-        buildAssetHoldingsChart(snapshots)
-        buildAllocationDriftChart(snapshots)
-        val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
-        buildCumulativeNetCashFlowChart(trades, showDryRun)
-        buildRebalancerComparisonChart(comparison)
-        buildRewardsChart(rewards)
-        renderTradeTable(trades)
-        updateStats(stats)
-    }.`catch` { error ->
-        if (requestGeneration == historyLoadGeneration) {
-            currentRange = loadedRange
-            syncTimeRangeButtons(currentRange)
-            historyRollbackPresetVisibility()
-            throw error
-        }
+    // Each dataset renders as soon as its own response resolves: one failing or
+    // slow endpoint must not blank the other charts. Only the comparison endpoint
+    // gets its own visible error state; a comparison failure stays isolated to the
+    // comparison chart and never rolls the range back — only a core dataset
+    // failure rolls the range controls back to the last successfully loaded range.
+    val corePromises = arrayOf(
+        loadGroup(requestGeneration, Routes.API_HISTORY_SNAPSHOTS.withRange(range)) { raw ->
+            val snapshots = parsePortfolioSnapshots(raw)
+            buildPortfolioValueChart(snapshots)
+            buildAssetHoldingsChart(snapshots)
+            buildAllocationDriftChart(snapshots)
+        },
+        loadGroup(requestGeneration, Routes.API_HISTORY_TRADES.withRange(range)) { raw ->
+            val trades = parseTradeRecords(raw)
+            allTrades = trades
+            renderTradeTable(trades)
+            buildCumulativeNetCashFlowChart(trades, showDryRun)
+        },
+        loadGroup(requestGeneration, Routes.API_HISTORY_STATS.withRange(range)) { raw ->
+            updateStats(parseHistoryStats(raw))
+        },
+        loadGroup(requestGeneration, Routes.API_HISTORY_REWARDS.withRange(range)) { raw ->
+            buildRewardsChart(parseRewardsOverTime(raw))
+        },
+    )
+
+    // The comparison chart loads independently: it shows its own error state on
+    // failure and resolves regardless, so it cannot reject the core range load.
+    loadGroup(
+        requestGeneration,
+        Routes.API_HISTORY_COMPARISON.withRange(range),
+        onError = { showComparisonFetchError() },
+    ) { raw ->
+        buildRebalancerComparisonChart(parseRebalancerComparison(raw))
+    }.`catch` { _: dynamic ->
+        // loadGroup already logged the failure and showed the visible error state
+        // for the current generation; a stale-generation failure must NOT reject
+        // (this chain is detached), so swallow it here unconditionally.
     }
+
+    return Promise.all(corePromises)
+        .then {
+            if (requestGeneration == historyLoadGeneration) loadedRange = range
+        }
+        .`catch` { error: dynamic ->
+            val throwable = error as? Throwable ?: Throwable(error?.toString())
+            if (requestGeneration == historyLoadGeneration) {
+                currentRange = loadedRange
+                syncTimeRangeButtons(currentRange)
+                historyRollbackPresetVisibility()
+                throw throwable
+            }
+        }
 }
 
 internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS)

@@ -239,6 +239,7 @@ ViewText:
   BUY_AND_HOLD: "Buy & Hold"
   COMPARISON_CAPTION: "Based on stored snapshots and recorded trades. Starting quantities are anchored to the effective comparison baseline; the original strategy inception remains preserved separately."
   COMPARISON_UNAVAILABLE_PREFIX: "Comparison unavailable: "
+  COMPARISON_FETCH_ERROR: "Comparison data could not be loaded. Other charts are unaffected."
   UNAVAILABLE_INSUFFICIENT_SNAPSHOTS: "Not enough history exists in this range to compare strategies."
   UNAVAILABLE_NON_POSITIVE_BASELINE: "The comparison needs a positive starting portfolio value."
   UNAVAILABLE_BASELINE_MISMATCH: "Starting holdings do not reconcile with the recorded portfolio value."
@@ -261,6 +262,7 @@ ViewText:
   UNAVAILABLE_INVALID_RESPONSE: "Comparison data could not be validated."
   COMPARISON_PROPOSED_LATER_START: "Earliest verified comparison start: <date> — set it in Settings."
   COMPARISON_PROPOSAL_SEARCH_INCOMPLETE: "Later-start verification is still in progress; refresh to continue the bounded search."
+  HTTP_FETCH_FAILED: "History data request failed (HTTP status"
   COMPARISON_PROPOSAL_SEARCH_EXHAUSTED: "No retained later start passed complete reconciliation."
   COMPARISON_CONFIDENCE_ESTIMATED: "Estimated (external balance changes may affect precision)"
   # Staking rewards

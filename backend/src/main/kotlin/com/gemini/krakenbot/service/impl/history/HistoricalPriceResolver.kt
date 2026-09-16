@@ -44,6 +44,7 @@ object HistoricalPriceResolver {
         futureTradeSkewSeconds: Long = MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS,
         marketPairsByBase: Map<String, List<String>> = emptyMap(),
         quoteConversionDepth: Int = 0,
+        ohlcCache: HistoricalOhlcCache? = null,
     ): BigDecimal? {
         val normalizedAsset = Asset.normalizeLedgerAsset(asset).uppercase()
         if (normalizedAsset == Asset.USD) {
@@ -133,11 +134,20 @@ object HistoricalPriceResolver {
             var resolved: BigDecimal? = null
             for (pair in candidatePairs) {
                 val candles = try {
-                    krakenService.getOHLC(
-                        pair = pair,
-                        interval = intervalMinutes,
-                        since = earliestCandleStart.epochSecond,
-                    )
+                    if (ohlcCache != null) {
+                        ohlcCache.getOHLC(
+                            pair = pair,
+                            intervalMinutes = intervalMinutes,
+                            sinceEpochSecond = earliestCandleStart.epochSecond,
+                            upTo = eventTime,
+                        )
+                    } else {
+                        krakenService.getOHLC(
+                            pair = pair,
+                            interval = intervalMinutes,
+                            since = earliestCandleStart.epochSecond,
+                        )
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -176,6 +186,7 @@ object HistoricalPriceResolver {
                             futureTradeSkewSeconds = futureTradeSkewSeconds,
                             marketPairsByBase = marketPairsByBase,
                             quoteConversionDepth = quoteConversionDepth,
+                            ohlcCache = ohlcCache,
                         )
                     }
                     if (converted != null) {
@@ -214,6 +225,7 @@ object HistoricalPriceResolver {
         futureTradeSkewSeconds: Long,
         marketPairsByBase: Map<String, List<String>>,
         quoteConversionDepth: Int,
+        ohlcCache: HistoricalOhlcCache?,
     ): BigDecimal? {
         if (quoteConversionDepth >= 1) return null
         val quoteUsdPrice = resolveHistoricalPrice(
@@ -226,6 +238,7 @@ object HistoricalPriceResolver {
             marketPairs = marketPairsByBase[quote].orEmpty(),
             marketPairsByBase = marketPairsByBase,
             quoteConversionDepth = quoteConversionDepth + 1,
+            ohlcCache = ohlcCache,
         ) ?: return null
         return quotePrice
             .multiply(quoteUsdPrice)

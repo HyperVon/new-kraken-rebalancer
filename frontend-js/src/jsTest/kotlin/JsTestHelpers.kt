@@ -220,9 +220,27 @@ fun mockHistoryFetchHandler(
     }
 }
 
+/** OK fetch response with a JSON body; plain JS object so the `json` lambda lands on the object. */
+fun okFetchResponse(payload: dynamic): dynamic = jsObject {
+    val body: dynamic = payload
+    val payloadPromise = Promise<dynamic> { resolve: (dynamic) -> Unit, _: (Throwable) -> Unit ->
+        resolve(body)
+    }
+    ok = true
+    status = 200
+    json = { payloadPromise }
+}
+
 fun mockFetch(handler: (String) -> Any?): dynamic = { url: String ->
     val responseData = handler(url)
-    Promise.resolve(json("json" to { Promise.resolve(responseData) }))
+    val ok = responseData !is String
+    Promise.resolve(
+        json(
+            "ok" to ok,
+            "status" to if (ok) 200 else 503,
+            "json" to { Promise.resolve(if (ok) responseData else json()) },
+        ),
+    )
 }
 
 /** Advance the native Promise queue without relying on a wall-clock sleep. */

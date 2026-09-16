@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.64] - 2026-09-15
+
+### Fixed
+
+- **Bounded historical OHLC requests for comparison pricing**: synthetic Buy & Hold valuation for
+  comparison points falls back from retained trades and snapshots to the historical OHLC ladder;
+  previously each fallback fetched Kraken OHLC candles live per valuation point and per interval
+  tier (the biggest observed driver of the production `BABYUSD` rate-limit storm). A shared
+  `HistoricalOhlcCache` now batches fetches per pair/interval with full request coverage, so
+  repeated valuations reuse in-memory completed candle series instead of rescaling network calls
+  with the point count. Accounting results are unchanged: the production 30-day comparison
+  reproduces exactly (AVAILABLE / RECONCILED / 300 points, same baseline and per-point values).
+- **Single-flight identical OHLC fetches**: concurrent identical `(pair, interval, since)` requests
+  now share one downstream Kraken call; failures are never cached and refetch on the next attempt.
+- **Completed-candle-only caching**: candle-on-fetch boundary semantics keep in-progress trailing
+  candles out of the cached series so no future close is used before it completes; no future close
+  is ever treated as completed, and historical pricing never consults the live ticker.
+- **Settings no longer blocks HTML on later-start proposal discovery**: `GET /settings` and error
+  renders show an asynchronous HTMX proposal slot; the proposal is resolved out-of-band via
+  `GET /fragments/settings-proposal` and swaps into the existing slot. Save-time proposal
+  revalidation remains synchronous.
+- **History charts render independently**: comparison data loading no longer aborts every other
+  chart; a failed comparison endpoint shows a dedicated error state while core charts still
+  render, and a failed range load rolls back to the last successful range label.
+- **History frontend validates fetch responses**: `fetchJSON` checks `res.ok` and surfaces the HTTP
+  status instead of throwing an opaque parse error.
+
 ## [6.17.63] - 2026-09-14
 
 ### Fixed

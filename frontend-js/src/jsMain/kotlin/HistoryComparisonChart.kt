@@ -11,7 +11,17 @@ import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
+import org.w3c.dom.HTMLElement
 import kotlin.js.json
+
+/** Renders the comparison slot with its own fetch-failure state; other charts keep rendering. */
+internal fun showComparisonFetchError() {
+    clearChart(HtmlIds.REBALANCER_COMPARISON_CHART)
+    document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)?.classList?.add(CssClass.Utility.Hidden.value)
+    val unavailableDiv = document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as? HTMLElement ?: return
+    unavailableDiv.textContent = ViewText.COMPARISON_FETCH_ERROR
+    unavailableDiv.classList.add(CssClass.Utility.Visible.value)
+}
 
 internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
     val chartArea = document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)

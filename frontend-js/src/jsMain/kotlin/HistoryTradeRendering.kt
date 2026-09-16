@@ -193,8 +193,10 @@ internal fun updateStats(stats: HistoryStats) {
     val avgSlippage = document.getElementById(HtmlIds.STAT_AVG_SLIPPAGE)
 
     if (athTitle != null) {
+        // Stats render within the range-load generation; currentRange reflects the selected
+        // range without waiting for every other dataset to land (partial-load semantics).
         athTitle.textContent =
-            if (loadedRange == TimeRange.ALL.key) {
+            if (currentRange == TimeRange.ALL.key) {
                 ViewText.HISTORY_ALL_TIME_HIGH
             } else {
                 ViewText.PERIOD_HIGH

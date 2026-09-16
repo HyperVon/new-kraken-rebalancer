@@ -45,6 +45,7 @@ class DashboardView(
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
         laterStartProposal: ComparisonStartProposal? = null,
+        laterStartProposalAsync: Boolean = false,
     ) {
         html.head {
             commonMetadataAndStyles()
@@ -52,8 +53,21 @@ class DashboardView(
             cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
         }
         html.body {
-            settingsFormComponent.render(config, errorMessage, csrfToken, paused, inceptionDisplay, laterStartProposal)
+            settingsFormComponent.render(
+                config,
+                errorMessage,
+                csrfToken,
+                paused,
+                inceptionDisplay,
+                laterStartProposal,
+                laterStartProposalAsync,
+            )
         }
+    }
+
+    /** Settings proposal async-slot fragment body. */
+    fun renderSettingsProposalFragment(parent: FlowContent, laterStartProposal: ComparisonStartProposal?) {
+        settingsFormComponent.renderProposalSlotFragment(parent, laterStartProposal)
     }
 
     fun renderSettingsFormFragment(
@@ -64,6 +78,7 @@ class DashboardView(
         paused: Boolean = false,
         inceptionDisplay: InceptionDisplayInfo = InceptionDisplayInfo(),
         laterStartProposal: ComparisonStartProposal? = null,
+        laterStartProposalAsync: Boolean = false,
     ) {
         settingsFormComponent.renderForm(
             parent,
@@ -73,6 +88,7 @@ class DashboardView(
             paused,
             inceptionDisplay,
             laterStartProposal,
+            laterStartProposalAsync,
         )
     }
 

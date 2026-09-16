@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -17,6 +18,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicInteger
 
 class HistoricalPriceResolverTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -26,6 +28,39 @@ class HistoricalPriceResolverTest : StringSpec() {
     private val eventTime = Instant.parse("2026-08-01T12:00:00Z")
 
     init {
+        "the OHLC fallback reuses cached candles across repeated valuations" {
+            runTest {
+                val counter = AtomicInteger(0)
+                val backing = FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        listOf(eventTime.minusSeconds(90_000).epochSecond to BigDecimal("89332.40"))
+                    }
+                }
+                val cache = HistoricalOhlcCache(backing)
+
+                val first =
+                    HistoricalPriceResolver.resolveHistoricalPrice(
+                        Asset.BTC,
+                        eventTime,
+                        repository,
+                        krakenService,
+                        ohlcCache = cache,
+                    )
+                val second =
+                    HistoricalPriceResolver.resolveHistoricalPrice(
+                        Asset.BTC,
+                        eventTime,
+                        repository,
+                        krakenService,
+                        ohlcCache = cache,
+                    )
+
+                counter.get() shouldBe 4
+                second!! shouldBeEqualComparingTo first!!
+            }
+        }
+
         "USD and the narrow candidate exception resolve without market history" {
             runTest {
                 HistoricalPriceResolver.resolveHistoricalPrice(

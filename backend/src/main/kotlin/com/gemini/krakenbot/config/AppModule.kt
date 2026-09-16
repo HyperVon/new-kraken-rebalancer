@@ -31,6 +31,7 @@ import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
+import com.gemini.krakenbot.service.impl.history.HistoricalOhlcCache
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
@@ -105,6 +106,7 @@ val coreModule =
                 recoveryService = get(),
             )
         }
+        single { HistoricalOhlcCache(krakenService = get()) }
         single {
             TradeHistoryQueryService(
                 repository = get(),
@@ -114,6 +116,7 @@ val coreModule =
                 inceptionDiscoveryService = get(),
                 fundingProvenanceResolver = get(),
                 krakenService = get(),
+                historicalOhlcCache = get(),
             )
         }
         single {
