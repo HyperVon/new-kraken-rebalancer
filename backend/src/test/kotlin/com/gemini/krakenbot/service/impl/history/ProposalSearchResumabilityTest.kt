@@ -317,13 +317,18 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = "0"
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] = ""
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] = ""
+                val storedHorizonBefore =
+                    metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS]
 
                 coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns
-                    base + snapshot(3600L * 14, 14) + snapshot(3600L * 15, 15)
+                    base + stableSnapshot(3600L * 14) + stableSnapshot(3600L * 15)
                 val reused = service.getComparisonStartProposal(now)
 
                 reused?.status shouldBe ComparisonProposalStatus.VERIFIED
                 reused?.timestamp shouldBe base[12].timestamp
+                storedHorizonBefore?.let {
+                    metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS] shouldNotBe it
+                }
             }
         }
 
@@ -342,6 +347,8 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = "EXHAUSTED"
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] = ""
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] = ""
+                val storedHorizonBefore =
+                    metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS]
 
                 coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns
                     base + stableSnapshot(3600L * 14) + stableSnapshot(3600L * 15)
@@ -378,6 +385,65 @@ class ProposalSearchResumabilityTest : StringSpec() {
                     ComparisonUnavailableReason.MISSING_PRICE.name
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
                     markedTs.toString()
+            }
+        }
+
+        "an invalidating appended tail re-opens past a stored VERIFIED anchor" {
+            runTest {
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(metadata, base)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns
+                    base + snapshot(3600L * 3, 1) + stableSnapshot(3600L * 4) + stableSnapshot(3600L * 5)
+                val after = service.getComparisonStartProposal(now)
+
+                // The appended growing snapshot breaks the stored anchor's reconciliation, so
+                // the stale VERIFIED at the earliest candidate must not be returned; the scan
+                // continues and reaches the later stable run.
+                after?.status shouldBe ComparisonProposalStatus.VERIFIED
+                after?.timestamp shouldBe stableSnapshot(3600L * 4).timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
+            }
+        }
+
+        "a stale VERIFIED never bypasses skipCandidatesBefore" {
+            runTest {
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val service = harness(metadata, base).first
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+
+                val proposal = service.findLaterComparisonStartProposal(
+                    startAfter = now,
+                    inceptionResolution = null,
+                    skipCandidatesBefore = now.plusSeconds(5000),
+                )
+                // The verified candidate precedes the intrinsic failure event, so it may not
+                // resurface; the remaining reachable anchors exhaust.
+                proposal.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe "EXHAUSTED"
+            }
+        }
+
+        "without a horizon advance the stored VERIFIED still fast-revalidates" {
+            runTest {
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(metadata, base)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+                val fingerprintBefore =
+                    metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT]
+
+                val reused = service.getComparisonStartProposal(now)
+
+                reused?.status shouldBe ComparisonProposalStatus.VERIFIED
+                reused?.timestamp shouldBe base[0].timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT] shouldBe fingerprintBefore
             }
         }
 

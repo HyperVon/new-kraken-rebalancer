@@ -779,6 +779,9 @@ class TradeHistoryQueryService(
             val fundingEvidenceFingerprint = preparedFundingProvenance?.evidenceFingerprint
             val fundingEvidenceChanged = fundingEvidenceFingerprint != null &&
                 fundingEvidenceFingerprint != storedFundingEvidenceFingerprint
+            val skipIndex = skipCandidatesBefore?.let { eventTime ->
+                candidates.indexOfFirst { it.timestamp >= eventTime }.takeIf { it >= 0 }
+            }
             val frontierSensitive = APPEND_SENSITIVE_FRONTIER_REASONS.any { it.name == storedFrontierReason }
             // A pointer to an append-sensitive failure predates the stored VERIFIED anchor: a
             // horizon advance may cure it and move the earliest verified start earlier, so the
@@ -821,12 +824,10 @@ class TradeHistoryQueryService(
                 )
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
             }
-            if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name &&
-                !reopensPastStoredVerified
-            ) {
+            if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name) {
                 storedCursor?.let { cursor ->
                     val verifiedIndex = candidates.indexOfProposalCursor(cursor)
-                    if (verifiedIndex >= 0) {
+                    if (verifiedIndex >= 0 && (skipIndex == null || skipIndex <= verifiedIndex)) {
                         val storedSnapshotId = repository.getSyncMetadata(
                             SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
                         )?.toIntOrNull()
@@ -835,11 +836,46 @@ class TradeHistoryQueryService(
                             cursor.ordinal,
                         )
                         if (storedSnapshotId != null && durableSnapshotId == storedSnapshotId) {
-                            return@withLock ComparisonStartProposal(
-                                status = ComparisonProposalStatus.VERIFIED,
-                                timestamp = candidates[verifiedIndex].timestamp,
-                                snapshotId = storedSnapshotId,
-                            )
+                            if (!horizonAdvanced && !reopensPastStoredVerified) {
+                                return@withLock ComparisonStartProposal(
+                                    status = ComparisonProposalStatus.VERIFIED,
+                                    timestamp = candidates[verifiedIndex].timestamp,
+                                    snapshotId = storedSnapshotId,
+                                )
+                            }
+                            if (!reopensPastStoredVerified) {
+                                // A horizon advance can invalidate the stored anchor with
+                                // new tail evidence (new ledger event, reconstruction row),
+                                // so the verified candidate is re-evaluated once under the
+                                // enlarged horizon before it may be returned.
+                                val revalidated = calculateComparison(
+                                    candidates.drop(verifiedIndex),
+                                    InceptionResolution(
+                                        inceptionTime = candidates[verifiedIndex].timestamp,
+                                        inceptionSnapshot = candidates[verifiedIndex],
+                                        isAutoDetected = false,
+                                    ),
+                                    preparedFundingProvenance = preparedFundingProvenance,
+                                )
+                                if (revalidated.availability == ComparisonAvailability.AVAILABLE) {
+                                    persistProposalSearchState(
+                                        fingerprint = fingerprint,
+                                        status = ComparisonProposalStatus.VERIFIED,
+                                        cursor = cursor.encode(),
+                                        snapshotId = storedSnapshotId,
+                                        fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+                                        evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                                    )
+                                    return@withLock ComparisonStartProposal(
+                                        status = ComparisonProposalStatus.VERIFIED,
+                                        timestamp = candidates[verifiedIndex].timestamp,
+                                        snapshotId = storedSnapshotId,
+                                    )
+                                }
+                                // Not AVAILABLE any more: continue proposal discovery under
+                                // the enlarged horizon (the full scan below re-evaluates, and
+                                // its persist overwrites the stale VERIFIED state).
+                            }
                         }
                     }
                 }
@@ -855,9 +891,6 @@ class TradeHistoryQueryService(
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED)
             }
 
-            val skipIndex = skipCandidatesBefore?.let { eventTime ->
-                candidates.indexOfFirst { it.timestamp >= eventTime }.takeIf { it >= 0 }
-            }
             // The persisted frontier is the EARLIEST append-sensitive failure carried across
             // calls — later non-sensitive failures do not supersede it, because the earliest
             // verified start contract keeps that candidate's re-evaluation open even when its
