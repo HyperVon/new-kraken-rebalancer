@@ -22,6 +22,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.downsampleSnapshots
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -221,30 +222,44 @@ class TradeHistoryQueryService(
      * Settings proposal. Recovery status alone is not sufficient: a confirmed baseline can still
      * be followed by an ownership or reconciliation failure in the retained history.
      */
-    suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? {
+    suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? =
+        getSettingsComparisonStatus(after).proposal
+
+    /**
+     * The same gate chain as [getComparisonStartProposal] in the same order, but it also
+     * exposes the passive comparison's availability and resolved baseline so the Settings
+     * fragment can render the effective Buy & Hold baseline from this single evaluation.
+     * The proposal semantics (including every early return) are preserved exactly.
+     */
+    suspend fun getSettingsComparisonStatus(after: Instant): SettingsComparisonStatus {
         val inceptionResolution = inceptionDiscoveryService?.resolveInception()
         // An auto-detected inception is display-only until the operator supplies an explicit
         // strategy start; Settings must not expose an approval action for it.
-        if (inceptionResolution?.isAutoDetected == true) return null
+        if (inceptionResolution?.isAutoDetected == true) return SettingsComparisonStatus()
         val snapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: Instant.EPOCH)
-        if (snapshots.size < 2) return null
+        if (snapshots.size < 2) return SettingsComparisonStatus()
         // Invalidated reconstructed history must not yield a proposal: a candidate anchored on
         // stale reconstructed snapshots is not evidence-backed until the rebuild completes.
-        if (overlapsStaleReconstruction(snapshots)) return null
+        if (overlapsStaleReconstruction(snapshots)) return SettingsComparisonStatus()
         val current = calculateComparison(snapshots, inceptionResolution)
+        val status = SettingsComparisonStatus(
+            availability = current.availability,
+            baselineTimestamp = current.baselineTimestamp?.toString(),
+            unavailableReason = current.unavailableReason,
+        )
         if (current.availability != ComparisonAvailability.UNAVAILABLE ||
             current.unavailableReason !in PROPOSAL_ELIGIBLE_REASONS
         ) {
-            return null
+            return status
         }
         if (historicalCoverageGapExists(
                 snapshots = snapshots,
                 strategyStart = inceptionResolution?.inceptionTime ?: after,
             )
         ) {
-            return null
+            return status
         }
-        return findLaterComparisonStartProposal(after, inceptionResolution)
+        return status.copy(proposal = findLaterComparisonStartProposal(after, inceptionResolution))
     }
 
     private suspend fun calculateComparison(

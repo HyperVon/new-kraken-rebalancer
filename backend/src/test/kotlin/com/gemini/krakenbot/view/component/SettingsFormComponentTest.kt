@@ -154,7 +154,7 @@ class SettingsFormComponentTest : StringSpec() {
                 InceptionDisplayInfo(status = InceptionDisplayStatus.APPROVED_READY),
             )
 
-            html shouldContain "Comparison Start: 2026-06-07"
+            html shouldContain "Requested comparison start: 2026-06-07"
         }
 
         "the full settings page renders through the body-context entry point" {

@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.OrderIntent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
+import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
 import com.gemini.krakenbot.view.component.HistoryPageComponent
@@ -66,8 +67,12 @@ class DashboardView(
     }
 
     /** Settings proposal async-slot fragment body. */
-    fun renderSettingsProposalFragment(parent: FlowContent, laterStartProposal: ComparisonStartProposal?) {
-        settingsFormComponent.renderProposalSlotFragment(parent, laterStartProposal)
+    fun renderSettingsProposalFragment(
+        parent: FlowContent,
+        status: SettingsComparisonStatus?,
+        configuredComparisonStart: String?,
+    ) {
+        settingsFormComponent.renderProposalSlotFragment(parent, status, configuredComparisonStart)
     }
 
     fun renderSettingsFormFragment(

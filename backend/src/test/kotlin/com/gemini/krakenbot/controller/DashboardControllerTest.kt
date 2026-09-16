@@ -7,12 +7,15 @@ import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
+import com.gemini.krakenbot.service.SettingsComparisonStatus
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -269,7 +272,11 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
                 val body = client.get(Routes.SETTINGS).bodyAsText()
                 body shouldContain """hx-get="/fragments/settings-proposal""""
+                body shouldContain """hx-target="#comparison-proposal-slot""""
+                body shouldContain """hx-target="body""""
+                body shouldContain "Determining effective Buy &amp; Hold baseline"
                 coVerify(exactly = 0) { tradeHistoryService.getComparisonStartProposal(any()) }
+                coVerify(exactly = 0) { tradeHistoryService.getSettingsComparisonStatus(any()) }
             }
         }
 
@@ -283,18 +290,133 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     message = "No trustworthy baseline could be established for the approved start: " +
                         "historical price unavailable",
                 )
-            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } returns ComparisonStartProposal(
-                status = ComparisonProposalStatus.VERIFIED,
-                timestamp = Instant.parse("2026-08-01T10:30:00Z"),
-                snapshotId = 7,
-            )
+            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+                SettingsComparisonStatus(
+                    availability = ComparisonAvailability.UNAVAILABLE,
+                    unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
+                    proposal = ComparisonStartProposal(
+                        status = ComparisonProposalStatus.VERIFIED,
+                        timestamp = Instant.parse("2026-08-01T10:30:00Z"),
+                        snapshotId = 7,
+                    ),
+                )
             testApplication {
                 application {
                     configureTestEnv()
                 }
                 val body = client.get(Routes.FRAGMENT_SETTINGS_PROPOSAL).bodyAsText()
+                body shouldContain """id="comparison-proposal-slot""""
                 body shouldContain "Earliest verified comparison start"
                 body shouldContain "Use verified start"
+            }
+        }
+
+        "getSettingsProposalFragment_rendersEffectiveBaselineWhenComparisonAvailable" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings().copy(inceptionDate = "2026-06-06"),
+            )
+            coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
+                    message = "No trustworthy baseline could be established for the approved start",
+                )
+            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+                SettingsComparisonStatus(
+                    availability = ComparisonAvailability.AVAILABLE,
+                    baselineTimestamp = "2026-06-08T03:09:55.608Z",
+                )
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val body = client.get(Routes.FRAGMENT_SETTINGS_PROPOSAL).bodyAsText()
+                body shouldContain """id="comparison-proposal-slot""""
+                body shouldContain "Automatic"
+                body shouldContain "Effective Buy &amp; Hold baseline: 2026-06-08T03:09:55.608Z"
+                body shouldNotContain """hx-trigger="load""""
+                body shouldNotContain """hx-get="/fragments/settings-proposal""""
+                body shouldNotContain "Use verified start"
+            }
+        }
+
+        "getSettingsProposalFragment_marksManualOverrideSeparately" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings().copy(
+                    inceptionDate = "2026-06-06",
+                    comparisonStartDate = "2026-06-07",
+                ),
+            )
+            coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
+                    message = "No trustworthy baseline could be established for the approved start",
+                )
+            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+                SettingsComparisonStatus(
+                    availability = ComparisonAvailability.AVAILABLE,
+                    baselineTimestamp = "2026-06-08T03:09:55.608Z",
+                )
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val body = client.get(Routes.FRAGMENT_SETTINGS_PROPOSAL).bodyAsText()
+                body shouldContain "Manual override active"
+                body shouldContain "Requested comparison start: 2026-06-07"
+                body shouldContain "Effective Buy &amp; Hold baseline: 2026-06-08T03:09:55.608Z"
+                body shouldNotContain "Automatic"
+            }
+        }
+
+        "getSettingsProposalFragment_rendersIncompleteSearchInsideTheSlot" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings().copy(inceptionDate = "2026-06-06"),
+            )
+            coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
+                    message = "No trustworthy baseline could be established for the approved start",
+                )
+            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+                SettingsComparisonStatus(
+                    availability = ComparisonAvailability.UNAVAILABLE,
+                    unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
+                    proposal = ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE),
+                )
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val body = client.get(Routes.FRAGMENT_SETTINGS_PROPOSAL).bodyAsText()
+                body shouldContain """id="comparison-proposal-slot""""
+                body shouldContain "Later-start verification is still in progress"
+                body shouldNotContain "Use verified start"
+            }
+        }
+
+        "getSettingsProposalFragment_rendersExhaustedSearchInsideTheSlot" {
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings().copy(inceptionDate = "2026-06-06"),
+            )
+            coEvery { tradeHistoryService.getDetectedInceptionDisplayInfo() } returns
+                InceptionDisplayInfo(
+                    status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
+                    message = "No trustworthy baseline could be established for the approved start",
+                )
+            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
+                SettingsComparisonStatus(
+                    availability = ComparisonAvailability.UNAVAILABLE,
+                    unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
+                    proposal = ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED),
+                )
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val body = client.get(Routes.FRAGMENT_SETTINGS_PROPOSAL).bodyAsText()
+                body shouldContain """id="comparison-proposal-slot""""
+                body shouldContain "No retained later start passed complete reconciliation."
+                body shouldNotContain "Use verified start"
             }
         }
 
@@ -307,7 +429,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     status = InceptionDisplayStatus.APPROVED_UNAVAILABLE,
                     message = "No trustworthy baseline could be established for the approved start",
                 )
-            coEvery { tradeHistoryService.getComparisonStartProposal(any()) } throws
+            coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } throws
                 IllegalStateException("comparison source temporarily unavailable")
             testApplication {
                 application {
@@ -317,6 +439,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.status shouldBe HttpStatusCode.OK
                 val body = response.bodyAsText()
                 body shouldContain """id="comparison-proposal-slot""""
+                body shouldContain "Unable to load comparison baseline status."
                 body shouldNotContain "Earliest verified comparison start"
             }
         }
@@ -335,11 +458,15 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         "historical price unavailable",
                 )
             val anchorSlot = slot<Instant>()
-            coEvery { tradeHistoryService.getComparisonStartProposal(capture(anchorSlot)) } returns
-                ComparisonStartProposal(
-                    status = ComparisonProposalStatus.VERIFIED,
-                    timestamp = Instant.parse("2026-06-07T00:00:00Z"),
-                    snapshotId = 42,
+            coEvery { tradeHistoryService.getSettingsComparisonStatus(capture(anchorSlot)) } returns
+                SettingsComparisonStatus(
+                    availability = ComparisonAvailability.UNAVAILABLE,
+                    unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
+                    proposal = ComparisonStartProposal(
+                        status = ComparisonProposalStatus.VERIFIED,
+                        timestamp = Instant.parse("2026-06-07T00:00:00Z"),
+                        snapshotId = 42,
+                    ),
                 )
             testApplication {
                 application {

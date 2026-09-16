@@ -77,5 +77,13 @@ interface TradeHistoryService {
      */
     suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? = null
 
+    /**
+     * Same passive evaluation as [getComparisonStartProposal], with the display fields the
+     * Settings effective-baseline fragment needs. Availability is null when the gate chain
+     * short-circuited before a passive comparison ran.
+     */
+    suspend fun getSettingsComparisonStatus(after: Instant): SettingsComparisonStatus =
+        SettingsComparisonStatus(proposal = getComparisonStartProposal(after))
+
     suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison
 }

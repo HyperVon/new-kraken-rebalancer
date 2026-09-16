@@ -1,10 +1,12 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
+import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
@@ -263,7 +265,8 @@ class SettingsFormComponent {
     /**
      * Renders the later-start proposal slot. When [async] the slot becomes an HTMX lazy-load
      * placeholder so Settings HTML never blocks on proposal discovery sync; the fragment
-     * route resolves the proposal out-of-band and swaps this element out.
+     * route resolves the comparison status out-of-band and swaps this element out. The explicit
+     * hx-target keeps any enclosing form's body swap from being inherited.
      */
     private fun FlowContent.renderProposalSlot(laterStartProposal: ComparisonStartProposal?, async: Boolean) {
         if (async) {
@@ -271,7 +274,9 @@ class SettingsFormComponent {
                 id = HtmlIds.COMPARISON_PROPOSAL_SLOT
                 attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_SETTINGS_PROPOSAL
                 attributes[HtmxAttrs.HX_TRIGGER] = HtmxValues.TRIGGER_LOAD
+                attributes[HtmxAttrs.HX_TARGET] = "#${HtmlIds.COMPARISON_PROPOSAL_SLOT}"
                 attributes[HtmxAttrs.HX_SWAP] = HtmxValues.SWAP_OUTER_HTML
+                p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_DETERMINING }
             }
             return
         }
@@ -281,15 +286,48 @@ class SettingsFormComponent {
         }
     }
 
-    /** Fragment response body for the async proposal slot; mirrors the synchronous slot markup. */
-    fun renderProposalSlotFragment(parent: FlowContent, laterStartProposal: ComparisonStartProposal?) {
-        parent.renderProposalContent(laterStartProposal)
+    /**
+     * Fragment response body for the async slot: the effective baseline status plus any
+     * later-start proposal. Mirrors the synchronous slot's comparison states without an
+     * hx-trigger, so the swap can never re-trigger a load loop.
+     */
+    fun renderProposalSlotFragment(
+        parent: FlowContent,
+        status: SettingsComparisonStatus?,
+        configuredComparisonStart: String?,
+    ) {
+        parent.renderComparisonStatus(status, configuredComparisonStart)
     }
 
-    private fun FlowContent.renderProposalContent(laterStartProposal: ComparisonStartProposal?) {
-        if (laterStartProposal != null) {
-            p(CssClass.Form.SectionSubtitle) { +ViewText.INCEPTION_APPROVED_BASELINE_COMPARISON_BLOCKED }
-            renderLaterStartProposal(laterStartProposal)
+    private fun FlowContent.renderComparisonStatus(
+        status: SettingsComparisonStatus?,
+        configuredComparisonStart: String?,
+    ) {
+        val overrideActive = !configuredComparisonStart.isNullOrBlank()
+        if (overrideActive) {
+            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_OVERRIDE_ACTIVE }
+            p(CssClass.Form.SectionSubtitle) {
+                +"${ViewText.COMPARISON_STATUS_REQUESTED_START_LABEL}: $configuredComparisonStart"
+            }
+        } else if (status?.availability != null) {
+            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_AUTOMATIC }
+        }
+        when (status?.availability) {
+            ComparisonAvailability.AVAILABLE -> status.baselineTimestamp?.let { baseline ->
+                p(CssClass.Form.SectionSubtitle) {
+                    +"${ViewText.COMPARISON_STATUS_EFFECTIVE_BASELINE_LABEL}: $baseline"
+                }
+            }
+
+            null -> Unit
+
+            else -> p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_UNAVAILABLE }
+        }
+        if (status?.proposal != null && status.availability != ComparisonAvailability.AVAILABLE) {
+            renderLaterStartProposal(status.proposal)
+        }
+        if (status == null) {
+            p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_ERROR }
         }
     }
 
@@ -320,7 +358,7 @@ class SettingsFormComponent {
         }
         config.settings.comparisonStartDate?.takeIf(String::isNotBlank)?.let { accepted ->
             p(CssClass.Form.SectionSubtitle) {
-                +"${ViewText.INCEPTION_COMPARISON_START}: $accepted"
+                +"${ViewText.COMPARISON_STATUS_REQUESTED_START_LABEL}: $accepted"
             }
         }
     }
