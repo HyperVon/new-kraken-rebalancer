@@ -355,6 +355,32 @@ class ProposalSearchResumabilityTest : StringSpec() {
             }
         }
 
+        "a pending mark survives non-sensitive noise, budget bounds, and later exhaustion" {
+            runTest {
+                val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(metadata, candidates)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                // Seed the review premise: the earliest pending append-sensitive mark sits at
+                // candidate 2, well before the resumed cursor.
+                val markedTs = candidates[2].timestamp.toEpochMilli()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] =
+                    ComparisonUnavailableReason.MISSING_PRICE.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] =
+                    markedTs.toString()
+
+                // Continued bounded scan without new evidence: resume at the cursor. Later
+                // non-sensitive failures (and the final INSUFFICIENT_SNAPSHOTS candidate) must
+                // not erase the EARLIEST pending mark.
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] shouldBe
+                    ComparisonUnavailableReason.MISSING_PRICE.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    markedTs.toString()
+            }
+        }
+
         "a stale EXHAUSTED reopens through its frontier when evidence appends past the horizon" {
             runTest {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }

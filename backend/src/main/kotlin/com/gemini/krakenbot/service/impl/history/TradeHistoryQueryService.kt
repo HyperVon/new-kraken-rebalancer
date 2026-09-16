@@ -862,8 +862,11 @@ class TradeHistoryQueryService(
             // calls — later non-sensitive failures do not supersede it, because the earliest
             // verified start contract keeps that candidate's re-evaluation open even when its
             // successor later failed non-sensitively or a verified anchor sits after it.
+            // Carry the persisted mark into the loop on EVERY resumable call — not only
+            // horizon advances — so a pending mark survives cursored resumes bounded by the
+            // phased calls. Each persist re-writes the earliest pending failure.
             val storedFrontierIndex = if (canResume && !fundingEvidenceChanged &&
-                horizonAdvanced && frontierSensitive && storedFrontierCursorRaw != null
+                frontierSensitive && storedFrontierCursorRaw != null
             ) {
                 candidates.indexOfFirst {
                     it.timestamp.toEpochMilli() >= storedFrontierCursorRaw
@@ -933,7 +936,7 @@ class TradeHistoryQueryService(
                     // The marker candidate was re-reached during this scan — an AVAILABLE
                     // anchor cures the pending mark; a mark that was carried but not reached
                     // in this call stays persisted so the next horizon advance reopens there.
-                    val frontierCured = frontierCursorIndex != null && frontierCursorIndex <= index
+                    val frontierCured = frontierCursorIndex == index
                     persistProposalSearchState(
                         fingerprint = fingerprint,
                         status = ComparisonProposalStatus.VERIFIED,
