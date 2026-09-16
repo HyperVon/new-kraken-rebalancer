@@ -117,6 +117,7 @@ val coreModule =
                 fundingProvenanceResolver = get(),
                 krakenService = get(),
                 historicalOhlcCache = get(),
+                applicationScope = get(named(APPLICATION_SCOPE_QUALIFIER)),
             )
         }
         single {

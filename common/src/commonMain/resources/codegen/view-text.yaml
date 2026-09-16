@@ -261,7 +261,7 @@ ViewText:
   UNAVAILABLE_INCEPTION_BASELINE_UNAVAILABLE: "Strategy inception was found, but a retained balance anchor or historical price is missing."
   UNAVAILABLE_INVALID_RESPONSE: "Comparison data could not be validated."
   COMPARISON_PROPOSED_LATER_START: "Earliest verified comparison start: <date> — set it in Settings."
-  COMPARISON_PROPOSAL_SEARCH_INCOMPLETE: "Later-start verification is still in progress; refresh to continue the bounded search."
+  COMPARISON_PROPOSAL_SEARCH_INCOMPLETE: "Later-start verification is still in progress; the search continues in the background and will update on the next refresh."
   HTTP_FETCH_FAILED: "History data request failed (HTTP status"
   COMPARISON_PROPOSAL_SEARCH_EXHAUSTED: "No retained later start passed complete reconciliation."
   COMPARISON_STATUS_AUTOMATIC: "Automatic"
@@ -271,6 +271,7 @@ ViewText:
   COMPARISON_STATUS_UNAVAILABLE: "Buy & Hold baseline is currently unavailable."
   COMPARISON_STATUS_DETERMINING: "Determining effective Buy & Hold baseline…"
   COMPARISON_STATUS_ERROR: "Unable to load comparison baseline status."
+  COMPARISON_STATUS_FAILED_AT: "failed at"
   COMPARISON_CONFIDENCE_ESTIMATED: "Estimated (external balance changes may affect precision)"
   # Staking rewards
   HISTORY_STAKING_REWARDS: "Staking, Promotion & Earn Rewards"

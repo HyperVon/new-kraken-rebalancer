@@ -321,7 +321,13 @@ class SettingsFormComponent {
 
             null -> Unit
 
-            else -> p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_UNAVAILABLE }
+            else -> p(CssClass.Form.SectionSubtitle) {
+                +ViewText.COMPARISON_STATUS_UNAVAILABLE
+                status.unavailableReason?.let { reason ->
+                    +" ${reason.displayText}"
+                    status.unavailableAt?.let { at -> +" (${ViewText.COMPARISON_STATUS_FAILED_AT}: $at)" }
+                }
+            }
         }
         if (status?.proposal != null && status.availability != ComparisonAvailability.AVAILABLE) {
             renderLaterStartProposal(status.proposal)

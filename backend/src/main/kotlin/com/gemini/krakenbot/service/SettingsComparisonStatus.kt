@@ -17,5 +17,7 @@ data class SettingsComparisonStatus(
     val availability: ComparisonAvailability? = null,
     val baselineTimestamp: String? = null,
     val unavailableReason: ComparisonUnavailableReason? = null,
+    /** Evidence timestamp the passive comparison failed at, when the reason carries one. */
+    val unavailableAt: String? = null,
     val proposal: ComparisonStartProposal? = null,
 )

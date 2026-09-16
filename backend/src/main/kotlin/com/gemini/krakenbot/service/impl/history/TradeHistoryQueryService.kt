@@ -25,13 +25,18 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 
 class TradeHistoryQueryService(
     private val repository: TradeRepository,
@@ -45,8 +50,14 @@ class TradeHistoryQueryService(
     private val historicalOhlcCache: HistoricalOhlcCache? = null,
     /** Evidence boundary used when the lifetime inception recovery cannot be trusted. */
     private val pureBenchmarkAnchorFloor: Instant = PURE_BENCHMARK_ANCHOR_FLOOR,
+    /** Application-lifetime scope used for the bounded background proposal continuation. */
+    private val applicationScope: CoroutineScope? = null,
 ) {
     private val proposalSearchMutex = Mutex()
+
+    private val log = LoggerFactory.getLogger(TradeHistoryQueryService::class.java)
+
+    private val proposalContinuationActive = AtomicBoolean(false)
 
     private data class ProposalCursor(val epochMillis: Long, val ordinal: Int) {
         fun encode(): String = "$epochMillis:$ordinal"
@@ -142,9 +153,27 @@ class TradeHistoryQueryService(
                 ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
             )
 
+        /**
+         * Reasons whose unavailable payload pins the exact evidence event a comparison failed
+         * at. Any candidate anchored before that instant places the same event inside its own
+         * comparison window and must fail identically, so the bounded proposal scan skips
+         * straight to the first candidate at or after the event instead of paying a full
+         * reconciliation trial for every one of them.
+         */
+        private val INTRINSIC_EVENT_REASONS =
+            setOf(
+                ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE,
+                ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+            )
+
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
-        private const val PROPOSAL_SEARCH_VERSION = "7"
+
+        /** Background continuation pacing and lifetime budget for an incomplete scan. */
+        private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 600
+        private const val PROPOSAL_CONTINUATION_PACING_MS = 2_000L
+        private const val PROPOSAL_SEARCH_VERSION = "8"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
         /**
@@ -246,7 +275,18 @@ class TradeHistoryQueryService(
             availability = current.availability,
             baselineTimestamp = current.baselineTimestamp?.toString(),
             unavailableReason = current.unavailableReason,
+            unavailableAt = current.unavailableAt?.toString(),
         )
+        if (current.availability == ComparisonAvailability.UNAVAILABLE) {
+            // Operator-visible reconciliation diagnostics: the reason and its evidence
+            // timestamp identify the event that made the inception-anchored comparison
+            // unavailable. Names, balances, and raw exchange payloads are deliberately omitted.
+            log.info(
+                "comparison unavailable; reason={} unavailableAt={}",
+                current.unavailableReason,
+                status.unavailableAt ?: "unknown",
+            )
+        }
         if (current.availability != ComparisonAvailability.UNAVAILABLE ||
             current.unavailableReason !in PROPOSAL_ELIGIBLE_REASONS
         ) {
@@ -259,7 +299,49 @@ class TradeHistoryQueryService(
         ) {
             return status
         }
-        return status.copy(proposal = findLaterComparisonStartProposal(after, inceptionResolution))
+        val skipCandidatesBefore = current.unavailableAt
+            ?.takeIf { current.unavailableReason in INTRINSIC_EVENT_REASONS }
+        val proposal = findLaterComparisonStartProposal(after, inceptionResolution, skipCandidatesBefore)
+        if (proposal.status == ComparisonProposalStatus.INCOMPLETE) {
+            ensureProposalSearchContinuation(after)
+        }
+        return status.copy(proposal = proposal)
+    }
+
+    /**
+     * Runs the bounded proposal scan faithfully on the application scope when an evaluation
+     * left it INCOMPLETE, so later-start discovery completes without asking the operator to
+     * reload Settings until the durable cursor advances through every candidate. Every cycle
+     * evaluates through the same gate chain and persists progress under [proposalSearchMutex],
+     * and the loop stops on VERIFIED, EXHAUSTED, any gate change, or its own bounded budget.
+     */
+    private fun ensureProposalSearchContinuation(after: Instant) {
+        val scope = applicationScope ?: return
+        if (!proposalContinuationActive.compareAndSet(false, true)) return
+        log.info("proposal search continuation started; status=INCOMPLETE")
+        scope.launch {
+            try {
+                for (cycle in 0 until PROPOSAL_CONTINUATION_MAX_CYCLES) {
+                    val proposal = getSettingsComparisonStatus(after).proposal
+                    if (proposal?.status != ComparisonProposalStatus.INCOMPLETE) {
+                        log.info(
+                            "proposal search continuation finished at cycle {}; status={}",
+                            cycle,
+                            proposal?.status,
+                        )
+                        return@launch
+                    }
+                    delay(PROPOSAL_CONTINUATION_PACING_MS)
+                }
+                log.info("proposal search continuation budget exhausted; status=INCOMPLETE")
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                log.warn("proposal search continuation stopped", error)
+            } finally {
+                proposalContinuationActive.set(false)
+            }
+        }
     }
 
     private suspend fun calculateComparison(
@@ -576,6 +658,8 @@ class TradeHistoryQueryService(
     internal suspend fun findLaterComparisonStartProposal(
         startAfter: Instant,
         inceptionResolution: InceptionResolution?,
+        /** Skip all candidates before an evidence event that provably fails inside every scan window. */
+        skipCandidatesBefore: Instant? = null,
     ): ComparisonStartProposal {
         return proposalSearchMutex.withLock {
             // Reload all economic evidence after acquiring the mutex. A concurrent Settings and
@@ -597,18 +681,27 @@ class TradeHistoryQueryService(
             }
             val candidates = orderedSnapshots.filter { it.timestamp > startAfter }
             val predecessorSnapshot = candidates.firstOrNull()?.let { repository.getSnapshotBefore(it.timestamp) }
-            val fingerprint = proposalEvidenceFingerprint(
-                orderedSnapshots = orderedSnapshots,
-                startAfter = startAfter,
-                inceptionResolution = inceptionResolution,
-                predecessorSnapshot = predecessorSnapshot,
-            )
+            // Read durable progress before fingerprinting: the stored evidence horizon bounds
+            // which rows participate in the digest. Candidates at or before it were already
+            // evaluated; append-only rows after it must not invalidate that progress (see
+            // proposalEvidenceFingerprint).
             val storedFingerprint = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT,
             )
             val storedStatus = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS)
-            val storedCursor = repository.getSyncMetadata(
+            val storedCursorRaw = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS,
+            )
+            val storedCursor = storedCursorRaw?.let(ProposalCursor::parse)
+            val storedEvidenceHorizon = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS,
+            )?.toLongOrNull()
+            val (fingerprint, appliedEvidenceHorizon) = proposalEvidenceFingerprint(
+                orderedSnapshots = orderedSnapshots,
+                startAfter = startAfter,
+                inceptionResolution = inceptionResolution,
+                predecessorSnapshot = predecessorSnapshot,
+                horizonEpochMillis = storedEvidenceHorizon,
             )
             val storedFundingEvidenceFingerprint = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT,
@@ -629,18 +722,15 @@ class TradeHistoryQueryService(
                 fundingEvidenceFingerprint != storedFundingEvidenceFingerprint
             if (preparedFundingProvenance?.preparationFailure != null) {
                 if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name) {
-                    val verifiedIndex = storedCursor?.let(ProposalCursor::parse)
+                    val verifiedIndex = storedCursor
                         ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
                     val storedSnapshotId = repository.getSyncMetadata(
                         SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
                     )?.toIntOrNull()
-                    val storedCursorValue = storedCursor?.let(ProposalCursor::parse)
-                    val durableSnapshotId = if (verifiedIndex != null && verifiedIndex >= 0 &&
-                        storedCursorValue != null
-                    ) {
+                    val durableSnapshotId = if (verifiedIndex != null && verifiedIndex >= 0) {
                         repository.getSnapshotId(
                             candidates[verifiedIndex].timestamp,
-                            storedCursorValue.ordinal,
+                            storedCursor.ordinal,
                         )
                     } else {
                         null
@@ -660,11 +750,12 @@ class TradeHistoryQueryService(
                     status = ComparisonProposalStatus.INCOMPLETE,
                     cursor = candidates.proposalCursorAt(0).encode(),
                     fundingEvidenceFingerprint = null,
+                    evidenceHorizonEpochMillis = appliedEvidenceHorizon,
                 )
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
             }
             if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name) {
-                storedCursor?.let(ProposalCursor::parse)?.let { cursor ->
+                storedCursor?.let { cursor ->
                     val verifiedIndex = candidates.indexOfProposalCursor(cursor)
                     if (verifiedIndex >= 0) {
                         val storedSnapshotId = repository.getSyncMetadata(
@@ -688,16 +779,19 @@ class TradeHistoryQueryService(
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED)
             }
 
+            val skipIndex = skipCandidatesBefore?.let { eventTime ->
+                candidates.indexOfFirst { it.timestamp >= eventTime }.takeIf { it >= 0 }
+            }
             val resumeIndex = if (canResume && !fundingEvidenceChanged &&
                 storedStatus == ComparisonProposalStatus.INCOMPLETE.name
             ) {
-                storedCursor?.let(ProposalCursor::parse)
+                storedCursor
                     ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
                     ?.takeIf { it >= 0 } ?: 0
             } else {
                 0
             }
-            var index = resumeIndex
+            var index = maxOf(resumeIndex, skipIndex ?: 0)
             var trials = 0
             while (index < candidates.size && trials < PROPOSAL_MAX_TRIALS) {
                 val candidate = candidates[index]
@@ -723,6 +817,7 @@ class TradeHistoryQueryService(
                         cursor = candidateCursor.encode(),
                         snapshotId = candidateSnapshotId,
                         fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+                        evidenceHorizonEpochMillis = appliedEvidenceHorizon,
                     )
                     return@withLock ComparisonStartProposal(
                         status = ComparisonProposalStatus.VERIFIED,
@@ -748,6 +843,7 @@ class TradeHistoryQueryService(
                     PROPOSAL_CURSOR_EXHAUSTED
                 },
                 fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+                evidenceHorizonEpochMillis = appliedEvidenceHorizon,
             )
             ComparisonStartProposal(status)
         }
@@ -965,6 +1061,7 @@ class TradeHistoryQueryService(
         cursor: String,
         snapshotId: Int? = null,
         fundingEvidenceFingerprint: String?,
+        evidenceHorizonEpochMillis: Long? = null,
     ) {
         repository.setSyncMetadataAtomically(
             mapOf(
@@ -974,6 +1071,8 @@ class TradeHistoryQueryService(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID to snapshotId?.toString().orEmpty(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT to
                     fundingEvidenceFingerprint.orEmpty(),
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS to
+                    evidenceHorizonEpochMillis?.toString().orEmpty(),
             ),
         )
     }
@@ -982,15 +1081,39 @@ class TradeHistoryQueryService(
      * The cursor is valid only for this configuration, effective start, account scope, and
      * evidence revision. The digest contains the complete retained rows rather than only the
      * display window so zooming cannot skip or reuse a candidate incorrectly.
+     *
+     * Identifies the economic evidence a proposal scan consumed. When [horizonEpochMillis] is
+     * set, only rows at or before that instant participate: append-only tail rows after the
+     * durable resume cursor arrive after tested candidates were evaluated and re-verifying them
+     * would invalidate incomplete progress on every live append, so the scan can never resume.
+     * Evidence strictly at or before the horizon is still digested row-by-row, so a backfilled,
+     * edited, or deleted historical row — anything that could change a tested candidate's
+     * outcome — invalidates the stored progress. Acceptance of a verified start re-runs the
+     * full reconciliation against current evidence, which keeps this append tolerance
+     * fail-closed for the acceptance decision itself.
+     *
+     * Returns the evidence fingerprint paired with the horizon actually applied. With no
+     * stored horizon the bound is derived once from the newest row present, so later scans
+     * recompute the digest over exactly the same pre-horizon evidence and append-only rows
+     * beyond it stay out without invalidating resumable progress.
      */
     private suspend fun proposalEvidenceFingerprint(
         orderedSnapshots: List<PortfolioSnapshot>,
         startAfter: Instant,
         inceptionResolution: InceptionResolution?,
         predecessorSnapshot: PortfolioSnapshot?,
-    ): String {
+        horizonEpochMillis: Long? = null,
+    ): Pair<String, Long> {
         val trades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
         val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
+        val latestRowEpochMiss = listOf(
+            orderedSnapshots.lastOrNull()?.timestamp,
+            predecessorSnapshot?.timestamp,
+            trades.lastOrNull()?.timestamp,
+            ledgers.lastOrNull()?.time,
+        ).filterNotNull().maxOfOrNull { it.toEpochMilli() } ?: 0L
+
+        val effectiveHorizon = horizonEpochMillis?.takeIf { it >= 0 } ?: latestRowEpochMiss
         val material = buildString {
             append(PROPOSAL_SEARCH_VERSION).append('\u0000')
             append(startAfter).append('\u0000')
@@ -1007,10 +1130,9 @@ class TradeHistoryQueryService(
                 .append('\u0000')
             append(repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION).orEmpty())
                 .append('\u0000')
-            append(ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC).orEmpty())
-                .append('\u0000')
-            append(repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC).orEmpty())
-                .append('\u0000')
+            // Coverage watermarks count append-only fresh rows and grow with every live cycle;
+            // they are freshness counters, not evidence identity, so they must not invalidate
+            // resumable progress. Row-level digests below remain the material evidence check.
             // Reconstruction currentness participates in the fingerprint: invalidating or
             // rebuilding reconstructed history must force proposal re-trials instead of letting a
             // stored VERIFIED cursor resume against a different evidence baseline.
@@ -1040,13 +1162,18 @@ class TradeHistoryQueryService(
                 append("predecessor\n")
                 appendSnapshotDigest(it)
             }
-            orderedSnapshots.forEach { appendSnapshotDigest(it) }
+            val horizon = horizonEpochMillis
+            orderedSnapshots.forEach {
+                if (horizon == null || it.timestamp.toEpochMilli() <= horizon) {
+                    appendSnapshotDigest(it)
+                }
+            }
             trades.sortedWith(compareBy({ it.timestamp }, { it.id ?: Int.MAX_VALUE }))
-                .forEach { appendTradeDigest(it) }
+                .forEach { if (horizon == null || it.timestamp.toEpochMilli() <= horizon) appendTradeDigest(it) }
             ledgers.sortedWith(compareBy({ it.time }, { it.ledgerId }))
-                .forEach { appendLedgerDigest(it) }
+                .forEach { if (horizon == null || it.time.toEpochMilli() <= horizon) appendLedgerDigest(it) }
         }
-        return sha256Hex(material)
+        return sha256Hex(material) to effectiveHorizon
     }
 
     private fun StringBuilder.appendSnapshotDigest(snapshot: PortfolioSnapshot) {
