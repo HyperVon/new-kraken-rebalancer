@@ -202,5 +202,113 @@ class ProposalSearchResumabilityTest : StringSpec() {
             }
             continuationScope.cancel()
         }
+
+        "a stale EXHAUSTED reopens through its frontier when evidence appends past the horizon" {
+            runTest {
+                val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
+                val tail = (13..15).map { index -> snapshot(3600L * index, index) }
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository) = harness(metadata, candidates)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                val exhaustedFingerprint = metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT]
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS] shouldBe
+                    candidates[11].timestamp.toEpochMilli().toString()
+                // The final candidate always fails INSUFFICIENT_SNAPSHOTS: its comparison window
+                // holds only itself until a future snapshot lands.
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] shouldBe
+                    ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    candidates[11].timestamp.toEpochMilli().toString()
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns candidates + tail
+                val reopened = service.getComparisonStartProposal(now)
+
+                reopened?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                // Terminal exhaustion must not persist for an open-ended universe: the tail
+                // extended it, so the horizon and fingerprint moved and the frontier run was
+                // re-evaluated — the new final candidate is now the pending frontier.
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS] shouldBe
+                    tail[2].timestamp.toEpochMilli().toString()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT]
+                    .shouldNotBe(exhaustedFingerprint)
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    tail[2].timestamp.toEpochMilli().toString()
+            }
+        }
+
+        "a tail row beyond the horizon does not invalidate progress but a historical edit does" {
+            runTest {
+                val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
+                val tailTrade = TestFixtures.tradeRecord(
+                    timestamp = now.plusSeconds(3600L * 14),
+                    pair = "XXBTZUSD",
+                    side = "buy",
+                    symbol = "XXBT",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal("50000.00"),
+                )
+                val historicalTrade = TestFixtures.tradeRecord(
+                    timestamp = now.plusSeconds(3600L * 3),
+                    pair = "XXBTZUSD",
+                    side = "buy",
+                    symbol = "XXBT",
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("25000.00"),
+                    id = 1,
+                )
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository) = harness(metadata, candidates)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe
+                    "${candidates[8].timestamp.toEpochMilli()}:0"
+
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(tailTrade)
+                val appended = service.getComparisonStartProposal(now)
+
+                // The tail trade is outside the persisted horizon: the completed prefix stays
+                // proven, the scan resumes at the cursor and finishes its remaining segment.
+                appended?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe "EXHAUSTED"
+
+                // A historical trade inside the horizon is part of what tested candidates
+                // consumed; its appearance invalidates the stored progress fail-closed.
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(historicalTrade)
+                val invalidated = service.getComparisonStartProposal(now)
+
+                invalidated?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe
+                    "${candidates[8].timestamp.toEpochMilli()}:0"
+            }
+        }
+
+        "incomplete progress rewinds to a pending append-sensitive frontier after new evidence" {
+            runTest {
+                val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
+                val tail = (13..15).map { index -> snapshot(3600L * index, index) }
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository) = harness(metadata, candidates)
+
+                // Force a trailing INSUFFICIENT_SNAPSHOTS frontier run before the budget ends:
+                // persist it by racing the scan to EXHAUSTED, then re-introduce a fresh
+                // incomplete segment via appends and prove the frontier run is rewound to and
+                // retried rather than trusted as immutable.
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    candidates[11].timestamp.toEpochMilli().toString()
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns candidates + tail
+                val rewound = service.getComparisonStartProposal(now)
+
+                // The rewind re-evaluates the frontier candidate with the newly appended
+                // snapshots; the final candidate then carries the new pending frontier.
+                rewound?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    tail[2].timestamp.toEpochMilli().toString()
+            }
+        }
     }
 }

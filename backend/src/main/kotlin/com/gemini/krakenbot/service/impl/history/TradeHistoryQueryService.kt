@@ -173,8 +173,24 @@ class TradeHistoryQueryService(
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
         private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 600
         private const val PROPOSAL_CONTINUATION_PACING_MS = 2_000L
-        private const val PROPOSAL_SEARCH_VERSION = "8"
+        private const val PROPOSAL_SEARCH_VERSION = "9"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
+
+        /**
+         * Candidate-local failure reasons whose outcome depends on the volume or availability of
+         * evidence after the candidate's own window, so a later append can flip them to AVAILABLE.
+         * A scan that exhausted its segment while its frontier failed for one of these reasons must
+         * rewind and re-evaluate that run when the evidence horizon advances. Event-origin and
+         * baseline/ownership reasons are excluded: they are pinned by evidence inside the
+         * candidate's own window (intrinsics) or on its left (baseline), so appends to the tail
+         * cannot cure them and rescanning them would only burn trials.
+         */
+        private val APPEND_SENSITIVE_FRONTIER_REASONS =
+            setOf(
+                ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                ComparisonUnavailableReason.MISSING_PRICE,
+                ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+            )
 
         /**
          * The normal snapshot loop is substantially more frequent than daily. A gap this large
@@ -679,12 +695,12 @@ class TradeHistoryQueryService(
             ) {
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
             }
-            val candidates = orderedSnapshots.filter { it.timestamp > startAfter }
-            val predecessorSnapshot = candidates.firstOrNull()?.let { repository.getSnapshotBefore(it.timestamp) }
+            val allCandidates = orderedSnapshots.filter { it.timestamp > startAfter }
+            val predecessorSnapshot = allCandidates.firstOrNull()?.let { repository.getSnapshotBefore(it.timestamp) }
             // Read durable progress before fingerprinting: the stored evidence horizon bounds
             // which rows participate in the digest. Candidates at or before it were already
             // evaluated; append-only rows after it must not invalidate that progress (see
-            // proposalEvidenceFingerprint).
+            // proposalEvidenceDigest).
             val storedFingerprint = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT,
             )
@@ -696,17 +712,60 @@ class TradeHistoryQueryService(
             val storedEvidenceHorizon = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS,
             )?.toLongOrNull()
-            val (fingerprint, appliedEvidenceHorizon) = proposalEvidenceFingerprint(
+            val storedFrontierReason = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON,
+            )
+            val storedFrontierCursorRaw = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS,
+            )?.toLongOrNull()
+            val trades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
+            val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
+            val latestRowEpochMillis = listOf(
+                orderedSnapshots.lastOrNull()?.timestamp,
+                predecessorSnapshot?.timestamp,
+                trades.lastOrNull()?.timestamp,
+                ledgers.lastOrNull()?.time,
+            ).filterNotNull().maxOfOrNull { it.toEpochMilli() } ?: 0L
+            // Revalidate the stored prefix under its own horizon first. A match proves every
+            // evaluated candidate's evidence is unchanged; only then may the horizon advance to
+            // the newest row so the growing tail becomes a fresh segment instead of invalidating
+            // proven progress.
+            val prefixFingerprint = proposalEvidenceDigest(
                 orderedSnapshots = orderedSnapshots,
                 startAfter = startAfter,
                 inceptionResolution = inceptionResolution,
                 predecessorSnapshot = predecessorSnapshot,
-                horizonEpochMillis = storedEvidenceHorizon,
+                trades = trades,
+                ledgers = ledgers,
+                horizonEpochMillis = storedEvidenceHorizon ?: latestRowEpochMillis,
             )
+            val canResume = storedFingerprint == prefixFingerprint
+            val horizonAdvanced = canResume &&
+                storedEvidenceHorizon != null &&
+                latestRowEpochMillis > storedEvidenceHorizon
+            // A reset (fresh or invalidated stored state) and a horizon advance both derive the
+            // bound from the newest row, so every persisted state covers its candidate universe
+            // exactly — no tested candidate is ever digested outside its own fingerprint.
+            val appliedEvidenceHorizon = if (canResume && !horizonAdvanced) {
+                storedEvidenceHorizon ?: latestRowEpochMillis
+            } else {
+                latestRowEpochMillis
+            }
+            val fingerprint = proposalEvidenceDigest(
+                orderedSnapshots = orderedSnapshots,
+                startAfter = startAfter,
+                inceptionResolution = inceptionResolution,
+                predecessorSnapshot = predecessorSnapshot,
+                trades = trades,
+                ledgers = ledgers,
+                horizonEpochMillis = appliedEvidenceHorizon,
+            )
+            val candidates = allCandidates.filter {
+                it.timestamp.toEpochMilli() <= appliedEvidenceHorizon
+            }
             val storedFundingEvidenceFingerprint = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT,
             ).orEmpty()
-            val canResume = storedFingerprint == fingerprint
             val preparedFundingProvenance = if (candidates.isNotEmpty()) {
                 // Pin one immutable provenance snapshot for the complete bounded scan. Passing
                 // it into every trial prevents a candidate loop from issuing one network-backed
@@ -775,24 +834,58 @@ class TradeHistoryQueryService(
                     }
                 }
             }
-            if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.EXHAUSTED.name) {
+            // Terminal exhaustion only holds while no evidence arrived after the persisted
+            // horizon. A newer tail extends the open-ended candidate universe, so the scan
+            // reopens at its frontier and evaluates the appended rows under a horizon that
+            // includes them.
+            if (canResume && !fundingEvidenceChanged &&
+                storedStatus == ComparisonProposalStatus.EXHAUSTED.name &&
+                !horizonAdvanced
+            ) {
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED)
             }
 
             val skipIndex = skipCandidatesBefore?.let { eventTime ->
                 candidates.indexOfFirst { it.timestamp >= eventTime }.takeIf { it >= 0 }
             }
+            val frontierSensitive = APPEND_SENSITIVE_FRONTIER_REASONS.any { it.name == storedFrontierReason }
+            val frontierResumeIndex = if (horizonAdvanced && frontierSensitive && storedFrontierCursorRaw != null) {
+                candidates.indexOfFirst {
+                    it.timestamp.toEpochMilli() >= storedFrontierCursorRaw
+                }.takeIf { it >= 0 }
+            } else {
+                null
+            }
+            val tailResumeIndex = if (horizonAdvanced) {
+                val advancedTailStart = storedEvidenceHorizon
+                candidates.indexOfFirst { it.timestamp.toEpochMilli() > advancedTailStart }
+                    .takeIf { it >= 0 }
+            } else {
+                null
+            }
             val resumeIndex = if (canResume && !fundingEvidenceChanged &&
                 storedStatus == ComparisonProposalStatus.INCOMPLETE.name
             ) {
-                storedCursor
+                val cursorIndex = storedCursor
                     ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
                     ?.takeIf { it >= 0 } ?: 0
+                // An advanced horizon rewinds through the persisted append-sensitive frontier
+                // run: those earlier failures may now be curable, while proven non-sensitive
+                // prefix failures stay final.
+                frontierResumeIndex?.let { minOf(it, cursorIndex) } ?: cursorIndex
+            } else if (horizonAdvanced) {
+                frontierResumeIndex
+                    ?: tailResumeIndex
+                    // Horizon advanced without a mappable cursor position: re-scan the whole
+                    // enlarged segment rather than trusting stale index arithmetic.
+                    ?: 0
             } else {
                 0
             }
             var index = maxOf(resumeIndex, skipIndex ?: 0)
             var trials = 0
+            var frontierRunStartIndex: Int? = null
+            var frontierRunReason: ComparisonUnavailableReason? = null
             while (index < candidates.size && trials < PROPOSAL_MAX_TRIALS) {
                 val candidate = candidates[index]
                 val trial = calculateComparison(
@@ -825,6 +918,18 @@ class TradeHistoryQueryService(
                         snapshotId = candidateSnapshotId,
                     )
                 }
+                // A trailing run of append-sensitive failures is the frontier that a later
+                // append may cure; any non-sensitive failure is final under this horizon and
+                // truncates the run.
+                if (trial.unavailableReason in APPEND_SENSITIVE_FRONTIER_REASONS) {
+                    if (frontierRunStartIndex == null) {
+                        frontierRunStartIndex = index
+                        frontierRunReason = trial.unavailableReason
+                    }
+                } else {
+                    frontierRunStartIndex = null
+                    frontierRunReason = null
+                }
                 // Advance exactly one candidate. A trial's unavailableAt is a failure point in
                 // that trial, not proof that every earlier retained candidate is invalid.
                 index++
@@ -844,6 +949,10 @@ class TradeHistoryQueryService(
                 },
                 fundingEvidenceFingerprint = fundingEvidenceFingerprint,
                 evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                frontierReason = frontierRunReason,
+                frontierCursorEpochMillis = frontierRunStartIndex?.let {
+                    candidates[it].timestamp.toEpochMilli()
+                },
             )
             ComparisonStartProposal(status)
         }
@@ -1062,6 +1171,8 @@ class TradeHistoryQueryService(
         snapshotId: Int? = null,
         fundingEvidenceFingerprint: String?,
         evidenceHorizonEpochMillis: Long? = null,
+        frontierReason: ComparisonUnavailableReason? = null,
+        frontierCursorEpochMillis: Long? = null,
     ) {
         repository.setSyncMetadataAtomically(
             mapOf(
@@ -1073,6 +1184,10 @@ class TradeHistoryQueryService(
                     fundingEvidenceFingerprint.orEmpty(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS to
                     evidenceHorizonEpochMillis?.toString().orEmpty(),
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON to
+                    frontierReason?.name.orEmpty(),
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS to
+                    frontierCursorEpochMillis?.toString().orEmpty(),
             ),
         )
     }
@@ -1082,38 +1197,26 @@ class TradeHistoryQueryService(
      * evidence revision. The digest contains the complete retained rows rather than only the
      * display window so zooming cannot skip or reuse a candidate incorrectly.
      *
-     * Identifies the economic evidence a proposal scan consumed. When [horizonEpochMillis] is
-     * set, only rows at or before that instant participate: append-only tail rows after the
-     * durable resume cursor arrive after tested candidates were evaluated and re-verifying them
-     * would invalidate incomplete progress on every live append, so the scan can never resume.
-     * Evidence strictly at or before the horizon is still digested row-by-row, so a backfilled,
-     * edited, or deleted historical row — anything that could change a tested candidate's
-     * outcome — invalidates the stored progress. Acceptance of a verified start re-runs the
-     * full reconciliation against current evidence, which keeps this append tolerance
-     * fail-closed for the acceptance decision itself.
-     *
-     * Returns the evidence fingerprint paired with the horizon actually applied. With no
-     * stored horizon the bound is derived once from the newest row present, so later scans
-     * recompute the digest over exactly the same pre-horizon evidence and append-only rows
-     * beyond it stay out without invalidating resumable progress.
+     * Identifies the economic evidence a proposal scan consumed over an explicit [horizonEpochMillis]
+     * bound: only rows at or before that instant participate. Append-only tail rows after a
+     * persisted horizon exclude themselves from the stored fingerprint, so the scan can resume
+     * and the appended rows instead extend the universe as a new segment once the prefix is
+     * revalidated — the caller derives the bound from the persisted horizon or the newest row.
+     * Evidence at or before the horizon is still digested row-by-row, so a backfilled, edited,
+     * or deleted historical row — anything that could change a tested candidate's outcome —
+     * invalidates the stored progress. Acceptance of a verified start re-runs the full
+     * reconciliation against current evidence, which keeps this append tolerance fail-closed
+     * for the acceptance decision itself.
      */
-    private suspend fun proposalEvidenceFingerprint(
+    private suspend fun proposalEvidenceDigest(
         orderedSnapshots: List<PortfolioSnapshot>,
         startAfter: Instant,
         inceptionResolution: InceptionResolution?,
         predecessorSnapshot: PortfolioSnapshot?,
-        horizonEpochMillis: Long? = null,
-    ): Pair<String, Long> {
-        val trades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
-        val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
-        val latestRowEpochMiss = listOf(
-            orderedSnapshots.lastOrNull()?.timestamp,
-            predecessorSnapshot?.timestamp,
-            trades.lastOrNull()?.timestamp,
-            ledgers.lastOrNull()?.time,
-        ).filterNotNull().maxOfOrNull { it.toEpochMilli() } ?: 0L
-
-        val effectiveHorizon = horizonEpochMillis?.takeIf { it >= 0 } ?: latestRowEpochMiss
+        trades: List<TradeRecord>,
+        ledgers: List<LedgerEvent>,
+        horizonEpochMillis: Long,
+    ): String {
         val material = buildString {
             append(PROPOSAL_SEARCH_VERSION).append('\u0000')
             append(startAfter).append('\u0000')
@@ -1164,16 +1267,16 @@ class TradeHistoryQueryService(
             }
             val horizon = horizonEpochMillis
             orderedSnapshots.forEach {
-                if (horizon == null || it.timestamp.toEpochMilli() <= horizon) {
+                if (it.timestamp.toEpochMilli() <= horizon) {
                     appendSnapshotDigest(it)
                 }
             }
             trades.sortedWith(compareBy({ it.timestamp }, { it.id ?: Int.MAX_VALUE }))
-                .forEach { if (horizon == null || it.timestamp.toEpochMilli() <= horizon) appendTradeDigest(it) }
+                .forEach { if (it.timestamp.toEpochMilli() <= horizon) appendTradeDigest(it) }
             ledgers.sortedWith(compareBy({ it.time }, { it.ledgerId }))
-                .forEach { if (horizon == null || it.time.toEpochMilli() <= horizon) appendLedgerDigest(it) }
+                .forEach { if (it.time.toEpochMilli() <= horizon) appendLedgerDigest(it) }
         }
-        return sha256Hex(material) to effectiveHorizon
+        return sha256Hex(material)
     }
 
     private fun StringBuilder.appendSnapshotDigest(snapshot: PortfolioSnapshot) {
