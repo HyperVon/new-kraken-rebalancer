@@ -74,7 +74,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
         metadata: MutableMap<String, String>,
         snapshots: List<PortfolioSnapshot>,
         applicationScope: CoroutineScope? = null,
-    ): TradeHistoryQueryService {
+    ): Pair<TradeHistoryQueryService, TradeRepository> {
         val repository = mockk<TradeRepository>(relaxed = true)
         val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
         coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
@@ -102,7 +102,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             nowProvider = { now },
             applicationScope = applicationScope,
         )
-        return service
+        return service to repository
     }
 
     init {
@@ -111,12 +111,16 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val tail = (13..15).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val service = harness(metadata, candidates)
+                val (service, repository) = harness(metadata, candidates)
 
                 val first = service.getComparisonStartProposal(now)
                 first?.status shouldBe ComparisonProposalStatus.INCOMPLETE
                 val storedCursor = metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS]
                 storedCursor shouldBe "${candidates[8].timestamp.toEpochMilli()}:0"
+
+                // A live append lands after the first request: re-stub the repository so the
+                // second call sees the tail rows beyond the first scan's evidence horizon.
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns candidates + tail
 
                 val resumed = service.getComparisonStartProposal(now)
                 resumed?.status shouldBe ComparisonProposalStatus.EXHAUSTED
@@ -127,7 +131,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             runTest {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val service = harness(metadata, candidates)
+                val (service, repository) = harness(metadata, candidates)
 
                 service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
                 val storedFingerprint = metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT]
@@ -150,7 +154,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             runTest {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val service = harness(metadata, candidates)
+                val (service, repository) = harness(metadata, candidates)
 
                 val proposal = service.findLaterComparisonStartProposal(
                     startAfter = now,
@@ -166,7 +170,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             runTest {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val service = harness(metadata, candidates)
+                val (service, repository) = harness(metadata, candidates)
 
                 val proposal = service.findLaterComparisonStartProposal(
                     startAfter = now,
@@ -183,7 +187,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             val metadata = mutableMapOf<String, String>()
             val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
             val continuationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-            val service = harness(metadata, candidates, applicationScope = continuationScope)
+            val (service, _) = harness(metadata, candidates, applicationScope = continuationScope)
 
             runBlocking {
                 service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
