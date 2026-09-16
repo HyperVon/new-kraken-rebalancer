@@ -4,6 +4,8 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.KrakenApiConstants
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -70,23 +72,67 @@ class ProposalSearchResumabilityTest : StringSpec() {
         )
     }
 
+    /**
+     * Snapshot with constant balances so trials anchored at it reconcile AVAILABLE against
+     * sibling stable rows (no trades/ledgers to explain deltas) — the "cured candidate" lever
+     * for reopen sequences.
+     */
+    private fun stableSnapshot(delaySeconds: Long, btcBalance: String = "1"): PortfolioSnapshot {
+        val price = BigDecimal("50000.00")
+        val balance = BigDecimal(btcBalance)
+        return PortfolioSnapshot(
+            timestamp = now.plusSeconds(delaySeconds),
+            totalValueUSD = price.multiply(balance).plus(BigDecimal("50000.00")),
+            assets = mapOf(
+                Asset.BTC to TestFixtures.assetSnapshot(
+                    symbol = Asset.BTC,
+                    balance = balance,
+                    price = price,
+                    valueUSD = price.multiply(balance),
+                    targetPercent = BigDecimal("10"),
+                ),
+                TestFixtures.USD to TestFixtures.assetSnapshot(
+                    symbol = TestFixtures.USD,
+                    balance = BigDecimal("50000.00"),
+                    price = BigDecimal.ONE,
+                    valueUSD = BigDecimal("50000.00"),
+                    targetPercent = BigDecimal("90"),
+                ),
+            ),
+            actions = emptyList(),
+            drawdownPercent = BigDecimal.ZERO,
+            fiatDeploymentPercent = BigDecimal.ZERO,
+            effectiveUsdTargetPercent = BigDecimal.ZERO,
+            balancesObservedAt = now.plusSeconds(delaySeconds),
+        )
+    }
+
     private fun harness(
         metadata: MutableMap<String, String>,
         snapshots: List<PortfolioSnapshot>,
+        confidentInception: Boolean = false,
         applicationScope: CoroutineScope? = null,
-    ): Pair<TradeHistoryQueryService, TradeRepository> {
+    ): Triple<TradeHistoryQueryService, TradeRepository, LedgerRepository> {
         val repository = mockk<TradeRepository>(relaxed = true)
         val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
         coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
         coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers { metadata.putAll(firstArg()) }
         val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-        coEvery { inceptionService.resolveInception() } returns InceptionResolution(
-            inceptionTime = now,
-            inceptionSnapshot = null,
-            isAutoDetected = false,
-            confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
-            unavailableReason = ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
-        )
+        coEvery { inceptionService.resolveInception() } returns if (confidentInception) {
+            InceptionResolution(
+                inceptionTime = now,
+                inceptionSnapshot = null,
+                isAutoDetected = false,
+            )
+        } else {
+            InceptionResolution(
+                inceptionTime = now,
+                inceptionSnapshot = null,
+                isAutoDetected = false,
+                confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                unavailableReason = ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
+            )
+        }
         coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns snapshots
         coEvery { repository.getSnapshotBefore(any()) } returns null
         coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
@@ -102,7 +148,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             nowProvider = { now },
             applicationScope = applicationScope,
         )
-        return service to repository
+        return Triple(service, repository, ledgerRepository)
     }
 
     init {
@@ -111,7 +157,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val tail = (13..15).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val (service, repository) = harness(metadata, candidates)
+                val (service, repository, ledgerRepository) = harness(metadata, candidates)
 
                 val first = service.getComparisonStartProposal(now)
                 first?.status shouldBe ComparisonProposalStatus.INCOMPLETE
@@ -131,7 +177,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             runTest {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val (service, repository) = harness(metadata, candidates)
+                val (service, repository, ledgerRepository) = harness(metadata, candidates)
 
                 service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
                 val storedFingerprint = metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT]
@@ -154,7 +200,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             runTest {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val (service, repository) = harness(metadata, candidates)
+                val (service, repository, ledgerRepository) = harness(metadata, candidates)
 
                 val proposal = service.findLaterComparisonStartProposal(
                     startAfter = now,
@@ -170,7 +216,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             runTest {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val (service, repository) = harness(metadata, candidates)
+                val (service, repository, ledgerRepository) = harness(metadata, candidates)
 
                 val proposal = service.findLaterComparisonStartProposal(
                     startAfter = now,
@@ -187,7 +233,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             val metadata = mutableMapOf<String, String>()
             val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
             val continuationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-            val (service, _) = harness(metadata, candidates, applicationScope = continuationScope)
+            val (service, _, _) = harness(metadata, candidates, applicationScope = continuationScope)
 
             runBlocking {
                 service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
@@ -203,12 +249,118 @@ class ProposalSearchResumabilityTest : StringSpec() {
             continuationScope.cancel()
         }
 
+        "a pending append-sensitive marker outranks a stored later VERIFIED on horizon advance" {
+            runTest {
+                // State 1: G has an unexplained delta; S1 is the final stable candidate and
+                // fails INSUFFICIENT_SNAPSHOTS (window holds only itself) — natural pending
+                // frontier. Seed a later durable VERIFIED anchor to represent the premise
+                // being tested: stored VERIFIED at a candidate AFTER failing mark.
+                val g = snapshot(3600, 1)
+                val s1 = stableSnapshot(7200)
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, ledgerRepository) = harness(metadata, listOf(g, s1))
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    s1.timestamp.toEpochMilli().toString()
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] =
+                    ComparisonProposalStatus.VERIFIED.name
+                val tempTs = now.plusSeconds(10800).toEpochMilli()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = "$tempTs:0"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = "0"
+
+                val tail = listOf(stableSnapshot(10800), stableSnapshot(14400))
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(g, s1) + tail
+                val cured = service.getComparisonStartProposal(now)
+
+                cured?.status shouldBe ComparisonProposalStatus.VERIFIED
+                cured?.timestamp shouldBe s1.timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
+            }
+        }
+
+        "a stale EXHAUSTED with a pending append-sensitive frontier re-evaluates to a cure" {
+            runTest {
+                val g = snapshot(3600, 1)
+                val a = stableSnapshot(7200)
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, ledgerRepository) = harness(metadata, listOf(g, a))
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] shouldBe
+                    ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    a.timestamp.toEpochMilli().toString()
+
+                val tail = listOf(stableSnapshot(10800), stableSnapshot(14400))
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(g, a) + tail
+                val cured = service.getComparisonStartProposal(now)
+
+                cured?.status shouldBe ComparisonProposalStatus.VERIFIED
+                cured?.timestamp shouldBe a.timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
+            }
+        }
+
+        "no pending frontier leaves a stored VERIFIED reusable across an appended tail" {
+            runTest {
+                val base = (1..12).map { index -> snapshot(3600L * index, index) } + stableSnapshot(3600L * 13)
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, ledgerRepository) = harness(metadata, base)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] =
+                    ComparisonProposalStatus.VERIFIED.name
+                val verifiedTs = base[12].timestamp.toEpochMilli()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = "$verifiedTs:0"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = "0"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] = ""
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] = ""
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns
+                    base + snapshot(3600L * 14, 14) + snapshot(3600L * 15, 15)
+                val reused = service.getComparisonStartProposal(now)
+
+                reused?.status shouldBe ComparisonProposalStatus.VERIFIED
+                reused?.timestamp shouldBe base[12].timestamp
+            }
+        }
+
+        "a horizon advance with no pending mark resumes directly at the appended tail" {
+            runTest {
+                val base = (1..12).map { index -> snapshot(3600L * index, index) } + stableSnapshot(3600L * 13)
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(metadata, base)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                // Review premise: with NO pending append-sensitive mark, the proven prefix may
+                // stay skipped and the tail resumes directly. Simulate EXHAUSTED with the
+                // frontier explicitly dropped.
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] =
+                    ComparisonProposalStatus.EXHAUSTED.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] = "EXHAUSTED"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] = ""
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] = ""
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns
+                    base + stableSnapshot(3600L * 14) + stableSnapshot(3600L * 15)
+                val firstTail = stableSnapshot(3600L * 14)
+                val resumed = service.getComparisonStartProposal(now)
+
+                resumed?.status shouldBe ComparisonProposalStatus.VERIFIED
+                resumed?.timestamp shouldBe firstTail.timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] =
+                    "${firstTail.timestamp.toEpochMilli()}:0"
+            }
+        }
+
         "a stale EXHAUSTED reopens through its frontier when evidence appends past the horizon" {
             runTest {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val tail = (13..15).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val (service, repository) = harness(metadata, candidates)
+                val (service, repository, ledgerRepository) = harness(metadata, candidates)
 
                 service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
                 service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
@@ -241,6 +393,14 @@ class ProposalSearchResumabilityTest : StringSpec() {
         "a tail row beyond the horizon does not invalidate progress but a historical edit does" {
             runTest {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
+                val extraHistoricalTrade = TestFixtures.tradeRecord(
+                    timestamp = now.plusSeconds(3600L * 4),
+                    pair = "XXBTZUSD",
+                    side = "sell",
+                    symbol = "XXBT",
+                    volume = BigDecimal("0.25"),
+                    usdAmount = BigDecimal("12500.00"),
+                )
                 val tailTrade = TestFixtures.tradeRecord(
                     timestamp = now.plusSeconds(3600L * 14),
                     pair = "XXBTZUSD",
@@ -259,7 +419,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
                     id = 1,
                 )
                 val metadata = mutableMapOf<String, String>()
-                val (service, repository) = harness(metadata, candidates)
+                val (service, repository, ledgerRepository) = harness(metadata, candidates)
 
                 service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe
@@ -275,7 +435,8 @@ class ProposalSearchResumabilityTest : StringSpec() {
 
                 // A historical trade inside the horizon is part of what tested candidates
                 // consumed; its appearance invalidates the stored progress fail-closed.
-                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(historicalTrade)
+                coEvery { repository.getTradesInRange(any(), any()) } returns
+                    listOf(extraHistoricalTrade, historicalTrade)
                 val invalidated = service.getComparisonStartProposal(now)
 
                 invalidated?.status shouldBe ComparisonProposalStatus.INCOMPLETE
@@ -289,7 +450,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
                 val tail = (13..15).map { index -> snapshot(3600L * index, index) }
                 val metadata = mutableMapOf<String, String>()
-                val (service, repository) = harness(metadata, candidates)
+                val (service, repository, ledgerRepository) = harness(metadata, candidates)
 
                 // Force a trailing INSUFFICIENT_SNAPSHOTS frontier run before the budget ends:
                 // persist it by racing the scan to EXHAUSTED, then re-introduce a fresh

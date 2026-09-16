@@ -173,7 +173,7 @@ class TradeHistoryQueryService(
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
         private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 600
         private const val PROPOSAL_CONTINUATION_PACING_MS = 2_000L
-        private const val PROPOSAL_SEARCH_VERSION = "9"
+        private const val PROPOSAL_SEARCH_VERSION = "10"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
         /**
@@ -779,8 +779,16 @@ class TradeHistoryQueryService(
             val fundingEvidenceFingerprint = preparedFundingProvenance?.evidenceFingerprint
             val fundingEvidenceChanged = fundingEvidenceFingerprint != null &&
                 fundingEvidenceFingerprint != storedFundingEvidenceFingerprint
+            val frontierSensitive = APPEND_SENSITIVE_FRONTIER_REASONS.any { it.name == storedFrontierReason }
+            // A pointer to an append-sensitive failure predates the stored VERIFIED anchor: a
+            // horizon advance may cure it and move the earliest verified start earlier, so the
+            // durable VERIFIED state may not short-circuit the reopened scan.
+            val reopensPastStoredVerified = canResume && !fundingEvidenceChanged &&
+                horizonAdvanced && frontierSensitive && storedFrontierCursorRaw != null
             if (preparedFundingProvenance?.preparationFailure != null) {
-                if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name) {
+                if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name &&
+                    !reopensPastStoredVerified
+                ) {
                     val verifiedIndex = storedCursor
                         ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
                     val storedSnapshotId = repository.getSyncMetadata(
@@ -813,7 +821,9 @@ class TradeHistoryQueryService(
                 )
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
             }
-            if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name) {
+            if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name &&
+                !reopensPastStoredVerified
+            ) {
                 storedCursor?.let { cursor ->
                     val verifiedIndex = candidates.indexOfProposalCursor(cursor)
                     if (verifiedIndex >= 0) {
@@ -848,8 +858,13 @@ class TradeHistoryQueryService(
             val skipIndex = skipCandidatesBefore?.let { eventTime ->
                 candidates.indexOfFirst { it.timestamp >= eventTime }.takeIf { it >= 0 }
             }
-            val frontierSensitive = APPEND_SENSITIVE_FRONTIER_REASONS.any { it.name == storedFrontierReason }
-            val frontierResumeIndex = if (horizonAdvanced && frontierSensitive && storedFrontierCursorRaw != null) {
+            // The persisted frontier is the EARLIEST append-sensitive failure carried across
+            // calls — later non-sensitive failures do not supersede it, because the earliest
+            // verified start contract keeps that candidate's re-evaluation open even when its
+            // successor later failed non-sensitively or a verified anchor sits after it.
+            val storedFrontierIndex = if (canResume && !fundingEvidenceChanged &&
+                horizonAdvanced && frontierSensitive && storedFrontierCursorRaw != null
+            ) {
                 candidates.indexOfFirst {
                     it.timestamp.toEpochMilli() >= storedFrontierCursorRaw
                 }.takeIf { it >= 0 }
@@ -870,13 +885,17 @@ class TradeHistoryQueryService(
                     ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
                     ?.takeIf { it >= 0 } ?: 0
                 // An advanced horizon rewinds through the persisted append-sensitive frontier
-                // run: those earlier failures may now be curable, while proven non-sensitive
+                // marker: those earlier failures may now be curable, while proven non-sensitive
                 // prefix failures stay final.
-                frontierResumeIndex?.let { minOf(it, cursorIndex) } ?: cursorIndex
+                if (horizonAdvanced) {
+                    minOf(cursorIndex, storedFrontierIndex ?: cursorIndex)
+                } else {
+                    cursorIndex
+                }
             } else if (horizonAdvanced && !fundingEvidenceChanged) {
                 // New funding evidence can flip any earlier candidate's outcome, so it bans
                 // frontier/tail shortcuts the same way it bans cursor resumption: rescan.
-                frontierResumeIndex
+                storedFrontierIndex
                     ?: tailResumeIndex
                     // Horizon advanced without a mappable cursor position: re-scan the whole
                     // enlarged segment rather than trusting stale index arithmetic.
@@ -886,8 +905,13 @@ class TradeHistoryQueryService(
             }
             var index = maxOf(resumeIndex, skipIndex ?: 0)
             var trials = 0
-            var frontierRunStartIndex: Int? = null
-            var frontierRunReason: ComparisonUnavailableReason? = null
+            var frontierCursorIndex = storedFrontierIndex
+            var frontierRunReason: ComparisonUnavailableReason? =
+                if (canResume && !fundingEvidenceChanged) {
+                    APPEND_SENSITIVE_FRONTIER_REASONS.firstOrNull { it.name == storedFrontierReason }
+                } else {
+                    null
+                }
             while (index < candidates.size && trials < PROPOSAL_MAX_TRIALS) {
                 val candidate = candidates[index]
                 val trial = calculateComparison(
@@ -906,6 +930,10 @@ class TradeHistoryQueryService(
                         candidate.timestamp,
                         candidateCursor.ordinal,
                     )
+                    // The marker candidate was re-reached during this scan — an AVAILABLE
+                    // anchor cures the pending mark; a mark that was carried but not reached
+                    // in this call stays persisted so the next horizon advance reopens there.
+                    val frontierCured = frontierCursorIndex != null && frontierCursorIndex <= index
                     persistProposalSearchState(
                         fingerprint = fingerprint,
                         status = ComparisonProposalStatus.VERIFIED,
@@ -913,6 +941,12 @@ class TradeHistoryQueryService(
                         snapshotId = candidateSnapshotId,
                         fundingEvidenceFingerprint = fundingEvidenceFingerprint,
                         evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                        frontierReason = if (frontierCured) null else frontierRunReason,
+                        frontierCursorEpochMillis = if (frontierCured) {
+                            null
+                        } else {
+                            frontierCursorIndex?.let { candidates[it].timestamp.toEpochMilli() }
+                        },
                     )
                     return@withLock ComparisonStartProposal(
                         status = ComparisonProposalStatus.VERIFIED,
@@ -920,16 +954,19 @@ class TradeHistoryQueryService(
                         snapshotId = candidateSnapshotId,
                     )
                 }
-                // A trailing run of append-sensitive failures is the frontier that a later
-                // append may cure; any non-sensitive failure is final under this horizon and
-                // truncates the run.
+                // Keep the EARLIEST append-sensitive failure, not the trailing run: candidate
+                // validity is independent, and a non-sensitive failure after it must not erase
+                // the earlier uncertainty. A non-sensitive failure of the marked candidate
+                // itself does supersede it — its own outcome is now final.
                 if (trial.unavailableReason in APPEND_SENSITIVE_FRONTIER_REASONS) {
-                    if (frontierRunStartIndex == null) {
-                        frontierRunStartIndex = index
+                    if (frontierCursorIndex == null ||
+                        candidate.timestamp < candidates[frontierCursorIndex].timestamp
+                    ) {
+                        frontierCursorIndex = index
                         frontierRunReason = trial.unavailableReason
                     }
-                } else {
-                    frontierRunStartIndex = null
+                } else if (frontierCursorIndex == index) {
+                    frontierCursorIndex = null
                     frontierRunReason = null
                 }
                 // Advance exactly one candidate. A trial's unavailableAt is a failure point in
@@ -952,7 +989,7 @@ class TradeHistoryQueryService(
                 fundingEvidenceFingerprint = fundingEvidenceFingerprint,
                 evidenceHorizonEpochMillis = appliedEvidenceHorizon,
                 frontierReason = frontierRunReason,
-                frontierCursorEpochMillis = frontierRunStartIndex?.let {
+                frontierCursorEpochMillis = frontierCursorIndex?.let {
                     candidates[it].timestamp.toEpochMilli()
                 },
             )
