@@ -18,6 +18,7 @@ import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionRecoveryStatus
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.ObservedBalances
+import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
@@ -150,6 +151,9 @@ class TradeHistoryServiceImpl(
 
     override suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? =
         queryService.getComparisonStartProposal(after)
+
+    override suspend fun getSettingsComparisonStatus(after: Instant): SettingsComparisonStatus =
+        queryService.getSettingsComparisonStatus(after)
 
     override suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
         queryService.getRebalancerComparison(from, to)

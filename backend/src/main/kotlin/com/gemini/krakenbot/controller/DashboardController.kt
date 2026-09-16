@@ -19,6 +19,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.OrderIntentService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
+import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.view.DashboardView
@@ -513,17 +514,21 @@ class DashboardController(
         call.respondText(errHtml, ContentType.Text.Html, status)
     }
 
-    /** Async slot body: resolves the later-start proposal without blocking the Settings page. */
+    /** Async slot body: resolves the comparison status without blocking the Settings page. */
     private suspend fun RoutingContext.handleGetSettingsProposalFragment() {
         val config = configService.getConfig()
-        val proposal =
-            runCatching { resolveLaterStartProposal(config.settings) }
-                .onFailure { log.warn("Later-start proposal resolution failed in settings fragment", it) }
+        val status =
+            runCatching { resolveComparisonStatus(config.settings) }
+                .onFailure { log.warn("Comparison baseline status resolution failed in settings fragment", it) }
                 .getOrNull()
         val html =
             createHTML(prettyPrint = false).div {
                 id = HtmlIds.COMPARISON_PROPOSAL_SLOT
-                dashboardView.renderSettingsProposalFragment(this, proposal)
+                dashboardView.renderSettingsProposalFragment(
+                    this,
+                    status,
+                    config.settings.comparisonStartDate,
+                )
             }
         call.respondText(html, ContentType.Text.Html)
     }
@@ -533,11 +538,11 @@ class DashboardController(
      * History. Approved baseline readiness is only one input; later ownership/reconciliation
      * evidence can still make the comparison unavailable. The query is read-only.
      */
-    private suspend fun resolveLaterStartProposal(settings: Settings): ComparisonStartProposal? {
+    private suspend fun resolveComparisonStatus(settings: Settings): SettingsComparisonStatus? {
         val anchor = settings.comparisonStartDate?.takeIf(String::isNotBlank)
             ?.let { InceptionDiscoveryService.parseInceptionDate(it) }
             ?: InceptionDiscoveryService.parseInceptionDate(settings.inceptionDate)
-        return anchor?.let { tradeHistoryService.getComparisonStartProposal(it) }
+        return anchor?.let { tradeHistoryService.getSettingsComparisonStatus(it) }
     }
 
     private suspend fun RoutingContext.handleGetDashboardFragment() {

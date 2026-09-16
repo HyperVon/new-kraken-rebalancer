@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.65] - 2026-09-16
+
+### Fixed
+
+- **Settings HTMX body-replacement regression**: the async comparison-proposal slot inherited the
+  form's `hx-target="body"` on swap, so a fragment fetch could replace the entire Settings page
+  (only the "Later-start verification..." message remained). The slot now declares an explicit
+  `hx-target="#comparison-proposal-slot"`, and every fragment response is scoped to the slot with
+  no `hx-trigger`, so the swap can never re-trigger a load loop or touch the rest of the page.
+  Header, navigation, form, modes, and allocations all survive while Settings is left open.
+- **Settings baseline terminology**: the form now separates the three concepts it previously
+  conflated — the field reads "Comparison Start Override (Optional)" with clearer help copy,
+  the approved-start message says "Strategy inception established at" instead of claiming the
+  inception date is the comparison baseline, and the async fragment reports the actual resolved
+  anchor ("Automatic"/"Manual override active", "Effective Buy & Hold baseline:" with the resolved
+  timestamp, plus "Buy & Hold baseline is currently unavailable." and resolution-failure copy). GET /settings
+  still renders without running comparison work; the fragment resolves the status out-of-band,
+  and Save-time validation remains synchronous. Proposal search accounting is unchanged.
+
 ## [6.17.64] - 2026-09-15
 
 ### Fixed
