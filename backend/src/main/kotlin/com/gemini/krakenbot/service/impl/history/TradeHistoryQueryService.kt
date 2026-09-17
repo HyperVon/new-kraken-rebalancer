@@ -789,8 +789,13 @@ class TradeHistoryQueryService(
             val reopensPastStoredVerified = canResume && !fundingEvidenceChanged &&
                 horizonAdvanced && frontierSensitive && storedFrontierCursorRaw != null
             if (preparedFundingProvenance?.preparationFailure != null) {
-                if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name &&
-                    !reopensPastStoredVerified
+                // Funding preparation cannot revalidate a stored anchor against a horizon
+                // that has advanced, so fail closed to INCOMPLETE; the next healthy call
+                // re-evaluates under the enlarged evidence horizon. The cached state stays
+                // safe only while the horizon — and thus the tested evidence set — is
+                // unchanged, and only past the caller's skip boundary.
+                if (canResume && !fundingEvidenceChanged && !horizonAdvanced &&
+                    storedStatus == ComparisonProposalStatus.VERIFIED.name
                 ) {
                     val verifiedIndex = storedCursor
                         ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
@@ -806,6 +811,7 @@ class TradeHistoryQueryService(
                         null
                     }
                     if (verifiedIndex != null && verifiedIndex >= 0 &&
+                        (skipIndex == null || skipIndex <= verifiedIndex) &&
                         storedSnapshotId != null && durableSnapshotId == storedSnapshotId
                     ) {
                         return@withLock ComparisonStartProposal(

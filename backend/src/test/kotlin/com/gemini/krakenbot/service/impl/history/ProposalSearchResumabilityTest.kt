@@ -4,6 +4,10 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.FundingEvidence
+import com.gemini.krakenbot.model.FundingProvenanceFailure
+import com.gemini.krakenbot.model.FundingProvenanceFailureReason
+import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -112,6 +116,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
         snapshots: List<PortfolioSnapshot>,
         confidentInception: Boolean = false,
         applicationScope: CoroutineScope? = null,
+        fundingResolver: FundingProvenanceResolver = SimpleFundingProvenanceResolver(),
     ): Triple<TradeHistoryQueryService, TradeRepository, LedgerRepository> {
         val repository = mockk<TradeRepository>(relaxed = true)
         val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
@@ -144,11 +149,37 @@ class ProposalSearchResumabilityTest : StringSpec() {
             ledgerRepository = ledgerRepository,
             orderIntentRepository = mockk(relaxed = true),
             inceptionDiscoveryService = inceptionService,
-            fundingProvenanceResolver = SimpleFundingProvenanceResolver(),
+            fundingProvenanceResolver = fundingResolver,
             nowProvider = { now },
             applicationScope = applicationScope,
         )
         return Triple(service, repository, ledgerRepository)
+    }
+
+    private fun failedFundingResolver(): FundingProvenanceResolver = FundingProvenanceResolver.unavailable(
+        FundingProvenanceFailure(
+            reason = FundingProvenanceFailureReason.REQUEST_FAILED,
+            message = "funding evidence unavailable",
+        ),
+    )
+
+    private fun healthyFundingResolver(fingerprint: String): FundingProvenanceResolver =
+        object : FundingProvenanceResolver {
+            override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+            override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver = this
+
+            override val evidenceFingerprint: String? = fingerprint
+        }
+
+    private fun scriptedFundingResolver(vararg stages: FundingProvenanceResolver): FundingProvenanceResolver {
+        val queue = stages.toMutableList()
+        return object : FundingProvenanceResolver {
+            override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
+
+            override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver =
+                queue.removeFirst()
+        }
     }
 
     init {
@@ -561,6 +592,121 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 rewound?.status shouldBe ComparisonProposalStatus.EXHAUSTED
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
                     tail[2].timestamp.toEpochMilli().toString()
+            }
+        }
+
+        "funding preparation failure without a horizon advance still returns the cached VERIFIED" {
+            runTest {
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val service = harness(
+                    metadata,
+                    base,
+                    fundingResolver = scriptedFundingResolver(
+                        healthyFundingResolver("funding-v1"),
+                        failedFundingResolver(),
+                    ),
+                ).first
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+
+                val reused = service.getComparisonStartProposal(now)
+
+                reused?.status shouldBe ComparisonProposalStatus.VERIFIED
+                reused?.timestamp shouldBe base[0].timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT] shouldBe "funding-v1"
+            }
+        }
+
+        "a horizon advance during funding preparation failure fails closed to INCOMPLETE" {
+            runTest {
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val tail = listOf(stableSnapshot(3600L * 3), stableSnapshot(3600L * 4))
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(
+                    metadata,
+                    base,
+                    fundingResolver = scriptedFundingResolver(
+                        healthyFundingResolver("funding-v1"),
+                        failedFundingResolver(),
+                    ),
+                )
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns base + tail
+                val failed = service.getComparisonStartProposal(now)
+
+                failed?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
+                    ComparisonProposalStatus.INCOMPLETE.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe
+                    "${base[0].timestamp.toEpochMilli()}:0"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT] shouldBe ""
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS] shouldBe
+                    tail[1].timestamp.toEpochMilli().toString()
+            }
+        }
+
+        "a cached VERIFIED never bypasses skipCandidatesBefore during preparation failure" {
+            runTest {
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val service = harness(
+                    metadata,
+                    base,
+                    fundingResolver = scriptedFundingResolver(
+                        healthyFundingResolver("funding-v1"),
+                        failedFundingResolver(),
+                    ),
+                ).first
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+
+                val proposal = service.findLaterComparisonStartProposal(
+                    startAfter = now,
+                    inceptionResolution = InceptionResolution(
+                        inceptionTime = now,
+                        inceptionSnapshot = null,
+                        isAutoDetected = false,
+                        confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                        unavailableReason = ComparisonUnavailableReason.INCEPTION_BASELINE_UNAVAILABLE,
+                    ),
+                    skipCandidatesBefore = base[1].timestamp,
+                )
+
+                proposal.status shouldBe ComparisonProposalStatus.INCOMPLETE
+            }
+        }
+
+        "a recovery after preparation failure rescans under the enlarged horizon before VERIFIED" {
+            runTest {
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val tail = listOf(stableSnapshot(3600L * 3), stableSnapshot(3600L * 4))
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(
+                    metadata,
+                    base,
+                    fundingResolver = scriptedFundingResolver(
+                        healthyFundingResolver("funding-v1"),
+                        failedFundingResolver(),
+                        healthyFundingResolver("funding-v1"),
+                    ),
+                )
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns base + tail
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT] shouldBe ""
+
+                val recovered = service.getComparisonStartProposal(now)
+
+                recovered?.status shouldBe ComparisonProposalStatus.VERIFIED
+                recovered?.timestamp shouldBe base[0].timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT] shouldBe "funding-v1"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS] shouldBe
+                    tail[1].timestamp.toEpochMilli().toString()
             }
         }
     }
