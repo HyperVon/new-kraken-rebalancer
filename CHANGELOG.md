@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.66] - 2026-09-16
+
+### Fixed
+
+- **Proposal scan resumability across live appends**: the Settings later-start proposal
+  fingerprint digested every retained snapshot, trade, and ledger row (open-ended), so each
+  snapshot appended by a live sync changed the digest, invalidated the durable resume cursor,
+  and restarted the bounded scan from the first candidate on every Settings fragment request —
+  the scan could never make progress on a live system. The fingerprint now digests only evidence
+  at or before a persisted evidence horizon (derived once from the newest row at scan start);
+  append-only tail rows beyond the horizon no longer invalidate tested candidates. Rows at or
+  before the horizon are still digested row-by-row, so backfilled, edited, or deleted historical
+  rows — anything that could change a tested candidate's outcome — still invalidate stored
+  progress, and accepting a verified start re-runs the full reconciliation fail-closed.
+- **Bounded background continuation for incomplete scans**: when the proposal search ends a
+  request still INCOMPLETE, the service continues the bounded scan on the application scope
+  (capped cycles, paced) so a scan completes server-side without operator reloads or an HTMX
+  reload loop; GET /settings stays non-blocking.
+- **Comparison unavailability is observable**: the exact unavailable reason (for example
+  "A deposit, withdrawal, transfer, or incomplete trade history may exist.") and evidence
+  timestamp now render in the Settings baseline slot and are logged in structured form when the
+  comparison is unavailable, replacing an unobservable failure.
+- **Intrinsic-event candidate skip**: when the current comparison fails inside a candidate's
+  window for a reason that originates in events rather than the candidate itself (unsupported
+  trade, unsupported ledger type, unexplained balance change), candidates whose entire window
+  precedes that failure point provably fail the same way and are skipped; candidate-local
+  reasons (asset universe change, baseline mismatch, insufficient snapshots, pruned inception
+  snapshot) are never skipped.
+
 ## [6.17.65] - 2026-09-16
 
 ### Fixed

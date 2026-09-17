@@ -25,13 +25,18 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 
 class TradeHistoryQueryService(
     private val repository: TradeRepository,
@@ -45,8 +50,14 @@ class TradeHistoryQueryService(
     private val historicalOhlcCache: HistoricalOhlcCache? = null,
     /** Evidence boundary used when the lifetime inception recovery cannot be trusted. */
     private val pureBenchmarkAnchorFloor: Instant = PURE_BENCHMARK_ANCHOR_FLOOR,
+    /** Application-lifetime scope used for the bounded background proposal continuation. */
+    private val applicationScope: CoroutineScope? = null,
 ) {
     private val proposalSearchMutex = Mutex()
+
+    private val log = LoggerFactory.getLogger(TradeHistoryQueryService::class.java)
+
+    private val proposalContinuationActive = AtomicBoolean(false)
 
     private data class ProposalCursor(val epochMillis: Long, val ordinal: Int) {
         fun encode(): String = "$epochMillis:$ordinal"
@@ -142,10 +153,44 @@ class TradeHistoryQueryService(
                 ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
             )
 
+        /**
+         * Reasons whose unavailable payload pins the exact evidence event a comparison failed
+         * at. Any candidate anchored before that instant places the same event inside its own
+         * comparison window and must fail identically, so the bounded proposal scan skips
+         * straight to the first candidate at or after the event instead of paying a full
+         * reconciliation trial for every one of them.
+         */
+        private val INTRINSIC_EVENT_REASONS =
+            setOf(
+                ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE,
+                ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+            )
+
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
-        private const val PROPOSAL_SEARCH_VERSION = "7"
+
+        /** Background continuation pacing and lifetime budget for an incomplete scan. */
+        private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 600
+        private const val PROPOSAL_CONTINUATION_PACING_MS = 2_000L
+        private const val PROPOSAL_SEARCH_VERSION = "10"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
+
+        /**
+         * Candidate-local failure reasons whose outcome depends on the volume or availability of
+         * evidence after the candidate's own window, so a later append can flip them to AVAILABLE.
+         * A scan that exhausted its segment while its frontier failed for one of these reasons must
+         * rewind and re-evaluate that run when the evidence horizon advances. Event-origin and
+         * baseline/ownership reasons are excluded: they are pinned by evidence inside the
+         * candidate's own window (intrinsics) or on its left (baseline), so appends to the tail
+         * cannot cure them and rescanning them would only burn trials.
+         */
+        private val APPEND_SENSITIVE_FRONTIER_REASONS =
+            setOf(
+                ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                ComparisonUnavailableReason.MISSING_PRICE,
+                ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+            )
 
         /**
          * The normal snapshot loop is substantially more frequent than daily. A gap this large
@@ -246,7 +291,18 @@ class TradeHistoryQueryService(
             availability = current.availability,
             baselineTimestamp = current.baselineTimestamp?.toString(),
             unavailableReason = current.unavailableReason,
+            unavailableAt = current.unavailableAt?.toString(),
         )
+        if (current.availability == ComparisonAvailability.UNAVAILABLE) {
+            // Operator-visible reconciliation diagnostics: the reason and its evidence
+            // timestamp identify the event that made the inception-anchored comparison
+            // unavailable. Names, balances, and raw exchange payloads are deliberately omitted.
+            log.info(
+                "comparison unavailable; reason={} unavailableAt={}",
+                current.unavailableReason,
+                status.unavailableAt ?: "unknown",
+            )
+        }
         if (current.availability != ComparisonAvailability.UNAVAILABLE ||
             current.unavailableReason !in PROPOSAL_ELIGIBLE_REASONS
         ) {
@@ -259,7 +315,49 @@ class TradeHistoryQueryService(
         ) {
             return status
         }
-        return status.copy(proposal = findLaterComparisonStartProposal(after, inceptionResolution))
+        val skipCandidatesBefore = current.unavailableAt
+            ?.takeIf { current.unavailableReason in INTRINSIC_EVENT_REASONS }
+        val proposal = findLaterComparisonStartProposal(after, inceptionResolution, skipCandidatesBefore)
+        if (proposal.status == ComparisonProposalStatus.INCOMPLETE) {
+            ensureProposalSearchContinuation(after)
+        }
+        return status.copy(proposal = proposal)
+    }
+
+    /**
+     * Runs the bounded proposal scan faithfully on the application scope when an evaluation
+     * left it INCOMPLETE, so later-start discovery completes without asking the operator to
+     * reload Settings until the durable cursor advances through every candidate. Every cycle
+     * evaluates through the same gate chain and persists progress under [proposalSearchMutex],
+     * and the loop stops on VERIFIED, EXHAUSTED, any gate change, or its own bounded budget.
+     */
+    private fun ensureProposalSearchContinuation(after: Instant) {
+        val scope = applicationScope ?: return
+        if (!proposalContinuationActive.compareAndSet(false, true)) return
+        log.info("proposal search continuation started; status=INCOMPLETE")
+        scope.launch {
+            try {
+                for (cycle in 0 until PROPOSAL_CONTINUATION_MAX_CYCLES) {
+                    val proposal = getSettingsComparisonStatus(after).proposal
+                    if (proposal?.status != ComparisonProposalStatus.INCOMPLETE) {
+                        log.info(
+                            "proposal search continuation finished at cycle {}; status={}",
+                            cycle,
+                            proposal?.status,
+                        )
+                        return@launch
+                    }
+                    delay(PROPOSAL_CONTINUATION_PACING_MS)
+                }
+                log.info("proposal search continuation budget exhausted; status=INCOMPLETE")
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                log.warn("proposal search continuation stopped", error)
+            } finally {
+                proposalContinuationActive.set(false)
+            }
+        }
     }
 
     private suspend fun calculateComparison(
@@ -576,6 +674,8 @@ class TradeHistoryQueryService(
     internal suspend fun findLaterComparisonStartProposal(
         startAfter: Instant,
         inceptionResolution: InceptionResolution?,
+        /** Skip all candidates before an evidence event that provably fails inside every scan window. */
+        skipCandidatesBefore: Instant? = null,
     ): ComparisonStartProposal {
         return proposalSearchMutex.withLock {
             // Reload all economic evidence after acquiring the mutex. A concurrent Settings and
@@ -595,25 +695,77 @@ class TradeHistoryQueryService(
             ) {
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
             }
-            val candidates = orderedSnapshots.filter { it.timestamp > startAfter }
-            val predecessorSnapshot = candidates.firstOrNull()?.let { repository.getSnapshotBefore(it.timestamp) }
-            val fingerprint = proposalEvidenceFingerprint(
-                orderedSnapshots = orderedSnapshots,
-                startAfter = startAfter,
-                inceptionResolution = inceptionResolution,
-                predecessorSnapshot = predecessorSnapshot,
-            )
+            val allCandidates = orderedSnapshots.filter { it.timestamp > startAfter }
+            val predecessorSnapshot = allCandidates.firstOrNull()?.let { repository.getSnapshotBefore(it.timestamp) }
+            // Read durable progress before fingerprinting: the stored evidence horizon bounds
+            // which rows participate in the digest. Candidates at or before it were already
+            // evaluated; append-only rows after it must not invalidate that progress (see
+            // proposalEvidenceDigest).
             val storedFingerprint = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT,
             )
             val storedStatus = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS)
-            val storedCursor = repository.getSyncMetadata(
+            val storedCursorRaw = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS,
             )
+            val storedCursor = storedCursorRaw?.let(ProposalCursor::parse)
+            val storedEvidenceHorizon = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS,
+            )?.toLongOrNull()
+            val storedFrontierReason = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON,
+            )
+            val storedFrontierCursorRaw = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS,
+            )?.toLongOrNull()
+            val trades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
+            val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
+            val latestRowEpochMillis = maxOf(
+                orderedSnapshots.maxOfOrNull { it.timestamp.toEpochMilli() } ?: 0L,
+                predecessorSnapshot?.timestamp?.toEpochMilli() ?: 0L,
+                trades.maxOfOrNull { it.timestamp.toEpochMilli() } ?: 0L,
+                ledgers.maxOfOrNull { it.time.toEpochMilli() } ?: 0L,
+            )
+            // Revalidate the stored prefix under its own horizon first. A match proves every
+            // evaluated candidate's evidence is unchanged; only then may the horizon advance to
+            // the newest row so the growing tail becomes a fresh segment instead of invalidating
+            // proven progress.
+            val prefixFingerprint = proposalEvidenceDigest(
+                orderedSnapshots = orderedSnapshots,
+                startAfter = startAfter,
+                inceptionResolution = inceptionResolution,
+                predecessorSnapshot = predecessorSnapshot,
+                trades = trades,
+                ledgers = ledgers,
+                horizonEpochMillis = storedEvidenceHorizon ?: latestRowEpochMillis,
+            )
+            val canResume = storedFingerprint == prefixFingerprint
+            val horizonAdvanced = canResume &&
+                storedEvidenceHorizon != null &&
+                latestRowEpochMillis > storedEvidenceHorizon
+            // A reset (fresh or invalidated stored state) and a horizon advance both derive the
+            // bound from the newest row, so every persisted state covers its candidate universe
+            // exactly — no tested candidate is ever digested outside its own fingerprint.
+            val appliedEvidenceHorizon = if (canResume && !horizonAdvanced) {
+                storedEvidenceHorizon ?: latestRowEpochMillis
+            } else {
+                latestRowEpochMillis
+            }
+            val fingerprint = proposalEvidenceDigest(
+                orderedSnapshots = orderedSnapshots,
+                startAfter = startAfter,
+                inceptionResolution = inceptionResolution,
+                predecessorSnapshot = predecessorSnapshot,
+                trades = trades,
+                ledgers = ledgers,
+                horizonEpochMillis = appliedEvidenceHorizon,
+            )
+            val candidates = allCandidates.filter {
+                it.timestamp.toEpochMilli() <= appliedEvidenceHorizon
+            }
             val storedFundingEvidenceFingerprint = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT,
             ).orEmpty()
-            val canResume = storedFingerprint == fingerprint
             val preparedFundingProvenance = if (candidates.isNotEmpty()) {
                 // Pin one immutable provenance snapshot for the complete bounded scan. Passing
                 // it into every trial prevents a candidate loop from issuing one network-backed
@@ -627,25 +779,39 @@ class TradeHistoryQueryService(
             val fundingEvidenceFingerprint = preparedFundingProvenance?.evidenceFingerprint
             val fundingEvidenceChanged = fundingEvidenceFingerprint != null &&
                 fundingEvidenceFingerprint != storedFundingEvidenceFingerprint
+            val skipIndex = skipCandidatesBefore?.let { eventTime ->
+                candidates.indexOfFirst { it.timestamp >= eventTime }.takeIf { it >= 0 }
+            }
+            val frontierSensitive = APPEND_SENSITIVE_FRONTIER_REASONS.any { it.name == storedFrontierReason }
+            // A pointer to an append-sensitive failure predates the stored VERIFIED anchor: a
+            // horizon advance may cure it and move the earliest verified start earlier, so the
+            // durable VERIFIED state may not short-circuit the reopened scan.
+            val reopensPastStoredVerified = canResume && !fundingEvidenceChanged &&
+                horizonAdvanced && frontierSensitive && storedFrontierCursorRaw != null
             if (preparedFundingProvenance?.preparationFailure != null) {
-                if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name) {
-                    val verifiedIndex = storedCursor?.let(ProposalCursor::parse)
+                // Funding preparation cannot revalidate a stored anchor against a horizon
+                // that has advanced, so fail closed to INCOMPLETE; the next healthy call
+                // re-evaluates under the enlarged evidence horizon. The cached state stays
+                // safe only while the horizon — and thus the tested evidence set — is
+                // unchanged, and only past the caller's skip boundary.
+                if (canResume && !fundingEvidenceChanged && !horizonAdvanced &&
+                    storedStatus == ComparisonProposalStatus.VERIFIED.name
+                ) {
+                    val verifiedIndex = storedCursor
                         ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
                     val storedSnapshotId = repository.getSyncMetadata(
                         SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
                     )?.toIntOrNull()
-                    val storedCursorValue = storedCursor?.let(ProposalCursor::parse)
-                    val durableSnapshotId = if (verifiedIndex != null && verifiedIndex >= 0 &&
-                        storedCursorValue != null
-                    ) {
+                    val durableSnapshotId = if (verifiedIndex != null && verifiedIndex >= 0) {
                         repository.getSnapshotId(
                             candidates[verifiedIndex].timestamp,
-                            storedCursorValue.ordinal,
+                            storedCursor.ordinal,
                         )
                     } else {
                         null
                     }
                     if (verifiedIndex != null && verifiedIndex >= 0 &&
+                        (skipIndex == null || skipIndex <= verifiedIndex) &&
                         storedSnapshotId != null && durableSnapshotId == storedSnapshotId
                     ) {
                         return@withLock ComparisonStartProposal(
@@ -660,13 +826,14 @@ class TradeHistoryQueryService(
                     status = ComparisonProposalStatus.INCOMPLETE,
                     cursor = candidates.proposalCursorAt(0).encode(),
                     fundingEvidenceFingerprint = null,
+                    evidenceHorizonEpochMillis = appliedEvidenceHorizon,
                 )
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
             }
             if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.VERIFIED.name) {
-                storedCursor?.let(ProposalCursor::parse)?.let { cursor ->
+                storedCursor?.let { cursor ->
                     val verifiedIndex = candidates.indexOfProposalCursor(cursor)
-                    if (verifiedIndex >= 0) {
+                    if (verifiedIndex >= 0 && (skipIndex == null || skipIndex <= verifiedIndex)) {
                         val storedSnapshotId = repository.getSyncMetadata(
                             SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
                         )?.toIntOrNull()
@@ -675,30 +842,118 @@ class TradeHistoryQueryService(
                             cursor.ordinal,
                         )
                         if (storedSnapshotId != null && durableSnapshotId == storedSnapshotId) {
-                            return@withLock ComparisonStartProposal(
-                                status = ComparisonProposalStatus.VERIFIED,
-                                timestamp = candidates[verifiedIndex].timestamp,
-                                snapshotId = storedSnapshotId,
-                            )
+                            if (!horizonAdvanced && !reopensPastStoredVerified) {
+                                return@withLock ComparisonStartProposal(
+                                    status = ComparisonProposalStatus.VERIFIED,
+                                    timestamp = candidates[verifiedIndex].timestamp,
+                                    snapshotId = storedSnapshotId,
+                                )
+                            }
+                            if (!reopensPastStoredVerified) {
+                                // A horizon advance can invalidate the stored anchor with
+                                // new tail evidence (new ledger event, reconstruction row),
+                                // so the verified candidate is re-evaluated once under the
+                                // enlarged horizon before it may be returned.
+                                val revalidated = calculateComparison(
+                                    candidates.drop(verifiedIndex),
+                                    InceptionResolution(
+                                        inceptionTime = candidates[verifiedIndex].timestamp,
+                                        inceptionSnapshot = candidates[verifiedIndex],
+                                        isAutoDetected = false,
+                                    ),
+                                    preparedFundingProvenance = preparedFundingProvenance,
+                                )
+                                if (revalidated.availability == ComparisonAvailability.AVAILABLE) {
+                                    persistProposalSearchState(
+                                        fingerprint = fingerprint,
+                                        status = ComparisonProposalStatus.VERIFIED,
+                                        cursor = cursor.encode(),
+                                        snapshotId = storedSnapshotId,
+                                        fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+                                        evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                                    )
+                                    return@withLock ComparisonStartProposal(
+                                        status = ComparisonProposalStatus.VERIFIED,
+                                        timestamp = candidates[verifiedIndex].timestamp,
+                                        snapshotId = storedSnapshotId,
+                                    )
+                                }
+                                // Not AVAILABLE any more: continue proposal discovery under
+                                // the enlarged horizon (the full scan below re-evaluates, and
+                                // its persist overwrites the stale VERIFIED state).
+                            }
                         }
                     }
                 }
             }
-            if (canResume && !fundingEvidenceChanged && storedStatus == ComparisonProposalStatus.EXHAUSTED.name) {
+            // Terminal exhaustion only holds while no evidence arrived after the persisted
+            // horizon. A newer tail extends the open-ended candidate universe, so the scan
+            // reopens at its frontier and evaluates the appended rows under a horizon that
+            // includes them.
+            if (canResume && !fundingEvidenceChanged &&
+                storedStatus == ComparisonProposalStatus.EXHAUSTED.name &&
+                !horizonAdvanced
+            ) {
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED)
             }
 
+            // The persisted frontier is the EARLIEST append-sensitive failure carried across
+            // calls — later non-sensitive failures do not supersede it, because the earliest
+            // verified start contract keeps that candidate's re-evaluation open even when its
+            // successor later failed non-sensitively or a verified anchor sits after it.
+            // Carry the persisted mark into the loop on EVERY resumable call — not only
+            // horizon advances — so a pending mark survives cursored resumes bounded by the
+            // phased calls. Each persist re-writes the earliest pending failure.
+            val storedFrontierIndex = if (canResume && !fundingEvidenceChanged &&
+                frontierSensitive && storedFrontierCursorRaw != null
+            ) {
+                candidates.indexOfFirst {
+                    it.timestamp.toEpochMilli() >= storedFrontierCursorRaw
+                }.takeIf { it >= 0 }
+            } else {
+                null
+            }
+            val tailResumeIndex = if (horizonAdvanced) {
+                val advancedTailStart = storedEvidenceHorizon
+                candidates.indexOfFirst { it.timestamp.toEpochMilli() > advancedTailStart }
+                    .takeIf { it >= 0 }
+            } else {
+                null
+            }
             val resumeIndex = if (canResume && !fundingEvidenceChanged &&
                 storedStatus == ComparisonProposalStatus.INCOMPLETE.name
             ) {
-                storedCursor?.let(ProposalCursor::parse)
+                val cursorIndex = storedCursor
                     ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
                     ?.takeIf { it >= 0 } ?: 0
+                // An advanced horizon rewinds through the persisted append-sensitive frontier
+                // marker: those earlier failures may now be curable, while proven non-sensitive
+                // prefix failures stay final.
+                if (horizonAdvanced) {
+                    minOf(cursorIndex, storedFrontierIndex ?: cursorIndex)
+                } else {
+                    cursorIndex
+                }
+            } else if (horizonAdvanced && !fundingEvidenceChanged) {
+                // New funding evidence can flip any earlier candidate's outcome, so it bans
+                // frontier/tail shortcuts the same way it bans cursor resumption: rescan.
+                storedFrontierIndex
+                    ?: tailResumeIndex
+                    // Horizon advanced without a mappable cursor position: re-scan the whole
+                    // enlarged segment rather than trusting stale index arithmetic.
+                    ?: 0
             } else {
                 0
             }
-            var index = resumeIndex
+            var index = maxOf(resumeIndex, skipIndex ?: 0)
             var trials = 0
+            var frontierCursorIndex = storedFrontierIndex
+            var frontierRunReason: ComparisonUnavailableReason? =
+                if (canResume && !fundingEvidenceChanged) {
+                    APPEND_SENSITIVE_FRONTIER_REASONS.firstOrNull { it.name == storedFrontierReason }
+                } else {
+                    null
+                }
             while (index < candidates.size && trials < PROPOSAL_MAX_TRIALS) {
                 val candidate = candidates[index]
                 val trial = calculateComparison(
@@ -717,18 +972,44 @@ class TradeHistoryQueryService(
                         candidate.timestamp,
                         candidateCursor.ordinal,
                     )
+                    // The marker candidate was re-reached during this scan — an AVAILABLE
+                    // anchor cures the pending mark; a mark that was carried but not reached
+                    // in this call stays persisted so the next horizon advance reopens there.
+                    val frontierCured = frontierCursorIndex == index
                     persistProposalSearchState(
                         fingerprint = fingerprint,
                         status = ComparisonProposalStatus.VERIFIED,
                         cursor = candidateCursor.encode(),
                         snapshotId = candidateSnapshotId,
                         fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+                        evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                        frontierReason = if (frontierCured) null else frontierRunReason,
+                        frontierCursorEpochMillis = if (frontierCured) {
+                            null
+                        } else {
+                            frontierCursorIndex?.let { candidates[it].timestamp.toEpochMilli() }
+                        },
                     )
                     return@withLock ComparisonStartProposal(
                         status = ComparisonProposalStatus.VERIFIED,
                         timestamp = candidate.timestamp,
                         snapshotId = candidateSnapshotId,
                     )
+                }
+                // Keep the EARLIEST append-sensitive failure, not the trailing run: candidate
+                // validity is independent, and a non-sensitive failure after it must not erase
+                // the earlier uncertainty. A non-sensitive failure of the marked candidate
+                // itself does supersede it — its own outcome is now final.
+                if (trial.unavailableReason in APPEND_SENSITIVE_FRONTIER_REASONS) {
+                    if (frontierCursorIndex == null ||
+                        candidate.timestamp < candidates[frontierCursorIndex].timestamp
+                    ) {
+                        frontierCursorIndex = index
+                        frontierRunReason = trial.unavailableReason
+                    }
+                } else if (frontierCursorIndex == index) {
+                    frontierCursorIndex = null
+                    frontierRunReason = null
                 }
                 // Advance exactly one candidate. A trial's unavailableAt is a failure point in
                 // that trial, not proof that every earlier retained candidate is invalid.
@@ -748,6 +1029,11 @@ class TradeHistoryQueryService(
                     PROPOSAL_CURSOR_EXHAUSTED
                 },
                 fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+                evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                frontierReason = frontierRunReason,
+                frontierCursorEpochMillis = frontierCursorIndex?.let {
+                    candidates[it].timestamp.toEpochMilli()
+                },
             )
             ComparisonStartProposal(status)
         }
@@ -965,6 +1251,9 @@ class TradeHistoryQueryService(
         cursor: String,
         snapshotId: Int? = null,
         fundingEvidenceFingerprint: String?,
+        evidenceHorizonEpochMillis: Long? = null,
+        frontierReason: ComparisonUnavailableReason? = null,
+        frontierCursorEpochMillis: Long? = null,
     ) {
         repository.setSyncMetadataAtomically(
             mapOf(
@@ -974,6 +1263,12 @@ class TradeHistoryQueryService(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID to snapshotId?.toString().orEmpty(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT to
                     fundingEvidenceFingerprint.orEmpty(),
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS to
+                    evidenceHorizonEpochMillis?.toString().orEmpty(),
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON to
+                    frontierReason?.name.orEmpty(),
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS to
+                    frontierCursorEpochMillis?.toString().orEmpty(),
             ),
         )
     }
@@ -982,15 +1277,27 @@ class TradeHistoryQueryService(
      * The cursor is valid only for this configuration, effective start, account scope, and
      * evidence revision. The digest contains the complete retained rows rather than only the
      * display window so zooming cannot skip or reuse a candidate incorrectly.
+     *
+     * Identifies the economic evidence a proposal scan consumed over an explicit [horizonEpochMillis]
+     * bound: only rows at or before that instant participate. Append-only tail rows after a
+     * persisted horizon exclude themselves from the stored fingerprint, so the scan can resume
+     * and the appended rows instead extend the universe as a new segment once the prefix is
+     * revalidated — the caller derives the bound from the persisted horizon or the newest row.
+     * Evidence at or before the horizon is still digested row-by-row, so a backfilled, edited,
+     * or deleted historical row — anything that could change a tested candidate's outcome —
+     * invalidates the stored progress. Acceptance of a verified start re-runs the full
+     * reconciliation against current evidence, which keeps this append tolerance fail-closed
+     * for the acceptance decision itself.
      */
-    private suspend fun proposalEvidenceFingerprint(
+    private suspend fun proposalEvidenceDigest(
         orderedSnapshots: List<PortfolioSnapshot>,
         startAfter: Instant,
         inceptionResolution: InceptionResolution?,
         predecessorSnapshot: PortfolioSnapshot?,
+        trades: List<TradeRecord>,
+        ledgers: List<LedgerEvent>,
+        horizonEpochMillis: Long,
     ): String {
-        val trades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
-        val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
         val material = buildString {
             append(PROPOSAL_SEARCH_VERSION).append('\u0000')
             append(startAfter).append('\u0000')
@@ -1007,10 +1314,9 @@ class TradeHistoryQueryService(
                 .append('\u0000')
             append(repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION).orEmpty())
                 .append('\u0000')
-            append(ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC).orEmpty())
-                .append('\u0000')
-            append(repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC).orEmpty())
-                .append('\u0000')
+            // Coverage watermarks count append-only fresh rows and grow with every live cycle;
+            // they are freshness counters, not evidence identity, so they must not invalidate
+            // resumable progress. Row-level digests below remain the material evidence check.
             // Reconstruction currentness participates in the fingerprint: invalidating or
             // rebuilding reconstructed history must force proposal re-trials instead of letting a
             // stored VERIFIED cursor resume against a different evidence baseline.
@@ -1040,11 +1346,16 @@ class TradeHistoryQueryService(
                 append("predecessor\n")
                 appendSnapshotDigest(it)
             }
-            orderedSnapshots.forEach { appendSnapshotDigest(it) }
+            val horizon = horizonEpochMillis
+            orderedSnapshots.forEach {
+                if (it.timestamp.toEpochMilli() <= horizon) {
+                    appendSnapshotDigest(it)
+                }
+            }
             trades.sortedWith(compareBy({ it.timestamp }, { it.id ?: Int.MAX_VALUE }))
-                .forEach { appendTradeDigest(it) }
+                .forEach { if (it.timestamp.toEpochMilli() <= horizon) appendTradeDigest(it) }
             ledgers.sortedWith(compareBy({ it.time }, { it.ledgerId }))
-                .forEach { appendLedgerDigest(it) }
+                .forEach { if (it.time.toEpochMilli() <= horizon) appendLedgerDigest(it) }
         }
         return sha256Hex(material)
     }

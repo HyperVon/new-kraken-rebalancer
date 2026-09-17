@@ -5,7 +5,9 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
@@ -166,6 +168,24 @@ class SettingsFormComponentTest : StringSpec() {
             }
             val occurrences = fragment.split("Requested comparison start").size - 1
             occurrences shouldBe 1
+        }
+
+        "an unavailable comparison renders the exact reason and evidence timestamp" {
+            val fragment = createHTML().div {
+                SettingsFormComponent().renderProposalSlotFragment(
+                    this,
+                    SettingsComparisonStatus(
+                        availability = ComparisonAvailability.UNAVAILABLE,
+                        unavailableReason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                        unavailableAt = "2026-06-08T00:00:00Z",
+                    ),
+                    null,
+                )
+            }
+
+            fragment shouldContain "Buy &amp; Hold baseline is currently unavailable."
+            fragment shouldContain "A deposit, withdrawal, transfer, or incomplete trade history may exist."
+            fragment shouldContain "(failed at: 2026-06-08T00:00:00Z)"
         }
 
         "the full settings page renders through the body-context entry point" {
