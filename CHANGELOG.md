@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.67] - 2026-09-17
+
+### Fixed
+
+- **Inception baseline replay orders same-instant events by balance continuity**:
+  the reverse replay previously processed ledger rows and trades sharing a timestamp
+  in fixed ledger-id order, so a deposit paired with a same-millisecond conversion
+  (or two fills of different trades landing in the same millisecond) replayed in an
+  order no forward execution could produce and failed closed with "unsupported trade
+  economics". Each instant's mutating rows and checkpointed trades are now chained by
+  matching recorded post-balances against the running balance (simulated first; the
+  legacy order is kept unless every row in the instant chains completely), restoring
+  the true reverse of the validated forward order.
+- **History sync metadata value widened to TEXT (schema 14)**: the metadata value
+  column was capped at 64 characters, so persisting the approved full-wallet baseline
+  universe record (a ~240-character asset list) exceeded the column and baseline
+  establishment failed with "Database write failed". The column is now TEXT with a
+  rebuild migration that preserves existing rows.
+- **Comparison reconciles pre-regulars staking rewards against anchor-relative
+  balances**: a staking leg dated before every regular event snapped its recorded
+  post balance against the post-regulars running state, stale-overwriting newer
+  regular effects so no late-assignment subset could match and the comparison failed
+  closed with "unexplained balance change" (production July-2026: four staking rewards
+  sharing an instant with two boundary sells). Pre-regulars late ledgers now evaluate
+  against a pre-regulars anchor copy with same-symbol prefix chaining (net-economics
+  legs are unaffected), and Spot-resolved staking rows honor the authoritative post
+  balance instead of lossy net economics (Kraken reports staking amount/fee fields
+  rounded).
+
 ## [6.17.66] - 2026-09-16
 
 ### Fixed

@@ -975,6 +975,20 @@ object RebalancerComparisonCalculator {
                 resolvedScopes,
             )
 
+            // Pre-regulars state for late-ledger evaluation: boundary ledgers dated before
+            // every regular event must be evaluated against the state at their own timestamp
+            // (see findLateAssignment), not against the post-regulars running state.
+            val preRegularBalances = impliedBalances.toMap()
+            val minRegularEventTime = buildList {
+                regularIntervalTrades.forEach { add(it.value.timestamp) }
+                regularIntervalLedgers.forEach { add(it.value.time) }
+            }.minOrNull()
+            val anchorRelativeLedgerIndexes = lateCandidates
+                .filterIsInstance<LateCandidate.Ledger>()
+                .filter { minRegularEventTime == null || it.ledger.time < minRegularEventTime }
+                .map { it.index }
+                .toSet()
+
             if (initialTradeCandidates.isNotEmpty() || initialLedgerCandidates.isNotEmpty()) {
                 for ((_, initialTrade) in initialTradeCandidates) {
                     val candidateBalances = impliedBalances.toMutableMap()
@@ -1125,6 +1139,8 @@ object RebalancerComparisonCalculator {
                         useAuthoritativeLedgerBalances,
                         tradeLegsByRefId,
                         tradeLegsByTradeIdentity,
+                        preRegularBalances,
+                        anchorRelativeLedgerIndexes,
                     )
                 } else {
                     null
@@ -1159,15 +1175,6 @@ object RebalancerComparisonCalculator {
                 )
             }
             if (!balancesMatchSnapshot(impliedBalances, curr)) {
-                val mismatches = impliedBalances.mapNotNull { (symbol, balance) ->
-                    val observed = curr.assets[symbol]?.balance ?: return@mapNotNull null
-                    if (balance.compareTo(observed) != 0) {
-                        "$symbol=${balance.toPlainString()}|observed=${observed.toPlainString()}|" +
-                            "diff=${balance.subtract(observed).toPlainString()}"
-                    } else {
-                        null
-                    }
-                }
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                     unavailableAt = curr.timestamp,
@@ -1494,6 +1501,11 @@ object RebalancerComparisonCalculator {
         useAuthoritativeLedgerBalances: Boolean,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
+        // Pre-regulars balances plus the indexes of late ledgers dated before every regular
+        // event. Those ledgers evaluate anchor-relatively (see applyAnchorRelativeLedgerEvent);
+        // default callers keep the legacy post-regulars evaluation.
+        anchorBalances: Map<String, BigDecimal> = emptyMap(),
+        anchorRelativeLedgerIndexes: Set<Int> = emptySet(),
     ): LateAssignment? {
         if (candidates.isEmpty() || candidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
         // Explore candidates in the same chronological order as final reconciliation so an
@@ -1509,6 +1521,10 @@ object RebalancerComparisonCalculator {
                 { candidate -> if (candidate is LateCandidate.Ledger) 0 else 1 },
             ),
         )
+        // Global-index to ledger lookup for anchor-relative prefix chaining below.
+        val ledgersByIndex = orderedCandidates
+            .filterIsInstance<LateCandidate.Ledger>()
+            .associate { it.index to it.ledger }
 
         var match: LateAssignment? = null
         var multipleMatches = false
@@ -1561,11 +1577,23 @@ object RebalancerComparisonCalculator {
 
                 is LateCandidate.Ledger -> {
                     val nextBalances = balances.toMutableMap()
-                    val appliedDelta = applyLedgerEvent(
-                        nextBalances,
-                        candidate.ledger,
-                        useAuthoritativeLedgerBalances,
-                    )
+                    val appliedDelta = if (candidate.index in anchorRelativeLedgerIndexes) {
+                        applyAnchorRelativeLedgerEvent(
+                            nextBalances,
+                            candidate.ledger,
+                            useAuthoritativeLedgerBalances,
+                            anchorBalances,
+                            ledgersByIndex,
+                            selectedLedgers,
+                            selectedLedgerDeltas,
+                        )
+                    } else {
+                        applyLedgerEvent(
+                            nextBalances,
+                            candidate.ledger,
+                            useAuthoritativeLedgerBalances,
+                        )
+                    }
                     selectedLedgers += candidate.index
                     selectedLedgerDeltas[candidate.index] = appliedDelta
                     search(position + 1, nextBalances)
@@ -1577,6 +1605,65 @@ object RebalancerComparisonCalculator {
 
         search(position = 0, balances = startingBalances)
         return if (multipleMatches) null else match
+    }
+
+    /**
+     * Mirror of the scope gate in [canUseAuthoritativeLedgerBalances]: a staking row may act
+     * as a Spot correction only when validator-resolved to Spot, which is exactly when the
+     * interval flag (and hence a non-null authoritativeDelta) is granted for it.
+     */
+    private fun isSpotResolvedStakingCorrection(ledger: LedgerEvent): Boolean =
+        ledger.type.equals(KrakenApiConstants.LEDGER_TYPE_STAKING, ignoreCase = true)
+
+    /**
+     * Applies a late boundary ledger dated before every regular event against the pre-regulars
+     * [anchorBalances] instead of the post-regulars running state, so a staking-row snap lands
+     * on its true point-in-time delta rather than overwriting newer regular effects with a
+     * stale post balance. Same-symbol subset ledgers applied earlier in this path are chained
+     * via [selectedLedgerDeltas]; net-economics legs are unaffected (addition commutes).
+     * Earlier same-symbol subset *trades* are not chained (trade deltas are not recorded), so
+     * exotic same-instant trade-plus-ledger layouts stay fail-closed here. Falls back to
+     * [applyLedgerEvent] when the symbol is absent from either balance map.
+     */
+    private fun applyAnchorRelativeLedgerEvent(
+        balances: MutableMap<String, BigDecimal>,
+        ledger: LedgerEvent,
+        useAuthoritativeBalance: Boolean,
+        anchorBalances: Map<String, BigDecimal>,
+        ledgersByIndex: Map<Int, LedgerEvent>,
+        selectedLedgerIndexes: List<Int>,
+        selectedLedgerDeltas: Map<Int, BigDecimal>,
+    ): BigDecimal {
+        val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
+        if (symbol !in balances || symbol !in anchorBalances) {
+            return applyLedgerEvent(balances, ledger, useAuthoritativeBalance)
+        }
+        var prefixDelta = BigDecimal.ZERO
+        for (selectedIndex in selectedLedgerIndexes) {
+            val prior = ledgersByIndex[selectedIndex] ?: continue
+            if (Asset.normalizeLedgerAsset(prior.asset).uppercase() == symbol) {
+                prefixDelta = prefixDelta.add(selectedLedgerDeltas[selectedIndex] ?: BigDecimal.ZERO)
+            }
+        }
+        val netDelta = ledger.netBalanceDelta()
+        val authoritativeDelta = if (useAuthoritativeBalance && ledger.hasAuthoritativeBalance) {
+            ledger.balance.subtract(anchorBalances.getValue(symbol)).subtract(prefixDelta)
+        } else {
+            null
+        }
+        val delta = if (
+            authoritativeDelta != null &&
+            (
+                authoritativeDelta.subtract(netDelta).abs() <= legacyLedgerFeeDeltaTolerance ||
+                    isSpotResolvedStakingCorrection(ledger)
+            )
+        ) {
+            authoritativeDelta
+        } else {
+            netDelta
+        }
+        balances[symbol] = balances.getValue(symbol).add(delta)
+        return delta
     }
 
     private data class BuiltEvents(
@@ -2254,9 +2341,19 @@ object RebalancerComparisonCalculator {
             // balance only as a compatible correction, not as an arbitrary replacement for the
             // ledger economics; this also keeps an embedded event from becoming a false zero-delta
             // post-baseline match during boundary assignment.
+            // Reward rows are exempt from the compatibility check: Kraken reports staking
+            // amount/fee fields rounded (fee to four decimals), so their net economics never
+            // reproduce the authoritative post balance. A staking row only reaches this branch
+            // with a non-null authoritativeDelta when the interval flag is true, which the
+            // validator-certified scope gate grants solely to Spot-resolved staking rows; the
+            // stored post is then exchange truth for the Spot wallet and must be honored.
+            // No tolerance value changes: the shared compatibility gate still applies to every other kind.
             val delta = if (
                 authoritativeDelta != null &&
-                authoritativeDelta.subtract(netDelta).abs() <= legacyLedgerFeeDeltaTolerance
+                (
+                    authoritativeDelta.subtract(netDelta).abs() <= legacyLedgerFeeDeltaTolerance ||
+                        isSpotResolvedStakingCorrection(ledger)
+                )
             ) {
                 authoritativeDelta
             } else {

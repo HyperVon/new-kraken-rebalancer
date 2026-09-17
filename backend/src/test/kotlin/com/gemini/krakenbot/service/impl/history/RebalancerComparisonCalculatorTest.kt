@@ -57,6 +57,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         priceProvider: HistoricalPriceProvider? = null,
         provenanceResolver: FundingProvenanceResolver = testProvenanceResolver,
         inceptionUnavailableReason: ComparisonUnavailableReason? = null,
+        ledgerContext: List<LedgerEvent> = emptyList(),
     ): RebalancerComparison = RebalancerComparisonCalculator.calculate(
         snapshots = snapshots,
         trades = trades,
@@ -68,6 +69,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         priceProvider = priceProvider,
         provenanceResolver = provenanceResolver,
         inceptionUnavailableReason = inceptionUnavailableReason,
+        ledgerContext = ledgerContext,
     )
 
     init {
@@ -2868,6 +2870,74 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.confidence shouldBe null
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
             result.unavailableAt shouldBe now.plusSeconds(3600)
+        }
+
+        "pre-regulars staking reward reconciles against anchor-relative balances" {
+            // Production July-2026 shape: a staking leg dated before every regular event
+            // must snap against the pre-regulars anchor, not the post-regulars running
+            // state (whose newer regular effects a stale snap would overwrite, leaving
+            // no matching subset). The context deposit seeds the validator SPOT scope;
+            // the in-window deposit is a forced regular, never a subset candidate, so
+            // the staking leg is the sole late candidate and the unique-match rule
+            // cannot multi-match. Without anchor-relative evaluation this fails
+            // UNAVAILABLE: the staking snap lands on post-regulars state.
+            val snapshots = listOf(
+                snapshot(
+                    timestamp = now,
+                    totalValueUSD = "100000.00",
+                    assets = mapOf(
+                        "BTC" to assetRow("1.0", "50000", "50000.00"),
+                        "USD" to assetRow("50000", "1", "50000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    timestamp = now.plusSeconds(3600),
+                    totalValueUSD = "129995.05",
+                    assets = mapOf(
+                        "BTC" to assetRow("1.599901", "50000", "79995.05"),
+                        "USD" to assetRow("50000", "1", "50000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            // Context (pre-window) funding of the opening balance: feeds validator
+            // scope resolution only, never reconciliation events.
+            val context = listOf(
+                ledgerEvent(
+                    now.minusSeconds(3600),
+                    "BTC",
+                    "1.0",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    fee = "0",
+                    balance = "1.0",
+                ),
+            )
+            // Boundary staking leg (within 1000ms of prev): the 4dp-rounded fee leaves
+            // amount-minus-fee (0.0999) 1e-6 below the recorded post, inside the
+            // compatibility gate. Chronological posts chain 1.0 -> 1.099901 -> 1.599901.
+            val rewards = listOf(
+                ledgerEvent(now.plusMillis(500), "BTC", "0.1", fee = "0.0001", balance = "1.099901"),
+                ledgerEvent(
+                    now.plusSeconds(1500),
+                    "BTC",
+                    "0.5",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    fee = "0",
+                    balance = "1.599901",
+                ),
+            )
+
+            val result = calculate(
+                snapshots,
+                emptyList(),
+                rewards,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                ledgerContext = context,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
         }
 
         "dividend ledger events for tracked assets are mirrored in buy-and-hold" {

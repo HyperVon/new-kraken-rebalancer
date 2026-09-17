@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.config
 
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -8,6 +9,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.upsert
 import java.math.BigDecimal
 import java.sql.DriverManager
 import java.util.UUID
@@ -34,6 +36,7 @@ class SchemaMigrationsTest : StringSpec() {
                 "inception-inference-evidence",
                 "ledger-amount-validity",
                 "trade-economic-validity",
+                "history-sync-metadata-value-text",
             )
         }
 
@@ -153,6 +156,7 @@ class SchemaMigrationsTest : StringSpec() {
                         11 to "inception-inference-evidence",
                         12 to "ledger-amount-validity",
                         13 to "trade-economic-validity",
+                        14 to "history-sync-metadata-value-text",
                     )
                 }
             }
@@ -242,6 +246,7 @@ class SchemaMigrationsTest : StringSpec() {
                         11 to "inception-inference-evidence",
                         12 to "ledger-amount-validity",
                         13 to "trade-economic-validity",
+                        14 to "history-sync-metadata-value-text",
                     )
                 }
             }
@@ -552,6 +557,56 @@ class SchemaMigrationsTest : StringSpec() {
                             .shouldBeEqualComparingTo(BigDecimal("250.00"))
                         resultSet.getBigDecimal("last_trusted_drawdown_pct")
                             .shouldBeEqualComparingTo(BigDecimal("12.5000"))
+                        resultSet.next() shouldBe false
+                    }
+                }
+            }
+        }
+
+        "v14 widens history sync metadata values to TEXT without losing rows" {
+            val databaseUrl = "jdbc:sqlite:file:test-migrations-meta-text-" + UUID.randomUUID() +
+                "?mode=memory&cache=shared"
+            DatabaseConfig.init(databaseUrl)
+            val legacyValue = "UNIT".repeat(60)
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        "INSERT INTO history_sync_metadata VALUES ('universe-key', '$legacyValue')",
+                    )
+                    statement.executeUpdate("DELETE FROM schema_migrations WHERE version = 14")
+                }
+            }
+
+            val database = DatabaseConfig.init(databaseUrl)
+            transaction(database) {
+                HistorySyncMetadataTable.upsert {
+                    it[key] = "wide-key"
+                    it[value] = "WIDE".repeat(60)
+                }
+            }
+
+            DriverManager.getConnection(databaseUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA table_info(history_sync_metadata)").use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("type") shouldBe "VARCHAR(64)"
+                        resultSet.next() shouldBe true
+                        resultSet.getString("type") shouldBe "TEXT"
+                        resultSet.next() shouldBe false
+                    }
+                    statement.executeQuery(
+                        "SELECT value FROM history_sync_metadata WHERE key = 'universe-key'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("value") shouldBe legacyValue
+                        resultSet.next() shouldBe false
+                    }
+                    statement.executeQuery(
+                        "SELECT value FROM history_sync_metadata WHERE key = 'wide-key'",
+                    ).use { resultSet ->
+                        resultSet.next() shouldBe true
+                        resultSet.getString("value") shouldBe "WIDE".repeat(60)
                         resultSet.next() shouldBe false
                     }
                 }
