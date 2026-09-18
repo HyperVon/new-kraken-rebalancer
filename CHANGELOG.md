@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.69] - 2026-09-18
+
+### Fixed
+
+- **Trade-history test files are hermetic per test case**: the shared
+  relative `test-trade-history.json` path (plus its backup/temp siblings)
+  was concurrently created, rotated, and locked by parallel Gradle test
+  forks in the repository working directory, making snapshot-store branch
+  coverage and outcomes nondeterministic across runs (observed as a CI
+  JaCoCo branch-ratio flake on identical content and as Windows file-lock
+  flakes). Each service test now gets its own freshly created temp-directory
+  file, so fork scheduling can no longer change test or coverage outcomes.
+
 ## [6.17.68] - 2026-09-17
 
 ### Changed

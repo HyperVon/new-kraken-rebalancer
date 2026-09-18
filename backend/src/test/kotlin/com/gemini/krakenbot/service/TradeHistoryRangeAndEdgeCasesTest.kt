@@ -563,7 +563,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     realKraken,
                     configService,
                     objectMapper,
-                    TestFixtures.TEST_TRADE_HISTORY_JSON,
+                    TestFixtures.hermeticTradeHistoryPath(),
                 ).syncTradesFromKraken()
 
                 coVerify(exactly = 1) {
@@ -626,7 +626,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     dynamic,
                     configService,
                     objectMapper,
-                    TestFixtures.TEST_TRADE_HISTORY_JSON,
+                    TestFixtures.hermeticTradeHistoryPath(),
                 ).syncTradesFromKraken()
 
                 coVerify(exactly = 2) {
