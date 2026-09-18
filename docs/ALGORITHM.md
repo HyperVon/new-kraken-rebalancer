@@ -836,17 +836,23 @@ external capital over time:
   bounded search advances through retained snapshots and persists `VERIFIED`, `INCOMPLETE`, or
   `EXHAUSTED` progress. A verified later timestamp is an optional comparison anchor only; accepting
   it preserves the original strategy inception and makes the same anchor explicit in configuration.
-- **A bounded passive anchor is separate from strategy-inception approval.** If lifetime recovery is
-  ambiguous, truncated, or has no trustworthy historical baseline, the comparison may use the
-  earliest genuinely recorded portfolio snapshot on or after the configured passive evidence floor.
-  The exact retained timestamp, observation marker, balances, prices, and provenance are the anchor;
-  this does not confirm the old strategy start, and a pending recovery state remains unavailable.
+- **A passive anchor is separate from strategy-inception approval.** If lifetime recovery is
+  ambiguous, truncated, or has no trustworthy historical baseline, the comparison anchors at the
+  earliest trustworthy retained snapshot at or after the comparison window start that expresses
+  an invested thesis: a recorded or authoritatively reconstructed row whose non-cash holdings
+  reach a material exposure floor (`$5.00`, mirroring the smallest position the configured
+  order-size guards can express). Sub-material dust can never fix the anchor thesis, while a
+  mostly-cash first real position still anchors coherently; only a zero-investment state
+  degenerates (later contributions would sit in cash rather than being invested by the anchor
+  weights). There is no literal date floor. The exact retained timestamp, observation
+  marker, balances, prices, and provenance are the anchor; this does not confirm the old
+  strategy start, and a pending recovery state remains unavailable.
 - **Coverage gaps fail closed.** Later-start proposal search is allowed only when retained snapshots cover
   the relevant strategy period continuously without missing historical eras. In upgraded installations with legacy
   pruning, continuous history start is tracked monotonically in metadata; if older candidate coverage was destroyed
   by pruning or contains a gap exceeding 24 hours, comparison availability reports `HISTORICAL_COVERAGE_GAP`
   and no retained snapshot is presented as the earliest trustworthy lifetime strategy start. A
-  bounded passive anchor can still be available when the retained post-floor snapshots themselves
+  passive invested anchor can still be available when the retained post-anchor snapshots themselves
   are complete and reconcile.
 - **Buy & Hold preserves the recorded anchor thesis.** The basket starts with every positive holding
   in the selected recorded anchor, using its actual balance, historical price, and value proportion
@@ -865,8 +871,11 @@ external capital over time:
   `ASSET_UNIVERSE_CHANGED`.
 - **Recorded history exposes one final state per instant and only spot-wallet effects.**
   Reconstruction persists a row per replayed event, so several cumulative rows can share a
-  millisecond; the chart and comparison keep the first row written for an instant (the state
-  after every event of that instant) before down-sampling. Ledger rows resolved to Kraken's
+  millisecond; the chart keeps the first row written for an instant (the state
+  after every event of that instant) before down-sampling. The comparison instead reconciles
+  the full retained series — intermediate same-instant states are reconciliation evidence
+  that collapsing would destroy — and only down-samples the resulting comparison points
+  for display. Ledger rows resolved to Kraken's
   staking or futures wallet scopes never move comparison balances, mirroring the recorded
   series, while linked internal-transfer pairs are still classified over the full ledger set.
   A trade whose quote asset never enters the recorded universe settles only its tracked leg;

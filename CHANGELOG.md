@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.68] - 2026-09-17
+
+### Changed
+
+- **History comparison reconciles first, samples after**: the service comparison
+  previously collapsed duplicate instants and stride-downsampled snapshots before
+  reconciliation, so chart sampling could change accounting outcomes (intermediate
+  same-instant states are reconciliation evidence). The calculator now receives the
+  full retained series and only the resulting comparison points are downsampled to
+  the chart bound; baseline, latest difference, and contribution accounting are
+  computed on the full series.
+- **Passive Buy & Hold anchor is discovered, not dated**: the hardcoded
+  June-8-2026 evidence floor is replaced by invested-thesis discovery — the
+  earliest trustworthy retained snapshot at or after the comparison window
+  whose non-cash holdings reach a material exposure floor (`$5.00`, mirroring
+  the smallest position the configured order-size guards can express), so
+  sub-material dust can never fix the anchor thesis while a mostly-cash first
+  real position still anchors coherently. A zero-investment all-cash baseline
+  can never anchor the benchmark even when its history reconciles, and the
+  discovery window follows the requested comparison window so windowed views
+  re-anchor inside their own range.
+
+### Fixed
+
+- Review follow-ups: removed a duplicated universe-split conversion test and
+  renamed the distinct backfilled-counterpart scenario, renamed the approved
+  baseline staleness gate to `approvedBaselineMissingUniverseProof` (dropped its
+  unused parameter), and added an observable warn log when a reconciliation
+  boundary exceeds the late-assignment candidate cap.
+- Adversarial-review follow-ups: a cancelled application scope now releases the
+  proposal-continuation guard instead of latching it (pinned by a regression
+  test), and the schema-14 metadata-widening migration drops any leftover
+  `history_sync_metadata_wide` table before rebuilding it.
+
+## [6.17.67] - 2026-09-17
+
+### Fixed
+
+- **Inception baseline replay orders same-instant events by balance continuity**:
+  the reverse replay previously processed ledger rows and trades sharing a timestamp
+  in fixed ledger-id order, so a deposit paired with a same-millisecond conversion
+  (or two fills of different trades landing in the same millisecond) replayed in an
+  order no forward execution could produce and failed closed with "unsupported trade
+  economics". Each instant's mutating rows and checkpointed trades are now chained by
+  matching recorded post-balances against the running balance (simulated first; the
+  legacy order is kept unless every row in the instant chains completely), restoring
+  the true reverse of the validated forward order.
+- **History sync metadata value widened to TEXT (schema 14)**: the metadata value
+  column was capped at 64 characters, so persisting the approved full-wallet baseline
+  universe record (a ~240-character asset list) exceeded the column and baseline
+  establishment failed with "Database write failed". The column is now TEXT with a
+  rebuild migration that preserves existing rows.
+- **Comparison reconciles pre-regulars staking rewards against anchor-relative
+  balances**: a staking leg dated before every regular event snapped its recorded
+  post balance against the post-regulars running state, stale-overwriting newer
+  regular effects so no late-assignment subset could match and the comparison failed
+  closed with "unexplained balance change" (production July-2026: four staking rewards
+  sharing an instant with two boundary sells). Pre-regulars late ledgers now evaluate
+  against a pre-regulars anchor copy with same-symbol prefix chaining (net-economics
+  legs are unaffected), and Spot-resolved staking rows honor the authoritative post
+  balance instead of lossy net economics (Kraken reports staking amount/fee fields
+  rounded).
+
 ## [6.17.66] - 2026-09-16
 
 ### Fixed

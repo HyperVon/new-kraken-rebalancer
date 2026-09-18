@@ -34,6 +34,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The bounded proposal scan must make durable, resumable progress: append-only live
@@ -278,6 +279,22 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 }
             }
             continuationScope.cancel()
+        }
+
+        "a cancelled continuation scope releases the guard instead of latching it" {
+            runTest {
+                val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
+                val metadata = mutableMapOf<String, String>()
+                val cancelledScope = CoroutineScope(SupervisorJob().apply { cancel() })
+                val (service, _, _) = harness(metadata, candidates, applicationScope = cancelledScope)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                val guard = TradeHistoryQueryService::class.java
+                    .getDeclaredField("proposalContinuationActive")
+                    .apply { isAccessible = true }
+                    .get(service) as AtomicBoolean
+                guard.get() shouldBe false
+            }
         }
 
         "a pending append-sensitive marker outranks a stored later VERIFIED on horizon advance" {

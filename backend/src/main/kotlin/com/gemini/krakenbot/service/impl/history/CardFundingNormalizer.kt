@@ -94,6 +94,28 @@ object CardFundingNormalizer {
             group.any { it.netBalanceDelta().signum() > 0 }
     }
 
+    /**
+     * True when linked spend/receive legs provably form one exchange-executed atomic
+     * transformation even though only a subset was balance-assigned. Every leg must carry
+     * the same explicit non-blank transformation subtype (for example Kraken's
+     * `dustsweeping` marker on every leg of one dust-to-credit sweep): the exchange itself
+     * labels the legs as one event of a known kind, so a shape-incomplete assigned subset
+     * is transformation plumbing rather than an ambiguous event type. Groups with blank
+     * or mixed subtypes carry no such evidence and must still fail closed elsewhere.
+     */
+    fun isAtomicTransformationGroup(group: List<LedgerEvent>): Boolean {
+        if (group.size < 2 || group.any { !isPassthroughLeg(it) }) return false
+        if (group.map(LedgerEvent::ledgerId).toSet().size != group.size) return false
+        val subtypes = group.map { normalizeTransformationSubtype(it.subtype) }.toSet()
+        return subtypes.size == 1 && subtypes.single().isNotEmpty()
+    }
+
+    private fun normalizeTransformationSubtype(subtype: String?): String = subtype.orEmpty()
+        .lowercase()
+        .replace("_", "")
+        .replace("-", "")
+        .replace(" ", "")
+
     fun isUsd(asset: String): Boolean {
         val norm = Asset.normalizeLedgerAsset(asset).uppercase()
         return norm == Asset.USD || norm == "ZUSD"

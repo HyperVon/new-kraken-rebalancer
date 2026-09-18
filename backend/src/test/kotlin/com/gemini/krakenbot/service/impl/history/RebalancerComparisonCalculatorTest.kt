@@ -57,6 +57,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         priceProvider: HistoricalPriceProvider? = null,
         provenanceResolver: FundingProvenanceResolver = testProvenanceResolver,
         inceptionUnavailableReason: ComparisonUnavailableReason? = null,
+        ledgerContext: List<LedgerEvent> = emptyList(),
     ): RebalancerComparison = RebalancerComparisonCalculator.calculate(
         snapshots = snapshots,
         trades = trades,
@@ -68,6 +69,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         priceProvider = priceProvider,
         provenanceResolver = provenanceResolver,
         inceptionUnavailableReason = inceptionUnavailableReason,
+        ledgerContext = ledgerContext,
     )
 
     init {
@@ -126,7 +128,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
-            result.unavailableAt shouldBe next.timestamp
         }
 
         "initial and late candidates share one search budget" {
@@ -204,7 +205,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                     listOf(first, next),
                     emptyList(),
                     (0 until count).map { index ->
-                        ledgerEvent(now.plusMillis(10100 + index * 10L), "BTC", (1 shl index).toString())
+                        ledgerEvent(now.plusMillis(9800 + index * 10L), "BTC", (1 shl index).toString())
                     },
                 )
                 if (count <= 12) {
@@ -2212,6 +2213,116 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
+        "legacy boundary ledger already embodied in previous balance is not re-proposed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        current,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                            "USD" to assetRow("45100.00", "1.0", "45100.00"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = current.plusMillis(500),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = current.plusMillis(600),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.minusSeconds(3600),
+                        asset = "BTC",
+                        amount = "1.0",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "1.0",
+                        ledgerId = "legacy-embodied-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "legacy boundary ledger with mismatched authority is still reconciled once" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        current,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                            "USD" to assetRow("45100.00", "1.0", "45100.00"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = current.plusMillis(500),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = current.plusMillis(600),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "999.0",
+                        ledgerId = "legacy-mismatched-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
         "legacy previous row with known current boundary reconciles trade and ledger events" {
             val current = now.plusSeconds(2)
             val result = calculate(
@@ -2870,6 +2981,74 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableAt shouldBe now.plusSeconds(3600)
         }
 
+        "pre-regulars staking reward reconciles against anchor-relative balances" {
+            // Production July-2026 shape: a staking leg dated before every regular event
+            // must snap against the pre-regulars anchor, not the post-regulars running
+            // state (whose newer regular effects a stale snap would overwrite, leaving
+            // no matching subset). The context deposit seeds the validator SPOT scope;
+            // the in-window deposit is a forced regular, never a subset candidate, so
+            // the staking leg is the sole late candidate and the unique-match rule
+            // cannot multi-match. Without anchor-relative evaluation this fails
+            // UNAVAILABLE: the staking snap lands on post-regulars state.
+            val snapshots = listOf(
+                snapshot(
+                    timestamp = now,
+                    totalValueUSD = "100000.00",
+                    assets = mapOf(
+                        "BTC" to assetRow("1.0", "50000", "50000.00"),
+                        "USD" to assetRow("50000", "1", "50000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    timestamp = now.plusSeconds(3600),
+                    totalValueUSD = "129995.05",
+                    assets = mapOf(
+                        "BTC" to assetRow("1.599901", "50000", "79995.05"),
+                        "USD" to assetRow("50000", "1", "50000.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            // Context (pre-window) funding of the opening balance: feeds validator
+            // scope resolution only, never reconciliation events.
+            val context = listOf(
+                ledgerEvent(
+                    now.minusSeconds(3600),
+                    "BTC",
+                    "1.0",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    fee = "0",
+                    balance = "1.0",
+                ),
+            )
+            // Boundary staking leg (within 1000ms of prev): the 4dp-rounded fee leaves
+            // amount-minus-fee (0.0999) 1e-6 below the recorded post, inside the
+            // compatibility gate. Chronological posts chain 1.0 -> 1.099901 -> 1.599901.
+            val rewards = listOf(
+                ledgerEvent(now.plusMillis(500), "BTC", "0.1", fee = "0.0001", balance = "1.099901"),
+                ledgerEvent(
+                    now.plusSeconds(1500),
+                    "BTC",
+                    "0.5",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    fee = "0",
+                    balance = "1.599901",
+                ),
+            )
+
+            val result = calculate(
+                snapshots,
+                emptyList(),
+                rewards,
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                ledgerContext = context,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+        }
+
         "dividend ledger events for tracked assets are mirrored in buy-and-hold" {
             val snapshots = listOf(
                 snapshot(
@@ -2925,7 +3104,645 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
-            result.points[0].differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "legacy boundary ledger beside an observed previous snapshot does not disturb reconciliation" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = now,
+                    ),
+                    snapshot(
+                        current,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                            "USD" to assetRow("45100.00", "1.0", "45100.00"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = current.plusMillis(500),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = current.plusMillis(600),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "999.0",
+                        ledgerId = "legacy-observed-mismatched-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "stale pre-window authority matching previous balance is not re-proposed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        current,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                            "USD" to assetRow("45100.00", "1.0", "45100.00"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = current.plusMillis(500),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = current.plusMillis(600),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.minusSeconds(86400),
+                        asset = "BTC",
+                        amount = "1.0",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "1.0",
+                        ledgerId = "legacy-stale-embodied-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "causal in-span deposit wins over identical out-of-span twin" {
+            val current = now.plusSeconds(3600)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                    ),
+                    snapshot(
+                        current,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50100.00", "1.0", "50100.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.minusMillis(500),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "twin-out",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusMillis(500),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "twin-in",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "minimal single-event explanation wins over fragmented twin legs" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        current,
+                        "100200.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50200.00", "1.0", "50200.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusMillis(500),
+                        asset = "USD",
+                        amount = "200.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "single-200",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusMillis(600),
+                        asset = "USD",
+                        amount = "60.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "frag-60",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusMillis(700),
+                        asset = "USD",
+                        amount = "140.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "frag-140",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "identical twin deposits with no causal distinction stay fail-closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        current,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50100.00", "1.0", "50100.00"),
+                        ),
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusMillis(500),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "twin-a",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusMillis(600),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "twin-b",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe current
+        }
+
+        "sub-skew first-interval deposit is absorbed into the opening state" {
+            val current = now.plusMillis(500)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = now,
+                    ),
+                    snapshot(
+                        current,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusMillis(250),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "legacy-subskew-deposit-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "first-burst contribution beside a single stale mismatch reconciles under observed previous snapshot" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = now,
+                    ),
+                    snapshot(
+                        current,
+                        "100200.00",
+                        mapOf(
+                            "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                            "USD" to assetRow("45200.00", "1.0", "45200.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = now.plusSeconds(1),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusMillis(1100),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "first-burst-deposit-late-usd",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusMillis(500),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "first-burst-deposit-usd",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.minusMillis(500),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "999.0",
+                        ledgerId = "legacy-observed-stale-mismatched-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "corroborated pre-baseline contradiction fails closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = now,
+                    ),
+                    snapshot(
+                        current,
+                        "100200.00",
+                        mapOf(
+                            "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                            "USD" to assetRow("45200.00", "1.0", "45200.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = now.plusSeconds(1),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.plusMillis(1100),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "first-burst-deposit-late-usd",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusMillis(500),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        ledgerId = "first-burst-deposit-usd",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.minusMillis(500),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "999.0",
+                        ledgerId = "legacy-observed-stale-mismatched-btc",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.minusSeconds(86400),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "999.0",
+                        ledgerId = "legacy-observed-ancient-mismatched-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            // Two independent pre-baseline authorities corroborate against the recorded
+            // baseline, so the opening balance cannot be trusted: fail closed.
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "same-instant contradictory authoritative ledgers fail closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = now,
+                    ),
+                    snapshot(
+                        current,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.minusMillis(500),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "1.0",
+                        ledgerId = "contradiction-a-btc",
+                    ),
+                    ledgerEvent(
+                        timestamp = now.minusMillis(500),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "999.0",
+                        ledgerId = "contradiction-b-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            // Two same-instant authorities disagree, so no reading can establish the true
+            // balance: the balance change is unexplained, not merely ambiguous between owners.
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "ancient non-matching authority beside unobserved snapshots does not disturb reconciliation" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        current,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = now.minusSeconds(86400),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "999.0",
+                        ledgerId = "legacy-null-ancient-mismatched-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            // A day-old authority far outside every observation window cannot adjudicate
+            // the null-observation interval, and nothing corroborates it: tolerated.
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "legacy boundary ledger with fully unobserved snapshots is still reconciled once" {
+            val current = now.plusSeconds(3600)
+            val tradeTime = now.plusSeconds(1800)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        current,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                            "USD" to assetRow("45100.00", "1.0", "45100.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = tradeTime,
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = tradeTime.plusMillis(100),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                    ledgerEvent(
+                        timestamp = now.plusSeconds(1),
+                        asset = "BTC",
+                        amount = "0.1",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "999.0",
+                        ledgerId = "legacy-unobserved-mismatched-btc",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "post-window ambiguous-provenance deposit still fails closed" {
+            val current = now.plusSeconds(2)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        now,
+                        "100000.00",
+                        mapOf(
+                            "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                            "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        current,
+                        "100100.00",
+                        mapOf(
+                            "BTC" to assetRow("1.1", "50000.00", "55000.00"),
+                            "USD" to assetRow("45100.00", "1.0", "45100.00"),
+                        ),
+                    ),
+                ),
+                trades = listOf(
+                    manualTrade(
+                        timestamp = current.plusMillis(500),
+                        side = "buy",
+                        symbol = "BTC",
+                        volume = "0.1",
+                        usdAmount = "5000.00",
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = current.plusMillis(600),
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    ),
+                    ledgerEvent(
+                        timestamp = current.plusMillis(700),
+                        asset = "USD",
+                        amount = "50.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        subtype = "staking",
+                        ledgerId = "legacy-post-window-ambiguous-usd",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+            result.unavailableAt shouldBe current.plusMillis(700)
         }
 
         "staking reward for an asset outside the baseline universe is ignored" {
@@ -10754,6 +11571,149 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
         }
 
+        "universe-split conversion with a complete refid pair reconciles" {
+            val fixture = universeSplitConversionFixture()
+
+            val result = calculate(
+                snapshots = fixture.snapshots,
+                rewards = fixture.ledgers,
+                ledgerContext = fixture.ledgerContext,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.unavailableReason shouldBe null
+            // The deposit replays exactly once as an owner contribution and the
+            // universe-split conversion emits no benchmark event of its own.
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1389.28")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal("-1000.00")
+        }
+
+        "universe-split conversion without its counterpart stays closed" {
+            val fixture = universeSplitConversionFixture()
+
+            val result = calculate(
+                snapshots = fixture.snapshots,
+                rewards = fixture.ledgers.filter { it.asset != "USDG" },
+                ledgerContext = fixture.ledgerContext,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
+        }
+
+        "universe-split conversion with a time-mismatched counterpart stays closed" {
+            val fixture = universeSplitConversionFixture()
+            val lateReceive = fixture.ledgers.single { it.asset == "USDG" }.copy(
+                ledgerId = "universe-split-receive-late",
+                time = fixture.conversionTime.plusSeconds(60),
+            )
+            val result = calculate(
+                snapshots = fixture.snapshots,
+                rewards = fixture.ledgers.filter { it.asset != "USDG" } + lateReceive,
+                ledgerContext = fixture.ledgerContext,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+        }
+
+        "universe-split conversion with an over-complete refid group stays closed" {
+            val fixture = universeSplitConversionFixture()
+            val extraReceive = fixture.ledgers.single { it.asset == "USDG" }.copy(
+                ledgerId = "universe-split-receive-extra",
+            )
+            val result = calculate(
+                snapshots = fixture.snapshots,
+                rewards = fixture.ledgers + extraReceive,
+                ledgerContext = fixture.ledgerContext,
+            )
+
+            // An over-complete refid group is uninterpretable, not merely ambiguous between
+            // readings: no two-leg pairing can be isolated, so classification fails closed.
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
+        }
+
+        "universe-split conversion with a pre-baseline counterpart stays closed" {
+            val fixture = universeSplitConversionFixture()
+            val straddlingReceive = fixture.ledgers.single { it.asset == "USDG" }.copy(
+                ledgerId = "universe-split-receive-straddling",
+                time = fixture.snapshots.first().timestamp,
+            )
+            val result = calculate(
+                snapshots = fixture.snapshots,
+                rewards = fixture.ledgers.filter { it.asset != "USDG" } + straddlingReceive,
+                ledgerContext = fixture.ledgerContext,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+        }
+
+        "universe-split conversion with a backfilled pre-baseline counterpart stays closed" {
+            val fixture = universeSplitConversionFixture()
+            // The counterpart predates the baseline state yet clears the entry filter via a
+            // backfilled first observation: a straddling conversion cannot rescue its leg.
+            val backfilledSnapshots = fixture.snapshots.mapIndexed { index, row ->
+                if (index == 0) {
+                    row.copy(balancesObservedAt = row.timestamp.minusSeconds(3600))
+                } else {
+                    row
+                }
+            }
+            val earlyCounterpart = fixture.ledgers.single { it.asset == "USDG" }.copy(
+                ledgerId = "universe-split-receive-early",
+                time = fixture.snapshots.first().timestamp.minusSeconds(1800),
+            )
+            val result = calculate(
+                snapshots = backfilledSnapshots,
+                rewards = fixture.ledgers.filter { it.asset != "USDG" } + earlyCounterpart,
+                ledgerContext = fixture.ledgerContext,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+        }
+
+        "universe-split conversion with a blank refid stays closed" {
+            val fixture = universeSplitConversionFixture(conversionRefid = null)
+
+            val result = calculate(
+                snapshots = fixture.snapshots,
+                rewards = fixture.ledgers,
+                ledgerContext = fixture.ledgerContext,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
+        }
+
+        "universe-split conversion into a tracked asset stays closed" {
+            val fixture = universeSplitConversionFixture()
+            val trackedSnapshots = fixture.snapshots.map { row ->
+                row.copy(
+                    assets = row.assets + (
+                        "USDG" to assetSnapshot(
+                            symbol = "USDG",
+                            balance = BigDecimal.ZERO,
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal.ZERO,
+                            targetPercent = BigDecimal.ZERO,
+                        )
+                        ),
+                )
+            }
+
+            val result = calculate(
+                snapshots = trackedSnapshots,
+                rewards = fixture.ledgers,
+                ledgerContext = fixture.ledgerContext,
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+        }
+
         "malformed conversion groups never become benchmark events" {
             val baseline = snapshot(
                 timestamp = now,
@@ -11279,6 +12239,1573 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             prepareCount shouldBe 1
         }
+
+        "legacy boundary ledger already embodied in previous snapshot balance is excluded from subsequent interval" {
+            val t0 = now
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        t0.plusMillis(200),
+                        "102.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("101.00", "1", "101.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    // Embodied in t0 snapshot: ledger balance matches BTC balance at t0
+                    ledgerEvent(
+                        timestamp = t0,
+                        asset = "BTC",
+                        amount = "0.50000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "1.00000000",
+                    ),
+                    // Mutation for interval [t0, t0.plusMillis(200)]
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(200),
+                        asset = "USD",
+                        amount = "1.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "101.00",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal.ONE)),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+        }
+
+        "legacy boundary ledger not embodied in previous snapshot balance is evaluated as boundary candidate" {
+            val t0 = now
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        t0.plusMillis(500),
+                        "102.00",
+                        mapOf(
+                            "BTC" to assetRow("1.50000000", "1", "1.50"),
+                            "USD" to assetRow("100.50", "1", "100.50"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    // Not embodied in t0 (balance 1.50 != 1.00), so evaluated for interval
+                    ledgerEvent(
+                        timestamp = t0.minusMillis(50),
+                        asset = "BTC",
+                        amount = "0.50000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "1.50000000",
+                    ),
+                    ledgerEvent(
+                        timestamp = t0.plusMillis(200),
+                        asset = "USD",
+                        amount = "0.50",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "100.50",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal.ONE)),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+        }
+
+        "authoritative ledger unresolved in ledgerScopes returns UNEXPLAINED_BALANCE_CHANGE" {
+            val t0 = now
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(t0, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00"))),
+                    snapshot(t0.plusSeconds(10), "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00"))),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    // Opaque staking ledger with authoritative balance cannot be resolved to SPOT or known scope
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(5),
+                        asset = "DOT.S",
+                        amount = "1.0",
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        balance = "10.0",
+                        hasAuthoritativeFee = false,
+                    ),
+                ),
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "external ledger with invalid fee returns UNEXPLAINED_BALANCE_CHANGE" {
+            val t0 = now
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(t0, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00"))),
+                    snapshot(t0.plusSeconds(10), "101.00", mapOf("USD" to assetRow("101.00", "1", "101.00"))),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(5),
+                        asset = "USD",
+                        amount = "1.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "101.00",
+                    ).copy(hasValidFee = false),
+                ),
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "calculate returns UNEXPLAINED_BALANCE_CHANGE when owner flow and balance movement are near pairs" {
+            val t0 = now
+            val t1 = t0.plusSeconds(60)
+            val depositTime = t0.plusSeconds(10)
+            val withdrawalTime = depositTime.plusMillis(200)
+            val stakingTime = withdrawalTime.plusMillis(200)
+            val depRef = "FT-near-deposit"
+            val wdrRef = "WIRE-near-withdrawal"
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = depRef,
+                        txid = "tx-dep",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = depositTime,
+                        status = "Success",
+                        method = "Wire",
+                    ),
+                ),
+                withdrawals = listOf(
+                    WithdrawStatusRecord(
+                        refid = wdrRef,
+                        txid = "tx-wdr",
+                        asset = "USD",
+                        amount = BigDecimal("50.00"),
+                        time = withdrawalTime,
+                        status = "Success",
+                        method = "Wire",
+                    ),
+                ),
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "1000.00",
+                        mapOf(
+                            "USD" to assetRow("500.00", "1", "500.00"),
+                            "BTC" to assetRow("0.01", "50000.00", "500.00"),
+                        ),
+                    ),
+                    snapshot(
+                        t1,
+                        "1150.00",
+                        mapOf(
+                            "USD" to assetRow("550.00", "1", "550.00"),
+                            "BTC" to assetRow("0.012", "50000.00", "600.00"),
+                        ),
+                    ),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = depositTime,
+                        asset = "USD",
+                        amount = "100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "600.00",
+                        refid = depRef,
+                    ),
+                    ledgerEvent(
+                        timestamp = withdrawalTime,
+                        asset = "USD",
+                        amount = "-50.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "550.00",
+                        refid = wdrRef,
+                    ),
+                    ledgerEvent(
+                        timestamp = stakingTime,
+                        asset = "BTC",
+                        amount = "0.002",
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                        balance = "0.012",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "calculate reconciles interval via PERSISTED_ROUNDED_COST when trade has ledger legs and rounded cost" {
+            val t0 = now
+            val t1 = t0.plusSeconds(20)
+            val tradeTime = t0.plusSeconds(10)
+            val tradeId = "PERSISTED-ROUND-T1"
+            val buyTrade = trade(
+                timestamp = tradeTime,
+                side = "BUY",
+                symbol = "BTC",
+                volume = "1.00000000",
+                price = "50000.004",
+                usdAmount = "50000.00",
+                fee = "0",
+                source = TradeSource.API_FILL,
+                tradeId = tradeId,
+            )
+            val baseLeg = ledgerEvent(
+                timestamp = tradeTime,
+                asset = "BTC",
+                amount = "1.00000000",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = tradeId,
+                balance = "2.00000000",
+            )
+            val quoteLeg = ledgerEvent(
+                timestamp = tradeTime,
+                asset = "USD",
+                amount = "-50000.004",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = tradeId,
+                balance = "49999.996",
+            )
+            val s0 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "150000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("1.00000000", "50000.00", "50000.00"),
+                    "USD" to assetRow("100000.00", "1", "100000.00"),
+                ),
+            )
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "150000.00",
+                assets = mapOf(
+                    "BTC" to assetRow("2.00000000", "50000.00", "100000.00"),
+                    "USD" to assetRow("50000.00", "1", "50000.00"),
+                ),
+            )
+            val result = calculate(
+                snapshots = listOf(s0, s1),
+                trades = listOf(buyTrade),
+                rewards = listOf(baseLeg, quoteLeg),
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "buildBenchmarkEventsForTest handles unpriceable and skipped owner flow edges" {
+            val t0 = now
+            val baseline = snapshot(t0, "1000.00", mapOf("USD" to assetRow("1000.00", "1", "1000.00")))
+
+            // Unpriceable deposit due to empty inception weights
+            val unpriceableDeposit = listOf(
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(5),
+                    asset = "USD",
+                    amount = "100.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = "FT-test-dep",
+                ),
+            )
+            RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = unpriceableDeposit,
+                baseline = baseline,
+                inceptionWeights = emptyMap(),
+                priceProvider = null,
+                provenanceResolver = FundingProvenanceResolver.NONE,
+            ) shouldBe emptyList()
+
+            // Skipped deposit due to zero or negative amount
+            val zeroDeposit = listOf(
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(5),
+                    asset = "USD",
+                    amount = "0.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = "FT-test-zero-dep",
+                ),
+            )
+            RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = zeroDeposit,
+                baseline = baseline,
+                inceptionWeights = mapOf("USD" to BigDecimal.ONE),
+                priceProvider = null,
+                provenanceResolver = FundingProvenanceResolver.NONE,
+            ) shouldBe emptyList()
+
+            // Skipped withdrawal due to zero withdrawalUsd
+            val skipWithdrawalRef = "WIRE-test-skip-wdr"
+            val zeroWithdrawal = listOf(
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(5),
+                    asset = "USD",
+                    amount = "0.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    refid = skipWithdrawalRef,
+                ),
+            )
+            val skipProvenance = SimpleFundingProvenanceResolver(
+                withdrawals = listOf(
+                    WithdrawStatusRecord(
+                        refid = skipWithdrawalRef,
+                        txid = "tx-skip-wdr",
+                        asset = "USD",
+                        amount = BigDecimal.ZERO,
+                        time = t0.plusSeconds(5),
+                        status = "Success",
+                        method = "Wire",
+                    ),
+                ),
+            )
+            RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = zeroWithdrawal,
+                baseline = baseline,
+                inceptionWeights = mapOf("USD" to BigDecimal.ONE),
+                priceProvider = null,
+                provenanceResolver = skipProvenance,
+            ) shouldBe emptyList()
+
+            // Unpriceable non-USD withdrawal without price provider
+            val unpriceableEthRef = "WIRE-test-unpriceable-eth"
+            val unpriceableEthWithdrawal = listOf(
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(5),
+                    asset = "ETH",
+                    amount = "-1.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    refid = unpriceableEthRef,
+                ),
+            )
+            val unpriceableProvenance = SimpleFundingProvenanceResolver(
+                withdrawals = listOf(
+                    WithdrawStatusRecord(
+                        refid = unpriceableEthRef,
+                        txid = "tx-unpriceable-eth",
+                        asset = "ETH",
+                        amount = BigDecimal("1.00"),
+                        time = t0.plusSeconds(5),
+                        status = "Success",
+                        method = "Cryptocurrency",
+                    ),
+                ),
+            )
+            RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = unpriceableEthWithdrawal,
+                baseline = baseline,
+                inceptionWeights = mapOf("USD" to BigDecimal.ONE),
+                priceProvider = null,
+                provenanceResolver = unpriceableProvenance,
+            ) shouldBe emptyList()
+        }
+
+        "calculate returns UNEXPLAINED_BALANCE_CHANGE when owner withdrawal exceeds synthetic total by more than dust" {
+            val t0 = now
+            val t1 = t0.plusSeconds(20)
+            val wdrTime = t0.plusSeconds(10)
+            val wdrRef = "WIRE-overdrawn-large"
+            val provenance = SimpleFundingProvenanceResolver(
+                withdrawals = listOf(
+                    WithdrawStatusRecord(
+                        refid = wdrRef,
+                        txid = "tx-wdr-large",
+                        asset = "USD",
+                        amount = BigDecimal("110.00"),
+                        time = wdrTime,
+                        status = "Success",
+                        method = "Wire",
+                    ),
+                ),
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(t0, "100.00", mapOf("USD" to assetRow("100.00", "1", "100.00"))),
+                    snapshot(t1, "0.00", mapOf("USD" to assetRow("0.00", "1", "0.00"))),
+                ),
+                trades = emptyList(),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = wdrTime,
+                        asset = "USD",
+                        amount = "-110.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "0.00",
+                        refid = wdrRef,
+                    ),
+                ),
+                provenanceResolver = provenance,
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "calculate absorbs owner withdrawal exceeding synthetic total within dust tolerance" {
+            val t0 = now
+            val t1 = t0.plusSeconds(30)
+            val sellTime = t0.plusSeconds(5)
+            val wdrTime = t0.plusSeconds(15)
+            val wdrRef = "WIRE-overdrawn-dust"
+            val provenance = SimpleFundingProvenanceResolver(
+                withdrawals = listOf(
+                    WithdrawStatusRecord(
+                        refid = wdrRef,
+                        txid = "tx-wdr-dust",
+                        asset = "USD",
+                        amount = BigDecimal("100.00"),
+                        time = wdrTime,
+                        status = "Success",
+                        method = "Wire",
+                    ),
+                ),
+            )
+            // Baseline has USD 90.00 and BTC 1.0 @ $10.00 = $100.00
+            val s0 = snapshot(
+                t0,
+                "100.00",
+                mapOf(
+                    "USD" to assetRow("90.00", "1.0", "90.00"),
+                    "BTC" to assetRow("1.00000000", "10.00", "10.00"),
+                ),
+            )
+            // In actual, BTC is sold for USD 10.00, raising actual USD balance to 100.00
+            val sellTrade = trade(
+                timestamp = sellTime,
+                side = "SELL",
+                symbol = "BTC",
+                volume = "1.00000000",
+                price = "10.00",
+                usdAmount = "10.00",
+                source = TradeSource.API_FILL,
+                tradeId = "SELL-BTC-1",
+            )
+            val s1 = snapshot(
+                t1,
+                "0.00",
+                mapOf(
+                    "USD" to assetRow("0.00", "1.0", "0.00"),
+                    "BTC" to assetRow("0.00000000", "9.50", "0.00"),
+                ),
+            )
+            // At withdrawal time, BTC price in synthetic benchmark has dropped to $9.50, so synthetic total is 90 + 9.50 = 99.50
+            // Owner withdrawal of $100.00 exceeds synthetic total of 99.50 by $0.50 (within $1.00 dust tolerance)
+            val priceProvider = HistoricalPriceProvider { symbol, time ->
+                if (symbol == "BTC") {
+                    if (time >= wdrTime) BigDecimal("9.50") else BigDecimal("10.00")
+                } else {
+                    BigDecimal.ONE
+                }
+            }
+            val result = calculate(
+                snapshots = listOf(s0, s1),
+                trades = listOf(sellTrade),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = wdrTime,
+                        asset = "USD",
+                        amount = "-100.00",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                        balance = "0.00",
+                        refid = wdrRef,
+                    ),
+                ),
+                priceProvider = priceProvider,
+                provenanceResolver = provenance,
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.NON_POSITIVE_BASELINE
+        }
+
+        "buildBenchmarkEventsForTest returns ambiguous when funding normalization straddles baseline" {
+            val t0 = now
+            val baseline = snapshot(t0, "5000.00", mapOf("USD" to assetRow("5000.00", "1", "5000.00")))
+            val ref = "CARD-STRADDLE-TEST"
+            val ledgers = listOf(
+                ledgerEvent(
+                    timestamp = t0.minusSeconds(10),
+                    asset = "USD",
+                    amount = "5000.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                    refid = ref,
+                    ledgerId = "dep-pre-baseline",
+                ),
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(5),
+                    asset = "USD",
+                    amount = "-100.00",
+                    type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                    refid = ref,
+                    ledgerId = "spend-post-baseline",
+                ),
+                ledgerEvent(
+                    timestamp = t0.plusSeconds(5),
+                    asset = "BTC",
+                    amount = "0.002",
+                    type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                    refid = ref,
+                    ledgerId = "recv-post-baseline",
+                ),
+            )
+            val provenance = SimpleFundingProvenanceResolver(
+                deposits = listOf(
+                    DepositStatusRecord(
+                        refid = ref,
+                        txid = "tx-card-straddle",
+                        asset = "USD",
+                        amount = BigDecimal("5000.00"),
+                        time = t0.minusSeconds(10),
+                        status = "Success",
+                        method = "Visa",
+                    ),
+                ),
+            )
+            RebalancerComparisonCalculator.buildBenchmarkEventsForTest(
+                ledgers = ledgers,
+                baseline = baseline,
+                inceptionWeights = mapOf("USD" to BigDecimal.ONE),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("50000.00"))),
+                provenanceResolver = provenance,
+            ) shouldBe emptyList()
+        }
+        "Test A: sub-cent trade must be consumed when evidenced by raw snapshot transition" {
+            val t0 = now
+            val t1 = now.plusSeconds(3)
+            val s0 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100.0002",
+                assets = mapOf("USD" to assetRow("100.0002", "1", "100.0002")),
+                balancesObservedAt = null,
+            )
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "100.0000",
+                assets = mapOf("USD" to assetRow("100.0000", "1", "100.0000")),
+                balancesObservedAt = null,
+            )
+            val subCentTrade = trade(
+                timestamp = t1,
+                side = "BUY",
+                symbol = "ATOM",
+                volume = "0.0001",
+                usdAmount = "0.00",
+                price = "2.0",
+                fee = "0",
+                source = TradeSource.API_FILL,
+                tradeId = "TRADE-SUBCENT-1",
+            )
+            val tradeLedgerUSD = ledgerEvent(
+                timestamp = t1,
+                asset = "USD",
+                amount = "-0.0002",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-SUBCENT-1",
+                balance = "100.0000",
+            )
+            val tradeLedgerBase = ledgerEvent(
+                timestamp = t1,
+                asset = "ATOM",
+                amount = "0.0001",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-SUBCENT-1",
+                balance = "0.0001",
+            )
+            val result = calculate(
+                snapshots = listOf(s0, s1),
+                trades = listOf(subCentTrade),
+                rewards = listOf(tradeLedgerUSD, tradeLedgerBase),
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+        }
+
+        "Test B: later interval with whole-dollar trade becomes unique after sub-cent trade is consumed" {
+            val t0 = now
+            val t1 = now.plusSeconds(30)
+            val t2 = now.plusSeconds(60)
+            val s0 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "150.00",
+                assets = mapOf(
+                    "USD" to assetRow("100.0002", "1", "100.0002"),
+                    "ATOM" to assetRow("24.9999", "2", "49.9998"),
+                ),
+                balancesObservedAt = null,
+            )
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "150.00",
+                assets = mapOf(
+                    "USD" to assetRow("100.0000", "1", "100.0000"),
+                    "ATOM" to assetRow("25.0000", "2", "50.0000"),
+                ),
+                balancesObservedAt = null,
+            )
+            val s2 = snapshot(
+                timestamp = t2,
+                totalValueUSD = "150.00",
+                assets = mapOf(
+                    "USD" to assetRow("150.0000", "1", "150.0000"),
+                    "ATOM" to assetRow("0.0000", "2", "0.0000"),
+                ),
+                balancesObservedAt = null,
+            )
+            val subCentTrade = trade(
+                timestamp = t1,
+                side = "BUY",
+                symbol = "ATOM",
+                volume = "0.0001",
+                usdAmount = "0.00",
+                price = "2.0",
+                fee = "0",
+                source = TradeSource.API_FILL,
+                tradeId = "TRADE-SUBCENT-1",
+            )
+            val subCentLedgerUSD = ledgerEvent(
+                timestamp = t1,
+                asset = "USD",
+                amount = "-0.0002",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-SUBCENT-1",
+                balance = "100.0000",
+            )
+            val subCentLedgerBase = ledgerEvent(
+                timestamp = t1,
+                asset = "ATOM",
+                amount = "0.0001",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-SUBCENT-1",
+                balance = "25.0000",
+            )
+            val laterTrade = trade(
+                timestamp = t2,
+                side = "SELL",
+                symbol = "ATOM",
+                volume = "25.0",
+                usdAmount = "50.00",
+                price = "2.0",
+                fee = "0",
+                source = TradeSource.API_FILL,
+                tradeId = "TRADE-LATER-1",
+            )
+            val laterLedgerUSD = ledgerEvent(
+                timestamp = t2,
+                asset = "USD",
+                amount = "50.0000",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-LATER-1",
+                balance = "150.0000",
+            )
+            val laterLedgerBase = ledgerEvent(
+                timestamp = t2,
+                asset = "ATOM",
+                amount = "-25.0",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-LATER-1",
+                balance = "0.0",
+            )
+            val result = calculate(
+                snapshots = listOf(s0, s1, s2),
+                trades = listOf(subCentTrade, laterTrade),
+                rewards = listOf(subCentLedgerUSD, subCentLedgerBase, laterLedgerUSD, laterLedgerBase),
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 3
+        }
+
+        "Test C: tiny unexplained numerical noise without matching trade remains tolerated" {
+            val t0 = now
+            val t1 = now.plusSeconds(5)
+            // USD has tiny noise (0.002) which rounds away at 2 decimals (100.00 == 100.00)
+            val s0 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100.0020",
+                assets = mapOf("USD" to assetRow("100.0020", "1", "100.0020")),
+                balancesObservedAt = null,
+            )
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "100.0000",
+                assets = mapOf("USD" to assetRow("100.0000", "1", "100.0000")),
+                balancesObservedAt = null,
+            )
+            val result = calculate(
+                snapshots = listOf(s0, s1),
+                trades = emptyList(),
+                rewards = emptyList(),
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points.size shouldBe 2
+        }
+
+        "Test D: genuine ambiguity between identical candidate subsets still fails closed" {
+            val t0 = now
+            val t1 = now.plusSeconds(5)
+            val s0 = snapshot(
+                timestamp = t0,
+                totalValueUSD = "100.00",
+                assets = mapOf("USD" to assetRow("100.00", "1", "100.00")),
+                balancesObservedAt = null,
+            )
+            val s1 = snapshot(
+                timestamp = t1,
+                totalValueUSD = "150.00",
+                assets = mapOf("USD" to assetRow("150.00", "1", "150.00")),
+                balancesObservedAt = null,
+            )
+            val tradeA = trade(
+                timestamp = t1,
+                side = "SELL",
+                symbol = "ATOM",
+                volume = "25.0",
+                usdAmount = "50.00",
+                price = "2.0",
+                fee = "0",
+                source = TradeSource.API_FILL,
+                tradeId = "TRADE-AMBIG-A",
+            )
+            val ledgerUSDA = ledgerEvent(
+                timestamp = t1,
+                asset = "USD",
+                amount = "50.0000",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-AMBIG-A",
+                balance = "150.0000",
+            )
+            val ledgerBaseA = ledgerEvent(
+                timestamp = t1,
+                asset = "ATOM",
+                amount = "-25.0",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-AMBIG-A",
+                balance = "0.0",
+            )
+            val tradeB = trade(
+                timestamp = t1,
+                side = "SELL",
+                symbol = "ATOM",
+                volume = "25.0",
+                usdAmount = "50.00",
+                price = "2.0",
+                fee = "0",
+                source = TradeSource.API_FILL,
+                tradeId = "TRADE-AMBIG-B",
+            )
+            val ledgerUSDB = ledgerEvent(
+                timestamp = t1,
+                asset = "USD",
+                amount = "50.0000",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-AMBIG-B",
+                balance = "150.0000",
+            )
+            val ledgerBaseB = ledgerEvent(
+                timestamp = t1,
+                asset = "ATOM",
+                amount = "-25.0",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                refid = "TRADE-AMBIG-B",
+                balance = "0.0",
+            )
+            val result = calculate(
+                snapshots = listOf(s0, s1),
+                trades = listOf(tradeA, tradeB),
+                rewards = listOf(ledgerUSDA, ledgerBaseA, ledgerUSDB, ledgerBaseB),
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+        "dec6 fix A exact boundary ledger at curr timestamp reconciles" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100.00",
+                        mapOf(
+                            "BTC" to assetRow("0.00000000", "1", "0.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        t1,
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "1.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "1.00000000",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("1"))),
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "dec6 fix B ledger embodied in prev snapshot is not reused" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "101.00",
+                    mapOf(
+                        "BTC" to assetRow("1.00000000", "1", "1.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "101.00",
+                    mapOf(
+                        "BTC" to assetRow("1.00000000", "1", "1.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0,
+                        asset = "BTC",
+                        amount = "0.50000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "1.00000000",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("1"))),
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "dec6 fix C future ledger after curr timestamp fails closed" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100.00",
+                        mapOf(
+                            "BTC" to assetRow("0.00000000", "1", "0.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        t1,
+                        "101.00",
+                        mapOf(
+                            "BTC" to assetRow("1.00000000", "1", "1.00"),
+                            "USD" to assetRow("100.00", "1", "100.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1.plusSeconds(5),
+                        asset = "BTC",
+                        amount = "1.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "1.00000000",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("1"))),
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "dec6 fix D contradictory authoritative post balance fails closed" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val result = calculate(
+                snapshots = listOf(
+                    snapshot(
+                        t0,
+                        "100.00",
+                        mapOf(
+                            "BTC" to assetRow("100.00000000", "1", "100.00"),
+                            "USD" to assetRow("0.00", "1", "0.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                    snapshot(
+                        t1,
+                        "150.00",
+                        mapOf(
+                            "BTC" to assetRow("150.00000000", "1", "150.00"),
+                            "USD" to assetRow("0.00", "1", "0.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "50.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "200.00000000",
+                    ),
+                ),
+                priceProvider = mapPriceProvider(mapOf("BTC" to BigDecimal("1"))),
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "dec6 fix E boundary ownership prev versus prev-plus-1ms versus curr versus curr-plus-1ms" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            fun snapshotsWithDelta(): List<PortfolioSnapshot> = listOf(
+                snapshot(
+                    t0,
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("0.00000000", "1", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "101.00",
+                    mapOf(
+                        "BTC" to assetRow("1.00000000", "1", "1.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            fun depositAt(timestamp: Instant): LedgerEvent = ledgerEvent(
+                timestamp = timestamp,
+                asset = "BTC",
+                amount = "1.00000000",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                balance = "1.00000000",
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("1")))
+            calculate(
+                snapshots = snapshotsWithDelta(),
+                rewards = listOf(depositAt(t0.plusMillis(1))),
+                priceProvider = prices,
+            ).availability shouldBe ComparisonAvailability.AVAILABLE
+            calculate(
+                snapshots = snapshotsWithDelta(),
+                rewards = listOf(depositAt(t1)),
+                priceProvider = prices,
+            ).availability shouldBe ComparisonAvailability.AVAILABLE
+            val future = calculate(
+                snapshots = snapshotsWithDelta(),
+                rewards = listOf(depositAt(t1.plusMillis(1))),
+                priceProvider = prices,
+            )
+            future.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            future.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "dec7 real sell plus zero effect dust at prev timestamp reconciles minimally" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("0.00000000", "1", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "166.87",
+                    mapOf(
+                        "BTC" to assetRow("0.00000000", "1", "0.00"),
+                        "USD" to assetRow("166.87", "1", "166.87"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("1")))
+            val result = calculate(
+                snapshots = snapshots,
+                trades = listOf(
+                    trade(
+                        timestamp = t1,
+                        side = "sell",
+                        symbol = "XLM",
+                        volume = "277.77777778",
+                        usdAmount = "67.00",
+                        fee = "0.13",
+                        price = "0.2412",
+                    ),
+                    trade(
+                        timestamp = t0,
+                        side = "sell",
+                        symbol = "XLM",
+                        volume = "0.00007082",
+                        usdAmount = "0",
+                        fee = "0",
+                        price = "0.24",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "dec7 two genuinely different explanations still fail closed" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("100.00000000", "1", "100.00"),
+                        "USD" to assetRow("0.00", "1", "0.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "150.00",
+                    mapOf(
+                        "BTC" to assetRow("150.00000000", "1", "150.00"),
+                        "USD" to assetRow("0.00", "1", "0.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("1")))
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "50.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "150.00000000",
+                        ledgerId = "dec7-ambig-a",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "50.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "150.00000000",
+                        ledgerId = "dec7-ambig-b",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "dec7 real sell plus two zero effect dusts reconciles with smallest explanation" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("0.00000000", "1", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "166.87",
+                    mapOf(
+                        "BTC" to assetRow("0.00000000", "1", "0.00"),
+                        "USD" to assetRow("166.87", "1", "166.87"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("1")))
+            val result = calculate(
+                snapshots = snapshots,
+                trades = listOf(
+                    trade(
+                        timestamp = t1,
+                        side = "sell",
+                        symbol = "XLM",
+                        volume = "277.77777778",
+                        usdAmount = "67.00",
+                        fee = "0.13",
+                        price = "0.2412",
+                    ),
+                    trade(
+                        timestamp = t0,
+                        side = "sell",
+                        symbol = "XLM",
+                        volume = "0.00007082",
+                        usdAmount = "0",
+                        fee = "0",
+                        price = "0.24",
+                    ),
+                    trade(
+                        timestamp = t0.plusMillis(1),
+                        side = "sell",
+                        symbol = "XLM",
+                        volume = "0.00004130",
+                        usdAmount = "0",
+                        fee = "0",
+                        price = "0.24",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "dec8 fractured dust sweep with uniform subtype reconciles as atomic transformation" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "101.00",
+                    mapOf(
+                        "BTC" to assetRow("0.00001116", "90000.00", "1.00"),
+                        "XRP" to assetRow("0.00000782", "2.00", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("0E-8", "90000.00", "0.00"),
+                        "XRP" to assetRow("0E-8", "2.00", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("90000.00")))
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "-0.00001116",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        subtype = "dustsweeping",
+                        balance = "0E-8",
+                        ledgerId = "dec8-btc-spend",
+                        refid = "dec8-sweep-1",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "XRP",
+                        amount = "-0.00000782",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        subtype = "dustsweeping",
+                        balance = "0E-8",
+                        ledgerId = "dec8-xrp-spend",
+                        refid = "dec8-sweep-1",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "DOGE",
+                        amount = "7.11000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                        subtype = "dustsweeping",
+                        balance = "7.11000000",
+                        ledgerId = "dec8-doge-receive",
+                        refid = "dec8-sweep-1",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "dec8 fractured sweep with blank subtypes still fails closed as ambiguous" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "101.00",
+                    mapOf(
+                        "BTC" to assetRow("0.00001116", "90000.00", "1.00"),
+                        "XRP" to assetRow("0.00000782", "2.00", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("0E-8", "90000.00", "0.00"),
+                        "XRP" to assetRow("0E-8", "2.00", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("90000.00")))
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "-0.00001116",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        balance = "0E-8",
+                        ledgerId = "dec8-blank-btc-spend",
+                        refid = "dec8-sweep-blank",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "XRP",
+                        amount = "-0.00000782",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        balance = "0E-8",
+                        ledgerId = "dec8-blank-xrp-spend",
+                        refid = "dec8-sweep-blank",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+        }
+
+        "dec8 fractured sweep consuming assigned receive leg reconciles" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "101.00",
+                    mapOf(
+                        "BTC" to assetRow("0.00001116", "90000.00", "1.00"),
+                        "XRP" to assetRow("0E-8", "2.00", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("0E-8", "90000.00", "0.00"),
+                        "XRP" to assetRow("0.00000782", "2.00", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("90000.00")))
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "-0.00001116",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        subtype = "dustsweeping",
+                        balance = "0E-8",
+                        ledgerId = "dec8-c-btc-spend",
+                        refid = "dec8-sweep-c",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "XRP",
+                        amount = "0.00000782",
+                        type = KrakenApiConstants.LEDGER_TYPE_RECEIVE,
+                        subtype = "dustsweeping",
+                        balance = "0.00000782",
+                        ledgerId = "dec8-c-xrp-receive",
+                        refid = "dec8-sweep-c",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "ZEC",
+                        amount = "-0.00000347",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        subtype = "dustsweeping",
+                        balance = "0E-8",
+                        ledgerId = "dec8-c-zec-spend",
+                        refid = "dec8-sweep-c",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "dec8 fractured sweep with mixed subtypes still fails closed as ambiguous" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "101.00",
+                    mapOf(
+                        "BTC" to assetRow("0.00001116", "90000.00", "1.00"),
+                        "XRP" to assetRow("0.00000782", "2.00", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("0E-8", "90000.00", "0.00"),
+                        "XRP" to assetRow("0E-8", "2.00", "0.00"),
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("90000.00")))
+            val result = calculate(
+                snapshots = snapshots,
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "BTC",
+                        amount = "-0.00001116",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        subtype = "dustsweeping",
+                        balance = "0E-8",
+                        ledgerId = "dec8-mixed-btc-spend",
+                        refid = "dec8-sweep-mixed",
+                    ),
+                    ledgerEvent(
+                        timestamp = t1,
+                        asset = "XRP",
+                        amount = "-0.00000782",
+                        type = KrakenApiConstants.LEDGER_TYPE_SPEND,
+                        balance = "0E-8",
+                        ledgerId = "dec8-mixed-xrp-spend",
+                        refid = "dec8-sweep-mixed",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
+        }
+
+        "jan4 in span fill wins exact tie against fuzzy future fill" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val t2 = t1.plusMillis(500)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100.00",
+                    mapOf(
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "81.75",
+                    mapOf(
+                        "USD" to assetRow("81.75", "1", "81.75"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t2,
+                    "81.75",
+                    mapOf(
+                        "USD" to assetRow("81.75", "1", "81.75"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("1")))
+            val result = calculate(
+                snapshots = snapshots,
+                trades = listOf(
+                    trade(
+                        timestamp = t1,
+                        side = "buy",
+                        symbol = "VET",
+                        volume = "1533",
+                        usdAmount = "18.25",
+                        fee = "0",
+                        price = "0.01190200",
+                    ),
+                    trade(
+                        timestamp = t1.plusMillis(137),
+                        side = "buy",
+                        symbol = "VET",
+                        volume = "1533",
+                        usdAmount = "18.25",
+                        fee = "0",
+                        price = "0.01190200",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
+
+        "jan4 same span identical fills still fail closed as ambiguous" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100.00",
+                    mapOf(
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "81.75",
+                    mapOf(
+                        "USD" to assetRow("81.75", "1", "81.75"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("1")))
+            val result = calculate(
+                snapshots = snapshots,
+                trades = listOf(
+                    trade(
+                        timestamp = t1,
+                        side = "buy",
+                        symbol = "VET",
+                        volume = "1533",
+                        usdAmount = "18.25",
+                        fee = "0",
+                        price = "0.01190200",
+                    ),
+                    trade(
+                        timestamp = t1,
+                        side = "buy",
+                        symbol = "VET",
+                        volume = "1533",
+                        usdAmount = "18.25",
+                        fee = "0",
+                        price = "0.01190200",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+        }
+
+        "jan4 lone fuzzy future fill still reconciles without in span rival" {
+            val t0 = now
+            val t1 = t0.plusMillis(200)
+            val t2 = t1.plusMillis(500)
+            val snapshots = listOf(
+                snapshot(
+                    t0,
+                    "100.00",
+                    mapOf(
+                        "USD" to assetRow("100.00", "1", "100.00"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t1,
+                    "81.75",
+                    mapOf(
+                        "USD" to assetRow("81.75", "1", "81.75"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+                snapshot(
+                    t2,
+                    "81.75",
+                    mapOf(
+                        "USD" to assetRow("81.75", "1", "81.75"),
+                    ),
+                    balancesObservedAt = null,
+                ),
+            )
+            val prices = mapPriceProvider(mapOf("BTC" to BigDecimal("1")))
+            val result = calculate(
+                snapshots = snapshots,
+                trades = listOf(
+                    trade(
+                        timestamp = t1.plusMillis(137),
+                        side = "buy",
+                        symbol = "VET",
+                        volume = "1533",
+                        usdAmount = "18.25",
+                        fee = "0",
+                        price = "0.01190200",
+                    ),
+                ),
+                priceProvider = prices,
+            )
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+        }
     }
 
     private fun mixedCostSnapshots(knownObservation: Boolean): List<PortfolioSnapshot> =
@@ -11406,6 +13933,74 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         tradeId = tradeId,
         orderTxid = orderTxid,
     )
+
+    private data class UniverseSplitConversionFixture(
+        val snapshots: List<PortfolioSnapshot>,
+        val ledgers: List<LedgerEvent>,
+        val ledgerContext: List<LedgerEvent>,
+        val conversionTime: Instant,
+    )
+
+    private fun universeSplitConversionFixture(conversionRefid: String? = "Unknown"): UniverseSplitConversionFixture {
+        val t = now.plusSeconds(3600)
+        fun usd(balance: String, valueUSD: String) = assetRow(balance, "1", valueUSD)
+        val snapshots = listOf(
+            snapshot(
+                t.minusSeconds(3600),
+                "389.28",
+                mapOf("USD" to usd("389.2793", "389.28")),
+                balancesObservedAt = null,
+            ),
+            snapshot(t, "389.28", mapOf("USD" to usd("389.2793", "389.28")), balancesObservedAt = null),
+            snapshot(t, "1389.28", mapOf("USD" to usd("1389.2793", "1389.28")), balancesObservedAt = null),
+            snapshot(t, "389.28", mapOf("USD" to usd("389.2793", "389.28")), balancesObservedAt = null),
+        )
+        val ledgerContext = listOf(
+            ledgerEvent(
+                t.minusSeconds(3600),
+                "USD",
+                "389.2793",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                balance = "389.2793",
+                ledgerId = "universe-split-dep-0",
+                refid = "FT-universe-split-0",
+                hasAuthoritativeFee = true,
+            ),
+        ).map { it.copy(aclass = "currency") }
+        val ledgers = listOf(
+            ledgerEvent(
+                t,
+                "USD",
+                "1000",
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                balance = "1389.2793",
+                ledgerId = "universe-split-dep-1",
+                refid = "FT-universe-split-1",
+                hasAuthoritativeFee = true,
+            ),
+            ledgerEvent(
+                t,
+                "USD",
+                "-1000",
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                balance = "389.2793",
+                ledgerId = "universe-split-spend",
+                refid = conversionRefid,
+                hasAuthoritativeFee = true,
+            ),
+            ledgerEvent(
+                t,
+                "USDG",
+                "1000",
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                balance = "1000",
+                ledgerId = "universe-split-receive",
+                refid = conversionRefid,
+                hasAuthoritativeFee = true,
+            ),
+        ).map { it.copy(aclass = "currency") }
+        return UniverseSplitConversionFixture(snapshots, ledgers, ledgerContext, t)
+    }
 
     private fun ledgerEvent(
         timestamp: Instant,

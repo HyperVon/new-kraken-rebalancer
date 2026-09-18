@@ -27,6 +27,7 @@ import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -48,8 +49,8 @@ class TradeHistoryQueryService(
     private val nowProvider: () -> Instant = Instant::now,
     private val krakenService: KrakenService? = null,
     private val historicalOhlcCache: HistoricalOhlcCache? = null,
-    /** Evidence boundary used when the lifetime inception recovery cannot be trusted. */
-    private val pureBenchmarkAnchorFloor: Instant = PURE_BENCHMARK_ANCHOR_FLOOR,
+    /** Lower bound of retained history scanned for a passive benchmark anchor. */
+    private val benchmarkHistoryFloor: Instant = Instant.EPOCH,
     /** Application-lifetime scope used for the bounded background proposal continuation. */
     private val applicationScope: CoroutineScope? = null,
 ) {
@@ -94,13 +95,24 @@ class TradeHistoryQueryService(
             .downsampleSnapshots()
 
     /**
+     * Full-fidelity comparison input: identity-anchor collisions excluded, otherwise the
+     * complete retained series. Reconciliation correctness must not depend on chart sampling,
+     * so duplicate instants and stride downsampling are NOT applied here — intermediate
+     * states are reconciliation evidence (a collapsed series provably loses multi-event
+     * instants the calculator contracts require). Presentation sampling happens on the
+     * resulting comparison points only after the calculator succeeds.
+     */
+    private suspend fun loadComparisonSnapshots(from: Instant, to: Instant): List<PortfolioSnapshot> =
+        excludeIdentitySnapshots(repository.getAllSnapshotsInRange(from, to)).sortedBy { it.timestamp }
+
+    /**
      * Reconstruction replays events newest-first and persists a row per replayed event, so an
      * instant that spans several events keeps several cumulative rows. Rows arrive ordered by
-     * timestamp and id ascending, which places the state after all events of an instant first:
-     * the recorded series exposes only that final state.
+     * timestamp ascending and id descending, which places intra-instant states in forward
+     * chronological order. The recorded series exposes the final state after all events of each instant.
      */
     private fun List<PortfolioSnapshot>.collapseDuplicateInstants(): List<PortfolioSnapshot> =
-        distinctBy { it.timestamp }
+        asReversed().distinctBy { it.timestamp }.asReversed()
 
     /**
      * Identity anchors survive series rewrites, so a rewrite can place a reconstructed snapshot
@@ -132,11 +144,11 @@ class TradeHistoryQueryService(
             HistoricalPriceResolver.MAX_EVENT_TIME_TRADE_OR_SNAPSHOT_AGE_SECONDS
 
         /**
-         * The earliest retained period accepted for the re-anchored pure Buy & Hold report.
-         * The exact anchor is resolved from a recorded snapshot at runtime; this is only the
-         * evidence floor, not a fabricated timestamp or balance state.
+         * Smallest non-cash holding that can express a benchmark investment thesis, mirroring
+         * the shipped `Settings.minimumOrderSizeUSD` template default: anything smaller is
+         * execution dust the strategy itself could never place, not an allocation decision.
          */
-        val PURE_BENCHMARK_ANCHOR_FLOOR: Instant = Instant.parse("2026-06-08T00:00:00Z")
+        val INVESTED_THESIS_MINIMUM_USD = BigDecimal("5.00")
 
         /**
          * Comparison-start reasons where an accepted later anchor can genuinely
@@ -204,7 +216,7 @@ class TradeHistoryQueryService(
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
 
     suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison {
-        val snapshots = getSnapshotsInRange(from, to)
+        val snapshots = loadComparisonSnapshots(from, to)
         if (snapshots.size < 2) {
             return RebalancerComparisonCalculator.calculate(snapshots, emptyList())
         }
@@ -225,7 +237,21 @@ class TradeHistoryQueryService(
             )
         }
         val inceptionResolution = inceptionDiscoveryService?.resolveInception()
-        val result = calculateComparison(orderedSnapshots, inceptionResolution)
+        val reconciled =
+            calculateComparison(
+                orderedSnapshots,
+                inceptionResolution,
+                suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
+            )
+        // Presentation sampling is strictly post-reconciliation: the calculator reconciles the
+        // full retained series, and only the resulting comparison points are reduced for chart
+        // payload size. Baseline, latest difference, and contribution accounting are computed on
+        // the full series and are unaffected by point selection; endpoints are always kept.
+        val result = if (reconciled.availability == ComparisonAvailability.AVAILABLE) {
+            reconciled.copy(points = reconciled.points.downsampleSnapshots())
+        } else {
+            reconciled
+        }
         // A later comparison start is actionable only alongside an explicit strategy inception.
         // Auto-detected inception is display-only until the operator supplies that anchor.
         if (result.availability == ComparisonAvailability.UNAVAILABLE &&
@@ -286,7 +312,12 @@ class TradeHistoryQueryService(
         // Invalidated reconstructed history must not yield a proposal: a candidate anchored on
         // stale reconstructed snapshots is not evidence-backed until the rebuild completes.
         if (overlapsStaleReconstruction(snapshots)) return SettingsComparisonStatus()
-        val current = calculateComparison(snapshots, inceptionResolution)
+        val current =
+            calculateComparison(
+                snapshots,
+                inceptionResolution,
+                suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
+            )
         val status = SettingsComparisonStatus(
             availability = current.availability,
             baselineTimestamp = current.baselineTimestamp?.toString(),
@@ -334,6 +365,10 @@ class TradeHistoryQueryService(
     private fun ensureProposalSearchContinuation(after: Instant) {
         val scope = applicationScope ?: return
         if (!proposalContinuationActive.compareAndSet(false, true)) return
+        if (!scope.isActive) {
+            proposalContinuationActive.set(false)
+            return
+        }
         log.info("proposal search continuation started; status=INCOMPLETE")
         scope.launch {
             try {
@@ -360,10 +395,32 @@ class TradeHistoryQueryService(
         }
     }
 
+    // An approved, confident baseline governs an operator-facing comparison only when it
+    // can ground a reconciled result for this view: a snapshot older than the
+    // trustworthy-history bound has no retained event trail behind it, so it cannot anchor
+    // here and discovery stays the fallback. The query window itself is not a usability
+    // bound — the full retained range is evaluated and presentation is sliced, so a
+    // post-bound approved baseline governs windowed views too.
+    private fun shouldSuppressPassiveDiscovery(inceptionResolution: InceptionResolution?): Boolean {
+        val approvedBaseline =
+            if (inceptionResolution?.confidence == InceptionConfidence.CONFIDENT) {
+                inceptionResolution.inceptionSnapshot
+            } else {
+                null
+            }
+        return approvedBaseline != null && !approvedBaseline.timestamp.isBefore(benchmarkHistoryFloor)
+    }
+
     private suspend fun calculateComparison(
         orderedSnapshots: List<PortfolioSnapshot>,
         inceptionResolution: InceptionResolution?,
         preparedFundingProvenance: FundingProvenanceResolver? = null,
+        // Operator-facing entries pass true when a usable approved baseline exists (see
+        // shouldSuppressPassiveDiscovery). Proposal-search trials always pass false: each
+        // trial synthesizes a per-candidate CONFIDENT resolution as scoping scaffolding, and
+        // verification pivots on discovery re-anchoring at the candidate — suppressing it
+        // there would make every trial reconcile the stale predecessor instead.
+        suppressPassiveDiscovery: Boolean = false,
     ): RebalancerComparison {
         val firstSnapshot = orderedSnapshots.first()
         val lastSnapshot = orderedSnapshots.last()
@@ -375,7 +432,19 @@ class TradeHistoryQueryService(
         // An ambiguous/rebuilt strategy inception blocks a lifetime reconstruction, but it need
         // not block a clearly-labelled passive benchmark. Re-anchor only at an actual recorded
         // post-floor snapshot; pending recovery and other unresolved states remain unavailable.
-        val recordedBenchmarkAnchor = findPureBenchmarkAnchor()
+        // Window-relative discovery: the anchor must sit inside the evaluated series (see
+        // findPureBenchmarkAnchor), so the floor is the range start, not retained-history start.
+        // Passive discovery is a fallback for ambiguous, truncated, or baselineless
+        // recovery — never an override of a usable explicit approval (the operator-facing
+        // call sites suppress it via suppressPassiveDiscovery). A permissive materiality
+        // rule would otherwise hijack an approved start at the first small-but-material
+        // position and break the approved reconciliation.
+        val recordedBenchmarkAnchor =
+            if (suppressPassiveDiscovery) {
+                null
+            } else {
+                findPureBenchmarkAnchor(maxOf(benchmarkHistoryFloor, firstTimestamp))
+            }
 
         if (inceptionResolution?.confidence == InceptionConfidence.RECOVERY_INCOMPLETE &&
             recordedBenchmarkAnchor == null
@@ -543,28 +612,40 @@ class TradeHistoryQueryService(
     }
 
     /**
-     * Finds the earliest trustworthy portfolio state at or after the evidence floor. A row
-     * qualifies when it was genuinely recorded by a live balance observation, or when it is the
-     * output of a complete reconstruction under the current reconstruction and coverage contracts:
-     * both prove the same authoritative chain, while a partially reconstructed or stale row stays
-     * excluded. The pure B&H anchor is independent of strategy-inception confidence — inception
-     * stays informational and must not replace or suppress an evidence-proven anchor. See
-     * [isRecordedAnchorCandidate] and [isReconstructedAnchorCandidate].
+     * Finds the earliest trustworthy portfolio state expressing an invested benchmark thesis,
+     * at or after [floor]. A row qualifies when it was genuinely recorded by a live balance
+     * observation, or when it is the output of a complete reconstruction under the current
+     * reconstruction and coverage contracts: both prove the same authoritative chain, while a
+     * partially reconstructed or stale row stays excluded. The pure B&H anchor is a
+     * fallback, not an override: a usable approved baseline (confident resolution with a
+     * retained snapshot) governs and suppresses discovery at the call site; otherwise
+     * inception stays informational and must not replace or suppress an evidence-proven
+     * anchor. See [isRecordedAnchorCandidate] and [isReconstructedAnchorCandidate].
+     *
+     * The floor is the evaluated range start (never earlier than [benchmarkHistoryFloor]): a
+     * zoomed window re-discovers its own anchor instead of inheriting a far-earlier one, so
+     * the baseline always sits inside the reconciled series. A baseline far outside the
+     * series forces months of pre-window events through boundary assignment and changes
+     * attribution (unpriceable contributions, shifted ownership) versus the lifetime run —
+     * the windowed chart must be the same benchmark logic applied to the visible range, not
+     * a different reconciliation.
      */
-    private suspend fun findPureBenchmarkAnchor(): PortfolioSnapshot? {
+    private suspend fun findPureBenchmarkAnchor(floor: Instant): PortfolioSnapshot? {
         val now = nowProvider()
         val window = reconstructionWindow()
         val reconstructedRange = authoritativelyReconstructedRange(window)
+        val effectiveFloor = maxOf(floor, benchmarkHistoryFloor)
         return repository
-            .getAllSnapshotsInRange(pureBenchmarkAnchorFloor, OPEN_ENDED_RANGE_END)
+            .getAllSnapshotsInRange(benchmarkHistoryFloor, OPEN_ENDED_RANGE_END)
             .asSequence()
             .filter { snapshot ->
-                !snapshot.timestamp.isBefore(pureBenchmarkAnchorFloor) &&
+                !snapshot.timestamp.isBefore(effectiveFloor) &&
                     !snapshot.timestamp.isAfter(now) &&
                     (
                         isRecordedAnchorCandidate(snapshot, window) ||
                             isReconstructedAnchorCandidate(snapshot, reconstructedRange)
                         ) &&
+                    expressesInvestedBenchmarkThesis(snapshot) &&
                     snapshot.totalValueUSD.signum() > 0 &&
                     snapshot.assets.any { (_, asset) -> asset.balance.signum() > 0 } &&
                     snapshot.assets.all { (symbol, asset) ->
@@ -575,6 +656,33 @@ class TradeHistoryQueryService(
                     }
             }
             .minWithOrNull(compareBy(PortfolioSnapshot::timestamp))
+    }
+
+    /**
+     * A passive-benchmark anchor must express an invested thesis, not a pre-deployment cash
+     * state: the benchmark invests every later owner contribution by the anchor's asset value
+     * weights, so a literally uninvested anchor leaves new money in cash and the benchmark
+     * degenerates into a deposits ledger. Mirroring calculator weight participation (positive
+     * balance and positive value, aliases normalized), the anchor is the earliest trustworthy
+     * state whose non-cash value reaches [INVESTED_THESIS_MINIMUM_USD].
+     *
+     * The boundary is first intentional-scale exposure, not a majority: 49-vs-50 has no
+     * portfolio meaning, while a sub-minimum position cannot express strategy intent — the
+     * strategy itself cannot place, adjust, or exit anything below
+     * `Settings.minimumOrderSizeUSD` (execution dust guards), so such a holding is dust,
+     * not a thesis. A mostly-cash anchor is still a coherent benchmark (it truthfully holds
+     * its cash weight); only a zero-investment anchor is degenerate.
+     */
+    private fun expressesInvestedBenchmarkThesis(snapshot: PortfolioSnapshot): Boolean {
+        val valuesBySymbol = snapshot.assets.entries
+            .filter { (_, asset) -> asset.balance.signum() > 0 && asset.valueUSD.signum() > 0 }
+            .groupingBy { (symbol, _) -> Asset.normalizeLedgerAsset(symbol).uppercase() }
+            .fold(BigDecimal.ZERO) { total, (_, asset) -> total.add(asset.valueUSD) }
+        if (valuesBySymbol.isEmpty()) return false
+        val invested = valuesBySymbol.entries
+            .filter { it.key != Asset.USD }
+            .fold(BigDecimal.ZERO) { total, (_, value) -> total.add(value) }
+        return invested >= INVESTED_THESIS_MINIMUM_USD
     }
 
     /**

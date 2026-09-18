@@ -122,6 +122,20 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getSnapshotsInRange retains the final snapshot of duplicate instants" {
+            runTest {
+                val t = now
+                val snap1 = snapshot(t, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(t, "100100.00", btc = "1.0" to "50000.00")
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSyncMetadata(any()) } returns null
+
+                val result = service.getSnapshotsInRange(t.minusSeconds(60), t.plusSeconds(60))
+                result.size shouldBe 1
+                result.single().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("100100.00"))
+            }
+        }
+
         "getRewardsOverTime_NormalizesEarnStakedAssetSymbols" {
             runTest {
                 val snap = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
@@ -1200,7 +1214,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
                 coEvery {
                     repository.getAllSnapshotsInRange(
-                        TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR,
+                        Instant.EPOCH,
                         openEndedRangeEnd,
                     )
                 } returns emptyList()
@@ -1220,12 +1234,12 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
-        "getRebalancerComparison_ReanchorsAtEarliestRecordedSnapshotAfterFloor" {
+        "getRebalancerComparison_ReanchorsAtEarliestRecordedInvestedSnapshot" {
             runTest {
-                val anchorTime = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR.plusSeconds(300)
+                val anchorTime = Instant.EPOCH.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val reconstructedAtFloor = snapshot(
-                    TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR,
+                    Instant.EPOCH,
                     "1000.00",
                     btc = "1.0" to "500.00",
                     usdBalance = "500.00",
@@ -1255,7 +1269,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     listOf(recordedAnchor, later)
                 coEvery {
                     repository.getAllSnapshotsInRange(
-                        TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR,
+                        Instant.EPOCH,
                         openEndedRangeEnd,
                     )
                 } returns listOf(reconstructedAtFloor, recordedAnchor, later)
@@ -1279,7 +1293,801 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1100.00"))
                 coVerify(exactly = 1) {
                     repository.getAllSnapshotsInRange(
-                        TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR,
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                }
+            }
+        }
+
+        "getRebalancerComparison_SkipsCashInvalidAndPricelessCandidatesForFirstInvestedAnchor" {
+            runTest {
+                val cashTime = Instant.EPOCH.plusSeconds(1000)
+                val invalidTime = Instant.EPOCH.plusSeconds(2000)
+                val pricelessTime = Instant.EPOCH.plusSeconds(3000)
+                val anchorTime = Instant.EPOCH.plusSeconds(4000)
+                val laterTime = anchorTime.plusSeconds(3600)
+                val allCash = snapshot(
+                    cashTime,
+                    "900.00",
+                    btc = "0.0" to "450.00",
+                    usdBalance = "900.00",
+                )
+                val invalidBalances = snapshot(
+                    invalidTime,
+                    "1000.00",
+                    btc = "-1.0" to "500.00",
+                    usdBalance = "1500.00",
+                )
+                val pricelessCrypto = snapshot(
+                    pricelessTime,
+                    "500.00",
+                    btc = "1.0" to "0.00",
+                    usdBalance = "500.00",
+                )
+                val investedAnchor = snapshot(
+                    anchorTime,
+                    "1000.00",
+                    btc = "1.0" to "600.00",
+                    usdBalance = "400.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1000.00",
+                    btc = "1.0" to "600.00",
+                    usdBalance = "400.00",
+                )
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = cashTime,
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
+                )
+                coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
+                    listOf(investedAnchor, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(allCash, invalidBalances, pricelessCrypto, investedAnchor, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe anchorTime
+                comparison.points.first().timestamp shouldBe anchorTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+            }
+        }
+
+        "getRebalancerComparison_WindowStartingAfterGlobalAnchorRediscoversInWindowAnchor" {
+            runTest {
+                val preWindowAnchorTime = Instant.EPOCH.plusSeconds(100)
+                val windowFrom = Instant.EPOCH.plusSeconds(1000)
+                val windowAnchorTime = Instant.EPOCH.plusSeconds(2000)
+                val laterTime = windowAnchorTime.plusSeconds(3600)
+                val preWindowAnchor = snapshot(
+                    preWindowAnchorTime,
+                    "1000.00",
+                    btc = "1.0" to "600.00",
+                    usdBalance = "400.00",
+                )
+                val windowAnchor = snapshot(
+                    windowAnchorTime,
+                    "2000.00",
+                    btc = "1.0" to "1200.00",
+                    usdBalance = "800.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "2200.00",
+                    btc = "1.0" to "1400.00",
+                    usdBalance = "800.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(windowAnchor, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(preWindowAnchor, windowAnchor, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(windowFrom, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe windowAnchorTime
+                comparison.points.first().timestamp shouldBe windowAnchorTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("2000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("2200.00"))
+            }
+        }
+
+        "getRebalancerComparison_AnchorsFirstMaterialPositionEvenWhenCashDominated" {
+            runTest {
+                val dustTime = Instant.EPOCH.plusSeconds(100)
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val laterTime = materialTime.plusSeconds(3600)
+                val dust = snapshot(
+                    dustTime,
+                    "1000.00",
+                    btc = "0.000002" to "89000.00",
+                    usdBalance = "999.822",
+                )
+                val material = snapshot(
+                    materialTime,
+                    "1000.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1010.00",
+                    btc = "0.001" to "110000.00",
+                    usdBalance = "900.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(dust, material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(dust, material, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(dustTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().timestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1010.00"))
+            }
+        }
+
+        "getRebalancerComparison_MalformedSupportedTradeFailsClosed" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val tradeTime = materialTime.plusSeconds(600)
+                val laterTime = materialTime.plusSeconds(3600)
+                val material = snapshot(
+                    materialTime,
+                    "2000.00",
+                    btc = "1.0" to "1200.00",
+                    usdBalance = "800.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "2200.00",
+                    btc = "1.0" to "1400.00",
+                    usdBalance = "800.00",
+                )
+                // Replayable BTCUSD pair but malformed economics: must fail closed, never a zero fill.
+                val malformed = TradeRecord(
+                    id = 1,
+                    pair = "BTCUSD",
+                    symbol = "BTC",
+                    side = "BUY",
+                    timestamp = tradeTime,
+                    volume = BigDecimal.ZERO,
+                    usdAmount = BigDecimal.ZERO,
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal.ZERO,
+                    fee = BigDecimal.ZERO,
+                    source = TradeSource.API_FILL,
+                    tradeId = "MALFORMED-1",
+                    orderTxid = "O-MALFORMED-1",
+                    cycleId = null,
+                    clientOrderId = null,
+                    hasValidVolume = false,
+                )
+                // Dry-run, failed, and out-of-window rows are not economic evidence: the scan
+                // must skip them (repositories return recorded rows; the scan owns the window).
+                val dryRunTrade = malformed.copy(
+                    id = 2,
+                    dryRun = true,
+                    tradeId = "MALFORMED-2",
+                    orderTxid = "O-MALFORMED-2",
+                )
+                val failedTrade = malformed.copy(
+                    id = 3,
+                    success = false,
+                    tradeId = "MALFORMED-3",
+                    orderTxid = "O-MALFORMED-3",
+                )
+                val preWindowTrade = malformed.copy(
+                    id = 4,
+                    timestamp = materialTime.minusSeconds(60),
+                    tradeId = "MALFORMED-4",
+                    orderTxid = "O-MALFORMED-4",
+                )
+                val postWindowTrade = malformed.copy(
+                    id = 5,
+                    timestamp = laterTime.plusSeconds(60),
+                    tradeId = "MALFORMED-5",
+                    orderTxid = "O-MALFORMED-5",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(material, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns
+                    listOf(dryRunTrade, failedTrade, preWindowTrade, malformed, postWindowTrade)
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+                comparison.unavailableAt shouldBe tradeTime
+            }
+        }
+
+        "getRebalancerComparison_SkipsRecordedPricelessCryptoWithNoPricedExposure" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val pricelessTime = materialTime.plusSeconds(1)
+                val laterTime = materialTime.plusSeconds(3600)
+                val priceless = snapshot(
+                    pricelessTime,
+                    "1000.00",
+                    btc = "1.0" to "0",
+                    usdBalance = "1000.00",
+                )
+                val material = snapshot(
+                    materialTime,
+                    "1000.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1010.00",
+                    btc = "0.001" to "110000.00",
+                    usdBalance = "900.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(material, priceless, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().timestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1010.00"))
+            }
+        }
+
+        "getRebalancerComparison_AnchorsSnapshotWithZeroBalanceRowFirst" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val laterTime = materialTime.plusSeconds(3600)
+                // Row order must not affect anchor eligibility: a zero-balance row listed before
+                // the invested rows still anchors when the state as a whole is invested.
+                val base = snapshot(
+                    materialTime,
+                    "910.00",
+                    btc = "0.0" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val btcKey = base.assets.keys.single { Asset.normalizeLedgerAsset(it).uppercase() == "BTC" }
+                val usdKey = base.assets.keys.single { Asset.normalizeLedgerAsset(it).uppercase() == Asset.USD }
+                val ethRow = TestFixtures.assetSnapshot(
+                    symbol = "ETH",
+                    balance = BigDecimal("0.1"),
+                    price = BigDecimal("100"),
+                    valueUSD = BigDecimal("10.00"),
+                    targetPercent = BigDecimal.ZERO,
+                )
+                val orderedAssets = linkedMapOf(
+                    btcKey to base.assets.getValue(btcKey),
+                    "ETH" to ethRow,
+                    usdKey to base.assets.getValue(usdKey),
+                )
+                val zeroFirst = base.copy(assets = orderedAssets)
+                val laterBase = snapshot(
+                    laterTime,
+                    "910.00",
+                    btc = "0.0" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = laterBase.copy(assets = orderedAssets)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(zeroFirst, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(zeroFirst, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("910.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("910.00"))
+            }
+        }
+
+        "getRebalancerComparison_SkipsZeroStateSnapshotWithNoHoldings" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val zeroTime = materialTime.plusSeconds(1)
+                val laterTime = materialTime.plusSeconds(3600)
+                val zeroState = snapshot(
+                    zeroTime,
+                    "0.00",
+                    btc = "0" to "100000.00",
+                    usdBalance = "0.00",
+                )
+                val material = snapshot(
+                    materialTime,
+                    "1000.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1010.00",
+                    btc = "0.001" to "110000.00",
+                    usdBalance = "900.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(material, zeroState, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().timestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1010.00"))
+            }
+        }
+
+        "getRebalancerComparison_SkipsSnapshotWhoseTotalContradictsItsHoldings" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val corruptTime = materialTime.plusSeconds(1)
+                val laterTime = materialTime.plusSeconds(3600)
+                val corruptTotal = snapshot(
+                    corruptTime,
+                    "0.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val material = snapshot(
+                    materialTime,
+                    "1000.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1010.00",
+                    btc = "0.001" to "110000.00",
+                    usdBalance = "900.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(material, corruptTotal, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().timestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1010.00"))
+            }
+        }
+
+        "getRebalancerComparison_SkipsSnapshotWithNegativeBalanceHolding" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val corruptTime = materialTime.plusSeconds(1)
+                val laterTime = materialTime.plusSeconds(3600)
+                val negativeHolding = corruptHoldingSnapshot(
+                    timestamp = corruptTime,
+                    symbol = "ATOM",
+                    balance = "-5",
+                    price = "1",
+                    valueUSD = "-5",
+                )
+                val material = snapshot(
+                    materialTime,
+                    "1000.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1010.00",
+                    btc = "0.001" to "110000.00",
+                    usdBalance = "900.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(material, negativeHolding, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().timestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1010.00"))
+            }
+        }
+
+        "getRebalancerComparison_SkipsSnapshotWithNegativeValueHolding" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val corruptTime = materialTime.plusSeconds(1)
+                val laterTime = materialTime.plusSeconds(3600)
+                val negativeValue = corruptHoldingSnapshot(
+                    timestamp = corruptTime,
+                    symbol = "ATOM",
+                    balance = "5",
+                    price = "1",
+                    valueUSD = "-5",
+                )
+                val material = snapshot(
+                    materialTime,
+                    "1000.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1010.00",
+                    btc = "0.001" to "110000.00",
+                    usdBalance = "900.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(material, negativeValue, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().timestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1010.00"))
+            }
+        }
+
+        "getRebalancerComparison_SkipsSnapshotWithPhantomValueAndZeroBalances" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val corruptTime = materialTime.plusSeconds(1)
+                val laterTime = materialTime.plusSeconds(3600)
+                val phantomValue = PortfolioSnapshot(
+                    timestamp = corruptTime,
+                    totalValueUSD = BigDecimal("100.00"),
+                    assets = mapOf(
+                        Asset.BTC to TestFixtures.assetSnapshot(
+                            symbol = Asset.BTC,
+                            balance = BigDecimal.ZERO,
+                            price = BigDecimal("100000"),
+                            valueUSD = BigDecimal("100.00"),
+                            targetPercent = BigDecimal.ZERO,
+                        ),
+                    ),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    balancesObservedAt = corruptTime,
+                )
+                val material = snapshot(
+                    materialTime,
+                    "1000.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1010.00",
+                    btc = "0.001" to "110000.00",
+                    usdBalance = "900.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(material, phantomValue, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().timestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1010.00"))
+            }
+        }
+
+        "getRebalancerComparison_SkipsProvablyRecordedAllZeroSnapshot" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val zeroTime = materialTime.plusSeconds(1)
+                val laterTime = materialTime.plusSeconds(3600)
+                // Provably recorded (observation strictly before the row instant) yet
+                // holding nothing: reaches the balance gate and must be skipped, so a
+                // recorded-but-empty row can never become the benchmark anchor.
+                val allZero = PortfolioSnapshot(
+                    timestamp = zeroTime,
+                    totalValueUSD = BigDecimal.ZERO,
+                    assets = mapOf(
+                        Asset.BTC to TestFixtures.assetSnapshot(
+                            symbol = Asset.BTC,
+                            balance = BigDecimal.ZERO,
+                            price = BigDecimal("100000"),
+                            valueUSD = BigDecimal.ZERO,
+                            targetPercent = BigDecimal.ZERO,
+                        ),
+                    ),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    balancesObservedAt = zeroTime.minusMillis(1),
+                )
+                val material = snapshot(
+                    materialTime,
+                    "1000.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1010.00",
+                    btc = "0.001" to "110000.00",
+                    usdBalance = "900.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(material, allZero, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1010.00"))
+            }
+        }
+
+        "getRebalancerComparison_AnchorsSnapshotWithZeroRowBeforePositiveRows" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val laterTime = materialTime.plusSeconds(3600)
+                val base = snapshot(
+                    materialTime,
+                    "900.00",
+                    btc = "0.0" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                // A zero-balance row listed before invested rows must not affect discovery:
+                // row order is a serialization accident, not portfolio meaning.
+                val zeroFirst = base.copy(
+                    totalValueUSD = BigDecimal("910.00"),
+                    assets = linkedMapOf(
+                        Asset.BTC to TestFixtures.assetSnapshot(
+                            symbol = Asset.BTC,
+                            balance = BigDecimal.ZERO,
+                            price = BigDecimal("100000"),
+                            valueUSD = BigDecimal.ZERO,
+                            targetPercent = BigDecimal.ZERO,
+                        ),
+                        "ETH" to TestFixtures.assetSnapshot(
+                            symbol = "ETH",
+                            balance = BigDecimal("0.1"),
+                            price = BigDecimal("100.00"),
+                            valueUSD = BigDecimal("10.00"),
+                            targetPercent = BigDecimal.ZERO,
+                        ),
+                        Asset.USD to TestFixtures.assetSnapshot(
+                            symbol = Asset.USD,
+                            balance = BigDecimal("900.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("900.00"),
+                            targetPercent = BigDecimal.ZERO,
+                        ),
+                    ),
+                )
+                val later = base.copy(
+                    timestamp = laterTime,
+                    totalValueUSD = BigDecimal("910.00"),
+                    assets = zeroFirst.assets,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(zeroFirst, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(zeroFirst, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("910.00"))
+            }
+        }
+
+        "getRebalancerComparison_SkipsSnapshotWithPriceValueInconsistency" {
+            runTest {
+                val materialTime = Instant.EPOCH.plusSeconds(200)
+                val corruptTime = materialTime.plusSeconds(1)
+                val laterTime = materialTime.plusSeconds(3600)
+                val inconsistentPrice = corruptHoldingSnapshot(
+                    timestamp = corruptTime,
+                    symbol = "ATOM",
+                    balance = "600",
+                    price = "0",
+                    valueUSD = "600",
+                )
+                val material = snapshot(
+                    materialTime,
+                    "1000.00",
+                    btc = "0.001" to "100000.00",
+                    usdBalance = "900.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1010.00",
+                    btc = "0.001" to "110000.00",
+                    usdBalance = "900.00",
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(material, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        Instant.EPOCH,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(material, inconsistentPrice, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val comparison = service.getRebalancerComparison(materialTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe materialTime
+                comparison.points.first().timestamp shouldBe materialTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1010.00"))
+            }
+        }
+
+        "getRebalancerComparison_DoesNotAnchorBeforeHistoryBoundEvenWhenEarlierHistoryIsClean" {
+            runTest {
+                val floor = Instant.EPOCH
+                val cleanEarly = snapshot(
+                    floor.minusSeconds(86400),
+                    "900.00",
+                    btc = "1.0" to "450.00",
+                    usdBalance = "450.00",
+                )
+                val anchorTime = floor.plusSeconds(300)
+                val laterTime = anchorTime.plusSeconds(3600)
+                val recordedAnchor = snapshot(
+                    anchorTime,
+                    "1000.00",
+                    btc = "1.0" to "500.00",
+                    usdBalance = "500.00",
+                )
+                val later = snapshot(
+                    laterTime,
+                    "1100.00",
+                    btc = "1.0" to "600.00",
+                    usdBalance = "500.00",
+                )
+                val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = cleanEarly.timestamp,
+                    inceptionSnapshot = cleanEarly,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.CONFIDENT,
+                )
+                coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
+                    listOf(recordedAnchor, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(
+                        floor,
+                        openEndedRangeEnd,
+                    )
+                } returns listOf(recordedAnchor, later)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                val serviceWithInception = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = mockInceptionService,
+                )
+
+                val comparison = serviceWithInception.getRebalancerComparison(anchorTime, laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe anchorTime
+                comparison.points.first().timestamp shouldBe anchorTime
+                comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1100.00"))
+                coVerify(exactly = 1) {
+                    repository.getAllSnapshotsInRange(
+                        floor,
                         openEndedRangeEnd,
                     )
                 }
@@ -1288,9 +2096,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_ExcludesLegacyDerivedRowsThroughTheirMetadataSecond" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
-                val derivedTime = floor.plusMillis(500)
-                val anchorTime = floor.plusSeconds(2)
+                // A non-zero reconstruction base: epoch-second metadata uses 0/blank as the
+                // never-reconstructed sentinel, so the legacy window needs a real base instant.
+                val base = Instant.parse("2026-01-01T00:00:00Z")
+                val derivedTime = base.plusMillis(500)
+                val anchorTime = base.plusSeconds(2)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val legacyDerived = snapshot(
                     derivedTime,
@@ -1312,8 +2122,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 val metadata = mapOf(
                     SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION to "legacy-reconstruction",
-                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC to floor.epochSecond.toString(),
-                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to floor.epochSecond.toString(),
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC to base.epochSecond.toString(),
+                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to base.epochSecond.toString(),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
                 coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
@@ -1327,7 +2137,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
                     listOf(recordedAnchor, later)
                 coEvery {
-                    repository.getAllSnapshotsInRange(floor, openEndedRangeEnd)
+                    repository.getAllSnapshotsInRange(Instant.EPOCH, openEndedRangeEnd)
                 } returns listOf(legacyDerived, recordedAnchor, later)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
@@ -1352,7 +2162,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_restart_reproduces_the_same_reanchor_result" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val liveAnchor = snapshot(
@@ -1406,7 +2216,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_reconstructedRowsAnchorWhenTheReconstructionIsCurrent" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val reconstructedAnchor = snapshot(
@@ -1467,7 +2277,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_reconstructedRowsStayExcludedWhenTheReconstructionIsOutdated" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(600)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val reconstructedRow = snapshot(
@@ -1533,7 +2343,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_reconstructedRowsOutsideTheRecordedWindowStayExcluded" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(600)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val legacyDerivedRow = snapshot(
@@ -1606,7 +2416,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_anchorSearchRejectsUnqualifiedRows" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
 
@@ -1739,7 +2549,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_reconstructionMetadataVariantsStayConsistent" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val liveAnchor = snapshot(
@@ -1816,7 +2626,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_truncatedInceptionWithoutRecordedAnchorStaysUnavailable" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val liveAnchor = snapshot(
@@ -1864,7 +2674,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_anchorSearchSkipsCandidatesWithoutPositiveHoldings" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val emptyCandidate = snapshot(
@@ -1922,7 +2732,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_staleRowInsideTheDisplayedWindowFailsClosed" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val liveAnchor = snapshot(
@@ -1979,7 +2789,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_windowMetadataShapesStayConsistent" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val liveAnchor = snapshot(
@@ -2042,7 +2852,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_truncatedInceptionStillUsesTheRecordedAnchor" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
                 val liveAnchor = snapshot(
@@ -2092,7 +2902,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_UnclassifiableLegacyWindowStillFindsLiveRecordedAnchor" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val derivedTime = floor.plusSeconds(1)
                 val anchorTime = floor.plusSeconds(300)
                 val laterTime = anchorTime.plusSeconds(3600)
@@ -2157,7 +2967,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
         "getRebalancerComparison_LiveSignatureRowInsideReconstructionWindowIsRecorded" {
             runTest {
-                val floor = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR
+                val floor = Instant.EPOCH
                 val windowEnd = floor.plusSeconds(10)
                 val anchorTime = floor.plusSeconds(5)
                 val laterTime = floor.plusSeconds(3600)
@@ -2222,7 +3032,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         "getRebalancerComparison_PreservesPostAnchorFailureReason" {
             runTest {
                 val oldInception = now.minusSeconds(90 * 86_400L)
-                val anchorTime = TradeHistoryQueryService.PURE_BENCHMARK_ANCHOR_FLOOR.plusSeconds(300)
+                val anchorTime = Instant.EPOCH.plusSeconds(300)
                 val anchor = snapshot(anchorTime, "1000.00", btc = "1.0" to "500.00", usdBalance = "500.00")
                 val later = snapshot(
                     anchorTime.plusSeconds(3600),
@@ -3330,6 +4140,32 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             fiatDeploymentPercent = BigDecimal.ZERO,
             effectiveUsdTargetPercent = BigDecimal.ZERO,
             balancesObservedAt = balancesObservedAt,
+        )
+    }
+
+    private fun corruptHoldingSnapshot(
+        timestamp: Instant,
+        symbol: String,
+        balance: String,
+        price: String,
+        valueUSD: String,
+    ): PortfolioSnapshot {
+        val base = snapshot(
+            timestamp,
+            "1000.00",
+            btc = "0.001" to "100000.00",
+            usdBalance = "900.00",
+        )
+        return base.copy(
+            assets = base.assets + (
+                symbol to TestFixtures.assetSnapshot(
+                    symbol = symbol,
+                    balance = BigDecimal(balance),
+                    price = BigDecimal(price),
+                    valueUSD = BigDecimal(valueUSD),
+                    targetPercent = BigDecimal.ZERO,
+                )
+                ),
         )
     }
 

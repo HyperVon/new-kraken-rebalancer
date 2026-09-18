@@ -12,7 +12,7 @@ import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import java.time.Instant
 
-internal const val CURRENT_SCHEMA_VERSION = 13
+internal const val CURRENT_SCHEMA_VERSION = 14
 
 internal data class SchemaMigration(
     val version: Int,
@@ -71,6 +71,20 @@ internal val SCHEMA_MIGRATIONS = listOf(
     // downstream while remaining retained as evidence. Columns are added via
     // addMissingColumnsStatements with DEFAULT true.
     SchemaMigration(13, "trade-economic-validity"),
+    // Full-wallet approved-baseline universes exceed the legacy VARCHAR(64) sync-metadata value
+    // width (Exposed enforces it client-side; SQLite itself never did). Rebuild widens it to
+    // TEXT so baseline persistence cannot fail on universe size.
+    SchemaMigration(14, "history-sync-metadata-value-text") {
+        exec("DROP TABLE IF EXISTS history_sync_metadata_wide")
+        exec(
+            "CREATE TABLE history_sync_metadata_wide " +
+                "(key VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL)",
+        )
+        exec("INSERT INTO history_sync_metadata_wide (key, value) SELECT key, value FROM history_sync_metadata")
+        exec("DROP TABLE history_sync_metadata")
+        exec("ALTER TABLE history_sync_metadata_wide RENAME TO history_sync_metadata")
+        currentDialectMetadata.resetCaches()
+    },
 )
 
 internal fun validateSchemaMigrations(migrations: List<SchemaMigration> = SCHEMA_MIGRATIONS) {

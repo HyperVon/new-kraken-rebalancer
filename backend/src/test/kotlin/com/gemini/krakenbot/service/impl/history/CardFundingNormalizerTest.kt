@@ -1341,4 +1341,61 @@ class CardFundingNormalizerTest : StringSpec() {
             effects shouldBe null
         }
     }
+
+    init {
+        "atomic transformation requires the exchange subtype marker on every leg" {
+            val sweep = listOf(
+                event("sweep-spend", "spend", "-0.50", asset = "XRP", subtype = "dustsweeping"),
+                event("sweep-receive", "receive", "0.48", asset = "USD", subtype = "dustsweeping"),
+            )
+            CardFundingNormalizer.isAtomicTransformationGroup(sweep) shouldBe true
+        }
+
+        "atomic transformation normalizes subtype casing and separators" {
+            val sweep = listOf(
+                event("sweep-spend", "spend", "-0.50", asset = "XRP", subtype = "Dust_Sweeping"),
+                event("sweep-receive", "receive", "0.48", asset = "USD", subtype = "DUST-SWEEPING"),
+            )
+            CardFundingNormalizer.isAtomicTransformationGroup(sweep) shouldBe true
+        }
+
+        "atomic transformation rejects a lone leg" {
+            val lone = listOf(
+                event("sweep-spend", "spend", "-0.50", asset = "XRP", subtype = "dustsweeping"),
+            )
+            CardFundingNormalizer.isAtomicTransformationGroup(lone) shouldBe false
+        }
+
+        "atomic transformation rejects a non-passthrough leg" {
+            val mixed = listOf(
+                event("sweep-spend", "spend", "-0.50", asset = "XRP", subtype = "dustsweeping"),
+                event("funding", "deposit", "0.48", asset = "USD", subtype = "dustsweeping"),
+            )
+            CardFundingNormalizer.isAtomicTransformationGroup(mixed) shouldBe false
+        }
+
+        "atomic transformation rejects a reused ledger id" {
+            val duplicated = listOf(
+                event("sweep-leg", "spend", "-0.50", asset = "XRP", subtype = "dustsweeping"),
+                event("sweep-leg", "receive", "0.48", asset = "USD", subtype = "dustsweeping"),
+            )
+            CardFundingNormalizer.isAtomicTransformationGroup(duplicated) shouldBe false
+        }
+
+        "atomic transformation rejects mixed subtypes" {
+            val mixed = listOf(
+                event("sweep-spend", "spend", "-0.50", asset = "XRP", subtype = "dustsweeping"),
+                event("sweep-receive", "receive", "0.48", asset = "USD", subtype = "staking"),
+            )
+            CardFundingNormalizer.isAtomicTransformationGroup(mixed) shouldBe false
+        }
+
+        "atomic transformation rejects blank subtypes" {
+            val blank = listOf(
+                event("sweep-spend", "spend", "-0.50", asset = "XRP", subtype = null),
+                event("sweep-receive", "receive", "0.48", asset = "USD", subtype = ""),
+            )
+            CardFundingNormalizer.isAtomicTransformationGroup(blank) shouldBe false
+        }
+    }
 }

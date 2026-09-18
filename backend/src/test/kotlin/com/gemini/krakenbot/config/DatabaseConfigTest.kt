@@ -99,6 +99,7 @@ class DatabaseConfigTest : StringSpec() {
                         11 to "inception-inference-evidence",
                         12 to "ledger-amount-validity",
                         13 to "trade-economic-validity",
+                        14 to "history-sync-metadata-value-text",
                     )
 
                     val expectedTables = setOf(

@@ -373,6 +373,7 @@ object RebalancerComparisonCalculator {
                 priceProvider = priceProvider,
                 classifications = ledgerClassifications,
                 cardNormalizations = cardNormalizations,
+                rewards = rewards,
             )
         } catch (e: HistoricalPriceSourceException) {
             return unavailable(
@@ -683,7 +684,14 @@ object RebalancerComparisonCalculator {
             ?: snapshots.first().timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
         val lastSnapshot = snapshots.last()
         val lastObservationTime = lastSnapshot.balancesObservedAt ?: lastSnapshot.timestamp
-        val maxEventTime = latestCandidateTime(lastSnapshot)
+        // With no trustworthy capture time for the final snapshot, nothing dated after its
+        // timestamp can be owned by any interval; admitting it would leak a future event
+        // backward into history.
+        val maxEventTime = if (lastSnapshot.balancesObservedAt == null) {
+            lastSnapshot.timestamp
+        } else {
+            latestCandidateTime(lastSnapshot)
+        }
 
         val successfulTrades = trades
             .filter {
@@ -776,12 +784,20 @@ object RebalancerComparisonCalculator {
 
             val impliedBalances = prev.assets.mapValues { (_, asset) -> asset.balance }.toMutableMap()
 
+            // Interval ownership ends at curr.timestamp when its observation time is unknown;
+            // a post-curr event then belongs to a later interval (or fails closed past the last
+            // snapshot) and must not leak backward into this one.
+            val lateUpperBound = if (curr.balancesObservedAt == null) {
+                curr.timestamp
+            } else {
+                latestCandidateTime(curr)
+            }
             val lateTradeCandidates = indexedTrades
                 .filter { (index, trade) ->
                     index !in assignedTradeIndexes &&
                         index !in initialTradeIndices &&
                         trade.timestamp > currObs &&
-                        trade.timestamp <= latestCandidateTime(curr) &&
+                        trade.timestamp <= lateUpperBound &&
                         affectsTrackedBalances(trade)
                 }
             val lateLedgerCandidates = indexedLedgers
@@ -789,7 +805,7 @@ object RebalancerComparisonCalculator {
                     index !in assignedLedgerIndexes &&
                         index !in initialLedgerIndices &&
                         ledger.time > currObs &&
-                        ledger.time <= latestCandidateTime(curr) &&
+                        ledger.time <= lateUpperBound &&
                         Asset.normalizeLedgerAsset(ledger.asset).uppercase() in baseline.assets.keys
                 }
 
@@ -856,7 +872,7 @@ object RebalancerComparisonCalculator {
                             trade.timestamp <= prev.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
                         val nearCurrentBoundary = if (curr.balancesObservedAt == null) {
                             trade.timestamp > curr.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&
-                                trade.timestamp <= curr.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                                trade.timestamp <= curr.timestamp
                         } else {
                             trade.timestamp > currObs &&
                                 trade.timestamp <= latestCandidateTime(curr)
@@ -877,12 +893,19 @@ object RebalancerComparisonCalculator {
                     ) {
                         false
                     } else {
-                        val nearUnknownPreviousBoundary = prev.balancesObservedAt == null &&
+                        val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
+                        // Universe validation guarantees every snapshot carries the baseline keys.
+                        val prevBalance = prev.assets.getValue(symbol).balance
+                        val alreadyEmbodiedInPrevious = ledger.time <= prev.timestamp &&
+                            ledger.hasAuthoritativeBalance &&
+                            prevBalance.compareTo(ledger.balance) == 0
+                        val nearUnknownPreviousBoundary = !alreadyEmbodiedInPrevious &&
+                            prev.balancesObservedAt == null &&
                             ledger.time > prev.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&
                             ledger.time <= prev.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
                         val nearCurrentBoundary = if (curr.balancesObservedAt == null) {
                             ledger.time > curr.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&
-                                ledger.time <= curr.timestamp.plusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+                                ledger.time <= curr.timestamp
                         } else {
                             ledger.time > currObs &&
                                 ledger.time <= latestCandidateTime(curr)
@@ -974,6 +997,20 @@ object RebalancerComparisonCalculator {
                 baseline.assets.keys,
                 resolvedScopes,
             )
+
+            // Pre-regulars state for late-ledger evaluation: boundary ledgers dated before
+            // every regular event must be evaluated against the state at their own timestamp
+            // (see findLateAssignment), not against the post-regulars running state.
+            val preRegularBalances = impliedBalances.toMap()
+            val minRegularEventTime = buildList {
+                regularIntervalTrades.forEach { add(it.value.timestamp) }
+                regularIntervalLedgers.forEach { add(it.value.time) }
+            }.minOrNull()
+            val anchorRelativeLedgerIndexes = lateCandidates
+                .filterIsInstance<LateCandidate.Ledger>()
+                .filter { minRegularEventTime == null || it.ledger.time < minRegularEventTime }
+                .map { it.index }
+                .toSet()
 
             if (initialTradeCandidates.isNotEmpty() || initialLedgerCandidates.isNotEmpty()) {
                 for ((_, initialTrade) in initialTradeCandidates) {
@@ -1116,7 +1153,7 @@ object RebalancerComparisonCalculator {
                         }
                     }
                 }
-                val lateAssignment = if (!balancesMatchSnapshot(impliedBalances, curr)) {
+                val lateAssignment = if (lateCandidates.isNotEmpty()) {
                     findLateAssignment(
                         lateCandidates,
                         impliedBalances,
@@ -1125,6 +1162,9 @@ object RebalancerComparisonCalculator {
                         useAuthoritativeLedgerBalances,
                         tradeLegsByRefId,
                         tradeLegsByTradeIdentity,
+                        preRegularBalances,
+                        anchorRelativeLedgerIndexes,
+                        prev.timestamp..curr.timestamp,
                     )
                 } else {
                     null
@@ -1159,15 +1199,6 @@ object RebalancerComparisonCalculator {
                 )
             }
             if (!balancesMatchSnapshot(impliedBalances, curr)) {
-                val mismatches = impliedBalances.mapNotNull { (symbol, balance) ->
-                    val observed = curr.assets[symbol]?.balance ?: return@mapNotNull null
-                    if (balance.compareTo(observed) != 0) {
-                        "$symbol=${balance.toPlainString()}|observed=${observed.toPlainString()}|" +
-                            "diff=${balance.subtract(observed).toPlainString()}"
-                    } else {
-                        null
-                    }
-                }
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                     unavailableAt = curr.timestamp,
@@ -1285,6 +1316,31 @@ object RebalancerComparisonCalculator {
         return true
     }
 
+    private fun balanceResidual(balances: Map<String, BigDecimal>, snapshot: PortfolioSnapshot): BigDecimal {
+        var total = BigDecimal.ZERO
+        val allSymbols = balances.keys + snapshot.assets.keys
+        for (symbol in allSymbols) {
+            val calculated = balances[symbol] ?: BigDecimal.ZERO
+            val actual = snapshot.assets[symbol]?.balance ?: BigDecimal.ZERO
+            total = total.add(calculated.subtract(actual).abs())
+        }
+        return total
+    }
+
+    /**
+     * Exact raw-precision equality of two resulting balance maps. Recognises provable no-op
+     * inclusions during late-assignment tie-breaking: when two matching subsets leave every
+     * tracked balance identical, the extra events moved nothing the snapshot can observe.
+     */
+    private fun sameResultingBalances(first: Map<String, BigDecimal>, second: Map<String, BigDecimal>): Boolean {
+        for (symbol in first.keys + second.keys) {
+            val left = first[symbol] ?: BigDecimal.ZERO
+            val right = second[symbol] ?: BigDecimal.ZERO
+            if (left.compareTo(right) != 0) return false
+        }
+        return true
+    }
+
     private fun canUseAuthoritativeLedgerBalances(
         ledgers: List<LedgerEvent>,
         trackedAssets: Set<String>,
@@ -1359,7 +1415,16 @@ object RebalancerComparisonCalculator {
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
     ): InitialAssignmentMatch? {
-        if (initialCandidates.size + lateCandidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
+        if (initialCandidates.size + lateCandidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) {
+            // Observable boundary saturation: exhaustive search is bounded, so an over-wide
+            // boundary degrades to fail-closed rather than silently nulling the assignment.
+            log.warn(
+                "Late-assignment boundary candidate cap exceeded; failing closed (candidates={}, cap={})",
+                initialCandidates.size + lateCandidates.size,
+                MAX_BOUNDARY_EVENT_CANDIDATES,
+            )
+            return null
+        }
 
         var match: InitialAssignmentMatch? = null
         var multipleMatches = false
@@ -1414,7 +1479,30 @@ object RebalancerComparisonCalculator {
                 }
                 if (!validEconomics) return
 
-                val candidateMatch = if (balancesMatchSnapshot(testBalances, snapshot)) {
+                val late = if (lateCandidates.isNotEmpty()) {
+                    findLateAssignment(
+                        lateCandidates,
+                        testBalances,
+                        snapshot,
+                        accountingMode,
+                        useAuthoritativeLedgerBalances,
+                        tradeLegsByRefId,
+                        tradeLegsByTradeIdentity,
+                    )
+                } else {
+                    null
+                }
+                val candidateMatch = if (late != null) {
+                    InitialAssignmentMatch(
+                        embeddedTradeIndexes = embeddedTrades.toList(),
+                        embeddedLedgerIndexes = embeddedLedgers.toList(),
+                        postBaselineTradeIndexes = postTrades.toList(),
+                        postBaselineLedgerIndexes = postLedgers.toList(),
+                        lateAssignment = late,
+                        resultingBalances = late.balances,
+                        ledgerDeltas = ledgerDeltas + late.ledgerDeltas,
+                    )
+                } else if (balancesMatchSnapshot(testBalances, snapshot)) {
                     InitialAssignmentMatch(
                         embeddedTradeIndexes = embeddedTrades.toList(),
                         embeddedLedgerIndexes = embeddedLedgers.toList(),
@@ -1425,28 +1513,7 @@ object RebalancerComparisonCalculator {
                         ledgerDeltas = ledgerDeltas,
                     )
                 } else {
-                    val late = findLateAssignment(
-                        lateCandidates,
-                        testBalances,
-                        snapshot,
-                        accountingMode,
-                        useAuthoritativeLedgerBalances,
-                        tradeLegsByRefId,
-                        tradeLegsByTradeIdentity,
-                    )
-                    if (late != null) {
-                        InitialAssignmentMatch(
-                            embeddedTradeIndexes = embeddedTrades.toList(),
-                            embeddedLedgerIndexes = embeddedLedgers.toList(),
-                            postBaselineTradeIndexes = postTrades.toList(),
-                            postBaselineLedgerIndexes = postLedgers.toList(),
-                            lateAssignment = late,
-                            resultingBalances = late.balances,
-                            ledgerDeltas = ledgerDeltas + late.ledgerDeltas,
-                        )
-                    } else {
-                        null
-                    }
+                    null
                 }
 
                 if (candidateMatch != null) {
@@ -1494,8 +1561,26 @@ object RebalancerComparisonCalculator {
         useAuthoritativeLedgerBalances: Boolean,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
+        // Pre-regulars balances plus the indexes of late ledgers dated before every regular
+        // event. Those ledgers evaluate anchor-relatively (see applyAnchorRelativeLedgerEvent);
+        // default callers keep the legacy post-regulars evaluation.
+        anchorBalances: Map<String, BigDecimal> = emptyMap(),
+        anchorRelativeLedgerIndexes: Set<Int> = emptySet(),
+        // Closed interval span [prev, curr] for causal tie-breaking below. Null preserves the
+        // legacy behavior of treating every exact tie as ambiguous.
+        intervalSpan: ClosedRange<Instant>? = null,
     ): LateAssignment? {
         if (candidates.isEmpty() || candidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
+
+        val emptyMatches = balancesMatchSnapshot(startingBalances, snapshot)
+        val emptyResidual = if (emptyMatches) balanceResidual(startingBalances, snapshot) else null
+
+        // If the unassigned state already matches the snapshot with exact zero residual at raw
+        // precision, boundary candidates cannot explain any remaining delta.
+        if (emptyMatches && emptyResidual != null && emptyResidual.compareTo(BigDecimal.ZERO) == 0) {
+            return null
+        }
+
         // Explore candidates in the same chronological order as final reconciliation so an
         // included subset evaluates authoritative checkpoints at their true point in time.
         val orderedCandidates = candidates.sortedWith(
@@ -1509,36 +1594,115 @@ object RebalancerComparisonCalculator {
                 { candidate -> if (candidate is LateCandidate.Ledger) 0 else 1 },
             ),
         )
+        // Global-index to ledger lookup for anchor-relative prefix chaining below.
+        val ledgersByIndex = orderedCandidates
+            .filterIsInstance<LateCandidate.Ledger>()
+            .associate { it.index to it.ledger }
+        // Event time by global index for causal span ranking below.
+        val candidateTimeByIndex: Map<Int, Instant> = candidates.associate {
+            when (it) {
+                is LateCandidate.Trade -> it.index to it.trade.timestamp
+                is LateCandidate.Ledger -> it.index to it.ledger.time
+            }
+        }
 
-        var match: LateAssignment? = null
+        // 0 when every event of the subset lies within the interval span (so the subset can
+        // have caused the observed state), 1 otherwise. Unknown spans never prefer.
+        fun spanRank(tradeIndexes: List<Int>, ledgerIndexes: List<Int>): Int {
+            val span = intervalSpan ?: return 1
+            val fullyInSpan = (tradeIndexes + ledgerIndexes).all {
+                candidateTimeByIndex[it]?.let { t -> t in span } ==
+                    true
+            }
+            return if (fullyInSpan) 0 else 1
+        }
+
+        var bestMatch: LateAssignment? = null
+        var bestResidual: BigDecimal? = null
         var multipleMatches = false
         val selectedTrades = mutableListOf<Int>()
         val selectedLedgers = mutableListOf<Int>()
         val selectedLedgerDeltas = mutableMapOf<Int, BigDecimal>()
 
         fun search(position: Int, balances: Map<String, BigDecimal>) {
-            if (multipleMatches) return
             if (position == orderedCandidates.size) {
                 if ((selectedTrades.isNotEmpty() || selectedLedgers.isNotEmpty()) &&
                     balancesMatchSnapshot(balances, snapshot)
                 ) {
-                    val candidateMatch = LateAssignment(
-                        tradeIndexes = selectedTrades.toList(),
-                        ledgerIndexes = selectedLedgers.toList(),
-                        balances = balances.toMap(),
-                        ledgerDeltas = selectedLedgerDeltas.toMap(),
-                    )
-                    if (match == null) {
-                        match = candidateMatch
-                    } else {
-                        multipleMatches = true
+                    val residual = balanceResidual(balances, snapshot)
+                    // If the empty subset already matched within display tolerance, a non-empty
+                    // candidate subset is only selected if its exact raw residual strictly improves
+                    // upon the unadjusted state.
+                    if (emptyResidual == null || residual.compareTo(emptyResidual) < 0) {
+                        val currentBest = bestResidual
+                        if (currentBest == null || residual.compareTo(currentBest) < 0) {
+                            bestResidual = residual
+                            bestMatch = LateAssignment(
+                                tradeIndexes = selectedTrades.toList(),
+                                ledgerIndexes = selectedLedgers.toList(),
+                                balances = balances.toMap(),
+                                ledgerDeltas = selectedLedgerDeltas.toMap(),
+                            )
+                            multipleMatches = false
+                        } else if (residual.compareTo(currentBest) == 0) {
+                            // An exact-residual tie between subsets with identical resulting
+                            // balances means the extra events are provable no-ops on tracked
+                            // state (e.g. a zero-effect dust fill riding along the real fill
+                            // that explains the delta). Keep the minimal explanation instead
+                            // of failing closed. Subsets that reach equal residual through
+                            // genuinely different balances stay ambiguous and fail closed.
+                            val incumbent = bestMatch
+                            if (incumbent != null && sameResultingBalances(incumbent.balances, balances)) {
+                                val challengerSize = selectedTrades.size + selectedLedgers.size
+                                val incumbentSize = incumbent.tradeIndexes.size + incumbent.ledgerIndexes.size
+                                when {
+                                    challengerSize < incumbentSize -> {
+                                        bestMatch = LateAssignment(
+                                            tradeIndexes = selectedTrades.toList(),
+                                            ledgerIndexes = selectedLedgers.toList(),
+                                            balances = balances.toMap(),
+                                            ledgerDeltas = selectedLedgerDeltas.toMap(),
+                                        )
+                                    }
+
+                                    challengerSize == incumbentSize -> {
+                                        // Same-size, same-balances, exact-residual ties are only
+                                        // genuinely ambiguous when neither subset is causally
+                                        // distinguished: a subset fully inside the interval span
+                                        // could have caused the observed state, while one relying
+                                        // on fuzzy-window neighbors from outside the span could
+                                        // not (under the relative timestamp order). Prefer the
+                                        // causal subset; same-span ties still fail closed.
+                                        val incumbentRank = spanRank(incumbent.tradeIndexes, incumbent.ledgerIndexes)
+                                        val challengerRank = spanRank(selectedTrades, selectedLedgers)
+                                        when {
+                                            challengerRank < incumbentRank -> {
+                                                bestMatch = LateAssignment(
+                                                    tradeIndexes = selectedTrades.toList(),
+                                                    ledgerIndexes = selectedLedgers.toList(),
+                                                    balances = balances.toMap(),
+                                                    ledgerDeltas = selectedLedgerDeltas.toMap(),
+                                                )
+                                                multipleMatches = false
+                                            }
+
+                                            challengerRank > incumbentRank -> Unit
+
+                                            else -> multipleMatches = true
+                                        }
+                                    }
+                                    // Larger no-op superset: ignore, the minimal subset stands.
+                                }
+                            } else {
+                                multipleMatches = true
+                            }
+                        }
                     }
                 }
                 return
             }
 
             search(position + 1, balances)
-            if (multipleMatches) return
 
             when (val candidate = orderedCandidates[position]) {
                 is LateCandidate.Trade -> {
@@ -1560,23 +1724,122 @@ object RebalancerComparisonCalculator {
                 }
 
                 is LateCandidate.Ledger -> {
-                    val nextBalances = balances.toMutableMap()
-                    val appliedDelta = applyLedgerEvent(
-                        nextBalances,
-                        candidate.ledger,
-                        useAuthoritativeLedgerBalances,
-                    )
-                    selectedLedgers += candidate.index
-                    selectedLedgerDeltas[candidate.index] = appliedDelta
-                    search(position + 1, nextBalances)
-                    selectedLedgerDeltas.remove(candidate.index)
-                    selectedLedgers.removeAt(selectedLedgers.lastIndex)
+                    val symbol = Asset.normalizeLedgerAsset(candidate.ledger.asset).uppercase()
+                    val isAnchorRelative = candidate.index in anchorRelativeLedgerIndexes
+                    val contradictoryAuthoritative = useAuthoritativeLedgerBalances &&
+                        candidate.ledger.hasAuthoritativeBalance &&
+                        !isSpotResolvedStakingCorrection(candidate.ledger) &&
+                        symbol in balances &&
+                        (!isAnchorRelative || symbol in anchorBalances) &&
+                        run {
+                            val netDelta = candidate.ledger.netBalanceDelta()
+                            val authoritativeDelta = if (isAnchorRelative) {
+                                var prefixDelta = BigDecimal.ZERO
+                                for (selectedIndex in selectedLedgers) {
+                                    val prior = ledgersByIndex[selectedIndex] ?: continue
+                                    if (Asset.normalizeLedgerAsset(prior.asset).uppercase() == symbol) {
+                                        prefixDelta = prefixDelta.add(
+                                            selectedLedgerDeltas[selectedIndex] ?: BigDecimal.ZERO,
+                                        )
+                                    }
+                                }
+                                candidate.ledger.balance.subtract(anchorBalances.getValue(symbol))
+                                    .subtract(prefixDelta)
+                            } else {
+                                candidate.ledger.balance.subtract(balances.getValue(symbol))
+                            }
+                            authoritativeDelta.subtract(netDelta).abs() > legacyLedgerFeeDeltaTolerance
+                        }
+                    if (!contradictoryAuthoritative) {
+                        val nextBalances = balances.toMutableMap()
+                        val appliedDelta = if (isAnchorRelative) {
+                            applyAnchorRelativeLedgerEvent(
+                                nextBalances,
+                                candidate.ledger,
+                                useAuthoritativeLedgerBalances,
+                                anchorBalances,
+                                ledgersByIndex,
+                                selectedLedgers,
+                                selectedLedgerDeltas,
+                            )
+                        } else {
+                            applyLedgerEvent(
+                                nextBalances,
+                                candidate.ledger,
+                                useAuthoritativeLedgerBalances,
+                            )
+                        }
+                        selectedLedgers += candidate.index
+                        selectedLedgerDeltas[candidate.index] = appliedDelta
+                        search(position + 1, nextBalances)
+                        selectedLedgerDeltas.remove(candidate.index)
+                        selectedLedgers.removeAt(selectedLedgers.lastIndex)
+                    }
                 }
             }
         }
 
         search(position = 0, balances = startingBalances)
-        return if (multipleMatches) null else match
+        return if (multipleMatches) null else bestMatch
+    }
+
+    /**
+     * Mirror of the scope gate in [canUseAuthoritativeLedgerBalances]: a staking row may act
+     * as a Spot correction only when validator-resolved to Spot, which is exactly when the
+     * interval flag (and hence a non-null authoritativeDelta) is granted for it.
+     */
+    private fun isSpotResolvedStakingCorrection(ledger: LedgerEvent): Boolean =
+        ledger.type.equals(KrakenApiConstants.LEDGER_TYPE_STAKING, ignoreCase = true)
+
+    /**
+     * Applies a late boundary ledger dated before every regular event against the pre-regulars
+     * [anchorBalances] instead of the post-regulars running state, so a staking-row snap lands
+     * on its true point-in-time delta rather than overwriting newer regular effects with a
+     * stale post balance. Same-symbol subset ledgers applied earlier in this path are chained
+     * via [selectedLedgerDeltas]; net-economics legs are unaffected (addition commutes).
+     * Earlier same-symbol subset *trades* are not chained (trade deltas are not recorded), so
+     * exotic same-instant trade-plus-ledger layouts stay fail-closed here. Falls back to
+     * [applyLedgerEvent] when the symbol is absent from either balance map.
+     */
+    private fun applyAnchorRelativeLedgerEvent(
+        balances: MutableMap<String, BigDecimal>,
+        ledger: LedgerEvent,
+        useAuthoritativeBalance: Boolean,
+        anchorBalances: Map<String, BigDecimal>,
+        ledgersByIndex: Map<Int, LedgerEvent>,
+        selectedLedgerIndexes: List<Int>,
+        selectedLedgerDeltas: Map<Int, BigDecimal>,
+    ): BigDecimal {
+        val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
+        if (symbol !in balances || symbol !in anchorBalances) {
+            return applyLedgerEvent(balances, ledger, useAuthoritativeBalance)
+        }
+        var prefixDelta = BigDecimal.ZERO
+        for (selectedIndex in selectedLedgerIndexes) {
+            val prior = ledgersByIndex[selectedIndex] ?: continue
+            if (Asset.normalizeLedgerAsset(prior.asset).uppercase() == symbol) {
+                prefixDelta = prefixDelta.add(selectedLedgerDeltas[selectedIndex] ?: BigDecimal.ZERO)
+            }
+        }
+        val netDelta = ledger.netBalanceDelta()
+        val authoritativeDelta = if (useAuthoritativeBalance && ledger.hasAuthoritativeBalance) {
+            ledger.balance.subtract(anchorBalances.getValue(symbol)).subtract(prefixDelta)
+        } else {
+            null
+        }
+        val delta = if (
+            authoritativeDelta != null &&
+            (
+                authoritativeDelta.subtract(netDelta).abs() <= legacyLedgerFeeDeltaTolerance ||
+                    isSpotResolvedStakingCorrection(ledger)
+                )
+        ) {
+            authoritativeDelta
+        } else {
+            netDelta
+        }
+        balances[symbol] = balances.getValue(symbol).add(delta)
+        return delta
     }
 
     private data class BuiltEvents(
@@ -1638,6 +1901,7 @@ object RebalancerComparisonCalculator {
         priceProvider: HistoricalPriceProvider?,
         classifications: Map<String, FlowCategory>,
         cardNormalizations: List<NormalizedFundingTransaction>,
+        rewards: List<LedgerEvent>,
     ): BuiltEvents {
         val postBaseline = ledgers.filter { reconciledLedger ->
             !reconciledLedger.embeddedInBaseline &&
@@ -1665,11 +1929,16 @@ object RebalancerComparisonCalculator {
             if (refid.isBlank() || postGroup.size != group.size ||
                 group.size != 2 || group.any { classifications[it.ledger.ledgerId] != FlowCategory.INTERNAL_MOVE }
             ) {
-                return BuiltEvents(
-                    events = emptyList(),
-                    unpriceableAt = null,
-                    ambiguousAt = conversionAt,
-                )
+                // A complete conversion whose counterpart references an asset outside the
+                // tracked universe never enters reconciliation, so the reconciled subset can
+                // look one-legged. Rescue only that split shape; everything else stays ambiguous.
+                if (!isUniverseSplitConversion(refid, group, rewards, baseline, classifications)) {
+                    return BuiltEvents(
+                        events = emptyList(),
+                        unpriceableAt = null,
+                        ambiguousAt = conversionAt,
+                    )
+                }
             }
             consumedLedgerIds += group.map { it.ledger.ledgerId }
         }
@@ -1788,6 +2057,13 @@ object RebalancerComparisonCalculator {
             if (group.size == 1) continue
             val groupAt = group.minOf { it.timestamp }
             if (!CardFundingNormalizer.isCompletePassthroughGroup(group.map { it.ledger })) {
+                // Legs of one exchange-labeled atomic transformation (uniform explicit subtype)
+                // are plumbing of that known event even when snapshots captured only a subset;
+                // consume them like a complete group instead of reporting an ambiguous type.
+                if (CardFundingNormalizer.isAtomicTransformationGroup(group.map { it.ledger })) {
+                    consumedLedgerIds += group.map { it.ledger.ledgerId }
+                    continue
+                }
                 return BuiltEvents(
                     events = emptyList(),
                     unpriceableAt = null,
@@ -1883,6 +2159,43 @@ object RebalancerComparisonCalculator {
 
     private fun isConversionLedger(ledger: LedgerEvent): Boolean =
         ledger.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
+
+    /**
+     * Recognizes a complete refid-linked conversion split by the tracked-universe boundary.
+     * The reconciled subset holds an assigned tracked-side leg while the counterpart, which
+     * references an asset absent from the tracked universe, could never be assigned during
+     * reconciliation. Rescue requires the full evidence group to be exactly the structurally
+     * complete pair: same non-blank refid, same exchange instant, one debit and one credit
+     * across two distinct assets with authoritative balances and fees, every leg classified
+     * internal, every leg post-baseline, and the counterpart outside the tracked universe.
+     * A straddling, underdetermined, or tracked-but-unassigned counterpart stays ambiguous.
+     */
+    private fun isUniverseSplitConversion(
+        refid: String,
+        group: List<ReconciledLedger>,
+        rewards: List<LedgerEvent>,
+        baseline: PortfolioSnapshot,
+        classifications: Map<String, FlowCategory>,
+    ): Boolean {
+        if (refid.isBlank()) return false
+        if (group.any { classifications[it.ledger.ledgerId] != FlowCategory.INTERNAL_MOVE }) return false
+        val fullGroup = rewards.filter { isConversionLedger(it) && it.refid?.trim() == refid }
+        if (fullGroup.size != 2) return false
+        val reconciledIds = group.mapTo(mutableSetOf()) { it.ledger.ledgerId }
+        val counterparts = fullGroup.filter { it.ledgerId !in reconciledIds }
+        if (counterparts.size != 1 || group.size != 1) return false
+        val leg = group.single().ledger
+        val counterpart = counterparts.single()
+        if (counterpart.time != leg.time) return false
+        if (counterpart.time <= baseline.timestamp) return false
+        if (baseline.balancesObservedAt != null && counterpart.time <= baseline.balancesObservedAt) return false
+        val trackedAssets = baseline.assets.keys
+            .map { Asset.normalizeLedgerAsset(it).uppercase() }
+            .toSet()
+        if (Asset.normalizeLedgerAsset(counterpart.asset).uppercase() in trackedAssets) return false
+        if (classifications[counterpart.ledgerId] != FlowCategory.INTERNAL_MOVE) return false
+        return LedgerFlowClassifier.isCompleteConversionGroup(listOf(leg, counterpart))
+    }
 
     /**
      * Event timestamps alone do not establish whether a balance movement was
@@ -2254,9 +2567,19 @@ object RebalancerComparisonCalculator {
             // balance only as a compatible correction, not as an arbitrary replacement for the
             // ledger economics; this also keeps an embedded event from becoming a false zero-delta
             // post-baseline match during boundary assignment.
+            // Reward rows are exempt from the compatibility check: Kraken reports staking
+            // amount/fee fields rounded (fee to four decimals), so their net economics never
+            // reproduce the authoritative post balance. A staking row only reaches this branch
+            // with a non-null authoritativeDelta when the interval flag is true, which the
+            // validator-certified scope gate grants solely to Spot-resolved staking rows; the
+            // stored post is then exchange truth for the Spot wallet and must be honored.
+            // No tolerance value changes: the shared compatibility gate still applies to every other kind.
             val delta = if (
                 authoritativeDelta != null &&
-                authoritativeDelta.subtract(netDelta).abs() <= legacyLedgerFeeDeltaTolerance
+                (
+                    authoritativeDelta.subtract(netDelta).abs() <= legacyLedgerFeeDeltaTolerance ||
+                        isSpotResolvedStakingCorrection(ledger)
+                    )
             ) {
                 authoritativeDelta
             } else {
@@ -2591,6 +2914,7 @@ object RebalancerComparisonCalculator {
             priceProvider = priceProvider,
             classifications = classifications,
             cardNormalizations = cardNormalizations,
+            rewards = ledgers,
         ).events
     }
 }

@@ -432,7 +432,11 @@ class InceptionRecoveryService(
         prepareForCurrentBaselineReplayVersionLocked()
 
         val currentStatus = readStatus()
-        if (currentStatus.status == InceptionRecoveryStatus.CONFIRMED) return@withLock currentStatus
+        if (currentStatus.status == InceptionRecoveryStatus.CONFIRMED &&
+            (requestedStart == null || !approvedBaselineMissingUniverseProof())
+        ) {
+            return@withLock currentStatus
+        }
         val now = nowProvider()
         val persistedHorizon = readHorizon()
         var retryWithExpandedHorizon = false
@@ -683,7 +687,7 @@ class InceptionRecoveryService(
         if (approvedId != null) {
             val existing = repository.getSnapshotById(approvedId)
             if (existing != null && isExactBaselineSnapshot(existing, requestedStart, expectedUniverse)) {
-                confirmApprovedBaseline(requestedStart, approvedId)
+                confirmApprovedBaseline(requestedStart, approvedId, snapshotUniverse(existing))
                 return
             }
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, "")
@@ -704,7 +708,7 @@ class InceptionRecoveryService(
                 .indexOf(exactSnapshot)
             val exactId = repository.getSnapshotId(requestedStart, exactOrdinal)
             if (exactId != null) {
-                confirmApprovedBaseline(requestedStart, exactId)
+                confirmApprovedBaseline(requestedStart, exactId, snapshotUniverse(exactSnapshot))
                 return
             }
         }
@@ -737,6 +741,8 @@ class InceptionRecoveryService(
                     SyncMetadataKeys.INCEPTION_RECOVERY_REASON to APPROVED_BASELINE_READY_REASON,
                     SyncMetadataKeys.INCEPTION_RECOVERY_STATUS to InceptionRecoveryStatus.CONFIRMED,
                     SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT to "",
+                    SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE to
+                        renderUniverse(snapshotUniverse(baseline.snapshot)),
                 )
                 repository.saveSnapshotWithMetadata(
                     snapshot = baseline.snapshot,
@@ -750,7 +756,11 @@ class InceptionRecoveryService(
         }
     }
 
-    private suspend fun confirmApprovedBaseline(requestedStart: Instant, snapshotId: Int) {
+    private suspend fun confirmApprovedBaseline(
+        requestedStart: Instant,
+        snapshotId: Int,
+        approvedUniverse: Set<String>,
+    ) {
         repository.setSyncMetadata(
             SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
             requestedStart.toEpochMilli().toString(),
@@ -758,6 +768,10 @@ class InceptionRecoveryService(
         repository.setSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_SOURCE, INCEPTION_SOURCE_APPROVED)
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, snapshotId.toString())
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, snapshotId.toString())
+        repository.setSyncMetadata(
+            SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE,
+            renderUniverse(approvedUniverse),
+        )
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_REASON, APPROVED_BASELINE_READY_REASON)
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT, "")
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS, InceptionRecoveryStatus.CONFIRMED)
@@ -765,15 +779,51 @@ class InceptionRecoveryService(
 
     private suspend fun clearApprovedBaselineEvidence() {
         repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, "")
+        repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE, "")
     }
 
-    private fun isExactBaselineSnapshot(
+    /**
+     * Full-wallet baseline validity contract for reusing an exact-timestamp snapshot as the
+     * approved strategy-start baseline.
+     *
+     * A snapshot is accepted only when it is stamped at the requested inception time with valid
+     * observation semantics, it covers every configured allocation asset, and its asset set
+     * exactly matches the full-wallet universe recorded when a baseline last passed the
+     * authoritative reverse-replay reconstruction. A configured-universe-only row therefore can
+     * never be adopted while the recorded universe proves additional historical holdings, and a
+     * row from before recorded universes existed always forces a rebuild instead of inheriting
+     * trust from `CONFIRMED` metadata alone.
+     */
+    private suspend fun isExactBaselineSnapshot(
         snapshot: PortfolioSnapshot,
         requestedStart: Instant,
         expectedUniverse: Set<String>,
-    ): Boolean = snapshot.timestamp == requestedStart &&
-        snapshot.balancesObservedAt?.let { it == requestedStart } != false &&
-        snapshot.assets.keys.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet() == expectedUniverse
+    ): Boolean {
+        if (snapshot.timestamp != requestedStart) return false
+        if (snapshot.balancesObservedAt?.let { it == requestedStart } == false) return false
+        val universe = snapshotUniverse(snapshot)
+        if (!universe.containsAll(expectedUniverse)) return false
+        val recordedUniverse = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE)
+        return !recordedUniverse.isNullOrBlank() && recordedUniverse == renderUniverse(universe)
+    }
+
+    private fun snapshotUniverse(snapshot: PortfolioSnapshot): Set<String> =
+        snapshot.assets.keys.map { Asset.normalizeLedgerAsset(it).uppercase() }.toSet()
+
+    private fun renderUniverse(universe: Set<String>): String = universe.sorted().joinToString(",")
+
+    /**
+     * An approved baseline whose snapshot id persists without a recorded full-wallet universe
+     * is treated as stale: an approved snapshot identity without its universe proof falls
+     * through to the normal approved-start rebuild instead of short-circuiting. Applies only
+     * when the operator has pinned an approved start; the call site skips the gate when
+     * `requestedStart` is null, mirroring the original null-guarded semantics.
+     */
+    private suspend fun approvedBaselineMissingUniverseProof(): Boolean {
+        val approvedId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+        if (approvedId.isNullOrBlank()) return false
+        return repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE).isNullOrBlank()
+    }
 
     private suspend fun recoveryStreamsComplete(): Boolean =
         repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) == STREAM_COMPLETE &&
@@ -1315,28 +1365,67 @@ class InceptionRecoveryService(
                 .thenByDescending { it.isCheckpoint }
                 .thenByDescending { it.tieBreak },
         )
-        for (step in replaySteps) {
-            when (step) {
-                is ReplayStep.Trade -> {
-                    if (!TradeLedgerReplay.reverseApply(step.replay, runningBalances)) {
-                        return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "unsupported trade economics")
+        // Rounding uncertainty each wallet carries since its last adopted authoritative
+        // checkpoint. Mirrors SnapshotHistoryCalculator.reverseUncertainty so the reverse walk
+        // consumes the same per-row validator envelope the forward chain grants each ledger row.
+        val reverseUncertainty = mutableMapOf<String, BigDecimal>()
+        // Same-instant rows share one timestamp but form a forward balance chain the
+        // validator proved by permutation, while replaySteps pins them to ledger-id order. A
+        // same-instant group whose every mutating row chains completely is reordered by chasing
+        // that chain from the running balance: the row whose post-balance matches is the true
+        // last forward entry and is inverted first. Ledgers and trades chase together because
+        // one instant can hold several fills of one pair (each fill's TradeRecord checkpoints
+        // must match before its delta is inverted) or a funding row plus a fill sharing one
+        // wallet. Groups with a non-chaseable row, or that do not chain completely, keep the
+        // legacy ledger-chase order, preserving fail-closed behavior.
+        val instantGroups = replaySteps.groupBy { it.time }.toSortedMap(compareByDescending { it })
+        for ((_, instantSteps) in instantGroups) {
+            val orderedSteps = orderSameInstantSteps(
+                instantSteps.filterIsInstance<ReplayStep.Ledger>(),
+                instantSteps.filterIsInstance<ReplayStep.Trade>(),
+                runningBalances,
+                reverseUncertainty,
+                historicalUniverse,
+                flowCategories,
+                balanceValidation.resolvedScopes,
+                orphanTradeLedgerIds,
+            )
+            for (step in orderedSteps) {
+                when (step) {
+                    is ReplayStep.Trade -> {
+                        val baseCarry = reverseUncertainty[step.replay.base] ?: BigDecimal.ZERO
+                        val quoteCarry = reverseUncertainty[step.replay.quote] ?: BigDecimal.ZERO
+                        if (!TradeLedgerReplay.reverseApply(step.replay, runningBalances, baseCarry, quoteCarry)) {
+                            return BaselineResult.Failure(
+                                InceptionRecoveryStatus.AMBIGUOUS,
+                                "unsupported trade economics",
+                            )
+                        }
+                        val effect = step.replay.ledgerEffect
+                        if (effect != null) {
+                            reverseUncertainty[step.replay.base] =
+                                carriedUncertainty(baseCarry, effect.baseCheckpoint, effect.baseRoundingAllowance)
+                            reverseUncertainty[step.replay.quote] =
+                                carriedUncertainty(quoteCarry, effect.quoteCheckpoint, effect.quoteRoundingAllowance)
+                        }
                     }
-                }
 
-                is ReplayStep.Ledger -> {
-                    if (!reverseApplyLedger(
-                            event = step.event,
-                            balances = runningBalances,
-                            expectedUniverse = historicalUniverse,
-                            flowCategories = flowCategories,
-                            resolvedScopes = balanceValidation.resolvedScopes,
-                            orphanTradeLedgerIds = orphanTradeLedgerIds,
-                        )
-                    ) {
-                        return BaselineResult.Failure(
-                            InceptionRecoveryStatus.AMBIGUOUS,
-                            "ledger changed tracked universe",
-                        )
+                    is ReplayStep.Ledger -> {
+                        if (!reverseApplyLedger(
+                                event = step.event,
+                                balances = runningBalances,
+                                expectedUniverse = historicalUniverse,
+                                flowCategories = flowCategories,
+                                resolvedScopes = balanceValidation.resolvedScopes,
+                                orphanTradeLedgerIds = orphanTradeLedgerIds,
+                                reverseUncertainty = reverseUncertainty,
+                            )
+                        ) {
+                            return BaselineResult.Failure(
+                                InceptionRecoveryStatus.AMBIGUOUS,
+                                "ledger changed tracked universe",
+                            )
+                        }
                     }
                 }
             }
@@ -1462,6 +1551,285 @@ class InceptionRecoveryService(
         }
     }
 
+    /**
+     * Reorders same-instant ledger rows per asset by chasing the forward balance chain the
+     * validator already proved. Cross-asset order is irrelevant because every row only touches
+     * its own asset balance. A group is reordered only when every row chains completely;
+     * otherwise legacy order is kept so fail-closed behavior is unchanged.
+     */
+    private fun orderSameInstantLedgers(
+        ledgerSteps: List<ReplayStep.Ledger>,
+        balances: Map<String, BigDecimal>,
+        uncertainty: Map<String, BigDecimal>,
+        expectedUniverse: Set<String>,
+        flowCategories: Map<String, FlowCategory>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        orphanTradeLedgerIds: Set<String>,
+    ): List<ReplayStep.Ledger> {
+        if (ledgerSteps.size < 2) return ledgerSteps
+        return ledgerSteps
+            .groupBy { Asset.normalizeLedgerAsset(it.event.asset).uppercase() }
+            .values
+            .flatMap { group ->
+                restoreAssetChainOrder(
+                    group,
+                    balances,
+                    uncertainty,
+                    expectedUniverse,
+                    flowCategories,
+                    resolvedScopes,
+                    orphanTradeLedgerIds,
+                )
+            }
+    }
+
+    private fun restoreAssetChainOrder(
+        group: List<ReplayStep.Ledger>,
+        balances: Map<String, BigDecimal>,
+        uncertainty: Map<String, BigDecimal>,
+        expectedUniverse: Set<String>,
+        flowCategories: Map<String, FlowCategory>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        orphanTradeLedgerIds: Set<String>,
+    ): List<ReplayStep.Ledger> {
+        if (group.size < 2 ||
+            group.any { !isChainOrderable(it.event, expectedUniverse, resolvedScopes, orphanTradeLedgerIds) }
+        ) {
+            return group
+        }
+        val symbol = Asset.normalizeLedgerAsset(group.first().event.asset).uppercase()
+        if (symbol !in balances) return group
+        // Simulate on copies: the chase only determines order, the walk below applies it.
+        val simulatedBalances = balances.toMutableMap()
+        val simulatedUncertainty = uncertainty.toMutableMap()
+        val remaining = group.toMutableList()
+        val chased = mutableListOf<ReplayStep.Ledger>()
+        while (remaining.isNotEmpty()) {
+            val next = remaining.firstOrNull { step ->
+                val envelope = AuthoritativeLedgerBalanceValidator.allowedDifference(step.event)
+                    .add(simulatedUncertainty[symbol] ?: BigDecimal.ZERO)
+                simulatedBalances.getValue(symbol).subtract(step.event.balance).abs() <= envelope
+            } ?: return group
+            if (!reverseApplyLedger(
+                    event = next.event,
+                    balances = simulatedBalances,
+                    expectedUniverse = expectedUniverse,
+                    flowCategories = flowCategories,
+                    resolvedScopes = resolvedScopes,
+                    orphanTradeLedgerIds = orphanTradeLedgerIds,
+                    reverseUncertainty = simulatedUncertainty,
+                )
+            ) {
+                return group
+            }
+            chased += next
+            remaining -= next
+        }
+        return chased
+    }
+
+    /**
+     * Merged same-instant ordering over ledger and trade steps. Non-mutating ledger rows
+     * (duplicate trade-leg checkpoints, skipped scopes) stay first in legacy order; every
+     * mutating row must be chaseable and the chase must consume all of them, otherwise the
+     * legacy ledger-chase order is kept so fail-closed behavior is unchanged.
+     *
+     * The fallback returns ledger steps in legacy order followed by trade steps, not the
+     * historical interleaved ledger-id sequence within the instant; the order only shapes
+     * the chase, and the walk's checkpoint guards still fail closed on any sequence a
+     * forward execution could not produce.
+     */
+    private fun orderSameInstantSteps(
+        ledgerSteps: List<ReplayStep.Ledger>,
+        tradeSteps: List<ReplayStep.Trade>,
+        balances: Map<String, BigDecimal>,
+        uncertainty: Map<String, BigDecimal>,
+        expectedUniverse: Set<String>,
+        flowCategories: Map<String, FlowCategory>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        orphanTradeLedgerIds: Set<String>,
+    ): List<ReplayStep> {
+        val legacyLedgers = orderSameInstantLedgers(
+            ledgerSteps,
+            balances,
+            uncertainty,
+            expectedUniverse,
+            flowCategories,
+            resolvedScopes,
+            orphanTradeLedgerIds,
+        )
+        val ledgerRoles = ledgerSteps.associateWith {
+            ledgerChaseRole(it.event, expectedUniverse, flowCategories, resolvedScopes, orphanTradeLedgerIds)
+        }
+        val tradeEligible = tradeSteps.associateWith { isTradeChaseEligible(it.replay, expectedUniverse, balances) }
+        if (ledgerRoles.values.any { it == ChaseRole.FORCING } || tradeEligible.values.any { !it }) {
+            return legacyLedgers + tradeSteps
+        }
+        val mutating = ledgerSteps.filter { ledgerRoles.getValue(it) == ChaseRole.MUTATING } +
+            tradeSteps.filter { tradeEligible.getValue(it) }
+        if (mutating.size < 2) return legacyLedgers + tradeSteps
+        // Simulate on copies: the chase only determines order, the walk below applies it.
+        // A failed trial never mutates the copies: every reverse path returns before writing.
+        val simulatedBalances = balances.toMutableMap()
+        val simulatedUncertainty = uncertainty.toMutableMap()
+        val remaining = mutating.toMutableList()
+        val chased = mutableListOf<ReplayStep>()
+        while (remaining.isNotEmpty()) {
+            val next = remaining.firstOrNull {
+                chaseTrialSucceeds(
+                    it,
+                    simulatedBalances,
+                    simulatedUncertainty,
+                    expectedUniverse,
+                    flowCategories,
+                    resolvedScopes,
+                    orphanTradeLedgerIds,
+                )
+            } ?: return legacyLedgers + tradeSteps
+            chased += next
+            remaining -= next
+        }
+        return ledgerSteps.filter { ledgerRoles.getValue(it) == ChaseRole.NOOP } + chased
+    }
+
+    private enum class ChaseRole {
+        NOOP,
+        MUTATING,
+        FORCING,
+    }
+
+    /**
+     * Static role of one ledger row, mirroring reverseApplyLedger branches without touching
+     * balances. NOOP rows always return true without writing; MUTATING rows snap to their
+     * recorded post-balance; FORCING rows either always fail or move the running balance
+     * without a post-balance to chase, so their instant keeps legacy order.
+     */
+    private fun ledgerChaseRole(
+        event: LedgerEvent,
+        expectedUniverse: Set<String>,
+        flowCategories: Map<String, FlowCategory>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        orphanTradeLedgerIds: Set<String>,
+    ): ChaseRole {
+        val isTrade = event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)
+        if (isTrade && event.ledgerId !in orphanTradeLedgerIds) return ChaseRole.NOOP
+        if (isTrade) return if (event.netBalanceDelta().signum() == 0) ChaseRole.NOOP else ChaseRole.MUTATING
+        if (!isChainOrderable(event, expectedUniverse, resolvedScopes, orphanTradeLedgerIds)) {
+            val isConversion = event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
+            if (!isConversion) {
+                when (resolvedScopes[event.ledgerId]) {
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT -> Unit
+
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.STAKING,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.FUTURES,
+                    AuthoritativeLedgerBalanceValidator.LedgerWalletScope.OPAQUE_STAKING,
+                    -> return ChaseRole.NOOP
+
+                    null -> {
+                        if (event.netBalanceDelta().signum() == 0) return ChaseRole.NOOP
+                        if (!event.hasAuthoritativeBalance &&
+                            flowCategories[event.ledgerId] == FlowCategory.INTERNAL_MOVE &&
+                            LedgerFlowClassifier.isDocumentedInternalScopeMarker(event)
+                        ) {
+                            return ChaseRole.NOOP
+                        }
+                    }
+                }
+            }
+            val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
+            if (symbol !in expectedUniverse &&
+                (event.netBalanceDelta().signum() == 0 || isConversion)
+            ) {
+                return ChaseRole.NOOP
+            }
+            return ChaseRole.FORCING
+        }
+        return ChaseRole.MUTATING
+    }
+
+    /**
+     * True only for trades the reverse walk inverts from recorded fill checkpoints on both
+     * wallets. Effect-less trades fall back to TradeRecord economics with no post-balance to
+     * chase, and out-of-universe wallets may be adopted without comparison, so both force
+     * legacy order for their instant.
+     */
+    private fun isTradeChaseEligible(
+        replay: TradeLedgerReplay.Classification.Replayable,
+        expectedUniverse: Set<String>,
+        balances: Map<String, BigDecimal>,
+    ): Boolean {
+        if (replay.ledgerEffect == null) return false
+        if (replay.base !in expectedUniverse || replay.quote !in expectedUniverse) return false
+        return replay.base in balances && replay.quote in balances
+    }
+
+    /**
+     * One chase trial on the simulated copies. Ledger candidates must first match their
+     * recorded post-balance within the validator envelope plus existing carry, because an
+     * authoritative snap unconditionally succeeds and carries no mismatch signal itself.
+     * Trade candidates carry their own checkpoint match inside reverseApply.
+     */
+    private fun chaseTrialSucceeds(
+        step: ReplayStep,
+        simulatedBalances: MutableMap<String, BigDecimal>,
+        simulatedUncertainty: MutableMap<String, BigDecimal>,
+        expectedUniverse: Set<String>,
+        flowCategories: Map<String, FlowCategory>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        orphanTradeLedgerIds: Set<String>,
+    ): Boolean {
+        when (step) {
+            is ReplayStep.Ledger -> {
+                val symbol = Asset.normalizeLedgerAsset(step.event.asset).uppercase()
+                val current = simulatedBalances[symbol] ?: return false
+                val envelope = AuthoritativeLedgerBalanceValidator.allowedDifference(step.event)
+                    .add(simulatedUncertainty[symbol] ?: BigDecimal.ZERO)
+                if (current.subtract(step.event.balance).abs() > envelope) return false
+                return reverseApplyLedger(
+                    event = step.event,
+                    balances = simulatedBalances,
+                    expectedUniverse = expectedUniverse,
+                    flowCategories = flowCategories,
+                    resolvedScopes = resolvedScopes,
+                    orphanTradeLedgerIds = orphanTradeLedgerIds,
+                    reverseUncertainty = simulatedUncertainty,
+                )
+            }
+
+            is ReplayStep.Trade -> {
+                val baseCarry = simulatedUncertainty[step.replay.base] ?: BigDecimal.ZERO
+                val quoteCarry = simulatedUncertainty[step.replay.quote] ?: BigDecimal.ZERO
+                if (!TradeLedgerReplay.reverseApply(step.replay, simulatedBalances, baseCarry, quoteCarry)) {
+                    return false
+                }
+                val effect = step.replay.ledgerEffect ?: return false
+                simulatedUncertainty[step.replay.base] =
+                    carriedUncertainty(baseCarry, effect.baseCheckpoint, effect.baseRoundingAllowance)
+                simulatedUncertainty[step.replay.quote] =
+                    carriedUncertainty(quoteCarry, effect.quoteCheckpoint, effect.quoteRoundingAllowance)
+                return true
+            }
+        }
+    }
+
+    /**
+     * True only for rows the reverse walk inverts by snapping to the recorded post-entry
+     * balance: authoritative, in-universe, and reaching the checkpoint branch (orphan trade
+     * legs, conversions, or Spot-scoped rows). Every other row keeps legacy order.
+     */
+    private fun isChainOrderable(
+        event: LedgerEvent,
+        expectedUniverse: Set<String>,
+        resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
+        orphanTradeLedgerIds: Set<String>,
+    ): Boolean {
+        if (!event.hasAuthoritativeBalance) return false
+        if (Asset.normalizeLedgerAsset(event.asset).uppercase() !in expectedUniverse) return false
+        if (event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)) return event.ledgerId in orphanTradeLedgerIds
+        if (event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)) return true
+        return resolvedScopes[event.ledgerId] == AuthoritativeLedgerBalanceValidator.LedgerWalletScope.SPOT
+    }
+
     private fun reverseApplyLedger(
         event: LedgerEvent,
         balances: MutableMap<String, BigDecimal>,
@@ -1469,6 +1837,7 @@ class InceptionRecoveryService(
         flowCategories: Map<String, FlowCategory>,
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
         orphanTradeLedgerIds: Set<String> = emptySet(),
+        reverseUncertainty: MutableMap<String, BigDecimal>,
     ): Boolean {
         val isTrade = event.type.equals(TRADE_LEDGER_TYPE, ignoreCase = true)
         if (isTrade && event.ledgerId !in orphanTradeLedgerIds) {
@@ -1491,6 +1860,7 @@ class InceptionRecoveryService(
             // is seeded from every such leg before replay, so the running balance is a guard for
             // an unexpected key while the checkpoint remains the source of truth.
             balances[symbol] = event.balance.subtract(delta)
+            reverseUncertainty[symbol] = AuthoritativeLedgerBalanceValidator.allowedDifference(event)
             return true
         }
         val isConversion = event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
@@ -1536,16 +1906,30 @@ class InceptionRecoveryService(
                 event.type.equals(KrakenApiConstants.LEDGER_TYPE_CONVERSION, ignoreCase = true)
         }
         val balance = balances.getValue(symbol)
+        val allowance = AuthoritativeLedgerBalanceValidator.allowedDifference(event)
         balances[symbol] = if (event.hasAuthoritativeBalance) {
             // The validator advanced this scope to the recorded post-entry balance; inverting the
             // delta from that authoritative post-state keeps replay exactly inverse instead of
             // letting per-row rounding differences accumulate into the reconstructed balance.
+            // The checkpoint consumes the older carry and restarts it at this row's own envelope,
+            // mirroring the forward check that grants this row its allowance.
+            reverseUncertainty[symbol] = allowance
             event.balance.subtract(delta)
         } else {
+            reverseUncertainty[symbol] = (reverseUncertainty[symbol] ?: BigDecimal.ZERO).add(allowance)
             balance.subtract(delta)
         }
         return true
     }
+
+    /**
+     * Uncertainty carried by a nominal pre-event balance. An authoritative checkpoint is exact,
+     * so it consumes whatever rounding the newer checkpoint-free rows had accumulated and
+     * restarts the carry at the row's own validator allowance; otherwise the row's allowance
+     * joins the carry for the next older checkpoint to resolve.
+     */
+    private fun carriedUncertainty(carried: BigDecimal, checkpoint: BigDecimal?, allowance: BigDecimal): BigDecimal =
+        if (checkpoint != null) allowance else carried.add(allowance)
 
     private sealed interface PriceResolution {
         data class Success(val prices: Map<String, BigDecimal>) : PriceResolution
@@ -1792,6 +2176,7 @@ class InceptionRecoveryService(
             SyncMetadataKeys.INCEPTION_RECOVERY_OWNERSHIP_EVIDENCE,
             SyncMetadataKeys.INCEPTION_RECOVERY_BASELINE_SNAPSHOT_ID,
             SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID,
+            SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE,
             SyncMetadataKeys.INCEPTION_RECOVERY_REASON,
             SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT,
         ).forEach { repository.setSyncMetadata(it, "") }
@@ -1839,6 +2224,7 @@ class InceptionRecoveryService(
                 SyncMetadataKeys.INCEPTION_RECOVERY_OWNERSHIP_EVIDENCE to "",
                 SyncMetadataKeys.INCEPTION_RECOVERY_BASELINE_SNAPSHOT_ID to "",
                 SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID to "",
+                SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE to "",
                 SyncMetadataKeys.INCEPTION_RECOVERY_REASON to "",
                 SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT to "",
                 SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION to CURRENT_BASELINE_REPLAY_VERSION,
@@ -2075,7 +2461,7 @@ class InceptionRecoveryService(
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"
-        const val CURRENT_BASELINE_REPLAY_VERSION = "14"
+        const val CURRENT_BASELINE_REPLAY_VERSION = "17"
         const val CURRENT_INFERENCE_VERSION = "2"
         const val MAX_PAGES_PER_RUN = 4
         const val SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS = 30L

@@ -1061,6 +1061,207 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
+        "recovery replays a same-instant deposit and conversion in balance-chain order" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                config = appConfig(
+                    listOf(
+                        Allocation(Asset.BTC, 40.0),
+                        Allocation(Asset.ETH, 40.0),
+                        Allocation(Asset.USD, 20.0),
+                    ),
+                )
+                val bot = apiTrade("same-instant-seed", botTime)
+                repository.saveTrade(localEstimate(botTime, bot))
+                val batchTime = botTime.plusSeconds(3600)
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(
+                            Asset.BTC to BigDecimal("0.39"),
+                            Asset.ETH to BigDecimal("1.00"),
+                            Asset.USD to BigDecimal("389.28"),
+                        ),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 1
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(bot) }
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    listOf(botTime.minusSeconds(901).epochSecond to BigDecimal("100.00"))
+                }
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "aa-pin-usd-scope",
+                            time = botTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = Asset.USD,
+                            amount = BigDecimal.ZERO,
+                            balance = BigDecimal("389.28"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "zz-same-instant-deposit",
+                            refid = "SAME-INSTANT-DEPOSIT",
+                            time = batchTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                            asset = Asset.USD,
+                            amount = BigDecimal("1000.00"),
+                            balance = BigDecimal("1389.28"),
+                            hasAuthoritativeBalance = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "aa-same-instant-conversion",
+                            refid = "SAME-INSTANT-CONVERSION",
+                            time = batchTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                            asset = Asset.USD,
+                            amount = BigDecimal("-1000.00"),
+                            balance = BigDecimal("389.28"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "aa-same-instant-conversion-eur",
+                            refid = "SAME-INSTANT-CONVERSION",
+                            time = batchTime,
+                            type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                            asset = "EUR",
+                            amount = BigDecimal("1000.00"),
+                            balance = BigDecimal("1000.00"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                    ),
+                )
+                val resolver = object : FundingProvenanceResolver {
+                    override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+                }
+
+                val status = newService(fundingProvenanceResolver = resolver).recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                    ?.toInt() ?: error("missing baseline id")
+                val baseline = repository.getSnapshotById(baselineId) ?: error("missing baseline")
+                // The seed buy (0.01 BTC for 1.00 USD + 0.01 fee) reverses after the batch:
+                // USD 389.28 + 1.00 + 0.01, BTC 0.39 - 0.01. Legacy ledgerId-desc order replays
+                // the deposit first and lands 1000.00 high at USD 1390.29.
+                baseline.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal("0.38"))
+                baseline.assets.getValue(Asset.ETH).balance.shouldBeEqualComparingTo(BigDecimal("1.00"))
+                baseline.assets.getValue(Asset.USD).balance.shouldBeEqualComparingTo(BigDecimal("390.29"))
+            }
+        }
+
+        "recovery replays same-instant fills of two trades in balance-chain order" {
+            runTest {
+                val botTime = Instant.parse("2026-01-02T00:00:00Z")
+                config = appConfig(
+                    listOf(
+                        Allocation(Asset.BTC, 40.0),
+                        Allocation(Asset.ETH, 40.0),
+                        Allocation(Asset.USD, 20.0),
+                    ),
+                )
+                val fillTime = botTime.plusSeconds(3600)
+                val fillA = apiTrade(
+                    "same-instant-fill-a",
+                    fillTime,
+                    volume = BigDecimal("2.00"),
+                    usdAmount = BigDecimal("200.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                val fillB = apiTrade(
+                    "same-instant-fill-b",
+                    fillTime,
+                    volume = BigDecimal("3.00"),
+                    usdAmount = BigDecimal("300.00"),
+                    fee = BigDecimal.ZERO,
+                )
+                repository.saveTrade(localEstimate(fillTime, fillA))
+                repository.saveTrade(localEstimate(fillTime, fillB))
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(
+                            Asset.BTC to BigDecimal("6.00"),
+                            Asset.ETH to BigDecimal("1.00"),
+                            Asset.USD to BigDecimal("500.00"),
+                        ),
+                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                    ),
+                )
+                // fillB is supplied (and saved) first so it takes the smaller id; legacy id-desc
+                // order then replays fillA first and fails, while the balance chain needs fillB.
+                krakenService.tradeHistoryTotalCountOverride = 2
+                krakenService.tradeHistorySupplier = { _, _ -> listOf(fillB, fillA) }
+                krakenService.ohlcSupplier = { _, _, _ ->
+                    listOf(fillTime.minusSeconds(901).epochSecond to BigDecimal("100.00"))
+                }
+                krakenService.seedLedgerEntries(
+                    listOf(
+                        LedgerEvent(
+                            ledgerId = "fill-a-base",
+                            refid = "trade-same-instant-fill-a",
+                            time = fillTime,
+                            type = "trade",
+                            asset = Asset.BTC,
+                            amount = BigDecimal("2.00"),
+                            fee = BigDecimal.ZERO,
+                            balance = BigDecimal("3.00"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "fill-a-quote",
+                            refid = "trade-same-instant-fill-a",
+                            time = fillTime,
+                            type = "trade",
+                            asset = Asset.USD,
+                            amount = BigDecimal("-200.00"),
+                            fee = BigDecimal.ZERO,
+                            balance = BigDecimal("800.00"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "fill-b-base",
+                            refid = "trade-same-instant-fill-b",
+                            time = fillTime,
+                            type = "trade",
+                            asset = Asset.BTC,
+                            amount = BigDecimal("3.00"),
+                            fee = BigDecimal.ZERO,
+                            balance = BigDecimal("6.00"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                        LedgerEvent(
+                            ledgerId = "fill-b-quote",
+                            refid = "trade-same-instant-fill-b",
+                            time = fillTime,
+                            type = "trade",
+                            asset = Asset.USD,
+                            amount = BigDecimal("-300.00"),
+                            fee = BigDecimal.ZERO,
+                            balance = BigDecimal("500.00"),
+                            hasAuthoritativeBalance = true,
+                            hasAuthoritativeFee = true,
+                        ),
+                    ),
+                )
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID)
+                    ?.toInt() ?: error("missing baseline id")
+                val baseline = repository.getSnapshotById(baselineId) ?: error("missing baseline")
+                baseline.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal("1.00"))
+                baseline.assets.getValue(Asset.ETH).balance.shouldBeEqualComparingTo(BigDecimal("1.00"))
+                baseline.assets.getValue(Asset.USD).balance.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+            }
+        }
+
         "recovery keeps malformed ledger fees ambiguous" {
             runTest {
                 val bot = apiTrade("bot", Instant.parse("2026-01-02T00:00:00Z"))
@@ -2326,7 +2527,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
         }
 
         "baseline replay version reflects historical universe semantics" {
-            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "14"
+            InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION shouldBe "17"
         }
 
         "recovery rejects unsupported trade economics" {
@@ -4900,26 +5101,34 @@ class InceptionRecoveryServiceTest : StringSpec() {
             refreshed shouldNotBe "999"
         }
 
-        "approved start adopts the exact duplicate-timestamp row rather than the first row" {
+        "exact rows without a recorded full-wallet universe force a rebuild instead of adoption" {
             runTest {
                 val requestedStart = Instant.parse("2026-01-01T00:00:00Z")
                 config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
-                val nonExact = anchorSnapshot(
-                    balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
-                    timestamp = requestedStart,
-                ).copy(balancesObservedAt = requestedStart.plusSeconds(1))
-                val exact = anchorSnapshot(
-                    balances = mapOf(Asset.BTC to BigDecimal("0.49"), Asset.USD to BigDecimal("501.01")),
-                    timestamp = requestedStart,
+                val nonExactId = repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
+                        timestamp = requestedStart,
+                    ).copy(balancesObservedAt = requestedStart.plusSeconds(1)),
                 )
-                repository.saveSnapshot(nonExact)
-                val exactId = repository.saveSnapshot(exact)
+                val exactId = repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.49"), Asset.USD to BigDecimal("501.01")),
+                        timestamp = requestedStart,
+                    ),
+                )
 
                 val status = newService().recoverOneBoundedRun()
 
                 status.status shouldBe InceptionRecoveryStatus.CONFIRMED
-                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe
-                    exactId.toString()
+                val adoptedId = requireNotNull(
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)?.toIntOrNull(),
+                )
+                adoptedId shouldNotBe nonExactId
+                adoptedId shouldNotBe exactId
+                repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 3
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE) shouldBe
+                    "BTC,USD"
             }
         }
 
@@ -5014,8 +5223,12 @@ class InceptionRecoveryServiceTest : StringSpec() {
             rerun.status shouldBe InceptionRecoveryStatus.CONFIRMED
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_BASELINE_REPLAY_VERSION) shouldBe
                 InceptionRecoveryService.CURRENT_BASELINE_REPLAY_VERSION
-            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe baselineId
-            repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 2
+            val rebuiltId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+            rebuiltId.shouldNotBeNull()
+            rebuiltId shouldNotBe baselineId
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE) shouldBe
+                "BTC,USD"
+            repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe 3
             krakenService.getTradeHistoryCallCount shouldBe initialTradeCalls
             krakenService.getLedgersCallCount shouldBe initialLedgerCalls
             repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_STATUS) shouldBe "COMPLETE"
@@ -5293,6 +5506,142 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 ) shouldBe InceptionRecoveryService.RecoveryCadence.RETRY
             }
         }
+
+        "approved baseline rebuild includes historical-only holdings with zero target" {
+            runTest {
+                seedHistoricalEthFixture()
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baseline = approvedBaseline()
+                baseline.assets.getValue(Asset.ETH).balance shouldBeEqualComparingTo BigDecimal("0.1")
+                baseline.assets.getValue(Asset.ETH).targetPercent shouldBeEqualComparingTo BigDecimal.ZERO
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE) shouldBe
+                    "BTC,ETH,USD"
+            }
+        }
+
+        "a stale configured-universe CONFIRMED baseline is rebuilt with the full wallet" {
+            runTest {
+                val requestedStart = seedHistoricalEthFixture()
+                val staleId = repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.50"), Asset.USD to BigDecimal("500.00")),
+                        timestamp = requestedStart,
+                    ),
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    requestedStart.toEpochMilli().toString(),
+                )
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_SOURCE,
+                    InceptionRecoveryService.INCEPTION_SOURCE_APPROVED,
+                )
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, staleId.toString())
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, staleId.toString())
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_REASON, "approved-start baseline ready")
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.CONFIRMED,
+                )
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val rebuiltId = requireNotNull(
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)?.toIntOrNull(),
+                )
+                rebuiltId shouldNotBe staleId
+                val rebuilt = requireNotNull(repository.getSnapshotById(rebuiltId))
+                rebuilt.assets.getValue(Asset.ETH).balance shouldBeEqualComparingTo BigDecimal("0.1")
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE) shouldBe
+                    "BTC,ETH,USD"
+            }
+        }
+
+        "a recorded full-wallet baseline is reused without rebuilding" {
+            runTest {
+                seedHistoricalEthFixture()
+                val first = newService().recoverOneBoundedRun()
+                first.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                val baselineId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
+                val snapshotCount = repository.getSnapshotsInRange(Instant.EPOCH, now).size
+
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS, "")
+                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_REASON, "")
+                now = now.plusSeconds(InceptionRecoveryService.RETRY_INTERVAL_SECONDS + 1)
+
+                val second = newService().recoverOneBoundedRun()
+
+                second.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID) shouldBe baselineId
+                repository.getSnapshotsInRange(Instant.EPOCH, now).size shouldBe snapshotCount
+            }
+        }
+
+        "approved baseline stays fail-closed when a historical asset lacks an authoritative balance" {
+            runTest {
+                val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+                config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+                repository.saveTrade(apiTrade("price-btc", requestedStart))
+                repository.saveTrade(
+                    apiTrade(
+                        id = "price-eth",
+                        timestamp = requestedStart,
+                        symbol = Asset.ETH,
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal("100.00"),
+                        fee = BigDecimal.ZERO,
+                    ),
+                )
+                repository.saveTrade(
+                    TestFixtures.tradeRecord(
+                        timestamp = requestedStart.plusSeconds(60),
+                        pair = Asset.ETH_USD_PAIR,
+                        side = OrderSide.BUY.apiValue,
+                        symbol = Asset.ETH,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("10.00"),
+                        price = BigDecimal("100.00"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = "order-eth-buy",
+                        tradeId = "trade-eth-buy",
+                    ),
+                )
+                repository.saveSnapshot(
+                    anchorSnapshot(
+                        balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("999.00")),
+                        timestamp = requestedStart.plusSeconds(120),
+                    ),
+                )
+                krakenService.tradeHistoryTotalCountOverride = 3
+                krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+
+                val status = newService().recoverOneBoundedRun()
+
+                status.status shouldBe InceptionRecoveryStatus.AMBIGUOUS
+                status.reason shouldBe "no authoritative balance for historical asset ETH"
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID).orEmpty() shouldBe
+                    ""
+            }
+        }
+
+        "configuration fingerprints distinguish allocation universes" {
+            val service = newService()
+            val btcUsd = service.configurationFingerprint(
+                appConfig(listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0))),
+                null,
+                "scope",
+            )
+            val btcOnly = service.configurationFingerprint(
+                appConfig(listOf(Allocation(Asset.BTC, 100.0))),
+                null,
+                "scope",
+            )
+            btcUsd shouldNotBe btcOnly
+        }
     }
 
     private data class TransferLeg(
@@ -5425,6 +5774,66 @@ class InceptionRecoveryServiceTest : StringSpec() {
         baseline.actions shouldBe emptyList()
         return baseline
     }
+
+    private suspend fun seedHistoricalEthFixture(): Instant {
+        val requestedStart = Instant.parse("2026-01-02T00:00:00Z")
+        config = config.copy(settings = config.settings.copy(inceptionDate = requestedStart.toString()))
+        repository.saveTrade(apiTrade("price-btc", requestedStart))
+        repository.saveTrade(
+            apiTrade(
+                id = "price-eth",
+                timestamp = requestedStart,
+                symbol = Asset.ETH,
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("100.00"),
+                fee = BigDecimal.ZERO,
+            ),
+        )
+        repository.saveTrade(
+            TestFixtures.tradeRecord(
+                timestamp = requestedStart.plusSeconds(60),
+                pair = Asset.ETH_USD_PAIR,
+                side = OrderSide.SELL.apiValue,
+                symbol = Asset.ETH,
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("10.00"),
+                price = BigDecimal("100.00"),
+                source = TradeSource.API_FILL,
+                orderTxid = "order-eth-sell",
+                tradeId = "trade-eth-sell",
+            ),
+        )
+        ledgerRepository.saveLedgers(
+            listOf(
+                LedgerEvent(
+                    ledgerId = "seed-eth",
+                    time = requestedStart.plusSeconds(120),
+                    type = KrakenApiConstants.LEDGER_TYPE_ADJUSTMENT,
+                    asset = Asset.ETH,
+                    amount = BigDecimal.ZERO,
+                    balance = BigDecimal.ZERO,
+                    hasAuthoritativeBalance = true,
+                ),
+            ),
+        )
+        repository.saveSnapshot(
+            anchorSnapshot(
+                balances = mapOf(Asset.BTC to BigDecimal("0.01"), Asset.USD to BigDecimal("1009.00")),
+                timestamp = requestedStart.plusSeconds(120),
+            ),
+        )
+        krakenService.tradeHistoryTotalCountOverride = 3
+        krakenService.tradeHistorySupplier = { _, _ -> emptyList() }
+        return requestedStart
+    }
+
+    private suspend fun approvedBaseline(): PortfolioSnapshot = requireNotNull(
+        repository.getSnapshotById(
+            requireNotNull(
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)?.toIntOrNull(),
+            ),
+        ),
+    )
 
     private fun newService(
         orderIntentRepository: OrderIntentRepository? = null,
