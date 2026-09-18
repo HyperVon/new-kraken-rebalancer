@@ -10,6 +10,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **History comparison keeps the full-wallet inception baseline separate from the live target
+  universe**: historical-only assets reconstructed at strategy start no longer make Buy & Hold
+  unavailable merely because later live snapshots omit them, while configured assets (including
+  zero-weight allocations) still fail closed when removed. A same-instant configured-only legacy
+  row can no longer replace the approved full-wallet anchor.
 - **Trade-history test files are hermetic per test case**: the shared
   relative `test-trade-history.json` path (plus its backup/temp siblings)
   was concurrently created, rotated, and locked by parallel Gradle test

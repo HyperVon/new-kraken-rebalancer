@@ -21,6 +21,7 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.downsampleSnapshots
 import com.gemini.krakenbot.service.ComparisonStartProposal
+import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -53,6 +54,8 @@ class TradeHistoryQueryService(
     private val benchmarkHistoryFloor: Instant = Instant.EPOCH,
     /** Application-lifetime scope used for the bounded background proposal continuation. */
     private val applicationScope: CoroutineScope? = null,
+    /** Current allocation membership; historical wallet-only assets are not live targets. */
+    private val configService: ConfigService? = null,
 ) {
     private val proposalSearchMutex = Mutex()
 
@@ -608,6 +611,9 @@ class TradeHistoryQueryService(
             knownInceptionTime = recordedBenchmarkAnchor?.timestamp ?: inceptionResolution?.inceptionTime,
             priceProvider = priceProvider,
             provenanceResolver = preparedFundingProvenance ?: fundingProvenanceResolver,
+            configuredAssetUniverse = configService?.getConfig()?.allocations
+                ?.map { Asset.normalizeLedgerAsset(it.symbol.value).uppercase() }
+                ?.toSet(),
         )
     }
 

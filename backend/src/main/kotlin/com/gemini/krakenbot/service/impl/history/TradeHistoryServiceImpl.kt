@@ -61,6 +61,7 @@ class TradeHistoryServiceImpl(
             orderIntentRepository = orderIntentRepository,
             nowProvider = syncNowProvider,
             krakenService = krakenService,
+            configService = configService,
         ),
         syncService =
         TradeHistorySyncService(

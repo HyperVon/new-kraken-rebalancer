@@ -867,8 +867,12 @@ external capital over time:
   holding instead of making the whole comparison unavailable; a pair with unknown quote semantics
   still fails closed. Snapshots may carry historical-only assets beyond the configured targets, but
   every non-zero balance must be produced by the replayed baseline, trades, or ledger events — an
-  unexplained appearance fails closed. Dropping a configured baseline asset still reports
-  `ASSET_UNIVERSE_CHANGED`.
+  unexplained appearance fails closed. Asset-universe validation compares the current configured
+  allocation membership (including configured zero-weight assets), not every historical-only row in
+  the full-wallet baseline. A historical-only row may therefore be absent from a later
+  configured-only snapshot once reconciliation explains its balance change; a same-instant
+  configured-only legacy row cannot replace the approved full-wallet anchor; dropping a configured
+  baseline asset still reports `ASSET_UNIVERSE_CHANGED`.
 - **Recorded history exposes one final state per instant and only spot-wallet effects.**
   Reconstruction persists a row per replayed event, so several cumulative rows can share a
   millisecond; the chart keeps the first row written for an instant (the state
