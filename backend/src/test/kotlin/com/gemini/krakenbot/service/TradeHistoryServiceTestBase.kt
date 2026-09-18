@@ -58,7 +58,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
     }
 
     protected fun createService(
-        tradeHistoryFilePath: String = TestFixtures.TEST_TRADE_HISTORY_JSON,
+        tradeHistoryFilePath: String = TestFixtures.hermeticTradeHistoryPath(),
         inceptionDate: String? = null,
         syncNowProvider: () -> Instant = Instant::now,
     ): TradeHistoryServiceImpl {

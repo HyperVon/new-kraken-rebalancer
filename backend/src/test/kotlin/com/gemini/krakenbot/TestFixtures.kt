@@ -11,6 +11,7 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.test.TestConstants
 import java.math.BigDecimal
+import java.nio.file.Files
 import java.time.Instant
 
 fun Map<String, Double>.toBigDecimalMap(): Map<String, BigDecimal> = this.mapValues { BigDecimal.valueOf(it.value) }
@@ -87,8 +88,9 @@ object TestFixtures {
     const val TEST_VALUE = "test_value"
     const val TEST_VALUE_2 = "test_value2"
 
-    /** Test resource file names. */
-    const val TEST_TRADE_HISTORY_JSON = "test-trade-history.json"
+    /** Per-call hermetic trade-history file so parallel test forks never share snapshot-store state. */
+    fun hermeticTradeHistoryPath(): String =
+        Files.createTempDirectory("trade-history-").resolve("trade-history.json").toAbsolutePath().toString()
 
     /** Misc test string constants. */
     const val PASS = "PASS"
