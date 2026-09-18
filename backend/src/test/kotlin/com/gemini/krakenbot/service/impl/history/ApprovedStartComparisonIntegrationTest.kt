@@ -477,7 +477,12 @@ class ApprovedStartComparisonIntegrationTest :
                     newQueryService(discovery).getRebalancerComparison(strategyStart, comparisonEnd)
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
-                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INCEPTION_RECOVERY_INCOMPLETE
+                // The materiality rule discovers the Jan-4 snapshot ($6 of BTC) as an
+                // invested anchor, but a single end-of-series snapshot cannot render a
+                // comparison, so the calculator reports thin history rather than pending
+                // recovery. The pending-recovery guard still dominates whenever no anchor
+                // exists, and no later-start proposal is produced either way.
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
                 comparison.proposedBaselineTimestamp.shouldBeNull()
             }
         }
