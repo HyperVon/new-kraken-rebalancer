@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.68] - 2026-09-17
+
+### Changed
+
+- **History comparison reconciles first, samples after**: the service comparison
+  previously collapsed duplicate instants and stride-downsampled snapshots before
+  reconciliation, so chart sampling could change accounting outcomes (intermediate
+  same-instant states are reconciliation evidence). The calculator now receives the
+  full retained series and only the resulting comparison points are downsampled to
+  the chart bound; baseline, latest difference, and contribution accounting are
+  computed on the full series.
+- **Passive Buy & Hold anchor is discovered, not dated**: the hardcoded
+  June-8-2026 evidence floor is replaced by invested-thesis discovery — the
+  earliest trustworthy retained snapshot at or after the comparison window
+  whose non-cash holdings reach a material exposure floor (`$5.00`, mirroring
+  the smallest position the configured order-size guards can express), so
+  sub-material dust can never fix the anchor thesis while a mostly-cash first
+  real position still anchors coherently. A zero-investment all-cash baseline
+  can never anchor the benchmark even when its history reconciles, and the
+  discovery window follows the requested comparison window so windowed views
+  re-anchor inside their own range.
+
 ## [6.17.67] - 2026-09-17
 
 ### Fixed
