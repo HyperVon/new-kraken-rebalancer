@@ -1415,7 +1415,16 @@ object RebalancerComparisonCalculator {
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
     ): InitialAssignmentMatch? {
-        if (initialCandidates.size + lateCandidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
+        if (initialCandidates.size + lateCandidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) {
+            // Observable boundary saturation: exhaustive search is bounded, so an over-wide
+            // boundary degrades to fail-closed rather than silently nulling the assignment.
+            log.warn(
+                "Late-assignment boundary candidate cap exceeded; failing closed (candidates={}, cap={})",
+                initialCandidates.size + lateCandidates.size,
+                MAX_BOUNDARY_EVENT_CANDIDATES,
+            )
+            return null
+        }
 
         var match: InitialAssignmentMatch? = null
         var multipleMatches = false

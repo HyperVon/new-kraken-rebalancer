@@ -433,7 +433,7 @@ class InceptionRecoveryService(
 
         val currentStatus = readStatus()
         if (currentStatus.status == InceptionRecoveryStatus.CONFIRMED &&
-            !staleApprovedBaselineNeedsRebuild(requestedStart)
+            (requestedStart == null || !approvedBaselineMissingUniverseProof())
         ) {
             return@withLock currentStatus
         }
@@ -813,12 +813,13 @@ class InceptionRecoveryService(
     private fun renderUniverse(universe: Set<String>): String = universe.sorted().joinToString(",")
 
     /**
-     * A `CONFIRMED` status alone must not keep trusting an approved baseline that predates
-     * recorded full-wallet universes: an approved snapshot identity without its universe proof
-     * falls through to the normal approved-start rebuild instead of short-circuiting.
+     * An approved baseline whose snapshot id persists without a recorded full-wallet universe
+     * is treated as stale: an approved snapshot identity without its universe proof falls
+     * through to the normal approved-start rebuild instead of short-circuiting. Applies only
+     * when the operator has pinned an approved start; the call site skips the gate when
+     * `requestedStart` is null, mirroring the original null-guarded semantics.
      */
-    private suspend fun staleApprovedBaselineNeedsRebuild(requestedStart: String?): Boolean {
-        if (requestedStart == null) return false
+    private suspend fun approvedBaselineMissingUniverseProof(): Boolean {
         val approvedId = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID)
         if (approvedId.isNullOrBlank()) return false
         return repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_UNIVERSE).isNullOrBlank()
@@ -1632,6 +1633,11 @@ class InceptionRecoveryService(
      * (duplicate trade-leg checkpoints, skipped scopes) stay first in legacy order; every
      * mutating row must be chaseable and the chase must consume all of them, otherwise the
      * legacy ledger-chase order is kept so fail-closed behavior is unchanged.
+     *
+     * The fallback returns ledger steps in legacy order followed by trade steps, not the
+     * historical interleaved ledger-id sequence within the instant; the order only shapes
+     * the chase, and the walk's checkpoint guards still fail closed on any sequence a
+     * forward execution could not produce.
      */
     private fun orderSameInstantSteps(
         ledgerSteps: List<ReplayStep.Ledger>,

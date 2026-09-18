@@ -28,6 +28,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   discovery window follows the requested comparison window so windowed views
   re-anchor inside their own range.
 
+### Fixed
+
+- Review follow-ups: removed a duplicated universe-split conversion test and
+  renamed the distinct backfilled-counterpart scenario, renamed the approved
+  baseline staleness gate to `approvedBaselineMissingUniverseProof` (dropped its
+  unused parameter), and added an observable warn log when a reconciliation
+  boundary exceeds the late-assignment candidate cap.
+
 ## [6.17.67] - 2026-09-17
 
 ### Fixed

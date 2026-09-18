@@ -11650,24 +11650,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE
         }
 
-        "universe-split conversion with an over-complete refid group stays closed" {
-            val fixture = universeSplitConversionFixture()
-            // Three legs share one refid and instant, so no identifiable debit/credit pair
-            // survives classification: the group fails closed upstream, before rescue.
-            val extraReceive = fixture.ledgers.single { it.asset == "USDG" }.copy(
-                ledgerId = "universe-split-receive-extra",
-            )
-            val result = calculate(
-                snapshots = fixture.snapshots,
-                rewards = fixture.ledgers + extraReceive,
-                ledgerContext = fixture.ledgerContext,
-            )
-
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
-        }
-
-        "universe-split conversion with a pre-baseline counterpart stays closed" {
+        "universe-split conversion with a backfilled pre-baseline counterpart stays closed" {
             val fixture = universeSplitConversionFixture()
             // The counterpart predates the baseline state yet clears the entry filter via a
             // backfilled first observation: a straddling conversion cannot rescue its leg.

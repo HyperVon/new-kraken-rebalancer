@@ -813,6 +813,9 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `fiatDeploymentExponent`  | `Double`  | `1.0`                   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
 
 > **Note:** `minimumOrderSizeUSD` is enforced to a minimum of `2` in `ConfigService` and the Settings UI (`min="2"`).
+> **Note:** the passive Buy & Hold anchor uses an independent invested-thesis floor of
+> `$5.00` (see `docs/ALGORITHM.md`); it mirrors the template default of
+> `minimumOrderSizeUSD` but is a fixed constant and does not track operator settings.
 
 ---
 
