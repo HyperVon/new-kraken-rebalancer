@@ -112,9 +112,14 @@ the host provides it. If no usable route is exposed, keep the work in the parent
    raw provider errors.
 5. Record the user approval, route-selection evidence, fallback, and any
    substitution for each track.
-6. If the host exposes only a role and cannot expose a usable model route, stop
-   material/parallel fan-out; do not silently use the parent route or a role-only
-   fallback.
+6. If a pinned or newly selected subagent route is unavailable or fails
+    (missing model, provider error, no exposed route), keep the work on a
+    subagent: relaunch the same track through another host-exposed route (for
+    example a host-suggested corrected model, another available role's route,
+    or a host-default-routed subagent). Use the parent session's own route only
+    as a genuine last resort when no subagent launch can run the track; then
+    cover it in the parent. Record the substitution; do not leave the track
+    unexecuted over a route failure.
 7. For a broad read-only workflow, launch the bounded track fan-out through
    the host's native parallel task surface. Use the
    `question` tool or host equivalent when a hard availability, scope, editing,
@@ -382,9 +387,12 @@ workflow launcher.
 For Kilo CLI sessions, launch bounded subagent fan-out through the host's
 native Task surface with the selected route from the native model-selection
 gate. A raw role-only Task call is not evidence that a concrete provider/model
-route was selected; record the actual route per track. If the host cannot
-expose the selected route, keep the track parent-owned or stop and report that
-state; do not silently fall back to native subagents on the parent model.
+route was selected; record the actual route per track. If a pinned or selected
+route is unavailable or fails, relaunch the same track through another
+host-exposed subagent route (host-suggested corrected model, another available
+role's route, or a host-default-routed subagent); use the parent session's own
+route only as a genuine last resort, and record the substitution; do not leave
+the track unexecuted over a route failure.
 Named workflow fan-outs return per-track reports; inspect those instead of
 launching a second native `kilo run` batch.
 

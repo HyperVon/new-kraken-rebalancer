@@ -110,9 +110,13 @@ that route. You MUST NOT use an unselected role-only `Task` / `task` tool,
 `ctx_batch_execute`, `ctx_execute`, or any in-process parallel
 scan as a substitute for a selected route. A role label (e.g. `adversarial-reviewer-a`)
 or a Kilo Auto tier does not select a provider/model route; only the host’s
-exact exposed route satisfies the model-selection gate. If the host cannot
-expose the route, stop and preserve that status;
-do not silently fall back to same-model native subagents.
+exact exposed route satisfies the model-selection gate. If a pinned or selected
+route is unavailable or fails, keep the track on a subagent: relaunch it through
+another host-exposed route (host-suggested corrected model, another available
+role's route, or a host-default-routed subagent). Use the parent session's own
+route only as a genuine last resort when no subagent launch can run the track;
+record the substitution and do not leave the track unexecuted over a route
+failure.
 
 Before launching the review tracks, state the candidate route plan to the user
 and obtain explicit approval. A missing/stale route or evidence requires
@@ -178,8 +182,8 @@ A prompt must contain:
 4. Forbidden files/actions, especially secrets and runtime data.
 5. Acceptance criteria, iteration cap, and the compact output format.
 6. The selected host route and effort when exposed, cost class, fallback,
-   availability evidence, and recorded user approval; do not launch if the host
-   cannot expose a usable route.
+   availability evidence, and recorded user approval; the parent session's own
+   route is a last-resort fallback only when no subagent route can run the track.
 
 Before reviewing the full diff, the parent may capture the bounded surface with:
 
@@ -196,12 +200,14 @@ Recover autonomously when an intended role fails, is cancelled, or is
 unavailable without pretending that a role replacement selected a model:
 
 1. Retry once only when the failure appears transient.
-2. Otherwise use only a preselected fallback route that the host can enforce and
-   expose for the **same narrow track**. A different role label alone is not a
-   valid fallback. Do not send the replacement the full PR diff.
-3. If no host-enforceable fallback exists, stop fan-out and have the parent
-   cover **every uncovered acceptance criterion** with sequential checks or
-   keep the track explicitly deferred. The track cannot be marked complete
+2. Otherwise relaunch the **same narrow track** through another host-exposed
+   subagent route: a host-suggested corrected model, another available role's
+   route, or a host-default-routed read-only subagent. A different role label
+   alone is not a valid fallback. Do not send the replacement the full PR diff.
+3. Only when no subagent launch can run the track, use the parent session's own
+   route as a genuine last resort — launch the subagent with the parent route,
+   or have the parent cover **every uncovered acceptance criterion** with
+   sequential checks. The track cannot be marked complete
    while its coverage matrix has unchecked paths or questions.
 4. Record requested route, selected route, effort, role, scope, availability,
    and the reason for any substitution in the verification notes. Never infer
