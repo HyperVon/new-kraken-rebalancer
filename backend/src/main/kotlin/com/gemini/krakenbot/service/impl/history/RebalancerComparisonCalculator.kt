@@ -82,6 +82,7 @@ object RebalancerComparisonCalculator {
         provenanceResolver: FundingProvenanceResolver = FundingProvenanceResolver.NONE,
         inceptionUnavailableReason: ComparisonUnavailableReason? = null,
         ledgerContext: List<LedgerEvent> = emptyList(),
+        configuredAssetUniverse: Set<String>? = null,
     ): RebalancerComparison {
         inceptionUnavailableReason?.let { reason ->
             return unavailable(
@@ -120,13 +121,32 @@ object RebalancerComparisonCalculator {
         }
         val orderedSnapshots = snapshots.sortedBy(PortfolioSnapshot::timestamp)
         val (baseline, effectiveSnapshots) = if (inceptionSnapshot != null) {
-            val trimmed = if (orderedSnapshots.first().timestamp < inceptionSnapshot.timestamp) {
-                val postInception = orderedSnapshots.filter { it.timestamp >= inceptionSnapshot.timestamp }
-                if (postInception.isEmpty() || postInception.first().timestamp > inceptionSnapshot.timestamp) {
-                    listOf(inceptionSnapshot) + postInception
-                } else {
-                    postInception
-                }
+            val sameInstantSnapshots = orderedSnapshots.filter { it.timestamp == inceptionSnapshot.timestamp }
+            val completeSameInstantSnapshots = sameInstantSnapshots.filter { snapshot ->
+                normalizedAssetUniverse(snapshot.assets.keys).containsAll(
+                    normalizedAssetUniverse(inceptionSnapshot.assets.keys),
+                )
+            }
+            val requiredAssetUniverse = requiredConfiguredAssetUniverse(inceptionSnapshot, configuredAssetUniverse)
+            val incompleteSameInstantMismatch = sameInstantSnapshots.firstOrNull { snapshot ->
+                !normalizedAssetUniverse(snapshot.assets.keys).containsAll(
+                    normalizedAssetUniverse(inceptionSnapshot.assets.keys),
+                ) && !configuredBalancesMatch(snapshot, inceptionSnapshot, requiredAssetUniverse)
+            }
+            if (incompleteSameInstantMismatch != null) {
+                return unavailable(
+                    reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                    unavailableAt = incompleteSameInstantMismatch.timestamp,
+                    baselineTimestamp = inceptionSnapshot.timestamp,
+                )
+            }
+            val postInception = orderedSnapshots.filter { it.timestamp > inceptionSnapshot.timestamp }
+            val trimmed = if (orderedSnapshots.first().timestamp <= inceptionSnapshot.timestamp) {
+                // The approved baseline is the complete wallet state. A legacy/configured-only
+                // row at the same instant is not a valid replacement for it, even when identity
+                // filtering has removed the approved anchor from the series. Keep a complete
+                // same-time reconstruction when one exists; otherwise restore the approved row.
+                (completeSameInstantSnapshots.ifEmpty { listOf(inceptionSnapshot) }) + postInception
             } else {
                 orderedSnapshots
             }
@@ -137,7 +157,7 @@ object RebalancerComparisonCalculator {
                     baselineTimestamp = inceptionSnapshot.timestamp,
                 )
             }
-            if (!trimmed.first().assets.keys.containsAll(inceptionSnapshot.assets.keys)) {
+            if (!normalizedAssetUniverse(trimmed.first().assets.keys).containsAll(requiredAssetUniverse)) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
                     unavailableAt = trimmed.first().timestamp,
@@ -149,7 +169,7 @@ object RebalancerComparisonCalculator {
             orderedSnapshots.first() to orderedSnapshots
         }
 
-        val universeError = validateAssetUniverse(effectiveSnapshots, baseline)
+        val universeError = validateAssetUniverse(effectiveSnapshots, baseline, configuredAssetUniverse)
         if (universeError != null) return universeError
 
         val baselineError = validateBaseline(baseline)
@@ -181,10 +201,25 @@ object RebalancerComparisonCalculator {
         val effectiveAnchor = anchorSnapshot?.takeIf {
             it.timestamp < baseline.timestamp && it.assets.keys.containsAll(baseline.assets.keys)
         }
-        val validationSnapshots = if (effectiveAnchor != null) {
-            listOf(effectiveAnchor) + effectiveSnapshots
-        } else {
-            effectiveSnapshots
+        val firstEffectiveSnapshot = effectiveSnapshots.firstOrNull()
+        val hasMissingPositiveBaselineAsset = firstEffectiveSnapshot != null && baseline.assets.any { (symbol, asset) ->
+            asset.balance.signum() > 0 && symbol !in firstEffectiveSnapshot.assets
+        }
+        val shouldPrependBaseline = firstEffectiveSnapshot != null &&
+            (
+                hasMissingPositiveBaselineAsset ||
+                    (firstEffectiveSnapshot.timestamp == baseline.timestamp && firstEffectiveSnapshot != baseline)
+                )
+        val validationSnapshots = when {
+            effectiveAnchor != null && shouldPrependBaseline -> {
+                listOf(effectiveAnchor, baseline) + effectiveSnapshots
+            }
+
+            effectiveAnchor != null -> listOf(effectiveAnchor) + effectiveSnapshots
+
+            shouldPrependBaseline -> listOf(baseline) + effectiveSnapshots
+
+            else -> effectiveSnapshots
         }
 
         // Surface structural ledger errors before balance-continuity validation. The validator
@@ -606,10 +641,18 @@ object RebalancerComparisonCalculator {
     private fun validateAssetUniverse(
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
+        configuredAssetUniverse: Set<String>?,
     ): RebalancerComparison? {
-        val baselineKeys = baseline.assets.keys
-        for (snapshot in snapshots.drop(1)) {
-            if (!snapshot.assets.keys.containsAll(baselineKeys)) {
+        val requiredAssetUniverse = requiredConfiguredAssetUniverse(baseline, configuredAssetUniverse)
+        if (!matchesConfiguredAssetUniverse(baseline, requiredAssetUniverse)) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
+                unavailableAt = baseline.timestamp,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
+        for (snapshot in snapshots) {
+            if (!matchesConfiguredAssetUniverse(snapshot, requiredAssetUniverse)) {
                 return unavailable(
                     reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
                     unavailableAt = snapshot.timestamp,
@@ -620,6 +663,15 @@ object RebalancerComparisonCalculator {
         return null
     }
 
+    private fun matchesConfiguredAssetUniverse(
+        snapshot: PortfolioSnapshot,
+        requiredAssetUniverse: Set<String>,
+    ): Boolean = normalizedAssetUniverse(snapshot.assets.keys).containsAll(requiredAssetUniverse) &&
+        snapshot.assets.none { (symbol, asset) ->
+            Asset.normalizeLedgerAsset(symbol).uppercase() !in requiredAssetUniverse &&
+                asset.targetPercent.signum() > 0
+        }
+
     private suspend fun validatePrices(
         snapshots: List<PortfolioSnapshot>,
         baseline: PortfolioSnapshot,
@@ -629,8 +681,9 @@ object RebalancerComparisonCalculator {
         for (snapshot in snapshots) {
             for (symbol in baselineKeys) {
                 if (symbol == Asset.USD) continue
-                // Universe validation guarantees every snapshot carries the baseline keys.
-                val assetRow = snapshot.assets.getValue(symbol)
+                // Configured-universe validation guarantees target rows are present. Historical-only
+                // wallet rows may legitimately disappear after their balance reaches zero.
+                val assetRow = snapshot.assets[symbol] ?: continue
                 if (assetRow.price.signum() < 0) {
                     return unavailable(
                         reason = ComparisonUnavailableReason.MISSING_PRICE,
@@ -653,6 +706,38 @@ object RebalancerComparisonCalculator {
         }
         return null
     }
+
+    private fun requiredConfiguredAssetUniverse(
+        baseline: PortfolioSnapshot,
+        configuredAssetUniverse: Set<String>?,
+    ): Set<String> = configuredAssetUniverse?.let(::normalizedAssetUniverse)
+        ?: normalizedAssetUniverse(
+            baseline.assets
+                .filterValues { it.targetPercent.signum() > 0 }
+                .keys,
+        )
+
+    private fun normalizedAssetUniverse(symbols: Iterable<String>): Set<String> = symbols
+        .map { Asset.normalizeLedgerAsset(it).uppercase() }
+        .toSet()
+
+    private fun configuredBalancesMatch(
+        snapshot: PortfolioSnapshot,
+        baseline: PortfolioSnapshot,
+        configuredAssetUniverse: Set<String>,
+    ): Boolean {
+        val baselineBalances = normalizedAssetBalances(baseline)
+        val snapshotBalances = normalizedAssetBalances(snapshot)
+        return configuredAssetUniverse
+            .all { symbol ->
+                (baselineBalances[symbol] ?: BigDecimal.ZERO)
+                    .compareTo(snapshotBalances[symbol] ?: BigDecimal.ZERO) == 0
+            }
+    }
+
+    private fun normalizedAssetBalances(snapshot: PortfolioSnapshot): Map<String, BigDecimal> = snapshot.assets
+        .mapKeys { (symbol, _) -> Asset.normalizeLedgerAsset(symbol).uppercase() }
+        .mapValues { (_, asset) -> asset.balance }
 
     private fun validateTrackedBalanceChanges(
         snapshots: List<PortfolioSnapshot>,
@@ -894,11 +979,16 @@ object RebalancerComparisonCalculator {
                         false
                     } else {
                         val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
-                        // Universe validation guarantees every snapshot carries the baseline keys.
-                        val prevBalance = prev.assets.getValue(symbol).balance
+                        // Configured-universe validation guarantees target rows, never historical-only
+                        // rows: a reconciled zeroing drops the row from later snapshots. Absence is
+                        // consistent only with an authoritative zero post-balance, so any other
+                        // post-balance stays a boundary candidate instead of being read as zero.
+                        val prevBalance = prev.assets[symbol]?.balance
+                        val previousBalanceMatches = prevBalance?.let { it.compareTo(ledger.balance) == 0 }
+                            ?: (ledger.balance.signum() == 0)
                         val alreadyEmbodiedInPrevious = ledger.time <= prev.timestamp &&
                             ledger.hasAuthoritativeBalance &&
-                            prevBalance.compareTo(ledger.balance) == 0
+                            previousBalanceMatches
                         val nearUnknownPreviousBoundary = !alreadyEmbodiedInPrevious &&
                             prev.balancesObservedAt == null &&
                             ledger.time > prev.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&

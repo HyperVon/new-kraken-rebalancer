@@ -58,6 +58,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         provenanceResolver: FundingProvenanceResolver = testProvenanceResolver,
         inceptionUnavailableReason: ComparisonUnavailableReason? = null,
         ledgerContext: List<LedgerEvent> = emptyList(),
+        configuredAssetUniverse: Set<String>? = null,
     ): RebalancerComparison = RebalancerComparisonCalculator.calculate(
         snapshots = snapshots,
         trades = trades,
@@ -70,6 +71,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         provenanceResolver = provenanceResolver,
         inceptionUnavailableReason = inceptionUnavailableReason,
         ledgerContext = ledgerContext,
+        configuredAssetUniverse = configuredAssetUniverse,
     )
 
     init {
@@ -395,7 +397,11 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
                 snapshot(now.plusSeconds(3600), "50000.00", mapOf("BTC" to assetRow("1.0", "50000.00", "50000.00"))),
             )
 
-            val result = calculate(snapshots, emptyList())
+            val result = calculate(
+                snapshots,
+                emptyList(),
+                configuredAssetUniverse = setOf("BTC", "ETH"),
+            )
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
@@ -5573,7 +5579,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableAt shouldBe t1
         }
 
-        "exact series anchor missing a zero-valued target fails closed" {
+        "exact series anchor missing a configured zero-balance target fails closed" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
             val inception = PortfolioSnapshot(
@@ -5606,11 +5612,693 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = calculate(
                 snapshots = listOf(incompleteSeriesAnchor, incompleteSeriesAnchor.copy(timestamp = t1)),
                 inceptionSnapshot = inception,
+                configuredAssetUniverse = setOf("BTC", "ETH"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+            result.unavailableAt shouldBe t1
+        }
+
+        "same-time configured-only row cannot replace the full approved anchor" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inception = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("200.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("100.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("100.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = t0,
+            )
+            val configuredOnlyRow = inception.copy(
+                assets = mapOf("BTC" to inception.assets.getValue("BTC")),
+            )
+            val laterFullRow = inception.copy(
+                timestamp = t1,
+                balancesObservedAt = t1,
+            )
+
+            val result = calculate(
+                snapshots = listOf(configuredOnlyRow, laterFullRow),
+                inceptionSnapshot = inception,
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "same-time incomplete row with a changed configured balance fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inception = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("200.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("100.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("100.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = t0,
+            )
+            val incompleteChangedRow = inception.copy(
+                assets = mapOf(
+                    "BTC" to inception.assets.getValue("BTC").copy(
+                        balance = BigDecimal("2.00000000"),
+                        valueUSD = BigDecimal("200.00"),
+                    ),
+                ),
+            )
+            val laterFullRow = inception.copy(timestamp = t1, balancesObservedAt = t1)
+
+            val result = calculate(
+                snapshots = listOf(incompleteChangedRow, laterFullRow),
+                inceptionSnapshot = inception,
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe t0
+        }
+
+        "same-time complete row with a positive unconfigured target fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inception = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("200.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("100.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("100.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = t0,
+            )
+            val sameTimePositiveExtra = inception.copy(
+                assets = inception.assets + (
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal("1.0"),
+                    )
+                    ),
+            )
+            val laterFullRow = inception.copy(
+                timestamp = t1,
+                balancesObservedAt = t1,
+            )
+
+            val result = calculate(
+                snapshots = listOf(sameTimePositiveExtra, laterFullRow),
+                inceptionSnapshot = inception,
+                configuredAssetUniverse = setOf("BTC"),
             )
 
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
             result.unavailableAt shouldBe t0
+        }
+
+        "same-time complete row with a different balance distribution fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inception = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("200.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("100.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("100.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = t0,
+            )
+            val sameTimeDifferentDistribution = inception.copy(
+                assets = inception.assets + (
+                    "BTC" to inception.assets.getValue("BTC").copy(
+                        balance = BigDecimal("2.00000000"),
+                        valueUSD = BigDecimal("200.00"),
+                    )
+                    ) + (
+                    "MORPHO" to inception.assets.getValue("MORPHO").copy(
+                        balance = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                    )
+                    ),
+            )
+            val laterSameDistribution = sameTimeDifferentDistribution.copy(
+                timestamp = t1,
+                balancesObservedAt = t1,
+            )
+
+            val result = calculate(
+                snapshots = listOf(sameTimeDifferentDistribution, laterSameDistribution),
+                inceptionSnapshot = inception,
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe t0
+        }
+
+        "same-time distribution mismatch is checked when a pre-baseline anchor exists" {
+            val anchorTime = Instant.parse("2026-05-31T12:00:00Z")
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val baseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("200.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("100.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("100.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = t0,
+            )
+            val differingDistribution = baseline.copy(
+                assets = baseline.assets + (
+                    "BTC" to baseline.assets.getValue("BTC").copy(
+                        balance = BigDecimal("2.00000000"),
+                        valueUSD = BigDecimal("200.00"),
+                    )
+                    ) + (
+                    "MORPHO" to baseline.assets.getValue("MORPHO").copy(
+                        balance = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                    )
+                    ),
+            )
+            val anchor = differingDistribution.copy(timestamp = anchorTime, balancesObservedAt = anchorTime)
+            val later = differingDistribution.copy(timestamp = t1, balancesObservedAt = t1)
+
+            val result = calculate(
+                snapshots = listOf(differingDistribution, later),
+                anchorSnapshot = anchor,
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe t0
+        }
+
+        "historical-only baseline holdings remain replayable outside configured universe" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inception = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("200.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("100.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("100.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = t0,
+            )
+            val configuredOnlyRow = inception.copy(
+                assets = mapOf("BTC" to inception.assets.getValue("BTC")),
+            )
+            val later = configuredOnlyRow.copy(
+                timestamp = t1,
+                balancesObservedAt = t1,
+                totalValueUSD = BigDecimal("100.00"),
+            )
+
+            val result = calculate(
+                snapshots = listOf(configuredOnlyRow, later),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(10),
+                        asset = "MORPHO",
+                        amount = "-100.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    ),
+                ),
+                inceptionSnapshot = inception,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "MORPHO" to BigDecimal.ONE),
+                ),
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
+        }
+
+        "still-held historical-only asset omitted after inception fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val inception = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("200.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("100.0"),
+                    ),
+                    "MORPHO" to assetSnapshot(
+                        symbol = "MORPHO",
+                        balance = BigDecimal("100.00000000"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+                balancesObservedAt = t0,
+            )
+            val laterConfiguredOnly = inception.copy(
+                timestamp = t1,
+                balancesObservedAt = t1,
+                assets = mapOf("BTC" to inception.assets.getValue("BTC")),
+                totalValueUSD = BigDecimal("100.00"),
+            )
+            val latestConfiguredOnly = laterConfiguredOnly.copy(timestamp = t1.plusSeconds(3600))
+
+            val result = calculate(
+                snapshots = listOf(laterConfiguredOnly, latestConfiguredOnly),
+                inceptionSnapshot = inception,
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+            result.unavailableAt shouldBe t1
+        }
+
+        "omitted historical-only row records a legacy boundary ledger without crashing" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(3600)
+            val t2 = t0.plusSeconds(7200)
+            val baseline = snapshot(
+                t0,
+                "200.00",
+                mapOf(
+                    "BTC" to assetRow("1", "100.00", "100.00"),
+                    "MORPHO" to assetRow("100.00000000", "1", "100.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val omitted = snapshot(
+                t1,
+                "100.00",
+                mapOf("BTC" to assetRow("1", "100.00", "100.00")),
+                balancesObservedAt = null,
+            )
+            val later = omitted.copy(timestamp = t2)
+
+            val result = calculate(
+                snapshots = listOf(omitted, later),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(10),
+                        asset = "MORPHO",
+                        amount = "-100.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    ),
+                    ledgerEvent(
+                        timestamp = t2,
+                        asset = "MORPHO",
+                        amount = "2.50000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    ),
+                ),
+                inceptionSnapshot = baseline,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "MORPHO" to BigDecimal.ONE),
+                ),
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            result.points.forEach {
+                it.buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            }
+        }
+
+        "historical-only row omitted under legacy observation without reconciled events fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(3600)
+            val baseline = snapshot(
+                t0,
+                "200.00",
+                mapOf(
+                    "BTC" to assetRow("1", "100.00", "100.00"),
+                    "MORPHO" to assetRow("100.00000000", "1", "100.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val omitted = snapshot(
+                t1,
+                "100.00",
+                mapOf("BTC" to assetRow("1", "100.00", "100.00")),
+                balancesObservedAt = null,
+            )
+
+            val result = calculate(
+                snapshots = listOf(omitted, omitted.copy(timestamp = t1.plusSeconds(3600))),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+            result.unavailableAt shouldBe t1
+        }
+
+        "historical-only row reappearing with a nonzero authoritative balance fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(3600)
+            val t2 = t0.plusSeconds(7200)
+            val baseline = snapshot(
+                t0,
+                "200.00",
+                mapOf(
+                    "BTC" to assetRow("1", "100.00", "100.00"),
+                    "MORPHO" to assetRow("100.00000000", "1", "100.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val omitted = snapshot(
+                t1,
+                "100.00",
+                mapOf("BTC" to assetRow("1", "100.00", "100.00")),
+                balancesObservedAt = null,
+            )
+            val reappeared = snapshot(
+                t2,
+                "150.00",
+                mapOf(
+                    "BTC" to assetRow("1", "100.00", "100.00"),
+                    "MORPHO" to assetRow("50.00000000", "1", "50.00"),
+                ),
+                balancesObservedAt = null,
+            )
+
+            val result = calculate(
+                snapshots = listOf(omitted, reappeared),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(10),
+                        asset = "MORPHO",
+                        amount = "-100.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    ),
+                    ledgerEvent(
+                        timestamp = t2,
+                        asset = "MORPHO",
+                        amount = "50.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "50.00000000",
+                    ),
+                ),
+                inceptionSnapshot = baseline,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "MORPHO" to BigDecimal.ONE),
+                ),
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe t2
+        }
+
+        "configured zero-weight assets still belong to the target universe" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val baseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("100.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("100.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal.ZERO,
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    baseline,
+                    baseline.copy(
+                        timestamp = t1,
+                        assets = mapOf("BTC" to baseline.assets.getValue("BTC")),
+                    ),
+                ),
+                configuredAssetUniverse = setOf("BTC", "ETH"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+            result.unavailableAt shouldBe t1
+        }
+
+        "configured asset absent from the baseline fails closed even when later zero-valued" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val btc = assetSnapshot(
+                symbol = "BTC",
+                balance = BigDecimal.ONE,
+                price = BigDecimal("100.00"),
+                valueUSD = BigDecimal("100.00"),
+                targetPercent = BigDecimal("100.0"),
+            )
+            val baseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("100.00"),
+                assets = mapOf("BTC" to btc),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val later = baseline.copy(
+                timestamp = t1,
+                assets = baseline.assets + (
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal.ZERO,
+                    )
+                    ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, later),
+                configuredAssetUniverse = setOf("BTC", "ETH"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+            result.unavailableAt shouldBe t0
+        }
+
+        "removed configured target fails closed even when its baseline balance was zero" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val baseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("100.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal("50.0"),
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    baseline,
+                    baseline.copy(
+                        timestamp = t1,
+                        assets = mapOf("BTC" to baseline.assets.getValue("BTC")),
+                    ),
+                ),
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+            result.unavailableAt shouldBe t0
+        }
+
+        "later positive target outside configured universe fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = Instant.parse("2026-06-02T12:00:00Z")
+            val baseline = PortfolioSnapshot(
+                timestamp = t0,
+                totalValueUSD = BigDecimal("100.00"),
+                assets = mapOf(
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
+                        balance = BigDecimal.ONE,
+                        price = BigDecimal("100.00"),
+                        valueUSD = BigDecimal("100.00"),
+                        targetPercent = BigDecimal("100.0"),
+                    ),
+                ),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO,
+            )
+            val later = baseline.copy(
+                timestamp = t1,
+                assets = baseline.assets + (
+                    "ETH" to assetSnapshot(
+                        symbol = "ETH",
+                        balance = BigDecimal.ZERO,
+                        price = BigDecimal.ZERO,
+                        valueUSD = BigDecimal.ZERO,
+                        targetPercent = BigDecimal("1.0"),
+                    )
+                    ),
+            )
+
+            val result = calculate(
+                snapshots = listOf(baseline, later),
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+            result.unavailableAt shouldBe t1
         }
 
         "same-time recorded twin keeps the full anchor without synthetic trade replay" {

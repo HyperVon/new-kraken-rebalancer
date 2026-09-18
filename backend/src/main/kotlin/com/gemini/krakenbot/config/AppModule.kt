@@ -118,6 +118,7 @@ val coreModule =
                 krakenService = get(),
                 historicalOhlcCache = get(),
                 applicationScope = get(named(APPLICATION_SCOPE_QUALIFIER)),
+                configService = get(),
             )
         }
         single {
