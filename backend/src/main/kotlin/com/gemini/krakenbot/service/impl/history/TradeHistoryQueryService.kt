@@ -27,6 +27,7 @@ import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -364,6 +365,10 @@ class TradeHistoryQueryService(
     private fun ensureProposalSearchContinuation(after: Instant) {
         val scope = applicationScope ?: return
         if (!proposalContinuationActive.compareAndSet(false, true)) return
+        if (!scope.isActive) {
+            proposalContinuationActive.set(false)
+            return
+        }
         log.info("proposal search continuation started; status=INCOMPLETE")
         scope.launch {
             try {

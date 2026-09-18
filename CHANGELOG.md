@@ -35,6 +35,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   baseline staleness gate to `approvedBaselineMissingUniverseProof` (dropped its
   unused parameter), and added an observable warn log when a reconciliation
   boundary exceeds the late-assignment candidate cap.
+- Adversarial-review follow-ups: a cancelled application scope now releases the
+  proposal-continuation guard instead of latching it (pinned by a regression
+  test), and the schema-14 metadata-widening migration drops any leftover
+  `history_sync_metadata_wide` table before rebuilding it.
 
 ## [6.17.67] - 2026-09-17
 

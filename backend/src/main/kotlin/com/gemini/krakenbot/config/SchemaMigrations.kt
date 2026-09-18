@@ -75,6 +75,7 @@ internal val SCHEMA_MIGRATIONS = listOf(
     // width (Exposed enforces it client-side; SQLite itself never did). Rebuild widens it to
     // TEXT so baseline persistence cannot fail on universe size.
     SchemaMigration(14, "history-sync-metadata-value-text") {
+        exec("DROP TABLE IF EXISTS history_sync_metadata_wide")
         exec(
             "CREATE TABLE history_sync_metadata_wide " +
                 "(key VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL)",
