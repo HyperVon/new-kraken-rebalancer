@@ -9,6 +9,7 @@ import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
 import com.gemini.krakenbot.service.impl.history.AccountScopeValidationResult
 import com.gemini.krakenbot.service.impl.history.AccountScopeValidationStatus
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
+import com.gemini.krakenbot.service.impl.history.TradeHistorySnapshotStore
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -92,6 +93,102 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                 tradeHistoryService.init()
 
                 // Simulation seed: ~15 days of 6h snapshots written as one batch.
+                coVerify(exactly = 1) { repository.save(match { it.isNotEmpty() }) }
+            }
+        }
+
+        "init_InSimulationMode_PersistsOnlySuccessfulLiveTrades" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(
+                        dryRun = false,
+                        simulation = true,
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        minimumOrderSizeUSD = 5.0,
+                        fiatMaxDrawdown = 30.0,
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns appConfig
+                coEvery { repository.load() } returns emptyList()
+                coEvery { krakenService.getBalances() } returns mapOf(
+                    Asset.BTC to BigDecimal.ONE,
+                    TestFixtures.USD to BigDecimal("1000.00"),
+                )
+
+                val liveTrade = TestFixtures.tradeRecord(
+                    timestamp = Instant.parse("2026-01-01T00:00:00Z"),
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.10"),
+                    usdAmount = BigDecimal("100.00"),
+                    price = BigDecimal("1000.00"),
+                ).copy(tradeId = "live")
+                val failedTrade = liveTrade.copy(tradeId = "failed", success = false)
+                val dryRunTrade = liveTrade.copy(tradeId = "dry-run", dryRun = true)
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(
+                    failedTrade,
+                    dryRunTrade,
+                    liveTrade,
+                )
+                coEvery { repository.saveTrade(any()) } returns 1
+
+                TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    ledgerRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    TestFixtures.hermeticTradeHistoryPath(),
+                ).init()
+
+                coVerify(exactly = 1) { repository.saveTrade(liveTrade) }
+                coVerify(exactly = 0) { repository.saveTrade(failedTrade) }
+                coVerify(exactly = 0) { repository.saveTrade(dryRunTrade) }
+            }
+        }
+
+        "init_InSimulationMode_SeedsWithoutOptionalStatsRepository" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(
+                        dryRun = false,
+                        simulation = true,
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        minimumOrderSizeUSD = 5.0,
+                        fiatMaxDrawdown = 30.0,
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns appConfig
+                coEvery { repository.load() } returns emptyList()
+
+                TradeHistorySnapshotStore(
+                    repository = repository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    objectMapper = objectMapper,
+                    tradeHistoryFilePath = TestFixtures.hermeticTradeHistoryPath(),
+                ).init()
+
                 coVerify(exactly = 1) { repository.save(match { it.isNotEmpty() }) }
             }
         }
@@ -211,6 +308,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                     repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS)
                 } returns Instant.now().minusSeconds(86400L * 100).toEpochMilli().toString()
                 coEvery { repository.pruneSnapshotsOlderThan(any()) } returns 5
+                coEvery { repository.pruneTradesOlderThan(any()) } returns 1
 
                 val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
 
