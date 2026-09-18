@@ -15,6 +15,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unavailable merely because later live snapshots omit them, while configured assets (including
   zero-weight allocations) still fail closed when removed. A same-instant configured-only legacy
   row can no longer replace the approved full-wallet anchor.
+- **Legacy boundary reconciliation no longer assumes every snapshot carries the full-wallet
+  baseline keys**: a boundary ledger for an omitted historical-only asset is treated as already
+  embodied only when its authoritative post-balance is zero; otherwise it stays a reconciliation
+  candidate and the interval fails closed (`UNEXPLAINED_BALANCE_CHANGE`) instead of throwing a
+  missing-key exception.
 - **Trade-history test files are hermetic per test case**: the shared
   relative `test-trade-history.json` path (plus its backup/temp siblings)
   was concurrently created, rotated, and locked by parallel Gradle test

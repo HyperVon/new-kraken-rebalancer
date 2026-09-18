@@ -872,7 +872,10 @@ external capital over time:
   the full-wallet baseline. A historical-only row may therefore be absent from a later
   configured-only snapshot once reconciliation explains its balance change; a same-instant
   configured-only legacy row cannot replace the approved full-wallet anchor; dropping a configured
-  baseline asset still reports `ASSET_UNIVERSE_CHANGED`.
+  baseline asset still reports `ASSET_UNIVERSE_CHANGED`. Legacy/unknown-observation boundaries
+  follow the same rule: a boundary ledger for an omitted historical-only asset counts as already
+  embodied only when its authoritative post-balance is zero, so absence is never read as wallet
+  truth and a nonzero post-balance stays a candidate the recorded series must explain.
 - **Recorded history exposes one final state per instant and only spot-wallet effects.**
   Reconstruction persists a row per replayed event, so several cumulative rows can share a
   millisecond; the chart keeps the first row written for an instant (the state

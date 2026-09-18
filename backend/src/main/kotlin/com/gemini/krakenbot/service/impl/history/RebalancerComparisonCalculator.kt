@@ -979,11 +979,16 @@ object RebalancerComparisonCalculator {
                         false
                     } else {
                         val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
-                        // Universe validation guarantees every snapshot carries the baseline keys.
-                        val prevBalance = prev.assets.getValue(symbol).balance
+                        // Configured-universe validation guarantees target rows, never historical-only
+                        // rows: a reconciled zeroing drops the row from later snapshots. Absence is
+                        // consistent only with an authoritative zero post-balance, so any other
+                        // post-balance stays a boundary candidate instead of being read as zero.
+                        val prevBalance = prev.assets[symbol]?.balance
+                        val previousBalanceMatches = prevBalance?.let { it.compareTo(ledger.balance) == 0 }
+                            ?: (ledger.balance.signum() == 0)
                         val alreadyEmbodiedInPrevious = ledger.time <= prev.timestamp &&
                             ledger.hasAuthoritativeBalance &&
-                            prevBalance.compareTo(ledger.balance) == 0
+                            previousBalanceMatches
                         val nearUnknownPreviousBoundary = !alreadyEmbodiedInPrevious &&
                             prev.balancesObservedAt == null &&
                             ledger.time > prev.timestamp.minusMillis(MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS) &&

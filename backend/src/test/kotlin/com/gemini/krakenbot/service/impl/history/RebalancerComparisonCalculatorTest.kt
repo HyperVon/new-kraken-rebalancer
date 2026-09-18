@@ -5991,6 +5991,145 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableAt shouldBe t1
         }
 
+        "omitted historical-only row records a legacy boundary ledger without crashing" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(3600)
+            val t2 = t0.plusSeconds(7200)
+            val baseline = snapshot(
+                t0,
+                "200.00",
+                mapOf(
+                    "BTC" to assetRow("1", "100.00", "100.00"),
+                    "MORPHO" to assetRow("100.00000000", "1", "100.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val omitted = snapshot(
+                t1,
+                "100.00",
+                mapOf("BTC" to assetRow("1", "100.00", "100.00")),
+                balancesObservedAt = null,
+            )
+            val later = omitted.copy(timestamp = t2)
+
+            val result = calculate(
+                snapshots = listOf(omitted, later),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(10),
+                        asset = "MORPHO",
+                        amount = "-100.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    ),
+                    ledgerEvent(
+                        timestamp = t2,
+                        asset = "MORPHO",
+                        amount = "2.50000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_STAKING,
+                    ),
+                ),
+                inceptionSnapshot = baseline,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "MORPHO" to BigDecimal.ONE),
+                ),
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            result.points.forEach {
+                it.buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            }
+        }
+
+        "historical-only row omitted under legacy observation without reconciled events fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(3600)
+            val baseline = snapshot(
+                t0,
+                "200.00",
+                mapOf(
+                    "BTC" to assetRow("1", "100.00", "100.00"),
+                    "MORPHO" to assetRow("100.00000000", "1", "100.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val omitted = snapshot(
+                t1,
+                "100.00",
+                mapOf("BTC" to assetRow("1", "100.00", "100.00")),
+                balancesObservedAt = null,
+            )
+
+            val result = calculate(
+                snapshots = listOf(omitted, omitted.copy(timestamp = t1.plusSeconds(3600))),
+                inceptionSnapshot = baseline,
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+            result.unavailableAt shouldBe t1
+        }
+
+        "historical-only row reappearing with a nonzero authoritative balance fails closed" {
+            val t0 = Instant.parse("2026-06-01T12:00:00Z")
+            val t1 = t0.plusSeconds(3600)
+            val t2 = t0.plusSeconds(7200)
+            val baseline = snapshot(
+                t0,
+                "200.00",
+                mapOf(
+                    "BTC" to assetRow("1", "100.00", "100.00"),
+                    "MORPHO" to assetRow("100.00000000", "1", "100.00"),
+                ),
+                balancesObservedAt = t0,
+            )
+            val omitted = snapshot(
+                t1,
+                "100.00",
+                mapOf("BTC" to assetRow("1", "100.00", "100.00")),
+                balancesObservedAt = null,
+            )
+            val reappeared = snapshot(
+                t2,
+                "150.00",
+                mapOf(
+                    "BTC" to assetRow("1", "100.00", "100.00"),
+                    "MORPHO" to assetRow("50.00000000", "1", "50.00"),
+                ),
+                balancesObservedAt = null,
+            )
+
+            val result = calculate(
+                snapshots = listOf(omitted, reappeared),
+                rewards = listOf(
+                    ledgerEvent(
+                        timestamp = t0.plusSeconds(10),
+                        asset = "MORPHO",
+                        amount = "-100.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                    ),
+                    ledgerEvent(
+                        timestamp = t2,
+                        asset = "MORPHO",
+                        amount = "50.00000000",
+                        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                        balance = "50.00000000",
+                    ),
+                ),
+                inceptionSnapshot = baseline,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "MORPHO" to BigDecimal.ONE),
+                ),
+                configuredAssetUniverse = setOf("BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.unavailableAt shouldBe t2
+        }
+
         "configured zero-weight assets still belong to the target universe" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
