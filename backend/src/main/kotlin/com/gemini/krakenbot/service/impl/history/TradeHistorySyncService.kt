@@ -277,7 +277,7 @@ class TradeHistorySyncService(
                 extendsCertifiedTail = false,
                 verifiedAccountScopeDigest = verifiedAccountScopeDigest,
             )
-            triggerReconstructionIfNeeded(config, backend)
+            triggerReconstructionIfNeeded(config, backend, queryNow)
             log.info(
                 "Trade coverage backfill completed. Added: {} new, Reconciled: {}. Coverage version is now {}.",
                 scanOutcome.totalAdded,
@@ -337,7 +337,7 @@ class TradeHistorySyncService(
             verifiedAccountScopeDigest = verifiedAccountScopeDigest,
         )
 
-        triggerReconstructionIfNeeded(config, backend)
+        triggerReconstructionIfNeeded(config, backend, queryNow)
         log.info(
             "Trade history synchronization completed. Added: {} new, Reconciled: {}.",
             scanOutcome.totalAdded,
@@ -877,13 +877,16 @@ class TradeHistorySyncService(
         data object AlreadyPersisted : TradeReconciliationResult()
     }
 
-    private suspend fun triggerReconstructionIfNeeded(config: AppConfig, backend: KrakenService) {
+    private suspend fun triggerReconstructionIfNeeded(
+        config: AppConfig,
+        backend: KrakenService,
+        reconstructionAnchor: Instant,
+    ) {
         val snapshots = repository.load()
         val totalTrades = repository.getTradeSummaryStats().totalTradesExecuted
         val isSimulation = config.settings.simulation
 
         if (!isSimulation && totalTrades > 0 && snapshots.size <= 1) {
-            val reconstructionAnchor = nowProvider()
             if (!reconstructionService.canRebuildSnapshots(config, reconstructionAnchor = reconstructionAnchor)) {
                 log.info(
                     "Skipping historical snapshot reconstruction during trade sync: trade or ledger coverage is not current.",

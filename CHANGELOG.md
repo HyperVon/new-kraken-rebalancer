@@ -39,6 +39,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   proposal-continuation guard instead of latching it (pinned by a regression
   test), and the schema-14 metadata-widening migration drops any leftover
   `history_sync_metadata_wide` table before rebuilding it.
+- Sync-triggered historical snapshot reconstruction is now anchored to the
+  proven evidence horizon instead of a fresh post-scan wall-clock instant, so a
+  slow or cold machine (operator-reported Windows build) no longer silently
+  skips reconstruction when a second boundary is crossed during the trade scan.
 
 ## [6.17.67] - 2026-09-17
 
