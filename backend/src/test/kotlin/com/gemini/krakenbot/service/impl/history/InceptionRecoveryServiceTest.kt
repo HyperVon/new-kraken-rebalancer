@@ -5531,7 +5531,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
                         timestamp = requestedStart,
                     ),
                 )
-                repository.setSyncMetadata(SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS, requestedStart.toEpochMilli().toString())
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS,
+                    requestedStart.toEpochMilli().toString(),
+                )
                 repository.setSyncMetadata(
                     SyncMetadataKeys.DETECTED_INCEPTION_SOURCE,
                     InceptionRecoveryService.INCEPTION_SOURCE_APPROVED,
@@ -5539,7 +5542,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_SNAPSHOT_ID, staleId.toString())
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_APPROVED_BASELINE_SNAPSHOT_ID, staleId.toString())
                 repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_REASON, "approved-start baseline ready")
-                repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_STATUS, InceptionRecoveryStatus.CONFIRMED)
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_STATUS,
+                    InceptionRecoveryStatus.CONFIRMED,
+                )
 
                 val status = newService().recoverOneBoundedRun()
 

@@ -1395,7 +1395,10 @@ class InceptionRecoveryService(
                         val baseCarry = reverseUncertainty[step.replay.base] ?: BigDecimal.ZERO
                         val quoteCarry = reverseUncertainty[step.replay.quote] ?: BigDecimal.ZERO
                         if (!TradeLedgerReplay.reverseApply(step.replay, runningBalances, baseCarry, quoteCarry)) {
-                            return BaselineResult.Failure(InceptionRecoveryStatus.AMBIGUOUS, "unsupported trade economics")
+                            return BaselineResult.Failure(
+                                InceptionRecoveryStatus.AMBIGUOUS,
+                                "unsupported trade economics",
+                            )
                         }
                         val effect = step.replay.ledgerEffect
                         if (effect != null) {

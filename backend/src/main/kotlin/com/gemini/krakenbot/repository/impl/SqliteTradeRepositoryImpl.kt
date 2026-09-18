@@ -181,7 +181,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                             (PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli())
                     }
                     .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
-                    .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.DESC)
                     .map { it[PortfolioSnapshotTable.id] }
 
             if (allIds.isEmpty()) return@readTransactionIO emptyList()
@@ -193,7 +193,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     .selectAll()
                     .where { PortfolioSnapshotTable.id inList downsampledIds }
                     .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
-                    .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.DESC)
                     .toList()
 
             buildSnapshotsFromRows(snapshotRows)
@@ -209,7 +209,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                             (PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli())
                     }
                     .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
-                    .orderBy(PortfolioSnapshotTable.id, SortOrder.ASC)
+                    .orderBy(PortfolioSnapshotTable.id, SortOrder.DESC)
                     .toList()
 
             snapshotRows

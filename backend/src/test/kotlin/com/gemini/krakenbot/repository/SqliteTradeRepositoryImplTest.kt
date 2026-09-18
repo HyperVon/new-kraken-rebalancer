@@ -7,12 +7,17 @@ import com.gemini.krakenbot.model.InceptionInferenceEvidence
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.upsert
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -233,6 +238,23 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
             }
         }
 
+        "getSnapshotsInRange and getAllSnapshotsInRange order same-instant snapshots by id DESC" {
+            runTest {
+                val t = Instant.parse("2026-06-12T22:15:00Z")
+                val sOlder = TestFixtures.emptySnapshot(t, BigDecimal("14669.79"))
+                val sNewer = TestFixtures.emptySnapshot(t, BigDecimal("14669.82"))
+
+                // Reconstructed snapshots saved backwards: sNewer inserted first (lower id), sOlder inserted second (higher id)
+                repository.save(listOf(sNewer, sOlder))
+
+                val inRange = repository.getSnapshotsInRange(t.minusSeconds(1), t.plusSeconds(1))
+                inRange.map { it.totalValueUSD } shouldBe listOf(BigDecimal("14669.79"), BigDecimal("14669.82"))
+
+                val allInRange = repository.getAllSnapshotsInRange(t.minusSeconds(1), t.plusSeconds(1))
+                allInRange.map { it.totalValueUSD } shouldBe listOf(BigDecimal("14669.79"), BigDecimal("14669.82"))
+            }
+        }
+
         "legacy save saves snapshots" {
             runTest {
                 val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
@@ -448,6 +470,64 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 trades.first().usdAmount.shouldBeEqualComparingTo(BigDecimal("14980.50"))
                 trades.first().price.shouldBeEqualComparingTo(BigDecimal("29972.00"))
                 trades.first().fee.shouldBeEqualComparingTo(BigDecimal("38.95"))
+            }
+        }
+
+        "update trade with ambiguous reconciliation candidates fails closed" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val template =
+                    TestFixtures.tradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("15000.00"),
+                    )
+                repository.saveTrade(template)
+                repository.saveTrade(template.copy())
+
+                shouldThrow<TradeReconciliationConflictException> {
+                    repository.updateTrade(template, template.copy(volume = BigDecimal("0.4")))
+                }
+            }
+        }
+
+        "update trade with no reconciliation candidate fails closed" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val template =
+                    TestFixtures.tradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("15000.00"),
+                    )
+                repository.saveTrade(template.copy(volume = BigDecimal("0.6")))
+
+                shouldThrow<TradeReconciliationConflictException> {
+                    repository.updateTrade(template, template.copy(volume = BigDecimal("0.4")))
+                }
+            }
+        }
+
+        "trade summary stats on an empty database are zero" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val stats = repository.getTradeSummaryStats(now.minusSeconds(3600), now)
+
+                stats.totalTradesExecuted shouldBe 0L
+                stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                stats.avgFeeRatePercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                stats.avgSlippagePercent.shouldBeNull()
+                stats.failedTradeCount shouldBe 0L
+                stats.dryRunTradeCount shouldBe 0L
+                stats.periodHigh.shouldBeNull()
+                stats.latestSnapshotTime.shouldBeNull()
             }
         }
 
@@ -937,8 +1017,55 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.setSyncMetadata(key, "not-a-floor")
                 repository.getSyncMetadata(key).shouldBeNull()
 
+                repository.setSyncMetadata(key, "-100")
+                repository.getSyncMetadata(key).shouldBeNull()
+
                 repository.setSyncMetadata(key, Instant.now().plusSeconds(86_400).toEpochMilli().toString())
                 repository.getSyncMetadata(key).shouldBeNull()
+            }
+        }
+
+        "setSyncMetadata handles corrupted negative or future existing floor in database" {
+            runTest {
+                val key = SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS
+                val futureFloor = Instant.now().plusSeconds(86_400).toEpochMilli().toString()
+
+                transaction(db) {
+                    HistorySyncMetadataTable.upsert {
+                        it[HistorySyncMetadataTable.key] = key
+                        it[HistorySyncMetadataTable.value] = "-100"
+                    }
+                }
+                repository.setSyncMetadata(key, "2000")
+                repository.getSyncMetadata(key) shouldBe "2000"
+
+                transaction(db) {
+                    HistorySyncMetadataTable.upsert {
+                        it[HistorySyncMetadataTable.key] = key
+                        it[HistorySyncMetadataTable.value] = futureFloor
+                    }
+                }
+                repository.setSyncMetadata(key, "1500")
+                repository.getSyncMetadata(key) shouldBe "1500"
+
+                val chKey = SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS
+                transaction(db) {
+                    HistorySyncMetadataTable.upsert {
+                        it[HistorySyncMetadataTable.key] = chKey
+                        it[HistorySyncMetadataTable.value] = "-100"
+                    }
+                }
+                repository.setSyncMetadata(chKey, "3000")
+                repository.getSyncMetadata(chKey) shouldBe "3000"
+
+                transaction(db) {
+                    HistorySyncMetadataTable.upsert {
+                        it[HistorySyncMetadataTable.key] = chKey
+                        it[HistorySyncMetadataTable.value] = futureFloor
+                    }
+                }
+                repository.setSyncMetadata(chKey, "2500")
+                repository.getSyncMetadata(chKey) shouldBe "2500"
             }
         }
 

@@ -11,6 +11,7 @@ import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -26,6 +27,7 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.transactions.transactionManager
+import org.jetbrains.exposed.v1.jdbc.upsert
 import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
@@ -439,6 +441,51 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 loaded.any { it.timestamp == anchorSnap.timestamp } shouldBe true
                 loaded.any { it.timestamp == routineOld.timestamp } shouldBe true
                 loaded.any { it.timestamp == recent.timestamp } shouldBe true
+            }
+        }
+
+        "pruneSnapshotsOlderThan ignores corrupted negative or future retention floors" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val oldSnap = TestFixtures.emptySnapshot(baseTime.minus(100, ChronoUnit.DAYS), BigDecimal("1000.00"))
+                val recentSnap = TestFixtures.emptySnapshot(baseTime, BigDecimal("2000.00"))
+                repository.saveSnapshot(oldSnap)
+                repository.saveSnapshot(recentSnap)
+
+                // Corrupted negative retention floor and future detected inception
+                transaction(db) {
+                    HistorySyncMetadataTable.upsert {
+                        it[HistorySyncMetadataTable.key] = SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS
+                        it[HistorySyncMetadataTable.value] = "-500"
+                    }
+                    HistorySyncMetadataTable.upsert {
+                        it[HistorySyncMetadataTable.key] = SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS
+                        it[HistorySyncMetadataTable.value] = Instant.now().plusSeconds(86_400).toEpochMilli().toString()
+                    }
+                }
+
+                val pruned = repository.pruneSnapshotsOlderThan(baseTime.minus(50, ChronoUnit.DAYS))
+                pruned shouldBe 1
+
+                val loaded = repository.load()
+                loaded.size shouldBe 1
+                loaded.single().timestamp shouldBe recentSnap.timestamp
+
+                // Reversed: future retention floor and negative detected inception
+                repository.saveSnapshot(oldSnap)
+                transaction(db) {
+                    HistorySyncMetadataTable.upsert {
+                        it[HistorySyncMetadataTable.key] = SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS
+                        it[HistorySyncMetadataTable.value] = Instant.now().plusSeconds(86_400).toEpochMilli().toString()
+                    }
+                    HistorySyncMetadataTable.upsert {
+                        it[HistorySyncMetadataTable.key] = SyncMetadataKeys.DETECTED_INCEPTION_EPOCH_MS
+                        it[HistorySyncMetadataTable.value] = "-500"
+                    }
+                }
+
+                val pruned2 = repository.pruneSnapshotsOlderThan(baseTime.minus(50, ChronoUnit.DAYS))
+                pruned2 shouldBe 1
             }
         }
 
