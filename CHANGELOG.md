@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.72] - 2026-09-19
+
+### Added
+
+- **Durable automatic Buy & Hold baseline verification**: when the settings comparison proves the
+  strategy inception is the effective automatic Buy & Hold baseline, that proof is persisted to
+  sync metadata (contract version, verified baseline timestamp and snapshot identity, config
+  fingerprint, account scope digest, and an evidence digest bounded by a verified horizon) and
+  re-used by `getSettingsComparisonStatus` on the next Settings load or app restart. The fast
+  path re-hashes the local snapshot, trade, and ledger evidence up to the stored horizon and
+  returns the proven baseline identity without reconciliation replay, historical-price
+  resolution, or funding preparation; reload and restart no longer recompute the entire
+  Dec-5-to-present comparison merely to rediscover the same baseline.
+  The proof fails closed: a changed inception, baseline snapshot identity, config universe,
+  account scope, reconstruction contract, any evidence row at or before the verified horizon
+  (edited, backfilled, or deleted), a contract version change, or malformed metadata each
+  invalidate the record with a bounded reason and trigger one full re-verification. Append-only
+  tail rows after the verified horizon (new live snapshots, deposits, trades) never invalidate
+  the proof, History comparison economics are never served from the record, and the manual
+  `comparisonStartDate` override is unaffected. Baseline provenance is now reported separately
+  from current comparison availability: `SettingsComparisonStatus` carries an explicit
+   `baselineStatus` (with `comparisonAvailability` renamed accordingly), the fast path proves
+   baseline identity only and never claims the current comparison was evaluated, a full
+   evaluation that fails reports the unavailability on its own, and the later-start proposal chain never
+  consumes the fast path. 16 new tests cover persistence, same-process and restart fast paths,
+  every invalidation reason, fail-closed malformed/partial state, tail-snapshot and tail-event
+  tolerance, the baseline/availability split, Settings rendering, and the manual override.
+
 ## [6.17.71] - 2026-09-19
 
 ### Changed

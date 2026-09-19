@@ -3,6 +3,7 @@ package com.gemini.krakenbot.view.component
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
+import com.gemini.krakenbot.service.AutomaticBaselineStatus
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
@@ -309,27 +310,32 @@ class SettingsFormComponent {
             p(CssClass.Form.SectionSubtitle) {
                 +"${ViewText.COMPARISON_STATUS_REQUESTED_START_LABEL}: $configuredComparisonStart"
             }
-        } else if (status?.availability != null) {
+        } else if (status?.baselineStatus == AutomaticBaselineStatus.VERIFIED ||
+            status?.comparisonAvailability == ComparisonAvailability.AVAILABLE
+        ) {
             p(CssClass.Form.SectionSubtitle) { +ViewText.COMPARISON_STATUS_AUTOMATIC }
         }
-        when (status?.availability) {
-            ComparisonAvailability.AVAILABLE -> status.baselineTimestamp?.let { baseline ->
+        if (status?.baselineStatus == AutomaticBaselineStatus.VERIFIED ||
+            status?.comparisonAvailability == ComparisonAvailability.AVAILABLE
+        ) {
+            status.baselineTimestamp?.let { baseline ->
                 p(CssClass.Form.SectionSubtitle) {
                     +"${ViewText.COMPARISON_STATUS_EFFECTIVE_BASELINE_LABEL}: $baseline"
                 }
             }
-
-            null -> Unit
-
-            else -> p(CssClass.Form.SectionSubtitle) {
+        }
+        when (status?.comparisonAvailability) {
+            ComparisonAvailability.UNAVAILABLE -> p(CssClass.Form.SectionSubtitle) {
                 +ViewText.COMPARISON_STATUS_UNAVAILABLE
                 status.unavailableReason?.let { reason ->
                     +" ${reason.displayText}"
                     status.unavailableAt?.let { at -> +" (${ViewText.COMPARISON_STATUS_FAILED_AT}: $at)" }
                 }
             }
+
+            else -> Unit
         }
-        if (status?.proposal != null && status.availability != ComparisonAvailability.AVAILABLE) {
+        if (status?.proposal != null && status.comparisonAvailability != ComparisonAvailability.AVAILABLE) {
             renderLaterStartProposal(status.proposal)
         }
         if (status == null) {

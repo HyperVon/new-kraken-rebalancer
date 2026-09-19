@@ -8,6 +8,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.service.AutomaticBaselineStatus
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.InceptionDisplayInfo
 import com.gemini.krakenbot.service.InceptionDisplayStatus
@@ -175,7 +176,7 @@ class SettingsFormComponentTest : StringSpec() {
                 SettingsFormComponent().renderProposalSlotFragment(
                     this,
                     SettingsComparisonStatus(
-                        availability = ComparisonAvailability.UNAVAILABLE,
+                        comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
                         unavailableReason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                         unavailableAt = "2026-06-08T00:00:00Z",
                     ),
@@ -186,6 +187,24 @@ class SettingsFormComponentTest : StringSpec() {
             fragment shouldContain "Buy &amp; Hold baseline is currently unavailable."
             fragment shouldContain "A deposit, withdrawal, transfer, or incomplete trade history may exist."
             fragment shouldContain "(failed at: 2026-06-08T00:00:00Z)"
+        }
+
+        "a fast-path baseline status renders Automatic without claiming a comparison evaluation" {
+            val fragment = createHTML().div {
+                SettingsFormComponent().renderProposalSlotFragment(
+                    this,
+                    SettingsComparisonStatus(
+                        baselineStatus = AutomaticBaselineStatus.VERIFIED,
+                        baselineTimestamp = "2026-06-07T00:00:00Z",
+                    ),
+                    null,
+                )
+            }
+
+            fragment shouldContain "Automatic"
+            fragment shouldContain "Effective Buy &amp; Hold baseline: 2026-06-07T00:00:00Z"
+            fragment shouldNotContain "currently unavailable"
+            fragment shouldNotContain "failed at"
         }
 
         "the full settings page renders through the body-context entry point" {

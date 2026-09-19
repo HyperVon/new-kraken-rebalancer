@@ -20,6 +20,7 @@ import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.downsampleSnapshots
+import com.gemini.krakenbot.service.AutomaticBaselineStatus
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -192,6 +193,17 @@ class TradeHistoryQueryService(
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
         /**
+         * Contract version of the durable automatic Buy & Hold baseline verification record.
+         * Increment whenever semantics that determine automatic-baseline validity change; a
+         * stored record written under any other version is rejected and recomputed, never
+         * interpreted. Independent of [PROPOSAL_SEARCH_VERSION] — the later-start proposal
+         * scan and the baseline proof are separate state machines.
+         */
+        private const val AUTOMATIC_BASELINE_VERIFICATION_VERSION = "1"
+        private const val AUTOMATIC_BASELINE_STATUS_VERIFIED = "VERIFIED"
+        private const val AUTOMATIC_BASELINE_STATUS_INVALIDATED = "INVALIDATED"
+
+        /**
          * Candidate-local failure reasons whose outcome depends on the volume or availability of
          * evidence after the candidate's own window, so a later append can flip them to AVAILABLE.
          * A scan that exhausted its segment while its frontier failed for one of these reasons must
@@ -297,19 +309,38 @@ class TradeHistoryQueryService(
      * be followed by an ownership or reconciliation failure in the retained history.
      */
     suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? =
-        getSettingsComparisonStatus(after).proposal
+        getSettingsComparisonStatus(after, allowPersistedBaselineFastPath = false).proposal
 
     /**
      * The same gate chain as [getComparisonStartProposal] in the same order, but it also
-     * exposes the passive comparison's availability and resolved baseline so the Settings
+     * exposes the baseline identity and the passive comparison's availability so the Settings
      * fragment can render the effective Buy & Hold baseline from this single evaluation.
-     * The proposal semantics (including every early return) are preserved exactly.
+     * The proposal semantics (including every early return) are preserved exactly: the
+     * proposal chain always evaluates through the full gates because it bypasses the
+     * persisted-baseline fast path.
+     *
+     * Baseline identity and current comparison availability are independent. When
+     * [allowPersistedBaselineFastPath] is true and the durable automatic baseline
+     * verification (see [readVerifiedAutomaticBaseline]) is present and still valid, this
+     * returns the proven baseline with a null [SettingsComparisonStatus.comparisonAvailability]:
+     * the proof validation re-hashes local snapshot/trade/ledger evidence up to the stored
+     * horizon but performs no reconciliation replay, no historical price resolution, and no
+     * funding preparation, and the current tail-inclusive comparison was not evaluated in
+     * this request. A successful full evaluation persists that proof once (see
+     * [persistAutomaticBaselineVerification]) and reports both concepts; an unavailable full
+     * evaluation keeps the proven baseline identity visible alongside the failure.
      */
-    suspend fun getSettingsComparisonStatus(after: Instant): SettingsComparisonStatus {
+    suspend fun getSettingsComparisonStatus(
+        after: Instant,
+        allowPersistedBaselineFastPath: Boolean = true,
+    ): SettingsComparisonStatus {
         val inceptionResolution = inceptionDiscoveryService?.resolveInception()
         // An auto-detected inception is display-only until the operator supplies an explicit
         // strategy start; Settings must not expose an approval action for it.
         if (inceptionResolution?.isAutoDetected == true) return SettingsComparisonStatus()
+        if (allowPersistedBaselineFastPath) {
+            readVerifiedAutomaticBaseline(inceptionResolution)?.let { return it }
+        }
         val snapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: Instant.EPOCH)
         if (snapshots.size < 2) return SettingsComparisonStatus()
         // Invalidated reconstructed history must not yield a proposal: a candidate anchored on
@@ -321,12 +352,23 @@ class TradeHistoryQueryService(
                 inceptionResolution,
                 suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
             )
-        val status = SettingsComparisonStatus(
-            availability = current.availability,
-            baselineTimestamp = current.baselineTimestamp?.toString(),
-            unavailableReason = current.unavailableReason,
-            unavailableAt = current.unavailableAt?.toString(),
-        )
+        val status =
+            if (current.availability == ComparisonAvailability.AVAILABLE) {
+                SettingsComparisonStatus(
+                    // Only the inception-anchored baseline certifies the automatic proof; a
+                    // passive re-anchor is available but has no durable verification behind it.
+                    baselineStatus = AutomaticBaselineStatus.VERIFIED
+                        .takeIf { current.baselineTimestamp == inceptionResolution?.inceptionTime },
+                    baselineTimestamp = current.baselineTimestamp?.toString(),
+                    comparisonAvailability = current.availability,
+                )
+            } else {
+                SettingsComparisonStatus(
+                    comparisonAvailability = current.availability,
+                    unavailableReason = current.unavailableReason,
+                    unavailableAt = current.unavailableAt?.toString(),
+                )
+            }
         if (current.availability == ComparisonAvailability.UNAVAILABLE) {
             // Operator-visible reconciliation diagnostics: the reason and its evidence
             // timestamp identify the event that made the inception-anchored comparison
@@ -340,6 +382,7 @@ class TradeHistoryQueryService(
         if (current.availability != ComparisonAvailability.UNAVAILABLE ||
             current.unavailableReason !in PROPOSAL_ELIGIBLE_REASONS
         ) {
+            persistAutomaticBaselineVerification(current, inceptionResolution, snapshots)
             return status
         }
         if (historicalCoverageGapExists(
@@ -376,7 +419,8 @@ class TradeHistoryQueryService(
         scope.launch {
             try {
                 for (cycle in 0 until PROPOSAL_CONTINUATION_MAX_CYCLES) {
-                    val proposal = getSettingsComparisonStatus(after).proposal
+                    val proposal =
+                        getSettingsComparisonStatus(after, allowPersistedBaselineFastPath = false).proposal
                     if (proposal?.status != ComparisonProposalStatus.INCOMPLETE) {
                         log.info(
                             "proposal search continuation finished at cycle {}; status={}",
@@ -412,6 +456,256 @@ class TradeHistoryQueryService(
                 null
             }
         return approvedBaseline != null && !approvedBaseline.timestamp.isBefore(benchmarkHistoryFloor)
+    }
+
+    /** Bounded reason a persisted automatic baseline verification stopped being reusable. */
+    private enum class AutomaticBaselineInvalidationReason {
+        VERSION_CHANGED,
+        INCEPTION_CHANGED,
+        BASELINE_ID_CHANGED,
+        ACCOUNT_SCOPE_CHANGED,
+        CONFIG_UNIVERSE_CHANGED,
+        RECONSTRUCTION_CHANGED,
+        FUNDING_EVIDENCE_CHANGED,
+        MALFORMED_STATE,
+    }
+
+    /**
+     * Serves the proven automatic Buy & Hold baseline from the durable verification record
+     * when that record is still valid, so a Settings reload or app restart does not replay
+     * the entire historical comparison merely to rediscover the same baseline.
+     *
+     * The record answers only "is strategy inception a proven automatic baseline" — never
+     * current comparison economics. Null means no record exists yet (first run) or the
+     * record was just invalidated; the caller then evaluates normally and the successful
+     * evaluation re-persists the proof. An already-invalidated record returns null silently
+     * so a failing re-evaluation does not spam invalidation logs.
+     *
+     * Validation fails closed: every field is re-checked against current evidence identity,
+     * evidence rows at or before the persisted horizon are re-digested, and any mismatch,
+     * malformed value, or missing field rejects the record with a bounded reason.
+     */
+    private suspend fun readVerifiedAutomaticBaseline(
+        inceptionResolution: InceptionResolution?,
+    ): SettingsComparisonStatus? {
+        val inceptionTime = inceptionResolution?.inceptionTime ?: return null
+        // A degraded resolution (unverified account scope, incomplete recovery, truncated
+        // history) withholds trust from the current evidence, so it must also withhold the
+        // persisted proof: the record was written under previously validated conditions and
+        // a degraded resolution says those conditions can no longer be confirmed. The full
+        // evaluation runs instead, and a successful one re-persists the proof.
+        if (inceptionResolution.confidence != InceptionConfidence.CONFIDENT ||
+            inceptionResolution.unavailableReason != null
+        ) {
+            return null
+        }
+        val status = repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS)
+        if (status.isNullOrBlank() || status == AUTOMATIC_BASELINE_STATUS_INVALIDATED) return null
+        if (status != AUTOMATIC_BASELINE_STATUS_VERIFIED) {
+            return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.MALFORMED_STATE)
+        }
+        val version =
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION)
+        if (version != AUTOMATIC_BASELINE_VERIFICATION_VERSION) {
+            return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.VERSION_CHANGED)
+        }
+        val storedBaselineEpochMillis = repository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_AUTO_BASELINE_TIMESTAMP_EPOCH_MS,
+        )?.toLongOrNull()
+        val storedInceptionEpochMillis = repository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_AUTO_BASELINE_INCEPTION_EPOCH_MS,
+        )?.toLongOrNull()
+        val storedSnapshotId = repository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_AUTO_BASELINE_SNAPSHOT_ID,
+        )?.toIntOrNull()
+        val storedCursor = repository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_AUTO_BASELINE_SNAPSHOT_CURSOR,
+        )?.let { ProposalCursor.parse(it) }
+        val storedConfigFingerprint = repository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_AUTO_BASELINE_CONFIG_FINGERPRINT,
+        )
+        val storedAccountScopeDigest = repository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_AUTO_BASELINE_ACCOUNT_SCOPE_DIGEST,
+        )
+        val storedEvidenceFingerprint = repository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT,
+        )
+        val storedEvidenceHorizonEpochMillis = repository.getSyncMetadata(
+            SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS,
+        )?.toLongOrNull()
+        if (storedBaselineEpochMillis == null ||
+            storedInceptionEpochMillis == null ||
+            storedSnapshotId == null ||
+            storedCursor == null ||
+            storedConfigFingerprint == null ||
+            storedAccountScopeDigest == null ||
+            storedEvidenceFingerprint == null ||
+            storedEvidenceHorizonEpochMillis == null ||
+            storedBaselineEpochMillis != storedInceptionEpochMillis
+        ) {
+            return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.MALFORMED_STATE)
+        }
+        if (storedInceptionEpochMillis != inceptionTime.toEpochMilli()) {
+            return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.INCEPTION_CHANGED)
+        }
+        // Only a stale reconstruction interval overlapping the verified interval can taint
+        // the proof's own rows; a stale interval elsewhere fails the full path exactly as it
+        // always has, without churning this record through pointless invalidate/re-persist
+        // cycles.
+        staleReconstructedInterval()?.let { (reconStart, reconThrough) ->
+            val verifiedStart = Instant.ofEpochMilli(storedInceptionEpochMillis)
+            val verifiedEnd = Instant.ofEpochMilli(storedEvidenceHorizonEpochMillis)
+            if (!reconThrough.isBefore(verifiedStart) && !reconStart.isAfter(verifiedEnd)) {
+                return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.RECONSTRUCTION_CHANGED)
+            }
+        }
+        if (storedConfigFingerprint !=
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT).orEmpty()
+        ) {
+            return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.CONFIG_UNIVERSE_CHANGED)
+        }
+        if (storedAccountScopeDigest !=
+            ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST).orEmpty()
+        ) {
+            return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.ACCOUNT_SCOPE_CHANGED)
+        }
+        val resolvedSnapshotId = repository.getSnapshotId(
+            Instant.ofEpochMilli(storedCursor.epochMillis),
+            storedCursor.ordinal,
+        )
+        if (resolvedSnapshotId != storedSnapshotId) {
+            return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.BASELINE_ID_CHANGED)
+        }
+        val evidenceFingerprint =
+            automaticBaselineEvidenceDigest(inceptionTime, storedEvidenceHorizonEpochMillis)
+        if (evidenceFingerprint != storedEvidenceFingerprint) {
+            return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.FUNDING_EVIDENCE_CHANGED)
+        }
+        // TOCTOU guard: a concurrent caller may have invalidated the record while this
+        // validation ran. Only a record that is still VERIFIED at the end of validation is
+        // served; anything else fails closed and the caller recomputes.
+        if (repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS) !=
+            AUTOMATIC_BASELINE_STATUS_VERIFIED
+        ) {
+            return null
+        }
+        val baseline = Instant.ofEpochMilli(storedBaselineEpochMillis)
+        log.info("using persisted automatic B&H baseline verification; baseline={}", baseline)
+        // The persisted proof covers baseline identity only; current comparison economics were
+        // not evaluated in this request, so comparisonAvailability stays null.
+        return SettingsComparisonStatus(
+            baselineStatus = AutomaticBaselineStatus.VERIFIED,
+            baselineTimestamp = baseline.toString(),
+        )
+    }
+
+    /**
+     * Marks the record invalidated so subsequent evaluations skip it silently, and returns
+     * null so the caller recomputes. The proof is re-persisted only by a later successful
+     * full evaluation; a failing evaluation leaves the record dead instead of re-logging
+     * the same invalidation on every Settings load.
+     */
+    private suspend fun invalidateAutomaticBaseline(
+        reason: AutomaticBaselineInvalidationReason,
+    ): SettingsComparisonStatus? {
+        log.info("persisted automatic B&H baseline verification invalidated; reason={}", reason)
+        repository.setSyncMetadataAtomically(
+            mapOf(
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS to AUTOMATIC_BASELINE_STATUS_INVALIDATED,
+            ),
+        )
+        return null
+    }
+
+    /**
+     * Persists the automatic baseline proof when the just-completed evaluation proved the
+     * strategy inception is the effective Buy & Hold baseline. The record stores the proof's
+     * identity, evidence horizon, and evidence digest — never current NAV or comparison
+     * economics, which History must still calculate. A baseline anchored at a different
+     * instant than the strategy inception (e.g. a passive recorded benchmark anchor or a
+     * degraded-resolution fallback row) is not an automatic-inception proof and is not
+     * persisted here; a same-instant anchor is indistinguishable from and equivalent to
+     * the inception baseline.
+     */
+    private suspend fun persistAutomaticBaselineVerification(
+        current: RebalancerComparison,
+        inceptionResolution: InceptionResolution?,
+        snapshots: List<PortfolioSnapshot>,
+    ) {
+        if (current.availability != ComparisonAvailability.AVAILABLE) return
+        val baselineTimestamp = current.baselineTimestamp ?: return
+        val inceptionTime = inceptionResolution?.inceptionTime ?: return
+        if (baselineTimestamp != inceptionTime) return
+        val baselineIndex = snapshots.indexOfFirst { it.timestamp == baselineTimestamp }
+        if (baselineIndex < 0) return
+        val cursor = snapshots.proposalCursorAt(baselineIndex)
+        val snapshotId = repository.getSnapshotId(Instant.ofEpochMilli(cursor.epochMillis), cursor.ordinal)
+        snapshotId ?: return
+        val evidenceHorizonEpochMillis = snapshots.maxOf { it.timestamp.toEpochMilli() }
+        val evidenceFingerprint = automaticBaselineEvidenceDigest(inceptionTime, evidenceHorizonEpochMillis)
+        repository.setSyncMetadataAtomically(
+            mapOf(
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION to
+                    AUTOMATIC_BASELINE_VERIFICATION_VERSION,
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS to AUTOMATIC_BASELINE_STATUS_VERIFIED,
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_TIMESTAMP_EPOCH_MS to
+                    cursor.epochMillis.toString(),
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_SNAPSHOT_ID to snapshotId.toString(),
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_SNAPSHOT_CURSOR to cursor.encode(),
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_INCEPTION_EPOCH_MS to
+                    inceptionTime.toEpochMilli().toString(),
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_CONFIG_FINGERPRINT to
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT).orEmpty(),
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_ACCOUNT_SCOPE_DIGEST to
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+                        .orEmpty(),
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT to evidenceFingerprint,
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS to
+                    evidenceHorizonEpochMillis.toString(),
+            ),
+        )
+        log.info(
+            "automatic B&H baseline verified and persisted; baseline={} snapshotId={}",
+            baselineTimestamp,
+            snapshotId,
+        )
+    }
+
+    /**
+     * Evidence identity of the automatic baseline proof: every snapshot, trade, and ledger
+     * row at or before the verified horizon, bound to the strategy inception the proof was
+     * anchored on and the verification contract version. Tail rows after the horizon are
+     * append-only evidence the proof did not consume — a new live snapshot, deposit, or
+     * trade after the verified interval must not reset the baseline discovery. A row at or
+     * before the horizon that is later edited, backfilled, or deleted changes the digest
+     * and fails the record closed.
+     */
+    private suspend fun automaticBaselineEvidenceDigest(inceptionTime: Instant, horizonEpochMillis: Long): String {
+        val snapshots = loadAllSnapshots(inceptionTime)
+        val predecessorSnapshot = repository.getSnapshotBefore(inceptionTime)
+        val trades = repository.getTradesInRange(Instant.EPOCH, Instant.ofEpochMilli(horizonEpochMillis))
+        val ledgers =
+            ledgerRepository.getLedgersInRange(Instant.EPOCH, Instant.ofEpochMilli(horizonEpochMillis))
+        val material = buildString {
+            append(AUTOMATIC_BASELINE_VERIFICATION_VERSION).append('\u0000')
+            append(inceptionTime).append('\u0000')
+            // The predecessor anchor participates in the full evaluation's event query
+            // window, so its presence and content belong to the proof's consumed evidence.
+            if (predecessorSnapshot == null) {
+                append("predecessor:none\n")
+            } else {
+                append("predecessor\n")
+                appendSnapshotDigest(predecessorSnapshot)
+            }
+            snapshots.forEach {
+                if (it.timestamp.toEpochMilli() <= horizonEpochMillis) appendSnapshotDigest(it)
+            }
+            trades.sortedWith(compareBy({ it.timestamp }, { it.id ?: Int.MAX_VALUE }))
+                .forEach { appendTradeDigest(it) }
+            ledgers.sortedWith(compareBy({ it.time }, { it.ledgerId }))
+                .forEach { appendLedgerDigest(it) }
+        }
+        return sha256Hex(material)
     }
 
     private suspend fun calculateComparison(
