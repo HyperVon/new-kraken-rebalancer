@@ -32,7 +32,9 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -4104,6 +4106,401 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 service.getSnapshotsInRange(now, now.plusSeconds(3600)) shouldBe listOf(anchor, later)
             }
         }
+
+        "settings comparison status persists the automatic baseline proof on first successful verification" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+
+                val status = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                status.availability shouldBe ComparisonAvailability.AVAILABLE
+                status.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] shouldBe "1"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_TIMESTAMP_EPOCH_MS] shouldBe
+                    fixture.anchorTime.toEpochMilli().toString()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_INCEPTION_EPOCH_MS] shouldBe
+                    fixture.anchorTime.toEpochMilli().toString()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_SNAPSHOT_CURSOR] shouldBe
+                    "${fixture.anchorTime.toEpochMilli()}:0"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_SNAPSHOT_ID].shouldNotBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT]
+                    .shouldNotBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] shouldBe
+                    fixture.laterTime.toEpochMilli().toString()
+            }
+        }
+
+        "settings comparison status takes the persisted fast path on unchanged evidence" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                // The full evaluation ran once: the recompute side effects (anchor lookup and the
+                // baseline id write) are not repeated by the fast path.
+                coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
+                coVerify(exactly = 2) { repository.getSnapshotId(any(), any()) }
+                // The full verification prepared funding evidence once; the fast path must not
+                // repeat the preparation.
+                coVerify(exactly = 1) { fixture.fundingProvenanceResolver.prepare(any()) }
+            }
+        }
+
+        "settings comparison status takes the persisted fast path in a fresh service instance" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                automaticBaselineService(fixture).getSettingsComparisonStatus(fixture.anchorTime)
+
+                val restarted = automaticBaselineService(fixture).getSettingsComparisonStatus(fixture.anchorTime)
+
+                restarted.availability shouldBe ComparisonAvailability.AVAILABLE
+                restarted.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
+                coVerify(exactly = 1) { fixture.fundingProvenanceResolver.prepare(any()) }
+            }
+        }
+
+        "a new live snapshot after verification does not invalidate the persisted proof" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                val tailTime = fixture.laterTime.plusSeconds(3600)
+                fixture.snapshotRows += snapshot(tailTime, "1200.00", btc = "1.0" to "700.00")
+
+                val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
+            }
+        }
+
+        "a degraded inception resolution fails closed without destroying the persisted proof" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                coEvery { fixture.inceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = fixture.anchorTime.minusSeconds(3600),
+                    inceptionSnapshot = null,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
+                )
+
+                val degraded = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                // A degraded resolution withholds trust from the current evidence, so the
+                // full evaluation runs (the passive-anchor path does not consult the
+                // snapshot-before lookup) instead of serving the record.
+                degraded.availability shouldBe ComparisonAvailability.AVAILABLE
+                coVerify(exactly = 1) { repository.getSnapshotId(any(), any()) }
+                // The proof survives a transient degraded resolution: the next confident
+                // resolution can reuse it without a re-verification.
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+            }
+        }
+
+        "the proposal evaluation path bypasses the persisted fast path" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                val proposal = service.getComparisonStartProposal(fixture.anchorTime)
+
+                // Proposal semantics are preserved exactly: the persisted record answers the
+                // Settings display only, never the proposal chain.
+                coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
+                proposal.shouldBeNull()
+            }
+        }
+
+        "a changed strategy inception invalidates the persisted proof" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                coEvery { fixture.inceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = fixture.laterTime,
+                    inceptionSnapshot = fixture.snapshotRows[1],
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.CONFIDENT,
+                )
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                // The fast path rejects the record before resolving the baseline id, so the
+                // only id resolution left is the first verification's persist write.
+                coVerify(exactly = 1) { repository.getSnapshotId(any(), any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldNotBe "VERIFIED"
+            }
+        }
+
+        "an unresolvable baseline snapshot id invalidates the persisted proof" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                coEvery { repository.getSnapshotId(any(), any()) } returns null
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                // The recompute's re-persist aborts at the unresolvable id before consuming
+                // evidence, so the count is first verification (calc + digest) plus one
+                // re-evaluation calculation.
+                coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldNotBe "VERIFIED"
+            }
+        }
+
+        "a changed config universe invalidates and re-persists the proof" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.metadata[SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT] = "universe-2"
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_CONFIG_FINGERPRINT] shouldBe
+                    "universe-2"
+            }
+        }
+
+        "a changed account scope invalidates and re-persists the proof" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.ledgerMetadata[SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST] = "scope-2"
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_ACCOUNT_SCOPE_DIGEST] shouldBe
+                    "scope-2"
+            }
+        }
+
+        "a changed reconstruction contract invalidates the persisted proof" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.metadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION] = "legacy"
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+            }
+        }
+
+        "a rewritten evidence row inside the verified horizon invalidates the persisted proof" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                val firstFingerprint =
+                    fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT]
+                fixture.snapshotRows[1] =
+                    fixture.snapshotRows[1].copy(totalValueUSD = BigDecimal("1200.00"))
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                // First verification (calc + digest), the failing validation digest, and the
+                // re-verification (calc + digest).
+                coVerify(exactly = 5) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT]
+                    .shouldNotBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT] shouldNotBe
+                    firstFingerprint
+            }
+        }
+
+        "malformed persisted state fails closed and recomputes" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] = "CORRUPT"
+
+                val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+            }
+        }
+
+        "a partially persisted record fails closed and recomputes" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.metadata.remove(SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT)
+
+                val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+            }
+        }
+
+        "a record written by another contract version is rejected and re-persisted" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] = "999"
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] shouldBe "1"
+            }
+        }
+
+        "a confident resolution carrying an unavailable reason does not serve the record" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                coEvery { fixture.inceptionService.resolveInception() } returns InceptionResolution(
+                    inceptionTime = fixture.anchorTime,
+                    inceptionSnapshot = fixture.snapshotRows.first(),
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.CONFIDENT,
+                    unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
+                )
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+            }
+        }
+
+        "a stale reconstruction interval outside the verified interval does not invalidate" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.metadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION] = "legacy"
+                fixture.metadata[SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC] =
+                    (fixture.anchorTime.epochSecond - 100).toString()
+
+                val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+            }
+        }
+
+        "each missing record field fails closed and is re-persisted" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                val mutations = listOf<Pair<String, String?>>(
+                    SyncMetadataKeys.INCEPTION_AUTO_BASELINE_TIMESTAMP_EPOCH_MS to null,
+                    SyncMetadataKeys.INCEPTION_AUTO_BASELINE_INCEPTION_EPOCH_MS to null,
+                    SyncMetadataKeys.INCEPTION_AUTO_BASELINE_SNAPSHOT_ID to null,
+                    SyncMetadataKeys.INCEPTION_AUTO_BASELINE_SNAPSHOT_CURSOR to null,
+                    SyncMetadataKeys.INCEPTION_AUTO_BASELINE_CONFIG_FINGERPRINT to null,
+                    SyncMetadataKeys.INCEPTION_AUTO_BASELINE_ACCOUNT_SCOPE_DIGEST to null,
+                    SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT to null,
+                    SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS to null,
+                    SyncMetadataKeys.INCEPTION_AUTO_BASELINE_TIMESTAMP_EPOCH_MS to
+                        (fixture.anchorTime.toEpochMilli() + 1).toString(),
+                )
+                for ((key, value) in mutations) {
+                    if (value == null) fixture.metadata.remove(key) else fixture.metadata[key] = value
+
+                    service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                    fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                }
+                // First verification plus one full re-verification per mutation.
+                coVerify(exactly = 2 + mutations.size * 2) { repository.getSnapshotBefore(any()) }
+            }
+        }
+
+        "an already-invalidated record is skipped silently until re-verification succeeds" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] = "INVALIDATED"
+                coEvery { repository.getSnapshotId(any(), any()) } returns null
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                // The full evaluation ran (digest consults the predecessor anchor again) and
+                // its own re-persist aborted at the unresolvable id, so the record stays dead
+                // instead of re-logging the same invalidation on every load.
+                coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "INVALIDATED"
+            }
+        }
+
+        "the predecessor anchor is part of the verified evidence" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val predecessor = snapshot(
+                    fixture.anchorTime.minusSeconds(3600),
+                    "1000.00",
+                    btc = "1.0" to "500.00",
+                    usdBalance = "500.00",
+                )
+                coEvery { repository.getSnapshotBefore(any()) } returns predecessor
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                val firstFingerprint =
+                    fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT]
+                coEvery { repository.getSnapshotBefore(any()) } returns predecessor.copy(
+                    totalValueUSD = BigDecimal("1050.00"),
+                )
+
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT] shouldNotBe
+                    firstFingerprint
+                coVerify(exactly = 5) { repository.getSnapshotBefore(any()) }
+            }
+        }
+
+        "a different proposal search window does not invalidate the persisted proof" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                val overridden =
+                    service.getSettingsComparisonStatus(fixture.laterTime.plusSeconds(3600))
+
+                overridden.availability shouldBe ComparisonAvailability.AVAILABLE
+                overridden.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
+            }
+        }
     }
 
     private fun snapshot(
@@ -4198,4 +4595,82 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             fee = BigDecimal(fee),
         )
     }
+
+    /** Shared state for the durable automatic baseline verification tests. */
+    private data class AutomaticBaselineFixture(
+        val anchorTime: Instant,
+        val laterTime: Instant,
+        val metadata: MutableMap<String, String>,
+        val ledgerMetadata: MutableMap<String, String>,
+        val snapshotRows: MutableList<PortfolioSnapshot>,
+        val inceptionService: InceptionDiscoveryService,
+        val fundingProvenanceResolver: FundingProvenanceResolver,
+    )
+
+    private fun automaticBaselineFixture(): AutomaticBaselineFixture {
+        val anchorTime = now.minusSeconds(86400)
+        val laterTime = anchorTime.plusSeconds(3600)
+        val metadata = mutableMapOf<String, String>()
+        val ledgerMetadata = mutableMapOf<String, String>()
+        val anchorSnapshot = snapshot(
+            anchorTime,
+            "1000.00",
+            btc = "1.0" to "500.00",
+            usdBalance = "500.00",
+            balancesObservedAt = anchorTime.minusMillis(800),
+        )
+        val laterSnapshot = snapshot(
+            laterTime,
+            "1100.00",
+            btc = "1.0" to "600.00",
+            usdBalance = "500.00",
+            balancesObservedAt = laterTime.minusMillis(700),
+        )
+        val snapshotRows = mutableListOf(anchorSnapshot, laterSnapshot)
+        val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+        coEvery { inceptionService.resolveInception() } returns InceptionResolution(
+            inceptionTime = anchorTime,
+            inceptionSnapshot = anchorSnapshot,
+            isAutoDetected = false,
+            confidence = InceptionConfidence.CONFIDENT,
+        )
+        val fundingProvenanceResolver = mockk<FundingProvenanceResolver>()
+        coEvery { fundingProvenanceResolver.resolve(any()) } returns FundingEvidence.UNRESOLVED
+        coEvery { fundingProvenanceResolver.isCardFunding(any()) } returns false
+        coEvery { fundingProvenanceResolver.preparationFailure } returns null
+        coEvery { fundingProvenanceResolver.evidenceFingerprint } returns null
+        coEvery { fundingProvenanceResolver.prepare(any()) } coAnswers { fundingProvenanceResolver }
+        coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+        coEvery { repository.setSyncMetadata(any(), any()) } coAnswers { metadata[firstArg()] = secondArg() }
+        coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers { metadata.putAll(firstArg()) }
+        coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers { ledgerMetadata[firstArg()] }
+        coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+        coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
+            snapshotRows.filter { !it.timestamp.isBefore(firstArg()) && !it.timestamp.isAfter(secondArg()) }
+        }
+        coEvery { repository.getSnapshotBefore(any()) } returns null
+        coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+        coEvery { repository.getSnapshotId(any(), any()) } coAnswers {
+            snapshotRows.filter { it.timestamp == firstArg<Instant>() }.getOrNull(secondArg<Int>())?.hashCode()
+        }
+        return AutomaticBaselineFixture(
+            anchorTime,
+            laterTime,
+            metadata,
+            ledgerMetadata,
+            snapshotRows,
+            inceptionService,
+            fundingProvenanceResolver,
+        )
+    }
+
+    private fun automaticBaselineService(fixture: AutomaticBaselineFixture) = TradeHistoryQueryService(
+        repository = repository,
+        portfolioStatsRepository = statsRepository,
+        ledgerRepository = ledgerRepository,
+        orderIntentRepository = orderIntentRepository,
+        inceptionDiscoveryService = fixture.inceptionService,
+        fundingProvenanceResolver = fixture.fundingProvenanceResolver,
+        nowProvider = { now },
+    )
 }

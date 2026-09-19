@@ -848,6 +848,27 @@ external capital over time:
   bounded search advances through retained snapshots and persists `VERIFIED`, `INCOMPLETE`, or
   `EXHAUSTED` progress. A verified later timestamp is an optional comparison anchor only; accepting
   it preserves the original strategy inception and makes the same anchor explicit in configuration.
+- **The successful automatic baseline proof is durable.** When the Settings evaluation proves the
+  strategy inception is the effective automatic Buy & Hold baseline (`AVAILABLE` with the baseline
+  exactly at inception), the proof is persisted as its own sync-metadata record — separate from the
+  later-start proposal state — under a dedicated contract version: verified baseline timestamp and
+  snapshot identity (position cursor plus database id), the inception bound it was anchored on, the
+  config fingerprint and account scope digest at proof time, and an evidence digest of every
+  snapshot, trade, and ledger row at or before a verified horizon. The next Settings evaluation
+  re-validates that record and, when it holds, returns the proven baseline without loading
+  snapshots, replaying trades and ledgers, resolving historical prices, or preparing funding
+  evidence — a Settings reload or app restart no longer replays the full historical comparison to
+  rediscover the same baseline. The record fails closed: a contract version change, a different
+  inception, a moved or rewritten baseline snapshot, a changed config universe or account scope, a
+  reconstruction contract that is no longer current, any evidence row at or before the verified
+  horizon that is later edited, backfilled, or deleted, or malformed/partial metadata each
+  invalidate the record with a bounded reason and force one full re-verification that re-persists
+  the proof on success. Append-only tail rows after the verified horizon — a new live snapshot,
+  deposit, or trade — do not invalidate the proof, because the baseline question is anchored in the
+  verified interval, not in the tail. The record answers only "is strategy inception a proven
+  automatic baseline": History still calculates current comparison economics, current NAV is never
+  served from it, and an explicit `comparisonStartDate` continues to govern operator-facing
+  proposals exactly as before.
 - **A passive anchor is separate from strategy-inception approval.** If lifetime recovery is
   ambiguous, truncated, or has no trustworthy historical baseline, the comparison anchors at the
   earliest trustworthy retained snapshot at or after the comparison window start that expresses
