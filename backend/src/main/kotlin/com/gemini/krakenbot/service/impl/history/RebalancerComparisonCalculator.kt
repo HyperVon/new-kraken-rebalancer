@@ -349,6 +349,28 @@ object RebalancerComparisonCalculator {
             ledgerClassifications[it.ledgerId] == FlowCategory.AMBIGUOUS
         }
         if (ambiguousLedger != null) {
+            preparedProvenanceResolver.diagnose(ambiguousLedger)?.let { diagnostic ->
+                log.warn(
+                    "Ambiguous funding ledger: timestamp={} ledgerId={} refid={} asset={} amount={} fee={} " +
+                        "type={} subtype={} matched={} recordRefid={} method={} status={} hasTransactionProof={} " +
+                        "evidence={} detail={}",
+                    ambiguousLedger.time,
+                    ambiguousLedger.ledgerId,
+                    ambiguousLedger.refid,
+                    ambiguousLedger.asset,
+                    ambiguousLedger.amount,
+                    ambiguousLedger.fee,
+                    ambiguousLedger.type,
+                    ambiguousLedger.subtype,
+                    diagnostic.matched,
+                    diagnostic.recordRefid,
+                    diagnostic.method,
+                    diagnostic.status,
+                    diagnostic.hasTransactionProof,
+                    diagnostic.evidence,
+                    diagnostic.detail,
+                )
+            }
             return unavailable(
                 reason = ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE,
                 unavailableAt = ambiguousLedger.time,
@@ -410,6 +432,11 @@ object RebalancerComparisonCalculator {
                 classifications = ledgerClassifications,
                 cardNormalizations = cardNormalizations,
                 rewards = rewards,
+                seriesObservedAssets = validationSnapshots
+                    .filter { it.timestamp > baseline.timestamp }
+                    .flatMap { it.assets.keys }
+                    .map { Asset.normalizeLedgerAsset(it).uppercase() }
+                    .toSet(),
             )
         } catch (e: HistoricalPriceSourceException) {
             return unavailable(
@@ -2026,6 +2053,7 @@ object RebalancerComparisonCalculator {
         classifications: Map<String, FlowCategory>,
         cardNormalizations: List<NormalizedFundingTransaction>,
         rewards: List<LedgerEvent>,
+        seriesObservedAssets: Set<String>,
     ): BuiltEvents {
         val postBaseline = ledgers.filter { reconciledLedger ->
             !reconciledLedger.embeddedInBaseline &&
@@ -2056,7 +2084,15 @@ object RebalancerComparisonCalculator {
                 // A complete conversion whose counterpart references an asset outside the
                 // tracked universe never enters reconciliation, so the reconciled subset can
                 // look one-legged. Rescue only that split shape; everything else stays ambiguous.
-                if (!isUniverseSplitConversion(refid, group, rewards, baseline, classifications)) {
+                if (!isUniverseSplitConversion(
+                        refid,
+                        group,
+                        rewards,
+                        baseline,
+                        classifications,
+                        seriesObservedAssets,
+                    )
+                ) {
                     return BuiltEvents(
                         events = emptyList(),
                         unpriceableAt = null,
@@ -2300,6 +2336,7 @@ object RebalancerComparisonCalculator {
         rewards: List<LedgerEvent>,
         baseline: PortfolioSnapshot,
         classifications: Map<String, FlowCategory>,
+        seriesObservedAssets: Set<String>,
     ): Boolean {
         if (refid.isBlank()) return false
         if (group.any { classifications[it.ledger.ledgerId] != FlowCategory.INTERNAL_MOVE }) return false
@@ -2313,9 +2350,15 @@ object RebalancerComparisonCalculator {
         if (counterpart.time != leg.time) return false
         if (counterpart.time <= baseline.timestamp) return false
         if (baseline.balancesObservedAt != null && counterpart.time <= baseline.balancesObservedAt) return false
-        val trackedAssets = baseline.assets.keys
+        // A counterpart is only rescuable when the reconciliation could never have assigned
+        // it: the asset is neither economically present at the anchor (a complete-wallet
+        // anchor may still carry zero-balance keys) nor ever recorded by the post-baseline
+        // series. An asset the series does record but that contradicts the leg stays closed.
+        val trackedAssets = baseline.assets
+            .filterValues { asset -> asset.balance.signum() != 0 }
+            .keys
             .map { Asset.normalizeLedgerAsset(it).uppercase() }
-            .toSet()
+            .toSet() + seriesObservedAssets
         if (Asset.normalizeLedgerAsset(counterpart.asset).uppercase() in trackedAssets) return false
         if (classifications[counterpart.ledgerId] != FlowCategory.INTERNAL_MOVE) return false
         return LedgerFlowClassifier.isCompleteConversionGroup(listOf(leg, counterpart))
@@ -3039,6 +3082,7 @@ object RebalancerComparisonCalculator {
             classifications = classifications,
             cardNormalizations = cardNormalizations,
             rewards = ledgers,
+            seriesObservedAssets = emptySet(),
         ).events
     }
 }

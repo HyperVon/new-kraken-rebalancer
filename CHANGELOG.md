@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.71] - 2026-09-19
+
+### Changed
+
+- **Structured diagnostics for ambiguous funding ledgers**: when the settings comparison stops
+  at an `AMBIGUOUS_LEDGER_TYPE` funding row, a warning now reports the event's timestamp, ledger
+  id, refid, asset, amount, fee, local type/subtype, and the matched funding-evidence identity
+  (record refid, method, status, transaction proof, resolution, and bounded reason) without
+  exposing credentials or raw provider payloads.
+
+### Fixed
+
+- **Universe-split conversions whose counterpart the series never records**: a same-instant
+  two-leg conversion consumed by reconciliation leaves one benchmark leg unassigned when the
+  destination asset is outside the configured universe (e.g. a USD → USDG stablecoin conversion
+  observed in production at 2026-01-09T10:44:15.949Z, where the complete-wallet anchor carried a
+  zero-balance USDG key and the legacy series never recorded USDG rows). The universe-split
+  rescue now treats a counterpart as untracked only when it is neither economically present at
+  the anchor (non-zero balance) nor ever recorded by the post-baseline series, while conversions
+  into an asset the series does observe stay closed.
+
 ## [6.17.70] - 2026-09-18
 
 ### Changed
