@@ -28,6 +28,22 @@ enum class FundingProvenanceFailureReason {
 data class FundingProvenanceFailure(val reason: FundingProvenanceFailureReason, val message: String)
 
 /**
+ * Bounded, secret-free diagnostic for a funding classification. [method],
+ * [status], and [recordRefid] describe the matched funding record when one
+ * exists; [detail] carries the resolver's bounded ambiguity reason. Never
+ * includes credentials, signatures, or raw private payloads.
+ */
+data class FundingMatchDiagnostic(
+    val matched: Boolean,
+    val recordRefid: String?,
+    val method: String?,
+    val status: String?,
+    val hasTransactionProof: Boolean,
+    val evidence: FundingEvidence,
+    val detail: String?,
+)
+
+/**
  * Authoritative record of a deposit transaction from Kraken's DepositStatus API.
  *
  * Kraken exposes both an amount and a fee, but different account-history
@@ -94,6 +110,22 @@ fun interface FundingProvenanceResolver {
      * must never include raw identifiers.
      */
     fun explain(event: LedgerEvent): String? = null
+
+    /**
+     * Bounded, secret-free diagnostic describing why [resolve] could not
+     * classify [event]. Implementations that track matched funding records
+     * should override this to surface the record identity, method, and
+     * status behind an unresolved classification.
+     */
+    fun diagnose(event: LedgerEvent): FundingMatchDiagnostic? = FundingMatchDiagnostic(
+        matched = false,
+        recordRefid = null,
+        method = null,
+        status = null,
+        hasTransactionProof = false,
+        evidence = resolve(event),
+        detail = explain(event),
+    )
 
     /** Non-null when the immutable evidence snapshot could not be prepared. */
     val preparationFailure: FundingProvenanceFailure?
@@ -242,6 +274,29 @@ class SimpleFundingProvenanceResolver(
             fuzzy.isEmpty() -> "no funding record matched"
             else -> unresolvedDetail(fuzzy.single().first, fuzzy.single().second)
         }
+    }
+
+    override fun diagnose(event: LedgerEvent): FundingMatchDiagnostic? {
+        if (event.type.lowercase() !in SUPPORTED_FUNDING_TYPES) return null
+        val refid = event.refid?.trim()?.takeIf(String::isNotEmpty)
+        val directRecords = refid?.let { id -> allRecords.filter { recordRefid(it)?.trim() == id } }.orEmpty()
+        val fuzzyRecords = if (directRecords.isEmpty()) {
+            allRecords.mapNotNull { record ->
+                compatibleCandidate(event, record, CorrelationMode.FUZZY)?.let { record }
+            }
+        } else {
+            emptyList()
+        }
+        val matched = directRecords.singleOrNull() ?: fuzzyRecords.singleOrNull()
+        return FundingMatchDiagnostic(
+            matched = matched != null,
+            recordRefid = matched?.let(::recordRefid),
+            method = recordMethod(matched),
+            status = recordStatus(matched),
+            hasTransactionProof = recordTxid(matched)?.takeIf(String::isNotBlank) != null,
+            evidence = resolve(event),
+            detail = explain(event),
+        )
     }
 
     private fun unresolvedDetail(record: Any, evidence: FundingEvidence): String? {
@@ -464,6 +519,24 @@ class SimpleFundingProvenanceResolver(
         is DepositStatusRecord -> record.refid
         is WithdrawStatusRecord -> record.refid
         is InternalTransferRecord -> record.refid
+        else -> null
+    }
+
+    private fun recordMethod(record: Any?): String? = when (record) {
+        is DepositStatusRecord -> record.method
+        is WithdrawStatusRecord -> record.method
+        else -> null
+    }
+
+    private fun recordStatus(record: Any?): String? = when (record) {
+        is DepositStatusRecord -> record.status
+        is WithdrawStatusRecord -> record.status
+        else -> null
+    }
+
+    private fun recordTxid(record: Any?): String? = when (record) {
+        is DepositStatusRecord -> record.txid
+        is WithdrawStatusRecord -> record.txid
         else -> null
     }
 

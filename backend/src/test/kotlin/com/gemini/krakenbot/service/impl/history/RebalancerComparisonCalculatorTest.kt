@@ -5579,6 +5579,144 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableAt shouldBe t1
         }
 
+        "complete-wallet baseline reconciles against the legacy configured-universe series" {
+            val fixture = legacySeriesScopeFixture()
+            val result = calculate(
+                fixture.snapshots,
+                fixture.trades,
+                fixture.rewards,
+                priceProvider = mapPriceProvider(
+                    mapOf(
+                        "MORPHO" to BigDecimal("1.2917"),
+                        "XMR" to BigDecimal("395.69"),
+                        "BTC" to BigDecimal.ONE,
+                    ),
+                ),
+                configuredAssetUniverse = setOf("USD", "BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+        }
+
+        "historical-only holding priced by the provider contributes to buy-and-hold NAV" {
+            val fixture = legacySeriesScopeFixture()
+            val result = calculate(
+                fixture.snapshots,
+                fixture.trades,
+                fixture.rewards,
+                priceProvider = mapPriceProvider(
+                    mapOf(
+                        "MORPHO" to BigDecimal("1.2917"),
+                        "XMR" to BigDecimal("395.69"),
+                        "BTC" to BigDecimal.ONE,
+                    ),
+                ),
+                configuredAssetUniverse = setOf("USD", "BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            result.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1860.79")
+            // USD 1490.5632 + MORPHO 286.4401 * 1.2917 + BTC 0.24 * 1: the out-of-scope holding
+            // the legacy series never records still carries benchmark value from the anchor.
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1860.80")
+        }
+
+        "unpriceable historical-only holding is omitted from buy-and-hold NAV without failing closed" {
+            val fixture = legacySeriesScopeFixture()
+            val result = calculate(
+                fixture.snapshots,
+                fixture.trades,
+                fixture.rewards,
+                priceProvider = mapPriceProvider(
+                    mapOf("XMR" to BigDecimal("395.69"), "BTC" to BigDecimal.ONE),
+                ),
+                configuredAssetUniverse = setOf("USD", "BTC"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            // The anchor point values MORPHO from its recorded baseline row; the successor point
+            // has no row and the provider cannot price it, so the benchmark composition omits
+            // MORPHO there — the missing price is never converted to zero and never fails closed.
+            result.points.first().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1860.79")
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("1490.80")
+        }
+
+        "reward-introduced asset without a price is omitted from buy-and-hold NAV until priced" {
+            val eventAt = now.plusSeconds(5)
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("1.00000000", "1", "1.00"),
+                        "USD" to assetRow("99.00", "1", "99.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(10),
+                    "100.00",
+                    mapOf(
+                        "BTC" to assetRow("1.00000000", "1", "1.00"),
+                        "BABY" to assetRow("0.50000000", "0", "0"),
+                        "USD" to assetRow("99.00", "1", "99.00"),
+                    ),
+                ),
+            )
+            val rewards = listOf(
+                ledgerEvent(
+                    timestamp = eventAt,
+                    asset = "BABY",
+                    amount = "0.5",
+                    fee = "0",
+                    balance = "0.5",
+                    ledgerId = "baby-unpriced-nav",
+                ),
+            )
+
+            val unpriced = calculate(snapshots, rewards = rewards, priceProvider = mapPriceProvider(emptyMap()))
+            val priced = calculate(
+                snapshots,
+                rewards = rewards,
+                priceProvider = mapPriceProvider(mapOf("BABY" to BigDecimal("0.18"))),
+            )
+
+            unpriced.availability shouldBe ComparisonAvailability.AVAILABLE
+            unpriced.points.size shouldBe 2
+            // The staking credit is mirrored into the benchmark at face value, but with no market
+            // price the unpriceable contribution is omitted rather than valued at zero.
+            unpriced.points.forEach {
+                it.buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.00")
+            }
+            priced.availability shouldBe ComparisonAvailability.AVAILABLE
+            priced.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100.09")
+        }
+
+        "out-of-universe baseline holding still fails closed when no series scope is derivable" {
+            val fixture = legacySeriesScopeFixture()
+            val result = calculate(fixture.snapshots, fixture.trades, fixture.rewards)
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+            result.unavailableAt shouldBe fixture.successorTimestamp
+        }
+
+        "baseline holding inside the configured universe cannot vanish from the series" {
+            val fixture = legacySeriesScopeFixture()
+            val result = calculate(
+                fixture.snapshots,
+                fixture.trades,
+                fixture.rewards,
+                configuredAssetUniverse = setOf("USD", "BTC", "MORPHO"),
+            )
+
+            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
+            result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
+            result.unavailableAt shouldBe fixture.successorTimestamp
+        }
+
         "exact series anchor missing a configured zero-balance target fails closed" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
@@ -5944,7 +6082,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.last().differenceUSD shouldBeEqualComparingTo BigDecimal.ZERO
         }
 
-        "still-held historical-only asset omitted after inception fails closed" {
+        "still-held historical-only asset omitted after inception reconciles as writer-scope artifact" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = Instant.parse("2026-06-02T12:00:00Z")
             val inception = PortfolioSnapshot(
@@ -5983,12 +6121,17 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = calculate(
                 snapshots = listOf(laterConfiguredOnly, latestConfiguredOnly),
                 inceptionSnapshot = inception,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "MORPHO" to BigDecimal.ONE),
+                ),
                 configuredAssetUniverse = setOf("BTC"),
             )
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
-            result.unavailableAt shouldBe t1
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            // The approved anchor owns the complete wallet, so the benchmark keeps the holding
+            // the legacy recorded series cannot observe.
+            result.points.last().buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
         }
 
         "omitted historical-only row records a legacy boundary ledger without crashing" {
@@ -6042,7 +6185,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             }
         }
 
-        "historical-only row omitted under legacy observation without reconciled events fails closed" {
+        "historical-only row omitted under legacy observation reconciles as writer-scope artifact" {
             val t0 = Instant.parse("2026-06-01T12:00:00Z")
             val t1 = t0.plusSeconds(3600)
             val baseline = snapshot(
@@ -6064,12 +6207,17 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = calculate(
                 snapshots = listOf(omitted, omitted.copy(timestamp = t1.plusSeconds(3600))),
                 inceptionSnapshot = baseline,
+                priceProvider = mapPriceProvider(
+                    mapOf("BTC" to BigDecimal("100.00"), "MORPHO" to BigDecimal.ONE),
+                ),
                 configuredAssetUniverse = setOf("BTC"),
             )
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
-            result.unavailableAt shouldBe t1
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.points.size shouldBe 2
+            result.points.forEach {
+                it.buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("200.00")
+            }
         }
 
         "historical-only row reappearing with a nonzero authoritative balance fails closed" {
@@ -12376,6 +12524,75 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
         }
 
+        "conversion into an unobserved zero-balance anchor asset reconciles" {
+            // Production shape: the complete-wallet anchor records a stablecoin key with zero
+            // balance, the legacy series never records that asset, and the conversion
+            // counterpart leg is therefore never assigned. The linked pair is structurally
+            // complete and classified internal, so the one-legged reconciled view must not
+            // surface as an ambiguous funding event.
+            val baseline = snapshot(
+                timestamp = now,
+                totalValueUSD = "200.00",
+                assets = mapOf(
+                    "USD" to assetRow("100.00", "1", "100.00"),
+                    "BTC" to assetRow("1.00", "100.00", "100.00"),
+                    "USDG" to assetRow("0.00", "1", "0.00"),
+                ),
+                balancesObservedAt = null,
+            )
+            val conversionTime = now.plusSeconds(1800)
+            val source = ledgerEvent(
+                timestamp = conversionTime,
+                asset = "USD",
+                amount = "-100.00",
+                balance = "0.00",
+                ledgerId = "stablecoin-conversion-source",
+                refid = "CONV-STABLECOIN",
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                hasAuthoritativeFee = true,
+            ).copy(aclass = "currency")
+            val destination = ledgerEvent(
+                timestamp = conversionTime,
+                asset = "USDG",
+                amount = "100.00",
+                balance = "100.00",
+                ledgerId = "stablecoin-conversion-destination",
+                refid = "CONV-STABLECOIN",
+                type = KrakenApiConstants.LEDGER_TYPE_CONVERSION,
+                hasAuthoritativeFee = true,
+            ).copy(aclass = "currency")
+
+            val legacySuccessor = snapshot(
+                timestamp = conversionTime.minusSeconds(1),
+                totalValueUSD = "200.00",
+                assets = mapOf(
+                    "USD" to assetRow("100.00", "1", "100.00"),
+                    "BTC" to assetRow("1.00", "100.00", "100.00"),
+                ),
+                balancesObservedAt = null,
+            )
+            val result = calculate(
+                snapshots = listOf(
+                    baseline,
+                    legacySuccessor,
+                    snapshot(
+                        conversionTime.plusSeconds(1),
+                        "100.00",
+                        mapOf(
+                            "USD" to assetRow("0.00", "1", "0.00"),
+                            "BTC" to assetRow("1.00", "100.00", "100.00"),
+                        ),
+                        balancesObservedAt = null,
+                    ),
+                ),
+                rewards = listOf(source, destination),
+                inceptionSnapshot = baseline,
+            )
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.unavailableReason shouldBe null
+        }
+
         "universe-split conversion into a tracked asset stays closed" {
             val fixture = universeSplitConversionFixture()
             val trackedSnapshots = fixture.snapshots.map { row ->
@@ -14494,6 +14711,81 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             )
             result.availability shouldBe ComparisonAvailability.AVAILABLE
         }
+    }
+
+    private data class LegacySeriesScopeFixture(
+        val snapshots: List<PortfolioSnapshot>,
+        val trades: List<TradeRecord>,
+        val rewards: List<LedgerEvent>,
+        val successorTimestamp: Instant,
+    )
+
+    // Production shape at the 2025-12-05 inception boundary: the approved baseline owns the
+    // complete wallet while the legacy series writes only configured-universe rows. The XMR
+    // buy settles through its USD quote leg; MORPHO is a baseline holding the legacy series
+    // never records.
+    private fun legacySeriesScopeFixture(): LegacySeriesScopeFixture {
+        val t0 = Instant.parse("2025-12-05T17:00:56.973Z")
+        val t1 = t0.plusMillis(101)
+        val baseline = snapshot(
+            t0,
+            "1860.7932",
+            mapOf(
+                "USD" to assetRow("1490.5632", "1", "1490.5632"),
+                "MORPHO" to assetRow("286.4401", "1.2917", "369.99"),
+                "BTC" to assetRow("0.24", "1", "0.24"),
+                "XMR" to assetRow("0", "395.69", "0"),
+            ),
+            balancesObservedAt = null,
+        )
+        val successor = snapshot(
+            t1,
+            "1267.8543",
+            mapOf(
+                "USD" to assetRow("1267.6143", "1", "1267.6143"),
+                "BTC" to assetRow("0.24", "1", "0.24"),
+            ),
+            balancesObservedAt = null,
+        )
+        val buy = trade(
+            timestamp = t1,
+            side = "BUY",
+            symbol = "XMR",
+            volume = "0.56119848",
+            usdAmount = "222.06",
+            fee = "0.8882",
+            source = TradeSource.API_FILL,
+            tradeId = "T6Z73R-C6OVC-AFWUA3",
+            orderTxid = "O7T5FM-XMEVI-QXMFVW",
+            price = "395.69",
+        )
+        val legs = listOf(
+            ledgerEvent(
+                t1,
+                "XMR",
+                "0.56119848",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                subtype = "tradespot",
+                fee = "0",
+                balance = "0.56119848",
+                ledgerId = "LIG3K7-KLC4B-REA3ZV",
+                refid = "T6Z73R-C6OVC-AFWUA3",
+                hasAuthoritativeFee = true,
+            ),
+            ledgerEvent(
+                t1,
+                "USD",
+                "-222.0607",
+                type = KrakenApiConstants.LEDGER_TYPE_TRADE,
+                subtype = "tradespot",
+                fee = "0.8882",
+                balance = "1267.6143",
+                ledgerId = "LOG2MN-OXNJG-XFDHZM",
+                refid = "T6Z73R-C6OVC-AFWUA3",
+                hasAuthoritativeFee = true,
+            ),
+        )
+        return LegacySeriesScopeFixture(listOf(baseline, successor), listOf(buy), legs, t1)
     }
 
     private fun mixedCostSnapshots(knownObservation: Boolean): List<PortfolioSnapshot> =

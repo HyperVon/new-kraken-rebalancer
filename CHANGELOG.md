@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.71] - 2026-09-19
+
+### Changed
+
+- **Structured diagnostics for ambiguous funding ledgers**: when the settings comparison stops
+  at an `AMBIGUOUS_LEDGER_TYPE` funding row, a warning now reports the event's timestamp, ledger
+  id, refid, asset, amount, fee, local type/subtype, and the matched funding-evidence identity
+  (record refid, method, status, transaction proof, resolution, and bounded reason) without
+  exposing credentials or raw provider payloads.
+
+### Fixed
+
+- **Universe-split conversions whose counterpart the series never records**: a same-instant
+  two-leg conversion consumed by reconciliation leaves one benchmark leg unassigned when the
+  destination asset is outside the configured universe (e.g. a USD → USDG stablecoin conversion
+  observed in production at 2026-01-09T10:44:15.949Z, where the complete-wallet anchor carried a
+  zero-balance USDG key and the legacy series never recorded USDG rows). The universe-split
+  rescue now treats a counterpart as untracked only when it is neither economically present at
+  the anchor (non-zero balance) nor ever recorded by the post-baseline series, while conversions
+  into an asset the series does observe stay closed.
+
+## [6.17.70] - 2026-09-18
+
+### Changed
+
+- **Parent-model inheritance for subagents**: agent guidance (OPERATING.md, adversarial
+  review, parallel multi-agent, and related skills, plus Cursor/Cline projections) no longer
+  requires selecting or recording specific provider/model routes for delegated tracks —
+  subagents inherit the parent session's model, relaunching through corrected or
+  host-default-routed subagent roles on transient launch failures. The OpenCode reviewer
+  agent definitions (`adversarial-reviewer-a/b`) no longer pin specific models.
+
+### Fixed
+
+- **Full-wallet baseline reconciles against the legacy configured-universe series**: after
+  inception recovery approves the complete-wallet baseline, the recorded post-inception series
+  written by the legacy allocation-scoped snapshot writer never contains rows for baseline
+  holdings outside the configured universe, so the interval-close check rejected the comparison
+  as `UNSUPPORTED_TRADE` at the first legacy successor snapshot (observed in production at
+  2025-12-05T17:00:57.074Z, 101 ms after inception, with the blocking trade itself reconciling
+  exactly). Symbols outside the derived series scope are now tolerated as never recorded by the
+  legacy writer — reconciliation still fails closed (`UNSUPPORTED_TRADE`) when no series scope
+  is derivable, and configured-universe holdings that vanish from the series still fail as
+  `ASSET_UNIVERSE_CHANGED`. The late-assignment matcher applies the same scope-awareness.
+
 ## [6.17.69] - 2026-09-18
 
 ### Fixed

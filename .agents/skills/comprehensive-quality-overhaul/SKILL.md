@@ -53,7 +53,7 @@ This skill:
 | Trigger | Full-repository quality sweep requests listed above |
 | Inputs | Repository state, current main/base, applicable project skills, and explicit approval for L-class changes |
 | Outputs | Findings report, S/M candidate fixes, L proposals, PR triage, verification evidence, and separately authorized PR actions |
-| Routing | Worker fan-out uses verified free routes or user-authorized paid routes with cost reporting; follow the native model-selection gate rules in [OPERATING.md](../../OPERATING.md) §8 |
+| Routing | Worker fan-out uses bounded read-only subagents that inherit the parent session's model; see [OPERATING.md](../../OPERATING.md) §3 |
 | Isolation | Five read-only audit tracks. The default host-native launcher gives each a temporary snapshot; a separate approved workflow is required for writable worktrees. |
 | Stop | All tracks report, findings are triaged, approved changes are verified, and unresolved L items are presented as proposals |
 | Parent owns | Integration, app boot, final gates, branch/commit/push/PR decisions, and teardown |
@@ -94,9 +94,8 @@ convergence.
 - For paid routes, ensure cost estimates, remaining balance, and free alternatives
   have been reviewed in plan mode, and obtain explicit cost approval (or use
   free-only for zero-cost runs).
-- Do not mistake a Kilo `kilo-auto/*` UI/helper label for a selected route.
-  Route identity comes from the host's exposed route evidence.
-- On missing route evidence, inspect rejection reasons once and report the
+- Do not treat a Kilo `kilo-auto/*` UI/helper label as a model choice.
+- On a subagent launch failure, inspect rejection reasons once and report the
   blocker. Never broaden policy or switch to native delegation without an
   explicit user decision.
 - Run app-boot and final verification serially. Keep build state isolated.
@@ -108,13 +107,10 @@ convergence.
 1. Establish a clean, current target; record the target revision and model
    routes. The registered read-only host-native workflow does not create
    worktrees or a coordination directory.
-2. Under Kilo, run the host's native model-selection gate in plan mode first,
-   using distinct routes (or free-only
-   if zero spend is preferred). Architecture is intentionally planned first with
-   the strongest eligible route
-   before diversity is applied to the remaining tracks. Never call Kilo's native
-   `Task` tool as a fallback without a selected route.
-   If route evidence is missing, stop and
+2. Under Kilo, launch the bounded track fan-out through the host's native
+   parallel task surface; subagents inherit the parent session's model. Do not
+   substitute `ctx_batch_execute`, `ctx_execute`, or an in-process scan for a
+   real subagent launch. On a launch failure, stop and
    report that state (or obtain the separate approval needed for discovery or
    evidence preparation); do not reinterpret it as launcher unavailability.
    Under Kilo, a successful route can still be blocked by
@@ -126,8 +122,8 @@ convergence.
    Launch all five tracks only after the exact plan is reviewed and approved.
    Read the terminal result's per-track reports;
    do not launch a second native Kilo fan-out to obtain reports.
-   Other harnesses use their native bounded fan-out and must record the
-   selected route themselves.
+   Other harnesses use their native bounded fan-out; subagents inherit the
+   parent session's model.
 3. Wait for the terminal worker results; do not diagnose a stall from silence.
    Handle one terminal failure or timeout with at most one identical retry.
 4. Collect and deduplicate findings. Classify S/M/L; stop on L changes needing

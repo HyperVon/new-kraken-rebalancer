@@ -33,23 +33,19 @@ only its assigned paths and minimum dependencies.
   launcher under Kilo CLI, native `invoke_subagent` under Antigravity).
 - **Coupled** → one agent or the parent.
 
-### Native model-selection gate
+### Parent-model inheritance
 
-Before the first material or parallel worker launch, select a host-supported
-model route for each track:
+Subagents inherit the parent session's model; do not pin, select, or require a
+specific provider/model route for a track:
 
-- Record the minimum capability, primary route, effort when exposed, fallback,
-  availability evidence, cost class/entitlement, and any substitution.
-- State the route and effort plan to the user and obtain explicit approval before
-  the first material or parallel worker launch.
-- Treat `subagent_type` as the worker role, not as route evidence from its name.
+- Record the minimum capability for each bounded track and any substitution
+  needed after a launch failure.
+- Treat `subagent_type` as the worker role, not as a model choice from its name.
 - In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute a Kilo-specific launcher.
 - Under Kilo CLI, launch read-only discovery or review fan-out through the host's
-  native Task surface with the selected route from the native model-selection
-  gate. A raw role-only `Task` call is not a substitute because it selects no
-  provider/model route. If the host cannot expose the selected route, preserve
-  that status and stop or ask for the required approval; do not silently fall
-  back to native same-model `Task` subagents without a selected route.
+  native Task surface. Subagents run on the parent session's model; do not
+  substitute `ctx_batch_execute`, `ctx_execute`, or an in-process scan for a
+  real subagent launch.
 - Native Auto owns its model mappings and fallbacks; it does not need a
   repository-side inventory or probe.
 - For a broad read-only named workflow, perform discovery fan-out natively via the host's parallel task surface.
@@ -65,11 +61,10 @@ Every worker prompt must include:
 3. Files to edit / files forbidden
 4. **Already done** context (so they do not redo or conflict)
 5. Project constraints worth repeating (Spotless 120, `:common` purity, sim-only, etc.)
-6. Selected host route, effort when exposed, cost class, availability evidence,
-   and user approval; if the host cannot expose the route, do not launch
+6. Substitution record: role, scope, and the reason for any relaunch after a
+   subagent launch failure
 
-Keep prompts and reports bounded. Use the selected route's documented or
-observed practical context limit. When that limit is unavailable, prefer each
+Keep prompts and reports bounded. Use the model's practical context limit. When that limit is unavailable, prefer each
 delegated request below **128K** and split it before it approaches **180K**.
 Give each agent an explicit file scope, stop condition, and iteration cap;
 request at most 12 report lines and 5 findings, not raw file dumps or progress
@@ -117,9 +112,7 @@ Prefer the repository's specialized types when available: use
 `explore` for narrow source discovery. These names are Kilo/OpenCode examples;
 other harnesses should map the same roles to their own read-only agents.
 Use `general` only as a last-resort bounded role for a genuinely low-risk,
-non-material single scout or as a role label for a host-selected route. It is
-never a model/provider substitute and cannot bypass the material/parallel route
-gate.
+non-material single scout. A role label is not a model choice.
 
 Launch independent tracks in one message when possible. Record the track, role,
 host route/effort mapping, model substitution, user approval, iteration cap,
@@ -143,9 +136,10 @@ work. Auto tiers choose their underlying models and server-side fallbacks; do
 not add a launcher, catalog parser, connectivity probe, or hardcoded
 underlying-model pool to reproduce that behavior.
 
-If a host Task surface cannot expose the selected route, keep the track
-parent-owned or stop and report that state; never claim that a role or
-profile enforced a model. The parent still owns the review surface, integration,
+If a subagent launch fails for a transient host reason, relaunch the same
+track as a subagent (a corrected role or a host-default-routed subagent); cover
+it in the parent only when no subagent launch can run it. Never claim that a
+role or profile enforced a model. The parent still owns the review surface, integration,
 and final verification:
 
 ```bash
@@ -153,7 +147,7 @@ and final verification:
 ```
 
 For named broad workflows, launch the bounded track fan-out through the host's
-native parallel task surface with the selected routes recorded per track. The
+native parallel task surface; subagents inherit the parent session's model. The
 parent still owns edits, integration, and final gates.
 
 ## Worktree and state isolation

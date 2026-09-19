@@ -24,6 +24,213 @@ class FundingProvenanceTest : StringSpec() {
             FundingProvenanceResolver.NONE.resolve(event) shouldBe FundingEvidence.UNRESOLVED
         }
 
+        "diagnose reports the matched funding record identity, method, and status" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-DX-1",
+                txid = "0xproof",
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+                fee = BigDecimal("0.001"),
+                time = now,
+                status = "Success",
+                method = "Ethereum",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(deposit))
+            val event = LedgerEvent(
+                ledgerId = "L-DX",
+                refid = "REF-DX-1",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "ETH",
+                amount = BigDecimal("2.5"),
+            )
+
+            val diagnostic = resolver.diagnose(event)
+
+            diagnostic?.matched shouldBe true
+            diagnostic?.recordRefid shouldBe "REF-DX-1"
+            diagnostic?.method shouldBe "Ethereum"
+            diagnostic?.status shouldBe "Success"
+            diagnostic?.hasTransactionProof shouldBe true
+            diagnostic?.evidence shouldBe FundingEvidence.EXTERNAL
+            diagnostic?.detail shouldBe null
+        }
+
+        "diagnose reports a matched but unresolved funding record" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-DX-2",
+                asset = "USD",
+                amount = BigDecimal("375"),
+                time = now,
+                status = "Pending",
+                method = "ACH (Plaid Transfer, via Plaid)",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(deposit))
+            val event = LedgerEvent(
+                ledgerId = "L-DX-2",
+                refid = "REF-DX-2",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("375"),
+            )
+
+            val diagnostic = resolver.diagnose(event)
+
+            diagnostic?.matched shouldBe true
+            diagnostic?.recordRefid shouldBe "REF-DX-2"
+            diagnostic?.method shouldBe "ACH (Plaid Transfer, via Plaid)"
+            diagnostic?.status shouldBe "Pending"
+            diagnostic?.hasTransactionProof shouldBe false
+            diagnostic?.evidence shouldBe FundingEvidence.UNRESOLVED
+            diagnostic?.detail shouldBe "funding record is not in a terminal status"
+        }
+
+        "diagnose reports unmatched ambiguity without record identity" {
+            val resolver = SimpleFundingProvenanceResolver()
+            val event = LedgerEvent(
+                ledgerId = "L-DX-3",
+                refid = "REF-DX-3",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+            )
+
+            val diagnostic = resolver.diagnose(event)
+
+            diagnostic?.matched shouldBe false
+            diagnostic?.recordRefid shouldBe null
+            diagnostic?.method shouldBe null
+            diagnostic?.status shouldBe null
+            diagnostic?.hasTransactionProof shouldBe false
+            diagnostic?.evidence shouldBe FundingEvidence.UNRESOLVED
+            diagnostic?.detail shouldBe "no funding record matched"
+        }
+
+        "diagnose reports duplicate references without a single record identity" {
+            val first = DepositStatusRecord(
+                refid = "REF-DX-DUP",
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                time = now,
+                status = "Success",
+            )
+            val second = DepositStatusRecord(
+                refid = "REF-DX-DUP",
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+                time = now,
+                status = "Success",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(first, second))
+            val event = LedgerEvent(
+                ledgerId = "L-DX-DUP",
+                refid = "REF-DX-DUP",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+            )
+
+            val diagnostic = resolver.diagnose(event)
+
+            diagnostic?.matched shouldBe false
+            diagnostic?.recordRefid shouldBe null
+            diagnostic?.evidence shouldBe FundingEvidence.UNRESOLVED
+            diagnostic?.detail shouldBe "multiple funding records share the ledger reference"
+        }
+
+        "diagnose ignores non-funding ledger events" {
+            val event = LedgerEvent(
+                ledgerId = "L-DX-T",
+                time = now,
+                type = "trade",
+                asset = "USD",
+                amount = BigDecimal("-100.00"),
+            )
+            SimpleFundingProvenanceResolver().diagnose(event) shouldBe null
+        }
+
+        "the bare resolver diagnostic keeps the classification without evidence detail" {
+            val event = LedgerEvent(
+                ledgerId = "L-DX-N",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("100.00"),
+            )
+
+            val diagnostic = FundingProvenanceResolver.NONE.diagnose(event)
+
+            diagnostic?.matched shouldBe false
+            diagnostic?.evidence shouldBe FundingEvidence.UNRESOLVED
+            diagnostic?.detail shouldBe null
+        }
+
+        "diagnose falls back to the single fuzzy match when the ledger reference differs" {
+            val deposit = DepositStatusRecord(
+                refid = "REF-FZ-1",
+                asset = "USD",
+                amount = BigDecimal("375"),
+                time = now,
+                status = "Success",
+                method = "ACH (Plaid Transfer, via Plaid)",
+            )
+            val resolver = SimpleFundingProvenanceResolver(deposits = listOf(deposit))
+            val event = LedgerEvent(
+                ledgerId = "L-FZ",
+                refid = "REF-OTHER",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+                asset = "USD",
+                amount = BigDecimal("375"),
+            )
+
+            val diagnostic = resolver.diagnose(event)
+
+            diagnostic?.matched shouldBe true
+            diagnostic?.recordRefid shouldBe "REF-FZ-1"
+            diagnostic?.method shouldBe "ACH (Plaid Transfer, via Plaid)"
+            diagnostic?.status shouldBe "Success"
+            diagnostic?.hasTransactionProof shouldBe false
+            diagnostic?.evidence shouldBe FundingEvidence.EXTERNAL
+            diagnostic?.detail shouldBe null
+        }
+
+        "diagnose reports a matched withdrawal record identity" {
+            val withdrawal = WithdrawStatusRecord(
+                refid = "REF-WD-1",
+                txid = "0xwithdrawal",
+                asset = "ETH",
+                amount = BigDecimal("1.5"),
+                fee = BigDecimal("0.005"),
+                time = now,
+                status = "Success",
+                method = "Ethereum",
+            )
+            val resolver = SimpleFundingProvenanceResolver(withdrawals = listOf(withdrawal))
+            val event = LedgerEvent(
+                ledgerId = "L-WD",
+                refid = "REF-WD-1",
+                time = now,
+                type = KrakenApiConstants.LEDGER_TYPE_WITHDRAWAL,
+                asset = "ETH",
+                amount = BigDecimal("-1.5"),
+                fee = BigDecimal("0.005"),
+            )
+
+            val diagnostic = resolver.diagnose(event)
+
+            diagnostic?.matched shouldBe true
+            diagnostic?.recordRefid shouldBe "REF-WD-1"
+            diagnostic?.method shouldBe "Ethereum"
+            diagnostic?.status shouldBe "Success"
+            diagnostic?.hasTransactionProof shouldBe true
+            diagnostic?.evidence shouldBe FundingEvidence.EXTERNAL
+            diagnostic?.detail shouldBe null
+        }
+
         "SimpleFundingProvenanceResolver resolves internal transfer by direct refid" {
             val transfer = InternalTransferRecord(
                 refid = "REF-INT-1",

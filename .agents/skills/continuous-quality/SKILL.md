@@ -60,7 +60,7 @@ serial final gates, and PR verification.
 
 When running under Google Antigravity (AGY), launch discovery subagents natively using built-in `invoke_subagent` tool calls; do NOT execute a Kilo-specific workflow launcher. Discovery workers are read-only; test fixes, Gradle, browser tests, coverage, and final gates remain parent-owned and serial.
 
-For optional Kilo CLI sessions, launch the bounded discovery fan-out through the host's native Task surface with a selected route.
+For optional Kilo CLI sessions, launch the bounded discovery fan-out through the host's native Task surface; subagents inherit the parent session's model.
 
 ---
 
@@ -230,7 +230,7 @@ If that is too heavy for a first probe, at minimum:
 ./gradlew :frontend-js:jsBrowserTest
 ```
 
-After the native model-selection gate, fan out discovery with
+Fan out discovery with
 [parallel-multi-agent](../parallel-multi-agent/SKILL.md) when tracks are
 disjoint. Suggested discovery tracks (pick what fits timebox):
 

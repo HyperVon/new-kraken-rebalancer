@@ -310,6 +310,7 @@ object RebalancerComparisonCalculator {
             tradeLegsByTradeIdentity = tradeLegsByTradeIdentity,
             resolvedScopes = ledgerScopes,
             orphanTradeLedgerIds = orphanTradeLedgerIds,
+            configuredAssetUniverse = configuredAssetUniverse,
         )
 
         val reconciledLedgers = when (balanceResult) {
@@ -348,6 +349,28 @@ object RebalancerComparisonCalculator {
             ledgerClassifications[it.ledgerId] == FlowCategory.AMBIGUOUS
         }
         if (ambiguousLedger != null) {
+            preparedProvenanceResolver.diagnose(ambiguousLedger)?.let { diagnostic ->
+                log.warn(
+                    "Ambiguous funding ledger: timestamp={} ledgerId={} refid={} asset={} amount={} fee={} " +
+                        "type={} subtype={} matched={} recordRefid={} method={} status={} hasTransactionProof={} " +
+                        "evidence={} detail={}",
+                    ambiguousLedger.time,
+                    ambiguousLedger.ledgerId,
+                    ambiguousLedger.refid,
+                    ambiguousLedger.asset,
+                    ambiguousLedger.amount,
+                    ambiguousLedger.fee,
+                    ambiguousLedger.type,
+                    ambiguousLedger.subtype,
+                    diagnostic.matched,
+                    diagnostic.recordRefid,
+                    diagnostic.method,
+                    diagnostic.status,
+                    diagnostic.hasTransactionProof,
+                    diagnostic.evidence,
+                    diagnostic.detail,
+                )
+            }
             return unavailable(
                 reason = ComparisonUnavailableReason.AMBIGUOUS_LEDGER_TYPE,
                 unavailableAt = ambiguousLedger.time,
@@ -409,6 +432,11 @@ object RebalancerComparisonCalculator {
                 classifications = ledgerClassifications,
                 cardNormalizations = cardNormalizations,
                 rewards = rewards,
+                seriesObservedAssets = validationSnapshots
+                    .filter { it.timestamp > baseline.timestamp }
+                    .flatMap { it.assets.keys }
+                    .map { Asset.normalizeLedgerAsset(it).uppercase() }
+                    .toSet(),
             )
         } catch (e: HistoricalPriceSourceException) {
             return unavailable(
@@ -748,6 +776,7 @@ object RebalancerComparisonCalculator {
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
         orphanTradeLedgerIds: Set<String>,
+        configuredAssetUniverse: Set<String>?,
     ): TrackedBalanceValidation {
         val invalidFeeLedger = ledgers.firstOrNull { it.type in externalBalanceLedgerTypes && !it.hasValidFee }
         if (invalidFeeLedger != null) {
@@ -810,6 +839,18 @@ object RebalancerComparisonCalculator {
         val baselineAssetSymbols = baseline.assets.keys
             .map { Asset.normalizeLedgerAsset(it).uppercase() }
             .toSet()
+
+        // The approved baseline may own the complete wallet while the recorded series only
+        // snapshots its tracked universe. A baseline holding outside that universe is invisible
+        // to every row the series writes, so its absence is a writer-scope artifact, not an
+        // unexplained change; reconciliation must not fail on it. An empty universe keeps the
+        // strict behavior so the check still fails closed when no scope can be derived.
+        val trackedSeriesUniverse = requiredConfiguredAssetUniverse(baseline, configuredAssetUniverse)
+
+        fun untrackedBySeries(symbol: String): Boolean = trackedSeriesUniverse.isNotEmpty() &&
+            Asset.normalizeLedgerAsset(symbol).uppercase() !in trackedSeriesUniverse
+
+        val toleratedUntrackedSymbols = linkedSetOf<String>()
 
         fun reconcileInterval(
             i: Int,
@@ -1137,6 +1178,7 @@ object RebalancerComparisonCalculator {
                     useAuthoritativeLedgerBalances = useAuthoritativeLedgerBalances,
                     tradeLegsByRefId = tradeLegsByRefId,
                     tradeLegsByTradeIdentity = tradeLegsByTradeIdentity,
+                    isUntrackedBySeries = ::untrackedBySeries,
                 ) ?: run {
                     return TrackedBalanceValidation.Failed(
                         reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
@@ -1252,6 +1294,7 @@ object RebalancerComparisonCalculator {
                         useAuthoritativeLedgerBalances,
                         tradeLegsByRefId,
                         tradeLegsByTradeIdentity,
+                        ::untrackedBySeries,
                         preRegularBalances,
                         anchorRelativeLedgerIndexes,
                         prev.timestamp..curr.timestamp,
@@ -1276,19 +1319,23 @@ object RebalancerComparisonCalculator {
                 }
             }
 
-            // A fully liquidated asset can disappear from the recorded series,
-            // so only keys with a materially non-zero balance must still be observable.
-            if (impliedBalances.any { (symbol, balance) ->
-                    symbol !in curr.assets &&
-                        balance.setScale(balanceScale(symbol), RoundingMode.HALF_UP).signum() != 0
+            // A fully liquidated asset can disappear from the recorded series, and a baseline
+            // holding outside the series' tracked universe is never recorded by it, so only
+            // tracked keys with a materially non-zero balance must still be observable.
+            impliedBalances.forEach { (symbol, balance) ->
+                if (symbol !in curr.assets &&
+                    balance.setScale(balanceScale(symbol), RoundingMode.HALF_UP).signum() != 0
+                ) {
+                    if (!untrackedBySeries(symbol)) {
+                        return TrackedBalanceValidation.Failed(
+                            reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                            unavailableAt = curr.timestamp,
+                        )
+                    }
+                    toleratedUntrackedSymbols.add(symbol)
                 }
-            ) {
-                return TrackedBalanceValidation.Failed(
-                    reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
-                    unavailableAt = curr.timestamp,
-                )
             }
-            if (!balancesMatchSnapshot(impliedBalances, curr)) {
+            if (!balancesMatchSnapshot(impliedBalances, curr, ::untrackedBySeries)) {
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                     unavailableAt = curr.timestamp,
@@ -1330,6 +1377,14 @@ object RebalancerComparisonCalculator {
             )
             if (reportedEconomicsFailure != null) return preciseFailure
             state = reportedEconomicsAttempt
+        }
+
+        if (toleratedUntrackedSymbols.isNotEmpty()) {
+            log.info(
+                "Comparison series-scope tolerance: {} baseline holding(s) are never recorded by the legacy series and are reconciled only at the anchor: {}",
+                toleratedUntrackedSymbols.size,
+                toleratedUntrackedSymbols.sorted().joinToString(", "),
+            )
         }
 
         val passedLedgers = state.assignedLedgerIndexes.sorted().map { index ->
@@ -1374,6 +1429,7 @@ object RebalancerComparisonCalculator {
     private fun balancesMatchSnapshot(
         expectedBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
+        isUntrackedBySeries: (String) -> Boolean,
     ): Boolean {
         for ((symbol, expectedBalance) in expectedBalances) {
             val scale = balanceScale(symbol)
@@ -1383,8 +1439,10 @@ object RebalancerComparisonCalculator {
             val roundedExpected = expectedBalance.setScale(scale, RoundingMode.HALF_UP)
             val snapshotBalance = snapshot.assets[symbol]?.balance
             if (snapshotBalance == null) {
-                // A fully liquidated position may be dropped from the recorded series.
+                // A fully liquidated position may be dropped from the recorded series, and a
+                // baseline holding outside the series' tracked universe is never recorded by it.
                 if (roundedExpected.signum() == 0) continue
+                if (isUntrackedBySeries(symbol)) continue
                 return false
             }
             val roundedActual = snapshotBalance.setScale(scale, RoundingMode.HALF_UP)
@@ -1504,6 +1562,7 @@ object RebalancerComparisonCalculator {
         useAuthoritativeLedgerBalances: Boolean,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
+        isUntrackedBySeries: (String) -> Boolean,
     ): InitialAssignmentMatch? {
         if (initialCandidates.size + lateCandidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) {
             // Observable boundary saturation: exhaustive search is bounded, so an over-wide
@@ -1578,6 +1637,7 @@ object RebalancerComparisonCalculator {
                         useAuthoritativeLedgerBalances,
                         tradeLegsByRefId,
                         tradeLegsByTradeIdentity,
+                        isUntrackedBySeries,
                     )
                 } else {
                     null
@@ -1592,7 +1652,7 @@ object RebalancerComparisonCalculator {
                         resultingBalances = late.balances,
                         ledgerDeltas = ledgerDeltas + late.ledgerDeltas,
                     )
-                } else if (balancesMatchSnapshot(testBalances, snapshot)) {
+                } else if (balancesMatchSnapshot(testBalances, snapshot, isUntrackedBySeries)) {
                     InitialAssignmentMatch(
                         embeddedTradeIndexes = embeddedTrades.toList(),
                         embeddedLedgerIndexes = embeddedLedgers.toList(),
@@ -1651,6 +1711,7 @@ object RebalancerComparisonCalculator {
         useAuthoritativeLedgerBalances: Boolean,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
+        isUntrackedBySeries: (String) -> Boolean,
         // Pre-regulars balances plus the indexes of late ledgers dated before every regular
         // event. Those ledgers evaluate anchor-relatively (see applyAnchorRelativeLedgerEvent);
         // default callers keep the legacy post-regulars evaluation.
@@ -1662,7 +1723,7 @@ object RebalancerComparisonCalculator {
     ): LateAssignment? {
         if (candidates.isEmpty() || candidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
 
-        val emptyMatches = balancesMatchSnapshot(startingBalances, snapshot)
+        val emptyMatches = balancesMatchSnapshot(startingBalances, snapshot, isUntrackedBySeries)
         val emptyResidual = if (emptyMatches) balanceResidual(startingBalances, snapshot) else null
 
         // If the unassigned state already matches the snapshot with exact zero residual at raw
@@ -1717,7 +1778,7 @@ object RebalancerComparisonCalculator {
         fun search(position: Int, balances: Map<String, BigDecimal>) {
             if (position == orderedCandidates.size) {
                 if ((selectedTrades.isNotEmpty() || selectedLedgers.isNotEmpty()) &&
-                    balancesMatchSnapshot(balances, snapshot)
+                    balancesMatchSnapshot(balances, snapshot, isUntrackedBySeries)
                 ) {
                     val residual = balanceResidual(balances, snapshot)
                     // If the empty subset already matched within display tolerance, a non-empty
@@ -1992,6 +2053,7 @@ object RebalancerComparisonCalculator {
         classifications: Map<String, FlowCategory>,
         cardNormalizations: List<NormalizedFundingTransaction>,
         rewards: List<LedgerEvent>,
+        seriesObservedAssets: Set<String>,
     ): BuiltEvents {
         val postBaseline = ledgers.filter { reconciledLedger ->
             !reconciledLedger.embeddedInBaseline &&
@@ -2022,7 +2084,15 @@ object RebalancerComparisonCalculator {
                 // A complete conversion whose counterpart references an asset outside the
                 // tracked universe never enters reconciliation, so the reconciled subset can
                 // look one-legged. Rescue only that split shape; everything else stays ambiguous.
-                if (!isUniverseSplitConversion(refid, group, rewards, baseline, classifications)) {
+                if (!isUniverseSplitConversion(
+                        refid,
+                        group,
+                        rewards,
+                        baseline,
+                        classifications,
+                        seriesObservedAssets,
+                    )
+                ) {
                     return BuiltEvents(
                         events = emptyList(),
                         unpriceableAt = null,
@@ -2266,6 +2336,7 @@ object RebalancerComparisonCalculator {
         rewards: List<LedgerEvent>,
         baseline: PortfolioSnapshot,
         classifications: Map<String, FlowCategory>,
+        seriesObservedAssets: Set<String>,
     ): Boolean {
         if (refid.isBlank()) return false
         if (group.any { classifications[it.ledger.ledgerId] != FlowCategory.INTERNAL_MOVE }) return false
@@ -2279,9 +2350,15 @@ object RebalancerComparisonCalculator {
         if (counterpart.time != leg.time) return false
         if (counterpart.time <= baseline.timestamp) return false
         if (baseline.balancesObservedAt != null && counterpart.time <= baseline.balancesObservedAt) return false
-        val trackedAssets = baseline.assets.keys
+        // A counterpart is only rescuable when the reconciliation could never have assigned
+        // it: the asset is neither economically present at the anchor (a complete-wallet
+        // anchor may still carry zero-balance keys) nor ever recorded by the post-baseline
+        // series. An asset the series does record but that contradicts the leg stays closed.
+        val trackedAssets = baseline.assets
+            .filterValues { asset -> asset.balance.signum() != 0 }
+            .keys
             .map { Asset.normalizeLedgerAsset(it).uppercase() }
-            .toSet()
+            .toSet() + seriesObservedAssets
         if (Asset.normalizeLedgerAsset(counterpart.asset).uppercase() in trackedAssets) return false
         if (classifications[counterpart.ledgerId] != FlowCategory.INTERNAL_MOVE) return false
         return LedgerFlowClassifier.isCompleteConversionGroup(listOf(leg, counterpart))
@@ -3005,6 +3082,7 @@ object RebalancerComparisonCalculator {
             classifications = classifications,
             cardNormalizations = cardNormalizations,
             rewards = ledgers,
+            seriesObservedAssets = emptySet(),
         ).events
     }
 }
