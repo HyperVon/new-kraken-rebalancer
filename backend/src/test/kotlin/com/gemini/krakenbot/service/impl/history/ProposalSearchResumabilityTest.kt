@@ -123,6 +123,8 @@ class ProposalSearchResumabilityTest : StringSpec() {
         val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
         coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
         coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers { metadata.putAll(firstArg()) }
+        metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] = "4102444800"
+        metadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] = "4102444800"
         val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
         coEvery { inceptionService.resolveInception() } returns if (confidentInception) {
             InceptionResolution(

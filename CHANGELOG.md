@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.73] - 2026-09-19
+
+### Fixed
+
+- **Automatic baseline verification uses only stable, coverage-confirmed history**: the Settings
+  automatic Buy & Hold baseline verification now runs against the longest contiguous prefix of
+  snapshots whose `balancesObservedAt` is at or before `min(ledger coverage horizon, trade
+  coverage horizon)`
+  (the same certified, monotonic coverage metadata the reconstruction contract uses). A newest
+  live snapshot whose balances were observed after confirmed trade/ledger coverage — e.g. a
+  post-sell snapshot written before the fills and ledgers for that cycle have synced — is
+  unstable-tail evidence: it is excluded from verification and from the persisted proof's
+  evidence horizon until history catches up, instead of failing the evaluation with
+  `UNEXPLAINED_BALANCE_CHANGE`. An uncovered snapshot starts the unstable tail, and later
+  snapshots may not re-enter the verification window until coverage catches up monotonically;
+  a covered observation reappearing after an uncovered one (non-monotonic order) defers the
+  evaluation outright (logged `HISTORY_COVERAGE_NON_MONOTONIC`) rather than silently erasing an
+  interior reconciliation checkpoint. When certified coverage is unknown or fewer than two stable
+  snapshots exist, the evaluation defers (logged `HISTORY_COVERAGE_STALE`) rather than reporting
+  a deposit/withdrawal error. Once coverage advances, the previously unstable snapshot is
+  eligible normally — nothing is blacklisted. Real reconciliation failures inside confirmed
+  coverage still fail closed, the persisted-proof digest/invalidation contract is unchanged, and
+  the fast path still serves the proven baseline regardless of the live tail. Evidence gating,
+  not tolerance: no snapshot is skipped, backdated, or accepted without confirmed coverage.
+
 ## [6.17.72] - 2026-09-19
 
 ### Added

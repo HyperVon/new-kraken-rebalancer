@@ -50,6 +50,10 @@ class ApprovedStartComparisonIntegrationTest :
                 jacksonObjectMapper(),
                 Files.createTempDirectory("approved-start-stats").resolve("portfolio-stats.json").toString(),
             )
+        beforeTest {
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC, "4102444800")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC, "4102444800")
+        }
         val krakenService = FakeKrakenService()
         val configService = mockk<ConfigService>(relaxed = true)
         val reconstructionService = mockk<TradeHistoryReconstructionService>(relaxed = true)
