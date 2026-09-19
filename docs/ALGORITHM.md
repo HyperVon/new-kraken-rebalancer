@@ -855,10 +855,11 @@ external capital over time:
   snapshot identity (position cursor plus database id), the inception bound it was anchored on, the
   config fingerprint and account scope digest at proof time, and an evidence digest of every
   snapshot, trade, and ledger row at or before a verified horizon. The next Settings evaluation
-  re-validates that record and, when it holds, returns the proven baseline without loading
-  snapshots, replaying trades and ledgers, resolving historical prices, or preparing funding
-  evidence — a Settings reload or app restart no longer replays the full historical comparison to
-  rediscover the same baseline. The record fails closed: a contract version change, a different
+  re-validates that record — re-hashing the local snapshot, trade, and ledger evidence up to the
+  stored horizon — and, when it holds, returns the proven baseline identity without
+  reconciliation replay, historical-price resolution, or funding preparation; a Settings reload
+  or app restart no longer replays the full historical comparison to rediscover the same
+  baseline. The record fails closed: a contract version change, a different
   inception, a moved or rewritten baseline snapshot, a changed config universe or account scope, a
   reconstruction contract that is no longer current, any evidence row at or before the verified
   horizon that is later edited, backfilled, or deleted, or malformed/partial metadata each
@@ -868,7 +869,10 @@ external capital over time:
   verified interval, not in the tail. The record answers only "is strategy inception a proven
   automatic baseline": History still calculates current comparison economics, current NAV is never
   served from it, and an explicit `comparisonStartDate` continues to govern operator-facing
-  proposals exactly as before.
+  proposals exactly as before. Settings status reporting separates the two questions: the fast
+  path reports the proven baseline without claiming the current comparison was evaluated, an
+  unavailable message appears only when a full evaluation runs and fails, and the later-start
+  proposal search never consumes the persisted proof.
 - **A passive anchor is separate from strategy-inception approval.** If lifetime recovery is
   ambiguous, truncated, or has no trustworthy historical baseline, the comparison anchors at the
   earliest trustworthy retained snapshot at or after the comparison window start that expresses

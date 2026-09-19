@@ -24,6 +24,7 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.AutomaticBaselineStatus
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
@@ -4114,7 +4115,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val status = service.getSettingsComparisonStatus(fixture.anchorTime)
 
-                status.availability shouldBe ComparisonAvailability.AVAILABLE
+                status.comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
+                status.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 status.baselineTimestamp shouldBe fixture.anchorTime.toString()
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION] shouldBe "1"
@@ -4140,8 +4142,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
 
-                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 reloaded.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                // The fast path proves baseline identity only; it must not claim that the
+                // current comparison was evaluated.
+                reloaded.comparisonAvailability.shouldBeNull()
                 // The full evaluation ran once: the recompute side effects (anchor lookup and the
                 // baseline id write) are not repeated by the fast path.
                 coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
@@ -4159,8 +4164,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val restarted = automaticBaselineService(fixture).getSettingsComparisonStatus(fixture.anchorTime)
 
-                restarted.availability shouldBe ComparisonAvailability.AVAILABLE
+                restarted.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 restarted.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                restarted.comparisonAvailability.shouldBeNull()
                 coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
                 coVerify(exactly = 1) { fixture.fundingProvenanceResolver.prepare(any()) }
             }
@@ -4176,12 +4182,46 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
 
-                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 reloaded.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                reloaded.comparisonAvailability.shouldBeNull()
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
                 coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
             }
         }
+
+        "a post-horizon tail event breaks the current comparison " +
+            "while the fast path keeps serving the proven baseline" {
+                runTest {
+                    val fixture = automaticBaselineFixture()
+                    val service = automaticBaselineService(fixture)
+                    service.getSettingsComparisonStatus(fixture.anchorTime)
+                    val tailTime = fixture.laterTime.plusMillis(500)
+                    val tailEvent = ledgerEvent("TAIL-1", tailTime, "USD", "1.00", type = "MARGIN_ROLLFORWARD")
+                    coEvery { ledgerRepository.getLedgersInRange(any(), any()) } coAnswers {
+                        if (secondArg<Instant>() >= tailTime) listOf(tailEvent) else emptyList()
+                    }
+
+                    val fastPath = service.getSettingsComparisonStatus(fixture.anchorTime)
+                    val fullPath = service.getSettingsComparisonStatus(
+                        fixture.anchorTime,
+                        allowPersistedBaselineFastPath = false,
+                    )
+
+                    // The persisted proof vouches for baseline identity only: the fast path keeps
+                    // reporting it while refusing to claim the current comparison was evaluated.
+                    fastPath.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
+                    fastPath.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                    fastPath.comparisonAvailability.shouldBeNull()
+                    // The full evaluation honestly reports the tail event and marks no baseline
+                    // status: an unavailable comparison carries no proof it did not just make.
+                    fullPath.comparisonAvailability shouldBe ComparisonAvailability.UNAVAILABLE
+                    fullPath.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_LEDGER_TYPE
+                    fullPath.baselineStatus.shouldBeNull()
+                    fullPath.baselineTimestamp.shouldBeNull()
+                    fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                }
+            }
 
         "a degraded inception resolution fails closed without destroying the persisted proof" {
             runTest {
@@ -4201,7 +4241,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // A degraded resolution withholds trust from the current evidence, so the
                 // full evaluation runs (the passive-anchor path does not consult the
                 // snapshot-before lookup) instead of serving the record.
-                degraded.availability shouldBe ComparisonAvailability.AVAILABLE
+                degraded.comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
+                // The degraded resolution re-anchors passively: the comparison is available,
+                // but no automatic-inception proof exists behind that anchor, so the status
+                // marks no baseline certification.
+                degraded.baselineStatus.shouldBeNull()
                 coVerify(exactly = 1) { repository.getSnapshotId(any(), any()) }
                 // The proof survives a transient degraded resolution: the next confident
                 // resolution can reuse it without a re-verification.
@@ -4340,7 +4384,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
 
-                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 reloaded.baselineTimestamp shouldBe fixture.anchorTime.toString()
                 coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
@@ -4356,7 +4401,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
 
-                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
             }
@@ -4407,7 +4453,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val reloaded = service.getSettingsComparisonStatus(fixture.anchorTime)
 
-                reloaded.availability shouldBe ComparisonAvailability.AVAILABLE
+                reloaded.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
+                reloaded.comparisonAvailability.shouldBeNull()
                 coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
             }
@@ -4496,8 +4543,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val overridden =
                     service.getSettingsComparisonStatus(fixture.laterTime.plusSeconds(3600))
 
-                overridden.availability shouldBe ComparisonAvailability.AVAILABLE
+                overridden.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 overridden.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                overridden.comparisonAvailability.shouldBeNull()
                 coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
             }
         }

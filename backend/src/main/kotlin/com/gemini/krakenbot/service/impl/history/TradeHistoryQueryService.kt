@@ -20,6 +20,7 @@ import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.downsampleSnapshots
+import com.gemini.krakenbot.service.AutomaticBaselineStatus
 import com.gemini.krakenbot.service.ComparisonStartProposal
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -312,19 +313,22 @@ class TradeHistoryQueryService(
 
     /**
      * The same gate chain as [getComparisonStartProposal] in the same order, but it also
-     * exposes the passive comparison's availability and resolved baseline so the Settings
+     * exposes the baseline identity and the passive comparison's availability so the Settings
      * fragment can render the effective Buy & Hold baseline from this single evaluation.
      * The proposal semantics (including every early return) are preserved exactly: the
      * proposal chain always evaluates through the full gates because it bypasses the
      * persisted-baseline fast path.
      *
-     * When [allowPersistedBaselineFastPath] is true and the durable automatic baseline
+     * Baseline identity and current comparison availability are independent. When
+     * [allowPersistedBaselineFastPath] is true and the durable automatic baseline
      * verification (see [readVerifiedAutomaticBaseline]) is present and still valid, this
-     * returns the proven baseline immediately: no snapshot load, no reconciliation replay,
-     * no historical price resolution, and no funding preparation — the Settings display only
-     * needs the proven baseline identity, not current comparison economics. A successful
-     * full evaluation persists that proof once (see [persistAutomaticBaselineVerification]);
-     * it is deliberately distinct from the later-start proposal state.
+     * returns the proven baseline with a null [SettingsComparisonStatus.comparisonAvailability]:
+     * the proof validation re-hashes local snapshot/trade/ledger evidence up to the stored
+     * horizon but performs no reconciliation replay, no historical price resolution, and no
+     * funding preparation, and the current tail-inclusive comparison was not evaluated in
+     * this request. A successful full evaluation persists that proof once (see
+     * [persistAutomaticBaselineVerification]) and reports both concepts; an unavailable full
+     * evaluation keeps the proven baseline identity visible alongside the failure.
      */
     suspend fun getSettingsComparisonStatus(
         after: Instant,
@@ -348,12 +352,23 @@ class TradeHistoryQueryService(
                 inceptionResolution,
                 suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
             )
-        val status = SettingsComparisonStatus(
-            availability = current.availability,
-            baselineTimestamp = current.baselineTimestamp?.toString(),
-            unavailableReason = current.unavailableReason,
-            unavailableAt = current.unavailableAt?.toString(),
-        )
+        val status =
+            if (current.availability == ComparisonAvailability.AVAILABLE) {
+                SettingsComparisonStatus(
+                    // Only the inception-anchored baseline certifies the automatic proof; a
+                    // passive re-anchor is available but has no durable verification behind it.
+                    baselineStatus = AutomaticBaselineStatus.VERIFIED
+                        .takeIf { current.baselineTimestamp == inceptionResolution?.inceptionTime },
+                    baselineTimestamp = current.baselineTimestamp?.toString(),
+                    comparisonAvailability = current.availability,
+                )
+            } else {
+                SettingsComparisonStatus(
+                    comparisonAvailability = current.availability,
+                    unavailableReason = current.unavailableReason,
+                    unavailableAt = current.unavailableAt?.toString(),
+                )
+            }
         if (current.availability == ComparisonAvailability.UNAVAILABLE) {
             // Operator-visible reconciliation diagnostics: the reason and its evidence
             // timestamp identify the event that made the inception-anchored comparison
@@ -576,8 +591,10 @@ class TradeHistoryQueryService(
         }
         val baseline = Instant.ofEpochMilli(storedBaselineEpochMillis)
         log.info("using persisted automatic B&H baseline verification; baseline={}", baseline)
+        // The persisted proof covers baseline identity only; current comparison economics were
+        // not evaluated in this request, so comparisonAvailability stays null.
         return SettingsComparisonStatus(
-            availability = ComparisonAvailability.AVAILABLE,
+            baselineStatus = AutomaticBaselineStatus.VERIFIED,
             baselineTimestamp = baseline.toString(),
         )
     }

@@ -292,7 +292,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 )
             coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
-                    availability = ComparisonAvailability.UNAVAILABLE,
+                    comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
                     unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
                     proposal = ComparisonStartProposal(
                         status = ComparisonProposalStatus.VERIFIED,
@@ -322,7 +322,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 )
             coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
-                    availability = ComparisonAvailability.AVAILABLE,
+                    comparisonAvailability = ComparisonAvailability.AVAILABLE,
                     baselineTimestamp = "2026-06-08T03:09:55.608Z",
                 )
             testApplication {
@@ -353,7 +353,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 )
             coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
-                    availability = ComparisonAvailability.AVAILABLE,
+                    comparisonAvailability = ComparisonAvailability.AVAILABLE,
                     baselineTimestamp = "2026-06-08T03:09:55.608Z",
                 )
             testApplication {
@@ -379,7 +379,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 )
             coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
-                    availability = ComparisonAvailability.UNAVAILABLE,
+                    comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
                     unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
                     proposal = ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE),
                 )
@@ -405,7 +405,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 )
             coEvery { tradeHistoryService.getSettingsComparisonStatus(any()) } returns
                 SettingsComparisonStatus(
-                    availability = ComparisonAvailability.UNAVAILABLE,
+                    comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
                     unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
                     proposal = ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED),
                 )
@@ -460,7 +460,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             val anchorSlot = slot<Instant>()
             coEvery { tradeHistoryService.getSettingsComparisonStatus(capture(anchorSlot)) } returns
                 SettingsComparisonStatus(
-                    availability = ComparisonAvailability.UNAVAILABLE,
+                    comparisonAvailability = ComparisonAvailability.UNAVAILABLE,
                     unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
                     proposal = ComparisonStartProposal(
                         status = ComparisonProposalStatus.VERIFIED,
