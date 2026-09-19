@@ -874,11 +874,15 @@ external capital over time:
   unavailable message appears only when a full evaluation runs and fails, and the later-start
   proposal search never consumes the persisted proof.
 - **Verification runs against the stable, coverage-confirmed historical state.** The Settings
-  automatic-baseline evaluation consumes only snapshots whose balance observation
-  (`balancesObservedAt`, falling back to the snapshot timestamp for reconstructed rows per the
-  reconstruction contract) lies at or before `stableThrough = min(certified ledger coverage
-  horizon, certified trade coverage horizon)` — the same monotonic, evidence-certified metadata
-  the reconstruction invariant requires. Newest live snapshots observed past that horizon are
+  automatic-baseline evaluation uses the longest contiguous prefix of snapshots whose balance
+  observation (`balancesObservedAt`, falling back to the snapshot timestamp for reconstructed
+  rows per the reconstruction contract) lies at or before `stableThrough = min(certified ledger
+  coverage horizon, certified trade coverage horizon)` — the same monotonic, evidence-certified
+  metadata the reconstruction invariant requires. An uncovered snapshot starts the unstable
+  tail; later snapshots may not re-enter the verification window until coverage catches up
+  monotonically, and a covered observation reappearing after an uncovered one (non-monotonic
+  order) defers verification outright instead of erasing an interior checkpoint. Newest live
+  snapshots observed past that horizon are
   unstable-tail evidence: the full evaluation verifies through the latest stable snapshot, and
   the persisted proof's evidence horizon is that stable snapshot rather than the newest row, so
   a snapshot written while its cycle's fills and ledgers are still syncing cannot fail the

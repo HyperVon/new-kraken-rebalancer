@@ -557,11 +557,14 @@ fails closed with `HISTORICAL_COVERAGE_GAP` when retained snapshots cannot prove
   as a verified comparison start. A valid configured inception date is persisted as a retention floor
   before recovery completes, preserving the history needed for later exact baseline reconstruction.
   Settings automatic baseline verification additionally runs only against the latest stable,
-  coverage-confirmed state: snapshots observed after `min(certified trade, ledger) coverage
-  horizon` are excluded from verification and the persisted proof horizon until trade/ledger
-  history catches up (deferring with a `HISTORY_COVERAGE_STALE` log instead of reporting
-  `UNEXPLAINED_BALANCE_CHANGE`); real reconciliation failures inside confirmed coverage still
-  fail closed.
+  coverage-confirmed state: verification uses the longest contiguous prefix of snapshots whose
+  observation boundaries are covered by the `min(certified trade, ledger) coverage horizon` —
+  an uncovered snapshot starts the unstable tail, and later snapshots may not re-enter the
+  verification window until coverage catches up monotonically (a covered observation after an
+  uncovered one defers with `HISTORY_COVERAGE_NON_MONOTONIC`) — excluded from verification and
+  the persisted proof horizon until trade/ledger history catches up (deferring with a
+  `HISTORY_COVERAGE_STALE` log instead of reporting `UNEXPLAINED_BALANCE_CHANGE`); real
+  reconciliation failures inside confirmed coverage still fail closed.
 
 ```mermaid
 sequenceDiagram

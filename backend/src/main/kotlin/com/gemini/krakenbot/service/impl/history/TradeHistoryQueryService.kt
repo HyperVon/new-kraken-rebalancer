@@ -360,7 +360,25 @@ class TradeHistoryQueryService(
             log.info("Automatic B&H baseline verification deferred; reason=HISTORY_COVERAGE_STALE")
             return SettingsComparisonStatus()
         }
-        val stableSnapshots = snapshots.filter { isSnapshotCoveredByHistory(it, stableThrough) }
+        val firstUncoveredIndex = snapshots.indexOfFirst { !isSnapshotCoveredByHistory(it, stableThrough) }
+        if (firstUncoveredIndex >= 0) {
+            val reentry = snapshots.drop(firstUncoveredIndex + 1).indexOfFirst {
+                isSnapshotCoveredByHistory(it, stableThrough)
+            }
+            if (reentry >= 0) {
+                // A covered observation after an uncovered one means the observation
+                // sequence is non-monotonic relative to certified coverage — trimming
+                // would silently erase an interior reconciliation checkpoint.
+                log.warn(
+                    "Automatic B&H baseline verification deferred; reason=HISTORY_COVERAGE_NON_MONOTONIC " +
+                        "firstUncoveredSnapshot={} laterCoveredSnapshot={}",
+                    snapshots[firstUncoveredIndex].timestamp,
+                    snapshots[firstUncoveredIndex + 1 + reentry].timestamp,
+                )
+                return SettingsComparisonStatus()
+            }
+        }
+        val stableSnapshots = if (firstUncoveredIndex < 0) snapshots else snapshots.take(firstUncoveredIndex)
         if (stableSnapshots.size < 2) {
             log.info("Automatic B&H baseline verification deferred; reason=HISTORY_COVERAGE_STALE")
             return SettingsComparisonStatus()

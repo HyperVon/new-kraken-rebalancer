@@ -618,6 +618,32 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getRebalancerComparison evaluates snapshots beyond certified coverage without the stable-horizon gate" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(7200),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond - 1).toString()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond - 1).toString()
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.baselineTimestamp shouldBe now
+                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+            }
+        }
+
         "getRebalancerComparison_IdentifiesBotTradeViaClientOrderId" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
@@ -4681,6 +4707,123 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 caughtUp.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] shouldBe
                     fixture.laterTime.toEpochMilli().toString()
+            }
+        }
+
+        "a covered snapshot reappearing after an uncovered one defers verification" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val uncoveredInterior = snapshot(
+                    fixture.laterTime,
+                    "1150.00",
+                    btc = "1.1" to "600.00",
+                    usdBalance = "550.00",
+                    balancesObservedAt = fixture.laterTime.plusSeconds(60),
+                )
+                fixture.snapshotRows += uncoveredInterior
+                fixture.snapshotRows += snapshot(
+                    fixture.laterTime.plusSeconds(5),
+                    "1000.00",
+                    btc = "1.0" to "500.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = fixture.laterTime.minusSeconds(100),
+                )
+                fixture.metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.laterTime.epochSecond - 2).toString()
+                fixture.ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.laterTime.epochSecond - 2).toString()
+                val service = automaticBaselineService(fixture)
+
+                val status = service.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                )
+
+                status.comparisonAvailability.shouldBeNull()
+                status.baselineStatus.shouldBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS].shouldBeNull()
+            }
+        }
+
+        "a second uncovered snapshot after a covered re-entry also defers verification" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                fixture.snapshotRows += snapshot(
+                    fixture.laterTime,
+                    "1150.00",
+                    btc = "1.1" to "600.00",
+                    usdBalance = "550.00",
+                    balancesObservedAt = fixture.laterTime.plusSeconds(60),
+                )
+                fixture.snapshotRows += snapshot(
+                    fixture.laterTime.plusSeconds(5),
+                    "1000.00",
+                    btc = "1.0" to "500.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = fixture.laterTime.minusSeconds(100),
+                )
+                fixture.snapshotRows += snapshot(
+                    fixture.laterTime.plusSeconds(10),
+                    "1000.00",
+                    btc = "1.0" to "500.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = fixture.laterTime.plusSeconds(120),
+                )
+                fixture.metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.laterTime.epochSecond - 2).toString()
+                fixture.ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.laterTime.epochSecond - 2).toString()
+                val service = automaticBaselineService(fixture)
+
+                val status = service.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                )
+
+                status.comparisonAvailability.shouldBeNull()
+                status.baselineStatus.shouldBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS].shouldBeNull()
+            }
+        }
+
+        "multiple unstable tail snapshots are trimmed together" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val midTime = fixture.anchorTime.plusSeconds(1800)
+                val tailTime = fixture.laterTime.plusSeconds(1800)
+                fixture.snapshotRows += snapshot(
+                    midTime,
+                    "1050.00",
+                    btc = "1.0" to "550.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = midTime.minusMillis(800),
+                )
+                fixture.snapshotRows += snapshot(
+                    tailTime,
+                    "1200.00",
+                    btc = "1.0" to "650.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = tailTime.minusMillis(800),
+                )
+                fixture.snapshotRows += snapshot(
+                    fixture.laterTime.plusSeconds(3600),
+                    "1250.00",
+                    btc = "1.0" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = fixture.laterTime.plusSeconds(3600).minusMillis(800),
+                )
+                fixture.metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.laterTime.epochSecond - 2).toString()
+                fixture.ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.laterTime.epochSecond - 2).toString()
+                val service = automaticBaselineService(fixture)
+
+                val status = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                status.comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
+                status.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] shouldBe
+                    midTime.toEpochMilli().toString()
             }
         }
 
