@@ -67,10 +67,11 @@ PRs to move faster; checking a box without having run the step.
 
 ## 3. Parallel multi-agent work
 
-When a request involves **multiple independent workstreams**, parallelize only
-after the native model-selection gate below passes. If the host cannot select and
-expose a usable model route for the work, do not fan out; keep the work in the
-parent. File disjointness alone is not permission to launch role-only workers.
+When a request involves **multiple independent workstreams**, parallelize bounded
+tracks through the host's native parallel task surface. Subagents inherit the
+parent session's model: do not pin, select, or require a specific provider/model
+route for a delegated track. File disjointness alone is not permission to launch
+role-only workers.
 
 The repository is harness-agnostic for ordinary development: any capable host
 can use the application source, tests, Gradle commands, Git workflow, and
@@ -80,8 +81,7 @@ Agent Manager. When running under Google Antigravity (AGY), subagents MUST be
 launched directly through Antigravity's native `invoke_subagent` tool calls;
 do not execute a Kilo-specific launcher there. Other non-Kilo hosts should
 similarly use their built-in native agent fan-out. Under Kilo, use the host's
-native model-selection gate in §8; do not substitute Kilo's native
-role-only `Task` tool for a selected route.
+native parallel task surface; subagents inherit the parent session's model.
 
 Independent work must be launched concurrently: use one parallel tool message
 or a background process for the complete fan-out, then poll results. Do not
@@ -92,41 +92,26 @@ For Kilo sessions, `.kilo/kilo.json` selects `kilo/kilo-auto/efficient` as the
 project default. That is a host-supported Auto tier, not a claim about which
 underlying model will answer a particular request.
 
-### Native model-selection gate
+### Parent-model inheritance for subagents
 
-Before the first material or parallel Task/subagent call, select a host-supported
-model route and obtain explicit approval when the work requires delegation. The
-host must expose the selected route and any separately configurable effort. A
-Kilo Auto tier satisfies the route requirement when Kilo exposes that tier; the
-underlying model remains server-selected and must not be reported as known unless
-the host provides it. If no usable route is exposed, keep the work in the parent.
+Subagents inherit the parent session's model. Do not pin, select, or require a
+specific provider/model route for a delegated track, and do not treat
+`subagent_type` as a model choice from its name alone. Keep the delegation
+bounded:
 
 1. Define the task profile and minimum capability for each bounded track.
-2. Select and record the primary host route, effort when exposed, fallback, and
-   any substitution before launching the track.
-3. Treat `subagent_type` as an agent role, not proof of the underlying model or
-   route from its name alone.
-4. Native Auto tiers do not need a repository-side catalog, probe script, or
-   permanent route ledger. Use the host's exposed route and record bounded
-   route-selection evidence; never persist credentials, prompts, balances, or
-   raw provider errors.
-5. Record the user approval, route-selection evidence, fallback, and any
-   substitution for each track.
-6. If a pinned or newly selected subagent route is unavailable or fails
-    (missing model, provider error, no exposed route), keep the work on a
-    subagent: relaunch the same track through another host-exposed route (for
-    example a host-suggested corrected model, another available role's route,
-    or a host-default-routed subagent). Use the parent session's own route only
-    as a genuine last resort when no subagent launch can run the track; then
-    cover it in the parent. Record the substitution; do not leave the track
-    unexecuted over a route failure.
-7. For a broad read-only workflow, launch the bounded track fan-out through
-   the host's native parallel task surface. Use the
-   `question` tool or host equivalent when a hard availability, scope, editing,
-   or high-risk review decision remains unresolved.
-8. For high-risk or disputed work, choose a stronger host route such as Kilo
-   `kilo/kilo-auto/frontier` or add an independent verifier only when the risk
-   justifies it.
+2. Launch the bounded track fan-out through the host's native parallel task
+   surface; each subagent runs on the parent's model.
+3. Never persist credentials, prompts, balances, or raw provider errors.
+4. Use the `question` tool or host equivalent when a hard availability, scope,
+   editing, or high-risk review decision remains unresolved.
+5. If a subagent launch fails for a transient host reason, relaunch the same
+   track as a subagent (a corrected role, another available role, or a
+   host-default-routed subagent). Cover the track in the parent only when no
+   subagent launch can run it, then record the substitution; do not leave the
+   track unexecuted over a launch failure.
+6. For high-risk or disputed work, add an independent verifier only when the
+   risk justifies it.
 
 ### When to parallelize
 
@@ -169,9 +154,9 @@ Keep delegated prompts below the model's practical long-context comfort zone:
    explicit stop condition.
 2. Ask for compact findings or a patch summary, not raw file dumps or full
    transcripts. Split a broad audit into staged discovery and follow-up tasks.
-3. Treat context size as route-specific. Use the selected route's documented or
-   observed practical limit; when that limit is unavailable, use bounded prompts
-   below **128K** and split before **180K** as a conservative default.
+3. Treat context size as the model's practical limit; when that limit is
+   unavailable, use bounded prompts below **128K** and split before **180K** as a
+   conservative default.
 4. Cap discovery workers at 8 iterations and reports at 12 lines / 5 findings
    unless the parent explicitly widens the limit for a named high-risk question.
 5. If a worker approaches its context limit, have it return a compact partial
@@ -355,59 +340,34 @@ chooses the least expensive benchmarked model expected to complete it. Its
 underlying mappings are server-side and can change; do not hardcode them in
 repository skills or scripts.
 
-Use the native tiers according to task risk:
-
-| Tier | Use |
-| :--- | :--- |
-| `kilo/kilo-auto/efficient` | Default for normal work; cost and capability are matched per request |
-| `kilo/kilo-auto/frontier` | Highest-risk, disputed, or frontier-reasoning review |
-| `kilo/kilo-auto/small` | Bounded routine work when the host exposes it |
-| `kilo/kilo-auto/free` | Non-sensitive experiments only; upstream providers may use prompts and outputs |
-
-Kilo Auto Balanced is also available for a manually selected middle tier. Custom
-Efficient pools belong in the Kilo profile or organization model settings, not in
-repository configuration. For other hosts, prefer a capable local route when it
-meets the task's context, tool, modality, latency, and risk requirements, then
-use that host's native fallback and entitlement information.
-
-When a request must choose between direct authenticated Kilo, OpenCode Go, OpenAI,
-OpenRouter, and NVIDIA routes, use the host's native route selection for the
-exact credentials it can expose; do not claim that `kilo/kilo-auto/efficient`
-can see independent credentials it cannot reach. The host selects providers
-and routes from its own configured include/blacklist rules and entitlement
-state; it does not infer a provider universe from ambient configuration or
-environment variables. Paid quota that the host cannot meter remains
-`unknown`; do not probe every provider or silently retry an agent after a
-partial failure.
+Use the host's native tiers for the parent session's own work: the project
+default in `.kilo/kilo.json` selects `kilo/kilo-auto/efficient`, and hosts may
+expose stronger or smaller tiers for high-risk or bounded routine work. Tier
+mappings are server-side and can change; do not hardcode them in repository
+skills or scripts.
 
 For bounded parallel subagents in Google Antigravity (AGY), launch subagents
 natively via `invoke_subagent` tool calls; do NOT execute a Kilo-specific
 workflow launcher.
 
-For Kilo CLI sessions, launch bounded subagent fan-out through the host's
-native Task surface with the selected route from the native model-selection
-gate. A raw role-only Task call is not evidence that a concrete provider/model
-route was selected; record the actual route per track. If a pinned or selected
-route is unavailable or fails, relaunch the same track through another
-host-exposed subagent route (host-suggested corrected model, another available
-role's route, or a host-default-routed subagent); use the parent session's own
-route only as a genuine last resort, and record the substitution; do not leave
-the track unexecuted over a route failure.
-Named workflow fan-outs return per-track reports; inspect those instead of
-launching a second native `kilo run` batch.
+Subagents inherit the parent session's model. Launch bounded subagent fan-out
+through the host's native parallel task surface; do not pin, select, or record
+provider/model routes for tracks, and do not treat a role label as a model
+choice. If a subagent launch fails for a transient host reason, relaunch the
+same track as a subagent (a corrected role, another available role, or a
+host-default-routed subagent); cover the track in the parent only when no
+subagent launch can run it, then record the substitution. Named workflow
+fan-outs return per-track reports; inspect those instead of launching a second
+native `kilo run` batch.
 
 Before material or parallel delegation:
 
 1. Define the task profile and minimum capability.
-2. Record the host route, effort when exposed, fallback, cost class/entitlement,
-   availability evidence, and any substitution.
-3. Start with the least expensive capable tier and escalate for demonstrated
+2. Start with the least expensive capable tier and escalate for demonstrated
    complexity, repeated failure, or safety-sensitive reasoning.
-4. Treat catalog status or configured credentials as insufficient proof of live
-   quota. Persist only bounded, redacted route-selection evidence; credentials,
-   prompts, balances, and raw provider errors are never persisted.
-5. Treat context size as route-specific; when unavailable, keep delegated
-   requests below **128K** and split before **180K**.
+3. Never persist credentials, prompts, balances, or raw provider errors.
+4. Treat context size as the model's practical limit; when unavailable, keep
+   delegated requests below **128K** and split before **180K**.
 
 Correctness and safety remain the hard constraint. Cost decides only between
 options that are all likely to succeed.

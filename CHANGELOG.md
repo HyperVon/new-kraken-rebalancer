@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.17.70] - 2026-09-18
 
+### Changed
+
+- **Parent-model inheritance for subagents**: agent guidance (OPERATING.md, adversarial
+  review, parallel multi-agent, and related skills, plus Cursor/Cline projections) no longer
+  requires selecting or recording specific provider/model routes for delegated tracks —
+  subagents inherit the parent session's model, relaunching through corrected or
+  host-default-routed subagent roles on transient launch failures. The OpenCode reviewer
+  agent definitions (`adversarial-reviewer-a/b`) no longer pin specific models.
+
 ### Fixed
 
 - **Full-wallet baseline reconciles against the legacy configured-universe series**: after

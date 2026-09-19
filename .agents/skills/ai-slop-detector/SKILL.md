@@ -139,11 +139,11 @@ signal, not evidence of slop.
 ### Optional parallel evidence pass
 
 For a full-repository or broad PR audit, fan out bounded read-only tracks
-through the host's native parallel task surface after Step 0 and the native
-model-selection gate. It supplies disjoint production/build, tests/evaluation,
+through the host's native parallel task surface after Step 0; subagents
+inherit the parent session's model. It supplies disjoint production/build, tests/evaluation,
 documentation/skills/rules, and UI/assets tracks. Workers return findings only;
 the parent owns severity triage, cleanup decisions, edits, and serial quality
-gates. If the host cannot expose a usable route, remain parent-owned rather than
+gates. If no subagent launch can run a track, remain parent-owned rather than
 using an unverified role. Do not fan out a small or tightly coupled audit.
 
 ### Step 1: Gather diff and high-risk evidence

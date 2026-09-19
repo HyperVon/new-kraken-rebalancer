@@ -721,7 +721,11 @@ an unexplained tracked mutation; untracked assets remain outside this validation
 boundary. Baseline holdings outside the derived configured-universe series scope
 are never recorded by the legacy snapshot writer and reconcile only at the anchor;
 when no series scope is derivable, a non-zero implied balance absent from the
-series still fails closed as `UNSUPPORTED_TRADE`.
+series still fails closed as `UNSUPPORTED_TRADE`. The Buy & Hold benchmark keeps
+owning those out-of-scope holdings from the anchor while the recorded rebalancer
+series only ever sees rows it contains, so reported differences include their
+price movement; a holding the price provider cannot price at a point is omitted
+from the benchmark composition at that point.
 
 Snapshots track an explicit `balancesObservedAt` timestamp representing the local
 balance-request start boundary, distinct from the snapshot creation/display

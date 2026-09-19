@@ -1,6 +1,8 @@
 # Parallel multi-agent work
 
-Parallelize independent workstreams only after the native model-selection gate
+Parallelize independent workstreams through the host's native parallel task
+surface; subagents inherit the parent session's model. Do not launch tracks
+because
 passes: bounded tracks (2–6, max 8) with disjoint file ownership, and the
 parent owns integration, cleanup, and final gates.
 

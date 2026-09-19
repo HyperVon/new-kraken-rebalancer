@@ -137,9 +137,9 @@ substitute an unverified role or `general` for a model. A small or coupled scope
 may proceed without this handoff.
 
 For Kilo broad audits, launch the bounded read-only audit tracks through the
-host's native parallel task surface with the selected routes recorded per track.
+host's native parallel task surface; subagents inherit the parent session's model.
 
-The command prints the route/quota matrix before launching; the read-only
+The command prints the track matrix before launching; the read-only
 workflow is authorized to launch its evidence
 tracks. The host owns only read-only evidence tracks; the parent remains
 responsible for findings, edits, and gates.

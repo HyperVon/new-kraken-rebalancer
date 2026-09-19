@@ -80,7 +80,7 @@ several small, independently useful reports:
 - Give each agent an explicit file set and only the minimum source paths needed
   to verify those files. The parent may inspect the full diff; workers should
   not receive it by default.
-- Target each delegated request well below the selected route's documented or
+- Target each delegated request well below the model's documented or
   observed practical context limit. Prefer prompts and source scopes below
   about **128K**; split the track before it approaches **180K** when the host
   exposes context telemetry, or use those limits conservatively when it does not.
@@ -103,34 +103,26 @@ several small, independently useful reports:
 
 ## Agent selection and launch
 
-**MUST — no exceptions.** For every Kilo CLI session, you MUST select a concrete
-provider/model route through the host’s native model-selection gate and launch
-independent review tracks through the host’s native parallel task surface with
-that route. You MUST NOT use an unselected role-only `Task` / `task` tool,
-`ctx_batch_execute`, `ctx_execute`, or any in-process parallel
-scan as a substitute for a selected route. A role label (e.g. `adversarial-reviewer-a`)
-or a Kilo Auto tier does not select a provider/model route; only the host’s
-exact exposed route satisfies the model-selection gate. If a pinned or selected
-route is unavailable or fails, keep the track on a subagent: relaunch it through
-another host-exposed route (host-suggested corrected model, another available
-role's route, or a host-default-routed subagent). Use the parent session's own
-route only as a genuine last resort when no subagent launch can run the track;
-record the substitution and do not leave the track unexecuted over a route
-failure.
-
-Before launching the review tracks, state the candidate route plan to the user
-and obtain explicit approval. A missing/stale route or evidence requires
-separate bounded approval. Do not use a 10–15 second shell timeout, start a
-duplicate job, or replace the selected route with `kilo auto`/native role-only
-delegation.
+**MUST — no exceptions.** Launch independent review tracks as bounded read-only
+subagents through the host's native parallel task surface. Subagents inherit the
+parent session's model: do NOT pin, select, or require a specific provider/model
+route for a track, and do not treat a role label (e.g. `adversarial-reviewer-a`)
+as a model choice. Never substitute `ctx_batch_execute`, `ctx_execute`, or an
+in-process parallel scan for a real subagent launch. If a subagent launch fails
+for a transient host reason, relaunch the same track as a subagent (a corrected
+role, a host-default-routed subagent, or the parent session's own model only as
+a genuine last resort); record the substitution and do not leave the track
+unexecuted over a launch failure.
 
 For `adversarial-pr-review`, the approval gate is the user’s explicit request
 to run an adversarial/multi-agent PR review. That request authorizes the
 parallel launch immediately; you do NOT need to ask for additional permission.
+Do not use a 10–15 second shell timeout, start a duplicate job, or replace the
+subagent launch with in-process delegation.
 
 For Kilo CLI sessions this handoff is **mandatory**: launch the independent
-tracks with the selected concrete routes through the host’s native parallel
-task surface, and include the track matrix in the parent task so agents do not
+tracks through the host’s native parallel task surface with parent-model
+inheritance, and include the track matrix in the parent task so agents do not
 redo one another’s work.
 
 While the workers run, the parent MUST keep checking observability instead of
@@ -140,25 +132,20 @@ decide when to stop polling; a stalled run is stopped and retried once, not
 waited on blindly.
 
 `subagent_type` and other agent-role labels identify a capability or harness
-role, not a model or effort level from their names alone. A profile is route
-evidence only when host metadata exposes the selected route; do not claim that a
-role changed the model. Record the selected route, effort when exposed, cost
-class/entitlement, availability evidence, fallback, user approval, and any
-substitution before launch. Native Auto handles its server-side model mapping
-and fallback; repository scripts must not recreate that logic.
+role, not a model or effort level from their names alone. Subagents inherit the
+parent session's model; do not claim a role changed the model. Record any
+substitution when a track must be relaunched.
 
 The routing rules below are harness-neutral. Named agent types are repository
 or Kilo/OpenCode examples only; Cursor, Claude Code, Copilot, and other hosts
 should map the same capabilities to their own read-only Task/equivalent agents.
 Preserve the bounded scope, stop condition, report cap, and parent ownership
-regardless of the host. **For Kilo CLI sessions the host's selected route is
-the required launch path (see above); the role table is only a mapping aid for
-hosts that launch natively.**
+regardless of the host. **For Kilo CLI sessions the native parallel task
+surface is the required launch path (see above); the role table is only a
+mapping aid for hosts that launch natively.**
 
 Prefer a repository-specialized read-only role when its contract matches the
-track. A generic role is only a last-resort role mapping after the native
-model-selection gate has passed; it is not a model/provider fallback and cannot
-authorize a material or parallel launch when route selection is unavailable.
+track. A generic role is only a last-resort role mapping.
 
 | Agent type / capability | Use when | Example role |
 | :--- | :--- | :--- |
@@ -200,23 +187,18 @@ Recover autonomously when an intended role fails, is cancelled, or is
 unavailable without pretending that a role replacement selected a model:
 
 1. Retry once only when the failure appears transient.
-2. Otherwise relaunch the **same narrow track** through another host-exposed
-   subagent route: a host-suggested corrected model, another available role's
-   route, or a host-default-routed read-only subagent. A different role label
-   alone is not a valid fallback. Do not send the replacement the full PR diff.
-3. Only when no subagent launch can run the track, use the parent session's own
-   route as a genuine last resort — launch the subagent with the parent route,
-   or have the parent cover **every uncovered acceptance criterion** with
-   sequential checks. The track cannot be marked complete
-   while its coverage matrix has unchecked paths or questions.
-4. Record requested route, selected route, effort, role, scope, availability,
-   and the reason for any substitution in the verification notes. Never infer
-   the selected route from a role label.
+2. Otherwise relaunch the **same narrow track** as a bounded read-only
+   subagent: a corrected role, another available read-only role, or a
+   host-default-routed subagent. Subagents inherit the parent session's model;
+   do not pin a route on relaunch. Do not send the replacement the full PR diff.
+3. Only when no subagent launch can run the track, have the parent cover
+   **every uncovered acceptance criterion** with sequential checks. The track
+   cannot be marked complete while its coverage matrix has unchecked paths or
+   questions.
+4. Record the role, scope, and the reason for any substitution in the
+   verification notes. Never infer a model from a role label.
 
-Do not bypass the native model-selection gate because a provider-specific
-selection is inconvenient. Do not claim a model ran when the routed worker
-returned an error or an empty report. The native Task wrapper remains a fallback
-only when it exposes the selected route itself.
+Do not claim a model ran when the worker returned an error or an empty report.
 
 ## Scope and evidence
 
