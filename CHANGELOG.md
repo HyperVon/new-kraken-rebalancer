@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.70] - 2026-09-18
+
+### Fixed
+
+- **Full-wallet baseline reconciles against the legacy configured-universe series**: after
+  inception recovery approves the complete-wallet baseline, the recorded post-inception series
+  written by the legacy allocation-scoped snapshot writer never contains rows for baseline
+  holdings outside the configured universe, so the interval-close check rejected the comparison
+  as `UNSUPPORTED_TRADE` at the first legacy successor snapshot (observed in production at
+  2025-12-05T17:00:57.074Z, 101 ms after inception, with the blocking trade itself reconciling
+  exactly). Symbols outside the derived series scope are now tolerated as never recorded by the
+  legacy writer — reconciliation still fails closed (`UNSUPPORTED_TRADE`) when no series scope
+  is derivable, and configured-universe holdings that vanish from the series still fail as
+  `ASSET_UNIVERSE_CHANGED`. The late-assignment matcher applies the same scope-awareness.
+
 ## [6.17.69] - 2026-09-18
 
 ### Fixed

@@ -718,7 +718,10 @@ Trades and internal conversions are reconciliation evidence for the actual serie
 not synthetic Buy & Hold events; the passive path applies only eligible external
 movements and normalized owner flows. It never emits estimated numeric alpha for
 an unexplained tracked mutation; untracked assets remain outside this validation
-boundary.
+boundary. Baseline holdings outside the derived configured-universe series scope
+are never recorded by the legacy snapshot writer and reconcile only at the anchor;
+when no series scope is derivable, a non-zero implied balance absent from the
+series still fails closed as `UNSUPPORTED_TRADE`.
 
 Snapshots track an explicit `balancesObservedAt` timestamp representing the local
 balance-request start boundary, distinct from the snapshot creation/display

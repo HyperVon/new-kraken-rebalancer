@@ -310,6 +310,7 @@ object RebalancerComparisonCalculator {
             tradeLegsByTradeIdentity = tradeLegsByTradeIdentity,
             resolvedScopes = ledgerScopes,
             orphanTradeLedgerIds = orphanTradeLedgerIds,
+            configuredAssetUniverse = configuredAssetUniverse,
         )
 
         val reconciledLedgers = when (balanceResult) {
@@ -748,6 +749,7 @@ object RebalancerComparisonCalculator {
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
         resolvedScopes: Map<String, AuthoritativeLedgerBalanceValidator.LedgerWalletScope>,
         orphanTradeLedgerIds: Set<String>,
+        configuredAssetUniverse: Set<String>?,
     ): TrackedBalanceValidation {
         val invalidFeeLedger = ledgers.firstOrNull { it.type in externalBalanceLedgerTypes && !it.hasValidFee }
         if (invalidFeeLedger != null) {
@@ -810,6 +812,18 @@ object RebalancerComparisonCalculator {
         val baselineAssetSymbols = baseline.assets.keys
             .map { Asset.normalizeLedgerAsset(it).uppercase() }
             .toSet()
+
+        // The approved baseline may own the complete wallet while the recorded series only
+        // snapshots its tracked universe. A baseline holding outside that universe is invisible
+        // to every row the series writes, so its absence is a writer-scope artifact, not an
+        // unexplained change; reconciliation must not fail on it. An empty universe keeps the
+        // strict behavior so the check still fails closed when no scope can be derived.
+        val trackedSeriesUniverse = requiredConfiguredAssetUniverse(baseline, configuredAssetUniverse)
+
+        fun untrackedBySeries(symbol: String): Boolean = trackedSeriesUniverse.isNotEmpty() &&
+            Asset.normalizeLedgerAsset(symbol).uppercase() !in trackedSeriesUniverse
+
+        val toleratedUntrackedSymbols = linkedSetOf<String>()
 
         fun reconcileInterval(
             i: Int,
@@ -1137,6 +1151,7 @@ object RebalancerComparisonCalculator {
                     useAuthoritativeLedgerBalances = useAuthoritativeLedgerBalances,
                     tradeLegsByRefId = tradeLegsByRefId,
                     tradeLegsByTradeIdentity = tradeLegsByTradeIdentity,
+                    isUntrackedBySeries = ::untrackedBySeries,
                 ) ?: run {
                     return TrackedBalanceValidation.Failed(
                         reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
@@ -1252,6 +1267,7 @@ object RebalancerComparisonCalculator {
                         useAuthoritativeLedgerBalances,
                         tradeLegsByRefId,
                         tradeLegsByTradeIdentity,
+                        ::untrackedBySeries,
                         preRegularBalances,
                         anchorRelativeLedgerIndexes,
                         prev.timestamp..curr.timestamp,
@@ -1276,19 +1292,23 @@ object RebalancerComparisonCalculator {
                 }
             }
 
-            // A fully liquidated asset can disappear from the recorded series,
-            // so only keys with a materially non-zero balance must still be observable.
-            if (impliedBalances.any { (symbol, balance) ->
-                    symbol !in curr.assets &&
-                        balance.setScale(balanceScale(symbol), RoundingMode.HALF_UP).signum() != 0
+            // A fully liquidated asset can disappear from the recorded series, and a baseline
+            // holding outside the series' tracked universe is never recorded by it, so only
+            // tracked keys with a materially non-zero balance must still be observable.
+            impliedBalances.forEach { (symbol, balance) ->
+                if (symbol !in curr.assets &&
+                    balance.setScale(balanceScale(symbol), RoundingMode.HALF_UP).signum() != 0
+                ) {
+                    if (!untrackedBySeries(symbol)) {
+                        return TrackedBalanceValidation.Failed(
+                            reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                            unavailableAt = curr.timestamp,
+                        )
+                    }
+                    toleratedUntrackedSymbols.add(symbol)
                 }
-            ) {
-                return TrackedBalanceValidation.Failed(
-                    reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
-                    unavailableAt = curr.timestamp,
-                )
             }
-            if (!balancesMatchSnapshot(impliedBalances, curr)) {
+            if (!balancesMatchSnapshot(impliedBalances, curr, ::untrackedBySeries)) {
                 return TrackedBalanceValidation.Failed(
                     reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
                     unavailableAt = curr.timestamp,
@@ -1330,6 +1350,14 @@ object RebalancerComparisonCalculator {
             )
             if (reportedEconomicsFailure != null) return preciseFailure
             state = reportedEconomicsAttempt
+        }
+
+        if (toleratedUntrackedSymbols.isNotEmpty()) {
+            log.info(
+                "Comparison series-scope tolerance: {} baseline holding(s) are never recorded by the legacy series and are reconciled only at the anchor: {}",
+                toleratedUntrackedSymbols.size,
+                toleratedUntrackedSymbols.sorted().joinToString(", "),
+            )
         }
 
         val passedLedgers = state.assignedLedgerIndexes.sorted().map { index ->
@@ -1374,6 +1402,7 @@ object RebalancerComparisonCalculator {
     private fun balancesMatchSnapshot(
         expectedBalances: Map<String, BigDecimal>,
         snapshot: PortfolioSnapshot,
+        isUntrackedBySeries: (String) -> Boolean,
     ): Boolean {
         for ((symbol, expectedBalance) in expectedBalances) {
             val scale = balanceScale(symbol)
@@ -1383,8 +1412,10 @@ object RebalancerComparisonCalculator {
             val roundedExpected = expectedBalance.setScale(scale, RoundingMode.HALF_UP)
             val snapshotBalance = snapshot.assets[symbol]?.balance
             if (snapshotBalance == null) {
-                // A fully liquidated position may be dropped from the recorded series.
+                // A fully liquidated position may be dropped from the recorded series, and a
+                // baseline holding outside the series' tracked universe is never recorded by it.
                 if (roundedExpected.signum() == 0) continue
+                if (isUntrackedBySeries(symbol)) continue
                 return false
             }
             val roundedActual = snapshotBalance.setScale(scale, RoundingMode.HALF_UP)
@@ -1504,6 +1535,7 @@ object RebalancerComparisonCalculator {
         useAuthoritativeLedgerBalances: Boolean,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
+        isUntrackedBySeries: (String) -> Boolean,
     ): InitialAssignmentMatch? {
         if (initialCandidates.size + lateCandidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) {
             // Observable boundary saturation: exhaustive search is bounded, so an over-wide
@@ -1578,6 +1610,7 @@ object RebalancerComparisonCalculator {
                         useAuthoritativeLedgerBalances,
                         tradeLegsByRefId,
                         tradeLegsByTradeIdentity,
+                        isUntrackedBySeries,
                     )
                 } else {
                     null
@@ -1592,7 +1625,7 @@ object RebalancerComparisonCalculator {
                         resultingBalances = late.balances,
                         ledgerDeltas = ledgerDeltas + late.ledgerDeltas,
                     )
-                } else if (balancesMatchSnapshot(testBalances, snapshot)) {
+                } else if (balancesMatchSnapshot(testBalances, snapshot, isUntrackedBySeries)) {
                     InitialAssignmentMatch(
                         embeddedTradeIndexes = embeddedTrades.toList(),
                         embeddedLedgerIndexes = embeddedLedgers.toList(),
@@ -1651,6 +1684,7 @@ object RebalancerComparisonCalculator {
         useAuthoritativeLedgerBalances: Boolean,
         tradeLegsByRefId: Map<String, List<LedgerEvent>>,
         tradeLegsByTradeIdentity: Map<String, List<LedgerEvent>>,
+        isUntrackedBySeries: (String) -> Boolean,
         // Pre-regulars balances plus the indexes of late ledgers dated before every regular
         // event. Those ledgers evaluate anchor-relatively (see applyAnchorRelativeLedgerEvent);
         // default callers keep the legacy post-regulars evaluation.
@@ -1662,7 +1696,7 @@ object RebalancerComparisonCalculator {
     ): LateAssignment? {
         if (candidates.isEmpty() || candidates.size > MAX_BOUNDARY_EVENT_CANDIDATES) return null
 
-        val emptyMatches = balancesMatchSnapshot(startingBalances, snapshot)
+        val emptyMatches = balancesMatchSnapshot(startingBalances, snapshot, isUntrackedBySeries)
         val emptyResidual = if (emptyMatches) balanceResidual(startingBalances, snapshot) else null
 
         // If the unassigned state already matches the snapshot with exact zero residual at raw
@@ -1717,7 +1751,7 @@ object RebalancerComparisonCalculator {
         fun search(position: Int, balances: Map<String, BigDecimal>) {
             if (position == orderedCandidates.size) {
                 if ((selectedTrades.isNotEmpty() || selectedLedgers.isNotEmpty()) &&
-                    balancesMatchSnapshot(balances, snapshot)
+                    balancesMatchSnapshot(balances, snapshot, isUntrackedBySeries)
                 ) {
                     val residual = balanceResidual(balances, snapshot)
                     // If the empty subset already matched within display tolerance, a non-empty
