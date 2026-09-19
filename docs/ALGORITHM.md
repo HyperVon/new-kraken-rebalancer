@@ -873,6 +873,22 @@ external capital over time:
   path reports the proven baseline without claiming the current comparison was evaluated, an
   unavailable message appears only when a full evaluation runs and fails, and the later-start
   proposal search never consumes the persisted proof.
+- **Verification runs against the stable, coverage-confirmed historical state.** The Settings
+  automatic-baseline evaluation consumes only snapshots whose balance observation
+  (`balancesObservedAt`, falling back to the snapshot timestamp for reconstructed rows per the
+  reconstruction contract) lies at or before `stableThrough = min(certified ledger coverage
+  horizon, certified trade coverage horizon)` — the same monotonic, evidence-certified metadata
+  the reconstruction invariant requires. Newest live snapshots observed past that horizon are
+  unstable-tail evidence: the full evaluation verifies through the latest stable snapshot, and
+  the persisted proof's evidence horizon is that stable snapshot rather than the newest row, so
+  a snapshot written while its cycle's fills and ledgers are still syncing cannot fail the
+  baseline evaluation with `UNEXPLAINED_BALANCE_CHANGE`. When certified coverage is unknown or
+  fewer than two stable snapshots exist, the evaluation defers with a `HISTORY_COVERAGE_STALE`
+  log instead of reporting an owner-capital failure. This is evidence gating, not tolerance: no
+  snapshot is dropped, skipped, or accepted without confirmed coverage, and once trade/ledger
+  history catches up the previously unstable snapshot is eligible normally. The append-only
+  exclusion applies to baseline verification and its persisted proof horizon only — History's
+  current-comparison behavior is unchanged.
 - **A passive anchor is separate from strategy-inception approval.** If lifetime recovery is
   ambiguous, truncated, or has no trustworthy historical baseline, the comparison anchors at the
   earliest trustworthy retained snapshot at or after the comparison window start that expresses

@@ -315,9 +315,12 @@ class TradeHistoryQueryService(
      * The same gate chain as [getComparisonStartProposal] in the same order, but it also
      * exposes the baseline identity and the passive comparison's availability so the Settings
      * fragment can render the effective Buy & Hold baseline from this single evaluation.
-     * The proposal semantics (including every early return) are preserved exactly: the
-     * proposal chain always evaluates through the full gates because it bypasses the
-     * persisted-baseline fast path.
+     * The proposal chain always evaluates through the full gates because it bypasses the
+     * persisted-baseline fast path. The stable-horizon gate below applies to every
+     * Settings-family evaluation that flows through this function — baseline proof,
+     * later-start proposal search, and search continuation — so each withholds a verdict
+     * while certified coverage is unknown or thin and resumes once history catches up.
+     * History's [getRebalancerComparison] keeps evaluating the full snapshot list.
      *
      * Baseline identity and current comparison availability are independent. When
      * [allowPersistedBaselineFastPath] is true and the durable automatic baseline
@@ -346,9 +349,42 @@ class TradeHistoryQueryService(
         // Invalidated reconstructed history must not yield a proposal: a candidate anchored on
         // stale reconstructed snapshots is not evidence-backed until the rebuild completes.
         if (overlapsStaleReconstruction(snapshots)) return SettingsComparisonStatus()
+        // Automatic-baseline verification operates only on stable historical evidence: a
+        // snapshot whose balance observation lies beyond the certified ledger/trade coverage
+        // horizon belongs to the live tail — e.g. balances already reflecting an executed
+        // trade whose fills or ledger rows have not synced yet — and must not fail the
+        // reconciliation of confirmed history. The boundary is the balance observation time,
+        // not the snapshot write time.
+        val stableThrough = latestConfirmedEconomicCoverage()
+        if (stableThrough == null) {
+            log.info("Automatic B&H baseline verification deferred; reason=HISTORY_COVERAGE_STALE")
+            return SettingsComparisonStatus()
+        }
+        val stableSnapshots = snapshots.filter { isSnapshotCoveredByHistory(it, stableThrough) }
+        if (stableSnapshots.size < 2) {
+            log.info("Automatic B&H baseline verification deferred; reason=HISTORY_COVERAGE_STALE")
+            return SettingsComparisonStatus()
+        }
+        if (stableSnapshots.size < snapshots.size) {
+            val newestSkipped = snapshots.last()
+            log.info(
+                "Automatic B&H baseline verification using stable history horizon; " +
+                    "stableThrough={} latestStableSnapshot={} skippedUnstableTailCount={}",
+                stableThrough,
+                stableSnapshots.last().timestamp,
+                snapshots.size - stableSnapshots.size,
+            )
+            log.debug(
+                "newestSkippedSnapshot={} balancesObservedAt={} ledgerCoverage={} tradeCoverage={}",
+                newestSkipped.timestamp,
+                newestSkipped.balancesObservedAt ?: newestSkipped.timestamp,
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC),
+                repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC),
+            )
+        }
         val current =
             calculateComparison(
-                snapshots,
+                stableSnapshots,
                 inceptionResolution,
                 suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
             )
@@ -382,7 +418,10 @@ class TradeHistoryQueryService(
         if (current.availability != ComparisonAvailability.UNAVAILABLE ||
             current.unavailableReason !in PROPOSAL_ELIGIBLE_REASONS
         ) {
-            persistAutomaticBaselineVerification(current, inceptionResolution, snapshots)
+            // The proof's evidence horizon is the newest stable snapshot: unstable live-tail
+            // rows after the certified coverage horizon are append-only evidence the proof
+            // did not consume, so they can neither invalidate it nor extend its horizon.
+            persistAutomaticBaselineVerification(current, inceptionResolution, stableSnapshots, stableThrough)
             return status
         }
         if (historicalCoverageGapExists(
@@ -618,6 +657,40 @@ class TradeHistoryQueryService(
     }
 
     /**
+     * Certified economic-history coverage for automatic-baseline verification: the earlier
+     * of the certified ledger and trade coverage horizons. Both certified horizons must
+     * exist and parse — the sync watermarks are deliberately not consulted because they
+     * record a refreshed query window, not a completeness proof. This mirrors the
+     * reconstruction contract, which requires both certified horizons to reach the
+     * reconstruction anchor before any rebuilt snapshot is trusted. A null return means
+     * coverage is unknown, so verification defers instead of trusting an unproven tail.
+     */
+    private suspend fun latestConfirmedEconomicCoverage(): Instant? {
+        val ledgerHorizonSec = ledgerRepository
+            .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
+        val tradeHorizonSec = repository
+            .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+            ?.toLongOrNull()
+        val ledgerHorizon = ledgerHorizonSec?.let(Instant::ofEpochSecond)
+        val tradeHorizon = tradeHorizonSec?.let(Instant::ofEpochSecond)
+        return if (ledgerHorizon == null || tradeHorizon == null) null else minOf(ledgerHorizon, tradeHorizon)
+    }
+
+    /**
+     * A snapshot is economically covered when its balance observation boundary — the moment
+     * the balances it records were observed — lies within confirmed trade/ledger coverage.
+     * Reconstructed historical snapshots carry no separate observation boundary
+     * ([PortfolioSnapshot.balancesObservedAt] is null by the reconstruction contract) and
+     * fall back to their snapshot timestamp, which reconstruction certification guarantees
+     * is covered. Certified coverage horizons are second-granular: a covered second covers
+     * every observation inside it (mirrors the reconstruction anchor tolerance and the ATH
+     * watermark gate).
+     */
+    private fun isSnapshotCoveredByHistory(snapshot: PortfolioSnapshot, stableThrough: Instant): Boolean =
+        (snapshot.balancesObservedAt ?: snapshot.timestamp).epochSecond <= stableThrough.epochSecond
+
+    /**
      * Persists the automatic baseline proof when the just-completed evaluation proved the
      * strategy inception is the effective Buy & Hold baseline. The record stores the proof's
      * identity, evidence horizon, and evidence digest — never current NAV or comparison
@@ -625,12 +698,15 @@ class TradeHistoryQueryService(
      * instant than the strategy inception (e.g. a passive recorded benchmark anchor or a
      * degraded-resolution fallback row) is not an automatic-inception proof and is not
      * persisted here; a same-instant anchor is indistinguishable from and equivalent to
-     * the inception baseline.
+     * the inception baseline. The evidence horizon is capped at the stable verification
+     * horizon (the certified coverage pair), so the digest never binds to uncertified
+     * tail rows.
      */
     private suspend fun persistAutomaticBaselineVerification(
         current: RebalancerComparison,
         inceptionResolution: InceptionResolution?,
         snapshots: List<PortfolioSnapshot>,
+        stableThrough: Instant,
     ) {
         if (current.availability != ComparisonAvailability.AVAILABLE) return
         val baselineTimestamp = current.baselineTimestamp ?: return
@@ -641,7 +717,11 @@ class TradeHistoryQueryService(
         val cursor = snapshots.proposalCursorAt(baselineIndex)
         val snapshotId = repository.getSnapshotId(Instant.ofEpochMilli(cursor.epochMillis), cursor.ordinal)
         snapshotId ?: return
-        val evidenceHorizonEpochMillis = snapshots.maxOf { it.timestamp.toEpochMilli() }
+        // Evidence horizon = the stable verification horizon: capped at certified coverage
+        // so a snapshot written after its covered observation cannot bind the digest to
+        // uncertified tail rows.
+        val evidenceHorizonEpochMillis =
+            minOf(snapshots.maxOf { it.timestamp.toEpochMilli() }, stableThrough.toEpochMilli())
         val evidenceFingerprint = automaticBaselineEvidenceDigest(inceptionTime, evidenceHorizonEpochMillis)
         repository.setSyncMetadataAtomically(
             mapOf(
