@@ -122,12 +122,14 @@ class SimulationEvaluationScenariosTest : StringSpec() {
                 val stack = createSimStack()
                 stack.tradeHistory.init()
                 stack.tradeHistory.syncTradesFromKraken()
+                stack.tradeHistory.syncLedgersFromKraken()
 
                 val comparison = stack.tradeHistory.getRebalancerComparison(
                     Instant.now().minusSeconds(30L * 24L * 60L * 60L),
                     Instant.now().plusSeconds(60),
                 )
 
+                comparison.unavailableReason shouldBe null
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.points.size shouldBeGreaterThanOrEqual 50
                 (comparison.latestDifferenceUSD!!.signum() != 0) shouldBe true

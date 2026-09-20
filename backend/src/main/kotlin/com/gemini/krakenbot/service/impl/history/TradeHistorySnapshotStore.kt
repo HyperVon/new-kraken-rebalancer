@@ -8,6 +8,7 @@ import com.gemini.krakenbot.domain.RebalancerEngine
 import com.gemini.krakenbot.domain.toCryptoScale
 import com.gemini.krakenbot.domain.toUsdScale
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -137,15 +138,17 @@ class TradeHistorySnapshotStore(
                 BigDecimal.ZERO
             }
 
-        val (finalBalances, historicalTrades, provisionalNow) = fetchSimulationData(allocations)
+        val (finalBalances, historicalTrades, historicalLedgers, provisionalNow) =
+            fetchSimulationData(allocations)
 
         val (startInstant, steps, stepHours) = calculateSnapshotGridParameters(historicalTrades, provisionalNow)
-        val currentBalances = reverseSeedTrades(finalBalances, historicalTrades)
+        val currentBalances = reverseSeedTrades(finalBalances, historicalTrades, historicalLedgers)
         val snapshotsToSave =
             buildSnapshotGrid(
                 allocations,
                 currentBalances,
                 historicalTrades,
+                historicalLedgers,
                 startInstant,
                 steps,
                 stepHours,
@@ -168,6 +171,7 @@ class TradeHistorySnapshotStore(
     private data class SimulationData(
         val balances: Map<String, BigDecimal>,
         val trades: List<TradeRecord>,
+        val ledgers: List<LedgerEvent>,
         val provisionalNow: Instant,
     )
 
@@ -199,7 +203,11 @@ class TradeHistorySnapshotStore(
                 .getTradeHistory(provisionalStart.epochSecond, 0)
                 .filter { it.success && !it.dryRun }
                 .sortedBy(TradeRecord::timestamp)
-            SimulationData(normalizedBalances, trades, provisionalNow)
+            val ledgers = backend
+                .getLedgers(provisionalStart.epochSecond, 0)
+                .filter { !it.hasAuthoritativeBalance }
+                .sortedBy(LedgerEvent::time)
+            SimulationData(normalizedBalances, trades, ledgers, provisionalNow)
         }
     }
 
@@ -228,21 +236,40 @@ class TradeHistorySnapshotStore(
     private fun reverseSeedTrades(
         finalBalances: Map<String, BigDecimal>,
         historicalTrades: List<TradeRecord>,
+        historicalLedgers: List<LedgerEvent>,
     ): MutableMap<String, BigDecimal> {
-        // The emulator's balances are its present-day state. Reverse its seeded fills to obtain
-        // a historical baseline, then replay those exact fills while producing snapshots. This
-        // keeps the demo data realistic and exercises the production reconciliation path.
+        // The emulator's balances are its present-day state. Reverse its seeded fills and
+        // ledger credits to obtain a historical baseline, then replay those exact events
+        // while producing snapshots. This keeps the demo data realistic and exercises the
+        // production reconciliation path.
         val currentBalances = finalBalances.toMutableMap()
+        for (ledger in historicalLedgers.asReversed()) {
+            applySeedLedger(currentBalances, ledger, reverse = true)
+        }
         for (trade in historicalTrades.asReversed()) {
             applySeedTrade(currentBalances, trade, reverse = true)
         }
         return currentBalances
     }
 
+    private fun applySeedLedger(balances: MutableMap<String, BigDecimal>, ledger: LedgerEvent, reverse: Boolean) {
+        if (ledger.hasAuthoritativeBalance) return
+        val symbol = Asset.normalizeLedgerAsset(ledger.asset).uppercase()
+        if (symbol !in balances) return
+        val delta = ledger.netBalanceDelta()
+        balances[symbol] =
+            if (reverse) {
+                balances.getValue(symbol).subtract(delta)
+            } else {
+                balances.getValue(symbol).add(delta)
+            }
+    }
+
     private fun buildSnapshotGrid(
         allocations: List<Allocation>,
         currentBalances: MutableMap<String, BigDecimal>,
         historicalTrades: List<TradeRecord>,
+        historicalLedgers: List<LedgerEvent>,
         startInstant: Instant,
         steps: Int,
         stepHours: Long,
@@ -251,10 +278,19 @@ class TradeHistorySnapshotStore(
         val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
         var step = 0
         var nextTradeIndex = 0
+        var nextLedgerIndex = 0
         var runningAth = currentAth
 
         while (step <= steps) {
             val timestamp = startInstant.plus(step * stepHours, ChronoUnit.HOURS)
+
+            while (
+                nextLedgerIndex < historicalLedgers.size &&
+                historicalLedgers[nextLedgerIndex].time <= timestamp
+            ) {
+                applySeedLedger(currentBalances, historicalLedgers[nextLedgerIndex], reverse = false)
+                nextLedgerIndex++
+            }
 
             while (
                 nextTradeIndex < historicalTrades.size &&

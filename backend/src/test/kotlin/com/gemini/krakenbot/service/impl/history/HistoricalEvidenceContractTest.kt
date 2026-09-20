@@ -221,6 +221,10 @@ class HistoricalEvidenceContractTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                "4102444800"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                "4102444800"
             val result = svc.getRebalancerComparison(fixedNow, fixedNow.plusSeconds(86400))
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE

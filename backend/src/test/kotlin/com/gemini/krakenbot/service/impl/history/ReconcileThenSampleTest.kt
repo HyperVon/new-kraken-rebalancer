@@ -9,6 +9,7 @@ import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -128,6 +129,12 @@ class ReconcileThenSampleTest : StringSpec() {
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns series
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
 
                 val service = TradeHistoryQueryService(
                     repository = repository,
@@ -172,6 +179,12 @@ class ReconcileThenSampleTest : StringSpec() {
                 coEvery { repository.getSnapshotsInRange(any(), any()) } returns series
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
 
                 val service = TradeHistoryQueryService(
                     repository = repository,

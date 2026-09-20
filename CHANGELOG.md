@@ -15,12 +15,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     with the same certified, monotonic stable-horizon boundary established for Settings in PR #357.
     Unstable live-tail snapshots whose balances precede complete trade/ledger sync are excluded from
     comparison downsampling and accounting without failing the historical evaluation.
-  - History comparison self-heals and persists verified automatic baseline proofs directly via
+  - History comparison persists verified automatic baseline proofs directly via
     `persistAutomaticBaselineVerification` when comparison reaches `AVAILABLE` with a stable horizon,
     guaranteeing baseline persistence even if the operator navigates directly to History without opening
     Settings.
-  - Bounded and healed `CONTINUOUS_HISTORY_START_EPOCH_MS` against verified baseline inception timestamp
-    when a verified automatic baseline proof is established or resolved.
+  - Kept automatic baseline verification strictly separate from reconstruction-owned continuity
+    metadata: a verified automatic baseline proof never rewrites `CONTINUOUS_HISTORY_START_EPOCH_MS`,
+    which remains the truth about retained/reconstructed snapshot continuity.
   - In `historicalCoverageGapExists`, skipped the 24h gap detection for snapshot intervals within the
     verified evidence horizon `[strategyStart, verifiedHorizon]`, preventing false `HISTORICAL_COVERAGE_GAP`
     unavailability for certified inception baselines while preserving fail-closed detection for

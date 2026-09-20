@@ -41,7 +41,9 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Disposable production-derived harness test verifying end-to-end convergence for the
+ * Production-shaped convergence fixture: an in-memory scenario database seeded from a
+ * production-derived event script — a faithful production-shaped scenario, not an exact
+ * replay of a disposable production database. Verifies end-to-end convergence for the
  * Buy & Hold baseline and history workflow under the proven Dec 5, 2025 automatic baseline.
  *
  * Exercises the reproduction phase, exhaustion loop, live-tail lag, coverage catch-up,
@@ -354,9 +356,10 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 settingsStatus.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 settingsStatus.baselineTimestamp shouldBe t0.toString()
 
-                // Continuous history start is aligned to t0
+                // B&H proof must not rewrite reconstruction-owned continuity metadata: the
+                // continuous history start stays exactly as reconstruction/retention left it.
                 val continuousStart = repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
-                continuousStart shouldBe t0.toEpochMilli().toString()
+                continuousStart.shouldBeNull()
             }
         }
 
@@ -374,6 +377,34 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.unavailableReason.shouldBeNull()
                 encounteredReasons.filterNotNull().shouldBeEmpty()
+            }
+        }
+
+        "Phase 7: Verified B&H proof leaves reconstruction-owned continuity metadata untouched" {
+            runTest {
+                seedProductionDatabase()
+                val queryService = newQueryService()
+
+                // Actual reconstruction continuity begins at T_recon, strictly after inception T0.
+                val tRecon = t0.plus(Duration.ofDays(30))
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                    tRecon.toEpochMilli().toString(),
+                )
+
+                // Automatic B&H verification succeeds from T0 through the verified horizon.
+                val settingsStatus = queryService.getSettingsComparisonStatus(
+                    t0,
+                    allowPersistedBaselineFastPath = false,
+                )
+                settingsStatus.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
+                settingsStatus.baselineTimestamp shouldBe t0.toString()
+
+                // The proof must NOT rewrite reconstruction-owned continuity metadata:
+                // rebuildHistoricalSnapshotsIfNeeded() reads exactly this key and, with
+                // T_recon > T0, must still conclude reconstruction does not cover inception.
+                repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+                    .shouldBe(tRecon.toEpochMilli().toString())
             }
         }
 

@@ -1085,6 +1085,101 @@ class TradeHistoryCoverageTest : StringSpec() {
             balanceCallCount shouldBe 1
         }
 
+        "rebuildHistoricalSnapshotsIfNeeded rebuilds despite a verified buy-and-hold baseline proof" {
+            stubBackend()
+            repository.setHistorySeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION, "2")
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
+                inception.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                defaultScopeDigest,
+            )
+            ledgerRepository.setLedgersSeeded(true)
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "10")
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
+                inception.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+                fixedNow.epochSecond.toString(),
+            )
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
+                defaultScopeDigest,
+            )
+
+            // Reconstruction-owned continuity starts AFTER inception (T_recon > T0): the
+            // reconstruction range itself did not begin there.
+            val tRecon = inception.plusSeconds(3600)
+            repository.setSyncMetadata(
+                SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                tRecon.toEpochMilli().toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+
+            // A verified automatic B&H baseline proof exists from inception through the horizon.
+            // The rebuild gate must not consume it: reconstruction decisions read only
+            // reconstruction-owned metadata.
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS, "VERIFIED")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION, "1")
+            repository.setSyncMetadata(
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_TIMESTAMP_EPOCH_MS,
+                inception.toEpochMilli().toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_INCEPTION_EPOCH_MS,
+                inception.toEpochMilli().toString(),
+            )
+            repository.setSyncMetadata(
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS,
+                fixedNow.toEpochMilli().toString(),
+            )
+
+            var balanceCallCount = 0
+            fakeKraken.balanceSupplier = {
+                balanceCallCount++
+                mapOf(
+                    Asset.BTC to BigDecimal.ONE,
+                    Asset.USD to BigDecimal("10000.00"),
+                )
+            }
+            fakeKraken.ohlcSupplier = { _, _, _ ->
+                listOf(
+                    inception.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
+                    fixedNow.truncatedTo(ChronoUnit.DAYS).epochSecond to BigDecimal("90000.00"),
+                )
+            }
+
+            val syncService = service(fakeKraken, fixedNow)
+            syncService.rebuildHistoricalSnapshotsIfNeeded()
+
+            // The B&H proof does not suppress the rebuild: continuous start does not cover
+            // inception, so reconstruction stays responsible for closing that gap.
+            balanceCallCount shouldBe 1
+
+            // Independence holds both ways: the rebuild path never mutates the baseline proof.
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS) shouldBe "VERIFIED"
+        }
+
         "canRebuildSnapshots() rejects outdated trade coverage version" {
             stubBackend()
             ledgerRepository.setLedgersSeeded(true)
