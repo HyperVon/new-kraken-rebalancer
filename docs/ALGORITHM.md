@@ -890,9 +890,10 @@ external capital over time:
   fewer than two stable snapshots exist, the evaluation defers with a `HISTORY_COVERAGE_STALE`
   log instead of reporting an owner-capital failure. This is evidence gating, not tolerance: no
   snapshot is dropped, skipped, or accepted without confirmed coverage, and once trade/ledger
-  history catches up the previously unstable snapshot is eligible normally. The append-only
-  exclusion applies to baseline verification and its persisted proof horizon only — History's
-  current-comparison behavior is unchanged.
+  history catches up the previously unstable snapshot is eligible normally. History comparison
+  uses the same stable-horizon gate to evaluate confirmed historical prefixes without premature
+  unexplained-balance failures on uncertified live tails, and persists verified automatic baseline
+  proofs directly upon successful evaluation.
 - **A passive anchor is separate from strategy-inception approval.** If lifetime recovery is
   ambiguous, truncated, or has no trustworthy historical baseline, the comparison anchors at the
   earliest trustworthy retained snapshot at or after the comparison window start that expresses

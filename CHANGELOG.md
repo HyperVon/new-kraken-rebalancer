@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.74] - 2026-09-19
+
+### Fixed
+
+- **Converge Buy & Hold baseline and stable-horizon history comparison**:
+  - Gated `getRebalancerComparison` on `latestConfirmedEconomicCoverage()`, aligning History evaluation
+    with the same certified, monotonic stable-horizon boundary established for Settings in PR #357.
+    Unstable live-tail snapshots whose balances precede complete trade/ledger sync are excluded from
+    comparison downsampling and accounting without failing the historical evaluation.
+  - History comparison self-heals and persists verified automatic baseline proofs directly via
+    `persistAutomaticBaselineVerification` when comparison reaches `AVAILABLE` with a stable horizon,
+    guaranteeing baseline persistence even if the operator navigates directly to History without opening
+    Settings.
+  - Bounded and healed `CONTINUOUS_HISTORY_START_EPOCH_MS` against verified baseline inception timestamp
+    when a verified automatic baseline proof is established or resolved.
+  - In `historicalCoverageGapExists`, skipped the 24h gap detection for snapshot intervals within the
+    verified evidence horizon `[strategyStart, verifiedHorizon]`, preventing false `HISTORICAL_COVERAGE_GAP`
+    unavailability for certified inception baselines while preserving fail-closed detection for
+    post-horizon gaps.
+  - In proposal post-processing, prevented rewriting `unavailableReason` to `HISTORICAL_COVERAGE_GAP`
+    when the strategy inception is a verified automatic baseline proof.
+  - Added structured diagnostic logging for unavailable comparison outcomes and reasons.
+
 ## [6.17.73] - 2026-09-19
 
 ### Fixed

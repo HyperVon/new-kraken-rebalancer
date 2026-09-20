@@ -252,9 +252,75 @@ class TradeHistoryQueryService(
             )
         }
         val inceptionResolution = inceptionDiscoveryService?.resolveInception()
+
+        // History comparison operates against stable, coverage-confirmed history: a newest
+        // live snapshot whose balance observation lies beyond certified trade/ledger coverage
+        // is unstable-tail evidence and must not fail the evaluation with an unexplained balance
+        // change or mask into a historical-coverage gap.
+        val stableThrough = latestConfirmedEconomicCoverage()
+        val firstUncoveredIndex = if (stableThrough != null) {
+            orderedSnapshots.indexOfFirst { !isSnapshotCoveredByHistory(it, stableThrough) }
+        } else {
+            -1
+        }
+        val evaluationSnapshots = if (firstUncoveredIndex >= 0) {
+            val reentry = orderedSnapshots.drop(firstUncoveredIndex + 1).indexOfFirst {
+                isSnapshotCoveredByHistory(it, stableThrough!!)
+            }
+            if (reentry >= 0) {
+                log.warn(
+                    "History comparison deferred; reason=HISTORY_COVERAGE_NON_MONOTONIC " +
+                        "firstUncoveredSnapshot={} laterCoveredSnapshot={}",
+                    orderedSnapshots[firstUncoveredIndex].timestamp,
+                    orderedSnapshots[firstUncoveredIndex + 1 + reentry].timestamp,
+                )
+                return RebalancerComparison(
+                    availability = ComparisonAvailability.UNAVAILABLE,
+                    confidence = null,
+                    baselineTimestamp = inceptionResolution?.inceptionTime ?: orderedSnapshots.first().timestamp,
+                    points = emptyList(),
+                    latestDifferenceUSD = null,
+                    latestDifferencePercent = null,
+                    unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                    unavailableAt = orderedSnapshots[firstUncoveredIndex].timestamp,
+                )
+            }
+            orderedSnapshots.take(firstUncoveredIndex)
+        } else {
+            orderedSnapshots
+        }
+
+        if (evaluationSnapshots.size < 2) {
+            log.info(
+                "History comparison unavailable; reason=HISTORY_COVERAGE_STALE stableThrough={} snapshotCount={}",
+                stableThrough,
+                evaluationSnapshots.size,
+            )
+            return RebalancerComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = inceptionResolution?.inceptionTime ?: orderedSnapshots.first().timestamp,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableAt = orderedSnapshots.firstOrNull()?.timestamp,
+            )
+        }
+
+        if (evaluationSnapshots.size < orderedSnapshots.size) {
+            log.info(
+                "History comparison using stable history horizon; " +
+                    "stableThrough={} latestStableSnapshot={} skippedUnstableTailCount={}",
+                stableThrough,
+                evaluationSnapshots.last().timestamp,
+                orderedSnapshots.size - evaluationSnapshots.size,
+            )
+        }
+
         val reconciled =
             calculateComparison(
-                orderedSnapshots,
+                evaluationSnapshots,
                 inceptionResolution,
                 suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
             )
@@ -263,10 +329,20 @@ class TradeHistoryQueryService(
         // payload size. Baseline, latest difference, and contribution accounting are computed on
         // the full series and are unaffected by point selection; endpoints are always kept.
         val result = if (reconciled.availability == ComparisonAvailability.AVAILABLE) {
+            if (stableThrough != null) {
+                persistAutomaticBaselineVerification(
+                    reconciled,
+                    inceptionResolution,
+                    evaluationSnapshots,
+                    stableThrough,
+                )
+            }
             reconciled.copy(points = reconciled.points.downsampleSnapshots())
         } else {
             reconciled
         }
+
+        var finalResult = result
         // A later comparison start is actionable only alongside an explicit strategy inception.
         // Auto-detected inception is display-only until the operator supplies that anchor.
         if (result.availability == ComparisonAvailability.UNAVAILABLE &&
@@ -278,29 +354,56 @@ class TradeHistoryQueryService(
             // continuity check; applying the obsolete strategy start here would turn a genuine
             // post-anchor reconciliation failure into a misleading historical-coverage gap.
             val strategyStart = result.baselineTimestamp ?: inceptionResolution?.inceptionTime
-            if (strategyStart != null && historicalCoverageGapExists(strategyStart)) {
-                // A later retained snapshot may reconcile locally while an earlier retained era
-                // is missing. Without continuity across the retention boundary there is no proof
-                // that the proposed candidate is the earliest trustworthy start.
-                return result.copy(
+            val isVerifiedBaseline = strategyStart != null &&
+                strategyStart == inceptionResolution?.inceptionTime &&
+                readVerifiedAutomaticBaseline(inceptionResolution) != null
+            if (strategyStart != null && !isVerifiedBaseline && historicalCoverageGapExists(strategyStart)) {
+                log.info(
+                    "comparison unavailable reason rewritten; from={} to={} because=HISTORICAL_COVERAGE_GAP",
+                    result.unavailableReason,
+                    ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+                )
+                finalResult = result.copy(
                     unavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
                     proposedBaselineTimestamp = null,
                     proposalSearchStatus = null,
                 )
+            } else {
+                // Window-independent: the proposal must not change when the user
+                // zooms the History chart, so the scan reads the full retained
+                // snapshot range instead of the display window.
+                val proposal = findLaterComparisonStartProposal(
+                    startAfter = inceptionResolution?.inceptionTime ?: Instant.EPOCH,
+                    inceptionResolution = inceptionResolution,
+                )
+                finalResult = result.copy(
+                    proposedBaselineTimestamp = proposal.timestamp,
+                    proposalSearchStatus = proposal.status,
+                )
             }
-            // Window-independent: the proposal must not change when the user
-            // zooms the History chart, so the scan reads the full retained
-            // snapshot range instead of the display window.
-            val proposal = findLaterComparisonStartProposal(
-                startAfter = inceptionResolution?.inceptionTime ?: Instant.EPOCH,
-                inceptionResolution = inceptionResolution,
-            )
-            return result.copy(
-                proposedBaselineTimestamp = proposal.timestamp,
-                proposalSearchStatus = proposal.status,
+        }
+
+        if (finalResult.availability == ComparisonAvailability.UNAVAILABLE) {
+            val continuousHistoryStart = repository.getSyncMetadata(
+                SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+            )?.toLongOrNull()?.let(Instant::ofEpochMilli)
+            val autoBaselineVerifiedThrough = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS,
+            )?.toLongOrNull()?.let(Instant::ofEpochMilli)
+            log.info(
+                "comparison unavailable; originalReason={} finalReason={} baseline={} unavailableAt={} " +
+                    "stableThrough={} continuousHistoryStart={} automaticBaselineVerifiedThrough={}",
+                result.unavailableReason,
+                finalResult.unavailableReason,
+                finalResult.baselineTimestamp ?: "unknown",
+                finalResult.unavailableAt ?: "unknown",
+                stableThrough ?: "unknown",
+                continuousHistoryStart ?: "unknown",
+                autoBaselineVerifiedThrough ?: "unknown",
             )
         }
-        return result
+
+        return finalResult
     }
 
     /**
@@ -320,7 +423,8 @@ class TradeHistoryQueryService(
      * Settings-family evaluation that flows through this function — baseline proof,
      * later-start proposal search, and search continuation — so each withholds a verdict
      * while certified coverage is unknown or thin and resumes once history catches up.
-     * History's [getRebalancerComparison] keeps evaluating the full snapshot list.
+     * History's [getRebalancerComparison] uses the same stable-horizon gate to trim
+     * uncertified live-tail snapshots while evaluating the retained historical prefix.
      *
      * Baseline identity and current comparison availability are independent. When
      * [allowPersistedBaselineFastPath] is true and the durable automatic baseline
@@ -741,6 +845,13 @@ class TradeHistoryQueryService(
         val evidenceHorizonEpochMillis =
             minOf(snapshots.maxOf { it.timestamp.toEpochMilli() }, stableThrough.toEpochMilli())
         val evidenceFingerprint = automaticBaselineEvidenceDigest(inceptionTime, evidenceHorizonEpochMillis)
+        val existingContinuousStart = repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
+            ?.toLongOrNull()
+        val effectiveContinuousStart = if (existingContinuousStart != null && existingContinuousStart >= 0L) {
+            minOf(existingContinuousStart, cursor.epochMillis)
+        } else {
+            cursor.epochMillis
+        }
         repository.setSyncMetadataAtomically(
             mapOf(
                 SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION to
@@ -760,6 +871,8 @@ class TradeHistoryQueryService(
                 SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT to evidenceFingerprint,
                 SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS to
                     evidenceHorizonEpochMillis.toString(),
+                SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS to
+                    effectiveContinuousStart.toString(),
             ),
         )
         log.info(
@@ -1563,27 +1676,63 @@ class TradeHistoryQueryService(
         }.sortedBy { it.timestamp }
         if (retained.isEmpty()) return false
 
-        val continuousStart = resolveContinuousHistoryStart(snapshots)
-        if (Duration.between(strategyStart, continuousStart).seconds > MAX_COVERAGE_GAP_SECONDS) {
-            // Strategy started before continuous history was established (e.g. lost under legacy retention).
-            return true
+        val verifiedBaseline = inceptionDiscoveryService?.resolveInception()?.let {
+            readVerifiedAutomaticBaseline(it)
         }
+        val isVerifiedInception = verifiedBaseline != null &&
+            verifiedBaseline.baselineTimestamp == strategyStart.toString()
+        val verifiedHorizonEpochMs = if (isVerifiedInception) {
+            repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS,
+            )?.toLongOrNull()
+        } else {
+            null
+        }
+        val verifiedHorizon = verifiedHorizonEpochMs?.let(Instant::ofEpochMilli)
 
-        val first = retained.first()
-        if (Duration.between(strategyStart, first.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS) {
-            return true
+        if (!isVerifiedInception) {
+            val continuousStart = resolveContinuousHistoryStart(snapshots)
+            if (Duration.between(strategyStart, continuousStart).seconds > MAX_COVERAGE_GAP_SECONDS) {
+                // Strategy started before continuous history was established (e.g. lost under legacy retention).
+                return true
+            }
+
+            val first = retained.first()
+            if (Duration.between(strategyStart, first.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS) {
+                return true
+            }
         }
 
         return retained.zipWithNext().any { (previous, current) ->
-            Duration.between(previous.timestamp, current.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS
+            if (verifiedHorizon != null && !current.timestamp.isAfter(verifiedHorizon)) {
+                false
+            } else {
+                Duration.between(previous.timestamp, current.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS
+            }
         }
     }
 
     private suspend fun resolveContinuousHistoryStart(snapshots: List<PortfolioSnapshot>): Instant {
+        val verifiedBaseline = inceptionDiscoveryService?.resolveInception()?.let {
+            readVerifiedAutomaticBaseline(it)
+        }
+        val verifiedInceptionEpoch = verifiedBaseline?.baselineTimestamp?.let {
+            runCatching { Instant.parse(it).toEpochMilli() }.getOrNull()
+        }
+
         val storedEpoch = repository.getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
             ?.toLongOrNull()
         if (storedEpoch != null && storedEpoch >= 0L) {
-            val stored = Instant.ofEpochMilli(storedEpoch)
+            val effectiveEpoch = if (verifiedInceptionEpoch != null && verifiedInceptionEpoch < storedEpoch) {
+                repository.setSyncMetadata(
+                    SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+                    verifiedInceptionEpoch.toString(),
+                )
+                verifiedInceptionEpoch
+            } else {
+                storedEpoch
+            }
+            val stored = Instant.ofEpochMilli(effectiveEpoch)
             val earliestSnapshot = snapshots.minByOrNull { it.timestamp }?.timestamp
             if (earliestSnapshot == null || !earliestSnapshot.isBefore(stored)) {
                 return stored
@@ -1599,12 +1748,24 @@ class TradeHistoryQueryService(
             determineContinuousHistoryStart(snapshots)
         }
 
-        val storedValue = if (isFresh) "0" else determinedStart.toEpochMilli().toString()
+        val effectiveDetermined = if (verifiedInceptionEpoch != null &&
+            verifiedInceptionEpoch < determinedStart.toEpochMilli()
+        ) {
+            Instant.ofEpochMilli(verifiedInceptionEpoch)
+        } else {
+            determinedStart
+        }
+
+        val storedValue = if (isFresh && verifiedInceptionEpoch == null) {
+            "0"
+        } else {
+            effectiveDetermined.toEpochMilli().toString()
+        }
         repository.setSyncMetadata(
             SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
             storedValue,
         )
-        return determinedStart
+        return effectiveDetermined
     }
 
     private fun determineContinuousHistoryStart(snapshots: List<PortfolioSnapshot>): Instant {

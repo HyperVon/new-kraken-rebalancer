@@ -618,7 +618,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
-        "getRebalancerComparison evaluates snapshots beyond certified coverage without the stable-horizon gate" {
+        "getRebalancerComparison withholds comparison when all snapshots lie beyond certified coverage" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 val snap2 = snapshot(
@@ -638,9 +638,90 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
 
-                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
-                comparison.baselineTimestamp shouldBe now
-                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "getRebalancerComparison evaluates stable prefix and skips live tail until coverage catches up" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(3600),
+                )
+                // Uncertified live tail snapshot: balance changed but trade/ledger sync hasn't arrived
+                val liveTailSnap = snapshot(
+                    now.plusSeconds(7200),
+                    "105000.00",
+                    btc = "1.1" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(7200),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2, liveTailSnap)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                // Certified coverage only extends to snap2
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 3600).toString()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 3600).toString()
+
+                val comparisonStable = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+
+                // Stable prefix reconciles cleanly without failing on live tail
+                comparisonStable.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparisonStable.baselineTimestamp shouldBe now
+                comparisonStable.points.size shouldBe 2
+
+                // Coverage catches up to liveTailSnap (without trades this balance change will now be evaluated)
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 7200).toString()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 7200).toString()
+
+                val comparisonCaughtUp = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+                // Now evaluated: because no trade was added for the BTC balance jump, it fails with UNEXPLAINED_BALANCE_CHANGE
+                comparisonCaughtUp.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparisonCaughtUp.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            }
+        }
+
+        "getRebalancerComparison defers when snapshot observations are non-monotonic relative to coverage" {
+            runTest {
+                val snap1 = snapshot(
+                    now,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    balancesObservedAt = now,
+                )
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    balancesObservedAt = now.plusSeconds(7200),
+                )
+                val snap3 = snapshot(
+                    now.plusSeconds(7200),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    balancesObservedAt = now.plusSeconds(1800),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2, snap3)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 3600).toString()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 3600).toString()
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+                comparison.unavailableAt shouldBe snap2.timestamp
             }
         }
 
@@ -2822,6 +2903,27 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "getRebalancerComparison does not rewrite unavailable reason when baseline is verified" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+
+                val unprovableRow = snapshot(
+                    fixture.anchorTime.plusSeconds(1800),
+                    "200000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "150000.00",
+                )
+                fixture.snapshotRows.add(1, unprovableRow)
+
+                val comparison = service.getRebalancerComparison(fixture.anchorTime, fixture.laterTime)
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            }
+        }
+
         "getRebalancerComparison_windowMetadataShapesStayConsistent" {
             runTest {
                 val floor = Instant.EPOCH
@@ -4284,6 +4386,31 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // The proof survives a transient degraded resolution: the next confident
                 // resolution can reuse it without a re-verification.
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+            }
+        }
+
+        "automatic baseline verification defers when snapshot observations are non-monotonic" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val intermediateSnap = snapshot(
+                    fixture.anchorTime.plusSeconds(1800),
+                    "1050.00",
+                    btc = "1.0" to "550.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = fixture.laterTime.plusSeconds(3600),
+                )
+                fixture.snapshotRows.add(1, intermediateSnap)
+                fixture.metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.anchorTime.epochSecond + 3600).toString()
+                fixture.ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.anchorTime.epochSecond + 3600).toString()
+
+                val service = automaticBaselineService(fixture)
+                val status = service.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                )
+                status.baselineStatus.shouldBeNull()
             }
         }
 
