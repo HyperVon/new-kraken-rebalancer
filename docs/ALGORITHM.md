@@ -1006,6 +1006,59 @@ external capital over time:
   incomplete linked multi-row groups fail closed. Other internal moves are ignored; unrecognized or
   ambiguous ledger rows fail closed (`UNSUPPORTED_LEDGER_TYPE`, `AMBIGUOUS_LEDGER_TYPE`).
 
+### Buy & Hold comparison cache contract
+
+A successful (`AVAILABLE`) Buy & Hold comparison is durably cached so repeat requests, long-running
+processes, and restarts reuse the reconciled result instead of replaying history. The cache is
+correctness-preserving: a cached entry is served only while the evidence the authoritative
+calculation actually consumed is unchanged.
+
+- **Entry validity.** A cache entry is keyed by the exact evaluation window (first/last stable
+  evaluation snapshot timestamps) and carries an input fingerprint: SHA-256 over the cache format
+  version, the certified stable horizon (`stableThrough`), the consumed-evidence digest, the OHLC
+  candle content revision, the funding provenance token, the configured allocation universe, the
+  reconstruction revision markers, the inception resolution, and the evaluation snapshot boundary
+  (count, first, last). A read matches only when the stored fingerprint equals the fingerprint
+  computed for the current request. Unavailable results are never persisted, and cache read/write
+  failures fall back to the authoritative calculation.
+- **Consumed evidence.** The fingerprint binds the recorded snapshots at or before the certified
+  horizon, all trades and ledgers up to that horizon, the predecessor snapshot before the effective
+  inception baseline, the OHLC candles consumed for historical valuations, the funding provenance
+  evidence identity, and the configuration affecting benchmark semantics. The digest is row-level
+  and content-derived: reordering, fee corrections, or balance edits in consumed rows change it.
+- **Invalidation.** The cache misses and one authoritative replay occurs when any consumed evidence
+  changes: a snapshot, trade, or ledger row is added, edited, or deleted at or before the certified
+  horizon; the certified trade/ledger horizon advances; order reconciliation rewrites consumed fill
+  economics; reconstruction continuity metadata changes; allocations change; funding evidence
+  content changes (deposits, withdrawals, internal transfers); or a consumed OHLC candle appears or
+  is corrected. An `AVAILABLE` replay then repopulates the cache with the new fingerprint.
+- **Non-invalidating writes.** New live-tail snapshots beyond `stableThrough` bump the global
+  evidence revision but leave the consumed-evidence digest unchanged, so the cached comparison is
+  still a hit (one bounded rehash, no replay). Empty or content-identical OHLC refetches do not
+  advance the OHLC content revision. Passage of time alone never invalidates.
+- **Funding freshness vs durable identity.** Prepared funding provenance has a short in-memory
+  freshness window (60s). When prepared evidence is absent or expired, the fingerprint falls back
+  to a durable, persisted funding-evidence identity (scope, funding families, bounded request
+  range, and a content fingerprint of the normalized deposit/withdrawal/internal-transfer records)
+  so requests across TTL expiry and process restarts reuse the cache without funding API calls.
+  Provenance decisions always use freshly prepared evidence during authoritative calculation; the
+  durable identity certifies cache identity only, never provenance answers. A later authoritative
+  preparation observing different funding evidence changes the durable fingerprint and invalidates
+  the cache. Degraded provenance results are never cached.
+- **OHLC freshness and revalidation.** Historical OHLC candles are cached in memory and persisted
+  with covering-fetch proofs. A covering fetch stays authoritative for a bounded freshness window:
+  successful empty responses revalidate after a short interval (so later backfills can cure
+  `MISSING_PRICE` / `HISTORICAL_PRICE_SOURCE_ERROR` frontiers), candles fetched while recent
+  (data ends within a day of the fetch) revalidate hourly, and clearly historical candles revalidate
+  weekly. An expired covering fetch triggers exactly one single-flighted refetch per window —
+  concurrent requests join the same flight. A successful refetch upserts candle corrections and
+  backfills; a transient provider failure never persists a successful empty result, serves the
+  stale cached series, and retries after the next window.
+- **Retention.** The comparison cache retains only the newest few successful ranges (keyed by
+  calculation time, then window end). Pruning runs inside the same transaction that persists a
+  newer successful range, so a replacement is durably committed before superseded rows are removed
+  and the table cannot grow without bound.
+
 ### Trade economics & slippage lifecycle
 
 Each executed order creates a **local estimate** row at rebalance time:

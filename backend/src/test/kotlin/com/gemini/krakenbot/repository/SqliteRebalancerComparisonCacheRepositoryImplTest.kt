@@ -15,6 +15,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.math.BigDecimal
 import java.time.Instant
@@ -109,6 +110,41 @@ class SqliteRebalancerComparisonCacheRepositoryImplTest : StringSpec() {
                 }
 
                 repository.load(0L, 1L) shouldBe null
+            }
+        }
+
+        "prunes superseded source ranges and keeps the newest result reusable" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:comparison-cache-prune-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val repository = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val hourMillis = 3_600_000L
+
+                // Advancing certified horizons save one row each; only the newest three
+                // successful source ranges are retained.
+                (1L..5L).forEach { index ->
+                    repository.save(0L, index * hourMillis, "fingerprint-$index", comparison())
+                }
+
+                val retainedRows = transaction(database) {
+                    RebalancerComparisonCacheTable.selectAll().map {
+                        it[RebalancerComparisonCacheTable.fromEpochMillis] to
+                            it[RebalancerComparisonCacheTable.toEpochMillis]
+                    }
+                }
+                retainedRows.size shouldBe 3
+                retainedRows.map { it.second }.toSet() shouldBe setOf(3L * hourMillis, 4L * hourMillis, 5L * hourMillis)
+
+                // The newest valid result survives pruning and remains loadable after a
+                // repository restart on the same database.
+                val restarted = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                restarted.load(0L, 5L * hourMillis)?.inputFingerprint shouldBe "fingerprint-5"
+                restarted.load(0L, 1L * hourMillis) shouldBe null
             }
         }
     }

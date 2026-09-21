@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.76] - 2026-09-21
+
+### Fixed
+
+- **Stable-prefix comparison cache invalidation**: the persisted Buy & Hold comparison fingerprint
+  now binds a row-level digest of the evidence the authoritative calculation actually consumed
+  (snapshots at or before the certified horizon, trades and ledgers up to that horizon, the
+  predecessor baseline snapshot) instead of a global write counter. New live-tail snapshots beyond
+  the certified horizon no longer force a replay, while any consumed-row change, certified horizon
+  advance, order reconciliation, reconstruction change, or allocation change still invalidates and
+  replays exactly once.
+- **Durable funding evidence identity**: the funding provenance fingerprint now falls back to a
+  persisted, content-derived identity (bounded scope/family/range metadata plus a normalized
+  evidence fingerprint) when prepared evidence is absent or its short freshness window has
+  expired, so the comparison cache is reused across requests, TTL expiry, and restarts without
+  funding API calls. A later authoritative preparation observing different funding evidence still
+  invalidates the cache, and degraded provenance results are never cached.
+- **Bounded OHLC revalidation**: persisted historical OHLC covering fetches now carry a freshness
+  policy — empty results revalidate after a short window, recent candles hourly, historical
+  candles weekly — so later provider backfills and corrections become visible without waiting for
+  new trade or ledger evidence. Expired fetches revalidate via a single flight; transient provider
+  failures serve stale data and are never persisted as successful empty evidence.
+- **Bounded comparison cache retention**: the comparison cache prunes superseded successful ranges
+  (keeping the newest few) inside the same transaction that persists a replacement, so the table
+  cannot grow without bound and a replacement is durably committed before older rows are removed.
+
 ## [6.17.75] - 2026-09-20
 
 ### Fixed

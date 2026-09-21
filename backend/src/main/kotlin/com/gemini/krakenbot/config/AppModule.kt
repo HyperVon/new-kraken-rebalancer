@@ -7,12 +7,14 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.model.FundingProvenanceResolver
+import com.gemini.krakenbot.repository.FundingEvidenceIdentityStore
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.repository.impl.SqliteFundingEvidenceIdentityStoreImpl
 import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteOrderIntentRepositoryImpl
@@ -100,6 +102,7 @@ val coreModule =
         singleOf(::SqliteRebalancerComparisonCacheRepositoryImpl) {
             bind<RebalancerComparisonCacheRepository>()
         }
+        singleOf(::SqliteFundingEvidenceIdentityStoreImpl) { bind<FundingEvidenceIdentityStore>() }
         single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
         single { HistoryEvidenceCoordinator() }
         single {
@@ -213,7 +216,10 @@ val coreModule =
             )
         }
         single<FundingProvenanceResolver> {
-            KrakenFundingProvenanceResolver(krakenService = get())
+            KrakenFundingProvenanceResolver(
+                krakenService = get(),
+                durableIdentityStore = get(),
+            )
         }
         single<PortfolioAnalyzer> {
             PortfolioAnalyzerImpl(

@@ -81,3 +81,7 @@ SyncMetadataKeys:
   INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT: "inception_auto_baseline_evidence_fingerprint"
   INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS: "inception_auto_baseline_evidence_horizon_ms"
   COMPARISON_EVIDENCE_REVISION: "comparison_evidence_revision"
+  OHLC_CANDLE_CONTENT_REVISION: "ohlc_candle_content_revision"
+  FUNDING_PROVENANCE_DURABLE_FINGERPRINT: "funding_provenance_durable_fingerprint"
+  FUNDING_PROVENANCE_DURABLE_IDENTITY: "funding_provenance_durable_identity"
+  FUNDING_PROVENANCE_DURABLE_UPDATED_AT_EPOCH_SEC: "funding_provenance_durable_updated_at_epoch_sec"

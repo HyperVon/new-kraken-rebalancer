@@ -41,8 +41,10 @@ import java.math.RoundingMode
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 private data class HistoricalPriceKey(val symbol: String, val time: Instant)
 
@@ -104,6 +106,22 @@ class TradeHistoryQueryService(
     private val log = LoggerFactory.getLogger(TradeHistoryQueryService::class.java)
 
     private val proposalContinuationActive = AtomicBoolean(false)
+
+    /**
+     * Memoized consumed-evidence digest keyed by inception, certified horizon, and the
+     * global evidence revision. The revision changes on every evidence write; the digest
+     * itself only changes when a row at or before the certified horizon changes, so a
+     * live-tail write (revision bump beyond the horizon) costs one rehash and no cache
+     * invalidation.
+     */
+    private val consumedEvidenceMemo = AtomicReference<ConsumedEvidenceMemo?>(null)
+
+    private data class ConsumedEvidenceMemo(
+        val inceptionMillis: Long?,
+        val horizonMillis: Long,
+        val revision: String,
+        val digest: String,
+    )
 
     private data class ProposalCursor(val epochMillis: Long, val ordinal: Int) {
         fun encode(): String = "$epochMillis:$ordinal"
@@ -228,7 +246,7 @@ class TradeHistoryQueryService(
         private const val PROPOSAL_MAX_TRIALS = 8
 
         /** Bump when the serialized comparison payload or its cache invalidation contract changes. */
-        private const val COMPARISON_CACHE_VERSION = "1"
+        private const val COMPARISON_CACHE_VERSION = "2"
 
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
         private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 24
@@ -544,9 +562,16 @@ class TradeHistoryQueryService(
     }
 
     /**
-     * Reuses only successful calculations. The revision is advanced in the same SQLite
-     * transaction as portfolio/trade/ledger/OHLC evidence writes; configuration, recovery, and
-     * prepared funding identities are included separately because they are not all row writes.
+     * Reuses only successful calculations. Cache identity is the digest of the evidence the
+     * authoritative calculation actually consumed — every snapshot, trade, and ledger row at
+     * or before the certified horizon, bound to the inception the series is anchored on —
+     * plus the OHLC candle-content revision for consumed valuations. Writes beyond the
+     * horizon (a new live snapshot awaiting fills, a deposit not yet synced into coverage)
+     * bump the global revision and cost one rehash, but the digest is unchanged, so the
+     * cache stays valid. Any change to consumed evidence — an edit, backfill, deletion,
+     * reconciliation, or a certified coverage watermark moving — changes the digest and
+     * invalidates exactly once. Configuration, recovery, and prepared funding identities
+     * participate separately because they are not all row writes.
      */
     private suspend fun comparisonCacheFingerprint(
         stableThrough: Instant,
@@ -561,6 +586,15 @@ class TradeHistoryQueryService(
         return try {
             val sourceRevision = repository
                 .getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
+                ?: "0"
+            val horizonEpochMillis = certifiedEventUpperBound(stableThrough).toEpochMilli()
+            val consumedEvidenceDigest = consumedEvidenceDigest(
+                inceptionResolution?.inceptionTime,
+                horizonEpochMillis,
+                sourceRevision,
+            )
+            val ohlcContentRevision = repository
+                .getSyncMetadata(SyncMetadataKeys.OHLC_CANDLE_CONTENT_REVISION)
                 ?: "0"
             val configuredUniverse = configService?.getConfig()?.allocations
                 ?.sortedBy { it.symbol.value.uppercase() }
@@ -581,7 +615,8 @@ class TradeHistoryQueryService(
             val material = buildString {
                 append(COMPARISON_CACHE_VERSION).append('\u0000')
                 append(stableThrough).append('\u0000')
-                append(sourceRevision).append('\u0000')
+                append(consumedEvidenceDigest).append('\u0000')
+                append(ohlcContentRevision).append('\u0000')
                 append(fundingToken).append('\u0000')
                 append(configuredUniverse).append('\u0000')
                 append(reconstructionRevision).append('\u0000')
@@ -589,8 +624,9 @@ class TradeHistoryQueryService(
                     .append(inceptionResolution?.isAutoDetected).append('|')
                     .append(inceptionResolution?.confidence).append('|')
                     .append(inceptionResolution?.unavailableReason).append('\u0000')
-                // The revision is authoritative for normal writes. These boundary values make
-                // an old database with no revision row conservative when its visible range moves.
+                // The consumed-evidence digest is authoritative for row writes. These boundary
+                // values make an old database with no revision row conservative when its
+                // visible range moves.
                 append(snapshots.size).append('|')
                     .append(snapshots.firstOrNull()?.timestamp).append('|')
                     .append(snapshots.lastOrNull()?.timestamp)
@@ -602,6 +638,61 @@ class TradeHistoryQueryService(
             log.debug("Comparison cache fingerprint unavailable: {}", e.message)
             null
         }
+    }
+
+    /**
+     * Digest of every snapshot, trade, and ledger row the authoritative calculation can
+     * consume at or before the certified horizon, bound to the strategy inception and the
+     * cache contract version. Rows strictly after the horizon are append-only live-tail
+     * evidence the calculation did not consume: appending them changes the global revision
+     * (forcing one rehash here) without changing this digest, so the cached comparison for
+     * the stable prefix survives. A row at or before the horizon that is later edited,
+     * backfilled, or deleted changes the digest and invalidates the cache.
+     */
+    private suspend fun consumedEvidenceDigest(
+        inceptionTime: Instant?,
+        horizonEpochMillis: Long,
+        revision: String,
+    ): String {
+        val inceptionMillis = inceptionTime?.toEpochMilli()
+        consumedEvidenceMemo.get()
+            ?.takeIf {
+                it.inceptionMillis == inceptionMillis &&
+                    it.horizonMillis == horizonEpochMillis &&
+                    it.revision == revision
+            }
+            ?.let { return it.digest }
+
+        val effectiveInception = inceptionTime ?: Instant.EPOCH
+        val snapshots = loadAllSnapshots(effectiveInception)
+        val predecessorSnapshot = repository.getSnapshotBefore(effectiveInception)
+        val trades = repository.getTradesInRange(Instant.EPOCH, Instant.ofEpochMilli(horizonEpochMillis))
+        val ledgers =
+            ledgerRepository.getLedgersInRange(Instant.EPOCH, Instant.ofEpochMilli(horizonEpochMillis))
+        val material = buildString {
+            append(COMPARISON_CACHE_VERSION).append('\u0000')
+            append(effectiveInception).append('\u0000')
+            // The predecessor anchor participates in the full evaluation's event query
+            // window, so its presence and content belong to the consumed evidence.
+            if (predecessorSnapshot == null) {
+                append("predecessor:none\n")
+            } else {
+                append("predecessor\n")
+                appendSnapshotDigest(predecessorSnapshot)
+            }
+            for (snapshot in snapshots) {
+                if (snapshot.timestamp.toEpochMilli() <= horizonEpochMillis) appendSnapshotDigest(snapshot)
+            }
+            val sortedTrades = trades.toMutableList()
+            sortedTrades.sortWith(TradeDigestOrder)
+            for (trade in sortedTrades) appendTradeDigest(trade)
+            val sortedLedgers = ledgers.toMutableList()
+            sortedLedgers.sortWith(LedgerDigestOrder)
+            for (event in sortedLedgers) appendLedgerDigest(event)
+        }
+        val digest = sha256Hex(material)
+        consumedEvidenceMemo.set(ConsumedEvidenceMemo(inceptionMillis, horizonEpochMillis, revision, digest))
+        return digest
     }
 
     private suspend fun loadCachedComparison(from: Instant, to: Instant, fingerprint: String): RebalancerComparison? {
@@ -628,6 +719,19 @@ class TradeHistoryQueryService(
     ) {
         val cache = comparisonCacheRepository ?: return
         if (comparison.availability != ComparisonAvailability.AVAILABLE) return
+        if (fundingProvenanceResolver !== FundingProvenanceResolver.NONE &&
+            fundingProvenanceResolver.preparationFailure != null
+        ) {
+            // A degraded funding batch (permission denied, request failed) classifies funding
+            // rows as unresolved and can change the comparison. Never cache that result under
+            // a fingerprint a healthy batch would also produce — it would poison the entry
+            // until the funding evidence itself changed.
+            log.debug(
+                "Comparison cache write skipped; funding provenance degraded ({})",
+                fundingProvenanceResolver.preparationFailure?.reason,
+            )
+            return
+        }
         // Resolve the fingerprint only after the authoritative calculation has finished. The
         // calculation may fetch and persist historical OHLC evidence, which advances the
         // comparison revision; saving a pre-calculation fingerprint would invalidate this result
@@ -2644,6 +2748,23 @@ class TradeHistoryQueryService(
             .append('|').append(event.fee.digestValue()).append('|').append(event.balance.digestValue()).append('|')
             .append(event.hasAuthoritativeBalance).append('|').append(event.hasAuthoritativeFee).append('|')
             .append(event.hasValidFee).append('|').append(event.hasValidAmount).append('\n')
+    }
+
+    /** Deterministic consumed-row ordering; a named comparator keeps the digest lambda-free. */
+    private object TradeDigestOrder : Comparator<TradeRecord> {
+        override fun compare(a: TradeRecord, b: TradeRecord): Int {
+            val byTime = a.timestamp.compareTo(b.timestamp)
+            if (byTime != 0) return byTime
+            return (a.id ?: Int.MAX_VALUE).compareTo(b.id ?: Int.MAX_VALUE)
+        }
+    }
+
+    private object LedgerDigestOrder : Comparator<LedgerEvent> {
+        override fun compare(a: LedgerEvent, b: LedgerEvent): Int {
+            val byTime = a.time.compareTo(b.time)
+            if (byTime != 0) return byTime
+            return a.ledgerId.compareTo(b.ledgerId)
+        }
     }
 
     private fun BigDecimal.digestValue(): String =

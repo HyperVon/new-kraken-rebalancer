@@ -9,6 +9,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -297,6 +298,405 @@ class HistoricalOhlcCacheTest : StringSpec() {
             )
             emptyRestarted.getOHLC(emptyPair, interval, since, upTo) shouldBe emptyList()
             secondCounter.get() shouldBe 0
+        }
+
+        "empty fetch coverage revalidates against the live source after its revalidation window" {
+            val counter = AtomicInteger(0)
+            var clock = Instant.now()
+            val fixedUpTo = clock
+            val cache = HistoricalOhlcCache(
+                fake(emptyList(), counter),
+                nowProvider = { clock },
+            )
+            val since = clock.epochSecond - 6 * durationSeconds
+
+            cache.getOHLC(pair, interval, since, fixedUpTo) shouldBe emptyList()
+            clock = clock.plusSeconds(500)
+            cache.getOHLC(pair, interval, since, fixedUpTo) shouldBe emptyList()
+            counter.get() shouldBe 1
+
+            clock = clock.plusSeconds(200)
+            cache.getOHLC(pair, interval, since, fixedUpTo) shouldBe emptyList()
+            counter.get() shouldBe 2
+        }
+
+        "revalidated response applies provider corrections and backfills" {
+            val counter = AtomicInteger(0)
+            var clock = Instant.now()
+            val fixedUpTo = clock
+            val candleStart = clock.epochSecond - 2 * durationSeconds
+            val candles = mutableListOf(candleStart to BigDecimal("0.0175"))
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        candles.toList()
+                    }
+                },
+                nowProvider = { clock },
+            )
+            val since = candleStart - durationSeconds
+
+            cache.getOHLC(pair, interval, since, fixedUpTo).single().second shouldBeEqualComparingTo
+                (BigDecimal("0.0175"))
+
+            // Inside the freshness window nothing is refetched; after it the corrected close
+            // and a later backfilled candle are both visible, and the provider's trailing
+            // in-progress candle is still dropped. The backfilled candle is listed first so
+            // the freshness computation sees out-of-order candle starts.
+            clock = clock.plusSeconds(3_601)
+            candles += (clock.epochSecond - 100) to BigDecimal("0.0999")
+            candles[0] = candleStart to BigDecimal("0.0199")
+            candles += (candleStart + durationSeconds) to BigDecimal("0.0200")
+            val revalidated = cache.getOHLC(pair, interval, since, fixedUpTo)
+
+            counter.get() shouldBe 2
+            revalidated.map { it.second } shouldBe listOf(BigDecimal("0.0199"), BigDecimal("0.0200"))
+        }
+
+        "stale history keeps serving while revalidation fails and retries after another window" {
+            val counter = AtomicInteger(0)
+            var clock = Instant.now()
+            val fixedUpTo = clock
+            val candleStart = clock.epochSecond - 2 * durationSeconds
+            val candles = mutableListOf(candleStart to BigDecimal("0.0175"))
+            var failAll = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        val call = counter.incrementAndGet()
+                        if (failAll) error("live source down")
+                        if (call > 1) candles += (candleStart + durationSeconds) to BigDecimal("0.0200")
+                        candles.toList()
+                    }
+                },
+                nowProvider = { clock },
+            )
+            val since = candleStart - durationSeconds
+
+            cache.getOHLC(pair, interval, since, fixedUpTo).size shouldBe 1
+            // A second, wider fetch proof for the same series: the slide-on-failure sweep
+            // must preserve it while replacing only the failed proof.
+            val widerSince = since - durationSeconds
+            cache.getOHLC(pair, interval, widerSince, fixedUpTo)
+
+            clock = clock.plusSeconds(3_601)
+            failAll = true
+            val stale = cache.getOHLC(pair, interval, since, fixedUpTo)
+            counter.get() shouldBe 3
+            stale.map { it.first } shouldBe listOf(candleStart)
+
+            // The stale proof was re-armed: inside the next window no further attempts happen.
+            clock = clock.plusSeconds(1_000)
+            cache.getOHLC(pair, interval, since, fixedUpTo)
+            counter.get() shouldBe 3
+
+            clock = clock.plusSeconds(2_700)
+            failAll = false
+            val recovered = cache.getOHLC(pair, interval, since, fixedUpTo)
+            counter.get() shouldBe 4
+            recovered.size shouldBe 2
+        }
+
+        "a failed revalidation never overwrites the persisted successful evidence" {
+            val database = DatabaseConfig.init(":memory:")
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            var clock = Instant.now()
+            val fixedUpTo = clock
+            val candleStart = clock.epochSecond - 2 * durationSeconds
+            val candles = mutableListOf(candleStart to BigDecimal("0.0175"))
+            var failAll = false
+            val firstCounter = AtomicInteger(0)
+            val first = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        firstCounter.incrementAndGet()
+                        if (failAll) error("live source down")
+                        candles.toList()
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { clock },
+            )
+            first.getOHLC(pair, interval, candleStart - durationSeconds, fixedUpTo).size shouldBe 1
+
+            // A restarted cache whose revalidation fails keeps serving the persisted stale
+            // candle; the persisted fetch proof is untouched.
+            val failingCounter = AtomicInteger(0)
+            failAll = true
+            clock = clock.plusSeconds(3_601)
+            val failing = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        failingCounter.incrementAndGet()
+                        error("live source down")
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { clock },
+            )
+            val stale = failing.getOHLC(pair, interval, candleStart - durationSeconds, fixedUpTo)
+            failingCounter.get() shouldBe 1
+            stale.single().second shouldBeEqualComparingTo (BigDecimal("0.0175"))
+
+            // The durable row still holds the original successful fetch: original wall time
+            // and candle value, never a failed attempt recorded as empty or partial evidence.
+            val persisted = repository.loadCovered(
+                pair = pair,
+                intervalMinutes = interval,
+                sinceEpochSecond = candleStart - durationSeconds,
+                upToEpochSecond = fixedUpTo.epochSecond,
+            )
+            persisted?.fetchedAtEpochSecond shouldBe fixedUpTo.epochSecond
+            persisted?.candles?.single()?.second?.compareTo(BigDecimal("0.0175")) shouldBe 0
+
+            // A later healthy process revalidates the expired but intact evidence normally.
+            val recoveredCounter = AtomicInteger(0)
+            val recovered = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        recoveredCounter.incrementAndGet()
+                        candles.toList()
+                    }
+                },
+                persistentRepository = repository,
+                nowProvider = { clock },
+            )
+            recovered.getOHLC(pair, interval, candleStart - durationSeconds, fixedUpTo).size shouldBe 1
+            recoveredCounter.get() shouldBe 1
+        }
+
+        "transient initial fetch failure is not persisted as successful empty evidence" {
+            val database = DatabaseConfig.init(":memory:")
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val clock = Instant.now()
+            val candleStart = clock.epochSecond - 2 * durationSeconds
+            val failingCounter = AtomicInteger(0)
+            val failing = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        failingCounter.incrementAndGet()
+                        error("transient kraken failure")
+                    }
+                },
+                persistentRepository = repository,
+            )
+
+            runCatching { failing.getOHLC(pair, interval, candleStart - durationSeconds, clock) }
+
+            val recoveredCounter = AtomicInteger(0)
+            val recovered = HistoricalOhlcCache(
+                fake(listOf(candleStart to "0.0175"), recoveredCounter),
+                persistentRepository = repository,
+            )
+            val served = recovered.getOHLC(pair, interval, candleStart - durationSeconds, clock)
+
+            recoveredCounter.get() shouldBe 1
+            served.single().second shouldBeEqualComparingTo (BigDecimal("0.0175"))
+        }
+
+        "concurrent post-expiry identical requests share one revalidation flight" {
+            val counter = AtomicInteger(0)
+            var clock = Instant.now()
+            val fixedUpTo = clock
+            val candleStart = clock.epochSecond - 2 * durationSeconds
+            val cache = HistoricalOhlcCache(
+                fake(listOf(candleStart to "0.0175"), counter, perCallDelayMillis = 150),
+                nowProvider = { clock },
+            )
+            val since = candleStart - durationSeconds
+            cache.getOHLC(pair, interval, since, fixedUpTo)
+
+            clock = clock.plusSeconds(3_601)
+            val results =
+                withContext(Dispatchers.IO) {
+                    (1..4).map { async { cache.getOHLC(pair, interval, since, fixedUpTo) } }.awaitAll()
+                }
+
+            counter.get() shouldBe 2
+            results.forEach { result -> result.single().second shouldBeEqualComparingTo (BigDecimal("0.0175")) }
+        }
+
+        "historical candles past the recent age use the long revalidation window" {
+            val counter = AtomicInteger(0)
+            var clock = Instant.now()
+            val fixedUpTo = clock
+            val candleStart = clock.epochSecond - 100 * durationSeconds
+            val cache = HistoricalOhlcCache(
+                fake(listOf(candleStart to "0.0175"), counter),
+                nowProvider = { clock },
+            )
+            val since = candleStart - durationSeconds
+
+            cache.getOHLC(pair, interval, since, fixedUpTo)
+            clock = clock.plusSeconds(5_000)
+            cache.getOHLC(pair, interval, since, fixedUpTo)
+            counter.get() shouldBe 1
+
+            clock = clock.plusSeconds(600_000)
+            cache.getOHLC(pair, interval, since, fixedUpTo)
+            counter.get() shouldBe 2
+        }
+
+        "refresh policy expires empty, recent, and historical fetches on their own windows" {
+            val policy = OhlcRefreshPolicy()
+
+            val empty = emptyList<Pair<Long, BigDecimal>>()
+            policy.isExpired(empty, fetchedAtEpochSecond = 1_000, intervalMinutes = 15, nowEpochSecond = 1_599) shouldBe
+                false
+            policy.isExpired(empty, fetchedAtEpochSecond = 1_000, intervalMinutes = 15, nowEpochSecond = 1_600) shouldBe
+                true
+
+            // A candle ending 100s before the fetch is recent: expires on the hourly window.
+            val recent = listOf(200L to BigDecimal.ONE)
+            policy.isExpired(
+                recent,
+                fetchedAtEpochSecond = 1_000,
+                intervalMinutes = 15,
+                nowEpochSecond = 4_599,
+            ) shouldBe
+                false
+            policy.isExpired(
+                recent,
+                fetchedAtEpochSecond = 1_000,
+                intervalMinutes = 15,
+                nowEpochSecond = 4_600,
+            ) shouldBe
+                true
+
+            // A candle ending more than a day before the fetch is historical: expires on the
+            // weekly window.
+            val historical = listOf((-90_000L) to BigDecimal.ONE)
+            policy.isExpired(
+                historical,
+                fetchedAtEpochSecond = 1_000,
+                intervalMinutes = 15,
+                nowEpochSecond = 605_799,
+            ) shouldBe false
+            policy.isExpired(
+                historical,
+                fetchedAtEpochSecond = 1_000,
+                intervalMinutes = 15,
+                nowEpochSecond = 605_800,
+            ) shouldBe true
+        }
+
+        "revalidation cancellation propagates and leaves the retry bounded" {
+            val counter = AtomicInteger(0)
+            var clock = Instant.now()
+            val fixedUpTo = clock
+            val candleStart = clock.epochSecond - 2 * durationSeconds
+            var cancel = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        if (cancel) throw kotlinx.coroutines.CancellationException("caller cancelled")
+                        listOf(candleStart to BigDecimal("0.0175"))
+                    }
+                },
+                nowProvider = { clock },
+            )
+            val since = candleStart - durationSeconds
+            cache.getOHLC(pair, interval, since, fixedUpTo)
+
+            clock = clock.plusSeconds(3_601)
+            cancel = true
+            val thrown = runCatching { cache.getOHLC(pair, interval, since, fixedUpTo) }.exceptionOrNull()
+            (thrown is CancellationException) shouldBe true
+            clock = clock.plusSeconds(3_601)
+            cancel = false
+            cache.getOHLC(pair, interval, since, fixedUpTo).size shouldBe 1
+            counter.get() shouldBe 3
+        }
+
+        "the newest covering proof serves requests the older proof also covers" {
+            val counter = AtomicInteger(0)
+            val now = Instant.now().epochSecond
+            val completed = now - 4 * durationSeconds
+            val cache = HistoricalOhlcCache(
+                fake(
+                    listOf(completed to "0.0175", (completed + durationSeconds) to "0.0179"),
+                    counter,
+                ),
+            )
+
+            // Two fetch proofs with different starts; both cover the final request window.
+            cache.getOHLC(pair, interval, completed, Instant.ofEpochSecond(completed + durationSeconds))
+            cache.getOHLC(pair, interval, completed - durationSeconds, Instant.ofEpochSecond(now))
+            val served = cache.getOHLC(pair, interval, completed, Instant.ofEpochSecond(now))
+
+            counter.get() shouldBe 2
+            served.size shouldBe 2
+        }
+
+        "a failed revalidation never extends coverage beyond its recorded fetch wall" {
+            val counter = AtomicInteger(0)
+            var clock = Instant.now()
+            val candleStart = clock.epochSecond - 2 * durationSeconds
+            val candles = mutableListOf(candleStart to BigDecimal("0.0175"))
+            var failAll = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        val call = counter.incrementAndGet()
+                        if (failAll) error("live source down")
+                        if (call > 2) candles += (candleStart + durationSeconds) to BigDecimal("0.0200")
+                        candles.toList()
+                    }
+                },
+                nowProvider = { clock },
+            )
+            val since = candleStart - durationSeconds
+            cache.getOHLC(pair, interval, since, clock)
+
+            // The stored proof expires and its revalidation fails; windows up to the original
+            // wall keep serving stale data, but a request beyond that wall must not be served
+            // stale evidence as if it were complete.
+            clock = clock.plusSeconds(3_601)
+            failAll = true
+            cache.getOHLC(pair, interval, since, clock.minusSeconds(3_601)).size shouldBe 1
+            val thrown = runCatching { cache.getOHLC(pair, interval, since, clock) }.exceptionOrNull()
+            (thrown != null) shouldBe true
+
+            // When the source recovers, the uncovered request fetches live fresh evidence.
+            failAll = false
+            val fresh = cache.getOHLC(pair, interval, since, clock)
+            counter.get() shouldBe 4
+            fresh.size shouldBe 2
+        }
+
+        "concurrent revalidation joiners serve stale data instead of throwing when the flight fails" {
+            val counter = AtomicInteger(0)
+            var clock = Instant.now()
+            val fixedUpTo = clock
+            val candleStart = clock.epochSecond - 2 * durationSeconds
+            var failAll = false
+            val cache = HistoricalOhlcCache(
+                FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        counter.incrementAndGet()
+                        if (failAll) error("live source down")
+                        Thread.sleep(150)
+                        listOf(candleStart to BigDecimal("0.0175"))
+                    }
+                },
+                nowProvider = { clock },
+            )
+            val since = candleStart - durationSeconds
+            cache.getOHLC(pair, interval, since, fixedUpTo)
+
+            clock = clock.plusSeconds(3_601)
+            failAll = true
+            val results = withContext(Dispatchers.IO) {
+                (1..4).map { async { runCatching { cache.getOHLC(pair, interval, since, fixedUpTo) } } }.awaitAll()
+            }
+
+            counter.get() shouldBe 2
+            results.forEach { result ->
+                result.isSuccess shouldBe true
+                result.getOrNull()?.single()?.second?.compareTo(BigDecimal("0.0175")) shouldBe 0
+            }
         }
     }
 }

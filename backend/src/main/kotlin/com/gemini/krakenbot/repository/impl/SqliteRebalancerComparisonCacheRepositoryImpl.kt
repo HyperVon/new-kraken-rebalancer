@@ -7,9 +7,12 @@ import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.table.RebalancerComparisonCacheTable
 import kotlinx.coroutines.CancellationException
+import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
@@ -86,6 +89,47 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
                 it[RebalancerComparisonCacheTable.resultJson] = resultJson
                 it[RebalancerComparisonCacheTable.calculatedAtEpochMillis] = Instant.now().toEpochMilli()
             }
+            pruneSuperseded()
         }
+    }
+
+    /**
+     * Retains only the newest successful source ranges. Every advancing certified horizon
+     * would otherwise add a full serialized comparison row that nothing ever reads again;
+     * pruning superseded rows in the same transaction as the replacement write guarantees
+     * the new entry is durably committed before any old entry is deleted, so a crash can
+     * only leave extra rows, never a missing result.
+     */
+    private fun JdbcTransaction.pruneSuperseded() {
+        val retained = RebalancerComparisonCacheTable
+            .selectAll()
+            .orderBy(
+                RebalancerComparisonCacheTable.calculatedAtEpochMillis to SortOrder.DESC,
+                RebalancerComparisonCacheTable.toEpochMillis to SortOrder.DESC,
+            )
+            .limit(RETAINED_SUCCESSFUL_RANGES)
+            .map {
+                it[RebalancerComparisonCacheTable.fromEpochMillis] to
+                    it[RebalancerComparisonCacheTable.toEpochMillis]
+            }
+            .toSet()
+        RebalancerComparisonCacheTable.selectAll()
+            .map {
+                it[RebalancerComparisonCacheTable.fromEpochMillis] to
+                    it[RebalancerComparisonCacheTable.toEpochMillis]
+            }
+            .distinct()
+            .filterNot { it in retained }
+            .forEach { (from, to) ->
+                RebalancerComparisonCacheTable.deleteWhere {
+                    (RebalancerComparisonCacheTable.fromEpochMillis eq from) and
+                        (RebalancerComparisonCacheTable.toEpochMillis eq to)
+                }
+            }
+    }
+
+    private companion object {
+        /** Small bounded set: the newest successful comparison per advancing source range. */
+        const val RETAINED_SUCCESSFUL_RANGES = 3
     }
 }

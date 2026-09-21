@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.DepositStatusRecord
@@ -11,6 +12,9 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.WithdrawStatusRecord
+import com.gemini.krakenbot.repository.FundingEvidenceIdentityRecord
+import com.gemini.krakenbot.repository.FundingEvidenceIdentityStore
+import com.gemini.krakenbot.repository.impl.SqliteFundingEvidenceIdentityStoreImpl
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.impl.history.HistoricalPriceProvider
@@ -257,6 +261,204 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
                 resolver.prepare(listOf(event))
 
                 krakenService.getDepositStatusCallCount shouldBe 2
+            }
+        }
+
+        "durable identity survives TTL expiry and restarts without refetching funding status" {
+            runTest {
+                var clock = now
+                val database = DatabaseConfig.init(":memory:")
+                val store = SqliteFundingEvidenceIdentityStoreImpl(database)
+                val krakenService = FakeKrakenService()
+                val event = fundingEvent("durable", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+                krakenService.depositStatusSupplier = { _, _ ->
+                    listOf(
+                        DepositStatusRecord(
+                            refid = event.refid!!,
+                            asset = "USD",
+                            amount = BigDecimal("100.00"),
+                            time = event.time,
+                            status = "Success",
+                            method = "Wire",
+                        ),
+                    )
+                }
+                val resolver = KrakenFundingProvenanceResolver(
+                    krakenService,
+                    nowProvider = { clock },
+                    durableIdentityStore = store,
+                )
+                val durableFingerprint = resolver.prepare(listOf(event)).evidenceFingerprint
+                durableFingerprint shouldNotBe null
+                resolver.evidenceFingerprint shouldBe durableFingerprint
+
+                // Long after the in-memory TTL the durable record still certifies cache identity.
+                clock = now.plusSeconds(600)
+                resolver.evidenceFingerprint shouldBe durableFingerprint
+
+                // A restarted resolver (never prepared) reads the same durable identity and
+                // makes no funding status call merely to validate reuse.
+                val restartedKraken = FakeKrakenService()
+                val restarted = KrakenFundingProvenanceResolver(
+                    restartedKraken,
+                    nowProvider = { clock },
+                    durableIdentityStore = store,
+                )
+                restarted.evidenceFingerprint shouldBe durableFingerprint
+                restartedKraken.getDepositStatusCallCount shouldBe 0
+                restartedKraken.getInternalTransfersCallCount shouldBe 0
+            }
+        }
+
+        "changing the durable funding evidence changes the durable fingerprint" {
+            runTest {
+                val database = DatabaseConfig.init(":memory:")
+                val store = SqliteFundingEvidenceIdentityStoreImpl(database)
+                val event = fundingEvent("mutable", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+                var method = "Wire"
+                fun kraken() = FakeKrakenService().apply {
+                    depositStatusSupplier = { _, _ ->
+                        listOf(
+                            DepositStatusRecord(
+                                refid = event.refid!!,
+                                asset = "USD",
+                                amount = BigDecimal("100.00"),
+                                time = event.time,
+                                status = "Success",
+                                method = method,
+                            ),
+                        )
+                    }
+                }
+                val first =
+                    KrakenFundingProvenanceResolver(kraken(), durableIdentityStore = store)
+                val firstFingerprint = first.prepare(listOf(event)).evidenceFingerprint
+                firstFingerprint shouldNotBe null
+
+                method = "Swift"
+                val second =
+                    KrakenFundingProvenanceResolver(kraken(), durableIdentityStore = store)
+                val secondFingerprint = second.prepare(listOf(event)).evidenceFingerprint
+                secondFingerprint shouldNotBe firstFingerprint
+                second.evidenceFingerprint shouldBe secondFingerprint
+
+                // A resolver that never prepares in this process still observes the change.
+                KrakenFundingProvenanceResolver(
+                    FakeKrakenService(),
+                    durableIdentityStore = store,
+                ).evidenceFingerprint shouldBe secondFingerprint
+            }
+        }
+
+        "preparation failure reports on the instance and leaves the durable identity intact" {
+            runTest {
+                val database = DatabaseConfig.init(":memory:")
+                val store = SqliteFundingEvidenceIdentityStoreImpl(database)
+                val event = fundingEvent("failure", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+                val healthy = FakeKrakenService().apply {
+                    depositStatusSupplier = { _, _ ->
+                        listOf(
+                            DepositStatusRecord(
+                                refid = event.refid!!,
+                                asset = "USD",
+                                amount = BigDecimal("100.00"),
+                                time = event.time,
+                                status = "Success",
+                                method = "Wire",
+                            ),
+                        )
+                    }
+                }
+                val healthyResolver = KrakenFundingProvenanceResolver(healthy, durableIdentityStore = store)
+                val fingerprint = healthyResolver.prepare(listOf(event)).evidenceFingerprint
+                fingerprint shouldNotBe null
+
+                var fail = true
+                val failing = FakeKrakenService().apply {
+                    depositStatusSupplier = { _, _ ->
+                        if (fail) error("kraken unavailable")
+                        emptyList()
+                    }
+                }
+                val failingResolver = KrakenFundingProvenanceResolver(failing, durableIdentityStore = store)
+                val degraded = failingResolver.prepare(listOf(event))
+                degraded.preparationFailure shouldNotBe null
+                failingResolver.preparationFailure shouldNotBe null
+                // The durable identity of the last healthy batch still certifies cache reuse;
+                // the degraded calculation itself must never be persisted under it.
+                failingResolver.evidenceFingerprint shouldBe fingerprint
+                fail = false
+                failingResolver.prepare(listOf(event))
+                failingResolver.preparationFailure shouldBe null
+            }
+        }
+
+        "preparing a funding-free window clears an earlier preparation failure" {
+            runTest {
+                val event = fundingEvent("sticky", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+                val failing = FakeKrakenService().apply {
+                    depositStatusSupplier = { _, _ -> error("kraken unavailable") }
+                }
+                val resolver = KrakenFundingProvenanceResolver(failing)
+                resolver.prepare(listOf(event))
+                resolver.preparationFailure shouldNotBe null
+
+                // A later window with no funding rows needs no provenance evidence, so the
+                // stale failure must not keep degrading (or uncaching) its healthy result.
+                resolver.prepare(emptyList())
+                resolver.preparationFailure shouldBe null
+            }
+        }
+
+        "an unverifiable durable save is cleared so later requests miss the cache" {
+            runTest {
+                var clock = now
+                val backing = mutableMapOf("fp" to "previous-batch-fingerprint")
+                val flakyStore = object : FundingEvidenceIdentityStore {
+                    override fun load(): FundingEvidenceIdentityRecord? = backing["fp"]?.let {
+                        FundingEvidenceIdentityRecord(
+                            fingerprint = it,
+                            identity = backing["id"].orEmpty(),
+                            updatedAtEpochSeconds = 0L,
+                        )
+                    }
+
+                    override fun save(record: FundingEvidenceIdentityRecord) {
+                        error("disk full")
+                    }
+
+                    override fun clear() {
+                        backing.clear()
+                    }
+                }
+                val event = fundingEvent("flaky", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
+                val krakenService = FakeKrakenService().apply {
+                    depositStatusSupplier = { _, _ ->
+                        listOf(
+                            DepositStatusRecord(
+                                refid = event.refid!!,
+                                asset = "USD",
+                                amount = BigDecimal("100.00"),
+                                time = event.time,
+                                status = "Success",
+                                method = "Wire",
+                            ),
+                        )
+                    }
+                }
+                val resolver = KrakenFundingProvenanceResolver(
+                    krakenService,
+                    nowProvider = { clock },
+                    durableIdentityStore = flakyStore,
+                )
+                resolver.prepare(listOf(event)).evidenceFingerprint shouldNotBe null
+
+                // The save could not be verified, so the durable record must not keep
+                // certifying the previous batch's evidence: after the TTL the fingerprint is
+                // gone and the next comparison replays authoritatively.
+                clock = now.plusSeconds(600)
+                resolver.evidenceFingerprint shouldBe null
+                backing shouldBe emptyMap()
             }
         }
 

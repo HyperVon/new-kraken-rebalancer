@@ -7,6 +7,8 @@ import com.gemini.krakenbot.model.FundingProvenanceResolver
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
+import com.gemini.krakenbot.repository.FundingEvidenceIdentityRecord
+import com.gemini.krakenbot.repository.FundingEvidenceIdentityStore
 import com.gemini.krakenbot.service.KrakenService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -27,6 +29,7 @@ import java.time.Instant
 class KrakenFundingProvenanceResolver(
     private val krakenService: KrakenService,
     private val nowProvider: () -> Instant = Instant::now,
+    private val durableIdentityStore: FundingEvidenceIdentityStore? = null,
 ) : FundingProvenanceResolver {
     private val log = LoggerFactory.getLogger(KrakenFundingProvenanceResolver::class.java)
     private val prepareMutex = Mutex()
@@ -34,17 +37,38 @@ class KrakenFundingProvenanceResolver(
     @Volatile
     private var prepared: PreparedEvidence? = null
 
+    @Volatile
+    private var lastPreparationFailure: FundingProvenanceFailure? = null
+
     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
     override fun isCardFunding(event: LedgerEvent): Boolean = prepared?.resolver?.isCardFunding(event) ?: false
     override fun explain(event: LedgerEvent): String? = prepared?.resolver?.explain(event)
+
+    override val preparationFailure: FundingProvenanceFailure?
+        get() = lastPreparationFailure
+
+    /**
+     * The prepared batch's content fingerprint while it is fresh; after the short TTL (or a
+     * process restart, which loses the in-memory batch) the DURABLE identity of the last
+     * successfully prepared batch keeps certifying cache identity so persisted comparisons
+     * stay reusable. Provenance classification is never served from the durable record: it
+     * only exists so an unchanged evidence content can be recognized, not trusted for
+     * resolution — resolution still requires a fresh in-memory prepare.
+     */
     override val evidenceFingerprint: String?
         get() {
-            val current = prepared ?: return UNPREPARED_EVIDENCE_FINGERPRINT
-            return current
-                .takeIf { it.preparedAt.plusSeconds(CACHE_TTL_SECONDS).isAfter(nowProvider()) }
-                ?.resolver
-                ?.evidenceFingerprint
+            val current = prepared
+            if (current != null) {
+                return current
+                    .takeIf { it.preparedAt.plusSeconds(CACHE_TTL_SECONDS).isAfter(nowProvider()) }
+                    ?.resolver
+                    ?.evidenceFingerprint
+                    ?: durableFingerprint()
+            }
+            return durableFingerprint() ?: UNPREPARED_EVIDENCE_FINGERPRINT
         }
+
+    private fun durableFingerprint(): String? = durableIdentityStore?.load()?.fingerprint
 
     /**
      * Returns an immutable resolver snapshot for this batch. The production
@@ -54,7 +78,12 @@ class KrakenFundingProvenanceResolver(
      */
     override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver {
         val fundingEvents = events.filter { it.type.lowercase() in SUPPORTED_TYPES }
-        if (fundingEvents.isEmpty()) return this
+        if (fundingEvents.isEmpty()) {
+            // No funding rows to prepare: this window needs no provenance evidence, so an
+            // earlier unrelated preparation failure must not keep degrading its result.
+            lastPreparationFailure = null
+            return this
+        }
 
         val requiredFamilies = fundingEvents.mapTo(mutableSetOf()) { it.type.lowercase() }
         val requestedRange = FundingRange.from(fundingEvents)
@@ -137,6 +166,8 @@ class KrakenFundingProvenanceResolver(
                     preparedAt = nowProvider(),
                     resolver = resolver,
                 )
+                lastPreparationFailure = null
+                persistDurableIdentity(resolver, lockedEvidenceScope, requestedRange, requiredFamilies)
                 resolver
             } catch (e: CancellationException) {
                 throw e
@@ -145,12 +176,14 @@ class KrakenFundingProvenanceResolver(
                 val message =
                     "Kraken denied ${e.endpoint}; funding provenance requires the Funds: Query permission."
                 log.error(message, e)
-                FundingProvenanceResolver.unavailable(
-                    FundingProvenanceFailure(
-                        reason = FundingProvenanceFailureReason.PERMISSION_DENIED,
-                        message = message,
-                    ),
-                )
+                FundingProvenanceFailure(
+                    reason = FundingProvenanceFailureReason.PERMISSION_DENIED,
+                    message = message,
+                ).also { failure ->
+                    lastPreparationFailure = failure
+                }.let { failure ->
+                    FundingProvenanceResolver.unavailable(failure)
+                }
             } catch (e: Exception) {
                 // Do not retain an incomplete or stale batch after a fetch
                 // failure. The caller receives unresolved evidence with the
@@ -161,13 +194,61 @@ class KrakenFundingProvenanceResolver(
                     "Funding provenance fetch failed; funding rows remain unresolved ({})",
                     e::class.simpleName ?: "unknown",
                 )
-                FundingProvenanceResolver.unavailable(
-                    FundingProvenanceFailure(
-                        reason = FundingProvenanceFailureReason.REQUEST_FAILED,
-                        message = "Funding provenance request failed: ${e.message ?: e::class.simpleName}",
-                    ),
-                )
+                FundingProvenanceFailure(
+                    reason = FundingProvenanceFailureReason.REQUEST_FAILED,
+                    message = "Funding provenance request failed: ${e.message ?: e::class.simpleName}",
+                ).also { failure ->
+                    lastPreparationFailure = failure
+                }.let { failure ->
+                    FundingProvenanceResolver.unavailable(failure)
+                }
             }
+        }
+    }
+
+    /**
+     * Records the prepared batch's durable cache identity: content fingerprint plus bounded
+     * scope metadata (evidence scope, funding families, queried epoch range) — never raw
+     * payloads, credentials, or signatures. The in-memory TTL and the durable record serve
+     * different purposes: TTL freshness gates classification reuse in this process, while
+     * the durable record lets later requests and restarted processes recognize that the
+     * funding evidence CONTENT backing an already-persisted comparison has not changed.
+     */
+    private fun persistDurableIdentity(
+        resolver: FundingProvenanceResolver,
+        evidenceScope: String,
+        range: FundingRange,
+        families: Set<String>,
+    ) {
+        val store = durableIdentityStore ?: return
+        val fingerprint = resolver.evidenceFingerprint ?: return
+        val identity = "$evidenceScope|${families.sorted().joinToString(",")}|${range.startSec}|${range.endSec}"
+        val record = FundingEvidenceIdentityRecord(
+            fingerprint = fingerprint,
+            identity = identity,
+            updatedAtEpochSeconds = nowProvider().epochSecond,
+        )
+        try {
+            store.save(record)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Unable to persist durable funding evidence identity: {}", e.message)
+        }
+        // Verify regardless of the save outcome: a save that reported success but did not
+        // persist (or threw) must not leave the PREVIOUS batch's fingerprint certifying cache
+        // reuse while this process holds a newer one. Clear it so later requests miss the
+        // cache (authoritative replay) instead of reusing a comparison under an outdated
+        // identity.
+        try {
+            if (store.load()?.fingerprint != fingerprint) {
+                store.clear()
+                log.warn("Durable funding evidence identity could not be verified after save; cleared")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Unable to verify durable funding evidence identity: {}", e.message)
         }
     }
 

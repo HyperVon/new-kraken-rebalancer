@@ -66,12 +66,28 @@ fun readSyncMetadataInTransaction(key: String): String? = HistorySyncMetadataTab
  * evidence, so a cache can never survive a partially committed evidence update.
  */
 fun JdbcTransaction.bumpComparisonEvidenceRevision() {
-    val current = readSyncMetadataInTransaction(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
+    bumpSyncMetadataCounter(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
+}
+
+/**
+ * Increments a monotonic counter row in the sync-metadata table. Used for change tokens that
+ * fingerprint consumers hash; the counter only moves when the calling transaction decides the
+ * underlying content actually changed.
+ */
+fun JdbcTransaction.bumpSyncMetadataCounter(metadataKey: String) {
+    val current = readSyncMetadataInTransaction(metadataKey)
         ?.toLongOrNull()
         ?: 0L
     HistorySyncMetadataTable.upsert {
-        it[HistorySyncMetadataTable.key] = SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION
+        it[HistorySyncMetadataTable.key] = metadataKey
         it[HistorySyncMetadataTable.value] = (current + 1L).toString()
+    }
+}
+
+fun writeSyncMetadataInTransaction(key: String, value: String) {
+    HistorySyncMetadataTable.upsert {
+        it[HistorySyncMetadataTable.key] = key
+        it[HistorySyncMetadataTable.value] = value
     }
 }
 
