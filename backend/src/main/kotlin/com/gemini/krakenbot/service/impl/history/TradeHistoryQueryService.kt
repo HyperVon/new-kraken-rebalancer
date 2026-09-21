@@ -221,6 +221,21 @@ class TradeHistoryQueryService(
             )
 
         /**
+         * Append-sensitive frontier reasons that external historical price evidence can also
+         * cure: an OHLC backfill, correction, or provider recovery supplies the missing price
+         * with NO new snapshot/trade/ledger row, so the evidence digest and the horizon never
+         * witness the change. A stored EXHAUSTED carrying one of these is re-probed with a
+         * single bounded frontier-candidate trial per call. The remaining append-sensitive
+         * reason (INSUFFICIENT_SNAPSHOTS) can only be cured by new rows, which advance the
+         * horizon and reopen the scan, so it stays strictly terminal.
+         */
+        private val PRICE_SENSITIVE_FRONTIER_REASONS =
+            setOf(
+                ComparisonUnavailableReason.MISSING_PRICE,
+                ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+            )
+
+        /**
          * The normal snapshot loop is substantially more frequent than daily. A gap this large
          * in historical coverage is evidence that retained history lost an interval or era;
          * proposal search must not infer over it.
@@ -1779,6 +1794,15 @@ class TradeHistoryQueryService(
                                     eventUpperBound = eventUpperBound,
                                 )
                                 if (revalidated.availability == ComparisonAvailability.AVAILABLE) {
+                                    // The pending frontier mark is unresolved earliest-start
+                                    // state, not superseded by this anchor's revalidation: a
+                                    // later horizon advance must still reopen at it
+                                    // (reopensPastStoredVerified). Omitting the keys here
+                                    // would atomically blank them and strand the mark. A
+                                    // reason that no longer maps to any known class carries
+                                    // no reopen semantics, so its cursor is dropped with it.
+                                    val carriedFrontierReason = APPEND_SENSITIVE_FRONTIER_REASONS
+                                        .firstOrNull { it.name == storedFrontierReason }
                                     persistProposalSearchState(
                                         fingerprint = fingerprint,
                                         status = ComparisonProposalStatus.VERIFIED,
@@ -1787,6 +1811,10 @@ class TradeHistoryQueryService(
                                         fundingEvidenceFingerprint = fundingEvidenceFingerprint,
                                         evidenceHorizonEpochMillis = appliedEvidenceHorizon,
                                         coverageHorizonEpochMillis = certifiedEventHorizonEpochMillis,
+                                        frontierReason = carriedFrontierReason,
+                                        frontierCursorEpochMillis = carriedFrontierReason?.let {
+                                            storedFrontierCursorRaw
+                                        },
                                     )
                                     return@withLock ComparisonStartProposal(
                                         status = ComparisonProposalStatus.VERIFIED,
@@ -1806,12 +1834,71 @@ class TradeHistoryQueryService(
             // horizon. A newer tail extends the open-ended candidate universe, so the scan
             // reopens at its frontier and evaluates the appended rows under a horizon that
             // includes them. A pending append-sensitive mark does not force a re-scan on an
-            // unchanged horizon: every row that could cure it is itself evidence whose
-            // arrival advances the horizon, so the mark stays persisted and reopens there.
+            // unchanged horizon: every ROW that could cure it is itself evidence whose
+            // arrival advances the horizon, so the mark stays persisted and reopens there —
+            // with one exception below for price-sensitive frontiers, whose cure can be
+            // digest-invisible external price evidence.
             if (canResume && !fundingEvidenceChanged &&
                 storedStatus == ComparisonProposalStatus.EXHAUSTED.name &&
                 !horizonAdvanced
             ) {
+                val storedPriceFrontierReason = storedFrontierReason?.let { reason ->
+                    PRICE_SENSITIVE_FRONTIER_REASONS.firstOrNull { it.name == reason }
+                }
+                val storedPriceFrontierIndex = if (storedPriceFrontierReason != null &&
+                    storedFrontierCursorRaw != null
+                ) {
+                    candidates.indexOfFirst {
+                        it.timestamp.toEpochMilli() >= storedFrontierCursorRaw
+                    }.takeIf { it >= 0 }
+                } else {
+                    null
+                }
+                // A price-sensitive frontier candidate pinned before an intrinsic failure
+                // event must not resurface, matching the scan's skipCandidatesBefore guard.
+                if (storedPriceFrontierIndex == null ||
+                    (skipIndex != null && storedPriceFrontierIndex < skipIndex)
+                ) {
+                    return@withLock ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED)
+                }
+                // External price evidence (OHLC backfill, historical correction, provider
+                // recovery) can cure this candidate with no new row, so the horizon cannot
+                // witness the change and the terminal branch above would suppress an earlier
+                // verified start indefinitely. Probe exactly the stored frontier candidate
+                // once per call — the same bounded per-call revalidation cost the VERIFIED
+                // path already pays — never a rescan of the candidate universe.
+                val frontierCandidate = candidates[storedPriceFrontierIndex]
+                val frontierTrial = calculateComparison(
+                    candidates.drop(storedPriceFrontierIndex),
+                    InceptionResolution(
+                        inceptionTime = frontierCandidate.timestamp,
+                        inceptionSnapshot = frontierCandidate,
+                        isAutoDetected = false,
+                    ),
+                    preparedFundingProvenance = preparedFundingProvenance,
+                    eventUpperBound = eventUpperBound,
+                )
+                if (frontierTrial.availability == ComparisonAvailability.AVAILABLE) {
+                    val frontierCursor = candidates.proposalCursorAt(storedPriceFrontierIndex)
+                    val frontierSnapshotId = repository.getSnapshotId(
+                        frontierCandidate.timestamp,
+                        frontierCursor.ordinal,
+                    )
+                    persistProposalSearchState(
+                        fingerprint = fingerprint,
+                        status = ComparisonProposalStatus.VERIFIED,
+                        cursor = frontierCursor.encode(),
+                        snapshotId = frontierSnapshotId,
+                        fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+                        evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                        coverageHorizonEpochMillis = certifiedEventHorizonEpochMillis,
+                    )
+                    return@withLock ComparisonStartProposal(
+                        status = ComparisonProposalStatus.VERIFIED,
+                        timestamp = frontierCandidate.timestamp,
+                        snapshotId = frontierSnapshotId,
+                    )
+                }
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED)
             }
 
@@ -2205,8 +2292,8 @@ class TradeHistoryQueryService(
         cursor: String,
         snapshotId: Int? = null,
         fundingEvidenceFingerprint: String?,
-        evidenceHorizonEpochMillis: Long? = null,
-        coverageHorizonEpochMillis: Long? = null,
+        evidenceHorizonEpochMillis: Long,
+        coverageHorizonEpochMillis: Long,
         frontierReason: ComparisonUnavailableReason? = null,
         frontierCursorEpochMillis: Long? = null,
     ) {
@@ -2219,9 +2306,9 @@ class TradeHistoryQueryService(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT to
                     fundingEvidenceFingerprint.orEmpty(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS to
-                    evidenceHorizonEpochMillis?.toString().orEmpty(),
+                    evidenceHorizonEpochMillis.toString(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_COVERAGE_HORIZON_MS to
-                    coverageHorizonEpochMillis?.toString().orEmpty(),
+                    coverageHorizonEpochMillis.toString(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON to
                     frontierReason?.name.orEmpty(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS to
