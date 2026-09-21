@@ -239,6 +239,7 @@ ViewText:
   BUY_AND_HOLD: "Buy & Hold"
   COMPARISON_CAPTION: "Based on stored snapshots and recorded trades. Starting quantities are anchored to the effective comparison baseline; the original strategy inception remains preserved separately."
   COMPARISON_UNAVAILABLE_PREFIX: "Comparison unavailable: "
+  COMPARISON_LOADING: "Loading B&H vs Rebalancer comparison…"
   COMPARISON_FETCH_ERROR: "Comparison data could not be loaded. Other charts are unaffected."
   UNAVAILABLE_INSUFFICIENT_SNAPSHOTS: "Not enough history exists in this range to compare strategies."
   UNAVAILABLE_NON_POSITIVE_BASELINE: "The comparison needs a positive starting portfolio value."

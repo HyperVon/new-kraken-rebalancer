@@ -37,6 +37,14 @@ class KrakenFundingProvenanceResolver(
     override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.UNRESOLVED
     override fun isCardFunding(event: LedgerEvent): Boolean = prepared?.resolver?.isCardFunding(event) ?: false
     override fun explain(event: LedgerEvent): String? = prepared?.resolver?.explain(event)
+    override val evidenceFingerprint: String?
+        get() {
+            val current = prepared ?: return UNPREPARED_EVIDENCE_FINGERPRINT
+            return current
+                .takeIf { it.preparedAt.plusSeconds(CACHE_TTL_SECONDS).isAfter(nowProvider()) }
+                ?.resolver
+                ?.evidenceFingerprint
+        }
 
     /**
      * Returns an immutable resolver snapshot for this batch. The production
@@ -110,11 +118,11 @@ class KrakenFundingProvenanceResolver(
                 // funding family, not only coarse `transfer` rows, so a
                 // backend that can query Futures history can disambiguate
                 // those rows before the external candidate is accepted.
-                val internalTransfers = if (requiredFamilies.isNotEmpty()) {
-                    backend.getInternalTransfers(requestedRange.startSec, requestedRange.endSec)
-                } else {
-                    emptyList()
-                }
+                // [prepare] returns this path only for at least one supported funding family.
+                val internalTransfers = backend.getInternalTransfers(
+                    requestedRange.startSec,
+                    requestedRange.endSec,
+                )
                 val resolver = SimpleFundingProvenanceResolver(
                     deposits = deposits,
                     withdrawals = withdrawals,
@@ -207,6 +215,7 @@ class KrakenFundingProvenanceResolver(
     private companion object {
         const val CORRELATION_WINDOW_SECONDS = 180L
         const val CACHE_TTL_SECONDS = 60L
+        const val UNPREPARED_EVIDENCE_FINGERPRINT = "kraken-funding-unprepared"
 
         @JvmField val SUPPORTED_TYPES = setOf(
             KrakenApiConstants.LEDGER_TYPE_DEPOSIT,

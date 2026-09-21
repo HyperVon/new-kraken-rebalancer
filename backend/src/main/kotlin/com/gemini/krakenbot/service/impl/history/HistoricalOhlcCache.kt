@@ -1,18 +1,22 @@
 package com.gemini.krakenbot.service.impl.history
 
+import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.service.KrakenService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentSkipListMap
 
 /**
- * Session-scoped cache for completed Kraken OHLC candles, eliminating the per-valuation-point
+ * Cache for completed Kraken OHLC candles, eliminating the per-valuation-point
  * refetch storm: every historical priceAt lookup used to issue its own live getOHLC call per
  * interval tier, multiplying one comparison across hundreds of identical and near-identical
- * requests. Completed candles are immutable evidence, so a response captured once remains
- * byte-equal to what a fresh fetch would return for the same valuation instant.
+ * requests. When [persistentRepository] is supplied, the cache also survives application
+ * restarts. Completed candles are normally stable evidence, while a later fresh response may
+ * replace a stored value if the provider corrects or backfills a historical candle.
  *
  * Cache contract:
  * - Key granularity is pair / interval; fetched ranges are recorded per fetch.
@@ -30,7 +34,11 @@ import java.util.concurrent.ConcurrentSkipListMap
  *   flight exceptionally and are never cached.
  * - Only the live OHLC endpoint participates; never a ticker or any other live-priced source.
  */
-class HistoricalOhlcCache(private val krakenService: KrakenService) {
+class HistoricalOhlcCache(
+    private val krakenService: KrakenService,
+    private val persistentRepository: HistoricalOhlcRepository? = null,
+) {
+    private val log = LoggerFactory.getLogger(HistoricalOhlcCache::class.java)
 
     private class FetchRecord(val sinceEpochSecond: Long, val fetchWallEpochSecond: Long)
 
@@ -73,6 +81,7 @@ class HistoricalOhlcCache(private val krakenService: KrakenService) {
         val durationSeconds = intervalMinutes * 60L
 
         serveFromMemory(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { return it }
+        loadFromPersistent(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { return it }
 
         val flightKey = FlightKey(normalizedPair, intervalMinutes.toLong(), sinceEpochSecond)
         val (flight, created) = startOrJoinFlight(flightKey)
@@ -85,13 +94,8 @@ class HistoricalOhlcCache(private val krakenService: KrakenService) {
                     since = sinceEpochSecond,
                 )
                 val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
-                val entry = store.compute(seriesKey) { _, existing -> existing ?: SeriesEntry() }!!
-                synchronized(entry.fetches) {
-                    completed.forEach { candle ->
-                        entry.candles.merge(candle.first, candle.second) { _, stored -> stored }
-                    }
-                    entry.fetches += FetchRecord(sinceEpochSecond, fetchWallEpochSecond)
-                }
+                val entry = rememberFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed)
+                persistFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed)
                 flight.complete(entry)
                 // An initiator answers with exactly its own completed-candle response.
                 return completed
@@ -123,6 +127,94 @@ class HistoricalOhlcCache(private val krakenService: KrakenService) {
             .toList()
     }
 
+    private suspend fun loadFromPersistent(
+        seriesKey: SeriesKey,
+        sinceEpochSecond: Long,
+        upToEpochSecond: Long,
+    ): List<Pair<Long, BigDecimal>>? {
+        val repository = persistentRepository ?: return null
+        val stored = try {
+            repository.loadCovered(
+                pair = seriesKey.pair,
+                intervalMinutes = seriesKey.intervalMinutes,
+                sinceEpochSecond = sinceEpochSecond,
+                upToEpochSecond = upToEpochSecond,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Persistence is an optimization boundary. A read failure should fall back to the
+            // live OHLC source; an unavailable source still fails closed in the resolver.
+            log.warn(
+                "Unable to read persisted OHLC cache for pair {} interval {}: {}",
+                seriesKey.pair,
+                seriesKey.intervalMinutes,
+                e.message,
+            )
+            null
+        } ?: return null
+
+        rememberFetch(
+            seriesKey = seriesKey,
+            sinceEpochSecond = stored.sinceEpochSecond,
+            fetchWallEpochSecond = stored.fetchedAtEpochSecond,
+            candles = stored.candles,
+        )
+        return stored.candles
+    }
+
+    private fun rememberFetch(
+        seriesKey: SeriesKey,
+        sinceEpochSecond: Long,
+        fetchWallEpochSecond: Long,
+        candles: List<Pair<Long, BigDecimal>>,
+    ): SeriesEntry {
+        val entry = store.compute(seriesKey) { _, existing -> existing ?: SeriesEntry() }!!
+        synchronized(entry.fetches) {
+            candles.forEach { (candleStart, close) ->
+                // A fresh provider response is allowed to correct a previously cached candle.
+                entry.candles[candleStart] = close
+            }
+            if (entry.fetches.none {
+                    it.sinceEpochSecond == sinceEpochSecond &&
+                        it.fetchWallEpochSecond == fetchWallEpochSecond
+                }
+            ) {
+                entry.fetches += FetchRecord(sinceEpochSecond, fetchWallEpochSecond)
+            }
+        }
+        return entry
+    }
+
+    private suspend fun persistFetch(
+        seriesKey: SeriesKey,
+        sinceEpochSecond: Long,
+        fetchWallEpochSecond: Long,
+        candles: List<Pair<Long, BigDecimal>>,
+    ) {
+        val repository = persistentRepository ?: return
+        try {
+            repository.saveFetch(
+                pair = seriesKey.pair,
+                intervalMinutes = seriesKey.intervalMinutes,
+                sinceEpochSecond = sinceEpochSecond,
+                fetchedAtEpochSecond = fetchWallEpochSecond,
+                candles = candles,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Keep the current request successful: the network response is still valid evidence,
+            // and a later request can retry the durable optimization.
+            log.warn(
+                "Unable to persist OHLC cache for pair {} interval {}: {}",
+                seriesKey.pair,
+                seriesKey.intervalMinutes,
+                e.message,
+            )
+        }
+    }
+
     private fun startOrJoinFlight(flightKey: FlightKey): Pair<CompletableDeferred<SeriesEntry>, Boolean> {
         var created = false
         val deferred = inFlight.compute(flightKey) { _, existing ->
@@ -132,7 +224,7 @@ class HistoricalOhlcCache(private val krakenService: KrakenService) {
             } else {
                 existing
             }
-        } ?: error("OHLC single-flight registry lost its entry for $flightKey")
+        }!!
         return deferred to created
     }
 }

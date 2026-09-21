@@ -18,6 +18,7 @@ import com.gemini.krakenbot.model.isHistoricallyReplayable
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.downsampleSnapshots
 import com.gemini.krakenbot.service.AutomaticBaselineStatus
@@ -27,6 +28,7 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -39,7 +41,44 @@ import java.math.RoundingMode
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+
+private data class HistoricalPriceKey(val symbol: String, val time: Instant)
+
+/**
+ * One comparison asks for the same asset/time from validation, event construction, and valuation.
+ * Share those exact resolutions, including null results, while allowing a transient source error
+ * to be retried by a later comparison.
+ */
+private class HistoricalPriceMemo {
+    private data class ResolvedPrice(val value: BigDecimal?)
+
+    private val values = ConcurrentHashMap<HistoricalPriceKey, ResolvedPrice>()
+    private val inFlight = ConcurrentHashMap<HistoricalPriceKey, CompletableDeferred<ResolvedPrice>>()
+
+    suspend fun get(key: HistoricalPriceKey, loader: suspend () -> BigDecimal?): BigDecimal? {
+        values[key]?.let { return it.value }
+        val candidate = CompletableDeferred<ResolvedPrice>()
+        val existing = inFlight.putIfAbsent(key, candidate)
+        if (existing != null) return existing.await().value
+
+        try {
+            val resolved = ResolvedPrice(loader())
+            values[key] = resolved
+            candidate.complete(resolved)
+            return resolved.value
+        } catch (e: CancellationException) {
+            candidate.completeExceptionally(e)
+            throw e
+        } catch (e: Throwable) {
+            candidate.completeExceptionally(e)
+            throw e
+        } finally {
+            inFlight.remove(key, candidate)
+        }
+    }
+}
 
 class TradeHistoryQueryService(
     private val repository: TradeRepository,
@@ -51,6 +90,7 @@ class TradeHistoryQueryService(
     private val nowProvider: () -> Instant = Instant::now,
     private val krakenService: KrakenService? = null,
     private val historicalOhlcCache: HistoricalOhlcCache? = null,
+    private val comparisonCacheRepository: RebalancerComparisonCacheRepository? = null,
     /** Lower bound of retained history scanned for a passive benchmark anchor. */
     private val benchmarkHistoryFloor: Instant = Instant.EPOCH,
     /** Application-lifetime scope used for the bounded background proposal continuation. */
@@ -187,9 +227,13 @@ class TradeHistoryQueryService(
         /** Bounded proposal scan: at most this many full reconciliation trials per query. */
         private const val PROPOSAL_MAX_TRIALS = 8
 
+        /** Bump when the serialized comparison payload or its cache invalidation contract changes. */
+        private const val COMPARISON_CACHE_VERSION = "1"
+
         /** Background continuation pacing and lifetime budget for an incomplete scan. */
-        private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 600
+        private const val PROPOSAL_CONTINUATION_MAX_CYCLES = 24
         private const val PROPOSAL_CONTINUATION_PACING_MS = 2_000L
+        private const val PROPOSAL_CONTINUATION_MAX_PACING_MS = 30_000L
         private const val PROPOSAL_SEARCH_VERSION = "10"
         private const val PROPOSAL_CURSOR_EXHAUSTED = "EXHAUSTED"
 
@@ -383,6 +427,25 @@ class TradeHistoryQueryService(
             )
         }
 
+        val cacheFrom = evaluationSnapshots.first().timestamp
+        val cacheTo = evaluationSnapshots.last().timestamp
+        val cacheFingerprint = comparisonCacheFingerprint(
+            stableThrough = stableThrough,
+            inceptionResolution = inceptionResolution,
+            snapshots = evaluationSnapshots,
+        )
+        if (cacheFingerprint != null) {
+            loadCachedComparison(cacheFrom, cacheTo, cacheFingerprint)?.let { cached ->
+                log.debug(
+                    "Serving cached B&H comparison; sourceFrom={} sourceTo={} fingerprint={}",
+                    cacheFrom,
+                    cacheTo,
+                    cacheFingerprint,
+                )
+                return presentComparison(cached, from, to)
+            }
+        }
+
         val reconciled =
             calculateComparison(
                 evaluationSnapshots,
@@ -401,29 +464,17 @@ class TradeHistoryQueryService(
                 evaluationSnapshots,
                 stableThrough,
             )
-            val displayPoints = reconciled.points.filter { point ->
-                !point.timestamp.isBefore(from) && !point.timestamp.isAfter(to)
-            }
-            if (displayPoints.size < 2) {
-                reconciled.copy(
-                    availability = ComparisonAvailability.UNAVAILABLE,
-                    confidence = null,
-                    points = emptyList(),
-                    latestDifferenceUSD = null,
-                    latestDifferencePercent = null,
-                    unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
-                    unavailableAt = displayPoints.firstOrNull()?.timestamp ?: from,
-                    proposedBaselineTimestamp = null,
-                    proposalSearchStatus = null,
-                )
-            } else {
-                val sampledDisplayPoints = displayPoints.downsampleSnapshots()
-                reconciled.copy(
-                    points = sampledDisplayPoints,
-                    latestDifferenceUSD = sampledDisplayPoints.last().differenceUSD,
-                    latestDifferencePercent = sampledDisplayPoints.last().differencePercent,
-                )
-            }
+            persistCachedComparison(
+                from = cacheFrom,
+                to = cacheTo,
+                fingerprint = comparisonCacheFingerprint(
+                    stableThrough = stableThrough,
+                    inceptionResolution = inceptionResolution,
+                    snapshots = evaluationSnapshots,
+                ),
+                comparison = reconciled,
+            )
+            presentComparison(reconciled, from, to)
         } else {
             reconciled
         }
@@ -492,6 +543,124 @@ class TradeHistoryQueryService(
         }
 
         return finalResult
+    }
+
+    /**
+     * Reuses only successful calculations. The revision is advanced in the same SQLite
+     * transaction as portfolio/trade/ledger/OHLC evidence writes; configuration, recovery, and
+     * prepared funding identities are included separately because they are not all row writes.
+     */
+    private suspend fun comparisonCacheFingerprint(
+        stableThrough: Instant,
+        inceptionResolution: InceptionResolution?,
+        snapshots: List<PortfolioSnapshot>,
+    ): String? {
+        if (comparisonCacheRepository == null) return null
+        val fundingToken = when {
+            fundingProvenanceResolver === FundingProvenanceResolver.NONE -> "none"
+            else -> fundingProvenanceResolver.evidenceFingerprint ?: return null
+        }
+        return try {
+            val sourceRevision = repository
+                .getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
+                ?: "0"
+            val configuredUniverse = configService?.getConfig()?.allocations
+                ?.sortedBy { it.symbol.value.uppercase() }
+                ?.joinToString(separator = ",") { allocation ->
+                    "${allocation.symbol.value.uppercase()}:${allocation.targetPercent}"
+                }
+                .orEmpty()
+            val reconstructionRevision = listOf(
+                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION),
+                repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC),
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT),
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST),
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION),
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC),
+                repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION),
+                repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC),
+            ).joinToString(separator = "\u0000")
+            val material = buildString {
+                append(COMPARISON_CACHE_VERSION).append('\u0000')
+                append(stableThrough).append('\u0000')
+                append(sourceRevision).append('\u0000')
+                append(fundingToken).append('\u0000')
+                append(configuredUniverse).append('\u0000')
+                append(reconstructionRevision).append('\u0000')
+                append(inceptionResolution?.inceptionTime).append('|')
+                    .append(inceptionResolution?.isAutoDetected).append('|')
+                    .append(inceptionResolution?.confidence).append('|')
+                    .append(inceptionResolution?.unavailableReason).append('\u0000')
+                // The revision is authoritative for normal writes. These boundary values make
+                // an old database with no revision row conservative when its visible range moves.
+                append(snapshots.size).append('|')
+                    .append(snapshots.firstOrNull()?.timestamp).append('|')
+                    .append(snapshots.lastOrNull()?.timestamp)
+            }
+            sha256Hex(material)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.debug("Comparison cache fingerprint unavailable: {}", e.message)
+            null
+        }
+    }
+
+    private suspend fun loadCachedComparison(from: Instant, to: Instant, fingerprint: String): RebalancerComparison? {
+        val cache = comparisonCacheRepository ?: return null
+        return try {
+            cache.load(from.toEpochMilli(), to.toEpochMilli())
+                ?.takeIf { it.inputFingerprint == fingerprint }
+                ?.comparison
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.debug("Comparison cache read skipped: {}", e.message)
+            null
+        }
+    }
+
+    private suspend fun persistCachedComparison(
+        from: Instant,
+        to: Instant,
+        fingerprint: String?,
+        comparison: RebalancerComparison,
+    ) {
+        val cache = comparisonCacheRepository ?: return
+        if (fingerprint == null || comparison.availability != ComparisonAvailability.AVAILABLE) return
+        try {
+            cache.save(from.toEpochMilli(), to.toEpochMilli(), fingerprint, comparison)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The result remains usable when its optimization record cannot be written.
+            log.debug("Comparison cache write skipped: {}", e.message)
+        }
+    }
+
+    private fun presentComparison(reconciled: RebalancerComparison, from: Instant, to: Instant): RebalancerComparison {
+        val displayPoints = reconciled.points.filter { point ->
+            !point.timestamp.isBefore(from) && !point.timestamp.isAfter(to)
+        }
+        if (displayPoints.size < 2) {
+            return reconciled.copy(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableAt = displayPoints.firstOrNull()?.timestamp ?: from,
+                proposedBaselineTimestamp = null,
+                proposalSearchStatus = null,
+            )
+        }
+        val sampledDisplayPoints = displayPoints.downsampleSnapshots()
+        return reconciled.copy(
+            points = sampledDisplayPoints,
+            latestDifferenceUSD = sampledDisplayPoints.last().differenceUSD,
+            latestDifferencePercent = sampledDisplayPoints.last().differencePercent,
+        )
     }
 
     /**
@@ -620,13 +789,34 @@ class TradeHistoryQueryService(
                 repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC),
             )
         }
-        val current =
-            calculateComparison(
-                stableSnapshots,
-                inceptionResolution,
-                eventUpperBound = certifiedEventUpperBound(stableThrough),
-                suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
+        val settingsCacheFrom = stableSnapshots.first().timestamp
+        val settingsCacheTo = stableSnapshots.last().timestamp
+        val settingsCacheFingerprint = comparisonCacheFingerprint(
+            stableThrough = stableThrough,
+            inceptionResolution = inceptionResolution,
+            snapshots = stableSnapshots,
+        )
+        val cachedSettingsComparison = settingsCacheFingerprint?.let { fingerprint ->
+            loadCachedComparison(settingsCacheFrom, settingsCacheTo, fingerprint)
+        }
+        val current = cachedSettingsComparison ?: calculateComparison(
+            stableSnapshots,
+            inceptionResolution,
+            eventUpperBound = certifiedEventUpperBound(stableThrough),
+            suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
+        )
+        if (cachedSettingsComparison == null && current.availability == ComparisonAvailability.AVAILABLE) {
+            persistCachedComparison(
+                from = settingsCacheFrom,
+                to = settingsCacheTo,
+                fingerprint = comparisonCacheFingerprint(
+                    stableThrough = stableThrough,
+                    inceptionResolution = inceptionResolution,
+                    snapshots = stableSnapshots,
+                ),
+                comparison = current,
             )
+        }
         val status =
             if (current.availability == ComparisonAvailability.AVAILABLE) {
                 SettingsComparisonStatus(
@@ -660,7 +850,9 @@ class TradeHistoryQueryService(
             // The proof's evidence horizon is the newest stable snapshot: unstable live-tail
             // rows after the certified coverage horizon are append-only evidence the proof
             // did not consume, so they can neither invalidate it nor extend its horizon.
-            persistAutomaticBaselineVerification(current, inceptionResolution, stableSnapshots, stableThrough)
+            if (cachedSettingsComparison == null) {
+                persistAutomaticBaselineVerification(current, inceptionResolution, stableSnapshots, stableThrough)
+            }
             return status
         }
         if (historicalCoverageGapExists(
@@ -697,6 +889,7 @@ class TradeHistoryQueryService(
         log.info("proposal search continuation started; status=INCOMPLETE")
         scope.launch {
             try {
+                var pacingMs = PROPOSAL_CONTINUATION_PACING_MS
                 for (cycle in 0 until PROPOSAL_CONTINUATION_MAX_CYCLES) {
                     val proposal =
                         getSettingsComparisonStatus(after, allowPersistedBaselineFastPath = false).proposal
@@ -708,7 +901,8 @@ class TradeHistoryQueryService(
                         )
                         return@launch
                     }
-                    delay(PROPOSAL_CONTINUATION_PACING_MS)
+                    delay(pacingMs)
+                    pacingMs = (pacingMs * 2).coerceAtMost(PROPOSAL_CONTINUATION_MAX_PACING_MS)
                 }
                 log.info("proposal search continuation budget exhausted; status=INCOMPLETE")
             } catch (error: CancellationException) {
@@ -2462,42 +2656,46 @@ class TradeHistoryQueryService(
         .groupBy({ it.first }, { it.second })
         .mapValues { (_, pairs) -> pairs.distinct() }
 
-    private fun historicalPriceProvider(marketPairsByBase: Map<String, List<String>>, eventUpperBound: Instant) =
-        HistoricalPriceProvider {
-                symbol,
-                time,
-            ->
-            if (Asset.normalizeLedgerAsset(symbol).uppercase() == Asset.USD) {
+    private fun historicalPriceProvider(
+        marketPairsByBase: Map<String, List<String>>,
+        eventUpperBound: Instant,
+    ): HistoricalPriceProvider {
+        val memo = HistoricalPriceMemo()
+        return HistoricalPriceProvider { symbol, time ->
+            val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+            if (normalizedSymbol == Asset.USD) {
                 BigDecimal.ONE
             } else {
-                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
-                var sourceFailure: HistoricalPriceSourceException? = null
-                val fromHistory = krakenService?.let { service ->
-                    try {
-                        HistoricalPriceResolver.resolveHistoricalPrice(
-                            asset = normalizedSymbol,
-                            eventTime = time,
-                            tradesRepo = repository,
-                            krakenService = service,
-                            marketPairs = marketPairsByBase[normalizedSymbol].orEmpty(),
-                            tradeLookbackSeconds = CONTRIBUTION_PRICE_LOOKUP_SECONDS,
-                            futureTradeSkewSeconds = CONTRIBUTION_PRICE_FUTURE_SKEW_SECONDS,
-                            marketPairsByBase = marketPairsByBase,
-                            ohlcCache = historicalOhlcCache,
-                            futureTradeUpperBound = eventUpperBound,
-                        )
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: HistoricalPriceSourceException) {
-                        // A source outage is not evidence that no price exists. A retained snapshot
-                        // may still prove the price; if it cannot, preserve the typed outage below.
-                        sourceFailure = e
-                        null
+                memo.get(HistoricalPriceKey(normalizedSymbol, time)) {
+                    var sourceFailure: HistoricalPriceSourceException? = null
+                    val fromHistory = krakenService?.let { service ->
+                        try {
+                            HistoricalPriceResolver.resolveHistoricalPrice(
+                                asset = normalizedSymbol,
+                                eventTime = time,
+                                tradesRepo = repository,
+                                krakenService = service,
+                                marketPairs = marketPairsByBase[normalizedSymbol].orEmpty(),
+                                tradeLookbackSeconds = CONTRIBUTION_PRICE_LOOKUP_SECONDS,
+                                futureTradeSkewSeconds = CONTRIBUTION_PRICE_FUTURE_SKEW_SECONDS,
+                                marketPairsByBase = marketPairsByBase,
+                                ohlcCache = historicalOhlcCache,
+                                futureTradeUpperBound = eventUpperBound,
+                            )
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: HistoricalPriceSourceException) {
+                            // A source outage is not evidence that no price exists. A retained snapshot
+                            // may still prove the price; if it cannot, preserve the typed outage below.
+                            sourceFailure = e
+                            null
+                        }
                     }
+                    fromHistory ?: snapshotContributionPrice(normalizedSymbol, time) ?: sourceFailure?.let { throw it }
                 }
-                fromHistory ?: snapshotContributionPrice(normalizedSymbol, time) ?: sourceFailure?.let { throw it }
             }
         }
+    }
 
     /**
      * Retained-snapshot fallback for contribution-time pricing: the nearest recorded observation at

@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -13,6 +14,30 @@ class HistoryComparisonChartTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
+        "showComparisonLoading exposes progress and clears stale comparison state" {
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.chartsDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            registerHistoryGlobals()
+            try {
+                buildRebalancerComparisonChart(mockAvailableComparison())
+                showComparisonLoading()
+
+                document.getElementById("comparison-chart-content")
+                    ?.classList?.contains("hidden") shouldBe true
+                val unavailable = document.getElementById("comparison-availability-message")
+                unavailable?.classList?.contains("visible") shouldBe true
+                unavailable?.textContent shouldBe ViewText.COMPARISON_LOADING
+                document.getElementById("comparison-latest-difference")?.textContent shouldBe ViewText.EM_DASH
+                document.getElementById("comparison-confidence-badge")
+                    ?.classList?.contains("visible") shouldBe false
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
         "buildRebalancerComparisonChart tooltip and tick callbacks format values" {
             val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.chartsDom()

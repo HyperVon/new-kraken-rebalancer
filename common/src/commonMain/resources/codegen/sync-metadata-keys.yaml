@@ -80,3 +80,4 @@ SyncMetadataKeys:
   INCEPTION_AUTO_BASELINE_ACCOUNT_SCOPE_DIGEST: "inception_auto_baseline_account_scope_digest"
   INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT: "inception_auto_baseline_evidence_fingerprint"
   INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS: "inception_auto_baseline_evidence_horizon_ms"
+  COMPARISON_EVIDENCE_REVISION: "comparison_evidence_revision"

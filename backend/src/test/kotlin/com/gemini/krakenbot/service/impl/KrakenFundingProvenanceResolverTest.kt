@@ -18,6 +18,7 @@ import com.gemini.krakenbot.service.impl.history.RebalancerComparisonCalculator
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -248,8 +249,11 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
                 }
                 val resolver = KrakenFundingProvenanceResolver(krakenService, nowProvider = { clock })
 
+                resolver.evidenceFingerprint shouldBe "kraken-funding-unprepared"
                 resolver.prepare(listOf(event))
+                resolver.evidenceFingerprint shouldNotBe null
                 clock = now.plusSeconds(60)
+                resolver.evidenceFingerprint shouldBe null
                 resolver.prepare(listOf(event))
 
                 krakenService.getDepositStatusCallCount shouldBe 2
@@ -420,6 +424,7 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
             val resolver = KrakenFundingProvenanceResolver(FakeKrakenService())
             resolver.resolve(fundingEvent("unprepared", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")) shouldBe
                 FundingEvidence.UNRESOLVED
+            resolver.explain(fundingEvent("unprepared", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")) shouldBe null
         }
 
         "prepared production provenance drives the comparison calculator" {
@@ -513,6 +518,7 @@ class KrakenFundingProvenanceResolverTest : StringSpec() {
                 val prepared = resolver.prepare(listOf(deposit))
                 prepared.isCardFunding(deposit) shouldBe true
                 resolver.isCardFunding(deposit) shouldBe true
+                resolver.explain(deposit)
 
                 val nonCardEvent = fundingEvent("wire-dep", KrakenApiConstants.LEDGER_TYPE_DEPOSIT, "100.00")
                 prepared.isCardFunding(nonCardEvent) shouldBe false

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
@@ -23,6 +24,8 @@ import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
+import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.AutomaticBaselineStatus
 import com.gemini.krakenbot.service.ConfigService
@@ -236,6 +239,70 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+            }
+        }
+
+        "getRebalancerComparison_reuses_durable_successful_result_until_evidence_revision_changes" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                val cache = InMemoryComparisonCache()
+                val configService = mockk<ConfigService>(relaxed = true)
+                every { configService.getConfig() } returns TestFixtures.config(
+                    allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+                )
+                val cachedService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    comparisonCacheRepository = cache,
+                    configService = configService,
+                )
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cachedService.getRebalancerComparison(
+                    Instant.EPOCH,
+                    snap2.timestamp.plusSeconds(30),
+                ).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+
+                cache.loadCount shouldBe 2
+                cache.saveCount shouldBe 1
+                coVerify(exactly = 2) { ledgerRepository.getLedgersInRange(any(), any()) }
+
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
+                } returns "changed"
+                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.saveCount shouldBe 2
+            }
+        }
+
+        "comparison cache failures leave the authoritative calculation available" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                val cachedService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    comparisonCacheRepository = ThrowingComparisonCache(),
+                )
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
             }
         }
 
@@ -4539,6 +4606,27 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "settings comparison reuses a durable result when the full path is requested again" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                coEvery { fixture.fundingProvenanceResolver.evidenceFingerprint } returns "fixture-funding"
+                val cache = InMemoryComparisonCache()
+                val cachedService = automaticBaselineService(fixture, cache)
+
+                cachedService.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                ).comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
+                cachedService.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                ).comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
+
+                cache.loadCount shouldBe 2
+                cache.saveCount shouldBe 1
+            }
+        }
+
         "history does not persist automatic baseline proof for auto-detected inception" {
             runTest {
                 val fixture = automaticBaselineFixture()
@@ -5746,13 +5834,58 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         )
     }
 
-    private fun automaticBaselineService(fixture: AutomaticBaselineFixture) = TradeHistoryQueryService(
+    private fun automaticBaselineService(
+        fixture: AutomaticBaselineFixture,
+        comparisonCacheRepository: RebalancerComparisonCacheRepository? = null,
+    ) = TradeHistoryQueryService(
         repository = repository,
         portfolioStatsRepository = statsRepository,
         ledgerRepository = ledgerRepository,
         orderIntentRepository = orderIntentRepository,
         inceptionDiscoveryService = fixture.inceptionService,
         fundingProvenanceResolver = fixture.fundingProvenanceResolver,
+        comparisonCacheRepository = comparisonCacheRepository,
         nowProvider = { now },
     )
+}
+
+private class InMemoryComparisonCache : RebalancerComparisonCacheRepository {
+    private var stored: Triple<Long, Long, RebalancerComparisonCacheEntry>? = null
+    var loadCount = 0
+        private set
+    var saveCount = 0
+        private set
+
+    override suspend fun load(fromEpochMillis: Long, toEpochMillis: Long): RebalancerComparisonCacheEntry? {
+        loadCount++
+        return stored?.takeIf { it.first == fromEpochMillis && it.second == toEpochMillis }?.third
+    }
+
+    override suspend fun save(
+        fromEpochMillis: Long,
+        toEpochMillis: Long,
+        inputFingerprint: String,
+        comparison: com.gemini.krakenbot.model.RebalancerComparison,
+    ) {
+        saveCount++
+        stored = Triple(
+            fromEpochMillis,
+            toEpochMillis,
+            RebalancerComparisonCacheEntry(inputFingerprint, comparison),
+        )
+    }
+}
+
+private class ThrowingComparisonCache : RebalancerComparisonCacheRepository {
+    override suspend fun load(fromEpochMillis: Long, toEpochMillis: Long): RebalancerComparisonCacheEntry =
+        error("cache read failure")
+
+    override suspend fun save(
+        fromEpochMillis: Long,
+        toEpochMillis: Long,
+        inputFingerprint: String,
+        comparison: com.gemini.krakenbot.model.RebalancerComparison,
+    ) {
+        error("cache write failure")
+    }
 }

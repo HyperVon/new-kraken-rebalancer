@@ -1,9 +1,13 @@
 package com.gemini.krakenbot.service.impl.history
 
+import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.repository.HistoricalOhlcRepository
+import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
 import com.gemini.krakenbot.service.FakeKrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -168,6 +172,44 @@ class HistoricalOhlcCacheTest : StringSpec() {
             second shouldBe emptyList()
         }
 
+        "persistence failures fall back to the live response without poisoning the cache" {
+            val counter = AtomicInteger(0)
+            val now = Instant.now().epochSecond
+            val completed = now - 2 * durationSeconds
+            val repository = object : HistoricalOhlcRepository {
+                override suspend fun loadCovered(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                    upToEpochSecond: Long,
+                ): com.gemini.krakenbot.repository.HistoricalOhlcSeries = error("read failure")
+
+                override suspend fun saveFetch(
+                    pair: String,
+                    intervalMinutes: Int,
+                    sinceEpochSecond: Long,
+                    fetchedAtEpochSecond: Long,
+                    candles: List<Pair<Long, BigDecimal>>,
+                ) {
+                    error("write failure")
+                }
+            }
+            val cache = HistoricalOhlcCache(
+                fake(listOf(completed to "0.0175"), counter),
+                persistentRepository = repository,
+            )
+
+            val result = cache.getOHLC(
+                pair,
+                interval,
+                completed - durationSeconds,
+                Instant.ofEpochSecond(now),
+            )
+
+            counter.get() shouldBe 1
+            result.size shouldBe 1
+        }
+
         "joiner with a stricter window than the leader covered refetches" {
             val counter = AtomicInteger(0)
             val now = Instant.now().epochSecond
@@ -213,6 +255,48 @@ class HistoricalOhlcCacheTest : StringSpec() {
             cache.getOHLC(pair.uppercase(), 15, since, Instant.ofEpochSecond(now))
 
             counter.get() shouldBe 1
+        }
+
+        "completed candles and empty fetch coverage survive a cache restart" {
+            val database = DatabaseConfig.init(":memory:")
+            val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+            val firstCounter = AtomicInteger(0)
+            val secondCounter = AtomicInteger(0)
+            val now = Instant.now().epochSecond
+            val completed = now - 4 * durationSeconds
+            val since = completed - durationSeconds
+            val upTo = Instant.ofEpochSecond(now - durationSeconds)
+
+            val first = HistoricalOhlcCache(
+                fake(listOf(completed to "0.0175"), firstCounter),
+                persistentRepository = repository,
+            )
+            val initial = first.getOHLC(pair, interval, since, upTo)
+
+            val restarted = HistoricalOhlcCache(
+                fake(emptyList(), secondCounter),
+                persistentRepository = repository,
+            )
+            val restored = restarted.getOHLC(pair, interval, since, upTo)
+
+            firstCounter.get() shouldBe 1
+            secondCounter.get() shouldBe 0
+            restored.size shouldBe initial.size
+            restored.single().first shouldBe initial.single().first
+            restored.single().second shouldBeEqualComparingTo initial.single().second
+
+            val emptyPair = "DELISTEDUSD"
+            val emptyFirst = HistoricalOhlcCache(
+                fake(emptyList(), firstCounter),
+                persistentRepository = repository,
+            )
+            emptyFirst.getOHLC(emptyPair, interval, since, upTo) shouldBe emptyList()
+            val emptyRestarted = HistoricalOhlcCache(
+                fake(emptyList(), secondCounter),
+                persistentRepository = repository,
+            )
+            emptyRestarted.getOHLC(emptyPair, interval, since, upTo) shouldBe emptyList()
+            secondCounter.get() shouldBe 0
         }
     }
 }
