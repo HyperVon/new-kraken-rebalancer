@@ -467,11 +467,9 @@ class TradeHistoryQueryService(
             persistCachedComparison(
                 from = cacheFrom,
                 to = cacheTo,
-                fingerprint = comparisonCacheFingerprint(
-                    stableThrough = stableThrough,
-                    inceptionResolution = inceptionResolution,
-                    snapshots = evaluationSnapshots,
-                ),
+                stableThrough = stableThrough,
+                inceptionResolution = inceptionResolution,
+                snapshots = evaluationSnapshots,
                 comparison = reconciled,
             )
             presentComparison(reconciled, from, to)
@@ -623,11 +621,22 @@ class TradeHistoryQueryService(
     private suspend fun persistCachedComparison(
         from: Instant,
         to: Instant,
-        fingerprint: String?,
+        stableThrough: Instant,
+        inceptionResolution: InceptionResolution?,
+        snapshots: List<PortfolioSnapshot>,
         comparison: RebalancerComparison,
     ) {
         val cache = comparisonCacheRepository ?: return
-        if (fingerprint == null || comparison.availability != ComparisonAvailability.AVAILABLE) return
+        if (comparison.availability != ComparisonAvailability.AVAILABLE) return
+        // Resolve the fingerprint only after the authoritative calculation has finished. The
+        // calculation may fetch and persist historical OHLC evidence, which advances the
+        // comparison revision; saving a pre-calculation fingerprint would invalidate this result
+        // on the very next request.
+        val fingerprint = comparisonCacheFingerprint(
+            stableThrough = stableThrough,
+            inceptionResolution = inceptionResolution,
+            snapshots = snapshots,
+        ) ?: return
         try {
             cache.save(from.toEpochMilli(), to.toEpochMilli(), fingerprint, comparison)
         } catch (e: CancellationException) {
@@ -809,11 +818,9 @@ class TradeHistoryQueryService(
             persistCachedComparison(
                 from = settingsCacheFrom,
                 to = settingsCacheTo,
-                fingerprint = comparisonCacheFingerprint(
-                    stableThrough = stableThrough,
-                    inceptionResolution = inceptionResolution,
-                    snapshots = stableSnapshots,
-                ),
+                stableThrough = stableThrough,
+                inceptionResolution = inceptionResolution,
+                snapshots = stableSnapshots,
                 comparison = current,
             )
         }

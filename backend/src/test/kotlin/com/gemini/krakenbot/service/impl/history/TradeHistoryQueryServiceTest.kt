@@ -285,6 +285,39 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "comparison cache records the evidence revision after calculation completes" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
+                val cache = InMemoryComparisonCache()
+                val cachedService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    comparisonCacheRepository = cache,
+                )
+                var revisionReads = 0
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
+                } coAnswers {
+                    if (revisionReads++ == 0) "before-calculation" else "after-calculation"
+                }
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+
+                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+
+                cache.loadCount shouldBe 2
+                cache.saveCount shouldBe 1
+            }
+        }
+
         "comparison cache failures leave the authoritative calculation available" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
