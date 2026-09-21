@@ -14,6 +14,7 @@ import com.gemini.krakenbot.model.WithdrawStatusRecord
 import com.gemini.krakenbot.util.PrecisionConstants
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 
 /** One page of a legacy Kraken funding-status response. */
@@ -94,7 +95,7 @@ object KrakenParsers {
         tradesNode.properties().forEach { (tradeId, tradeNode) ->
             val pair = tradeNode.path(KrakenApiConstants.FIELD_PAIR).asText()
             val type = tradeNode.path(KrakenApiConstants.FIELD_TYPE).asText()
-            val time = tradeNode.path(KrakenApiConstants.FIELD_TIME).asDouble()
+            val time = parseEpochSeconds(tradeNode.path(KrakenApiConstants.FIELD_TIME)) ?: Instant.EPOCH
             val priceStr = tradeNode.path(KrakenApiConstants.FIELD_PRICE).asText()
             val costStr = tradeNode.path(KrakenApiConstants.FIELD_COST).asText()
             val volStr = tradeNode.path(KrakenApiConstants.FIELD_VOL).asText()
@@ -116,7 +117,6 @@ object KrakenParsers {
                     return@forEach
                 }
 
-            val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
             val side = type.uppercase()
             // Raw numeric validity: malformed economics must never become valid-looking zeros.
             // Rows are retained as evidence with explicit invalid flags and fail closed downstream.
@@ -144,7 +144,7 @@ object KrakenParsers {
 
             tradesList.add(
                 TradeRecord(
-                    timestamp = timestamp,
+                    timestamp = time,
                     pair = pair,
                     side = side,
                     symbol = symbol,
@@ -200,7 +200,7 @@ object KrakenParsers {
             val type = entryNode.path(KrakenApiConstants.FIELD_TYPE).asText()
             if (expectedTypes != null && type !in expectedTypes) return@forEach
 
-            val time = entryNode.path(KrakenApiConstants.FIELD_TIME).asDouble()
+            val time = parseEpochSeconds(entryNode.path(KrakenApiConstants.FIELD_TIME)) ?: Instant.EPOCH
             val amountStr = entryNode.path(KrakenApiConstants.FIELD_AMOUNT).asText()
             val parsedAmount = runCatching { BigDecimal(amountStr) }.getOrNull()
             val hasValidAmount = amountStr.isNotBlank() && parsedAmount != null
@@ -236,7 +236,7 @@ object KrakenParsers {
                 LedgerEvent(
                     ledgerId = ledgerId,
                     refid = refid,
-                    time = Instant.ofEpochMilli((time * 1000).toLong()),
+                    time = time,
                     type = type,
                     subtype = subtype,
                     aclass = aclass,
@@ -407,10 +407,24 @@ object KrakenParsers {
     }
 
     private fun parseFundingTime(node: JsonNode): Instant? {
-        val seconds = node.path(KrakenApiConstants.FIELD_TIME).asDouble(Double.NaN)
-        if (!seconds.isFinite() || seconds < 0) return null
-        return runCatching { Instant.ofEpochMilli((seconds * 1000.0).toLong()) }.getOrNull()
+        val raw = node.path(KrakenApiConstants.FIELD_TIME).asText().trim()
+        if (raw.isBlank()) return null
+        return raw.toBigDecimalOrNull()
+            ?.takeIf { it.signum() >= 0 }
+            ?.let { seconds -> epochSecondsToInstant(seconds) }
     }
+
+    /** Converts Kraken's decimal epoch seconds without routing through binary floating point. */
+    private fun parseEpochSeconds(node: JsonNode): Instant? =
+        node.asText().trim().toBigDecimalOrNull()?.let(::epochSecondsToInstant)
+
+    private fun epochSecondsToInstant(seconds: BigDecimal): Instant? = runCatching {
+        val epochMillis = seconds
+            .movePointRight(3)
+            .setScale(0, RoundingMode.DOWN)
+            .longValueExact()
+        Instant.ofEpochMilli(epochMillis)
+    }.getOrNull()
 
     private fun parseRawDecimal(node: JsonNode, field: String): BigDecimal? =
         node.path(field).asText().takeIf(String::isNotBlank)?.let { raw ->

@@ -2,8 +2,10 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonProposalStatus
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
+import com.gemini.krakenbot.model.DepositStatusRecord
 import com.gemini.krakenbot.model.FundingEvidence
 import com.gemini.krakenbot.model.FundingProvenanceFailure
 import com.gemini.krakenbot.model.FundingProvenanceFailureReason
@@ -17,6 +19,7 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.service.KrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldBeNull
@@ -34,6 +37,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -112,24 +116,61 @@ class ProposalSearchResumabilityTest : StringSpec() {
         )
     }
 
+    /**
+     * Stable snapshot whose BTC position grew by the deposited amount so a BTC deposit
+     * ledger row inside the evaluated window is balance-explained without introducing a
+     * new asset. The DEPOSIT instant is priced only through the external OHLC provider —
+     * the price-sensitive lever for frontier re-probe scenarios.
+     */
+    private fun fundedSnapshot(delaySeconds: Long): PortfolioSnapshot = stableSnapshot(delaySeconds, btcBalance = "3")
+
+    private fun btcDeposit(at: Instant): LedgerEvent = LedgerEvent(
+        ledgerId = "L-BTC-DEPOSIT",
+        refid = "REF-BTC-DEPOSIT",
+        time = at,
+        type = KrakenApiConstants.LEDGER_TYPE_DEPOSIT,
+        asset = "XXBT",
+        amount = BigDecimal("2"),
+    )
+
+    /** Resolves the BTC deposit's external ownership so provenance never masks the price lever. */
+    private fun externalFundingResolver(): FundingProvenanceResolver = object : FundingProvenanceResolver {
+        override fun resolve(event: LedgerEvent): FundingEvidence = FundingEvidence.EXTERNAL
+
+        override suspend fun prepare(events: Collection<LedgerEvent>): FundingProvenanceResolver = this
+
+        override val evidenceFingerprint: String? = "external-funding-fingerprint"
+    }
+
     private fun harness(
         metadata: MutableMap<String, String>,
         snapshots: List<PortfolioSnapshot>,
         confidentInception: Boolean = false,
+        withInceptionService: Boolean = true,
         applicationScope: CoroutineScope? = null,
         fundingResolver: FundingProvenanceResolver = SimpleFundingProvenanceResolver(),
+        ledgers: List<LedgerEvent> = emptyList(),
+        krakenService: KrakenService? = null,
+        historicalOhlcCache: HistoricalOhlcCache? = null,
     ): Triple<TradeHistoryQueryService, TradeRepository, LedgerRepository> {
         val repository = mockk<TradeRepository>(relaxed = true)
         val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
         coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+        metadata[SyncMetadataKeys.TRADE_COVERAGE_VERSION] = TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        metadata[SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC] = "0"
         coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers { metadata.putAll(firstArg()) }
         metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] = "4102444800"
         metadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] = "4102444800"
+        metadata[SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC] = "0"
+        metadata[SyncMetadataKeys.LEDGER_COVERAGE_VERSION] = LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        metadata[SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST] = "test-scope"
+        metadata[SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST] = "test-scope"
+        metadata[SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST] = "test-scope"
         val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-        coEvery { inceptionService.resolveInception() } returns if (confidentInception) {
+        coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns if (confidentInception) {
             InceptionResolution(
                 inceptionTime = now,
-                inceptionSnapshot = null,
+                inceptionSnapshot = snapshots.firstOrNull()?.takeIf { it.timestamp == now },
                 isAutoDetected = false,
             )
         } else {
@@ -144,16 +185,18 @@ class ProposalSearchResumabilityTest : StringSpec() {
         coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns snapshots
         coEvery { repository.getSnapshotBefore(any()) } returns null
         coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
-        coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+        coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns ledgers
         coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
         val service = TradeHistoryQueryService(
             repository = repository,
             portfolioStatsRepository = mockk(relaxed = true),
             ledgerRepository = ledgerRepository,
             orderIntentRepository = mockk(relaxed = true),
-            inceptionDiscoveryService = inceptionService,
+            inceptionDiscoveryService = if (withInceptionService) inceptionService else null,
             fundingProvenanceResolver = fundingResolver,
             nowProvider = { now },
+            krakenService = krakenService,
+            historicalOhlcCache = historicalOhlcCache,
             applicationScope = applicationScope,
         )
         return Triple(service, repository, ledgerRepository)
@@ -204,6 +247,79 @@ class ProposalSearchResumabilityTest : StringSpec() {
 
                 val resumed = service.getComparisonStartProposal(now)
                 resumed?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+            }
+        }
+
+        "proposal search never verifies from an uncertified snapshot tail" {
+            runTest {
+                val stable = listOf(
+                    stableSnapshot(3600),
+                    stableSnapshot(7200),
+                )
+                val uncertifiedTail = stableSnapshot(10800, btcBalance = "2")
+                val metadata = mutableMapOf<String, String>()
+                val (service, _, _) = harness(metadata, stable + uncertifiedTail)
+                val stableThrough = now.plusSeconds(7200)
+                metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] = stableThrough.epochSecond.toString()
+                metadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] = stableThrough.epochSecond.toString()
+
+                val proposal = service.findVerifiedLaterComparisonStart(now)
+
+                proposal shouldBe stable.first().timestamp
+            }
+        }
+
+        "coverage catch-up invalidates a cached verified proposal before rescanning the new tail" {
+            runTest {
+                val stable = listOf(
+                    stableSnapshot(3600),
+                    stableSnapshot(7200),
+                )
+                val tail = stableSnapshot(10800, btcBalance = "2")
+                val metadata = mutableMapOf<String, String>()
+                val (service, _, _) = harness(metadata, stable + tail)
+                val stableThrough = now.plusSeconds(7200)
+                metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] = stableThrough.epochSecond.toString()
+                metadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] = stableThrough.epochSecond.toString()
+
+                val first = service.findLaterComparisonStartProposal(now, null)
+                first.status shouldBe ComparisonProposalStatus.VERIFIED
+                first.timestamp shouldBe stable.first().timestamp
+
+                val caughtUpThrough = now.plusSeconds(10800)
+                metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] =
+                    caughtUpThrough.epochSecond.toString()
+                metadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] =
+                    caughtUpThrough.epochSecond.toString()
+
+                val afterCatchUp = service.findLaterComparisonStartProposal(now, null)
+
+                afterCatchUp.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_COVERAGE_HORIZON_MS] shouldBe
+                    ((caughtUpThrough.epochSecond + 1) * 1000 - 1).toString()
+            }
+        }
+
+        "an out-of-scope stored evidence horizon rewinds proposal progress" {
+            runTest {
+                val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
+                val metadata = mutableMapOf<String, String>()
+                val (service, _, _) = harness(metadata, candidates)
+
+                service.findLaterComparisonStartProposal(now, null).status shouldBe
+                    ComparisonProposalStatus.INCOMPLETE
+                val cursor = "${candidates[8].timestamp.toEpochMilli()}:0"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS] =
+                    Long.MAX_VALUE.toString()
+
+                service.findLaterComparisonStartProposal(now, null).status shouldBe
+                    ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe cursor
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS] = "-1"
+                service.findLaterComparisonStartProposal(now, null).status shouldBe
+                    ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe cursor
             }
         }
 
@@ -264,7 +380,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
         }
 
         "the bounded server-side continuation completes the scan without operator reloads" {
-            val metadata = mutableMapOf<String, String>()
+            val metadata = ConcurrentHashMap<String, String>()
             val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
             val continuationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
             val (service, _, _) = harness(metadata, candidates, applicationScope = continuationScope)
@@ -350,6 +466,372 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 cured?.status shouldBe ComparisonProposalStatus.VERIFIED
                 cured?.timestamp shouldBe a.timestamp
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
+            }
+        }
+
+        "an OHLC outage leaves a price-sensitive exhausted frontier bounded, and recovery cures it" {
+            runTest {
+                // S1/S2 hold 1 BTC, a BTC deposit lands at +9000s, and S3 holds 3 BTC. With
+                // the OHLC source down, trials that must price the deposit fail
+                // HISTORICAL_PRICE_SOURCE_ERROR; the deposit is the only cure lever, and no
+                // row ever changes between the failing and cured calls.
+                val s1 = stableSnapshot(3600)
+                val s2 = stableSnapshot(7200)
+                val s3 = fundedSnapshot(10800)
+                val metadata = mutableMapOf<String, String>()
+                val krakenService = mockk<KrakenService>()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } throws
+                    RuntimeException("OHLC outage")
+                val (service, _) = harness(
+                    metadata,
+                    listOf(s1, s2, s3),
+                    ledgers = listOf(btcDeposit(now.plusSeconds(9000))),
+                    fundingResolver = externalFundingResolver(),
+                    krakenService = krakenService,
+                    historicalOhlcCache = HistoricalOhlcCache(krakenService),
+                )
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] shouldBe
+                    ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    s1.timestamp.toEpochMilli().toString()
+
+                // Still exhausted while the source stays down: the bounded per-call probe
+                // burns one frontier-candidate trial, never a rescan of the universe.
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] shouldBe
+                    ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR.name
+
+                // The provider recovers (backfill/correction class) with NO evidence change:
+                // the stored frontier candidate becomes priceable and must be re-probed.
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    (now.plusSeconds(9000).epochSecond - 900) to BigDecimal("50000"),
+                )
+                val cured = service.getComparisonStartProposal(now)
+
+                cured?.status shouldBe ComparisonProposalStatus.VERIFIED
+                cured?.timestamp shouldBe s1.timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe
+                    "${s1.timestamp.toEpochMilli()}:0"
+            }
+        }
+
+        "a stored VERIFIED preserves its pending price frontier through revalidation and cures it on reopen" {
+            runTest {
+                // Scan: trials anchored at S1/S2 must price the +9000s deposit and fail; the
+                // S3-anchored trial excludes the pre-anchor deposit and verifies. The earliest
+                // price-sensitive mark at S1 stays pending under the later VERIFIED anchor.
+                val s1 = stableSnapshot(3600)
+                val s2 = stableSnapshot(7200)
+                val s3 = fundedSnapshot(10800)
+                val s4 = fundedSnapshot(14400)
+                val metadata = mutableMapOf<String, String>()
+                val krakenService = mockk<KrakenService>()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } throws
+                    RuntimeException("OHLC outage")
+                val (service, repository, _) = harness(
+                    metadata,
+                    listOf(s1, s2, s3, s4),
+                    ledgers = listOf(btcDeposit(now.plusSeconds(9000))),
+                    fundingResolver = externalFundingResolver(),
+                    krakenService = krakenService,
+                    historicalOhlcCache = HistoricalOhlcCache(krakenService),
+                )
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] shouldBe
+                    ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    s1.timestamp.toEpochMilli().toString()
+
+                // Unchanged evidence revalidates the stored anchor. The revalidation persist
+                // must carry the pending mark forward — blanking it here would strand the
+                // earliest unresolved candidate forever.
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] shouldBe
+                    ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] shouldBe
+                    s1.timestamp.toEpochMilli().toString()
+
+                // A horizon advance reopens the scan AT the preserved mark; the recovered
+                // price source cures it and the earliest start moves back to S1.
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns
+                    listOf(s1, s2, s3, s4) + fundedSnapshot(18000)
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    (now.plusSeconds(9000).epochSecond - 900) to BigDecimal("50000"),
+                )
+                val cured = service.getComparisonStartProposal(now)
+
+                cured?.status shouldBe ComparisonProposalStatus.VERIFIED
+                cured?.timestamp shouldBe s1.timestamp
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
+            }
+        }
+
+        "an append-sensitive exhausted frontier performs no trials while evidence is unchanged" {
+            runTest {
+                val g = snapshot(3600, 1)
+                val a = stableSnapshot(7200)
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(metadata, listOf(g, a))
+                var tradeRangeCalls = 0
+                coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
+                    tradeRangeCalls++
+                    emptyList()
+                }
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] shouldBe
+                    ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS.name
+                val callsAfterExhaustion = tradeRangeCalls
+
+                // Repeated polling with unchanged evidence must stay terminal with only the
+                // fixed per-call digest read: zero trial reconciliation work, ever.
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+
+                tradeRangeCalls - callsAfterExhaustion shouldBe 2
+            }
+        }
+
+        "a price-sensitive frontier with a lost or pruned cursor degrades to terminal exhaustion" {
+            runTest {
+                // A durable price mark whose cursor was lost (legacy state) or whose target
+                // row was pruned must degrade to the SAME safe terminal state as an
+                // append-sensitive mark: no probe, no relaunch, until fresh evidence.
+                val g = snapshot(3600, 1)
+                val a = stableSnapshot(7200)
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(metadata, listOf(g, a))
+                var tradeRangeCalls = 0
+                coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
+                    tradeRangeCalls++
+                    emptyList()
+                }
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] =
+                    ComparisonUnavailableReason.MISSING_PRICE.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] = ""
+                val callsWithLostCursor = tradeRangeCalls
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                tradeRangeCalls - callsWithLostCursor shouldBe 1
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] =
+                    (now.plusSeconds(99999)).toEpochMilli().toString()
+                val callsWithPrunedCursor = tradeRangeCalls
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                tradeRangeCalls - callsWithPrunedCursor shouldBe 1
+            }
+        }
+
+        "a price-sensitive frontier pinned before an intrinsic failure stays skipped" {
+            runTest {
+                // An intrinsic event (e.g. an unexplained balance change) pinned the scan's
+                // skip boundary after the marked frontier candidate: the contract forbids
+                // that candidate from resurfacing, so the probe must stay suppressed.
+                val g = snapshot(3600, 1)
+                val a = stableSnapshot(7200)
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(metadata, listOf(g, a))
+                var tradeRangeCalls = 0
+                coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
+                    tradeRangeCalls++
+                    emptyList()
+                }
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] =
+                    ComparisonUnavailableReason.MISSING_PRICE.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] =
+                    g.timestamp.toEpochMilli().toString()
+                val callsBefore = tradeRangeCalls
+                val proposal = service.findLaterComparisonStartProposal(
+                    startAfter = now,
+                    inceptionResolution = null,
+                    skipCandidatesBefore = a.timestamp,
+                )
+                proposal.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                tradeRangeCalls - callsBefore shouldBe 1
+            }
+        }
+
+        "an appended trade advances the evidence horizon and reopens a stale exhausted scan" {
+            runTest {
+                // Trade rows are append-sensitive evidence too: a newly certified trade
+                // beyond the stored horizon must reopen the scan exactly like a snapshot
+                // append, and the proposal digest must consume the appended trade row.
+                val g = snapshot(3600, 1)
+                val a = stableSnapshot(7200)
+                val metadata = mutableMapOf<String, String>()
+                val (service, repository, _) = harness(metadata, listOf(g, a))
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+
+                val appendedTrade = TestFixtures.tradeRecord(
+                    timestamp = now.plusSeconds(9000),
+                    pair = "XXBTZUSD",
+                    side = "sell",
+                    symbol = "XXBT",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal("50000"),
+                    success = false,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(appendedTrade)
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(g, a)
+                val reopened = service.getComparisonStartProposal(now)
+
+                reopened?.status shouldBe ComparisonProposalStatus.EXHAUSTED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS] shouldBe
+                    now.plusSeconds(9000).toEpochMilli().toString()
+            }
+        }
+
+        "the evidence-lock proposal entry evaluates the same gates for lock owners" {
+            runTest {
+                // Sync/recovery operations that already own the evidence coordinator call
+                // the internal entry; it must run the identical gate chain and scan.
+                val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
+                val metadata = mutableMapOf<String, String>()
+                val (service, _, _) = harness(metadata, candidates)
+
+                val underLock = service.getComparisonStartProposalUnderEvidenceLock(now)
+
+                underLock?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe
+                    "${candidates[8].timestamp.toEpochMilli()}:0"
+            }
+        }
+
+        "an unknown legacy frontier mark is not carried through a VERIFIED revalidation" {
+            runTest {
+                // A mark whose reason no longer maps to any known class cannot be honored by
+                // any reopen path; carrying it would preserve junk, clearing it falls back to
+                // the plain verified-anchor contract.
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val (service, _) = harness(metadata, base)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] = "LEGACY_UNKNOWN"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] =
+                    base[0].timestamp.toEpochMilli().toString()
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS]
+                    .orEmpty() shouldBe ""
+            }
+        }
+
+        "a stored VERIFIED without a durable snapshot identity is not trusted" {
+            runTest {
+                // The VERIFIED short-circuit pivots on the durable snapshot identity: state
+                // whose id was lost (malformed or legacy write) must fall through to the
+                // scan instead of standing in for a verified anchor.
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val (service, _) = harness(metadata, base)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = ""
+
+                val reevaluated = service.getComparisonStartProposal(now)
+
+                reevaluated?.status shouldBe ComparisonProposalStatus.VERIFIED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] shouldBe "0"
+            }
+        }
+
+        "changed funding evidence forces a stored VERIFIED anchor through re-scan" {
+            runTest {
+                // Funding evidence sits outside the row digest; a changed fingerprint bans
+                // every reuse shortcut, including the cached VERIFIED anchor.
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val (service, _) = harness(
+                    metadata,
+                    base,
+                    fundingResolver = scriptedFundingResolver(
+                        healthyFundingResolver("fingerprint-A"),
+                        healthyFundingResolver("fingerprint-B"),
+                    ),
+                )
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT] shouldBe
+                    "fingerprint-A"
+
+                val reevaluated = service.getComparisonStartProposal(now)
+
+                reevaluated?.status shouldBe ComparisonProposalStatus.VERIFIED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT] shouldBe
+                    "fingerprint-B"
+            }
+        }
+
+        "a non-sensitive failure of the marked candidate itself supersedes the mark" {
+            runTest {
+                // The pending mark means "earliest candidate whose outcome may still flip".
+                // When the scan actually re-evaluates the marked candidate and its own
+                // verdict is non-sensitive, that verdict is final: the stale mark must not
+                // survive, and the scan's remaining append-sensitive failure takes over.
+                val candidates = (1..12).map { index -> snapshot(3600L * index, index) }
+                val metadata = mutableMapOf<String, String>()
+                val (service, _, _) = harness(metadata, candidates)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON] =
+                    ComparisonUnavailableReason.MISSING_PRICE.name
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS] =
+                    candidates[2].timestamp.toEpochMilli().toString()
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] =
+                    "${candidates[0].timestamp.toEpochMilli()}:0"
+
+                // The rewound scan re-evaluates the marked candidate; its non-sensitive
+                // verdict clears the mark, and no sensitive failure replaces it.
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON].orEmpty() shouldBe ""
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS]
+                    .orEmpty() shouldBe ""
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe
+                    "${candidates[8].timestamp.toEpochMilli()}:0"
+            }
+        }
+
+        "a funding preparation failure fails closed and clears reuse state" {
+            runTest {
+                // With the funding fingerprint unknown, no stored state can be trusted:
+                // the scan fails closed to INCOMPLETE and blanks the cached fingerprint
+                // and any pending frontier mark in the same atomic write.
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val (service, _) = harness(metadata, base, fundingResolver = failedFundingResolver())
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT].orEmpty() shouldBe ""
+            }
+        }
+
+        "a stored VERIFIED with a mismatched snapshot identity is not trusted" {
+            runTest {
+                // A durable identity that no longer matches the candidate row (rewritten
+                // store, dedupe collapse) must void the cached anchor and force re-scan.
+                val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
+                val metadata = mutableMapOf<String, String>()
+                val (service, _) = harness(metadata, base)
+
+                service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = "999"
+
+                val reevaluated = service.getComparisonStartProposal(now)
+
+                reevaluated?.status shouldBe ComparisonProposalStatus.VERIFIED
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] shouldBe "0"
             }
         }
 
@@ -479,11 +961,16 @@ class ProposalSearchResumabilityTest : StringSpec() {
             }
         }
 
-        "without a horizon advance the stored VERIFIED still fast-revalidates" {
+        "without a horizon advance the stored VERIFIED revalidates current evidence" {
             runTest {
                 val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
                 val metadata = mutableMapOf<String, String>()
                 val (service, repository, _) = harness(metadata, base)
+                var tradeRangeCalls = 0
+                coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
+                    tradeRangeCalls++
+                    emptyList()
+                }
 
                 service.getComparisonStartProposal(now)?.status shouldBe ComparisonProposalStatus.VERIFIED
                 val fingerprintBefore =
@@ -494,6 +981,9 @@ class ProposalSearchResumabilityTest : StringSpec() {
                 reused?.status shouldBe ComparisonProposalStatus.VERIFIED
                 reused?.timestamp shouldBe base[0].timestamp
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FINGERPRINT] shouldBe fingerprintBefore
+                // Each proposal call reads the bounded digest once and replays the cached
+                // candidate through the current historical price/evidence path twice.
+                tradeRangeCalls shouldBe 6
             }
         }
 
@@ -614,7 +1104,7 @@ class ProposalSearchResumabilityTest : StringSpec() {
             }
         }
 
-        "funding preparation failure without a horizon advance still returns the cached VERIFIED" {
+        "funding preparation failure without a horizon advance fails closed" {
             runTest {
                 val base = listOf(stableSnapshot(3600), stableSnapshot(7200))
                 val metadata = mutableMapOf<String, String>()
@@ -631,9 +1121,11 @@ class ProposalSearchResumabilityTest : StringSpec() {
 
                 val reused = service.getComparisonStartProposal(now)
 
-                reused?.status shouldBe ComparisonProposalStatus.VERIFIED
-                reused?.timestamp shouldBe base[0].timestamp
-                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT] shouldBe "funding-v1"
+                reused?.status shouldBe ComparisonProposalStatus.INCOMPLETE
+                reused?.timestamp shouldBe null
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS] shouldBe
+                    "${base[0].timestamp.toEpochMilli()}:0"
+                metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT] shouldBe ""
             }
         }
 

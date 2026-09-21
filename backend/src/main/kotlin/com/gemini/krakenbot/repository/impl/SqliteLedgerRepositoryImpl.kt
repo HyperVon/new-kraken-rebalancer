@@ -4,6 +4,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.LedgerTable
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
@@ -16,6 +17,7 @@ import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.time.Instant
@@ -99,6 +101,18 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
 
     override suspend fun setSyncMetadata(key: String, value: String) {
         database.writeSyncMetadata(key, value, log, "Failed to upsert sync metadata")
+    }
+
+    override suspend fun setSyncMetadataAtomically(metadata: Map<String, String>) {
+        if (metadata.isEmpty()) return
+        database.safeTransactionIO(log, "Failed to persist ledger sync metadata revision") {
+            metadata.forEach { (key, value) ->
+                HistorySyncMetadataTable.upsert {
+                    it[HistorySyncMetadataTable.key] = key
+                    it[HistorySyncMetadataTable.value] = value
+                }
+            }
+        }
     }
 
     override suspend fun isLedgersSeeded(): Boolean = getSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED) == "true"

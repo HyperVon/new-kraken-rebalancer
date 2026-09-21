@@ -57,6 +57,7 @@ class TradeHistoryQueryService(
     private val applicationScope: CoroutineScope? = null,
     /** Current allocation membership; historical wallet-only assets are not live targets. */
     private val configService: ConfigService? = null,
+    private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) {
     private val proposalSearchMutex = Mutex()
 
@@ -99,15 +100,15 @@ class TradeHistoryQueryService(
             .downsampleSnapshots()
 
     /**
-     * Full-fidelity comparison input: identity-anchor collisions excluded, otherwise the
-     * complete retained series. Reconciliation correctness must not depend on chart sampling,
-     * so duplicate instants and stride downsampling are NOT applied here — intermediate
-     * states are reconciliation evidence (a collapsed series provably loses multi-event
-     * instants the calculator contracts require). Presentation sampling happens on the
-     * resulting comparison points only after the calculator succeeds.
+     * Full-fidelity accounting input: identity-anchor collisions excluded, otherwise the complete
+     * retained series from the effective baseline through the requested end. Reconciliation
+     * correctness must not depend on the display window, chart sampling, or duplicate-instant
+     * collapsing, so intermediate states remain evidence. Presentation filtering and sampling
+     * happen only after the calculator succeeds.
      */
-    private suspend fun loadComparisonSnapshots(from: Instant, to: Instant): List<PortfolioSnapshot> =
-        excludeIdentitySnapshots(repository.getAllSnapshotsInRange(from, to)).sortedBy { it.timestamp }
+    private suspend fun loadComparisonSnapshots(accountingFrom: Instant, to: Instant): List<PortfolioSnapshot> =
+        excludeIdentitySnapshots(repository.getAllSnapshotsInRange(accountingFrom, to))
+            .sortedBy { it.timestamp }
 
     /**
      * Reconstruction replays events newest-first and persists a row per replayed event, so an
@@ -220,6 +221,21 @@ class TradeHistoryQueryService(
             )
 
         /**
+         * Append-sensitive frontier reasons that external historical price evidence can also
+         * cure: an OHLC backfill, correction, or provider recovery supplies the missing price
+         * with NO new snapshot/trade/ledger row, so the evidence digest and the horizon never
+         * witness the change. A stored EXHAUSTED carrying one of these is re-probed with a
+         * single bounded frontier-candidate trial per call. The remaining append-sensitive
+         * reason (INSUFFICIENT_SNAPSHOTS) can only be cured by new rows, which advance the
+         * horizon and reopen the scan, so it stays strictly terminal.
+         */
+        private val PRICE_SENSITIVE_FRONTIER_REASONS =
+            setOf(
+                ComparisonUnavailableReason.MISSING_PRICE,
+                ComparisonUnavailableReason.HISTORICAL_PRICE_SOURCE_ERROR,
+            )
+
+        /**
          * The normal snapshot loop is substantially more frequent than daily. A gap this large
          * in historical coverage is evidence that retained history lost an interval or era;
          * proposal search must not infer over it.
@@ -230,8 +246,27 @@ class TradeHistoryQueryService(
 
     suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, nowProvider())
 
-    suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison {
-        val snapshots = loadComparisonSnapshots(from, to)
+    suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
+        historyEvidenceCoordinator.withLock {
+            val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
+            getRebalancerComparisonLocked(from, to, inceptionResolution)
+        }
+
+    private suspend fun getRebalancerComparisonLocked(
+        from: Instant,
+        to: Instant,
+        inceptionResolution: InceptionResolution?,
+    ): RebalancerComparison {
+        // The requested interval is a display range, not an accounting boundary. Load from the
+        // known effective baseline when it predates the display start so every intermediate
+        // checkpoint needed to prove the B&H state at the first returned point remains available.
+        // When no inception service is configured, there is no proven earlier baseline to widen
+        // to and the existing range-local behavior remains the safest contract.
+        val accountingFrom = maxOf(
+            benchmarkHistoryFloor,
+            minOf(from, inceptionResolution?.inceptionTime ?: from),
+        )
+        val snapshots = loadComparisonSnapshots(accountingFrom, to)
         if (snapshots.size < 2) {
             return RebalancerComparisonCalculator.calculate(snapshots, emptyList())
         }
@@ -251,22 +286,149 @@ class TradeHistoryQueryService(
                 inceptionUnavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
             )
         }
-        val inceptionResolution = inceptionDiscoveryService?.resolveInception()
+        // History comparison operates against stable, coverage-confirmed history: a newest
+        // live snapshot whose balance observation lies beyond certified trade/ledger coverage
+        // is unstable-tail evidence and must not fail the evaluation with an unexplained balance
+        // change or mask into a historical-coverage gap.
+        val stableThrough = latestConfirmedEconomicCoverage(
+            requiredStart = requiredCoverageStart(
+                baselineStart = effectiveReplayBaselineStart(
+                    inceptionResolution,
+                    orderedSnapshots.first(),
+                    accountingFrom,
+                    to,
+                ),
+                firstSnapshot = orderedSnapshots.first(),
+            ),
+        )
+        if (stableThrough == null) {
+            // Fail closed: without certified trade AND ledger horizons, no live-tail evidence
+            // may be evaluated at all (mirrors the Settings defer behavior). Never substitute
+            // a watermark, wall clock, or latest snapshot time for certified coverage.
+            val ledgerCoverage = ledgerRepository
+                .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+            val tradeCoverage = repository
+                .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+            log.info(
+                "History comparison unavailable; reason=HISTORY_COVERAGE_STALE stableThrough=null " +
+                    "ledgerCoverage={} tradeCoverage={}",
+                ledgerCoverage ?: "missing",
+                tradeCoverage ?: "missing",
+            )
+            return RebalancerComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = inceptionResolution?.inceptionTime ?: orderedSnapshots.first().timestamp,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableAt = orderedSnapshots.firstOrNull()?.timestamp,
+            )
+        }
+        val firstUncoveredIndex =
+            orderedSnapshots.indexOfFirst { !isSnapshotCoveredByHistory(it, stableThrough) }
+        val evaluationSnapshots = if (firstUncoveredIndex >= 0) {
+            val reentry = orderedSnapshots.drop(firstUncoveredIndex + 1).indexOfFirst {
+                isSnapshotCoveredByHistory(it, stableThrough)
+            }
+            if (reentry >= 0) {
+                log.warn(
+                    "History comparison deferred; reason=HISTORY_COVERAGE_NON_MONOTONIC " +
+                        "firstUncoveredSnapshot={} laterCoveredSnapshot={}",
+                    orderedSnapshots[firstUncoveredIndex].timestamp,
+                    orderedSnapshots[firstUncoveredIndex + 1 + reentry].timestamp,
+                )
+                return RebalancerComparison(
+                    availability = ComparisonAvailability.UNAVAILABLE,
+                    confidence = null,
+                    baselineTimestamp = inceptionResolution?.inceptionTime ?: orderedSnapshots.first().timestamp,
+                    points = emptyList(),
+                    latestDifferenceUSD = null,
+                    latestDifferencePercent = null,
+                    unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                    unavailableAt = orderedSnapshots[firstUncoveredIndex].timestamp,
+                )
+            }
+            orderedSnapshots.take(firstUncoveredIndex)
+        } else {
+            orderedSnapshots
+        }
+
+        if (evaluationSnapshots.size < 2) {
+            log.info(
+                "History comparison unavailable; reason=HISTORY_COVERAGE_STALE stableThrough={} snapshotCount={}",
+                stableThrough,
+                evaluationSnapshots.size,
+            )
+            return RebalancerComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = inceptionResolution?.inceptionTime ?: orderedSnapshots.first().timestamp,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableAt = orderedSnapshots.firstOrNull()?.timestamp,
+            )
+        }
+
+        if (evaluationSnapshots.size < orderedSnapshots.size) {
+            log.info(
+                "History comparison using stable history horizon; " +
+                    "stableThrough={} latestStableSnapshot={} skippedUnstableTailCount={}",
+                stableThrough,
+                evaluationSnapshots.last().timestamp,
+                orderedSnapshots.size - evaluationSnapshots.size,
+            )
+        }
+
         val reconciled =
             calculateComparison(
-                orderedSnapshots,
+                evaluationSnapshots,
                 inceptionResolution,
+                eventUpperBound = certifiedEventUpperBound(stableThrough),
                 suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
             )
-        // Presentation sampling is strictly post-reconciliation: the calculator reconciles the
-        // full retained series, and only the resulting comparison points are reduced for chart
-        // payload size. Baseline, latest difference, and contribution accounting are computed on
-        // the full series and are unaffected by point selection; endpoints are always kept.
+        // Presentation filtering and sampling are strictly post-reconciliation: the calculator
+        // reconciles the full stable accounting series, then the returned points are restricted
+        // to the requested display range and sampled for payload size. Baseline and contribution
+        // accounting come from the full series; latest differences come from the displayed tail.
         val result = if (reconciled.availability == ComparisonAvailability.AVAILABLE) {
-            reconciled.copy(points = reconciled.points.downsampleSnapshots())
+            persistAutomaticBaselineVerification(
+                reconciled,
+                inceptionResolution,
+                evaluationSnapshots,
+                stableThrough,
+            )
+            val displayPoints = reconciled.points.filter { point ->
+                !point.timestamp.isBefore(from) && !point.timestamp.isAfter(to)
+            }
+            if (displayPoints.size < 2) {
+                reconciled.copy(
+                    availability = ComparisonAvailability.UNAVAILABLE,
+                    confidence = null,
+                    points = emptyList(),
+                    latestDifferenceUSD = null,
+                    latestDifferencePercent = null,
+                    unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                    unavailableAt = displayPoints.firstOrNull()?.timestamp ?: from,
+                    proposedBaselineTimestamp = null,
+                    proposalSearchStatus = null,
+                )
+            } else {
+                val sampledDisplayPoints = displayPoints.downsampleSnapshots()
+                reconciled.copy(
+                    points = sampledDisplayPoints,
+                    latestDifferenceUSD = sampledDisplayPoints.last().differenceUSD,
+                    latestDifferencePercent = sampledDisplayPoints.last().differencePercent,
+                )
+            }
         } else {
             reconciled
         }
+
+        var finalResult = result
         // A later comparison start is actionable only alongside an explicit strategy inception.
         // Auto-detected inception is display-only until the operator supplies that anchor.
         if (result.availability == ComparisonAvailability.UNAVAILABLE &&
@@ -278,29 +440,58 @@ class TradeHistoryQueryService(
             // continuity check; applying the obsolete strategy start here would turn a genuine
             // post-anchor reconciliation failure into a misleading historical-coverage gap.
             val strategyStart = result.baselineTimestamp ?: inceptionResolution?.inceptionTime
-            if (strategyStart != null && historicalCoverageGapExists(strategyStart)) {
-                // A later retained snapshot may reconcile locally while an earlier retained era
-                // is missing. Without continuity across the retention boundary there is no proof
-                // that the proposed candidate is the earliest trustworthy start.
-                return result.copy(
+            val isVerifiedBaseline = strategyStart != null &&
+                strategyStart == inceptionResolution?.inceptionTime &&
+                readVerifiedAutomaticBaseline(inceptionResolution) != null
+            if (strategyStart != null && !isVerifiedBaseline &&
+                historicalCoverageGapExists(strategyStart, inceptionResolution)
+            ) {
+                log.info(
+                    "comparison unavailable reason rewritten; from={} to={} because=HISTORICAL_COVERAGE_GAP",
+                    result.unavailableReason,
+                    ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
+                )
+                finalResult = result.copy(
                     unavailableReason = ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP,
                     proposedBaselineTimestamp = null,
                     proposalSearchStatus = null,
                 )
+            } else {
+                // Window-independent: the proposal must not change when the user
+                // zooms the History chart, so the scan reads the full retained
+                // snapshot range instead of the display window.
+                val proposal = findLaterComparisonStartProposalLocked(
+                    startAfter = inceptionResolution?.inceptionTime ?: Instant.EPOCH,
+                    inceptionResolution = inceptionResolution,
+                )
+                finalResult = result.copy(
+                    proposedBaselineTimestamp = proposal.timestamp,
+                    proposalSearchStatus = proposal.status,
+                )
             }
-            // Window-independent: the proposal must not change when the user
-            // zooms the History chart, so the scan reads the full retained
-            // snapshot range instead of the display window.
-            val proposal = findLaterComparisonStartProposal(
-                startAfter = inceptionResolution?.inceptionTime ?: Instant.EPOCH,
-                inceptionResolution = inceptionResolution,
-            )
-            return result.copy(
-                proposedBaselineTimestamp = proposal.timestamp,
-                proposalSearchStatus = proposal.status,
+        }
+
+        if (finalResult.availability == ComparisonAvailability.UNAVAILABLE) {
+            val continuousHistoryStart = repository.getSyncMetadata(
+                SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS,
+            )?.toLongOrNull()?.let(Instant::ofEpochMilli)
+            val autoBaselineVerifiedThrough = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS,
+            )?.toLongOrNull()?.let(Instant::ofEpochMilli)
+            log.info(
+                "comparison unavailable; originalReason={} finalReason={} baseline={} unavailableAt={} " +
+                    "stableThrough={} continuousHistoryStart={} automaticBaselineVerifiedThrough={}",
+                result.unavailableReason,
+                finalResult.unavailableReason,
+                finalResult.baselineTimestamp ?: "unknown",
+                finalResult.unavailableAt ?: "unknown",
+                stableThrough,
+                continuousHistoryStart ?: "unknown",
+                autoBaselineVerifiedThrough ?: "unknown",
             )
         }
-        return result
+
+        return finalResult
     }
 
     /**
@@ -311,6 +502,16 @@ class TradeHistoryQueryService(
     suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? =
         getSettingsComparisonStatus(after, allowPersistedBaselineFastPath = false).proposal
 
+    /** Called by a service operation that already owns [historyEvidenceCoordinator]. */
+    internal suspend fun getComparisonStartProposalUnderEvidenceLock(after: Instant): ComparisonStartProposal? {
+        val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
+        return getSettingsComparisonStatusLocked(
+            after = after,
+            allowPersistedBaselineFastPath = false,
+            inceptionResolution = inceptionResolution,
+        ).proposal
+    }
+
     /**
      * The same gate chain as [getComparisonStartProposal] in the same order, but it also
      * exposes the baseline identity and the passive comparison's availability so the Settings
@@ -320,7 +521,8 @@ class TradeHistoryQueryService(
      * Settings-family evaluation that flows through this function — baseline proof,
      * later-start proposal search, and search continuation — so each withholds a verdict
      * while certified coverage is unknown or thin and resumes once history catches up.
-     * History's [getRebalancerComparison] keeps evaluating the full snapshot list.
+     * History's [getRebalancerComparison] uses the same stable-horizon gate to trim
+     * uncertified live-tail snapshots while evaluating the retained historical prefix.
      *
      * Baseline identity and current comparison availability are independent. When
      * [allowPersistedBaselineFastPath] is true and the durable automatic baseline
@@ -336,8 +538,16 @@ class TradeHistoryQueryService(
     suspend fun getSettingsComparisonStatus(
         after: Instant,
         allowPersistedBaselineFastPath: Boolean = true,
+    ): SettingsComparisonStatus = historyEvidenceCoordinator.withLock {
+        val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
+        getSettingsComparisonStatusLocked(after, allowPersistedBaselineFastPath, inceptionResolution)
+    }
+
+    private suspend fun getSettingsComparisonStatusLocked(
+        after: Instant,
+        allowPersistedBaselineFastPath: Boolean,
+        inceptionResolution: InceptionResolution?,
     ): SettingsComparisonStatus {
-        val inceptionResolution = inceptionDiscoveryService?.resolveInception()
         // An auto-detected inception is display-only until the operator supplies an explicit
         // strategy start; Settings must not expose an approval action for it.
         if (inceptionResolution?.isAutoDetected == true) return SettingsComparisonStatus()
@@ -355,7 +565,17 @@ class TradeHistoryQueryService(
         // trade whose fills or ledger rows have not synced yet — and must not fail the
         // reconciliation of confirmed history. The boundary is the balance observation time,
         // not the snapshot write time.
-        val stableThrough = latestConfirmedEconomicCoverage()
+        val stableThrough = latestConfirmedEconomicCoverage(
+            requiredStart = requiredCoverageStart(
+                baselineStart = effectiveReplayBaselineStart(
+                    inceptionResolution,
+                    snapshots.first(),
+                    benchmarkHistoryFloor,
+                    nowProvider(),
+                ),
+                firstSnapshot = snapshots.first(),
+            ),
+        )
         if (stableThrough == null) {
             log.info("Automatic B&H baseline verification deferred; reason=HISTORY_COVERAGE_STALE")
             return SettingsComparisonStatus()
@@ -404,6 +624,7 @@ class TradeHistoryQueryService(
             calculateComparison(
                 stableSnapshots,
                 inceptionResolution,
+                eventUpperBound = certifiedEventUpperBound(stableThrough),
                 suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
             )
         val status =
@@ -445,13 +666,14 @@ class TradeHistoryQueryService(
         if (historicalCoverageGapExists(
                 snapshots = snapshots,
                 strategyStart = inceptionResolution?.inceptionTime ?: after,
+                inceptionResolution = inceptionResolution,
             )
         ) {
             return status
         }
         val skipCandidatesBefore = current.unavailableAt
             ?.takeIf { current.unavailableReason in INTRINSIC_EVENT_REASONS }
-        val proposal = findLaterComparisonStartProposal(after, inceptionResolution, skipCandidatesBefore)
+        val proposal = findLaterComparisonStartProposalLocked(after, inceptionResolution, skipCandidatesBefore)
         if (proposal.status == ComparisonProposalStatus.INCOMPLETE) {
             ensureProposalSearchContinuation(after)
         }
@@ -524,6 +746,7 @@ class TradeHistoryQueryService(
         CONFIG_UNIVERSE_CHANGED,
         RECONSTRUCTION_CHANGED,
         FUNDING_EVIDENCE_CHANGED,
+        COVERAGE_CHANGED,
         MALFORMED_STATE,
     }
 
@@ -589,7 +812,7 @@ class TradeHistoryQueryService(
         )
         val storedEvidenceHorizonEpochMillis = repository.getSyncMetadata(
             SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS,
-        )?.toLongOrNull()
+        )?.toLongOrNull()?.takeIf { it >= 0L }
         if (storedBaselineEpochMillis == null ||
             storedInceptionEpochMillis == null ||
             storedSnapshotId == null ||
@@ -601,6 +824,15 @@ class TradeHistoryQueryService(
             storedBaselineEpochMillis != storedInceptionEpochMillis
         ) {
             return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.MALFORMED_STATE)
+        }
+        val stableThrough = latestConfirmedEconomicCoverage(requiredStart = inceptionTime)
+        val certifiedEvidenceHorizonEpochMillis = stableThrough
+            ?.let(::certifiedEventUpperBound)
+            ?.toEpochMilliOrNull()
+        if (certifiedEvidenceHorizonEpochMillis == null ||
+            storedEvidenceHorizonEpochMillis > certifiedEvidenceHorizonEpochMillis
+        ) {
+            return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.COVERAGE_CHANGED)
         }
         if (storedInceptionEpochMillis != inceptionTime.toEpochMilli()) {
             return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.INCEPTION_CHANGED)
@@ -622,7 +854,7 @@ class TradeHistoryQueryService(
             return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.CONFIG_UNIVERSE_CHANGED)
         }
         if (storedAccountScopeDigest !=
-            ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST).orEmpty()
+            repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST).orEmpty()
         ) {
             return invalidateAutomaticBaseline(AutomaticBaselineInvalidationReason.ACCOUNT_SCOPE_CHANGED)
         }
@@ -676,23 +908,98 @@ class TradeHistoryQueryService(
 
     /**
      * Certified economic-history coverage for automatic-baseline verification: the earlier
-     * of the certified ledger and trade coverage horizons. Both certified horizons must
-     * exist and parse — the sync watermarks are deliberately not consulted because they
-     * record a refreshed query window, not a completeness proof. This mirrors the
-     * reconstruction contract, which requires both certified horizons to reach the
-     * reconstruction anchor before any rebuilt snapshot is trusted. A null return means
-     * coverage is unknown, so verification defers instead of trusting an unproven tail.
+     * of the current-version certified ledger and trade coverage horizons. Both certificates
+     * must have current versions, nonnegative starts and horizons, and parse — the sync
+     * watermarks are deliberately not consulted because they record a refreshed query window,
+     * not a completeness proof. Coverage starts and account-scope digests are part of the
+     * certificate contract: a current horizon alone must never make an incomplete or differently
+     * scoped history look verified. A null return means coverage is unknown, so verification
+     * defers instead of trusting an unproven tail.
      */
-    private suspend fun latestConfirmedEconomicCoverage(): Instant? {
+    private suspend fun latestConfirmedEconomicCoverage(requiredStart: Instant): Instant? {
+        // A horizon is a certificate only when it was written by the current coverage
+        // contract. A stale version marker can otherwise leave an old horizon looking
+        // trustworthy after the event-classification or account-scope semantics changed.
+        val ledgerCoverageVersion = ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
+        val tradeCoverageVersion = repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION)
+        if (ledgerCoverageVersion != LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION ||
+            tradeCoverageVersion != TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        ) {
+            return null
+        }
+        val ledgerStartSec = ledgerRepository
+            .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC)
+            ?.toLongOrNull()
+            ?.takeIf { it >= 0L }
+        val tradeStartSec = repository
+            .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC)
+            ?.toLongOrNull()
+            ?.takeIf { it >= 0L }
         val ledgerHorizonSec = ledgerRepository
             .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
             ?.toLongOrNull()
+            ?.takeIf { it >= 0L }
         val tradeHorizonSec = repository
             .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
             ?.toLongOrNull()
-        val ledgerHorizon = ledgerHorizonSec?.let(Instant::ofEpochSecond)
-        val tradeHorizon = tradeHorizonSec?.let(Instant::ofEpochSecond)
-        return if (ledgerHorizon == null || tradeHorizon == null) null else minOf(ledgerHorizon, tradeHorizon)
+            ?.takeIf { it >= 0L }
+        if (ledgerStartSec == null || tradeStartSec == null ||
+            ledgerHorizonSec == null || tradeHorizonSec == null ||
+            ledgerStartSec > ledgerHorizonSec || tradeStartSec > tradeHorizonSec
+        ) {
+            return null
+        }
+        val requiredStartSec = requiredStart.epochSecond
+        if (ledgerStartSec > requiredStartSec || tradeStartSec > requiredStartSec ||
+            ledgerHorizonSec < requiredStartSec || tradeHorizonSec < requiredStartSec
+        ) {
+            return null
+        }
+
+        // A live account-scoped certificate must agree with the shared inception binding. An
+        // entirely blank pair is the unbound simulation contract; a partial pair, mismatched
+        // pair, or nonblank pair without a shared binding is not a certificate.
+        val ledgerScopeDigest = ledgerRepository
+            .getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+            ?.trim()
+            .orEmpty()
+        val tradeScopeDigest = repository
+            .getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+            ?.trim()
+            .orEmpty()
+        val inceptionScopeDigest = repository
+            .getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+            ?.trim()
+            .orEmpty()
+        // Blank scope certificates are emitted only by the simulation seed. They are useful for
+        // an isolated synthetic account, but are not evidence that can cross into production
+        // mode: when simulation is disabled, require an account-bound certificate instead.
+        val simulationEnabled = configService?.getConfig()?.settings?.simulation == true
+        val scopesUnbound = simulationEnabled &&
+            ledgerScopeDigest.isBlank() &&
+            tradeScopeDigest.isBlank() &&
+            inceptionScopeDigest.isBlank()
+        val scopesBound = ledgerScopeDigest.isNotBlank() &&
+            tradeScopeDigest.isNotBlank() &&
+            ledgerScopeDigest == tradeScopeDigest &&
+            inceptionScopeDigest == ledgerScopeDigest
+        if (!scopesUnbound && !scopesBound) {
+            return null
+        }
+        return runCatching {
+            val ledgerHorizon = Instant.ofEpochSecond(ledgerHorizonSec)
+            val tradeHorizon = Instant.ofEpochSecond(tradeHorizonSec)
+            val stableThrough = minOf(ledgerHorizon, tradeHorizon)
+            val eventUpperBound = certifiedEventUpperBound(stableThrough)
+            // Instant supports a wider range than epoch-millisecond metadata. Reject a
+            // mathematically valid second that cannot be represented by every downstream
+            // digest/cursor query instead of allowing an overflow later in the replay path.
+            if (stableThrough.toEpochMilliOrNull() == null || eventUpperBound.toEpochMilliOrNull() == null) {
+                null
+            } else {
+                stableThrough
+            }
+        }.getOrNull()
     }
 
     /**
@@ -707,6 +1014,55 @@ class TradeHistoryQueryService(
      */
     private fun isSnapshotCoveredByHistory(snapshot: PortfolioSnapshot, stableThrough: Instant): Boolean =
         (snapshot.balancesObservedAt ?: snapshot.timestamp).epochSecond <= stableThrough.epochSecond
+
+    /**
+     * Coverage must reach the earliest time the evaluation can replay, not merely the first row
+     * returned for the requested display range. An explicit inception/approved baseline may sit
+     * before that row (including when an identity-anchor collision removes the row from the
+     * loaded series), and events from that baseline onward still participate in reconciliation.
+     */
+    private fun requiredCoverageStart(baselineStart: Instant?, firstSnapshot: PortfolioSnapshot): Instant {
+        val firstObservation = firstSnapshot.balancesObservedAt ?: firstSnapshot.timestamp
+        return baselineStart?.let { minOf(it, firstObservation) } ?: firstObservation
+    }
+
+    /**
+     * Finds the earliest evidence the current comparison path will actually replay. A retained
+     * approved snapshot can supersede the configured instant as the economic anchor, while a
+     * passive benchmark re-anchor is deliberately preferred when an informational inception lies
+     * before the retained-history floor. If no such post-floor anchor exists, retain the earlier
+     * inception so the coverage gate fails closed instead of laundering a truncated replay.
+     */
+    private suspend fun effectiveReplayBaselineStart(
+        inceptionResolution: InceptionResolution?,
+        firstSnapshot: PortfolioSnapshot,
+        fallback: Instant,
+        evaluationUpperBound: Instant,
+    ): Instant {
+        val resolvedBaseline = inceptionResolution?.inceptionSnapshot?.let {
+            it.balancesObservedAt ?: it.timestamp
+        } ?: inceptionResolution?.inceptionTime
+        if (inceptionResolution != null &&
+            !shouldSuppressPassiveDiscovery(inceptionResolution) &&
+            (resolvedBaseline == null || resolvedBaseline.isBefore(benchmarkHistoryFloor))
+        ) {
+            findPureBenchmarkAnchor(
+                floor = maxOf(benchmarkHistoryFloor, firstSnapshot.timestamp),
+                upperBound = evaluationUpperBound,
+            )
+                ?.let { return it.balancesObservedAt ?: it.timestamp }
+        }
+        return resolvedBaseline ?: fallback
+    }
+
+    /**
+     * Coverage horizons are persisted at epoch-second precision. The whole certified second is
+     * covered, so event replay may include its fractional-second rows but nothing later.
+     */
+    private fun certifiedEventUpperBound(stableThrough: Instant): Instant =
+        runCatching { stableThrough.plusNanos(999_999_999) }.getOrDefault(stableThrough)
+
+    private fun Instant.toEpochMilliOrNull(): Long? = runCatching { toEpochMilli() }.getOrNull()
 
     /**
      * Persists the automatic baseline proof when the just-completed evaluation proved the
@@ -726,6 +1082,9 @@ class TradeHistoryQueryService(
         snapshots: List<PortfolioSnapshot>,
         stableThrough: Instant,
     ) {
+        // Auto-detected inception is display-only until the operator supplies an explicit
+        // strategy anchor. History must not turn a display result into a durable approval proof.
+        if (inceptionResolution?.isAutoDetected == true) return
         if (current.availability != ComparisonAvailability.AVAILABLE) return
         val baselineTimestamp = current.baselineTimestamp ?: return
         val inceptionTime = inceptionResolution?.inceptionTime ?: return
@@ -738,9 +1097,15 @@ class TradeHistoryQueryService(
         // Evidence horizon = the stable verification horizon: capped at certified coverage
         // so a snapshot written after its covered observation cannot bind the digest to
         // uncertified tail rows.
-        val evidenceHorizonEpochMillis =
-            minOf(snapshots.maxOf { it.timestamp.toEpochMilli() }, stableThrough.toEpochMilli())
+        val certifiedHorizonEpochMillis = certifiedEventUpperBound(stableThrough).toEpochMilliOrNull() ?: return
+        val snapshotEpochMillis = snapshots
+            .map { it.timestamp.toEpochMilliOrNull() ?: return }
+            .maxOrNull() ?: return
+        val evidenceHorizonEpochMillis = minOf(snapshotEpochMillis, certifiedHorizonEpochMillis)
         val evidenceFingerprint = automaticBaselineEvidenceDigest(inceptionTime, evidenceHorizonEpochMillis)
+        // This proof is B&H economic evidence only. It must never rewrite
+        // CONTINUOUS_HISTORY_START_EPOCH_MS: that key is reconstruction-owned truth about
+        // retained snapshot continuity and gates rebuildHistoricalSnapshotsIfNeeded().
         repository.setSyncMetadataAtomically(
             mapOf(
                 SyncMetadataKeys.INCEPTION_AUTO_BASELINE_VERIFICATION_VERSION to
@@ -755,7 +1120,7 @@ class TradeHistoryQueryService(
                 SyncMetadataKeys.INCEPTION_AUTO_BASELINE_CONFIG_FINGERPRINT to
                     repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT).orEmpty(),
                 SyncMetadataKeys.INCEPTION_AUTO_BASELINE_ACCOUNT_SCOPE_DIGEST to
-                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
                         .orEmpty(),
                 SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT to evidenceFingerprint,
                 SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS to
@@ -810,6 +1175,9 @@ class TradeHistoryQueryService(
         orderedSnapshots: List<PortfolioSnapshot>,
         inceptionResolution: InceptionResolution?,
         preparedFundingProvenance: FundingProvenanceResolver? = null,
+        // Every caller supplies the certified or otherwise explicitly bounded evidence horizon;
+        // replaying events beyond that bound could make an uncertified live tail look verified.
+        eventUpperBound: Instant,
         // Operator-facing entries pass true when a usable approved baseline exists (see
         // shouldSuppressPassiveDiscovery). Proposal-search trials always pass false: each
         // trial synthesizes a per-candidate CONFIDENT resolution as scoping scaffolding, and
@@ -838,7 +1206,10 @@ class TradeHistoryQueryService(
             if (suppressPassiveDiscovery) {
                 null
             } else {
-                findPureBenchmarkAnchor(maxOf(benchmarkHistoryFloor, firstTimestamp))
+                findPureBenchmarkAnchor(
+                    floor = maxOf(benchmarkHistoryFloor, firstTimestamp),
+                    upperBound = lastTimestamp,
+                )
             }
 
         if (inceptionResolution?.confidence == InceptionConfidence.RECOVERY_INCOMPLETE &&
@@ -928,21 +1299,33 @@ class TradeHistoryQueryService(
         } else {
             eventQueryStart.minusMillisIfLegacyObservation(anchorSnapshot, firstSnapshot)
         }
-        val queryTo = maxOf(lastTimestamp, lastObservationTime)
+        val naturalQueryTo = maxOf(lastTimestamp, lastObservationTime)
             .plusMillis(RebalancerComparisonCalculator.MAX_EVENT_OBSERVATION_CLOCK_SKEW_MILLIS)
+        val queryTo = minOf(naturalQueryTo, eventUpperBound)
 
-        val trades = getTradesInRange(queryFrom, queryTo)
+        val trades = if (queryTo.isBefore(queryFrom)) {
+            emptyList()
+        } else {
+            getTradesInRange(queryFrom, queryTo)
+        }
         // Raw-evidence contract: the ledger repository is raw/unprojected (types = null on
         // ingestion). The classifier/replay layer is the semantic projection — never the query
-        // layer. Pass the complete interval so unknown top-level types reach
+        // layer. Pass the complete certified interval so unknown top-level types reach
         // LedgerFlowClassifier and fail closed as UNSUPPORTED/AMBIGUOUS instead of disappearing
         // here. `trade` rows are retained as continuity checkpoints and classify as TRADE_IGNORED.
-        val ledgers = ledgerRepository.getLedgersInRange(queryFrom, queryTo)
+        val ledgers = if (queryTo.isBefore(queryFrom)) {
+            emptyList()
+        } else {
+            ledgerRepository.getLedgersInRange(queryFrom, queryTo)
+        }
         val windowLedgerIds = ledgers.associateBy(LedgerEvent::ledgerId)
         // Validation context: strictly-before rows (inclusive-bound query + identity
         // dedupe keeps the exact-queryFrom row economic-window-only), used ONLY for
         // wallet-scope replay of the authoritative validator.
-        val contextLedgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, queryFrom)
+        val contextLedgers = ledgerRepository.getLedgersInRange(
+            Instant.EPOCH,
+            minOf(queryFrom, eventUpperBound),
+        )
             .filterNot { it.ledgerId in windowLedgerIds }
         // Fail closed on trade markets that recorded history cannot interpret. Coverage-grade
         // ingestion preserves e.g. ADAEUR/XBTUSDT/XBTUSDC; their Kraken `cost` must never be
@@ -991,8 +1374,11 @@ class TradeHistoryQueryService(
         // including pairs whose only fill predates the displayed comparison window. No pair is
         // guessed for an asset absent from the anchor, and no live ticker participates in an old
         // comparison.
-        val retainedMarketTrades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
-        val priceProvider = historicalPriceProvider(retainedMarketPairsByBase(retainedMarketTrades + trades))
+        val retainedMarketTrades = repository.getTradesInRange(Instant.EPOCH, eventUpperBound)
+        val priceProvider = historicalPriceProvider(
+            marketPairsByBase = retainedMarketPairsByBase(retainedMarketTrades + trades),
+            eventUpperBound = eventUpperBound,
+        )
         return RebalancerComparisonCalculator.calculate(
             snapshots = orderedSnapshots,
             trades = trades,
@@ -1028,7 +1414,7 @@ class TradeHistoryQueryService(
      * the windowed chart must be the same benchmark logic applied to the visible range, not
      * a different reconciliation.
      */
-    private suspend fun findPureBenchmarkAnchor(floor: Instant): PortfolioSnapshot? {
+    private suspend fun findPureBenchmarkAnchor(floor: Instant, upperBound: Instant): PortfolioSnapshot? {
         val now = nowProvider()
         val window = reconstructionWindow()
         val reconstructedRange = authoritativelyReconstructedRange(window)
@@ -1038,6 +1424,7 @@ class TradeHistoryQueryService(
             .asSequence()
             .filter { snapshot ->
                 !snapshot.timestamp.isBefore(effectiveFloor) &&
+                    !snapshot.timestamp.isAfter(upperBound) &&
                     !snapshot.timestamp.isAfter(now) &&
                     (
                         isRecordedAnchorCandidate(snapshot, window) ||
@@ -1182,12 +1569,58 @@ class TradeHistoryQueryService(
         inceptionResolution: InceptionResolution?,
         /** Skip all candidates before an evidence event that provably fails inside every scan window. */
         skipCandidatesBefore: Instant? = null,
+    ): ComparisonStartProposal = historyEvidenceCoordinator.withLock {
+        val resolvedInception = inceptionResolution
+            ?: inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
+        findLaterComparisonStartProposalLocked(startAfter, resolvedInception, skipCandidatesBefore)
+    }
+
+    private suspend fun findLaterComparisonStartProposalLocked(
+        startAfter: Instant,
+        inceptionResolution: InceptionResolution?,
+        skipCandidatesBefore: Instant? = null,
     ): ComparisonStartProposal {
         return proposalSearchMutex.withLock {
             // Reload all economic evidence after acquiring the mutex. A concurrent Settings and
             // History request must not fingerprint a stale snapshot list and then overwrite newer
             // durable progress with an older cursor.
-            val orderedSnapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: startAfter)
+            val loadedSnapshots = loadAllSnapshots(inceptionResolution?.inceptionTime ?: startAfter)
+            if (loadedSnapshots.size < 2) {
+                return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+            }
+            val stableThrough = latestConfirmedEconomicCoverage(
+                requiredStart = requiredCoverageStart(
+                    baselineStart = effectiveReplayBaselineStart(
+                        inceptionResolution,
+                        loadedSnapshots.first(),
+                        startAfter,
+                        nowProvider(),
+                    ),
+                    firstSnapshot = loadedSnapshots.first(),
+                ),
+            ) ?: return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+            val eventUpperBound = certifiedEventUpperBound(stableThrough)
+            val certifiedEventHorizonEpochMillis = eventUpperBound.toEpochMilliOrNull()
+                ?: return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+            val firstUncoveredIndex = loadedSnapshots.indexOfFirst {
+                !isSnapshotCoveredByHistory(it, stableThrough)
+            }
+            if (firstUncoveredIndex >= 0) {
+                val reentry = loadedSnapshots.drop(firstUncoveredIndex + 1).indexOfFirst {
+                    isSnapshotCoveredByHistory(it, stableThrough)
+                }
+                if (reentry >= 0) {
+                    return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+                }
+            }
+            val orderedSnapshots = if (firstUncoveredIndex >= 0) {
+                loadedSnapshots.take(firstUncoveredIndex)
+            } else {
+                loadedSnapshots
+            }
+            if (orderedSnapshots.size < 2) {
+                return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+            }
             // A stale reconstruction interval invalidates every candidate that overlaps it, so no
             // candidate can be declared VERIFIED until a successful rebuild. Fail the search
             // incomplete instead of scanning snapshots whose reconstruction contract is stale.
@@ -1197,12 +1630,21 @@ class TradeHistoryQueryService(
             if (historicalCoverageGapExists(
                     snapshots = orderedSnapshots,
                     strategyStart = inceptionResolution?.inceptionTime ?: startAfter,
+                    inceptionResolution = inceptionResolution,
                 )
             ) {
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
             }
             val allCandidates = orderedSnapshots.filter { it.timestamp > startAfter }
             val predecessorSnapshot = allCandidates.firstOrNull()?.let { repository.getSnapshotBefore(it.timestamp) }
+            val orderedSnapshotEpochMillis = orderedSnapshots.map {
+                it.timestamp.toEpochMilliOrNull()
+                    ?: return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+            }
+            val predecessorEpochMillis = predecessorSnapshot?.timestamp?.toEpochMilliOrNull()
+                ?: predecessorSnapshot?.let {
+                    return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
+                }
             // Read durable progress before fingerprinting: the stored evidence horizon bounds
             // which rows participate in the digest. Candidates at or before it were already
             // evaluated; append-only rows after it must not invalidate that progress (see
@@ -1218,20 +1660,31 @@ class TradeHistoryQueryService(
             val storedEvidenceHorizon = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS,
             )?.toLongOrNull()
+            val storedEvidenceHorizonOutOfScope = storedEvidenceHorizon != null &&
+                (storedEvidenceHorizon < 0L || storedEvidenceHorizon > certifiedEventHorizonEpochMillis)
+            val boundedStoredEvidenceHorizon = storedEvidenceHorizon
+                ?.takeUnless { storedEvidenceHorizonOutOfScope }
+            val storedCoverageHorizon = repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_COVERAGE_HORIZON_MS,
+            )?.toLongOrNull()
             val storedFrontierReason = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON,
             )
             val storedFrontierCursorRaw = repository.getSyncMetadata(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS,
             )?.toLongOrNull()
-            val trades = repository.getTradesInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
-            val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END)
-            val latestRowEpochMillis = maxOf(
-                orderedSnapshots.maxOfOrNull { it.timestamp.toEpochMilli() } ?: 0L,
-                predecessorSnapshot?.timestamp?.toEpochMilli() ?: 0L,
+            // Raw evidence, funding provenance, fingerprints, and the candidate universe all
+            // share the same certified event boundary. Rows beyond it are live-tail evidence,
+            // not input that a proposal can consume or cache as VERIFIED.
+            val trades = repository.getTradesInRange(Instant.EPOCH, eventUpperBound)
+            val ledgers = ledgerRepository.getLedgersInRange(Instant.EPOCH, eventUpperBound)
+            val rawLatestRowEpochMillis = maxOf(
+                orderedSnapshotEpochMillis.maxOrNull() ?: 0L,
+                predecessorEpochMillis ?: 0L,
                 trades.maxOfOrNull { it.timestamp.toEpochMilli() } ?: 0L,
                 ledgers.maxOfOrNull { it.time.toEpochMilli() } ?: 0L,
             )
+            val latestRowEpochMillis = minOf(rawLatestRowEpochMillis, certifiedEventHorizonEpochMillis)
             // Revalidate the stored prefix under its own horizon first. A match proves every
             // evaluated candidate's evidence is unchanged; only then may the horizon advance to
             // the newest row so the growing tail becomes a fresh segment instead of invalidating
@@ -1243,17 +1696,20 @@ class TradeHistoryQueryService(
                 predecessorSnapshot = predecessorSnapshot,
                 trades = trades,
                 ledgers = ledgers,
-                horizonEpochMillis = storedEvidenceHorizon ?: latestRowEpochMillis,
+                horizonEpochMillis = boundedStoredEvidenceHorizon ?: latestRowEpochMillis,
+                certifiedEventHorizonEpochMillis = certifiedEventHorizonEpochMillis,
             )
-            val canResume = storedFingerprint == prefixFingerprint
+            val coverageBoundaryMatches = storedCoverageHorizon == certifiedEventHorizonEpochMillis
+            val canResume = !storedEvidenceHorizonOutOfScope && coverageBoundaryMatches &&
+                storedFingerprint == prefixFingerprint
             val horizonAdvanced = canResume &&
-                storedEvidenceHorizon != null &&
-                latestRowEpochMillis > storedEvidenceHorizon
+                boundedStoredEvidenceHorizon != null &&
+                latestRowEpochMillis > boundedStoredEvidenceHorizon
             // A reset (fresh or invalidated stored state) and a horizon advance both derive the
             // bound from the newest row, so every persisted state covers its candidate universe
             // exactly — no tested candidate is ever digested outside its own fingerprint.
             val appliedEvidenceHorizon = if (canResume && !horizonAdvanced) {
-                storedEvidenceHorizon ?: latestRowEpochMillis
+                boundedStoredEvidenceHorizon ?: latestRowEpochMillis
             } else {
                 latestRowEpochMillis
             }
@@ -1265,6 +1721,7 @@ class TradeHistoryQueryService(
                 trades = trades,
                 ledgers = ledgers,
                 horizonEpochMillis = appliedEvidenceHorizon,
+                certifiedEventHorizonEpochMillis = certifiedEventHorizonEpochMillis,
             )
             val candidates = allCandidates.filter {
                 it.timestamp.toEpochMilli() <= appliedEvidenceHorizon
@@ -1277,7 +1734,7 @@ class TradeHistoryQueryService(
                 // it into every trial prevents a candidate loop from issuing one network-backed
                 // funding request per reconciliation attempt.
                 fundingProvenanceResolver.prepare(
-                    ledgerRepository.getLedgersInRange(Instant.EPOCH, OPEN_ENDED_RANGE_END),
+                    ledgers,
                 )
             } else {
                 null
@@ -1295,44 +1752,16 @@ class TradeHistoryQueryService(
             val reopensPastStoredVerified = canResume && !fundingEvidenceChanged &&
                 horizonAdvanced && frontierSensitive && storedFrontierCursorRaw != null
             if (preparedFundingProvenance?.preparationFailure != null) {
-                // Funding preparation cannot revalidate a stored anchor against a horizon
-                // that has advanced, so fail closed to INCOMPLETE; the next healthy call
-                // re-evaluates under the enlarged evidence horizon. The cached state stays
-                // safe only while the horizon — and thus the tested evidence set — is
-                // unchanged, and only past the caller's skip boundary.
-                if (canResume && !fundingEvidenceChanged && !horizonAdvanced &&
-                    storedStatus == ComparisonProposalStatus.VERIFIED.name
-                ) {
-                    val verifiedIndex = storedCursor
-                        ?.let { cursor -> candidates.indexOfProposalCursor(cursor) }
-                    val storedSnapshotId = repository.getSyncMetadata(
-                        SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID,
-                    )?.toIntOrNull()
-                    val durableSnapshotId = if (verifiedIndex != null && verifiedIndex >= 0) {
-                        repository.getSnapshotId(
-                            candidates[verifiedIndex].timestamp,
-                            storedCursor.ordinal,
-                        )
-                    } else {
-                        null
-                    }
-                    if (verifiedIndex != null && verifiedIndex >= 0 &&
-                        (skipIndex == null || skipIndex <= verifiedIndex) &&
-                        storedSnapshotId != null && durableSnapshotId == storedSnapshotId
-                    ) {
-                        return@withLock ComparisonStartProposal(
-                            status = ComparisonProposalStatus.VERIFIED,
-                            timestamp = candidates[verifiedIndex].timestamp,
-                            snapshotId = storedSnapshotId,
-                        )
-                    }
-                }
+                // A funding preparation failure means the evidence fingerprint is unknown.
+                // Even an unchanged local horizon cannot prove that the cached VERIFIED state
+                // remains valid, so never reuse it without a fresh immutable provenance snapshot.
                 persistProposalSearchState(
                     fingerprint = fingerprint,
                     status = ComparisonProposalStatus.INCOMPLETE,
                     cursor = candidates.proposalCursorAt(0).encode(),
                     fundingEvidenceFingerprint = null,
                     evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                    coverageHorizonEpochMillis = certifiedEventHorizonEpochMillis,
                 )
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.INCOMPLETE)
             }
@@ -1348,18 +1777,12 @@ class TradeHistoryQueryService(
                             cursor.ordinal,
                         )
                         if (storedSnapshotId != null && durableSnapshotId == storedSnapshotId) {
-                            if (!horizonAdvanced && !reopensPastStoredVerified) {
-                                return@withLock ComparisonStartProposal(
-                                    status = ComparisonProposalStatus.VERIFIED,
-                                    timestamp = candidates[verifiedIndex].timestamp,
-                                    snapshotId = storedSnapshotId,
-                                )
-                            }
                             if (!reopensPastStoredVerified) {
-                                // A horizon advance can invalidate the stored anchor with
-                                // new tail evidence (new ledger event, reconstruction row),
-                                // so the verified candidate is re-evaluated once under the
-                                // enlarged horizon before it may be returned.
+                                // Re-evaluate every cached VERIFIED candidate. The local digest
+                                // cannot identify changes in bounded external OHLC evidence, and
+                                // the provider/cache may have restarted or corrected a historical
+                                // price since the state was persisted. A horizon advance is one
+                                // reason to do this; it is not the only one.
                                 val revalidated = calculateComparison(
                                     candidates.drop(verifiedIndex),
                                     InceptionResolution(
@@ -1368,8 +1791,18 @@ class TradeHistoryQueryService(
                                         isAutoDetected = false,
                                     ),
                                     preparedFundingProvenance = preparedFundingProvenance,
+                                    eventUpperBound = eventUpperBound,
                                 )
                                 if (revalidated.availability == ComparisonAvailability.AVAILABLE) {
+                                    // The pending frontier mark is unresolved earliest-start
+                                    // state, not superseded by this anchor's revalidation: a
+                                    // later horizon advance must still reopen at it
+                                    // (reopensPastStoredVerified). Omitting the keys here
+                                    // would atomically blank them and strand the mark. A
+                                    // reason that no longer maps to any known class carries
+                                    // no reopen semantics, so its cursor is dropped with it.
+                                    val carriedFrontierReason = APPEND_SENSITIVE_FRONTIER_REASONS
+                                        .firstOrNull { it.name == storedFrontierReason }
                                     persistProposalSearchState(
                                         fingerprint = fingerprint,
                                         status = ComparisonProposalStatus.VERIFIED,
@@ -1377,6 +1810,11 @@ class TradeHistoryQueryService(
                                         snapshotId = storedSnapshotId,
                                         fundingEvidenceFingerprint = fundingEvidenceFingerprint,
                                         evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                                        coverageHorizonEpochMillis = certifiedEventHorizonEpochMillis,
+                                        frontierReason = carriedFrontierReason,
+                                        frontierCursorEpochMillis = carriedFrontierReason?.let {
+                                            storedFrontierCursorRaw
+                                        },
                                     )
                                     return@withLock ComparisonStartProposal(
                                         status = ComparisonProposalStatus.VERIFIED,
@@ -1395,11 +1833,72 @@ class TradeHistoryQueryService(
             // Terminal exhaustion only holds while no evidence arrived after the persisted
             // horizon. A newer tail extends the open-ended candidate universe, so the scan
             // reopens at its frontier and evaluates the appended rows under a horizon that
-            // includes them.
+            // includes them. A pending append-sensitive mark does not force a re-scan on an
+            // unchanged horizon: every ROW that could cure it is itself evidence whose
+            // arrival advances the horizon, so the mark stays persisted and reopens there —
+            // with one exception below for price-sensitive frontiers, whose cure can be
+            // digest-invisible external price evidence.
             if (canResume && !fundingEvidenceChanged &&
                 storedStatus == ComparisonProposalStatus.EXHAUSTED.name &&
                 !horizonAdvanced
             ) {
+                val storedPriceFrontierReason = storedFrontierReason?.let { reason ->
+                    PRICE_SENSITIVE_FRONTIER_REASONS.firstOrNull { it.name == reason }
+                }
+                val storedPriceFrontierIndex = if (storedPriceFrontierReason != null &&
+                    storedFrontierCursorRaw != null
+                ) {
+                    candidates.indexOfFirst {
+                        it.timestamp.toEpochMilli() >= storedFrontierCursorRaw
+                    }.takeIf { it >= 0 }
+                } else {
+                    null
+                }
+                // A price-sensitive frontier candidate pinned before an intrinsic failure
+                // event must not resurface, matching the scan's skipCandidatesBefore guard.
+                if (storedPriceFrontierIndex == null ||
+                    (skipIndex != null && storedPriceFrontierIndex < skipIndex)
+                ) {
+                    return@withLock ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED)
+                }
+                // External price evidence (OHLC backfill, historical correction, provider
+                // recovery) can cure this candidate with no new row, so the horizon cannot
+                // witness the change and the terminal branch above would suppress an earlier
+                // verified start indefinitely. Probe exactly the stored frontier candidate
+                // once per call — the same bounded per-call revalidation cost the VERIFIED
+                // path already pays — never a rescan of the candidate universe.
+                val frontierCandidate = candidates[storedPriceFrontierIndex]
+                val frontierTrial = calculateComparison(
+                    candidates.drop(storedPriceFrontierIndex),
+                    InceptionResolution(
+                        inceptionTime = frontierCandidate.timestamp,
+                        inceptionSnapshot = frontierCandidate,
+                        isAutoDetected = false,
+                    ),
+                    preparedFundingProvenance = preparedFundingProvenance,
+                    eventUpperBound = eventUpperBound,
+                )
+                if (frontierTrial.availability == ComparisonAvailability.AVAILABLE) {
+                    val frontierCursor = candidates.proposalCursorAt(storedPriceFrontierIndex)
+                    val frontierSnapshotId = repository.getSnapshotId(
+                        frontierCandidate.timestamp,
+                        frontierCursor.ordinal,
+                    )
+                    persistProposalSearchState(
+                        fingerprint = fingerprint,
+                        status = ComparisonProposalStatus.VERIFIED,
+                        cursor = frontierCursor.encode(),
+                        snapshotId = frontierSnapshotId,
+                        fundingEvidenceFingerprint = fundingEvidenceFingerprint,
+                        evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                        coverageHorizonEpochMillis = certifiedEventHorizonEpochMillis,
+                    )
+                    return@withLock ComparisonStartProposal(
+                        status = ComparisonProposalStatus.VERIFIED,
+                        timestamp = frontierCandidate.timestamp,
+                        snapshotId = frontierSnapshotId,
+                    )
+                }
                 return@withLock ComparisonStartProposal(ComparisonProposalStatus.EXHAUSTED)
             }
 
@@ -1420,7 +1919,7 @@ class TradeHistoryQueryService(
                 null
             }
             val tailResumeIndex = if (horizonAdvanced) {
-                val advancedTailStart = storedEvidenceHorizon
+                val advancedTailStart = boundedStoredEvidenceHorizon
                 candidates.indexOfFirst { it.timestamp.toEpochMilli() > advancedTailStart }
                     .takeIf { it >= 0 }
             } else {
@@ -1470,6 +1969,7 @@ class TradeHistoryQueryService(
                         isAutoDetected = false,
                     ),
                     preparedFundingProvenance = preparedFundingProvenance,
+                    eventUpperBound = eventUpperBound,
                 )
                 trials++
                 if (trial.availability == ComparisonAvailability.AVAILABLE) {
@@ -1489,6 +1989,7 @@ class TradeHistoryQueryService(
                         snapshotId = candidateSnapshotId,
                         fundingEvidenceFingerprint = fundingEvidenceFingerprint,
                         evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                        coverageHorizonEpochMillis = certifiedEventHorizonEpochMillis,
                         frontierReason = if (frontierCured) null else frontierRunReason,
                         frontierCursorEpochMillis = if (frontierCured) {
                             null
@@ -1536,6 +2037,7 @@ class TradeHistoryQueryService(
                 },
                 fundingEvidenceFingerprint = fundingEvidenceFingerprint,
                 evidenceHorizonEpochMillis = appliedEvidenceHorizon,
+                coverageHorizonEpochMillis = certifiedEventHorizonEpochMillis,
                 frontierReason = frontierRunReason,
                 frontierCursorEpochMillis = frontierCursorIndex?.let {
                     candidates[it].timestamp.toEpochMilli()
@@ -1548,12 +2050,19 @@ class TradeHistoryQueryService(
     private suspend fun loadAllSnapshots(from: Instant): List<PortfolioSnapshot> =
         repository.getAllSnapshotsInRange(from, OPEN_ENDED_RANGE_END).sortedBy { it.timestamp }
 
-    private suspend fun historicalCoverageGapExists(strategyStart: Instant): Boolean =
-        historicalCoverageGapExists(loadAllSnapshots(strategyStart), strategyStart)
+    private suspend fun historicalCoverageGapExists(
+        strategyStart: Instant,
+        inceptionResolution: InceptionResolution?,
+    ): Boolean = historicalCoverageGapExists(
+        loadAllSnapshots(strategyStart),
+        strategyStart,
+        inceptionResolution,
+    )
 
     private suspend fun historicalCoverageGapExists(
         snapshots: List<PortfolioSnapshot>,
         strategyStart: Instant,
+        inceptionResolution: InceptionResolution?,
     ): Boolean {
         val now = nowProvider()
         if (strategyStart.isAfter(now)) return false
@@ -1563,19 +2072,45 @@ class TradeHistoryQueryService(
         }.sortedBy { it.timestamp }
         if (retained.isEmpty()) return false
 
-        val continuousStart = resolveContinuousHistoryStart(snapshots)
-        if (Duration.between(strategyStart, continuousStart).seconds > MAX_COVERAGE_GAP_SECONDS) {
-            // Strategy started before continuous history was established (e.g. lost under legacy retention).
-            return true
+        val verifiedBaseline = inceptionResolution?.let { readVerifiedAutomaticBaseline(it) }
+        val isVerifiedInception = verifiedBaseline != null &&
+            verifiedBaseline.baselineTimestamp == strategyStart.toString()
+        // The proof is scoped to the interval it actually reconciled: [strategyStart, verifiedHorizon].
+        // A malformed or pre-inception horizon grants no exemption, so continuity heuristics run.
+        val verifiedHorizon = if (isVerifiedInception) {
+            repository.getSyncMetadata(
+                SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS,
+            )?.toLongOrNull()?.let(Instant::ofEpochMilli)?.takeIf { !it.isBefore(strategyStart) }
+        } else {
+            null
         }
 
-        val first = retained.first()
-        if (Duration.between(strategyStart, first.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS) {
-            return true
+        if (verifiedHorizon == null) {
+            val continuousStart = resolveContinuousHistoryStart(snapshots)
+            if (Duration.between(strategyStart, continuousStart).seconds > MAX_COVERAGE_GAP_SECONDS) {
+                // Strategy started before continuous history was established (e.g. lost under legacy retention).
+                return true
+            }
+
+            val first = retained.first()
+            if (Duration.between(strategyStart, first.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS) {
+                return true
+            }
+        } else {
+            log.debug(
+                "Historical continuity satisfied by verified automatic baseline proof; " +
+                    "baseline={} verifiedThrough={}",
+                strategyStart,
+                verifiedHorizon,
+            )
         }
 
         return retained.zipWithNext().any { (previous, current) ->
-            Duration.between(previous.timestamp, current.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS
+            if (verifiedHorizon != null && !current.timestamp.isAfter(verifiedHorizon)) {
+                false
+            } else {
+                Duration.between(previous.timestamp, current.timestamp).seconds > MAX_COVERAGE_GAP_SECONDS
+            }
         }
     }
 
@@ -1757,7 +2292,8 @@ class TradeHistoryQueryService(
         cursor: String,
         snapshotId: Int? = null,
         fundingEvidenceFingerprint: String?,
-        evidenceHorizonEpochMillis: Long? = null,
+        evidenceHorizonEpochMillis: Long,
+        coverageHorizonEpochMillis: Long,
         frontierReason: ComparisonUnavailableReason? = null,
         frontierCursorEpochMillis: Long? = null,
     ) {
@@ -1770,7 +2306,9 @@ class TradeHistoryQueryService(
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT to
                     fundingEvidenceFingerprint.orEmpty(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_EVIDENCE_HORIZON_MS to
-                    evidenceHorizonEpochMillis?.toString().orEmpty(),
+                    evidenceHorizonEpochMillis.toString(),
+                SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_COVERAGE_HORIZON_MS to
+                    coverageHorizonEpochMillis.toString(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_REASON to
                     frontierReason?.name.orEmpty(),
                 SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FRONTIER_CURSOR_EPOCH_MS to
@@ -1785,7 +2323,8 @@ class TradeHistoryQueryService(
      * display window so zooming cannot skip or reuse a candidate incorrectly.
      *
      * Identifies the economic evidence a proposal scan consumed over an explicit [horizonEpochMillis]
-     * bound: only rows at or before that instant participate. Append-only tail rows after a
+     * bound and certified coverage boundary: only rows at or before those instants participate.
+     * Append-only tail rows after a
      * persisted horizon exclude themselves from the stored fingerprint, so the scan can resume
      * and the appended rows instead extend the universe as a new segment once the prefix is
      * revalidated — the caller derives the bound from the persisted horizon or the newest row.
@@ -1803,11 +2342,13 @@ class TradeHistoryQueryService(
         trades: List<TradeRecord>,
         ledgers: List<LedgerEvent>,
         horizonEpochMillis: Long,
+        certifiedEventHorizonEpochMillis: Long,
     ): String {
         val material = buildString {
             append(PROPOSAL_SEARCH_VERSION).append('\u0000')
             append(startAfter).append('\u0000')
             append(inceptionResolution?.inceptionTime).append('\u0000')
+            append(certifiedEventHorizonEpochMillis).append('\u0000')
             append(repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT).orEmpty())
                 .append('\u0000')
             append(repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST).orEmpty())
@@ -1821,8 +2362,9 @@ class TradeHistoryQueryService(
             append(repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION).orEmpty())
                 .append('\u0000')
             // Coverage watermarks count append-only fresh rows and grow with every live cycle;
-            // they are freshness counters, not evidence identity, so they must not invalidate
-            // resumable progress. Row-level digests below remain the material evidence check.
+            // they are freshness counters, not evidence identity. The certified event boundary
+            // above is different: it defines the exact set of authoritative events the scan was
+            // allowed to consume, so a boundary change must invalidate cached progress.
             // Reconstruction currentness participates in the fingerprint: invalidating or
             // rebuilding reconstructed history must force proposal re-trials instead of letting a
             // stored VERIFIED cursor resume against a different evidence baseline.
@@ -1920,40 +2462,42 @@ class TradeHistoryQueryService(
         .groupBy({ it.first }, { it.second })
         .mapValues { (_, pairs) -> pairs.distinct() }
 
-    private fun historicalPriceProvider(marketPairsByBase: Map<String, List<String>>) = HistoricalPriceProvider {
-            symbol,
-            time,
-        ->
-        if (Asset.normalizeLedgerAsset(symbol).uppercase() == Asset.USD) {
-            BigDecimal.ONE
-        } else {
-            val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
-            var sourceFailure: HistoricalPriceSourceException? = null
-            val fromHistory = krakenService?.let { service ->
-                try {
-                    HistoricalPriceResolver.resolveHistoricalPrice(
-                        asset = normalizedSymbol,
-                        eventTime = time,
-                        tradesRepo = repository,
-                        krakenService = service,
-                        marketPairs = marketPairsByBase[normalizedSymbol].orEmpty(),
-                        tradeLookbackSeconds = CONTRIBUTION_PRICE_LOOKUP_SECONDS,
-                        futureTradeSkewSeconds = CONTRIBUTION_PRICE_FUTURE_SKEW_SECONDS,
-                        marketPairsByBase = marketPairsByBase,
-                        ohlcCache = historicalOhlcCache,
-                    )
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: HistoricalPriceSourceException) {
-                    // A source outage is not evidence that no price exists. A retained snapshot
-                    // may still prove the price; if it cannot, preserve the typed outage below.
-                    sourceFailure = e
-                    null
+    private fun historicalPriceProvider(marketPairsByBase: Map<String, List<String>>, eventUpperBound: Instant) =
+        HistoricalPriceProvider {
+                symbol,
+                time,
+            ->
+            if (Asset.normalizeLedgerAsset(symbol).uppercase() == Asset.USD) {
+                BigDecimal.ONE
+            } else {
+                val normalizedSymbol = Asset.normalizeLedgerAsset(symbol).uppercase()
+                var sourceFailure: HistoricalPriceSourceException? = null
+                val fromHistory = krakenService?.let { service ->
+                    try {
+                        HistoricalPriceResolver.resolveHistoricalPrice(
+                            asset = normalizedSymbol,
+                            eventTime = time,
+                            tradesRepo = repository,
+                            krakenService = service,
+                            marketPairs = marketPairsByBase[normalizedSymbol].orEmpty(),
+                            tradeLookbackSeconds = CONTRIBUTION_PRICE_LOOKUP_SECONDS,
+                            futureTradeSkewSeconds = CONTRIBUTION_PRICE_FUTURE_SKEW_SECONDS,
+                            marketPairsByBase = marketPairsByBase,
+                            ohlcCache = historicalOhlcCache,
+                            futureTradeUpperBound = eventUpperBound,
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: HistoricalPriceSourceException) {
+                        // A source outage is not evidence that no price exists. A retained snapshot
+                        // may still prove the price; if it cannot, preserve the typed outage below.
+                        sourceFailure = e
+                        null
+                    }
                 }
+                fromHistory ?: snapshotContributionPrice(normalizedSymbol, time) ?: sourceFailure?.let { throw it }
             }
-            fromHistory ?: snapshotContributionPrice(normalizedSymbol, time) ?: sourceFailure?.let { throw it }
         }
-    }
 
     /**
      * Retained-snapshot fallback for contribution-time pricing: the nearest recorded observation at

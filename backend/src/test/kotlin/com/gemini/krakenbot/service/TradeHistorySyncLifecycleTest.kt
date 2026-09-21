@@ -35,7 +35,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                     allocations = emptyList(),
                 )
                 val scopeGuard = mockk<AccountHistoryScopeGuard>()
-                coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+                coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                     status = AccountScopeValidationStatus.VALID,
                     currentScopeDigest = "verified-account",
                 )
@@ -53,7 +53,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                     accountHistoryScopeGuard = scopeGuard,
                 ).syncLedgersFromKraken()
 
-                coVerify(exactly = 1) { scopeGuard.validateAccountScope() }
+                coVerify(exactly = 1) { scopeGuard.validateAccountScopeUnderEvidenceLock() }
             }
         }
 
@@ -94,6 +94,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
 
                 // Simulation seed: ~15 days of 6h snapshots written as one batch.
                 coVerify(exactly = 1) { repository.save(match { it.isNotEmpty() }) }
+                coVerify(exactly = 1) { ledgerRepository.saveLedgers(any()) }
             }
         }
 

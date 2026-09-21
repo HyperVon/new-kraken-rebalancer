@@ -21,6 +21,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -31,7 +32,7 @@ class LedgersSyncServiceTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val db = DatabaseConfig.init(TestFixtures.MEMORY_)
-    private val repository = SqliteLedgerRepositoryImpl(db)
+    private val repository = spyk(SqliteLedgerRepositoryImpl(db))
     private val tradeRepository = SqliteTradeRepositoryImpl(db)
     private val krakenService = mockk<KrakenService>(relaxed = true)
     private val configService = mockk<ConfigService>(relaxed = true)
@@ -151,9 +152,10 @@ class LedgersSyncServiceTest : StringSpec() {
             repository.setLedgersSeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult.scopeMismatch(
-                current = "account-b-digest",
-            )
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns
+                AccountScopeValidationResult.scopeMismatch(
+                    current = "account-b-digest",
+                )
             val service = LedgersSyncService(
                 repository,
                 krakenService,
@@ -233,6 +235,18 @@ class LedgersSyncServiceTest : StringSpec() {
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_TOTAL) shouldBe SyncMetadataKeys.COMPLETED
             service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC) shouldBe
                 fixedNow.epochSecond.toString()
+            coVerify(exactly = 1) {
+                repository.setSyncMetadataAtomically(
+                    mapOf(
+                        SyncMetadataKeys.LEDGER_COVERAGE_VERSION to
+                            LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+                        SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC to
+                            fixedNow.minus(96, ChronoUnit.DAYS).epochSecond.toString(),
+                        SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC to fixedNow.epochSecond.toString(),
+                        SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST to "",
+                    ),
+                )
+            }
             // Unified coverage queries each offset once with types = null.
             coVerify(exactly = 1) {
                 krakenService.getLedgers(any(), 0, any(), any())
@@ -743,7 +757,7 @@ class LedgersSyncServiceTest : StringSpec() {
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, "7")
             markCompletedRecovery(scopeDigest, requiredStart = inception)
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )
@@ -775,7 +789,7 @@ class LedgersSyncServiceTest : StringSpec() {
             repository.setLedgersSeeded(true)
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
             var activeScopeDigest: String? = scopeDigest
-            coEvery { scopeGuard.validateAccountScope() } coAnswers {
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } coAnswers {
                 AccountScopeValidationResult(
                     status = AccountScopeValidationStatus.VALID,
                     currentScopeDigest = activeScopeDigest,
@@ -876,7 +890,7 @@ class LedgersSyncServiceTest : StringSpec() {
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_TOTAL, "0")
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS, "")
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )
@@ -918,7 +932,7 @@ class LedgersSyncServiceTest : StringSpec() {
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )
@@ -961,7 +975,7 @@ class LedgersSyncServiceTest : StringSpec() {
             coEvery { krakenService.getLastLedgerTotalCount() } returns 0
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )
@@ -1002,7 +1016,7 @@ class LedgersSyncServiceTest : StringSpec() {
             val failure = RuntimeException("recovery continuation unavailable")
             coEvery { krakenService.getLedgers(any(), any(), any(), any()) } throws failure
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )
@@ -1351,8 +1365,8 @@ class LedgersSyncServiceTest : StringSpec() {
             syncBoundaryLedger("ledger-boundary-start", intervalStart)
             tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
 
-            // Exactly at THROUGH invalidates (inclusive upper bound).
-            syncBoundaryLedger("ledger-boundary-through", intervalThrough)
+            // Any event in the persisted THROUGH second invalidates (inclusive upper bound).
+            syncBoundaryLedger("ledger-boundary-through", intervalThrough.plusMillis(500))
             tradeRepository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) shouldBe ""
         }
 
@@ -1651,7 +1665,7 @@ class LedgersSyncServiceTest : StringSpec() {
             every { configService.getConfig() } returns appConfig
             val scopeDigest = AccountHistoryScopeGuard.digestAccountScope("account-a")
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )
@@ -1704,6 +1718,17 @@ class LedgersSyncServiceTest : StringSpec() {
 
             val stored = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plusSeconds(300))
             stored.isEmpty() shouldBe false
+        }
+
+        "facade delegates metadata and seed queries to the repository" {
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+
+            repository.setSyncMetadata("probe-existing", "from-repository")
+            service.setSyncMetadata("probe-added", "from-service")
+
+            service.getSyncMetadata("probe-existing") shouldBe "from-repository"
+            service.getSyncMetadata("probe-added") shouldBe "from-service"
+            service.isLedgersSeeded() shouldBe repository.isLedgersSeeded()
         }
     }
 }

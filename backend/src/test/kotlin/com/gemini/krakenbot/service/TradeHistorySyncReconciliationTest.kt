@@ -18,6 +18,7 @@ import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import com.gemini.krakenbot.service.impl.history.TradeHistorySyncService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.Runs
 import io.mockk.coEvery
@@ -114,6 +115,14 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 coVerify(atLeast = 1) { krakenService.getTradeHistory(any(), any()) }
                 coVerify(exactly = 1) { repository.saveTrade(any()) }
                 coVerify(exactly = 1) { repository.setHistorySeeded(true) }
+                coVerify(exactly = 1) { repository.setSyncMetadataAtomically(any()) }
+                repositorySyncMetadata[SyncMetadataKeys.TRADE_COVERAGE_VERSION] shouldBe
+                    TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+                repositorySyncMetadata[SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC]
+                    .shouldNotBeNull()
+                repositorySyncMetadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC]
+                    .shouldNotBeNull()
+                repositorySyncMetadata[SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST] shouldBe ""
             }
         }
 

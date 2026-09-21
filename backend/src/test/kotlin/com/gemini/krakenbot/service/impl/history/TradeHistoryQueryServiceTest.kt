@@ -25,11 +25,13 @@ import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.AutomaticBaselineStatus
+import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldBeNull
@@ -38,11 +40,27 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
+
+// Map-stubbed tests answer every sync-metadata read from a local map; these keys fall back
+// to far-future certified coverage so evaluation tests exercise the stable-history path.
+// Defer-specific tests stub the coverage keys to null explicitly.
+private val CERTIFIED_COVERAGE_DEFAULTS = mapOf(
+    SyncMetadataKeys.TRADE_COVERAGE_VERSION to TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+    SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC to "0",
+    SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC to "4102444800",
+    SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST to "test-scope",
+    SyncMetadataKeys.LEDGER_COVERAGE_VERSION to LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+    SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC to "0",
+    SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC to "4102444800",
+    SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST to "test-scope",
+    SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST to "test-scope",
+)
 
 @Suppress("unused")
 class TradeHistoryQueryServiceTest : StringSpec() {
@@ -65,9 +83,20 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         // Relaxed mocks answer getSyncMetadata with "" → null coverage, which defers the
         // Settings evaluation; default to far-future certified coverage so tests exercise
         // the stable-history path. Defer-specific tests stub these keys to null.
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+            TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
         coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns "4102444800"
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+            "test-scope"
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns "test-scope"
+        coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+            LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
         coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
             "4102444800"
+        coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+            "test-scope"
 
         "getRewardsOverTime_CumulativePerSnapshotTime" {
             runTest {
@@ -618,7 +647,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
-        "getRebalancerComparison evaluates snapshots beyond certified coverage without the stable-horizon gate" {
+        "getRebalancerComparison withholds comparison when all snapshots lie beyond certified coverage" {
             runTest {
                 val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 val snap2 = snapshot(
@@ -638,9 +667,258 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
 
-                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
-                comparison.baselineTimestamp shouldBe now
-                comparison.confidence shouldBe ComparisonConfidence.RECONCILED
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "getRebalancerComparison requires coverage from an explicit inception before the retention floor" {
+            runTest {
+                val inceptionTime = now.minusSeconds(86400)
+                val retentionFloor = now
+                val inceptionSnapshot = snapshot(inceptionTime, "100000.00", btc = "0" to "0", usdBalance = "100000.00")
+                val retained = listOf(
+                    snapshot(retentionFloor, "100000.00", btc = "0" to "0", usdBalance = "100000.00"),
+                    snapshot(
+                        retentionFloor.plusSeconds(3600),
+                        "100000.00",
+                        btc = "0" to "0",
+                        usdBalance = "100000.00",
+                    ),
+                )
+                val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
+                    inceptionTime = inceptionTime,
+                    inceptionSnapshot = inceptionSnapshot,
+                    isAutoDetected = false,
+                )
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns retained
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns retained
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns
+                    retentionFloor.epochSecond.toString()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    retentionFloor.epochSecond.toString()
+                val serviceWithFloor = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = inceptionService,
+                    benchmarkHistoryFloor = retentionFloor,
+                )
+
+                val comparison = serviceWithFloor.getRebalancerComparison(
+                    retentionFloor,
+                    retentionFloor.plusSeconds(3600),
+                )
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "getRebalancerComparison evaluates stable prefix and skips live tail until coverage catches up" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(3600),
+                )
+                // Uncertified live tail snapshot: balance changed but trade/ledger sync hasn't arrived
+                val liveTailSnap = snapshot(
+                    now.plusSeconds(7200),
+                    "105000.00",
+                    btc = "1.1" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(7200),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2, liveTailSnap)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                // Certified coverage only extends to snap2
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 3600).toString()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 3600).toString()
+
+                val comparisonStable = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+
+                // Stable prefix reconciles cleanly without failing on live tail
+                comparisonStable.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparisonStable.baselineTimestamp shouldBe now
+                comparisonStable.points.size shouldBe 2
+
+                // Coverage catches up to liveTailSnap (without trades this balance change will now be evaluated)
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 7200).toString()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 7200).toString()
+
+                val comparisonCaughtUp = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+                // Now evaluated: because no trade was added for the BTC balance jump, it fails with UNEXPLAINED_BALANCE_CHANGE
+                comparisonCaughtUp.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparisonCaughtUp.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            }
+        }
+
+        "getRebalancerComparison defers when snapshot observations are non-monotonic relative to coverage" {
+            runTest {
+                val snap1 = snapshot(
+                    now,
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    balancesObservedAt = now,
+                )
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    balancesObservedAt = now.plusSeconds(7200),
+                )
+                val snap3 = snapshot(
+                    now.plusSeconds(7200),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    balancesObservedAt = now.plusSeconds(1800),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2, snap3)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 3600).toString()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    (now.epochSecond + 3600).toString()
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(7200))
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+                comparison.unavailableAt shouldBe snap2.timestamp
+            }
+        }
+
+        "getRebalancerComparison fails closed when trade coverage horizon is missing" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(3600),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    null
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+                comparison.points.shouldBeEmpty()
+            }
+        }
+
+        "getRebalancerComparison fails closed when ledger coverage horizon is missing" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(3600),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    null
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+                comparison.points.shouldBeEmpty()
+            }
+        }
+
+        "getRebalancerComparison fails closed when trade coverage horizon is malformed" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(3600),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "not-a-number"
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+                comparison.points.shouldBeEmpty()
+            }
+        }
+
+        "getRebalancerComparison fails closed when ledger coverage horizon is malformed" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val snap2 = snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(3600),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "not-a-number"
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+                comparison.points.shouldBeEmpty()
+            }
+        }
+
+        "getRebalancerComparison never evaluates uncertified live tail when coverage is missing" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
+                val liveTailSnap = snapshot(
+                    now.plusSeconds(3600),
+                    "105000.00",
+                    btc = "1.1" to "50000.00",
+                    usdBalance = "50000.00",
+                    balancesObservedAt = now.plusSeconds(3600),
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(snap1, liveTailSnap)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    null
+
+                val comparison = service.getRebalancerComparison(Instant.EPOCH, now.plusSeconds(3600))
+
+                // Uncertified evidence must not produce UNEXPLAINED_BALANCE_CHANGE or an AVAILABLE verdict
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+                comparison.points.shouldBeEmpty()
             }
         }
 
@@ -694,7 +972,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     snapshot(now.plusSeconds(3600), "110000.00", btc = "1.0" to "60000.00", balancesObservedAt = null)
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = inceptionTime,
                     inceptionSnapshot = snapInception,
                     isAutoDetected = true,
@@ -737,7 +1015,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     snapshot(now.plusSeconds(3600), "110000.00", btc = "1.0" to "60000.00", balancesObservedAt = null)
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = inceptionTime,
                     inceptionSnapshot = null,
                     isAutoDetected = true,
@@ -791,7 +1069,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = snap0,
                     isAutoDetected = true,
@@ -859,7 +1137,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = snap0,
                     isAutoDetected = true,
@@ -928,7 +1206,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     balancesObservedAt = tMid.minusSeconds(60),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = snap0,
                     isAutoDetected = true,
@@ -1004,7 +1282,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 coEvery { outageGateway.getOHLC(any(), any(), any()) } throws
                     IllegalStateException("gateway outage")
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = snap0,
                     isAutoDetected = true,
@@ -1071,7 +1349,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     usdBalance = "50000.00",
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = snap0,
                     isAutoDetected = true,
@@ -1182,7 +1460,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     balancesObservedAt = tMid.minusSeconds(120),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = snap0,
                     isAutoDetected = true,
@@ -1240,7 +1518,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap2 = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400 * 100),
                     inceptionSnapshot = null,
                     isAutoDetected = true,
@@ -1293,7 +1571,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     usdBalance = "500.00",
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -1373,7 +1651,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     usdBalance = "400.00",
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = cashTime,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -1387,6 +1665,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                         Instant.EPOCH,
                         openEndedRangeEnd,
                     )
+                } returns listOf(allCash, invalidBalances, pricelessCrypto, investedAnchor, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(cashTime, laterTime)
                 } returns listOf(allCash, invalidBalances, pricelessCrypto, investedAnchor, later)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
@@ -2088,7 +2369,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     usdBalance = "500.00",
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = cleanEarly.timestamp,
                     inceptionSnapshot = cleanEarly,
                     isAutoDetected = false,
@@ -2101,6 +2382,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                         floor,
                         openEndedRangeEnd,
                     )
+                } returns listOf(recordedAnchor, later)
+                coEvery {
+                    repository.getAllSnapshotsInRange(floor, laterTime)
                 } returns listOf(recordedAnchor, later)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
@@ -2120,7 +2404,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 comparison.points.first().timestamp shouldBe anchorTime
                 comparison.points.first().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.00"))
                 comparison.points.last().buyAndHoldValueUSD.shouldBeEqualComparingTo(BigDecimal("1100.00"))
-                coVerify(exactly = 1) {
+                coVerify(exactly = 2) {
                     repository.getAllSnapshotsInRange(
                         floor,
                         openEndedRangeEnd,
@@ -2161,14 +2445,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to base.epochSecond.toString(),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
                     listOf(recordedAnchor, later)
                 coEvery {
@@ -2216,14 +2502,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 val metadata = mapOf(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION to "7")
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
                     listOf(liveAnchor, later)
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
@@ -2279,14 +2567,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to laterTime.epochSecond.toString(),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
                     listOf(reconstructedAnchor, later)
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
@@ -2347,14 +2637,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                         floor.plusSeconds(100).epochSecond.toString(),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
                     listOf(recordedAnchor, later)
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
@@ -2420,14 +2712,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                         floor.plusSeconds(100).epochSecond.toString(),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
                     listOf(recordedAnchor, later)
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
@@ -2550,14 +2844,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 val metadata = mapOf(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION to "7")
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
                     listOf(liveAnchor, zeroBalanceRow, zeroPricedUsdRow, later)
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
@@ -2603,14 +2899,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 var metadata: Map<String, String> = emptyMap()
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns listOf(liveAnchor, later)
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
                     listOf(liveAnchor, later)
@@ -2679,14 +2977,17 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     balancesObservedAt = laterTime.minusMillis(700),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.TRUNCATED,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_HISTORY_TRUNCATED,
                 )
-                coEvery { repository.getSyncMetadata(any()) } returns null
+                val metadata = emptyMap<String, String>()
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns emptyList()
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns listOf(liveAnchor, later)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
@@ -2735,14 +3036,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 val metadata = mapOf(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION to "7")
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
                     listOf(emptyCandidate, liveAnchor, later)
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns listOf(liveAnchor, later)
@@ -2792,14 +3095,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 val metadata = mapOf(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION to "7")
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
                     listOf(liveAnchor, unprovableRow, later)
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
@@ -2819,6 +3124,27 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
                 comparison.unavailableReason shouldBe ComparisonUnavailableReason.HISTORICAL_COVERAGE_GAP
+            }
+        }
+
+        "getRebalancerComparison does not rewrite unavailable reason when baseline is verified" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+
+                val unprovableRow = snapshot(
+                    fixture.anchorTime.plusSeconds(1800),
+                    "200000.00",
+                    btc = "1.0" to "50000.00",
+                    usdBalance = "150000.00",
+                )
+                fixture.snapshotRows.add(1, unprovableRow)
+
+                val comparison = service.getRebalancerComparison(fixture.anchorTime, fixture.laterTime)
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
             }
         }
 
@@ -2843,14 +3169,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 var metadata: Map<String, String> = emptyMap()
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
                     listOf(liveAnchor, later)
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns listOf(liveAnchor, later)
@@ -2905,14 +3233,17 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     balancesObservedAt = laterTime.minusMillis(700),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.TRUNCATED,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_HISTORY_TRUNCATED,
                 )
-                coEvery { repository.getSyncMetadata(any()) } returns null
+                val metadata = emptyMap<String, String>()
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns listOf(liveAnchor, later)
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
                     listOf(liveAnchor, later)
@@ -2967,14 +3298,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION to "7",
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
                     listOf(liveAnchor, later)
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
@@ -3031,14 +3364,16 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_THROUGH_EPOCH_SEC to windowEnd.epochSecond.toString(),
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
                     confidence = InceptionConfidence.RECOVERY_INCOMPLETE,
                     unavailableReason = ComparisonUnavailableReason.INCEPTION_AMBIGUOUS,
                 )
-                coEvery { repository.getSyncMetadata(any()) } answers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } answers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.getSnapshotsInRange(anchorTime, laterTime) } returns
                     listOf(liveAnchor, later)
                 coEvery { repository.getAllSnapshotsInRange(floor, openEndedRangeEnd) } returns
@@ -3076,7 +3411,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     usdBalance = "500.00",
                 )
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = oldInception,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -3116,7 +3451,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap2 = snapshot(t2, "110000.00", btc = "1.0" to "60000.00")
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -3157,7 +3492,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap3 = snapshot(t2.plusSeconds(3600), "110000.00", btc = "1.0" to "60000.00")
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -3169,6 +3504,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 } returns listOf(snap2, snap3)
                 coEvery { repository.getSnapshotsInRange(t0, openEndedRangeEnd) } returns
                     listOf(snap0, snap1, snap2, snap3)
+                coEvery {
+                    repository.getAllSnapshotsInRange(t0, t2.plusSeconds(3600))
+                } returns listOf(snap0, snap1, snap2, snap3)
                 coEvery { repository.getSnapshotBefore(any()) } returns snap0
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
@@ -3201,7 +3539,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap1 = snapshot(t1, "100000.00", btc = "1.0" to "50000.00")
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -3239,6 +3577,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap2 = snapshot(t2, "110000.00", btc = "1.0" to "60000.00")
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = false,
+                )
                 coEvery { repository.getAllSnapshotsInRange(t0, openEndedRangeEnd) } returns
                     listOf(snap0, snap1, snap2)
                 // Keep the sampled chart query empty so this regression proves that the proposal
@@ -3398,7 +3741,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     snapshot(duplicateTime, "100000.00", btc = "1.0" to "50000.00")
                 }
                 val metadata = mutableMapOf<String, String>()
-                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
                     metadata.putAll(firstArg())
                 }
@@ -3461,7 +3806,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                             )
                         }
                 }
-                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
                     metadata.putAll(firstArg())
                 }
@@ -3488,9 +3835,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] =
                     ComparisonProposalStatus.VERIFIED.name
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID] = "77"
-                serviceWithInception.findVerifiedLaterComparisonStart(t0) shouldBe t1
+                serviceWithInception.findVerifiedLaterComparisonStart(t0).shouldBeNull()
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
-                    ComparisonProposalStatus.VERIFIED.name
+                    ComparisonProposalStatus.INCOMPLETE.name
 
                 val verifiedCursor = requireNotNull(
                     metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS],
@@ -3526,7 +3873,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val baseline = snapshot(t0, "100000.00", btc = "1.0" to "50000.00")
                 val later = snapshot(t1, "105000.00", btc = "1.1" to "50000.00")
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns
                     InceptionResolution(t0, baseline, isAutoDetected = false)
                 coEvery { repository.getSnapshotsInRange(t0, t1) } returns listOf(baseline, later)
                 coEvery { repository.getSnapshotBefore(any()) } returns baseline
@@ -3563,6 +3910,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val snap4 = snapshot(t4, "170000.00", btc = "3.0" to "40000.00")
 
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
+                    inceptionTime = t0,
+                    inceptionSnapshot = snap0,
+                    isAutoDetected = false,
+                )
                 coEvery { repository.getSnapshotsInRange(t0, t4) } returns
                     listOf(snap0, snap1, snap2, snap3, snap4)
                 coEvery { repository.getSnapshotsInRange(t0, openEndedRangeEnd) } returns
@@ -3631,7 +3983,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     snapshot(verifiedContinuation, "130000.00", btc = "2.0" to "40000.00"),
                 )
                 val metadata = mutableMapOf<String, String>()
-                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
                     metadata.putAll(firstArg())
                 }
@@ -3675,8 +4029,17 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val metadata = mutableMapOf<String, String>(
                     SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT to "config-a",
                     SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST to "account-a",
+                    SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST to "account-a",
                 )
-                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                val ledgerMetadata = mutableMapOf<String, String>(
+                    SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST to "account-a",
+                )
+                coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
+                coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers {
+                    ledgerMetadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
                     metadata.putAll(firstArg())
                 }
@@ -3699,6 +4062,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 metadata[SyncMetadataKeys.INCEPTION_CONFIG_FINGERPRINT] = "config-b"
                 metadata[SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST] = "account-b"
+                metadata[SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST] = "account-b"
+                ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST] = "account-b"
                 serviceWithInception.findVerifiedLaterComparisonStart(now).shouldBeNull()
                 metadata[SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_STATUS] shouldBe
                     ComparisonProposalStatus.INCOMPLETE.name
@@ -3724,12 +4089,14 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 )
                 val metadata = mutableMapOf<String, String>()
                 metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] = "4102444800"
-                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
                     metadata.putAll(firstArg())
                 }
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -3771,7 +4138,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 var evidenceRevision = "revision-a"
                 var prepareCalls = 0
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t0,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -3789,7 +4156,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                         return this
                     }
                 }
-                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
                     metadata.putAll(firstArg())
                 }
@@ -3847,7 +4216,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val first = snapshot(now, "100000.00", btc = "1.0" to "50000.00")
                 val second = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now,
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -3876,7 +4245,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val first = snapshot(now, "90000.00", btc = "1.0" to "40000.00")
                 val second = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now,
                     inceptionSnapshot = first,
                     isAutoDetected = true,
@@ -3902,7 +4271,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val verified = snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00")
                 val last = snapshot(now.plusSeconds(7200), "110000.00", btc = "1.0" to "60000.00")
                 val metadata = mutableMapOf<String, String>()
-                coEvery { repository.getSyncMetadata(any()) } coAnswers { metadata[firstArg()] }
+                coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                    metadata[firstArg()] ?: CERTIFIED_COVERAGE_DEFAULTS[firstArg()]
+                }
                 coEvery { repository.setSyncMetadataAtomically(any()) } coAnswers {
                     metadata.putAll(firstArg())
                 }
@@ -4168,6 +4539,129 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "history does not persist automatic baseline proof for auto-detected inception" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                coEvery { fixture.inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
+                    inceptionTime = fixture.anchorTime,
+                    inceptionSnapshot = fixture.snapshotRows.first(),
+                    isAutoDetected = true,
+                    confidence = InceptionConfidence.CONFIDENT,
+                )
+                val service = automaticBaselineService(fixture)
+
+                val comparison = service.getRebalancerComparison(fixture.anchorTime, fixture.laterTime)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS].shouldBeNull()
+            }
+        }
+
+        "verified automatic baseline proof exempts snapshot gaps inside its verified horizon" {
+            runTest {
+                val fixture = automaticBaselineFixture(anchorOffsetSeconds = 8 * 86400L)
+                val service = automaticBaselineService(fixture)
+                val gapTime = fixture.laterTime.plusSeconds(29 * 3600)
+                fixture.snapshotRows += snapshot(
+                    gapTime,
+                    "1200.00",
+                    btc = "1.0" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = gapTime.minusMillis(600),
+                )
+
+                service.getRebalancerComparison(fixture.anchorTime, now)
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] shouldBe
+                    gapTime.toEpochMilli().toString()
+
+                val liveTailTime = gapTime.plusSeconds(3600)
+                fixture.snapshotRows += snapshot(
+                    liveTailTime,
+                    "1270.00",
+                    btc = "1.1" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = liveTailTime.minusMillis(500),
+                )
+
+                val status = service.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                )
+                status.comparisonAvailability shouldBe ComparisonAvailability.UNAVAILABLE
+                status.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                status.proposal.shouldNotBeNull()
+                fixture.metadata[SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS].shouldBeNull()
+            }
+        }
+
+        "verified baseline proof does not exempt gaps when the evidence horizon is malformed" {
+            runTest {
+                val fixture = automaticBaselineFixture(anchorOffsetSeconds = 8 * 86400L)
+                val service = automaticBaselineService(fixture)
+                val gapTime = fixture.laterTime.plusSeconds(29 * 3600)
+                fixture.snapshotRows += snapshot(
+                    gapTime,
+                    "1200.00",
+                    btc = "1.0" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = gapTime.minusMillis(600),
+                )
+
+                service.getRebalancerComparison(fixture.anchorTime, now)
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] =
+                    "not-a-number"
+
+                val liveTailTime = gapTime.plusSeconds(3600)
+                fixture.snapshotRows += snapshot(
+                    liveTailTime,
+                    "1270.00",
+                    btc = "1.1" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = liveTailTime.minusMillis(500),
+                )
+
+                val status = service.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                )
+                status.comparisonAvailability shouldBe ComparisonAvailability.UNAVAILABLE
+                status.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                status.proposal.shouldBeNull()
+            }
+        }
+
+        "without a verified baseline proof the retained-history gap blocks the proposal search" {
+            runTest {
+                val fixture = automaticBaselineFixture(anchorOffsetSeconds = 8 * 86400L)
+                val service = automaticBaselineService(fixture)
+                val gapTime = fixture.laterTime.plusSeconds(29 * 3600)
+                fixture.snapshotRows += snapshot(
+                    gapTime,
+                    "1200.00",
+                    btc = "1.0" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = gapTime.minusMillis(600),
+                )
+                val liveTailTime = gapTime.plusSeconds(3600)
+                fixture.snapshotRows += snapshot(
+                    liveTailTime,
+                    "1270.00",
+                    btc = "1.1" to "700.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = liveTailTime.minusMillis(500),
+                )
+
+                val status = service.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                )
+                status.comparisonAvailability shouldBe ComparisonAvailability.UNAVAILABLE
+                status.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+                status.proposal.shouldBeNull()
+            }
+        }
+
         "settings comparison status takes the persisted fast path on unchanged evidence" {
             runTest {
                 val fixture = automaticBaselineFixture()
@@ -4262,7 +4756,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val fixture = automaticBaselineFixture()
                 val service = automaticBaselineService(fixture)
                 service.getSettingsComparisonStatus(fixture.anchorTime)
-                coEvery { fixture.inceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { fixture.inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = fixture.anchorTime.minusSeconds(3600),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -4287,6 +4781,31 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "automatic baseline verification defers when snapshot observations are non-monotonic" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val intermediateSnap = snapshot(
+                    fixture.anchorTime.plusSeconds(1800),
+                    "1050.00",
+                    btc = "1.0" to "550.00",
+                    usdBalance = "500.00",
+                    balancesObservedAt = fixture.laterTime.plusSeconds(3600),
+                )
+                fixture.snapshotRows.add(1, intermediateSnap)
+                fixture.metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.anchorTime.epochSecond + 3600).toString()
+                fixture.ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] =
+                    (fixture.anchorTime.epochSecond + 3600).toString()
+
+                val service = automaticBaselineService(fixture)
+                val status = service.getSettingsComparisonStatus(
+                    fixture.anchorTime,
+                    allowPersistedBaselineFastPath = false,
+                )
+                status.baselineStatus.shouldBeNull()
+            }
+        }
+
         "the proposal evaluation path bypasses the persisted fast path" {
             runTest {
                 val fixture = automaticBaselineFixture()
@@ -4307,7 +4826,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val fixture = automaticBaselineFixture()
                 val service = automaticBaselineService(fixture)
                 service.getSettingsComparisonStatus(fixture.anchorTime)
-                coEvery { fixture.inceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { fixture.inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = fixture.laterTime,
                     inceptionSnapshot = fixture.snapshotRows[1],
                     isAutoDetected = false,
@@ -4361,11 +4880,23 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val fixture = automaticBaselineFixture()
                 val service = automaticBaselineService(fixture)
                 service.getSettingsComparisonStatus(fixture.anchorTime)
-                fixture.ledgerMetadata[SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST] = "scope-2"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST] = "scope-2"
 
-                service.getSettingsComparisonStatus(fixture.anchorTime)
+                val blocked = service.getSettingsComparisonStatus(fixture.anchorTime)
 
-                coVerify(exactly = 4) { repository.getSnapshotBefore(any()) }
+                blocked.comparisonAvailability.shouldBeNull()
+                blocked.baselineStatus.shouldBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "INVALIDATED"
+
+                // A changed account binding cannot be certified until both economic-history
+                // coverage certificates are rebound to the same scope.
+                fixture.metadata[SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST] = "scope-2"
+                fixture.ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST] = "scope-2"
+                fixture.metadata[SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST] = "scope-2"
+                val rebound = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                rebound.comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
+                rebound.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "VERIFIED"
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_ACCOUNT_SCOPE_DIGEST] shouldBe
                     "scope-2"
@@ -4461,7 +4992,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val fixture = automaticBaselineFixture()
                 val service = automaticBaselineService(fixture)
                 service.getSettingsComparisonStatus(fixture.anchorTime)
-                coEvery { fixture.inceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { fixture.inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = fixture.anchorTime,
                     inceptionSnapshot = fixture.snapshotRows.first(),
                     isAutoDetected = false,
@@ -4673,7 +5204,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 status.comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
                 status.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] shouldBe
-                    ((fixture.laterTime.epochSecond - 1) * 1000).toString()
+                    ((fixture.laterTime.epochSecond - 1) * 1000 + 999).toString()
             }
         }
 
@@ -4885,7 +5416,36 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
-        "persisted fast path remains usable while newer unstable snapshots exist" {
+        "blank coverage scopes defer baseline verification outside simulation" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                fixture.metadata.remove(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                fixture.metadata.remove(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+                fixture.ledgerMetadata.remove(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                val productionConfigService = mockk<ConfigService>()
+                every { productionConfigService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(simulation = false),
+                )
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = fixture.inceptionService,
+                    fundingProvenanceResolver = fixture.fundingProvenanceResolver,
+                    nowProvider = { now },
+                    configService = productionConfigService,
+                )
+
+                val status = service.getSettingsComparisonStatus(fixture.anchorTime)
+
+                status.comparisonAvailability.shouldBeNull()
+                status.baselineStatus.shouldBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS].shouldBeNull()
+            }
+        }
+
+        "persisted fast path is invalidated when certified coverage regresses" {
             runTest {
                 val fixture = automaticBaselineFixture()
                 val service = automaticBaselineService(fixture)
@@ -4906,11 +5466,32 @@ class TradeHistoryQueryServiceTest : StringSpec() {
 
                 val status = reloaded.getSettingsComparisonStatus(fixture.anchorTime)
 
-                status.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
-                status.baselineTimestamp shouldBe fixture.anchorTime.toString()
+                status.baselineStatus.shouldBeNull()
+                status.baselineTimestamp.shouldBeNull()
                 status.comparisonAvailability.shouldBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "INVALIDATED"
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_FINGERPRINT] shouldBe
                     persistedDigest
+            }
+        }
+
+        "persisted fast path defers when a valid epoch-second horizon overflows epoch milliseconds" {
+            runTest {
+                val fixture = automaticBaselineFixture()
+                val service = automaticBaselineService(fixture)
+                service.getSettingsComparisonStatus(fixture.anchorTime)
+                val validButUnrepresentableEpochSecond = "9223372036854776"
+                fixture.metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] =
+                    validButUnrepresentableEpochSecond
+                fixture.ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] =
+                    validButUnrepresentableEpochSecond
+
+                val status = automaticBaselineService(fixture).getSettingsComparisonStatus(fixture.anchorTime)
+
+                status.baselineStatus.shouldBeNull()
+                status.baselineTimestamp.shouldBeNull()
+                status.comparisonAvailability.shouldBeNull()
+                fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_STATUS] shouldBe "INVALIDATED"
             }
         }
 
@@ -4989,7 +5570,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 status.comparisonAvailability shouldBe ComparisonAvailability.AVAILABLE
                 status.baselineStatus shouldBe AutomaticBaselineStatus.VERIFIED
                 fixture.metadata[SyncMetadataKeys.INCEPTION_AUTO_BASELINE_EVIDENCE_HORIZON_MS] shouldBe
-                    ((fixture.laterTime.epochSecond + 1) * 1000).toString()
+                    ((fixture.laterTime.epochSecond + 1) * 1000 + 999).toString()
             }
         }
     }
@@ -5098,14 +5679,21 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         val fundingProvenanceResolver: FundingProvenanceResolver,
     )
 
-    private fun automaticBaselineFixture(): AutomaticBaselineFixture {
-        val anchorTime = now.minusSeconds(86400)
+    private fun automaticBaselineFixture(anchorOffsetSeconds: Long = 86400L): AutomaticBaselineFixture {
+        val anchorTime = now.minusSeconds(anchorOffsetSeconds)
         val laterTime = anchorTime.plusSeconds(3600)
         val metadata = mutableMapOf<String, String>()
         val ledgerMetadata = mutableMapOf<String, String>()
         // Certified coverage defaults; tests that shape the live tail override these.
+        metadata[SyncMetadataKeys.TRADE_COVERAGE_VERSION] = TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        metadata[SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC] = "0"
         metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] = "4102444800"
+        metadata[SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST] = "test-scope"
+        metadata[SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST] = "test-scope"
+        ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_VERSION] = LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC] = "0"
         ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] = "4102444800"
+        ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST] = "test-scope"
         val anchorSnapshot = snapshot(
             anchorTime,
             "1000.00",
@@ -5122,7 +5710,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         )
         val snapshotRows = mutableListOf(anchorSnapshot, laterSnapshot)
         val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-        coEvery { inceptionService.resolveInception() } returns InceptionResolution(
+        coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
             inceptionTime = anchorTime,
             inceptionSnapshot = anchorSnapshot,
             isAutoDetected = false,

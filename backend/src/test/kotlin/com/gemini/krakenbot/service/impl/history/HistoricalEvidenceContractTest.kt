@@ -79,7 +79,7 @@ class HistoricalEvidenceContractTest : StringSpec() {
         )
         ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST, scopeDigest)
         every { configService.getConfig() } returns appConfig
-        coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+        coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
             status = AccountScopeValidationStatus.VALID,
             currentScopeDigest = scopeDigest,
         )
@@ -121,7 +121,7 @@ class HistoricalEvidenceContractTest : StringSpec() {
             }
             fakeKraken.pricesSupplier = { mapOf("XXBTZUSD" to mapOf("c" to listOf("50000.0"))) }
             fakeKraken.ohlcSupplier = { _, _, _ -> listOf(1L to BigDecimal("50000")) }
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )
@@ -221,6 +221,24 @@ class HistoricalEvidenceContractTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns
+                "0"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                "0"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                "4102444800"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                "4102444800"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
             val result = svc.getRebalancerComparison(fixedNow, fixedNow.plusSeconds(86400))
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
@@ -229,7 +247,7 @@ class HistoricalEvidenceContractTest : StringSpec() {
         // P1 BLOCKER 3 — certification requires authoritative count.
         "seeded coverage migration with missing count does not promote version" {
             every { configService.getConfig() } returns appConfig
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )
@@ -255,7 +273,7 @@ class HistoricalEvidenceContractTest : StringSpec() {
         }
         "seeded coverage migration with count zero and valid empty certifies" {
             every { configService.getConfig() } returns appConfig
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )
@@ -306,7 +324,7 @@ class HistoricalEvidenceContractTest : StringSpec() {
         }
         "seeded coverage migration with malformed page does not promote" {
             every { configService.getConfig() } returns appConfig
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.VALID,
                 currentScopeDigest = scopeDigest,
             )

@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.config
 
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
@@ -32,6 +33,7 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.service.impl.history.AccountHistoryScopeGuard
 import com.gemini.krakenbot.service.impl.history.HistoricalOhlcCache
+import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.service.impl.history.InceptionRecoveryService
 import com.gemini.krakenbot.service.impl.history.LedgersSyncService
@@ -77,6 +79,7 @@ val coreModule =
         }
         single<ObjectMapper> {
             jacksonObjectMapper().apply {
+                enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
                 registerModule(JavaTimeModule())
                 disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             }
@@ -90,6 +93,7 @@ val coreModule =
         singleOf(::OrderIntentServiceImpl) { bind<OrderIntentService>() }
         singleOf(::SqliteLedgerRepositoryImpl) { bind<LedgerRepository>() }
         single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
+        single { HistoryEvidenceCoordinator() }
         single {
             TradeHistorySnapshotStore(
                 repository = get(),
@@ -97,6 +101,8 @@ val coreModule =
                 configService = get(),
                 objectMapper = get(),
                 portfolioStatsRepository = get(),
+                ledgerRepository = get(),
+                historyEvidenceCoordinator = get(),
             )
         }
         single {
@@ -104,6 +110,7 @@ val coreModule =
                 tradeRepository = get(),
                 configService = get(),
                 recoveryService = get(),
+                historyEvidenceCoordinator = get(),
             )
         }
         single { HistoricalOhlcCache(krakenService = get()) }
@@ -119,6 +126,7 @@ val coreModule =
                 historicalOhlcCache = get(),
                 applicationScope = get(named(APPLICATION_SCOPE_QUALIFIER)),
                 configService = get(),
+                historyEvidenceCoordinator = get(),
             )
         }
         single {
@@ -127,6 +135,7 @@ val coreModule =
                 tradeRepository = get(),
                 ledgerRepository = get(),
                 configService = get(),
+                historyEvidenceCoordinator = get(),
             )
         }
         single {
@@ -136,6 +145,7 @@ val coreModule =
                 configService = get(),
                 tradeRepository = get(),
                 accountHistoryScopeGuard = get(),
+                historyEvidenceCoordinator = get(),
             )
         }
         single {
@@ -156,6 +166,7 @@ val coreModule =
                 reconstructionService = get(),
                 accountHistoryScopeGuard = get(),
                 ledgerRepository = get(),
+                historyEvidenceCoordinator = get(),
             )
         }
         single {
@@ -168,6 +179,7 @@ val coreModule =
                 orderIntentRepository = get(),
                 fundingProvenanceResolver = get(),
                 accountHistoryScopeGuard = get(),
+                historyEvidenceCoordinator = get(),
             )
         }
         single<TradeHistoryService> {
@@ -177,6 +189,7 @@ val coreModule =
                 syncService = get(),
                 ledgersSyncService = get(),
                 inceptionRecoveryService = get(),
+                historyEvidenceCoordinator = get(),
             )
         }
         // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:
@@ -248,6 +261,7 @@ val webModule =
                 dashboardView = get(),
                 portfolioManager = get(),
                 orderIntentService = get(),
+                historyEvidenceCoordinator = get(),
             )
         }
     }

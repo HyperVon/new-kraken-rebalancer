@@ -38,6 +38,7 @@ class LedgersSyncService(
     private val tradeRepository: TradeRepository? = null,
     private val nowProvider: () -> Instant = Instant::now,
     private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
+    private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) {
     private val log = LoggerFactory.getLogger(LedgersSyncService::class.java)
     private val syncMutex = Mutex()
@@ -79,8 +80,10 @@ class LedgersSyncService(
         )
     }
 
-    suspend fun syncLedgersFromKraken() = syncMutex.withLock {
-        syncLedgersFromKrakenLocked()
+    suspend fun syncLedgersFromKraken() = historyEvidenceCoordinator.withLock {
+        syncMutex.withLock {
+            syncLedgersFromKrakenLocked()
+        }
     }
 
     private suspend fun syncLedgersFromKrakenLocked() {
@@ -108,7 +111,7 @@ class LedgersSyncService(
                 return
             }
             krakenService.withStableBackend {
-                val scopeResult = accountHistoryScopeGuard?.validateAccountScope()
+                val scopeResult = accountHistoryScopeGuard?.validateAccountScopeUnderEvidenceLock()
                 if (scopeResult != null && !scopeResult.isValid) {
                     log.warn(
                         "Account scope validation failed: {}. Skipping ledger synchronization.",
@@ -398,7 +401,7 @@ class LedgersSyncService(
         val continuousStartMs = tradeRepo
             .getSyncMetadata(SyncMetadataKeys.CONTINUOUS_HISTORY_START_EPOCH_MS)
             ?.toLongOrNull()
-        val reconstructedThrough = throughSec?.let(Instant::ofEpochSecond)
+        val reconstructedThrough = throughSec?.let { Instant.ofEpochSecond(it, 999_999_999L) }
             ?: continuousStartMs?.let(Instant::ofEpochMilli)
             ?: return
         val reconstructedStart = startSec?.let(Instant::ofEpochSecond) ?: Instant.EPOCH
@@ -479,22 +482,23 @@ class LedgersSyncService(
             writeSyncWatermark(successfulQueryHorizon)
         }
 
-        if (coverageAdvances) {
-            // Refresh version, certified range start, and horizon together: a re-certified store
-            // may move the start earlier (configuration/version migration) and must never expose a
-            // stale start alongside a newer horizon.
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
-                CURRENT_LEDGER_COVERAGE_VERSION,
-            )
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC,
-                coverageStart.epochSecond.toString(),
-            )
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
-                successfulHorizonSec.toString(),
-            )
+        val certificateMetadata = buildMap {
+            if (coverageAdvances) {
+                // Refresh version, certified range start, and horizon in one transaction: a
+                // re-certified store may move the start earlier (configuration/version migration)
+                // and must never expose a stale start alongside a newer horizon.
+                put(SyncMetadataKeys.LEDGER_COVERAGE_VERSION, CURRENT_LEDGER_COVERAGE_VERSION)
+                put(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC, coverageStart.epochSecond.toString())
+                put(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC, successfulHorizonSec.toString())
+                // A certification without a verified account scope is the unbound contract. Clear
+                // an old digest atomically instead of publishing a new horizon under stale scope.
+                put(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST, verifiedAccountScopeDigest.orEmpty())
+            } else if (verifiedAccountScopeDigest != null) {
+                put(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST, verifiedAccountScopeDigest)
+            }
+        }
+        if (certificateMetadata.isNotEmpty()) {
+            repository.setSyncMetadataAtomically(certificateMetadata)
         } else if (!authoritativeCompletenessProven) {
             log.info(
                 "Ledger sync carried no authoritative completeness proof; certified coverage horizon stays at {}.",
@@ -508,12 +512,6 @@ class LedgersSyncService(
             )
         }
 
-        if (verifiedAccountScopeDigest != null) {
-            repository.setSyncMetadata(
-                SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST,
-                verifiedAccountScopeDigest,
-            )
-        }
         pruneOldEntries(successfulQueryHorizon)
         lastSyncTime = nowProvider()
         return coverageAdvances

@@ -29,6 +29,11 @@ interface LedgerRepository {
 
     suspend fun setSyncMetadata(key: String, value: String)
 
+    /** Persists a metadata revision in one transaction where supported. */
+    suspend fun setSyncMetadataAtomically(metadata: Map<String, String>) {
+        metadata.forEach { (key, value) -> setSyncMetadata(key, value) }
+    }
+
     suspend fun isLedgersSeeded(): Boolean
 
     suspend fun setLedgersSeeded(seeded: Boolean)

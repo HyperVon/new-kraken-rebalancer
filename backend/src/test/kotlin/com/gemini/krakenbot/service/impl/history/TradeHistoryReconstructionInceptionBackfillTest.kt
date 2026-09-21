@@ -107,6 +107,9 @@ class TradeHistoryReconstructionInceptionBackfillTest :
                 SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
                 horizon.epochSecond.toString(),
             )
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST, "test-scope")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, "test-scope")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST, "test-scope")
         }
 
         "reconstructs full historical timeline back to inception date bridging all snapshot gaps" {

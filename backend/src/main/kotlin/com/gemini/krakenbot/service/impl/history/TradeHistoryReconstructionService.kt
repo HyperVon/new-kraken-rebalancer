@@ -127,7 +127,7 @@ class TradeHistoryReconstructionService(
         }
 
         if (accountHistoryScopeGuard != null) {
-            val scope = accountHistoryScopeGuard.validateAccountScope()
+            val scope = accountHistoryScopeGuard.validateAccountScopeUnderEvidenceLock()
             if (!scope.isValid) {
                 return false
             }
@@ -479,6 +479,7 @@ class TradeHistoryReconstructionService(
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_CURSOR_EPOCH_MS, "")
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_SNAPSHOT_ID, "")
             repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_FUNDING_FINGERPRINT, "")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_PROPOSAL_COVERAGE_HORIZON_MS, "")
         }
         repository.setSyncMetadata(
             SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC,

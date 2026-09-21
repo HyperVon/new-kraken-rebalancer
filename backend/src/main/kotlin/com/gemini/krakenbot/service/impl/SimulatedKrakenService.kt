@@ -127,6 +127,8 @@ class SimulatedKrakenService(private val configService: ConfigService) :
             repeat(5) { eventIndex ->
                 val hoursAgo = 14L + eventIndex * 72L + assetIndex.toLong()
                 val rewardUsd = BigDecimal.valueOf(25L + eventIndex * 6L)
+                val rewardAmount =
+                    rewardUsd.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
                 simulatedLedgerEntries.add(
                     LedgerEvent(
                         ledgerId = "SIM-SEED-LEDGER-$assetIndex-$eventIndex",
@@ -135,9 +137,12 @@ class SimulatedKrakenService(private val configService: ConfigService) :
                         subtype = "reward",
                         aclass = "currency",
                         asset = symbol,
-                        amount = rewardUsd.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
+                        amount = rewardAmount,
                     ),
                 )
+                // Production staking rewards credit actual balances; mirror that so the
+                // seeded ledger rows reconcile against the seeded balance series.
+                balances.merge(symbol, rewardAmount, BigDecimal::add)
             }
         }
     }

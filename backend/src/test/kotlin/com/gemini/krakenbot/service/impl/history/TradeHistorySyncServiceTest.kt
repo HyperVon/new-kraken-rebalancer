@@ -128,9 +128,10 @@ class TradeHistorySyncServiceTest : StringSpec() {
             stubStableBackend()
             stubConfig()
             val scopeGuard = mockk<AccountHistoryScopeGuard>()
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult.scopeMismatch(
-                current = "account-b-digest",
-            )
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns
+                AccountScopeValidationResult.scopeMismatch(
+                    current = "account-b-digest",
+                )
             val sync = TradeHistorySyncService(
                 repository,
                 krakenService,

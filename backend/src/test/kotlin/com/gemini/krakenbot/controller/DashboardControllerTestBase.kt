@@ -24,7 +24,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
-import io.mockk.mockk
+import io.mockk.*
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
@@ -63,6 +63,20 @@ abstract class DashboardControllerTestBase : StringSpec() {
     }
 
     init {
+        // The production controller uses under-lock service entry points. Test doubles delegate
+        // those calls to the public methods so existing route assertions still exercise their
+        // configured answers and verifications.
+        coEvery { tradeHistoryService.getSyncMetadataUnderEvidenceLock(any()) } coAnswers {
+            tradeHistoryService.getSyncMetadata(firstArg())
+        }
+        coEvery { tradeHistoryService.setSyncMetadataUnderEvidenceLock(any(), any()) } coAnswers {
+            tradeHistoryService.setSyncMetadata(firstArg(), secondArg())
+        }
+        coEvery {
+            tradeHistoryService.getComparisonStartProposalUnderEvidenceLock(any())
+        } coAnswers {
+            tradeHistoryService.getComparisonStartProposal(firstArg())
+        }
         val testModule =
             module {
                 single { tradeHistoryService }

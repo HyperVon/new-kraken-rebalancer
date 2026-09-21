@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
+import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -164,6 +165,25 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
         "sync metadata roundtrips through the shared history_sync_metadata table" {
             repository.setSyncMetadata(TestFixtures.SYNC_KEY, TestFixtures.SYNC_VAL)
             repository.getSyncMetadata(TestFixtures.SYNC_KEY) shouldBe TestFixtures.SYNC_VAL
+        }
+
+        "coverage metadata revisions roundtrip as one batch" {
+            repository.setSyncMetadataAtomically(
+                mapOf(
+                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION to LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+                    SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC to t0.epochSecond.toString(),
+                    SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC to t2.epochSecond.toString(),
+                    SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST to "scope-a",
+                ),
+            )
+
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) shouldBe
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) shouldBe
+                t0.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) shouldBe
+                t2.epochSecond.toString()
+            repository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) shouldBe "scope-a"
         }
 
         "seeded flag persists via the LEDGERS_SEEDED metadata key" {

@@ -512,7 +512,7 @@ failure.
 ### Ledger history and external rewards
 
 `LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
-once every **300 seconds**. Coverage-grade synchronization (`CURRENT_LEDGER_COVERAGE_VERSION = "9"`) queries
+once every **300 seconds**. Coverage-grade synchronization (`CURRENT_LEDGER_COVERAGE_VERSION = "10"`) queries
 unprojected Kraken ledgers (`types = null`) so that all raw ledger records—including top-level `trade`
 checkpoint rows and unknown future ledger types—are captured and persisted. Ordinary non-coverage
 sync passes fall back to the fifteen retained balance-affecting response types
@@ -525,7 +525,7 @@ consumer `spend`/`receive` rows and filters locally. Pagination for filtered que
 checks Kraken's authoritative total count (`nextOffset < totalCount`) and the
 raw response page size (`rawPageSize >= 50`) so intermediate pages containing
 zero target rows continue paginating until completion. A seeded installation whose coverage
-version predates version `9` backfills from the configured inception date when it predates the
+version predates version `10` backfills from the configured inception date when it predates the
 default window, otherwise it performs the bounded **96-day** backfill with unprojected ledgers
 with the same identity deduplication and records the covered lower bound; a later earlier
 configured inception triggers another bounded migration backfill. Ledgers remain retained for the
@@ -657,7 +657,7 @@ balance observation. On either history stream, a newly inserted fill inside the 
 reconstruction interval `[SNAPSHOT_RECONSTRUCTION_START, SNAPSHOT_RECONSTRUCTION_THROUGH]`, or a
 reconciled fill whose economics materially changed, invalidates the reconstruction.
 
-When a seeded database migrates to ledger coverage version `9` or trade coverage version `1`, the migration may reuse completed
+When a seeded database migrates to ledger coverage version `10` or trade coverage version `2`, the migration may reuse completed
 inception-recovery coverage only when both private-history streams are complete, their durable
 offsets/version and total/oldest-row evidence reach the required lower bound, and the persisted
 account-scope binding matches the scope validated for the current run. It then fetches only an
@@ -890,12 +890,13 @@ external capital over time:
   fewer than two stable snapshots exist, the evaluation defers with a `HISTORY_COVERAGE_STALE`
   log instead of reporting an owner-capital failure. This is evidence gating, not tolerance: no
   snapshot is dropped, skipped, or accepted without confirmed coverage, and once trade/ledger
-  history catches up the previously unstable snapshot is eligible normally. The append-only
-  exclusion applies to baseline verification and its persisted proof horizon only — History's
-  current-comparison behavior is unchanged.
+  history catches up the previously unstable snapshot is eligible normally. History comparison
+  uses the same stable-horizon gate to evaluate confirmed historical prefixes without premature
+  unexplained-balance failures on uncertified live tails, and persists verified automatic baseline
+  proofs directly upon successful evaluation.
 - **A passive anchor is separate from strategy-inception approval.** If lifetime recovery is
   ambiguous, truncated, or has no trustworthy historical baseline, the comparison anchors at the
-  earliest trustworthy retained snapshot at or after the comparison window start that expresses
+  earliest trustworthy retained snapshot at or after the bounded passive evidence floor that expresses
   an invested thesis: a recorded or authoritatively reconstructed row whose non-cash holdings
   reach a material exposure floor (`$5.00`, mirroring the smallest position the configured
   order-size guards can express). Sub-material dust can never fix the anchor thesis, while a
@@ -951,6 +952,21 @@ external capital over time:
   withdrawal plumbing share source evidence whose sequence cannot be proven. Trades and internal
   conversions do not create synthetic benchmark events and therefore do not introduce a passive
   ordering conflict.
+- **Display windows are applied after accounting.** The History range (`24h`, `7d`, `30d`,
+  `90d`, or `all`) selects the points returned to the chart only. The query loads the effective
+  baseline through the requested end, trims the unstable tail, reconciles the complete stable
+  prefix, then filters and down-samples the reconciled points to the selected window. This
+  prevents a finite range from omitting an earlier checkpoint that explains a later balance
+  change, and keeps overlapping range economics identical to the corresponding points in `all`.
+  `latestDifferenceUSD` and `latestDifferencePercent` are taken from the last displayed point;
+  fewer than two displayed points returns `INSUFFICIENT_SNAPSHOTS` without bypassing accounting.
+- **Stable-history replay requires current coverage certificates.** The trade and ledger horizons
+  are trusted only when both current coverage-version markers and nonnegative coverage starts are
+  present, each start does not exceed its horizon, and the two account-scope digests agree with
+  the shared account binding when one exists. Valid epoch seconds must also fit the downstream
+  epoch-millisecond metadata representation. Event retrieval is capped at the end of the earlier
+  certified second, so an uncertified live-tail event cannot be used to produce a verified
+  comparison or proposal.
 - **Trade ownership is not passive allocation input.** Every successful non-dry-run fill that can
   affect the tracked Spot balances is still validated against authoritative ledger legs and the
   recorded snapshots. `REBALANCER`, `MANUAL`, and `UNKNOWN` labels do not change pure Buy & Hold:

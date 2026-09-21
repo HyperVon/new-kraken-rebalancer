@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -187,6 +188,18 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
                         TestFixtures.emptySnapshot(timestamp = baseline, totalValueUSD = BigDecimal.ONE),
                         TestFixtures.emptySnapshot(timestamp = last, totalValueUSD = BigDecimal.ONE),
                     )
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC)
+                } returns "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    "test-scope"
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+                } returns "test-scope"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns "test-scope"
 
                 tradeHistoryService.getRebalancerComparison(from, to)
 

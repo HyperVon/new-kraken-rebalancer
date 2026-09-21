@@ -51,8 +51,21 @@ class ApprovedStartComparisonIntegrationTest :
                 Files.createTempDirectory("approved-start-stats").resolve("portfolio-stats.json").toString(),
             )
         beforeTest {
+            repository.setSyncMetadata(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+            )
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC, "0")
             repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC, "4102444800")
+            ledgerRepository.setSyncMetadata(
+                SyncMetadataKeys.LEDGER_COVERAGE_VERSION,
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+            )
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC, "0")
             ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC, "4102444800")
+            repository.setSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST, "test-scope")
+            repository.setSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST, "test-scope")
+            ledgerRepository.setSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST, "test-scope")
         }
         val krakenService = FakeKrakenService()
         val configService = mockk<ConfigService>(relaxed = true)
@@ -70,7 +83,7 @@ class ApprovedStartComparisonIntegrationTest :
             )
 
         every { configService.getConfig() } answers { config }
-        coEvery { trustedScopeGuard.validateAccountScope() } coAnswers {
+        coEvery { trustedScopeGuard.validateAccountScopeUnderEvidenceLock() } coAnswers {
             when {
                 config.settings.simulation -> AccountScopeValidationResult.SIMULATION
 

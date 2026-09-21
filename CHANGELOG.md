@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.75] - 2026-09-20
+
+### Fixed
+
+- **History comparison range semantics**: finite History windows now reconcile the complete
+  stable accounting series from the effective recorded baseline through the requested end before
+  filtering and down-sampling points for display. This preserves intermediate checkpoints and
+  exact overlap economics with All, keeps latest difference fields tied to the displayed tail,
+  and reports `INSUFFICIENT_SNAPSHOTS` when a selected window contains fewer than two display
+  points without weakening fail-closed reconciliation. Stable replay now also requires current
+  trade/ledger coverage certificates, rejects malformed or overflowing horizons, and caps event
+  retrieval at the certified horizon so an uncertified live tail cannot produce a verified result.
+
+## [6.17.74] - 2026-09-19
+
+### Fixed
+
+- **Converge Buy & Hold baseline and stable-horizon history comparison**:
+  - Gated `getRebalancerComparison` on `latestConfirmedEconomicCoverage()`, aligning History evaluation
+    with the same certified, monotonic stable-horizon boundary established for Settings in PR #357.
+    Unstable live-tail snapshots whose balances precede complete trade/ledger sync are excluded from
+    comparison downsampling and accounting without failing the historical evaluation.
+  - History comparison persists verified automatic baseline proofs directly via
+    `persistAutomaticBaselineVerification` when comparison reaches `AVAILABLE` with a stable horizon,
+    guaranteeing baseline persistence even if the operator navigates directly to History without opening
+    Settings.
+  - Kept automatic baseline verification strictly separate from reconstruction-owned continuity
+    metadata: a verified automatic baseline proof never rewrites `CONTINUOUS_HISTORY_START_EPOCH_MS`,
+    which remains the truth about retained/reconstructed snapshot continuity.
+  - In `historicalCoverageGapExists`, skipped the 24h gap detection for snapshot intervals within the
+    verified evidence horizon `[strategyStart, verifiedHorizon]`, preventing false `HISTORICAL_COVERAGE_GAP`
+    unavailability for certified inception baselines while preserving fail-closed detection for
+    post-horizon gaps.
+  - In proposal post-processing, prevented rewriting `unavailableReason` to `HISTORICAL_COVERAGE_GAP`
+    when the strategy inception is a verified automatic baseline proof.
+  - Added structured diagnostic logging for unavailable comparison outcomes and reasons.
+
 ## [6.17.73] - 2026-09-19
 
 ### Fixed

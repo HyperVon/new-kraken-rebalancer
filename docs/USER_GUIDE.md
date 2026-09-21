@@ -253,6 +253,16 @@ The History page is for longer-term review: performance charts and the full
 trade log. Use the **24h / 7d / 30d / 90d / All** pills to change the window —
 all six summary cards and the charts update together.
 
+The selected window controls which reconciled points are displayed; it does not
+shorten the accounting evidence used to build the comparison. Buy & Hold and
+actual-history reconciliation run from the effective recorded baseline through
+the requested end, then the result is filtered to the selected window and
+down-sampled for the chart. This keeps overlapping windows economically
+consistent with **All** and preserves fail-closed behavior when an earlier
+checkpoint cannot be explained. A window with fewer than two display points is
+shown as unavailable with **Insufficient snapshots** rather than receiving an
+estimated value.
+
 ### Sync progress banner
 
 Immediately below the header, a banner appears while ordinary trade/ledger history
@@ -431,7 +441,7 @@ The comparison cannot be computed when:
 
 | Reason | Meaning |
 | :--- | :--- |
-| Insufficient snapshots | Fewer than 2 snapshots in range. |
+| Insufficient snapshots | Fewer than 2 reconciled snapshots remain in the selected display window. Accounting evidence is still evaluated from the effective baseline through the window end, using only current-version certified trade/ledger coverage. |
 | Non-positive baseline | First snapshot total value is $0 (no baseline to scale from). |
 | Baseline mismatch | First snapshot's total value doesn't match the sum of its priced assets (stale data). |
 | Missing price | An asset lacks a price in a snapshot. |

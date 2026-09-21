@@ -43,6 +43,7 @@ class InceptionDiscoveryService(
     private val configService: ConfigService,
     private val nowProvider: () -> Instant = Instant::now,
     private val recoveryService: InceptionRecoveryService? = null,
+    private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) {
     private val log = LoggerFactory.getLogger(InceptionDiscoveryService::class.java)
 
@@ -99,7 +100,14 @@ class InceptionDiscoveryService(
         return ApprovedBaselineState(metadataId = metadataId, snapshot = snapshot)
     }
 
-    suspend fun resolveInception(): InceptionResolution {
+    suspend fun resolveInception(): InceptionResolution = historyEvidenceCoordinator.withLock {
+        resolveInceptionLocked()
+    }
+
+    /** Called by an evidence consumer that already holds [HistoryEvidenceCoordinator]. */
+    internal suspend fun resolveInceptionUnderEvidenceLock(): InceptionResolution = resolveInceptionLocked()
+
+    private suspend fun resolveInceptionLocked(): InceptionResolution {
         val config = configService.getConfig()
         val settings = config.settings
         val preparation = recoveryService?.prepareForCurrentConfigurationResult(settings)
