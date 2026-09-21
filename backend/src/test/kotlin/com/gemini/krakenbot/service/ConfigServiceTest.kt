@@ -423,6 +423,47 @@ class ConfigServiceTest : StringSpec() {
             exception.message shouldNotContain "secret"
         }
 
+        "NIO permission strategy hardens owner-only POSIX permissions deterministically" {
+            val posixView = mockk<PosixFileAttributeView>(relaxed = true)
+            var observedPermissions: Set<PosixFilePermission>? = null
+            every { posixView.setPermissions(any()) } answers {
+                observedPermissions = firstArg()
+            }
+
+            val strategy = NioConfigFilePermissionStrategy(
+                attributeViews = object : ConfigFileAttributeViews {
+                    override fun posix(path: Path): PosixFileAttributeView? = posixView
+
+                    override fun acl(path: Path): AclFileAttributeView? =
+                        error("ACL must not be consulted while POSIX permissions are available")
+
+                    override fun owner(path: Path): UserPrincipal =
+                        error("owner lookup must not run for POSIX hardening")
+                },
+                createWithPosixPermissions = {},
+                createWithDefaultPermissions = { error("default creation must not run under POSIX") },
+            )
+
+            strategy.createOwnerOnlyFile(tempFile.toPath().resolveSibling("posix-hardened-config.tmp"))
+
+            observedPermissions shouldBe ownerOnlyPermissions
+        }
+
+        "NIO permission strategy deletes nothing when creation fails before ownership hardening" {
+            val path = tempFile.toPath().resolveSibling("failed-create-config.tmp")
+            var deleteAttempted = false
+            val strategy = NioConfigFilePermissionStrategy(
+                createWithPosixPermissions = { throw IOException("config file could not be created") },
+                deleteIfExists = { deleteAttempted = true },
+            )
+
+            shouldThrow<IOException> {
+                strategy.createOwnerOnlyFile(path)
+            }
+
+            deleteAttempted shouldBe false
+        }
+
         "config permission failures never expose credential values" {
             val secretApiKey = "api-key-that-must-not-appear"
             val secretPrivateKey = "private-key-that-must-not-appear"
