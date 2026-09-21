@@ -8,6 +8,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.time.Instant
@@ -191,10 +192,10 @@ class HistoricalOhlcCacheTest : StringSpec() {
 
             val results =
                 withContext(Dispatchers.IO) {
-                    listOf(
-                        async { cache.getOHLC(pair, interval, since, upTo) },
-                        async { cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(now + 3600)) },
-                    ).awaitAll()
+                    val leader = async { cache.getOHLC(pair, interval, since, upTo) }
+                    delay(100)
+                    val joiner = async { cache.getOHLC(pair, interval, since, Instant.ofEpochSecond(now + 3600)) }
+                    listOf(leader.await(), joiner.await())
                 }
 
             results.forEach { result -> result.size shouldBe 1 }
