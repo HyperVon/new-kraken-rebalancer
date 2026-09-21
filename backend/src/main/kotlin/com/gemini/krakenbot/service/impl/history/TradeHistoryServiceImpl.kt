@@ -29,6 +29,7 @@ class TradeHistoryServiceImpl(
     private val syncService: TradeHistorySyncService,
     private val ledgersSyncService: LedgersSyncService,
     private val inceptionRecoveryService: InceptionRecoveryService? = null,
+    private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) : TradeHistoryService {
     constructor(
         repository: TradeRepository,
@@ -42,6 +43,7 @@ class TradeHistoryServiceImpl(
         orderIntentRepository: OrderIntentRepository? = null,
         inceptionRecoveryService: InceptionRecoveryService? = null,
         accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
+        historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
     ) : this(
         snapshotStore =
         TradeHistorySnapshotStore(
@@ -50,8 +52,10 @@ class TradeHistoryServiceImpl(
             configService = configService,
             objectMapper = objectMapper,
             portfolioStatsRepository = portfolioStatsRepository,
+            ledgerRepository = ledgerRepository,
             tradeHistoryFilePath = tradeHistoryFilePath,
             nowProvider = syncNowProvider,
+            historyEvidenceCoordinator = historyEvidenceCoordinator,
         ),
         queryService =
         TradeHistoryQueryService(
@@ -62,6 +66,7 @@ class TradeHistoryServiceImpl(
             nowProvider = syncNowProvider,
             krakenService = krakenService,
             configService = configService,
+            historyEvidenceCoordinator = historyEvidenceCoordinator,
         ),
         syncService =
         TradeHistorySyncService(
@@ -71,6 +76,7 @@ class TradeHistoryServiceImpl(
             nowProvider = syncNowProvider,
             accountHistoryScopeGuard = accountHistoryScopeGuard,
             ledgerRepository = ledgerRepository,
+            historyEvidenceCoordinator = historyEvidenceCoordinator,
             reconstructionService =
             TradeHistoryReconstructionService(
                 repository = repository,
@@ -90,8 +96,10 @@ class TradeHistoryServiceImpl(
             tradeRepository = repository,
             nowProvider = syncNowProvider,
             accountHistoryScopeGuard = accountHistoryScopeGuard,
+            historyEvidenceCoordinator = historyEvidenceCoordinator,
         ),
         inceptionRecoveryService = inceptionRecoveryService,
+        historyEvidenceCoordinator = historyEvidenceCoordinator,
     )
 
     override suspend fun init() = snapshotStore.init()
@@ -139,6 +147,12 @@ class TradeHistoryServiceImpl(
 
     override suspend fun setSyncMetadata(key: String, value: String) = syncService.setSyncMetadata(key, value)
 
+    override suspend fun getSyncMetadataUnderEvidenceLock(key: String): String? =
+        syncService.getSyncMetadataUnderEvidenceLock(key)
+
+    override suspend fun setSyncMetadataUnderEvidenceLock(key: String, value: String) =
+        syncService.setSyncMetadataUnderEvidenceLock(key, value)
+
     override suspend fun isHistorySeeded(): Boolean = syncService.isHistorySeeded()
 
     override suspend fun getInceptionRecoveryStatus(): InceptionRecoveryStatus =
@@ -152,6 +166,9 @@ class TradeHistoryServiceImpl(
 
     override suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? =
         queryService.getComparisonStartProposal(after)
+
+    override suspend fun getComparisonStartProposalUnderEvidenceLock(after: Instant): ComparisonStartProposal? =
+        queryService.getComparisonStartProposalUnderEvidenceLock(after)
 
     override suspend fun getSettingsComparisonStatus(after: Instant): SettingsComparisonStatus =
         queryService.getSettingsComparisonStatus(after)

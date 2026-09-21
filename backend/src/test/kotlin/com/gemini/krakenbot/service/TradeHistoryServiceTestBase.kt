@@ -22,25 +22,83 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     protected val objectMapper: ObjectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
-    protected val repository = mockk<TradeRepository>(relaxed = true).also {
-        coEvery { it.isHistorySeeded() } returns true
-        coEvery { it.getSnapshotBefore(any()) } returns null
+    protected val repositorySyncMetadata = mutableMapOf(
+        com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION to
+            com.gemini.krakenbot.service.impl.history.TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+    )
+    protected val ledgerRepositorySyncMetadata = mutableMapOf(
+        com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION to
+            com.gemini.krakenbot.service.impl.history.LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+    )
+    private var tradeCoverageHorizonProvider: (() -> String)? = {
+        Instant.now().epochSecond.toString()
+    }
+    private var ledgerCoverageHorizonProvider: (() -> String)? = {
+        Instant.now().epochSecond.toString()
+    }
+    protected val repository = mockk<TradeRepository>(relaxed = true).also { mock ->
+        coEvery { mock.isHistorySeeded() } returns true
+        coEvery { mock.getSnapshotBefore(any()) } returns null
+        coEvery { mock.getSyncMetadata(any()) } answers {
+            val key = firstArg<String>()
+            repositorySyncMetadata[key] ?: when (key) {
+                com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC ->
+                    tradeCoverageHorizonProvider?.invoke()
+
+                else -> null
+            }
+        }
+        coEvery { mock.setSyncMetadata(any(), any()) } coAnswers {
+            repositorySyncMetadata[firstArg()] = secondArg()
+        }
+        coEvery { mock.setSyncMetadataAtomically(any()) } coAnswers {
+            val values = firstArg<Map<String, String>>()
+            repositorySyncMetadata.putAll(values)
+            values.forEach { (key, value) -> mock.setSyncMetadata(key, value) }
+        }
         coEvery {
-            it.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION)
-        } returns com.gemini.krakenbot.service.impl.history.TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            mock.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION)
+        } answers {
+            repositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION]
+        }
         coEvery {
-            it.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
-        } answers { Instant.now().epochSecond.toString() }
+            mock.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+        } answers {
+            repositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC]
+                ?: tradeCoverageHorizonProvider?.invoke()
+        }
     }
     protected val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-    protected val ledgerRepository = mockk<LedgerRepository>(relaxed = true).also {
-        coEvery { it.isLedgersSeeded() } returns true
+    protected val ledgerRepository = mockk<LedgerRepository>(relaxed = true).also { mock ->
+        coEvery { mock.isLedgersSeeded() } returns true
+        coEvery { mock.getSyncMetadata(any()) } answers {
+            val key = firstArg<String>()
+            ledgerRepositorySyncMetadata[key] ?: when (key) {
+                com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC ->
+                    ledgerCoverageHorizonProvider?.invoke()
+
+                else -> null
+            }
+        }
+        coEvery { mock.setSyncMetadata(any(), any()) } coAnswers {
+            ledgerRepositorySyncMetadata[firstArg()] = secondArg()
+        }
+        coEvery { mock.setSyncMetadataAtomically(any()) } coAnswers {
+            val values = firstArg<Map<String, String>>()
+            ledgerRepositorySyncMetadata.putAll(values)
+            values.forEach { (key, value) -> mock.setSyncMetadata(key, value) }
+        }
         coEvery {
-            it.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
-        } returns com.gemini.krakenbot.service.impl.history.LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            mock.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
+        } answers {
+            ledgerRepositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION]
+        }
         coEvery {
-            it.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
-        } answers { Instant.now().epochSecond.toString() }
+            mock.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+        } answers {
+            ledgerRepositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC]
+                ?: ledgerCoverageHorizonProvider?.invoke()
+        }
     }
     protected val krakenService = mockk<KrakenService>(relaxed = true).also { stubWithStableBackend(it) }
     protected val configService = mockk<ConfigService>(relaxed = true)
@@ -76,27 +134,49 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
         every { configService.getConfig() } returns appConfig
 
         val savedSnapshots = mutableListOf<PortfolioSnapshot>()
+        repositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION] =
+            com.gemini.krakenbot.service.impl.history.TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        repositorySyncMetadata.remove(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC)
+        repositorySyncMetadata.remove(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+        tradeCoverageHorizonProvider = { (syncNowProvider().epochSecond + 60).toString() }
+        coEvery {
+            repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION)
+        } answers {
+            repositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION]
+        }
+        coEvery {
+            repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+        } answers {
+            repositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC]
+                ?: tradeCoverageHorizonProvider?.invoke()
+        }
         coEvery { repository.saveSnapshot(any()) } answers {
             savedSnapshots.add(0, firstArg())
             savedSnapshots.size
         }
         coEvery { repository.load() } answers { savedSnapshots.take(50) }
         coEvery { repository.getLatestSnapshot() } coAnswers { repository.load().firstOrNull() }
-        coEvery {
-            repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_VERSION)
-        } returns com.gemini.krakenbot.service.impl.history.TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
-        coEvery {
-            repository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
-        } answers { (syncNowProvider().epochSecond + 60).toString() }
         coEvery { ledgerRepository.isLedgersSeeded() } returns true
+        ledgerRepositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION] =
+            com.gemini.krakenbot.service.impl.history.LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        ledgerRepositorySyncMetadata.remove(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC)
+        ledgerRepositorySyncMetadata.remove(
+            com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
+        )
+        ledgerCoverageHorizonProvider = { (syncNowProvider().epochSecond + 60).toString() }
         coEvery {
             ledgerRepository.getSyncMetadata(com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION)
-        } returns com.gemini.krakenbot.service.impl.history.LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        } answers {
+            ledgerRepositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_VERSION]
+        }
         coEvery {
             ledgerRepository.getSyncMetadata(
                 com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC,
             )
-        } answers { (syncNowProvider().epochSecond + 60).toString() }
+        } answers {
+            ledgerRepositorySyncMetadata[com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC]
+                ?: ledgerCoverageHorizonProvider?.invoke()
+        }
 
         return TradeHistoryServiceImpl(
             repository,

@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.TradeSource
@@ -16,7 +17,7 @@ import java.time.Instant
 class KrakenParsersTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    private val objectMapper = jacksonObjectMapper()
+    private val objectMapper = jacksonObjectMapper().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
 
     init {
         "parses balance and ticker golden responses without changing positive values" {
@@ -121,6 +122,52 @@ class KrakenParsersTest : StringSpec() {
             ether.symbol shouldBe "ETH"
             ether.side shouldBe "SELL"
             ether.orderTxid shouldBe null
+        }
+
+        "truncates fractional epoch seconds exactly at millisecond precision" {
+            val (trades, _) = KrakenParsers.parseTradeHistory(
+                objectMapper.readTree(
+                    """
+                    {
+                      "trades": {
+                        "T-FRACTIONAL": {
+                          "pair": "XXBTZUSD",
+                          "time": 1700000000.9999999,
+                          "type": "buy",
+                          "price": "50000",
+                          "cost": "5000",
+                          "fee": "10",
+                          "vol": "0.1"
+                        }
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+                allocations = listOf("BTC", "USD"),
+            )
+            val (ledgers, _) = KrakenParsers.parseLedgerPage(
+                objectMapper.readTree(
+                    """
+                    {
+                      "ledger": {
+                        "L-FRACTIONAL": {
+                          "aclass": "currency",
+                          "asset": "XXBT",
+                          "amount": "0.1",
+                          "fee": "0",
+                          "time": 1700000000.9999999,
+                          "type": "staking",
+                          "subtype": "reward"
+                        }
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+                expectedTypes = null,
+            )
+
+            trades.single().timestamp.toEpochMilli() shouldBe 1700000000999L
+            ledgers.single().time.toEpochMilli() shouldBe 1700000000999L
         }
 
         "flags malformed supported-market trade economics without dropping the row" {

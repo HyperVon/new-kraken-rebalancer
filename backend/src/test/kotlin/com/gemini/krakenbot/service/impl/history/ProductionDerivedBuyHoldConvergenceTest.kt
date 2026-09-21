@@ -27,6 +27,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldNotBeEmpty
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -47,7 +48,7 @@ import java.time.Instant
  * Buy & Hold baseline and history workflow under the proven Dec 5, 2025 automatic baseline.
  *
  * Exercises the reproduction phase, exhaustion loop, live-tail lag, coverage catch-up,
- * UI range matrix (24h, 7d, 30d, 90d, lifetime), restart idempotency, and fail-closed
+ * UI range matrix (24h, 7d, 30d, 90d, all), restart idempotency, and fail-closed
  * safety invariants.
  */
 class ProductionDerivedBuyHoldConvergenceTest :
@@ -86,7 +87,7 @@ class ProductionDerivedBuyHoldConvergenceTest :
         )
 
         every { configService.getConfig() } answers { appConfig }
-        coEvery { trustedScopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+        coEvery { trustedScopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
             status = AccountScopeValidationStatus.VALID,
             currentScopeDigest = scopeDigest,
         )
@@ -363,20 +364,16 @@ class ProductionDerivedBuyHoldConvergenceTest :
             }
         }
 
-        "Phases 5 & 6: Exhaustion loop eliminates all unavailable blockers until reaching AVAILABLE" {
+        "Phase 5: Stable full comparison reaches AVAILABLE without unavailable blockers" {
             runTest {
                 seedProductionDatabase()
                 val queryService = newQueryService()
 
-                val encounteredReasons = mutableListOf<ComparisonUnavailableReason?>()
-
                 val comparison = queryService.getRebalancerComparison(t0, tTail)
-                encounteredReasons.add(comparison.unavailableReason)
 
-                // Comparison must be immediately AVAILABLE with zero unavailable reasons
+                // A complete stable production-derived series must be AVAILABLE with no blocker.
                 comparison.availability shouldBe ComparisonAvailability.AVAILABLE
                 comparison.unavailableReason.shouldBeNull()
-                encounteredReasons.filterNotNull().shouldBeEmpty()
             }
         }
 
@@ -507,7 +504,7 @@ class ProductionDerivedBuyHoldConvergenceTest :
             }
         }
 
-        "Phase 9: Full UI range matrix (24h, 7d, 30d, 90d, lifetime) all return AVAILABLE" {
+        "Phase 9: Full UI range matrix and overlap consistency" {
             runTest {
                 seedProductionDatabase()
                 val queryService = newQueryService()
@@ -540,6 +537,19 @@ class ProductionDerivedBuyHoldConvergenceTest :
                 compLifetime.availability shouldBe ComparisonAvailability.AVAILABLE
                 compLifetime.baselineTimestamp shouldBe t0
                 compLifetime.points.shouldNotBeEmpty()
+
+                val lifetimeByTimestamp = compLifetime.points.associateBy { it.timestamp }
+                listOf(comp24h, comp7d, comp30d, comp90d).forEach { window ->
+                    window.points.forEach { point ->
+                        val lifetimePoint = lifetimeByTimestamp.getValue(point.timestamp)
+                        point.rebalancerValueUSD shouldBeEqualComparingTo lifetimePoint.rebalancerValueUSD
+                        point.buyAndHoldValueUSD shouldBeEqualComparingTo lifetimePoint.buyAndHoldValueUSD
+                        point.differenceUSD shouldBeEqualComparingTo lifetimePoint.differenceUSD
+                        point.differencePercent shouldBeEqualComparingTo lifetimePoint.differencePercent
+                    }
+                    window.latestDifferenceUSD!! shouldBeEqualComparingTo window.points.last().differenceUSD
+                    window.latestDifferencePercent!! shouldBeEqualComparingTo window.points.last().differencePercent
+                }
             }
         }
 

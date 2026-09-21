@@ -65,6 +65,7 @@ class InceptionRecoveryService(
         configService = configService,
     ),
     private val nowProvider: () -> Instant = Instant::now,
+    private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) {
     private val log = LoggerFactory.getLogger(InceptionRecoveryService::class.java)
     private val recoveryMutex = Mutex()
@@ -373,140 +374,154 @@ class InceptionRecoveryService(
     }
 
     /** Runs at most [MAX_PAGES_PER_RUN] private-history pages and returns durable state. */
-    suspend fun recoverOneBoundedRun(): InceptionRecoveryStatus = recoveryMutex.withLock {
-        val preflightConfig = configService.getConfig()
+    suspend fun recoverOneBoundedRun(): InceptionRecoveryStatus = historyEvidenceCoordinator.withLock {
+        recoverOneBoundedRunUnderRecoveryLock()
+    }
 
-        // The scope gate runs before the manual-override short-circuit: a configured
-        // date is authoritative for *when* inception was, but it must not bless
-        // history the active credentials cannot be shown to own.
-        val scopeResult = accountHistoryScopeGuard.validateAccountScope()
-        when (scopeResult.status) {
-            AccountScopeValidationStatus.SIMULATION -> {
-                setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "simulation backend")
-                return@withLock readStatus()
-            }
-
-            AccountScopeValidationStatus.SCOPE_UNAVAILABLE -> {
-                setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, scopeResult.reason ?: "account scope unavailable")
-                return@withLock readStatus()
-            }
-
-            AccountScopeValidationStatus.SCOPE_MISMATCH -> {
-                setOverallStatus(
-                    InceptionRecoveryStatus.UNAVAILABLE,
-                    scopeResult.reason ?: "account scope changed; use correct DB or perform reset",
-                )
-                return@withLock readStatus()
-            }
-
-            AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY -> {
-                setOverallStatus(
-                    InceptionRecoveryStatus.UNAVAILABLE,
-                    scopeResult.reason ?: "existing history cannot be verified for active credentials",
-                )
-                return@withLock readStatus()
-            }
-
-            AccountScopeValidationStatus.VALIDATION_PENDING -> {
-                setOverallStatus(
-                    InceptionRecoveryStatus.UNAVAILABLE,
-                    scopeResult.reason ?: "account validation pending",
-                )
-                return@withLock readStatus()
-            }
-
-            AccountScopeValidationStatus.VALID -> {
-                // Verified valid scope
-            }
+    private suspend fun recoverOneBoundedRunUnderRecoveryLock(): InceptionRecoveryStatus = recoveryMutex.withLock {
+        try {
+            recoverOneBoundedRunWithPinnedConfig()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Strategy inception recovery failed before execution session; retaining resumable progress", e)
+            setOverallStatus(InceptionRecoveryStatus.FAILED, "history request failed")
+            readStatus()
         }
+    }
 
-        val requestedStart = preflightConfig.settings.inceptionDate
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
+    private suspend fun recoverOneBoundedRunWithPinnedConfig(): InceptionRecoveryStatus =
+        configService.withExecutionSession session@{
+            // Pin the configuration before the local preflight. The same execution session remains
+            // active through recovery, so a settings update is staged until this run has finished
+            // instead of changing the fingerprint/approved start between preflight and replay.
+            val preflightConfig = configService.getConfig()
 
-        prepareForCurrentConfigurationLocked(
-            config = preflightConfig,
-            settings = preflightConfig.settings,
-            accountScope = scopeResult.currentScopeDigest.orEmpty(),
-        )
-        prepareForCurrentBaselineReplayVersionLocked()
+            // The scope gate runs before the manual-override short-circuit: a configured
+            // date is authoritative for *when* inception was, but it must not bless
+            // history the active credentials cannot be shown to own.
+            val scopeResult = accountHistoryScopeGuard.validateAccountScopeUnderEvidenceLock()
+            when (scopeResult.status) {
+                AccountScopeValidationStatus.SIMULATION -> {
+                    setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "simulation backend")
+                    return@session readStatus()
+                }
 
-        val currentStatus = readStatus()
-        if (currentStatus.status == InceptionRecoveryStatus.CONFIRMED &&
-            (requestedStart == null || !approvedBaselineMissingUniverseProof())
-        ) {
-            return@withLock currentStatus
-        }
-        val now = nowProvider()
-        val persistedHorizon = readHorizon()
-        var retryWithExpandedHorizon = false
-        if (requestedStart != null && recoveryStreamsComplete() &&
-            (currentStatus.status in FINAL_BASELINE_FAILURES || currentStatus.status == InceptionRecoveryStatus.FAILED)
-        ) {
-            // A failed approved-start reconstruction is reusable only while its local evidence
-            // is unchanged. The configuration fingerprint alone is insufficient: a later sync
-            // may add the missing anchor, ledger, trade identity, or price-bearing row without
-            // changing the operator's approved date. Keep the retry bounded by the normal
-            // interval below and retain all imported history. Include retained rows beyond the
-            // original recovery horizon so a later balance observation can become the retry
-            // anchor without repaginating already-complete private-history streams.
-            if (currentStatus.status in FINAL_BASELINE_FAILURES) {
-                val currentEvidence = approvedBaselineEvidenceFingerprint(
-                    InceptionDiscoveryService.parseInceptionDate(requestedStart) ?: Instant.EPOCH,
-                )
-                val failedEvidence = repository.getSyncMetadata(
-                    SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT,
-                )
-                val evidenceUnchanged = !failedEvidence.isNullOrBlank() && failedEvidence == currentEvidence
-                if (evidenceUnchanged && !isTransientApprovedBaselineFailure(currentStatus.reason)) {
-                    return@withLock currentStatus
+                AccountScopeValidationStatus.SCOPE_UNAVAILABLE -> {
+                    setOverallStatus(
+                        InceptionRecoveryStatus.UNAVAILABLE,
+                        scopeResult.reason ?: "account scope unavailable",
+                    )
+                    return@session readStatus()
+                }
+
+                AccountScopeValidationStatus.SCOPE_MISMATCH -> {
+                    setOverallStatus(
+                        InceptionRecoveryStatus.UNAVAILABLE,
+                        scopeResult.reason ?: "account scope changed; use correct DB or perform reset",
+                    )
+                    return@session readStatus()
+                }
+
+                AccountScopeValidationStatus.UNBOUND_EXISTING_HISTORY -> {
+                    setOverallStatus(
+                        InceptionRecoveryStatus.UNAVAILABLE,
+                        scopeResult.reason ?: "existing history cannot be verified for active credentials",
+                    )
+                    return@session readStatus()
+                }
+
+                AccountScopeValidationStatus.VALIDATION_PENDING -> {
+                    setOverallStatus(
+                        InceptionRecoveryStatus.UNAVAILABLE,
+                        scopeResult.reason ?: "account validation pending",
+                    )
+                    return@session readStatus()
+                }
+
+                AccountScopeValidationStatus.VALID -> {
+                    // Verified valid scope
                 }
             }
-            retryWithExpandedHorizon = true
-        }
 
-        val cadence = classifyRecoveryCadence(currentStatus)
-        val lastAttempt = repository
-            .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC)
-            ?.toLongOrNull()
-        if (lastAttempt != null && now.epochSecond - lastAttempt in 0 until cadence.intervalSeconds) {
-            return@withLock currentStatus
-        }
+            val requestedStart = preflightConfig.settings.inceptionDate
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
 
-        val horizon = if (retryWithExpandedHorizon) {
-            // This is an evaluation-only expansion. Complete private-history streams were not
-            // repaginated, so the durable coverage horizon must remain the original bound.
-            maxOf(persistedHorizon ?: now, now)
-        } else {
-            persistedHorizon ?: now.also {
+            prepareForCurrentConfigurationLocked(
+                config = preflightConfig,
+                settings = preflightConfig.settings,
+                accountScope = scopeResult.currentScopeDigest.orEmpty(),
+            )
+            prepareForCurrentBaselineReplayVersionLocked()
+
+            val currentStatus = readStatus()
+            if (currentStatus.status == InceptionRecoveryStatus.CONFIRMED &&
+                (requestedStart == null || !approvedBaselineMissingUniverseProof())
+            ) {
+                return@session currentStatus
+            }
+            val now = nowProvider()
+            val persistedHorizon = readHorizon()
+            val failedAfterCompleteRecovery = currentStatus.status in FINAL_BASELINE_FAILURES ||
+                currentStatus.status == InceptionRecoveryStatus.FAILED
+            if (requestedStart != null && recoveryStreamsComplete() && failedAfterCompleteRecovery) {
+                // A failed approved-start reconstruction is reusable only while its local evidence
+                // is unchanged. The configuration fingerprint alone is insufficient: a later sync
+                // may add a missing anchor, ledger, trade identity, or price-bearing row without
+                // changing the approved date. Keep the retry bounded by the normal interval, but
+                // do not widen the replay horizon: complete private-history streams certify evidence
+                // only through their persisted horizon. A later sync must recertify and advance that
+                // horizon before a retry may consume newer rows.
+                if (currentStatus.status in FINAL_BASELINE_FAILURES) {
+                    val currentEvidence = approvedBaselineEvidenceFingerprint(
+                        InceptionDiscoveryService.parseInceptionDate(requestedStart) ?: Instant.EPOCH,
+                    )
+                    val failedEvidence = repository.getSyncMetadata(
+                        SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT,
+                    )
+                    val evidenceUnchanged = !failedEvidence.isNullOrBlank() && failedEvidence == currentEvidence
+                    if (evidenceUnchanged && !isTransientApprovedBaselineFailure(currentStatus.reason)) {
+                        return@session currentStatus
+                    }
+                }
+            }
+
+            val cadence = classifyRecoveryCadence(currentStatus)
+            val lastAttempt = repository
+                .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC)
+                ?.toLongOrNull()
+            if (lastAttempt != null && now.epochSecond - lastAttempt in 0 until cadence.intervalSeconds) {
+                return@session currentStatus
+            }
+
+            val horizon = persistedHorizon ?: canonicalRecoveryHorizon(now).also {
                 repository.setSyncMetadata(
                     SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
                     it.epochSecond.toString(),
                 )
             }
-        }
-        repository.setSyncMetadata(
-            SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC,
-            now.epochSecond.toString(),
-        )
-        setOverallStatus(InceptionRecoveryStatus.IN_PROGRESS, "")
+            repository.setSyncMetadata(
+                SyncMetadataKeys.INCEPTION_RECOVERY_LAST_ATTEMPT_EPOCH_SEC,
+                now.epochSecond.toString(),
+            )
+            setOverallStatus(InceptionRecoveryStatus.IN_PROGRESS, "")
 
-        try {
-            configService.withExecutionSession {
-                val pinnedConfig = configService.getConfig()
+            try {
+                val pinnedConfig = preflightConfig
                 val pinnedStart = pinnedConfig.settings.inceptionDate
                     ?.trim()
                     ?.takeIf(String::isNotBlank)
                 if (pinnedConfig.settings.simulation) {
                     setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "simulation backend")
-                    return@withExecutionSession
+                    return@session readStatus()
                 }
                 if (!pinnedConfig.kraken.hasValidCredentials()) {
                     setOverallStatus(InceptionRecoveryStatus.UNAVAILABLE, "credentials unavailable")
-                    return@withExecutionSession
+                    return@session readStatus()
                 }
                 krakenService.withStableBackend { backend ->
-                    val pinnedScope = accountHistoryScopeGuard.validateAccountScope()
+                    val pinnedScope = accountHistoryScopeGuard.validateAccountScopeUnderEvidenceLock()
                     if (!pinnedScope.isValid) {
                         setOverallStatus(
                             InceptionRecoveryStatus.UNAVAILABLE,
@@ -527,37 +542,36 @@ class InceptionRecoveryService(
                         approvedStartRequested = pinnedStart != null,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Strategy inception recovery failed; retaining resumable progress", e)
+                setOverallStatus(InceptionRecoveryStatus.FAILED, "history request failed")
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.warn("Strategy inception recovery failed; retaining resumable progress", e)
-            setOverallStatus(InceptionRecoveryStatus.FAILED, "history request failed")
-        }
-        val outcomeStatus = readStatus()
-        when {
-            outcomeStatus.status == InceptionRecoveryStatus.IN_PROGRESS &&
-                outcomeStatus.reason == RECOVERY_REASON_BOUNDED_CONTINUATION -> {
-                log.info(
-                    "Strategy inception recovery incomplete; next continuation eligible in {}s",
-                    SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS,
-                )
-            }
+            val outcomeStatus = readStatus()
+            when {
+                outcomeStatus.status == InceptionRecoveryStatus.IN_PROGRESS &&
+                    outcomeStatus.reason == RECOVERY_REASON_BOUNDED_CONTINUATION -> {
+                    log.info(
+                        "Strategy inception recovery incomplete; next continuation eligible in {}s",
+                        SUCCESSFUL_CONTINUATION_INTERVAL_SECONDS,
+                    )
+                }
 
-            outcomeStatus.status == InceptionRecoveryStatus.FAILED ||
-                outcomeStatus.status == InceptionRecoveryStatus.UNAVAILABLE ||
-                (
-                    outcomeStatus.status in FINAL_BASELINE_FAILURES &&
-                        isTransientApprovedBaselineFailure(outcomeStatus.reason)
-                    ) -> {
-                log.warn(
-                    "Strategy inception recovery failed; retry eligible in {}s",
-                    FAILURE_RETRY_INTERVAL_SECONDS,
-                )
+                outcomeStatus.status == InceptionRecoveryStatus.FAILED ||
+                    outcomeStatus.status == InceptionRecoveryStatus.UNAVAILABLE ||
+                    (
+                        outcomeStatus.status in FINAL_BASELINE_FAILURES &&
+                            isTransientApprovedBaselineFailure(outcomeStatus.reason)
+                        ) -> {
+                    log.warn(
+                        "Strategy inception recovery failed; retry eligible in {}s",
+                        FAILURE_RETRY_INTERVAL_SECONDS,
+                    )
+                }
             }
+            outcomeStatus
         }
-        outcomeStatus
-    }
 
     private suspend fun recoverPagesAndEvaluate(
         config: AppConfig,
@@ -713,7 +727,7 @@ class InceptionRecoveryService(
             }
         }
 
-        val allTrades = repository.getTradesInRange(Instant.EPOCH, horizon.plusSeconds(1))
+        val allTrades = repository.getTradesInRange(Instant.EPOCH, recoveryEventUpperBound(horizon))
             .filter { it.success && !it.dryRun }
             .sortedBy(TradeRecord::timestamp)
         when (
@@ -836,6 +850,10 @@ class InceptionRecoveryService(
             offset = offset,
             endSec = horizon.epochSecond,
         )
+        val upperBound = recoveryEventUpperBound(horizon)
+        if (page.any { it.timestamp.isAfter(upperBound) }) {
+            throw IllegalStateException("Kraken returned a trade beyond the recovery horizon")
+        }
         val reportedTotal = backend.getLastTradeHistoryTotalCount().coerceAtLeast(0)
         val priorTotal = repository
             .getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_TOTAL)
@@ -854,7 +872,7 @@ class InceptionRecoveryService(
         val paginationShifted = priorTotal > 0 && reportedTotal > 0 && reportedTotal != priorTotal
 
         // The reconciler writes only API_FILL economics and never changes the ordinary cursor.
-        tradeHistorySyncService.importRecoveredApiTrades(page)
+        tradeHistorySyncService.importRecoveredApiTradesUnderEvidenceLock(page, upperBound)
 
         // A count change means newest-first offsets may have shifted while the bounded run was
         // paused. Rewind after importing the current overlap page so the next bounded slice
@@ -877,7 +895,7 @@ class InceptionRecoveryService(
             repository.setSyncMetadata(
                 SyncMetadataKeys.INCEPTION_RECOVERY_TRADE_OLDEST_EPOCH_MS,
                 repository
-                    .getTradesInRange(Instant.EPOCH, horizon.plusSeconds(1))
+                    .getTradesInRange(Instant.EPOCH, recoveryEventUpperBound(horizon))
                     .minOfOrNull { it.timestamp }
                     ?.toEpochMilli()
                     ?.toString()
@@ -900,6 +918,10 @@ class InceptionRecoveryService(
             endSec = horizon.epochSecond,
             types = null,
         )
+        val upperBound = recoveryEventUpperBound(horizon)
+        if (page.any { it.time.isAfter(upperBound) }) {
+            throw IllegalStateException("Kraken returned a ledger beyond the recovery horizon")
+        }
         val rawPageSize = backend.getLastLedgerRawPageSize().coerceAtLeast(page.size)
         if (!backend.hasLastLedgerPageShape()) {
             throw IllegalStateException("Kraken returned a malformed ledger page envelope")
@@ -959,7 +981,7 @@ class InceptionRecoveryService(
             ledgerRepository.setSyncMetadata(
                 SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_OLDEST_EPOCH_MS,
                 ledgerRepository
-                    .getLedgersInRange(Instant.EPOCH, horizon.plusSeconds(1))
+                    .getLedgersInRange(Instant.EPOCH, recoveryEventUpperBound(horizon))
                     .minOfOrNull { it.time }
                     ?.toEpochMilli()
                     ?.toString()
@@ -972,7 +994,7 @@ class InceptionRecoveryService(
     }
 
     private suspend fun evaluateRecoveredEvidence(config: AppConfig, backend: KrakenService, horizon: Instant) {
-        val upperBound = horizon.plusSeconds(1)
+        val upperBound = recoveryEventUpperBound(horizon)
         val allTrades = repository.getTradesInRange(Instant.EPOCH, upperBound)
             .filter { it.success && !it.dryRun }
             .sortedBy(TradeRecord::timestamp)
@@ -1159,7 +1181,10 @@ class InceptionRecoveryService(
             .getLedgersInRange(baselineTime.plusMillis(1), anchorObservation)
         val ledgerContext = ledgerRepository.getLedgersInRange(
             baselineTime.minusSeconds(CardFundingNormalizer.MAX_CARD_TRANSACTION_SPAN_SECONDS),
-            anchorObservation.plusSeconds(CardFundingNormalizer.MAX_CARD_TRANSACTION_SPAN_SECONDS),
+            minOf(
+                anchorObservation.plusSeconds(CardFundingNormalizer.MAX_CARD_TRANSACTION_SPAN_SECONDS),
+                recoveryEventUpperBound(horizon),
+            ),
         )
 
         val preparedProvenance = try {
@@ -1217,7 +1242,11 @@ class InceptionRecoveryService(
         val retainedCardGroups = if (loneFundingRefIds.isEmpty()) {
             emptyMap()
         } else {
-            CardFundingNormalizer.identifyCandidateGroups(ledgerRepository.getLedgersByRefIds(loneFundingRefIds))
+            CardFundingNormalizer.identifyCandidateGroups(
+                ledgerRepository
+                    .getLedgersByRefIds(loneFundingRefIds)
+                    .filter { !it.time.isAfter(recoveryEventUpperBound(horizon)) },
+            )
         }
         for ((refid, contextGroup) in cardGroups) {
             if (contextGroup.none { it.time > baselineTime && !it.time.isAfter(anchorObservation) }) continue
@@ -1458,6 +1487,7 @@ class InceptionRecoveryService(
                 runningBalances = runningBalances,
                 backend = backend,
                 marketPairsByBase = retainedPairsByBase,
+                futureTradeUpperBound = anchorObservation,
             )
         ) {
             is PriceResolution.Success -> priceResolution.prices
@@ -1946,6 +1976,7 @@ class InceptionRecoveryService(
         runningBalances: Map<String, BigDecimal>,
         backend: KrakenService,
         marketPairsByBase: Map<String, List<String>>,
+        futureTradeUpperBound: Instant,
     ): PriceResolution {
         val evidenceSymbol = candidatePriceEvidence?.first
         val prices = mutableMapOf<String, BigDecimal>()
@@ -1975,6 +2006,7 @@ class InceptionRecoveryService(
                     candidatePriceException = candidateException,
                     marketPairs = marketPairsByBase[symbol].orEmpty(),
                     marketPairsByBase = marketPairsByBase,
+                    futureTradeUpperBound = futureTradeUpperBound,
                 )
             } catch (e: HistoricalPriceSourceException) {
                 return PriceResolution.SourceError(symbol, e.message ?: "historical price source failed")
@@ -2458,6 +2490,12 @@ class InceptionRecoveryService(
             RecoveryCadence.RETRY
         }
     }
+
+    /** Converts the persisted inclusive epoch-second horizon into the end of that certified second. */
+    private fun canonicalRecoveryHorizon(now: Instant): Instant = Instant.ofEpochSecond(now.epochSecond)
+
+    private fun recoveryEventUpperBound(horizon: Instant): Instant =
+        Instant.ofEpochSecond(horizon.epochSecond, 999_999_999L)
 
     companion object {
         const val CURRENT_RECOVERY_VERSION = "1"

@@ -21,6 +21,7 @@ import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RebalanceOperationalStatus
 import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.history.HistoryEvidenceCoordinator
 import com.gemini.krakenbot.service.impl.history.InceptionDiscoveryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.css.CssStyles
@@ -75,6 +76,7 @@ class DashboardController(
     private val portfolioManager: PortfolioManager,
     private val orderIntentService: OrderIntentService,
     private val nowProvider: () -> Instant = Instant::now,
+    private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) {
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
 
@@ -215,6 +217,12 @@ class DashboardController(
             )
             return
         }
+        historyEvidenceCoordinator.withLock {
+            handlePostSettingsUnderEvidenceLock(params)
+        }
+    }
+
+    private suspend fun RoutingContext.handlePostSettingsUnderEvidenceLock(params: Parameters) {
         val currentConfig = configService.getConfig()
         val updatedConfig = try {
             parseSettingsForm(params, currentConfig)
@@ -244,12 +252,16 @@ class DashboardController(
         val comparisonStartChanged = comparisonStartChanged(currentConfig, updatedConfig)
         val inceptionChanged = inceptionDateChanged(currentConfig, updatedConfig)
         val previousAcceptedComparisonSnapshotId = if (comparisonStartChanged) {
-            tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID)
+            tradeHistoryService.getSyncMetadataUnderEvidenceLock(
+                SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
+            )
         } else {
             null
         }
         val previousRetentionFloor = if (inceptionChanged) {
-            tradeHistoryService.getSyncMetadata(SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS)
+            tradeHistoryService.getSyncMetadataUnderEvidenceLock(
+                SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+            )
         } else {
             null
         }
@@ -261,7 +273,7 @@ class DashboardController(
             // failed update cannot leave the stores describing different accepted anchors.
             if (comparisonStartChanged) {
                 comparisonStartMetadataWriteStarted = true
-                tradeHistoryService.setSyncMetadata(
+                tradeHistoryService.setSyncMetadataUnderEvidenceLock(
                     SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
                     acceptedComparisonSnapshotId?.toString().orEmpty(),
                 )
@@ -269,7 +281,7 @@ class DashboardController(
             if (inceptionChanged) {
                 configuredRetentionFloorEpochMs(updatedConfig)?.toString()?.let { retentionFloor ->
                     retentionFloorMetadataWriteStarted = true
-                    tradeHistoryService.setSyncMetadata(
+                    tradeHistoryService.setSyncMetadataUnderEvidenceLock(
                         SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
                         retentionFloor,
                     )
@@ -322,7 +334,7 @@ class DashboardController(
 
     private suspend fun restoreAcceptedComparisonSnapshotId(previousSnapshotId: String?): Exception? = try {
         withContext(NonCancellable) {
-            tradeHistoryService.setSyncMetadata(
+            tradeHistoryService.setSyncMetadataUnderEvidenceLock(
                 SyncMetadataKeys.INCEPTION_COMPARISON_START_SNAPSHOT_ID,
                 previousSnapshotId.orEmpty(),
             )
@@ -353,13 +365,11 @@ class DashboardController(
     }
 
     private suspend fun restoreRetentionFloor(previousFloor: String?): Exception? = try {
-        previousFloor?.takeIf(String::isNotBlank)?.let { floor ->
-            withContext(NonCancellable) {
-                tradeHistoryService.setSyncMetadata(
-                    SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
-                    floor,
-                )
-            }
+        withContext(NonCancellable) {
+            tradeHistoryService.setSyncMetadataUnderEvidenceLock(
+                SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
+                previousFloor.orEmpty(),
+            )
         }
         null
     } catch (cancelled: CancellationException) {
@@ -450,7 +460,7 @@ class DashboardController(
         val strategyStart = updatedConfig.settings.inceptionDate
             ?.let(InceptionDiscoveryService::parseInceptionDate)
             ?: throw IllegalArgumentException(ViewText.INVALID_COMPARISON_START_DATE)
-        val proposal = tradeHistoryService.getComparisonStartProposal(strategyStart)
+        val proposal = tradeHistoryService.getComparisonStartProposalUnderEvidenceLock(strategyStart)
         require(
             proposal?.status == ComparisonProposalStatus.VERIFIED &&
                 proposal.timestamp == acceptedStart &&

@@ -19,6 +19,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -61,6 +62,18 @@ class ReconcileThenSampleTest : StringSpec() {
         coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
             repository.getSnapshotsInRange(firstArg(), secondArg())
         }
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+            TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+        coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+            LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+        coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+            "test-scope"
+        coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+            "test-scope"
+        coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+            "test-scope"
 
         "collapsing a multi-row instant silently drops reconciled states" {
             runTest {
@@ -119,7 +132,7 @@ class ReconcileThenSampleTest : StringSpec() {
                 val last = snap(t.plusSeconds(3600), "100000.00", steady(), t.plusSeconds(3600))
                 val series = listOf(first, pre, post, last)
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = t.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -169,7 +182,7 @@ class ReconcileThenSampleTest : StringSpec() {
                     )
                 }
                 val mockInceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-                coEvery { mockInceptionService.resolveInception() } returns InceptionResolution(
+                coEvery { mockInceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
                     inceptionTime = now.minusSeconds(86400),
                     inceptionSnapshot = null,
                     isAutoDetected = false,
@@ -214,6 +227,683 @@ class ReconcileThenSampleTest : StringSpec() {
                     full.points.last().buyAndHoldValueUSD
                 (comparison.latestDifferenceUSD ?: BigDecimal.ZERO) shouldBeEqualComparingTo
                     full.latestDifferenceUSD!!
+
+                // The exact 300-point boundary must still be a display operation: removing the
+                // first accounting row leaves 300 returned points, all of which retain the
+                // economics of their corresponding full-fidelity calculation.
+                val exactDisplay = service.getRebalancerComparison(
+                    now.plusSeconds(60),
+                    now.plusSeconds(count * 60L),
+                )
+                exactDisplay.points.size shouldBe 300
+                val fullByTimestamp = full.points.associateBy { it.timestamp }
+                exactDisplay.points.forEach { point ->
+                    val fullPoint = fullByTimestamp.getValue(point.timestamp)
+                    point.buyAndHoldValueUSD shouldBeEqualComparingTo fullPoint.buyAndHoldValueUSD
+                    point.differenceUSD shouldBeEqualComparingTo fullPoint.differenceUSD
+                }
+            }
+        }
+
+        "short display ranges reconcile the full prefix and preserve overlapping economics" {
+            runTest {
+                val baselineTime = now.minusSeconds(4 * 3600L)
+                val intermediateTime = now.minusSeconds(3 * 3600L)
+                val displayStart = now.minusSeconds(2 * 3600L)
+                val displayEnd = now
+                val baseline = snap(
+                    baselineTime,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    baselineTime,
+                )
+                val intermediate = snap(
+                    intermediateTime,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    intermediateTime,
+                )
+                val firstDisplay = snap(
+                    displayStart,
+                    "110000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "60000.00", "60000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    displayStart,
+                )
+                val lastDisplay = snap(
+                    displayEnd,
+                    "111000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "61000.00", "61000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    displayEnd,
+                )
+                val series = listOf(baseline, intermediate, firstDisplay, lastDisplay)
+                val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
+                    inceptionTime = baselineTime,
+                    inceptionSnapshot = baseline,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.CONFIDENT,
+                )
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } coAnswers {
+                    val lower: Instant = firstArg()
+                    val upper: Instant = secondArg()
+                    series.filter { !it.timestamp.isBefore(lower) && !it.timestamp.isAfter(upper) }
+                }
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = inceptionService,
+                )
+
+                val lifetime = service.getRebalancerComparison(baselineTime, displayEnd)
+                val shortRange = service.getRebalancerComparison(displayStart, displayEnd)
+
+                lifetime.availability shouldBe ComparisonAvailability.AVAILABLE
+                shortRange.availability shouldBe ComparisonAvailability.AVAILABLE
+                shortRange.baselineTimestamp shouldBe baselineTime
+                shortRange.points.map { it.timestamp } shouldBe listOf(displayStart, displayEnd)
+                val lifetimeByTimestamp = lifetime.points.associateBy { it.timestamp }
+                shortRange.points.forEach { point ->
+                    val lifetimePoint = lifetimeByTimestamp.getValue(point.timestamp)
+                    point.rebalancerValueUSD shouldBeEqualComparingTo lifetimePoint.rebalancerValueUSD
+                    point.buyAndHoldValueUSD shouldBeEqualComparingTo lifetimePoint.buyAndHoldValueUSD
+                    point.differenceUSD shouldBeEqualComparingTo lifetimePoint.differenceUSD
+                    point.differencePercent shouldBeEqualComparingTo lifetimePoint.differencePercent
+                }
+                shortRange.latestDifferenceUSD!! shouldBeEqualComparingTo shortRange.points.last().differenceUSD
+                shortRange.latestDifferencePercent!! shouldBeEqualComparingTo
+                    shortRange.points.last().differencePercent
+
+                val oneDisplayPoint = service.getRebalancerComparison(displayStart, displayStart)
+                oneDisplayPoint.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                oneDisplayPoint.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+                coVerify(atLeast = 1) {
+                    repository.getAllSnapshotsInRange(baselineTime, displayEnd)
+                }
+            }
+        }
+
+        "stale coverage versions defer comparison even with far-future horizons" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = first.copy(timestamp = now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns "1"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                val comparison = service.getRebalancerComparison(now, last.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "overflowing coverage horizons defer comparison without throwing" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = first.copy(timestamp = now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns Long.MAX_VALUE.toString()
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns Long.MAX_VALUE.toString()
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                val comparison = service.getRebalancerComparison(now, last.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "epoch-second horizons that overflow epoch milliseconds defer comparison without throwing" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = first.copy(timestamp = now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                val validButUnrepresentableEpochSecond = "9223372036854776"
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns validButUnrepresentableEpochSecond
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns validButUnrepresentableEpochSecond
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                val comparison = service.getRebalancerComparison(now, last.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "missing coverage starts defer comparison even with current horizons" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = first.copy(timestamp = now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns null
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                val comparison = service.getRebalancerComparison(now, last.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "mismatched coverage scopes defer comparison" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = first.copy(timestamp = now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns "account-a"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns "account-b"
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                val comparison = service.getRebalancerComparison(now, last.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "coverage certificate rejects negative starts, future starts, and lagging horizons" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = first.copy(timestamp = now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "-1"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "-1"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "4102444800"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "100"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "100"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "0"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    null
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns null
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    null
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    "account-a"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    null
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns
+                    "account-a"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    null
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns
+                    null
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns "0"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "9223372036854775"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "9223372036854775"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "-1"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns "-1"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "0"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                    "0"
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    "account-a"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns
+                    "account-a"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                    null
+                service.getRebalancerComparison(now, last.timestamp).availability shouldBe
+                    ComparisonAvailability.UNAVAILABLE
+            }
+        }
+
+        "account-scoped coverage requires a shared inception binding" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = first.copy(timestamp = now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns "4102444800"
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns "account-a"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns "account-a"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST)
+                } returns "account-b"
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                val comparison = service.getRebalancerComparison(now, last.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "unbound coverage cannot certify against a bound inception scope" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = first.copy(timestamp = now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    ""
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns ""
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                    "account-a"
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                val comparison = service.getRebalancerComparison(now, last.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                comparison.unavailableReason shouldBe ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS
+            }
+        }
+
+        "comparison trims the uncertified live tail and reconciles the stable prefix" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val second = first.copy(timestamp = now.plusSeconds(3600))
+                val uncertifiedTail = first.copy(timestamp = now.plusSeconds(7200))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns
+                    listOf(first, second, uncertifiedTail)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    now.plusSeconds(3600).epochSecond.toString()
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC)
+                } returns
+                    now.plusSeconds(3600).epochSecond.toString()
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                val comparison = service.getRebalancerComparison(now, uncertifiedTail.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+            }
+        }
+
+        "matching scoped coverage with a matching inception binding remains usable" {
+            runTest {
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = first.copy(timestamp = now.plusSeconds(3600))
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    "4102444800"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                    "account-a"
+                coEvery {
+                    ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST)
+                } returns
+                    "account-a"
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                    "account-a"
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                )
+
+                val comparison = service.getRebalancerComparison(now, last.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+            }
+        }
+
+        "stable-history replay does not query events past the certified horizon" {
+            runTest {
+                val stableThrough = now.plusSeconds(3600)
+                val first = snap(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "50000.00", "50000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    now,
+                )
+                val last = snap(
+                    stableThrough,
+                    "110000.00",
+                    mapOf(
+                        "BTC" to row("1.0", "60000.00", "60000.00"),
+                        "USD" to row("50000.00", "1", "50000.00"),
+                    ),
+                    stableThrough,
+                )
+                val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns InceptionResolution(
+                    inceptionTime = first.timestamp,
+                    inceptionSnapshot = first,
+                    isAutoDetected = false,
+                    confidence = InceptionConfidence.CONFIDENT,
+                )
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns listOf(first, last)
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    stableThrough.epochSecond.toString()
+                coEvery { ledgerRepository.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
+                    stableThrough.epochSecond.toString()
+                val queriedTradeTos = mutableListOf<Instant>()
+                val queriedLedgerTos = mutableListOf<Instant>()
+                coEvery { repository.getTradesInRange(any(), any()) } answers {
+                    queriedTradeTos += secondArg<Instant>()
+                    emptyList()
+                }
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } answers {
+                    queriedLedgerTos += secondArg<Instant>()
+                    emptyList()
+                }
+
+                val service = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = inceptionService,
+                )
+
+                val comparison = service.getRebalancerComparison(first.timestamp, last.timestamp)
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                val certifiedEventEnd = stableThrough.plusNanos(999_999_999)
+                queriedTradeTos.any { it == certifiedEventEnd } shouldBe true
+                queriedTradeTos.filter { it != openEndedRangeEnd }.all { !it.isAfter(certifiedEventEnd) } shouldBe true
+                queriedLedgerTos.all { !it.isAfter(certifiedEventEnd) } shouldBe true
             }
         }
     }

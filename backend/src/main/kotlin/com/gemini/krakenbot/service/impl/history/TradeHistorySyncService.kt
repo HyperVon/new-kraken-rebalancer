@@ -39,6 +39,7 @@ class TradeHistorySyncService(
     private val nowProvider: () -> Instant = Instant::now,
     private val accountHistoryScopeGuard: AccountHistoryScopeGuard? = null,
     private val ledgerRepository: LedgerRepository? = null,
+    private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) {
     private val log = LoggerFactory.getLogger(TradeHistorySyncService::class.java)
     private val syncMutex = Mutex()
@@ -66,8 +67,10 @@ class TradeHistorySyncService(
         }
     }
 
-    suspend fun syncTradesFromKraken() = syncMutex.withLock {
-        syncTradesFromKrakenLocked()
+    suspend fun syncTradesFromKraken() = historyEvidenceCoordinator.withLock {
+        syncMutex.withLock {
+            syncTradesFromKrakenLocked()
+        }
     }
 
     /**
@@ -75,12 +78,27 @@ class TradeHistorySyncService(
      * Recovery deliberately reuses the normal fill reconciler so a historical API fill can enrich
      * a retained local estimate/order-intent row instead of creating a second economic event.
      */
-    internal suspend fun importRecoveredApiTrades(apiTrades: List<TradeRecord>): Pair<Int, Int> = syncMutex.withLock {
+    internal suspend fun importRecoveredApiTrades(apiTrades: List<TradeRecord>): Pair<Int, Int> =
+        historyEvidenceCoordinator.withLock {
+            importRecoveredApiTradesLocked(apiTrades)
+        }
+
+    /** Called by inception recovery while it already owns [historyEvidenceCoordinator]. */
+    internal suspend fun importRecoveredApiTradesUnderEvidenceLock(
+        apiTrades: List<TradeRecord>,
+        recoveryUpperBound: Instant? = null,
+    ): Pair<Int, Int> = importRecoveredApiTradesLocked(apiTrades, recoveryUpperBound)
+
+    private suspend fun importRecoveredApiTradesLocked(
+        apiTrades: List<TradeRecord>,
+        recoveryUpperBound: Instant? = null,
+    ): Pair<Int, Int> = syncMutex.withLock {
         if (apiTrades.isEmpty()) return@withLock 0 to 0
         val first = apiTrades.minOf { it.timestamp }
         val last = apiTrades.maxOf { it.timestamp }
+        val contextEnd = minOf(last.plusSeconds(600), recoveryUpperBound ?: last.plusSeconds(600))
         val originalLocalTrades = repository
-            .getTradesInRange(first.minusSeconds(600), last.plusSeconds(600))
+            .getTradesInRange(first.minusSeconds(600), contextEnd)
             .toMutableList()
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
         val orderMetadataByTxid = buildOrderMetadata(originalLocalTrades)
@@ -104,7 +122,12 @@ class TradeHistorySyncService(
      * boundary as the balance state. Without it the anchor degrades to the wall clock, which
      * cannot prove a common boundary and fails closed.
      */
-    suspend fun rebuildHistoricalSnapshotsIfNeeded(observedBalances: ObservedBalances? = null) {
+    suspend fun rebuildHistoricalSnapshotsIfNeeded(observedBalances: ObservedBalances? = null) =
+        historyEvidenceCoordinator.withLock {
+            rebuildHistoricalSnapshotsIfNeededLocked(observedBalances)
+        }
+
+    private suspend fun rebuildHistoricalSnapshotsIfNeededLocked(observedBalances: ObservedBalances? = null) {
         val config = configService.getConfig()
         if (config.settings.simulation) return
 
@@ -171,7 +194,7 @@ class TradeHistorySyncService(
                 return
             }
             krakenService.withStableBackend { backend ->
-                val scopeResult = accountHistoryScopeGuard?.validateAccountScope()
+                val scopeResult = accountHistoryScopeGuard?.validateAccountScopeUnderEvidenceLock()
                 if (scopeResult != null && !scopeResult.isValid) {
                     log.warn(
                         "Account scope validation failed: {}. Skipping trade history synchronization.",
@@ -957,22 +980,23 @@ class TradeHistorySyncService(
         // completeness proof and must never be consumed as one.
         writeSyncWatermark(successfulQueryHorizon)
 
-        if (coverageAdvances) {
-            // Refresh version, certified range start, and horizon together: a re-certified store
-            // may move the start earlier (configuration/version migration) and must never expose a
-            // stale start alongside a newer horizon.
-            repository.setSyncMetadata(
-                SyncMetadataKeys.TRADE_COVERAGE_VERSION,
-                CURRENT_TRADE_COVERAGE_VERSION,
-            )
-            repository.setSyncMetadata(
-                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC,
-                coverageStart.epochSecond.toString(),
-            )
-            repository.setSyncMetadata(
-                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC,
-                successfulHorizonSec.toString(),
-            )
+        val certificateMetadata = buildMap {
+            if (coverageAdvances) {
+                // Refresh version, certified range start, and horizon in one transaction: a
+                // re-certified store may move the start earlier (configuration/version migration)
+                // and must never expose a stale start alongside a newer horizon.
+                put(SyncMetadataKeys.TRADE_COVERAGE_VERSION, CURRENT_TRADE_COVERAGE_VERSION)
+                put(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC, coverageStart.epochSecond.toString())
+                put(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC, successfulHorizonSec.toString())
+                // A certification without a verified account scope is the unbound contract. Clear
+                // an old digest atomically instead of publishing a new horizon under stale scope.
+                put(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST, verifiedAccountScopeDigest.orEmpty())
+            } else if (verifiedAccountScopeDigest != null) {
+                put(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST, verifiedAccountScopeDigest)
+            }
+        }
+        if (certificateMetadata.isNotEmpty()) {
+            repository.setSyncMetadataAtomically(certificateMetadata)
         } else if (!authoritativeCompletenessProven) {
             log.info(
                 "Trade sync carried no authoritative completeness proof; certified coverage horizon stays at {}.",
@@ -986,12 +1010,6 @@ class TradeHistorySyncService(
             )
         }
 
-        if (verifiedAccountScopeDigest != null) {
-            repository.setSyncMetadata(
-                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST,
-                verifiedAccountScopeDigest,
-            )
-        }
         // Local throttling is based on completion; the durable cursor is based on the request
         // horizon above and must never be advanced in a finally block after a failed pull.
         lastSyncTime = nowProvider()
@@ -1211,9 +1229,21 @@ class TradeHistorySyncService(
         }
     }
 
-    suspend fun getSyncMetadata(key: String): String? = repository.getSyncMetadata(key)
+    suspend fun getSyncMetadata(key: String): String? = historyEvidenceCoordinator.withLock {
+        repository.getSyncMetadata(key)
+    }
 
-    suspend fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
+    suspend fun setSyncMetadata(key: String, value: String) = historyEvidenceCoordinator.withLock {
+        repository.setSyncMetadata(key, value)
+    }
+
+    /** Called by a service operation that already owns [historyEvidenceCoordinator]. */
+    internal suspend fun getSyncMetadataUnderEvidenceLock(key: String): String? = repository.getSyncMetadata(key)
+
+    /** Called by a service operation that already owns [historyEvidenceCoordinator]. */
+    internal suspend fun setSyncMetadataUnderEvidenceLock(key: String, value: String) {
+        repository.setSyncMetadata(key, value)
+    }
 
     suspend fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
 }

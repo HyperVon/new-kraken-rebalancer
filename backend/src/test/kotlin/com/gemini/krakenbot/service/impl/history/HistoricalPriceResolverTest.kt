@@ -362,6 +362,27 @@ class HistoricalPriceResolverTest : StringSpec() {
             }
         }
 
+        "an explicit certified event bound excludes future trade evidence" {
+            runTest {
+                val futureTrade = trade(
+                    price = BigDecimal("101.00"),
+                    volume = BigDecimal("0.01"),
+                    usd = BigDecimal("1.01"),
+                ).copy(timestamp = eventTime.plusSeconds(30))
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(futureTrade)
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+
+                HistoricalPriceResolver.resolveHistoricalPrice(
+                    Asset.BTC,
+                    eventTime,
+                    repository,
+                    krakenService,
+                    futureTradeUpperBound = eventTime,
+                ) shouldBe null
+            }
+        }
+
         "retained market pairs are consulted when the default pair has no history" {
             runTest {
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()

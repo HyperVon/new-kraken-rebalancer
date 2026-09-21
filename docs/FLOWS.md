@@ -453,7 +453,7 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   **300 seconds**, with a captured end time for stable newest-first pagination.
 - Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
   so overlap and repeated pages are harmless. Coverage-grade synchronization
-  (`CURRENT_LEDGER_COVERAGE_VERSION = "9"`) requests unprojected ledger pages (`types = null`),
+  (`CURRENT_LEDGER_COVERAGE_VERSION = "10"`) requests unprojected ledger pages (`types = null`),
   ensuring all raw entries (including `trade` balance-continuity checkpoints and unknown future types)
   are captured and persisted without allow-list projection. Ordinary non-coverage sync passes request
   `staking`, `dividend`, `earn`, `deposit`, `withdrawal`, `transfer`, `adjustment`, `conversion`,
@@ -468,7 +468,7 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   hold that asset. Other holding-dependent reward credits remain actual-only when
   the credited asset was unheld in the counterfactual.
   Ordinary synchronization uses the same local response-type filtering for future reward rows. Durable trade
-  coverage version `1` records start epoch sec, horizon epoch sec, and verified account
+coverage version `2` records start epoch sec, horizon epoch sec, and verified account
   scope digest, enabling start-aware reconstruction without relying on forward trade watermarks.
 - Invalid live credentials skip the sync without opening an execution session;
   a real sync brackets all pages with the same `ConfigService` execution-session
@@ -510,6 +510,16 @@ normal suspend query, not a background flow. Before the comparison renders, each
 tracked interval must reconcile against authoritative trades and supported ledger
 events at USD scale 2 or crypto scale 8; the first unexplained mismatch returns
 `UNEXPLAINED_BALANCE_CHANGE` at the next snapshot timestamp and hides numeric output.
+The History range is a display filter, not an accounting lower bound: comparison
+loads the effective baseline through the requested end, trims the unstable tail,
+reconciles the complete stable prefix, and only then filters and down-samples the
+points returned to the chart. Thus overlapping finite ranges retain the same
+economics as `all`; fewer than two displayed points returns
+`INSUFFICIENT_SNAPSHOTS` after the full accounting pass. The stable prefix requires
+current trade and ledger coverage certificates. Certificates also require coverage starts,
+consistent account-scope digests, and epoch-second values representable by the downstream
+millisecond metadata path. Event replay is capped at the end of the earlier certified second
+so uncertified live-tail events cannot produce a verified comparison or proposal.
 
 ---
 

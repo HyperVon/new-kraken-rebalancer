@@ -96,10 +96,24 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns
+                "0"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns
+                "0"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
             val result = svc.getRebalancerComparison(fixedNow, fixedNow.plusSeconds(86400))
             result.availability shouldBe ComparisonAvailability.UNAVAILABLE
             result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
@@ -313,10 +327,20 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
                 reconStart.epochSecond.toString()
@@ -338,7 +362,7 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             val live2 = contractSnapshot(reconThrough.plusSeconds(4600)).copy(balancesObservedAt = null)
             val staleInception = contractSnapshot(reconThrough.minusSeconds(600))
             val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-            coEvery { inceptionService.resolveInception() } returns
+            coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns
                 InceptionResolution(
                     inceptionTime = staleInception.timestamp,
                     inceptionSnapshot = staleInception,
@@ -351,10 +375,22 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
                 reconStart.epochSecond.toString()
@@ -383,10 +419,22 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
                 reconStart.epochSecond.toString()
@@ -408,7 +456,7 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             val live2 = contractSnapshot(reconThrough.plusSeconds(4600))
             val livePredecessor = contractSnapshot(reconThrough.plusSeconds(500))
             val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-            coEvery { inceptionService.resolveInception() } returns
+            coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns
                 InceptionResolution(
                     inceptionTime = live1.timestamp,
                     inceptionSnapshot = live1,
@@ -422,10 +470,22 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
                 reconStart.epochSecond.toString()
@@ -443,7 +503,7 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             val s1 = contractSnapshot(fixedNow)
             val s2 = contractSnapshot(fixedNow.plusSeconds(3600))
             val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-            coEvery { inceptionService.resolveInception() } returns
+            coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns
                 InceptionResolution(
                     inceptionTime = s1.timestamp,
                     inceptionSnapshot = s1,
@@ -458,6 +518,12 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
 
             val result = svc.getRebalancerComparison(s1.timestamp, s2.timestamp)
 
@@ -470,7 +536,7 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             val s1 = contractSnapshot(fixedNow)
             val s2 = contractSnapshot(fixedNow.plusSeconds(3600))
             val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
-            coEvery { inceptionService.resolveInception() } returns
+            coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } returns
                 InceptionResolution(
                     inceptionTime = s1.timestamp,
                     inceptionSnapshot = s1,
@@ -492,6 +558,12 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery {
                 mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_TRADE_COVERAGE_VERSION)
             } returns TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
 
             val result = svc.getRebalancerComparison(s1.timestamp, s2.timestamp)
 
@@ -514,10 +586,22 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
                 reconStart.epochSecond.toString()
@@ -556,10 +640,22 @@ class HistoricalEvidenceContractExtraTest : StringSpec() {
             coEvery { mockLedgers.getLedgersInRange(any(), any()) } returns emptyList()
             coEvery { mockTrades.getSyncMetadata(any()) } returns null
             coEvery { mockLedgers.getSyncMetadata(any()) } returns null
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_VERSION) } returns
+                TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC) } returns "0"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_VERSION) } returns
+                LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC) } returns "0"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
             coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC) } returns
                 "4102444800"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.INCEPTION_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
+            coEvery { mockLedgers.getSyncMetadata(SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST) } returns
+                "test-scope"
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns ""
             coEvery { mockTrades.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_START_EPOCH_SEC) } returns
                 reconStart.epochSecond.toString()

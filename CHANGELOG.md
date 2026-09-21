@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.75] - 2026-09-20
+
+### Fixed
+
+- **History comparison range semantics**: finite History windows now reconcile the complete
+  stable accounting series from the effective recorded baseline through the requested end before
+  filtering and down-sampling points for display. This preserves intermediate checkpoints and
+  exact overlap economics with All, keeps latest difference fields tied to the displayed tail,
+  and reports `INSUFFICIENT_SNAPSHOTS` when a selected window contains fewer than two display
+  points without weakening fail-closed reconciliation. Stable replay now also requires current
+  trade/ledger coverage certificates, rejects malformed or overflowing horizons, and caps event
+  retrieval at the certified horizon so an uncertified live tail cannot produce a verified result.
+
 ## [6.17.74] - 2026-09-19
 
 ### Fixed

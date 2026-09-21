@@ -50,6 +50,14 @@ interface TradeHistoryService {
 
     suspend fun setSyncMetadata(key: String, value: String)
 
+    /**
+     * Metadata access for a caller that already owns the shared history-evidence coordinator.
+     * The default delegates preserve compatibility for alternate implementations and tests.
+     */
+    suspend fun getSyncMetadataUnderEvidenceLock(key: String): String? = getSyncMetadata(key)
+
+    suspend fun setSyncMetadataUnderEvidenceLock(key: String, value: String) = setSyncMetadata(key, value)
+
     suspend fun isHistorySeeded(): Boolean
 
     /** Current durable strategy-inception recovery state for the History status surface. */
@@ -76,6 +84,10 @@ interface TradeHistoryService {
      * exhausted bounded search.
      */
     suspend fun getComparisonStartProposal(after: Instant): ComparisonStartProposal? = null
+
+    /** Called only while the shared history-evidence coordinator is held. */
+    suspend fun getComparisonStartProposalUnderEvidenceLock(after: Instant): ComparisonStartProposal? =
+        getComparisonStartProposal(after)
 
     /**
      * Same passive evaluation as [getComparisonStartProposal], with the display fields the

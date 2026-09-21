@@ -74,7 +74,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
     init {
         every { configService.getConfig() } answers { config }
-        coEvery { trustedScopeGuard.validateAccountScope() } coAnswers {
+        coEvery { trustedScopeGuard.validateAccountScopeUnderEvidenceLock() } coAnswers {
             when {
                 config.settings.simulation -> AccountScopeValidationResult.SIMULATION
 
@@ -630,8 +630,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 status = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.IN_PROGRESS
-                status.ledgerOffset shouldBe "50"
+                status.status shouldBe InceptionRecoveryStatus.FAILED
+                status.ledgerOffset shouldBe "100"
+                ledgerRepository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_LEDGER_STATUS) shouldBe
+                    "FAILED"
             }
         }
 
@@ -3637,7 +3639,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "future trade one hour after inception cannot seed baseline price" {
+        "future trade after the retained anchor cannot seed baseline price" {
             runTest {
                 config = appConfig(
                     listOf(
@@ -3650,7 +3652,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val bot = apiTrade("bot", botTime, volume = BigDecimal("0.5"), usdAmount = BigDecimal("50.00"))
                 val ethFill = apiTrade(
                     "eth",
-                    botTime.plusSeconds(3600),
+                    botTime.plusSeconds(30),
                     symbol = Asset.ETH,
                     volume = BigDecimal("0.1"),
                     usdAmount = BigDecimal("10.00"),
@@ -3669,7 +3671,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                             Asset.ETH to BigDecimal.ZERO,
                             Asset.USD to BigDecimal.ONE,
                         ),
-                        timestamp = Instant.parse("2026-01-03T00:00:00Z"),
+                        timestamp = botTime.plusSeconds(10),
                     ),
                 )
                 krakenService.tradeHistoryTotalCountOverride = 0
@@ -4027,7 +4029,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
         "bounded recovery fails closed on pending or reasonless scope results" {
             runTest {
-                coEvery { trustedScopeGuard.validateAccountScope() } returnsMany listOf(
+                coEvery { trustedScopeGuard.validateAccountScopeUnderEvidenceLock() } returnsMany listOf(
                     AccountScopeValidationResult(
                         status = AccountScopeValidationStatus.VALIDATION_PENDING,
                         reason = null,
@@ -4068,7 +4070,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
         "recovery revalidates account scope after the execution session is pinned" {
             runTest {
-                coEvery { trustedScopeGuard.validateAccountScope() } returnsMany listOf(
+                coEvery { trustedScopeGuard.validateAccountScopeUnderEvidenceLock() } returnsMany listOf(
                     AccountScopeValidationResult(
                         status = AccountScopeValidationStatus.VALID,
                         currentScopeDigest = AccountHistoryScopeGuard.digestAccountScope("account-A"),
@@ -4130,8 +4132,11 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 val retried = newService().recoverOneBoundedRun()
 
                 retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
-                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC) shouldBe
-                    initialHorizon
+                val retriedHorizon = repository.getSyncMetadata(
+                    SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC,
+                )
+                retriedHorizon shouldNotBe initialHorizon
+                retriedHorizon shouldNotBe ""
             }
         }
 
@@ -4154,15 +4159,15 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "recovery honors an approved start published after preflight" {
+        "recovery pins the configuration before an approved start is published" {
             runTest {
                 val manualConfig = config.copy(settings = config.settings.copy(inceptionDate = "2026-01-01"))
                 every { configService.getConfig() } returnsMany listOf(config, manualConfig)
 
                 val status = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
-                status.reason shouldBe "no retained balance anchor"
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.reason shouldBe "no positively owned bot fill"
                 krakenService.getTradeHistoryCallCount shouldBeGreaterThan 0
             }
         }
@@ -4180,29 +4185,29 @@ class InceptionRecoveryServiceTest : StringSpec() {
             }
         }
 
-        "recovery honors simulation published after preflight" {
+        "recovery pins non-simulation mode before simulation is published" {
             runTest {
                 val simulationConfig = config.copy(settings = config.settings.copy(simulation = true))
                 every { configService.getConfig() } returnsMany listOf(config, simulationConfig)
 
                 val status = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
-                status.reason shouldBe "simulation backend"
-                krakenService.getTradeHistoryCallCount shouldBe 0
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.reason shouldBe "no positively owned bot fill"
+                krakenService.getTradeHistoryCallCount shouldBeGreaterThan 0
             }
         }
 
-        "recovery honors credentials removed after preflight" {
+        "recovery pins credentials before they are removed" {
             runTest {
                 val invalidConfig = config.copy(kraken = KrakenCredentials("", ""))
                 every { configService.getConfig() } returnsMany listOf(config, invalidConfig)
 
                 val status = newService().recoverOneBoundedRun()
 
-                status.status shouldBe InceptionRecoveryStatus.UNAVAILABLE
-                status.reason shouldBe "credentials unavailable"
-                krakenService.getTradeHistoryCallCount shouldBe 0
+                status.status shouldBe InceptionRecoveryStatus.COMPLETE_NO_BOT_EVIDENCE
+                status.reason shouldBe "no positively owned bot fill"
+                krakenService.getTradeHistoryCallCount shouldBeGreaterThan 0
             }
         }
 
@@ -4797,9 +4802,10 @@ class InceptionRecoveryServiceTest : StringSpec() {
 
                 val retried = newService().recoverOneBoundedRun()
 
-                retried.status shouldBe InceptionRecoveryStatus.CONFIRMED
+                retried.status shouldBe InceptionRecoveryStatus.BASELINE_UNAVAILABLE
+                retried.reason shouldBe "no retained balance anchor"
                 config.settings.inceptionDate shouldBe requestedStart.toString()
-                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT) shouldBe ""
+                repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_EVIDENCE_FINGERPRINT) shouldNotBe ""
                 repository.getSyncMetadata(SyncMetadataKeys.INCEPTION_RECOVERY_HORIZON_EPOCH_SEC) shouldBe
                     initialHorizon
                 krakenService.getTradeHistoryCallCount shouldBe initialTradeCalls
@@ -5026,7 +5032,7 @@ class InceptionRecoveryServiceTest : StringSpec() {
                 AccountScopeValidationResult.scopeUnavailable("credentials rotated mid-run"),
             )
             var call = 0
-            coEvery { trustedScopeGuard.validateAccountScope() } coAnswers { scopeResults[call++] }
+            coEvery { trustedScopeGuard.validateAccountScopeUnderEvidenceLock() } coAnswers { scopeResults[call++] }
 
             val status = newService().recoverOneBoundedRun()
 

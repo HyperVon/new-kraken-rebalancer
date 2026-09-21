@@ -921,7 +921,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     "17",
                 )
             }
-            coVerify(exactly = 0) {
+            coVerify(exactly = 1) {
                 tradeHistoryService.setSyncMetadata(
                     SyncMetadataKeys.INCEPTION_RETENTION_FLOOR_EPOCH_MS,
                     "",

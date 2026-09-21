@@ -45,6 +45,7 @@ object HistoricalPriceResolver {
         marketPairsByBase: Map<String, List<String>> = emptyMap(),
         quoteConversionDepth: Int = 0,
         ohlcCache: HistoricalOhlcCache? = null,
+        futureTradeUpperBound: Instant? = null,
     ): BigDecimal? {
         val normalizedAsset = Asset.normalizeLedgerAsset(asset).uppercase()
         if (normalizedAsset == Asset.USD) {
@@ -60,8 +61,15 @@ object HistoricalPriceResolver {
         // useful for retained contribution evidence, but it must never widen the future side of
         // the valuation window and introduce look-ahead.
         val tradeLookbackStart = eventTime.minusSeconds(tradeLookbackSeconds)
-        val tradeFutureEnd = eventTime.plusSeconds(futureTradeSkewSeconds)
-        val candidateTrades = tradesRepo.getTradesInRange(tradeLookbackStart, tradeFutureEnd)
+        val requestedTradeFutureEnd = runCatching {
+            eventTime.plusSeconds(futureTradeSkewSeconds)
+        }.getOrDefault(Instant.MAX)
+        val tradeFutureEnd = minOf(requestedTradeFutureEnd, futureTradeUpperBound ?: Instant.MAX)
+        val candidateTrades = if (tradeFutureEnd.isBefore(tradeLookbackStart)) {
+            emptyList()
+        } else {
+            tradesRepo.getTradesInRange(tradeLookbackStart, tradeFutureEnd)
+        }
             .filter {
                 it.success &&
                     !it.dryRun &&
@@ -187,6 +195,7 @@ object HistoricalPriceResolver {
                             marketPairsByBase = marketPairsByBase,
                             quoteConversionDepth = quoteConversionDepth,
                             ohlcCache = ohlcCache,
+                            futureTradeUpperBound = futureTradeUpperBound,
                         )
                     }
                     if (converted != null) {
@@ -226,6 +235,7 @@ object HistoricalPriceResolver {
         marketPairsByBase: Map<String, List<String>>,
         quoteConversionDepth: Int,
         ohlcCache: HistoricalOhlcCache?,
+        futureTradeUpperBound: Instant?,
     ): BigDecimal? {
         if (quoteConversionDepth >= 1) return null
         val quoteUsdPrice = resolveHistoricalPrice(
@@ -239,6 +249,7 @@ object HistoricalPriceResolver {
             marketPairsByBase = marketPairsByBase,
             quoteConversionDepth = quoteConversionDepth + 1,
             ohlcCache = ohlcCache,
+            futureTradeUpperBound = futureTradeUpperBound,
         ) ?: return null
         return quotePrice
             .multiply(quoteUsdPrice)

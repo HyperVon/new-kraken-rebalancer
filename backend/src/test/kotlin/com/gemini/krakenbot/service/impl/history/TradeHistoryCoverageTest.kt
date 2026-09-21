@@ -61,7 +61,7 @@ class TradeHistoryCoverageTest : StringSpec() {
 
     private fun stubBackend(scopeDigest: String? = defaultScopeDigest) {
         every { configService.getConfig() } returns appConfig
-        coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+        coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
             status = AccountScopeValidationStatus.VALID,
             currentScopeDigest = scopeDigest,
         )
@@ -498,7 +498,7 @@ class TradeHistoryCoverageTest : StringSpec() {
 
         "canRebuildSnapshots() rejects an invalid account scope" {
             stubBackend()
-            coEvery { scopeGuard.validateAccountScope() } returns
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns
                 AccountScopeValidationResult.scopeMismatch(current = "account-b-digest")
             seedCurrentCoverage()
 
@@ -1202,7 +1202,7 @@ class TradeHistoryCoverageTest : StringSpec() {
 
         "canRebuildSnapshots() rejects invalid account scope" {
             every { configService.getConfig() } returns appConfig
-            coEvery { scopeGuard.validateAccountScope() } returns AccountScopeValidationResult(
+            coEvery { scopeGuard.validateAccountScopeUnderEvidenceLock() } returns AccountScopeValidationResult(
                 status = AccountScopeValidationStatus.SCOPE_UNAVAILABLE,
                 currentScopeDigest = null,
             )

@@ -13,6 +13,7 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
@@ -42,8 +43,10 @@ class TradeHistorySnapshotStore(
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
     private val portfolioStatsRepository: PortfolioStatsRepository? = null,
+    private val ledgerRepository: LedgerRepository? = null,
     private val tradeHistoryFilePath: String = "trade-history.json",
     private val nowProvider: () -> Instant = Instant::now,
+    private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) {
     private val log = LoggerFactory.getLogger(TradeHistorySnapshotStore::class.java)
 
@@ -61,7 +64,11 @@ class TradeHistorySnapshotStore(
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
 
-    suspend fun init() {
+    suspend fun init() = historyEvidenceCoordinator.withLock {
+        initLocked()
+    }
+
+    private suspend fun initLocked() {
         try {
             persistConfiguredRetentionFloor(nowProvider())
         } catch (e: CancellationException) {
@@ -159,7 +166,37 @@ class TradeHistorySnapshotStore(
         for (trade in historicalTrades) {
             repository.saveTrade(trade)
         }
+        // The snapshot grid applies these ledger deltas while it is built. Persist the same raw
+        // ledger evidence before marking history seeded, otherwise a fresh simulation has
+        // balances that cannot be explained by the ledger repository during reconciliation.
+        ledgerRepository?.let { ledgerStore ->
+            ledgerStore.saveLedgers(historicalLedgers)
+            ledgerStore.setLedgersSeeded(true)
+            ledgerStore.setSyncMetadataAtomically(
+                mapOf(
+                    SyncMetadataKeys.LEDGER_COVERAGE_VERSION to
+                        LedgersSyncService.CURRENT_LEDGER_COVERAGE_VERSION,
+                    SyncMetadataKeys.LEDGER_COVERAGE_START_EPOCH_SEC to
+                        (
+                            historicalLedgers.minOfOrNull { it.time }?.epochSecond
+                                ?: startInstant.epochSecond
+                            ).toString(),
+                    SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC to provisionalNow.epochSecond.toString(),
+                    SyncMetadataKeys.LEDGER_COVERAGE_ACCOUNT_SCOPE_DIGEST to "",
+                ),
+            )
+        }
         repository.setHistorySeeded(true)
+        repository.setSyncMetadataAtomically(
+            mapOf(
+                SyncMetadataKeys.TRADE_COVERAGE_VERSION to
+                    TradeHistorySyncService.CURRENT_TRADE_COVERAGE_VERSION,
+                SyncMetadataKeys.TRADE_COVERAGE_START_EPOCH_SEC to
+                    (historicalTrades.minOfOrNull { it.timestamp }?.epochSecond ?: startInstant.epochSecond).toString(),
+                SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC to provisionalNow.epochSecond.toString(),
+                SyncMetadataKeys.TRADE_COVERAGE_ACCOUNT_SCOPE_DIGEST to "",
+            ),
+        )
         repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, Instant.now().epochSecond.toString())
         log.info(
             "Simulation mode: seeded {} historical snapshots and {} trade records",
@@ -405,7 +442,11 @@ class TradeHistorySnapshotStore(
         return currentPrice.multiply(BigDecimal.valueOf(trend + broadWave + shortWave)).toCryptoScale()
     }
 
-    suspend fun addSnapshot(snapshot: PortfolioSnapshot) {
+    suspend fun addSnapshot(snapshot: PortfolioSnapshot) = historyEvidenceCoordinator.withLock {
+        addSnapshotLocked(snapshot)
+    }
+
+    private suspend fun addSnapshotLocked(snapshot: PortfolioSnapshot) {
         val now = nowProvider()
         var retentionFloorDurable = true
         try {
@@ -492,9 +533,13 @@ class TradeHistorySnapshotStore(
         ),
     ).filterNotNull().minOrNull()
 
-    suspend fun saveTrade(trade: TradeRecord): Int = repository.saveTrade(trade)
+    suspend fun saveTrade(trade: TradeRecord): Int = historyEvidenceCoordinator.withLock {
+        repository.saveTrade(trade)
+    }
 
-    suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) = repository.updateTrade(oldTrade, newTrade)
+    suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) = historyEvidenceCoordinator.withLock {
+        repository.updateTrade(oldTrade, newTrade)
+    }
 
     suspend fun hasPendingSubmissions(): Boolean = repository.hasPendingSubmissions()
 
