@@ -14,6 +14,23 @@ import kotlinx.browser.document
 import org.w3c.dom.HTMLElement
 import kotlin.js.json
 
+/** Shows progress while the comparison endpoint performs its first uncached calculation. */
+internal fun showComparisonLoading() {
+    clearChart(HtmlIds.REBALANCER_COMPARISON_CHART)
+    document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)?.classList?.add(CssClass.Utility.Hidden.value)
+    document.getElementById(HtmlIds.COMPARISON_LATEST_DIFFERENCE)?.let { deltaEl ->
+        deltaEl.textContent = ViewText.EM_DASH
+        deltaEl.className = CssClass.History.ComparisonDelta.value
+    }
+    document.getElementById(HtmlIds.COMPARISON_CONFIDENCE_BADGE)?.let { confidenceBadge ->
+        confidenceBadge.textContent = ""
+        confidenceBadge.classList.remove(CssClass.Utility.Visible.value)
+    }
+    val unavailableDiv = document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE) as? HTMLElement ?: return
+    unavailableDiv.textContent = ViewText.COMPARISON_LOADING
+    unavailableDiv.classList.add(CssClass.Utility.Visible.value)
+}
+
 /** Renders the comparison slot with its own fetch-failure state; other charts keep rendering. */
 internal fun showComparisonFetchError() {
     clearChart(HtmlIds.REBALANCER_COMPARISON_CHART)

@@ -1006,6 +1006,88 @@ external capital over time:
   incomplete linked multi-row groups fail closed. Other internal moves are ignored; unrecognized or
   ambiguous ledger rows fail closed (`UNSUPPORTED_LEDGER_TYPE`, `AMBIGUOUS_LEDGER_TYPE`).
 
+### Buy & Hold comparison cache contract
+
+A successful (`AVAILABLE`) Buy & Hold comparison is durably cached so repeat requests, long-running
+processes, and restarts reuse the reconciled result instead of replaying history. The cache is
+correctness-preserving: a cached entry is served only while the evidence the authoritative
+calculation actually consumed is unchanged.
+
+- **Entry validity.** A cache entry is keyed by the exact evaluation window (first/last stable
+  evaluation snapshot timestamps) and carries an input fingerprint: SHA-256 over the cache format
+  version, the certified stable horizon (`stableThrough`), the consumed-evidence digest,
+  the funding provenance token, the configured allocation universe, the
+  reconstruction revision markers, the inception resolution, and the evaluation snapshot boundary
+  (count, first, last). Consumed OHLC windows are validated by the persisted dependency manifest,
+  never by the global OHLC content revision, so unrelated price evidence activity cannot
+  invalidate the entry. A read matches only when the stored fingerprint equals the fingerprint
+  computed for the current request. Unavailable results are never persisted, and cache read/write
+  failures fall back to the authoritative calculation.
+- **Consumed evidence.** The fingerprint binds the recorded snapshots at or before the certified
+  horizon, all trades and ledgers up to that horizon, the predecessor snapshot before the effective
+  inception baseline, the OHLC candles consumed for historical valuations, the funding provenance
+  evidence identity, and the configuration affecting benchmark semantics. The digest is row-level
+  and content-derived: reordering, fee corrections, or balance edits in consumed rows change it.
+- **Invalidation.** The cache misses and one authoritative replay occurs when any consumed evidence
+  changes: a snapshot, trade, or ledger row is added, edited, or deleted at or before the certified
+  horizon; the certified trade/ledger horizon advances; order reconciliation rewrites consumed fill
+  economics; reconstruction continuity metadata changes; allocations change; funding evidence
+  content changes (deposits, withdrawals, internal transfers); or a consumed OHLC candle appears or
+  is corrected. An `AVAILABLE` replay then repopulates the cache with the new fingerprint.
+- **Non-invalidating writes.** New live-tail snapshots beyond `stableThrough` bump the global
+  evidence revision but leave the consumed-evidence digest unchanged, so the cached comparison is
+  still a hit (one bounded rehash, no replay). Empty or content-identical OHLC refetches do not
+  advance the OHLC content revision. Passage of time alone never invalidates.
+- **Funding freshness vs durable identity.** Historical settled Kraken deposits, withdrawals, and
+  transfers represent settled ledger events whose provenance identity is immutable once observed.
+  Kraken does not mutate the method, status, or asset classification of a settled historical funding
+  record post-facto; any new financial transaction generates a new ledger record with a distinct
+  timestamp and ID, which advances local ledger coverage and changes the comparison's consumed
+  evidence digest. Prepared funding provenance has a short in-memory freshness window (60s). When
+  prepared evidence is absent or expired, the fingerprint falls back to a durable, persisted
+  funding-evidence identity (scope, funding families, bounded request range, and a content fingerprint
+  of the normalized deposit/withdrawal/internal-transfer records) so requests across TTL expiry and
+  process restarts reuse the cache without funding API calls (0 external funding calls on restart).
+  Provenance decisions always use freshly prepared evidence during authoritative calculation; the
+  durable identity certifies cache identity only, never provenance answers. Degraded provenance
+  results are never cached.
+- **OHLC freshness, dependency tracking, and bounded revalidation.** Historical OHLC candles are cached
+  in memory and persisted with covering-fetch proofs. A covering fetch stays authoritative for a bounded
+  freshness window: successful empty responses revalidate after 5 minutes (so later backfills can cure
+  `MISSING_PRICE` / `HISTORICAL_PRICE_SOURCE_ERROR` frontiers), candles fetched while recent (data ends
+  within a day of the fetch) revalidate hourly, and clearly historical candles revalidate weekly.
+  The comparison cache persists the exact external OHLC dependencies consumed during authoritative
+  calculation (pair, interval, since, valuation upper bound `upTo`, wall fetch timestamp, freshness
+  deadline, and candle content hash). The hash covers only completed candles in the consumed
+  `[since, upTo]` window, so normal future candle growth never looks like a historical correction,
+  while a correction or backfill inside the window (including one curing empty negative evidence)
+  invalidates. Revalidation refetches each dependency's own range; a fresher response for a
+  different range never validates the window. Fetch proofs are range-aware: a short complete
+  response proves its full requested domain, while a page-limited response proves only the
+  completed span it actually returned (and a truncated page with zero completed rows proves
+  nothing), so preserved older candles are never paired with a newer truncated proof and called
+  freshly validated. On comparison cache lookup:
+  - **Fast path:** When all recorded OHLC dependencies are fresh (`now < freshnessDeadlineEpochSecond`),
+    the cached comparison is served immediately (0 OHLC calls, 0 calculation replays).
+  - **Expired revalidation:** If any consumed dependency is expired, only expired dependencies are
+    revalidated against the exchange via single-flight deduplication. If all return unchanged candle
+    content hashes, their freshness deadlines are refreshed in the database and the cached comparison
+    is returned (0 calculation replays, 1 bounded OHLC refresh).
+  - **Refresh budget:** One request performs at most 8 distinct live OHLC refetches synchronously
+    (dependencies sharing one range share a single flight). When expired ranges exceed the budget,
+    the request refreshes a deterministic batch, persists that progress without marking the
+    remainder fresh, and serves an explicit transient (`EXTERNAL_EVIDENCE_REFRESHING`) instead of
+    the unvalidated entry; the remainder validates in one single-flighted background refresh (or
+    across later requests without an application scope), and a later request hits with 0 replays.
+    Concurrent requests join the in-flight refresh and spend zero synchronous calls.
+  - **Content changed:** If external OHLC content changed or backfilled, the comparison cache entry is
+    invalidated and deleted, followed by exactly 1 authoritative calculation replay.
+  - **Exchange error:** Provider outages serve stale cached OHLC and do not invalidate the comparison cache.
+- **Retention.** The comparison cache retains only the newest 3 successful comparison source ranges
+  total (keyed by calculation time, then window end). Pruning runs inside the same transaction that
+  persists a newer successful range, so a replacement is durably committed before superseded rows are
+  removed and the table cannot grow without bound.
+
 ### Trade economics & slippage lifecycle
 
 Each executed order creates a **local estimate** row at rebalance time:

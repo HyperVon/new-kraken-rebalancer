@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -46,6 +47,8 @@ object HistoricalPriceResolver {
         quoteConversionDepth: Int = 0,
         ohlcCache: HistoricalOhlcCache? = null,
         futureTradeUpperBound: Instant? = null,
+        onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
+        onOhlcSourceFailure: (() -> Unit)? = null,
     ): BigDecimal? {
         val normalizedAsset = Asset.normalizeLedgerAsset(asset).uppercase()
         if (normalizedAsset == Asset.USD) {
@@ -148,6 +151,7 @@ object HistoricalPriceResolver {
                             intervalMinutes = intervalMinutes,
                             sinceEpochSecond = earliestCandleStart.epochSecond,
                             upTo = eventTime,
+                            onDependencyResolved = onOhlcDependencyConsumed,
                         )
                     } else {
                         krakenService.getOHLC(
@@ -160,6 +164,7 @@ object HistoricalPriceResolver {
                     throw e
                 } catch (e: Exception) {
                     sourceFailed = true
+                    onOhlcSourceFailure?.invoke()
                     log.warn(
                         "Failed to fetch OHLC price for asset {} pair {} interval {}: {}",
                         normalizedAsset,
@@ -196,6 +201,8 @@ object HistoricalPriceResolver {
                             quoteConversionDepth = quoteConversionDepth,
                             ohlcCache = ohlcCache,
                             futureTradeUpperBound = futureTradeUpperBound,
+                            onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+                            onOhlcSourceFailure = onOhlcSourceFailure,
                         )
                     }
                     if (converted != null) {
@@ -236,6 +243,8 @@ object HistoricalPriceResolver {
         quoteConversionDepth: Int,
         ohlcCache: HistoricalOhlcCache?,
         futureTradeUpperBound: Instant?,
+        onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)?,
+        onOhlcSourceFailure: (() -> Unit)?,
     ): BigDecimal? {
         if (quoteConversionDepth >= 1) return null
         val quoteUsdPrice = resolveHistoricalPrice(
@@ -250,6 +259,8 @@ object HistoricalPriceResolver {
             quoteConversionDepth = quoteConversionDepth + 1,
             ohlcCache = ohlcCache,
             futureTradeUpperBound = futureTradeUpperBound,
+            onOhlcDependencyConsumed = onOhlcDependencyConsumed,
+            onOhlcSourceFailure = onOhlcSourceFailure,
         ) ?: return null
         return quotePrice
             .multiply(quoteUsdPrice)

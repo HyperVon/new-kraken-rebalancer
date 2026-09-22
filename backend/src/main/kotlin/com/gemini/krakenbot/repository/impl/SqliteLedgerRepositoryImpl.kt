@@ -34,6 +34,7 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
                     LedgerTable.applyTo(it, event)
                 }.insertedCount
             }
+            if (inserted > 0) bumpComparisonEvidenceRevision()
             inserted
         }
 
@@ -137,6 +138,8 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
                 } else {
                     condition
                 }
+            }.also { deleted ->
+                if (deleted > 0) bumpComparisonEvidenceRevision()
             }
         }
 }

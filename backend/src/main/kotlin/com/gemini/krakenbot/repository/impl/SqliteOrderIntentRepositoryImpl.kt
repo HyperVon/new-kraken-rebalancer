@@ -145,7 +145,7 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
         resolved
     }
 
-    private fun updateLocalTrade(
+    private fun org.jetbrains.exposed.v1.jdbc.JdbcTransaction.updateLocalTrade(
         intent: OrderIntent,
         state: OrderIntentState,
         orderTxid: String?,
@@ -211,6 +211,10 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                     check(TradeTable.deleteWhere { TradeTable.id eq localTradeId } == 1) {
                         "Cannot remove reconciled local trade $localTradeId for order intent ${intent.id}."
                     }
+                    // Order-intent reconciliation mutates the economic trade journal directly;
+                    // advance the comparison evidence revision in this same transaction so a
+                    // previously memoized comparison cannot survive the replacement.
+                    bumpComparisonEvidenceRevision()
                     return
                 } else {
                     throw OrderIntentReconciliationException(
@@ -242,6 +246,8 @@ class SqliteOrderIntentRepositoryImpl(private val database: Database) : OrderInt
                 "Cannot reconcile order intent ${intent.id}: linked local trade $localTradeId is missing.",
             )
         }
+        // The local trade is the economic evidence consumed by B&H vs Rebalancer replay.
+        bumpComparisonEvidenceRevision()
         if (state == OrderIntentState.CONFIRMED || state == OrderIntentState.REJECTED) {
             detachLocalTrade(intent.id, intent.localTradeId, localTradeId)
         }

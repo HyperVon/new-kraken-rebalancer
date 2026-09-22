@@ -7,13 +7,19 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.model.FundingProvenanceResolver
+import com.gemini.krakenbot.repository.FundingEvidenceIdentityStore
+import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.repository.impl.SqliteFundingEvidenceIdentityStoreImpl
+import com.gemini.krakenbot.repository.impl.SqliteHistoricalOhlcRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteOrderIntentRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
+import com.gemini.krakenbot.repository.impl.SqliteRebalancerComparisonCacheRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -92,6 +98,11 @@ val coreModule =
         singleOf(::SqliteOrderIntentRepositoryImpl) { bind<OrderIntentRepository>() }
         singleOf(::OrderIntentServiceImpl) { bind<OrderIntentService>() }
         singleOf(::SqliteLedgerRepositoryImpl) { bind<LedgerRepository>() }
+        singleOf(::SqliteHistoricalOhlcRepositoryImpl) { bind<HistoricalOhlcRepository>() }
+        singleOf(::SqliteRebalancerComparisonCacheRepositoryImpl) {
+            bind<RebalancerComparisonCacheRepository>()
+        }
+        singleOf(::SqliteFundingEvidenceIdentityStoreImpl) { bind<FundingEvidenceIdentityStore>() }
         single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
         single { HistoryEvidenceCoordinator() }
         single {
@@ -113,7 +124,7 @@ val coreModule =
                 historyEvidenceCoordinator = get(),
             )
         }
-        single { HistoricalOhlcCache(krakenService = get()) }
+        single { HistoricalOhlcCache(krakenService = get(), persistentRepository = get()) }
         single {
             TradeHistoryQueryService(
                 repository = get(),
@@ -124,6 +135,7 @@ val coreModule =
                 fundingProvenanceResolver = get(),
                 krakenService = get(),
                 historicalOhlcCache = get(),
+                comparisonCacheRepository = get(),
                 applicationScope = get(named(APPLICATION_SCOPE_QUALIFIER)),
                 configService = get(),
                 historyEvidenceCoordinator = get(),
@@ -204,7 +216,10 @@ val coreModule =
             )
         }
         single<FundingProvenanceResolver> {
-            KrakenFundingProvenanceResolver(krakenService = get())
+            KrakenFundingProvenanceResolver(
+                krakenService = get(),
+                durableIdentityStore = get(),
+            )
         }
         single<PortfolioAnalyzer> {
             PortfolioAnalyzerImpl(

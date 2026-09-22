@@ -286,6 +286,18 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
             }
         }
 
+        "replace snapshots advances comparison evidence revision when rows are removed" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                repository.saveSnapshot(TestFixtures.emptySnapshot(now.minusSeconds(10), BigDecimal("1000.00")))
+
+                repository.replaceSnapshots(emptyList())
+
+                repository.load() shouldBe emptyList()
+                repository.getSyncMetadata(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION) shouldBe "2"
+            }
+        }
+
         "replace snapshots preserves snapshots referenced by identity metadata" {
             runTest {
                 val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)

@@ -6,6 +6,115 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.80] - 2026-09-22
+
+### Fixed
+
+- **Range-aware OHLC fetch proofs**: fetch coverage is now an explicit proven span instead of the
+  original request bounds, in both the in-memory cache and the durable SQLite store. A truncated
+  page proves only its returned completed span (short pages still prove the full requested
+  domain; truncated pages with zero completed rows prove nothing), so a later-span page can no
+  longer certify an older window as freshly covered — including across restarts. Dependency
+  revalidation fails closed when the live refresh does not cover the dependency's consumed
+  window, disjoint proof lineages coexist without evicting each other, and pre-migration proof
+  rows without coverage bounds fail closed until refetched.
+
+## [6.17.79] - 2026-09-22
+
+### Fixed
+
+- **Raw-page OHLC truncation signal**: whether a fresh OHLC response may be page-limited is now
+  measured on the raw provider page before in-progress-candle filtering, and carried explicitly
+  into the in-memory and SQLite replacement paths. A full 720-row page with one in-progress
+  candle no longer masquerades as a short complete response, so older cached candles before the
+  returned span are preserved instead of deleted; genuinely short pages keep full-domain
+  authority and truncated pages with zero completed candles delete nothing.
+
+## [6.17.78] - 2026-09-22
+
+### Fixed
+
+- **Authoritative OHLC domain replacement**: a successful fresh OHLC response now replaces the
+  authoritative contents of its exact fetched domain in both the in-memory cache and the durable
+  SQLite store — stored completed candles the response omits are deleted instead of unioned, so
+  retractions and removals converge instead of resurrecting. Full pages prove only their covered
+  span, out-of-domain candles are never deleted, and rows witnessed later than the fetch always
+  win on out-of-order completion.
+- **Consumed-window dependency freshness**: dependency TTLs now use the same consumed candle window
+  as the content hash at every report, revalidation, and failure-pacing site, so normal future
+  candle growth affects neither invalidation nor refresh cadence. Empty consumed windows keep the
+  short revalidation TTL and always reconfirm live (backfill discovery), while old consumed
+  evidence rides the 7-day historical cadence.
+
+## [6.17.77] - 2026-09-22
+
+### Fixed
+
+- **Exact consumed OHLC windows**: comparison cache dependencies now record the valuation upper
+  bound alongside `since`, and the candle content hash covers only completed candles in the
+  consumed window. Normal future candle growth no longer invalidates historical comparisons,
+  while corrections and backfills inside the window (including ones curing empty negative
+  evidence) still invalidate exactly once. Revalidation refetches each dependency's own range
+  through one canonical hash helper.
+- **Isolated OHLC invalidation**: the comparison fingerprint no longer includes the global OHLC
+  content revision, so unrelated pairs' price evidence activity never invalidates a cached
+  comparison; the persisted dependency manifest is authoritative for OHLC validity. The cache
+  contract version bumped, so entries written under the previous contract cleanly miss and
+  repopulate.
+- **Bounded comparison OHLC refresh**: one History request performs at most 8 distinct live OHLC
+  refetches synchronously while revalidating an expired comparison entry. Larger expired sets
+  refresh a deterministic batch, persist progress without marking the remainder fresh, and serve
+  an explicit transient while one single-flighted background refresh (or later requests) completes
+  validation; concurrent requests join the in-flight refresh with zero synchronous calls and no
+  replay fan-out.
+- **Scoped OHLC failure pacing**: a failed dependency revalidation backs off retries of that same
+  range for its freshness window, while other ranges of the series pause only briefly (60s) before
+  retrying live. A paced cross-range proof no longer validates a window it never attempted, so
+  recovered ranges detect provider corrections and backfills instead of serving stale.
+- **Uncacheable degraded OHLC calculations**: a comparison computed while any candidate OHLC
+  source failed is served best-available but never persisted, since the manifest cannot prove the
+  resolver would choose the same price again. The next request recomputes, and a healthy
+  calculation caches normally.
+- **Background refresh identity guard**: the background OHLC remainder only writes while the entry
+  still carries exactly the dependency list it validated, and its final write is atomic against
+  concurrent replays, so it can neither delete nor overwrite a same-fingerprint replayed entry.
+- **Fail-closed cache reads**: an unreadable dependency manifest now misses instead of validating
+  as an empty manifest, and a revalidation joiner without a coverage proof replays instead of
+  validating stale.
+
+## [6.17.76] - 2026-09-21
+
+### Fixed
+
+- **Stable-prefix comparison cache invalidation**: the persisted Buy & Hold comparison fingerprint
+  now binds a row-level digest of the evidence the authoritative calculation actually consumed
+  (snapshots at or before the certified horizon, trades and ledgers up to that horizon, the
+  predecessor baseline snapshot) instead of a global write counter. New live-tail snapshots beyond
+  the certified horizon no longer force a replay, while any consumed-row change, certified horizon
+  advance, order reconciliation, reconstruction change, or allocation change still invalidates and
+  replays exactly once.
+- **Durable funding evidence identity**: the funding provenance fingerprint now falls back to a
+  persisted, content-derived identity (bounded scope/family/range metadata plus a normalized
+  evidence fingerprint) when prepared evidence is absent or its short freshness window has
+  expired, so the comparison cache is reused across requests, TTL expiry, and restarts without
+  funding API calls. A later authoritative preparation observing different funding evidence still
+  invalidates the cache, and degraded provenance results are never cached.
+- **Bounded OHLC revalidation**: persisted historical OHLC covering fetches now carry a freshness
+  policy — empty results revalidate after a short window, recent candles hourly, historical
+  candles weekly — so later provider backfills and corrections become visible without waiting for
+  new trade or ledger evidence. Expired fetches revalidate via a single flight; transient provider
+  failures serve stale data and are never persisted as successful empty evidence.
+- **External OHLC dependency tracking and comparison cache revalidation**: persisted Buy & Hold
+  comparisons now record their exact consumed external OHLC dependencies (pair, interval, since,
+  wall fetch timestamp, freshness deadline, and candle content hash). Subsequent cache hits revalidate
+  expired OHLC evidence without bypassing provider freshness: identical external candles refresh
+  freshness deadlines in the cache without replaying calculation, while corrected or backfilled
+  candles invalidate the cached comparison and trigger exactly one authoritative replay.
+- **Bounded comparison cache retention**: the comparison cache prunes superseded successful ranges
+  (keeping the newest 3 successful comparison source ranges total) inside the same transaction that
+  persists a replacement, so the table cannot grow without bound and a replacement is durably
+  committed before older rows are removed.
+
 ## [6.17.75] - 2026-09-20
 
 ### Fixed

@@ -581,6 +581,40 @@ class HistoricalPriceResolverTest : StringSpec() {
                 )!! shouldBeEqualComparingTo BigDecimal("99.00")
             }
         }
+
+        "a failing quote-conversion leg reports the source failure to the caller" {
+            runTest {
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                val kraken = FakeKrakenService().apply {
+                    ohlcSupplier = { pair, _, _ ->
+                        when {
+                            pair == "ATOMUSDT" ->
+                                listOf(eventTime.minusSeconds(900).epochSecond to BigDecimal("2.00"))
+
+                            pair.contains("USDT") -> error("quote leg unavailable")
+
+                            else -> emptyList()
+                        }
+                    }
+                }
+                var failures = 0
+
+                // The outer ATOM fetch succeeds, so only the recursive quote-leg failure can
+                // fire the callback: dropping the recursive passthrough breaks this test.
+                shouldThrow<HistoricalPriceSourceException> {
+                    HistoricalPriceResolver.resolveHistoricalPrice(
+                        asset = "ATOM",
+                        eventTime = eventTime,
+                        tradesRepo = repository,
+                        krakenService = kraken,
+                        marketPairs = listOf("ATOMUSDT"),
+                        onOhlcSourceFailure = { failures++ },
+                    )
+                }
+                failures shouldBe 4
+            }
+        }
     }
 
     private fun trade(price: BigDecimal, volume: BigDecimal, usd: BigDecimal): TradeRecord = TestFixtures.tradeRecord(

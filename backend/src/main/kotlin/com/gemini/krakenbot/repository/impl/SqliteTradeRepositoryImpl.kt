@@ -62,6 +62,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             for (snapshot in history) {
                 insertSnapshotWithChildren(snapshot)
             }
+            if (history.isNotEmpty()) bumpComparisonEvidenceRevision()
         }
     }
 
@@ -87,6 +88,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             for (snapshot in history) {
                 insertSnapshotWithChildren(snapshot)
             }
+            if (replaceableIds.isNotEmpty() || history.isNotEmpty()) bumpComparisonEvidenceRevision()
         }
     }
 
@@ -112,14 +114,14 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
     override suspend fun saveSnapshot(snapshot: PortfolioSnapshot): Int =
         database.safeTransactionIO(log, "Failed to save snapshot to database") {
-            insertSnapshotWithChildren(snapshot)
+            insertSnapshotWithChildren(snapshot).also { bumpComparisonEvidenceRevision() }
         }
 
     override suspend fun saveTrade(trade: TradeRecord): Int =
         database.safeTransactionIO(log, "Failed to save trade to database") {
             TradeTable.insert {
                 TradeTable.applyTo(it, trade)
-            }[TradeTable.id]
+            }[TradeTable.id].also { bumpComparisonEvidenceRevision() }
         }
 
     override suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
@@ -149,6 +151,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     "Expected to update one trade row, but updated $updatedRows for trade ${oldTrade.id}.",
                 )
             }
+            bumpComparisonEvidenceRevision()
         }
     }
 
@@ -158,7 +161,9 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             if (id in protectedTradeIds) {
                 throw IllegalStateException("Cannot delete protected trade $id linked to unresolved order intent.")
             }
-            TradeTable.deleteWhere { TradeTable.id eq id } == 1
+            (TradeTable.deleteWhere { TradeTable.id eq id } == 1).also { deleted ->
+                if (deleted) bumpComparisonEvidenceRevision()
+            }
         }
 
     override suspend fun hasPendingSubmissions(): Boolean = database.readTransactionIO {
@@ -263,6 +268,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 it[HistorySyncMetadataTable.value] = value
             }
         }
+        bumpComparisonEvidenceRevision()
         snapshotId
     }
 
@@ -343,6 +349,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     it[HistorySyncMetadataTable.value] = value
                 }
             }
+            bumpComparisonEvidenceRevision()
         }
     }
 
@@ -658,6 +665,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     ActionLogTable.deleteWhere { snapshotId inList chunk }
                     PortfolioSnapshotTable.deleteWhere { id inList chunk }
                 }
+                bumpComparisonEvidenceRevision()
             }
             idsToDelete.size
         }
@@ -682,6 +690,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             }.map { it[TradeTable.id] }
             idsToDelete.chunked(SQLITE_IN_CHUNK_SIZE).sumOf { chunk ->
                 TradeTable.deleteWhere { TradeTable.id inList chunk }
+            }.also { deleted ->
+                if (deleted > 0) bumpComparisonEvidenceRevision()
             }
         }
 
@@ -711,6 +721,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     .filterNot(protectedTradeIds::contains)
                     .chunked(SQLITE_IN_CHUNK_SIZE)
                     .forEach { chunk -> TradeTable.deleteWhere { TradeTable.id inList chunk } }
+                if (toDelete.any { it !in protectedTradeIds }) bumpComparisonEvidenceRevision()
             }
         }
     }

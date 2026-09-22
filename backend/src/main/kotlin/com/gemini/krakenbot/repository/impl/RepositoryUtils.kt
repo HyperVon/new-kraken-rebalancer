@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.model.OrderIntentReconciliationException
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeReconciliationConflictException
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import kotlinx.coroutines.CancellationException
@@ -58,6 +59,37 @@ fun readSyncMetadataInTransaction(key: String): String? = HistorySyncMetadataTab
     .where { HistorySyncMetadataTable.key eq key }
     .firstOrNull()
     ?.get(HistorySyncMetadataTable.value)
+
+/**
+ * Advances the shared revision consumed by durable comparison caches. Call this in the same
+ * transaction as any write that can change portfolio, trade, ledger, or historical-price
+ * evidence, so a cache can never survive a partially committed evidence update.
+ */
+fun JdbcTransaction.bumpComparisonEvidenceRevision() {
+    bumpSyncMetadataCounter(SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION)
+}
+
+/**
+ * Increments a monotonic counter row in the sync-metadata table. Used for change tokens that
+ * fingerprint consumers hash; the counter only moves when the calling transaction decides the
+ * underlying content actually changed.
+ */
+fun JdbcTransaction.bumpSyncMetadataCounter(metadataKey: String) {
+    val current = readSyncMetadataInTransaction(metadataKey)
+        ?.toLongOrNull()
+        ?: 0L
+    HistorySyncMetadataTable.upsert {
+        it[HistorySyncMetadataTable.key] = metadataKey
+        it[HistorySyncMetadataTable.value] = (current + 1L).toString()
+    }
+}
+
+fun writeSyncMetadataInTransaction(key: String, value: String) {
+    HistorySyncMetadataTable.upsert {
+        it[HistorySyncMetadataTable.key] = key
+        it[HistorySyncMetadataTable.value] = value
+    }
+}
 
 suspend fun Database.writeSyncMetadata(key: String, value: String, log: Logger, logMessage: String) {
     safeTransactionIO(log, logMessage) {

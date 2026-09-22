@@ -158,6 +158,7 @@ internal fun loadAll(range: String): Promise<Unit> {
 
     // The comparison chart loads independently: it shows its own error state on
     // failure and resolves regardless, so it cannot reject the core range load.
+    showComparisonLoading()
     loadGroup(
         requestGeneration,
         Routes.API_HISTORY_COMPARISON.withRange(range),

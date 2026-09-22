@@ -3,6 +3,8 @@ package com.gemini.krakenbot.config
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
 import com.gemini.krakenbot.repository.table.AthAppliedFlowTable
+import com.gemini.krakenbot.repository.table.HistoricalOhlcCandleTable
+import com.gemini.krakenbot.repository.table.HistoricalOhlcFetchTable
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.InceptionInferenceCandidateTable
 import com.gemini.krakenbot.repository.table.InceptionInferenceTable
@@ -10,6 +12,7 @@ import com.gemini.krakenbot.repository.table.LedgerTable
 import com.gemini.krakenbot.repository.table.OrderIntentTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
+import com.gemini.krakenbot.repository.table.RebalancerComparisonCacheTable
 import com.gemini.krakenbot.repository.table.SchemaMigrationTable
 import com.gemini.krakenbot.repository.table.TradeTable
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -58,6 +61,9 @@ object DatabaseConfig {
             AthAppliedFlowTable,
             ActionLogTable,
             HistorySyncMetadataTable,
+            HistoricalOhlcCandleTable,
+            HistoricalOhlcFetchTable,
+            RebalancerComparisonCacheTable,
         )
 
     private val allTables =
