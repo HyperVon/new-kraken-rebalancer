@@ -829,6 +829,8 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 var ohlcClose = "50000"
                 var ohlcCalls = 0
                 var extraOhlc: List<Pair<Long, BigDecimal>> = emptyList()
+                var dropSnap2Candle = false
+                var emptyFifteenMinute = false
                 fun fundingKraken() = FakeKrakenService().apply {
                     depositStatusSupplier = { _, _ ->
                         listOf(
@@ -842,15 +844,27 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                             ),
                         )
                     }
-                    ohlcSupplier = { _, _, _ ->
+                    ohlcSupplier = { _, interval, _ ->
                         ohlcCalls++
-                        // Completed 15m candles closing exactly at the deposit-deployment and
-                        // snapshot valuation instants, plus any newer provider growth appended
-                        // by later steps (beyond every consumed valuation instant).
-                        listOf(
-                            (deposit.time.epochSecond - 900L) to BigDecimal(ohlcClose),
-                            (snap2.timestamp.epochSecond - 900L) to BigDecimal(ohlcClose),
-                        ) + extraOhlc
+                        // Completed candles closing exactly at the deposit-deployment and
+                        // snapshot valuation instants (plus a one-bucket-older fallback for
+                        // the snapshot instant), two grid-aligned coarser-tier fallbacks
+                        // (the tier matcher scores close as start + tier duration, so only
+                        // grid-aligned candles feed the 60m tier), plus any newer provider
+                        // growth appended by later steps (beyond every consumed instant).
+                        if (emptyFifteenMinute && interval == 15) {
+                            emptyList()
+                        } else {
+                            buildList {
+                                add((deposit.time.epochSecond - 900L) to BigDecimal(ohlcClose))
+                                add((snap2.timestamp.epochSecond - 1800L) to BigDecimal(ohlcClose))
+                                add((deposit.time.epochSecond - 7200L) to BigDecimal(ohlcClose))
+                                add((snap2.timestamp.epochSecond - 7200L) to BigDecimal(ohlcClose))
+                                if (!dropSnap2Candle) {
+                                    add((snap2.timestamp.epochSecond - 900L) to BigDecimal(ohlcClose))
+                                }
+                            } + extraOhlc
+                        }
                     }
                 }
                 var clock = now.plusSeconds(36_000)
@@ -1015,6 +1029,149 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 12
                 cache.saveCount shouldBe 3
+
+                // 11. Eight days later every historical dependency expires; the provider
+                // returns identical consumed candles plus many newer candles beyond every
+                // consumed instant (the step-9b growth stays, so nothing consumed moves):
+                // one bounded revalidation round, consumed hashes unchanged, refreshed
+                // deadlines on the 7-day historical cadence, 0 replays.
+                clock = clock.plusSeconds(8 * 86_400L)
+                extraOhlc = extraOhlc + (1..24).map { i ->
+                    (snap2.timestamp.epochSecond + 7_200L + i * 900L) to BigDecimal("54000")
+                } + (1..4).map { i ->
+                    // Wall-hugging growth: recent enough to keep every stored series on the
+                    // 1h record cadence, yet closing after every consumed instant so the
+                    // dependencies below still ride the 7-day historical cadence.
+                    (clock.epochSecond - (5 - i) * 1_800L) to BigDecimal("54500")
+                }
+                val ohlcBefore11 = ohlcCalls
+                val updateBefore11 = cache.updateOhlcCount
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 13
+                cache.saveCount shouldBe 3
+                (ohlcCalls - ohlcBefore11) shouldBe 4
+                cache.updateOhlcCount shouldBeGreaterThan updateBefore11
+                val deps11 = checkNotNull(
+                    durableCache.load(
+                        snap1.timestamp.toEpochMilli(),
+                        liveTailSnap.timestamp.toEpochMilli(),
+                    ),
+                ).ohlcDependencies
+                deps11.size shouldBe 4
+                deps11.forEach {
+                    (it.freshnessDeadlineEpochSecond - it.fetchedAtEpochSecond) shouldBe 604_800L
+                }
+                val ohlcAfter11 = ohlcCalls
+
+                // 12. Immediate repeat: cache hit with 0 OHLC calls.
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 14
+                cache.saveCount shouldBe 3
+                ohlcCalls shouldBe ohlcAfter11
+
+                // 12b. Two hours later every dependency is still fresh on its 7-day
+                // historical cadence even though the stored series (carrying wall-near
+                // future candles) expired on the 1h record cadence: a hit with 0 calls.
+                // Union-driven TTLs would expire all four ranges here instead.
+                clock = clock.plusSeconds(7_200L)
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 15
+                cache.saveCount shouldBe 3
+                ohlcCalls shouldBe ohlcAfter11
+
+                // 14. Eight more days; the provider retracts one out-of-window future
+                // candle: revalidation finds consumed content unchanged (0 replays) while
+                // authoritative replacement deletes the retracted row.
+                clock = clock.plusSeconds(8 * 86_400L)
+                val retractedStart = snap2.timestamp.epochSecond + 7_200L + 24 * 900L
+                extraOhlc = extraOhlc.filter { it.first != retractedStart }
+                val ohlcBefore14 = ohlcCalls
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 16
+                cache.saveCount shouldBe 3
+                (ohlcCalls - ohlcBefore14) shouldBe 4
+                val ohlcAfter14 = ohlcCalls
+                val series13 = ohlcRepository.loadCovered(
+                    Asset.BTC_USD_PAIR,
+                    15,
+                    snap2.timestamp.epochSecond - 86_400L,
+                    clock.epochSecond,
+                )?.candles.orEmpty()
+                series13.none { it.first == retractedStart } shouldBe true
+                series13.any { it.first == snap2.timestamp.epochSecond - 900L } shouldBe true
+
+                // 15. The provider retracts the consumed snapshot candle: the sorted
+                // round revalidates the deposit range (unchanged, 1 call), then the
+                // snapshot range reports ContentChanged and aborts the round before the
+                // tail ranges are attempted; exactly one replay re-prices from the
+                // one-bucket-older fallback candle plus one 60m tail refresh. The repeat
+                // then hits.
+                dropSnap2Candle = true
+                clock = clock.plusSeconds(8 * 86_400L)
+                val ohlcBefore15 = ohlcCalls
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 17
+                cache.saveCount shouldBe 4
+                (ohlcCalls - ohlcBefore15) shouldBe 3
+                val series14 = ohlcRepository.loadCovered(
+                    Asset.BTC_USD_PAIR,
+                    15,
+                    snap2.timestamp.epochSecond - 86_400L,
+                    clock.epochSecond,
+                )?.candles.orEmpty()
+                series14.none { it.first == snap2.timestamp.epochSecond - 900L } shouldBe true
+                series14.any { it.first == snap2.timestamp.epochSecond - 1800L } shouldBe true
+                val ohlcAfter15 = ohlcCalls
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 18
+                cache.saveCount shouldBe 4
+                ohlcCalls shouldBe ohlcAfter15
+
+                // 16. The provider returns empty for every 15m window: the first round
+                // revalidation reports ContentChanged and aborts the round, then exactly
+                // one replay re-prices through the 60m tier (1 round call; the replay
+                // fetches 60m for the first two valuations while every 15m lookup hits
+                // the fresh-empty proofs and the tail 60m lookup hits the fresh
+                // cross-range proof), and the stale 15m rows are removed from the store.
+                emptyFifteenMinute = true
+                clock = clock.plusSeconds(8 * 86_400L)
+                val ohlcBefore16 = ohlcCalls
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 19
+                cache.saveCount shouldBe 5
+                (ohlcCalls - ohlcBefore16) shouldBe 3
+                ohlcRepository.loadCovered(
+                    Asset.BTC_USD_PAIR,
+                    15,
+                    snap2.timestamp.epochSecond - 86_400L,
+                    clock.epochSecond,
+                )?.candles shouldBe emptyList()
+                val series60 = ohlcRepository.loadCovered(
+                    Asset.BTC_USD_PAIR,
+                    60,
+                    snap2.timestamp.epochSecond - 86_400L,
+                    clock.epochSecond,
+                )?.candles.orEmpty()
+                series60.any { it.first == snap2.timestamp.epochSecond - 1800L } shouldBe true
+                val ohlcAfter16 = ohlcCalls
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 20
+                cache.saveCount shouldBe 5
+                ohlcCalls shouldBe ohlcAfter16
+                // Pinned totals for the §4 report: 22 live OHLC calls, 20 cache reads,
+                // 5 replays (cold + correction + horizon + removal + empty-range), 4
+                // dependency-refresh writes, 3 invalidating deletes.
+                ohlcCalls shouldBe 22
+                cache.updateOhlcCount shouldBe 4
+                cache.deleteCount shouldBe 3
             }
         }
 
@@ -1637,9 +1794,10 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     .distinct()
                 (distinctKeys.size > budget) shouldBe true
 
-                // Every dependency expires at once. Each request refreshes at most one budget
+                // Every dependency expires at once: eight days clears even the 7-day
+                // historical consumed-window TTL. Each request refreshes at most one budget
                 // of ranges, serves the explicit transient, and persists progress; zero replays.
-                clock = clock.plusSeconds(3601)
+                clock = clock.plusSeconds(8 * 86_400L)
                 var hit = false
                 repeat(12) {
                     if (hit) return@repeat
@@ -1732,10 +1890,11 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     .distinct()
                 (distinctKeys.size > budget) shouldBe true
 
-                // Every dependency expires at once; four identical requests race. Exactly one
+                // Every dependency expires at once (eight days clears even the 7-day
+                // historical consumed-window TTL); four identical requests race. Exactly one
                 // owns the bounded synchronous batch while joiners spend zero calls, and the
                 // single background refresh completes the remainder with zero replays.
-                clock = clock.plusSeconds(3601)
+                clock = clock.plusSeconds(8 * 86_400L)
                 val results = (1..4).map {
                     async { queryService.getRebalancerComparison(Instant.EPOCH, snapshots.last().timestamp) }
                 }.awaitAll()
@@ -1780,7 +1939,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 // Mutate a deferred range (past the first synchronous batch) only.
                 val targetSince = h.sortedDistinctSinces()[8]
                 h.mutatedRanges.add(targetSince)
-                h.clock.value = h.clock.value.plusSeconds(3601)
+                // Eight days clears even the 7-day historical consumed-window TTL, so the
+                // mutated range lands in the expired set the background remainder validates.
+                h.clock.value = h.clock.value.plusSeconds(8 * 86_400L)
 
                 val first = h.requestLatest()
                 first.availability shouldBe ComparisonAvailability.UNAVAILABLE
@@ -2011,7 +2172,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     comparisonCache = backing,
                     serviceCache = throwingCache,
                 )
-                h.clock.value = h.clock.value.plusSeconds(3601)
+                // Eight days clears even the 7-day historical consumed-window TTL, so every
+                // dependency expires at once and the refresh stays over budget.
+                h.clock.value = h.clock.value.plusSeconds(8 * 86_400L)
 
                 // First request: bounded batch persists (update 1), background remainder
                 // validates but its final conditional write fails (throws and is logged).
@@ -2045,7 +2208,9 @@ class TradeHistoryQueryServiceTest : StringSpec() {
         "regression: provider outage during over-budget refresh retries without replays" {
             runTest {
                 val h = prepareOverBudgetHarness(backgroundScope = this)
-                h.clock.value = h.clock.value.plusSeconds(3601)
+                // Eight days clears even the 7-day historical consumed-window TTL, so every
+                // dependency expires at once and the refresh stays over budget.
+                h.clock.value = h.clock.value.plusSeconds(8 * 86_400L)
                 h.failAll.value = true
 
                 // Every live call fails: the batch serves stale without persisting progress

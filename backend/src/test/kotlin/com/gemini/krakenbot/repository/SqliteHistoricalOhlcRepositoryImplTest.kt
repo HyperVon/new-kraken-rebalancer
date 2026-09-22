@@ -122,6 +122,211 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 covered?.fetchedAtEpochSecond shouldBe 21_000L
             }
         }
+
+        "authoritative empty refetch deletes its domain candles and reports change" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-replace-empty-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    5_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                ) shouldBe true
+
+                // A later authoritative response for the same domain is empty: C is deleted,
+                // not unioned, and the removal counts as content change.
+                repository.saveFetch(pair, intervalMinutes, 0L, 9_000L, emptyList()) shouldBe true
+                repository.loadCovered(pair, intervalMinutes, 0L, 8_000L)?.candles shouldBe emptyList()
+            }
+        }
+
+        "partial removal deletes only the absent candle" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-replace-partial-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    5_000L,
+                    listOf(1_000L to BigDecimal("0.0175"), 1_900L to BigDecimal("0.0179")),
+                )
+
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    9_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                ) shouldBe true
+                repository.loadCovered(pair, intervalMinutes, 0L, 8_000L)?.candles?.map { it.first } shouldBe
+                    listOf(1_000L)
+            }
+        }
+
+        "correction plus removal converges exactly to the fresh response" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-replace-mixed-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    5_000L,
+                    listOf(1_000L to BigDecimal("0.0175"), 1_900L to BigDecimal("0.0179")),
+                )
+
+                // One close corrected, one candle removed, one backfilled: the stored
+                // series must equal the fresh response exactly.
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    9_000L,
+                    listOf(1_000L to BigDecimal("0.0199"), 2_800L to BigDecimal("0.0200")),
+                ) shouldBe true
+                val stored = repository.loadCovered(pair, intervalMinutes, 0L, 8_000L)?.candles
+                stored?.map { it.first } shouldBe listOf(1_000L, 2_800L)
+                stored?.single { it.first == 1_000L }?.second?.compareTo(BigDecimal("0.0199")) shouldBe 0
+                stored?.single { it.first == 2_800L }?.second?.compareTo(BigDecimal("0.0200")) shouldBe 0
+            }
+        }
+
+        "replacement never deletes candles outside the fetched domain" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-replace-domain-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    5_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                )
+
+                // An empty refetch of a strictly newer domain leaves the older candle alone
+                // and reports no change: nothing inside its own domain moved.
+                repository.saveFetch(pair, intervalMinutes, 2_000L, 9_000L, emptyList()) shouldBe false
+                repository.loadCovered(pair, intervalMinutes, 0L, 4_000L)?.candles?.map { it.first } shouldBe
+                    listOf(1_000L)
+            }
+        }
+
+        "out-of-order older fetch never deletes evidence witnessed later" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-replace-ooo-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    9_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                )
+
+                // A stale overlapping fetch completing late must not retract the close a
+                // newer wall already witnessed.
+                repository.saveFetch(pair, intervalMinutes, 0L, 5_000L, emptyList()) shouldBe false
+                repository.loadCovered(pair, intervalMinutes, 0L, 4_000L)?.candles?.map { it.first } shouldBe
+                    listOf(1_000L)
+            }
+        }
+
+        "response candle outside the fetched domain never enters the deletion set" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-replace-ood-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    5_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                )
+
+                // The newer range echoes the older stored candle outside its own domain:
+                // loaded for comparison, never judged absent, no change reported.
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    2_000L,
+                    9_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                ) shouldBe false
+                repository.loadCovered(pair, intervalMinutes, 0L, 4_000L)?.candles?.map { it.first } shouldBe
+                    listOf(1_000L)
+            }
+        }
+
+        "out-of-order older response keeps the newer close without reporting change" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-replace-ooow-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    9_000L,
+                    listOf(1_000L to BigDecimal("0.0199")),
+                )
+
+                // A stale overlapping fetch completing late must neither overwrite the
+                // newer close nor report a change for the ignored correction.
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    5_000L,
+                    listOf(1_000L to BigDecimal("0.0175")),
+                ) shouldBe false
+                val stored = repository.loadCovered(pair, intervalMinutes, 0L, 4_000L)?.candles
+                stored?.single()?.second?.compareTo(BigDecimal("0.0199")) shouldBe 0
+            }
+        }
+
+        "stored candle above the fetched domain is never judged absent" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:ohlc-replace-above-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val repository = SqliteHistoricalOhlcRepositoryImpl(database)
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    20_000L,
+                    listOf(8_500L to BigDecimal("0.0175")),
+                )
+
+                // A narrower older-wall refetch echoes the stored candle above its own
+                // domain: out of range, never deleted, and its newer close is kept.
+                repository.saveFetch(
+                    pair,
+                    intervalMinutes,
+                    0L,
+                    9_000L,
+                    listOf(8_500L to BigDecimal("0.0175")),
+                ) shouldBe false
+                val stored = repository.loadCovered(pair, intervalMinutes, 0L, 8_000L)?.candles
+                stored?.map { it.first } shouldBe listOf(8_500L)
+            }
+        }
     }
 
     private suspend fun fetchProofCount(

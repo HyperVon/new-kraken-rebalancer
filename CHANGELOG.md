@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.17.78] - 2026-09-22
+
+### Fixed
+
+- **Authoritative OHLC domain replacement**: a successful fresh OHLC response now replaces the
+  authoritative contents of its exact fetched domain in both the in-memory cache and the durable
+  SQLite store — stored completed candles the response omits are deleted instead of unioned, so
+  retractions and removals converge instead of resurrecting. Full pages prove only their covered
+  span, out-of-domain candles are never deleted, and rows witnessed later than the fetch always
+  win on out-of-order completion.
+- **Consumed-window dependency freshness**: dependency TTLs now use the same consumed candle window
+  as the content hash at every report, revalidation, and failure-pacing site, so normal future
+  candle growth affects neither invalidation nor refresh cadence. Empty consumed windows keep the
+  short revalidation TTL and always reconfirm live (backfill discovery), while old consumed
+  evidence rides the 7-day historical cadence.
+
 ## [6.17.77] - 2026-09-22
 
 ### Fixed

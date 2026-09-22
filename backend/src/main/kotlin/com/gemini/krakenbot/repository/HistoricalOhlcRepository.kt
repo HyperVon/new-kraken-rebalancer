@@ -24,6 +24,11 @@ interface HistoricalOhlcRepository {
     /**
      * Persists a completed-candle response and its coverage proof atomically.
      * Returns true if any candle content was added, modified, or removed.
+     *
+     * A successful response replaces the authoritative contents of its fetched domain:
+     * stored completed candles in `[since, wall)` that the response omits are deleted,
+     * response candles are upserted, and rows witnessed later than this fetch are always
+     * kept. A full page proves only its covered span, since it may be truncated.
      */
     suspend fun saveFetch(
         pair: String,
