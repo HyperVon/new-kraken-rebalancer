@@ -8,6 +8,7 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respondText
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.time.Instant
 
@@ -65,6 +66,10 @@ object ErrorHandlingConfig {
                     )
                 }
             }
+
+            // Cancellation (client disconnect, shutdown) is not an error: rethrow so
+            // it is never logged as unhandled and no response is attempted.
+            exception<CancellationException> { _, cause -> throw cause }
 
             exception<Exception> { call, cause ->
                 log.error("Unhandled exception: {}", cause.message, cause)

@@ -308,6 +308,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 body shouldContain """id="comparison-proposal-slot""""
                 body shouldContain "Earliest verified comparison start"
                 body shouldContain "Use verified start"
+                body shouldNotContain """hx-trigger="load""""
+                body shouldNotContain """hx-get="/fragments/settings-proposal""""
             }
         }
 
@@ -365,6 +367,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 body shouldContain "Requested comparison start: 2026-06-07"
                 body shouldContain "Effective Buy &amp; Hold baseline: 2026-06-08T03:09:55.608Z"
                 body shouldNotContain "Automatic"
+                body shouldNotContain """hx-trigger="load""""
+                body shouldNotContain """hx-get="/fragments/settings-proposal""""
             }
         }
 
@@ -391,6 +395,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 body shouldContain """id="comparison-proposal-slot""""
                 body shouldContain "Later-start verification is still in progress"
                 body shouldNotContain "Use verified start"
+                body shouldNotContain """hx-trigger="load""""
+                body shouldNotContain """hx-get="/fragments/settings-proposal""""
             }
         }
 
@@ -417,6 +423,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 body shouldContain """id="comparison-proposal-slot""""
                 body shouldContain "No retained later start passed complete reconciliation."
                 body shouldNotContain "Use verified start"
+                body shouldNotContain """hx-trigger="load""""
+                body shouldNotContain """hx-get="/fragments/settings-proposal""""
             }
         }
 
@@ -441,6 +449,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 body shouldContain """id="comparison-proposal-slot""""
                 body shouldContain "Unable to load comparison baseline status."
                 body shouldNotContain "Earliest verified comparison start"
+                body shouldNotContain """hx-trigger="load""""
+                body shouldNotContain """hx-get="/fragments/settings-proposal""""
             }
         }
 

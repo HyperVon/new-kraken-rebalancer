@@ -352,6 +352,70 @@ class SettingsTest : StringSpec() {
             }
         }
 
+        "initSettings starts the baseline poller only once across HTMX swaps" {
+            resetInceptionBaselinePollingForTest()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.settingsDom() +
+                """<p id="inception-baseline-pending">Baseline pending</p>"""
+            document.body!!.appendChild(container)
+            val oldSetInterval = window.asDynamic().setInterval
+            var pollers = 0
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int ->
+                pollers++
+                0
+            }
+            try {
+                initSettings()
+                initSettings()
+                pollers shouldBe 1
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                document.body!!.removeChild(container)
+                resetInceptionBaselinePollingForTest()
+            }
+        }
+
+        "baseline poller stops itself when the pending block disappears" {
+            resetInceptionBaselinePollingForTest()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.settingsDom() +
+                """<p id="inception-baseline-pending">Baseline pending</p>"""
+            document.body!!.appendChild(container)
+            val oldSetInterval = window.asDynamic().setInterval
+            val oldClearInterval = window.asDynamic().clearInterval
+            var tick: (() -> Unit)? = null
+            var pollers = 0
+            window.asDynamic().setInterval = { callback: () -> Unit, _: Int ->
+                tick = callback
+                pollers++
+                pollers
+            }
+            var cleared = -1
+            window.asDynamic().clearInterval = { id: Int -> cleared = id }
+            try {
+                initSettings()
+                pollers shouldBe 1
+
+                document.getElementById("inception-baseline-pending")?.remove()
+                checkNotNull(tick)()
+                cleared shouldBe 1
+
+                // The guard resets with the poller: if the block returns, a later
+                // initSettings starts a fresh poller instead of staying silent.
+                container.insertAdjacentHTML(
+                    "beforeend",
+                    """<p id="inception-baseline-pending">Baseline pending</p>""",
+                )
+                initSettings()
+                pollers shouldBe 2
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                window.asDynamic().clearInterval = oldClearInterval
+                document.body!!.removeChild(container)
+                resetInceptionBaselinePollingForTest()
+            }
+        }
+
         "updateAllocationTotal ignores non-input elements and invalid numbers" {
             val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.settingsAndSyncDom()

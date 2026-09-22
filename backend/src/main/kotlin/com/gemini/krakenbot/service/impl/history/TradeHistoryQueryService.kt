@@ -47,6 +47,7 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.coroutineContext
 
 private data class HistoricalPriceKey(val symbol: String, val time: Instant)
 
@@ -160,11 +161,29 @@ class TradeHistoryQueryService(
     private val comparisonInFlight =
         ConcurrentHashMap<String, CompletableDeferred<RebalancerComparison>>()
 
+    private val settingsStatusInFlight =
+        ConcurrentHashMap<String, CompletableDeferred<SettingsComparisonStatus>>()
+
     private fun startOrJoinComparisonFlight(
         flightKey: String,
     ): Pair<CompletableDeferred<RebalancerComparison>, Boolean> {
         var created = false
         val deferred = comparisonInFlight.compute(flightKey) { _, existing ->
+            if (existing == null) {
+                created = true
+                CompletableDeferred()
+            } else {
+                existing
+            }
+        }!!
+        return deferred to created
+    }
+
+    private fun startOrJoinSettingsStatusFlight(
+        flightKey: String,
+    ): Pair<CompletableDeferred<SettingsComparisonStatus>, Boolean> {
+        var created = false
+        val deferred = settingsStatusInFlight.compute(flightKey) { _, existing ->
             if (existing == null) {
                 created = true
                 CompletableDeferred()
@@ -565,6 +584,7 @@ class TradeHistoryQueryService(
                     suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                     onOhlcDependencyConsumed = { consumedDependencies.add(it) },
                     onOhlcSourceFailure = { ohlcHadFailures.set(true) },
+                    ohlcCallOwner = OhlcCallOwner.HISTORY_COMPARISON,
                 )
                 if (calculated.availability == ComparisonAvailability.AVAILABLE) {
                     persistAutomaticBaselineVerification(
@@ -640,6 +660,7 @@ class TradeHistoryQueryService(
                 val proposal = findLaterComparisonStartProposalLocked(
                     startAfter = inceptionResolution?.inceptionTime ?: Instant.EPOCH,
                     inceptionResolution = inceptionResolution,
+                    ohlcCallOwner = OhlcCallOwner.HISTORY_COMPARISON,
                 )
                 finalResult = result.copy(
                     proposedBaselineTimestamp = proposal.timestamp,
@@ -1230,9 +1251,45 @@ class TradeHistoryQueryService(
     suspend fun getSettingsComparisonStatus(
         after: Instant,
         allowPersistedBaselineFastPath: Boolean = true,
-    ): SettingsComparisonStatus = historyEvidenceCoordinator.withLock {
-        val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
-        getSettingsComparisonStatusLocked(after, allowPersistedBaselineFastPath, inceptionResolution)
+    ): SettingsComparisonStatus {
+        // Duplicate Settings fragment requests (tabs, reloads, overlapping polls) must
+        // not fan out into N identical proposal searches: same-key callers join one
+        // flight. The flight sits outside the evidence lock so joiners never hold it
+        // while awaiting the initiator. The under-lock POST variant below stays
+        // unflighted: it already owns the lock, so joining a flight whose initiator
+        // needs that lock could deadlock. A joiner whose own job is still active but
+        // whose initiator went away (client disconnect) takes over as a new initiator
+        // instead of inheriting the cancellation: one closed tab must not kill its
+        // healthy siblings. Genuine evaluation failures still fail every joiner fast.
+        val flightKey = "${after.toEpochMilli()}:$allowPersistedBaselineFastPath"
+        while (true) {
+            val (flight, created) = startOrJoinSettingsStatusFlight(flightKey)
+            if (created) {
+                try {
+                    val result = historyEvidenceCoordinator.withLock {
+                        val inceptionResolution = inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
+                        getSettingsComparisonStatusLocked(after, allowPersistedBaselineFastPath, inceptionResolution)
+                    }
+                    flight.complete(result)
+                    return result
+                } catch (e: CancellationException) {
+                    flight.completeExceptionally(e)
+                    throw e
+                } catch (e: Throwable) {
+                    flight.completeExceptionally(e)
+                    throw e
+                } finally {
+                    settingsStatusInFlight.remove(flightKey, flight)
+                }
+            }
+            try {
+                log.debug("settings comparison status joined existing flight; after={}", after)
+                return flight.await()
+            } catch (e: CancellationException) {
+                if (!coroutineContext.isActive) throw e
+                log.debug("settings comparison status flight initiator went away; taking over; after={}", after)
+            }
+        }
     }
 
     private suspend fun getSettingsComparisonStatusLocked(
@@ -1343,6 +1400,7 @@ class TradeHistoryQueryService(
                         suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
                         onOhlcDependencyConsumed = consumedDependencies::add,
                         onOhlcSourceFailure = { ohlcHadFailures.set(true) },
+                        ohlcCallOwner = OhlcCallOwner.SETTINGS_PROPOSAL,
                     )
                     if (calculated.availability == ComparisonAvailability.AVAILABLE) {
                         persistCachedComparison(
@@ -1419,7 +1477,12 @@ class TradeHistoryQueryService(
         }
         val skipCandidatesBefore = current.unavailableAt
             ?.takeIf { current.unavailableReason in INTRINSIC_EVENT_REASONS }
-        val proposal = findLaterComparisonStartProposalLocked(after, inceptionResolution, skipCandidatesBefore)
+        val proposal = findLaterComparisonStartProposalLocked(
+            after,
+            inceptionResolution,
+            skipCandidatesBefore,
+            ohlcCallOwner = OhlcCallOwner.SETTINGS_PROPOSAL,
+        )
         if (proposal.status == ComparisonProposalStatus.INCOMPLETE) {
             ensureProposalSearchContinuation(after)
         }
@@ -1934,6 +1997,7 @@ class TradeHistoryQueryService(
         suppressPassiveDiscovery: Boolean = false,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
         onOhlcSourceFailure: (() -> Unit)? = null,
+        ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): RebalancerComparison {
         val firstSnapshot = orderedSnapshots.first()
         val lastSnapshot = orderedSnapshots.last()
@@ -2130,6 +2194,7 @@ class TradeHistoryQueryService(
             eventUpperBound = eventUpperBound,
             onOhlcDependencyConsumed = onOhlcDependencyConsumed,
             onOhlcSourceFailure = onOhlcSourceFailure,
+            ohlcCallOwner = ohlcCallOwner,
         )
         return RebalancerComparisonCalculator.calculate(
             snapshots = orderedSnapshots,
@@ -2321,16 +2386,23 @@ class TradeHistoryQueryService(
         inceptionResolution: InceptionResolution?,
         /** Skip all candidates before an evidence event that provably fails inside every scan window. */
         skipCandidatesBefore: Instant? = null,
+        ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): ComparisonStartProposal = historyEvidenceCoordinator.withLock {
         val resolvedInception = inceptionResolution
             ?: inceptionDiscoveryService?.resolveInceptionUnderEvidenceLock()
-        findLaterComparisonStartProposalLocked(startAfter, resolvedInception, skipCandidatesBefore)
+        findLaterComparisonStartProposalLocked(
+            startAfter,
+            resolvedInception,
+            skipCandidatesBefore,
+            ohlcCallOwner = ohlcCallOwner,
+        )
     }
 
     private suspend fun findLaterComparisonStartProposalLocked(
         startAfter: Instant,
         inceptionResolution: InceptionResolution?,
         skipCandidatesBefore: Instant? = null,
+        ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): ComparisonStartProposal {
         return proposalSearchMutex.withLock {
             // Reload all economic evidence after acquiring the mutex. A concurrent Settings and
@@ -2544,6 +2616,7 @@ class TradeHistoryQueryService(
                                     ),
                                     preparedFundingProvenance = preparedFundingProvenance,
                                     eventUpperBound = eventUpperBound,
+                                    ohlcCallOwner = ohlcCallOwner,
                                 )
                                 if (revalidated.availability == ComparisonAvailability.AVAILABLE) {
                                     // The pending frontier mark is unresolved earliest-start
@@ -2629,6 +2702,7 @@ class TradeHistoryQueryService(
                     ),
                     preparedFundingProvenance = preparedFundingProvenance,
                     eventUpperBound = eventUpperBound,
+                    ohlcCallOwner = ohlcCallOwner,
                 )
                 if (frontierTrial.availability == ComparisonAvailability.AVAILABLE) {
                     val frontierCursor = candidates.proposalCursorAt(storedPriceFrontierIndex)
@@ -2722,6 +2796,7 @@ class TradeHistoryQueryService(
                     ),
                     preparedFundingProvenance = preparedFundingProvenance,
                     eventUpperBound = eventUpperBound,
+                    ohlcCallOwner = ohlcCallOwner,
                 )
                 trials++
                 if (trial.availability == ComparisonAvailability.AVAILABLE) {
@@ -3236,6 +3311,7 @@ class TradeHistoryQueryService(
         eventUpperBound: Instant,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)?,
         onOhlcSourceFailure: (() -> Unit)?,
+        ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): HistoricalPriceProvider {
         val memo = HistoricalPriceMemo()
         return HistoricalPriceProvider { symbol, time ->
@@ -3260,6 +3336,7 @@ class TradeHistoryQueryService(
                                 futureTradeUpperBound = eventUpperBound,
                                 onOhlcDependencyConsumed = onOhlcDependencyConsumed,
                                 onOhlcSourceFailure = onOhlcSourceFailure,
+                                ohlcCallOwner = ohlcCallOwner,
                             )
                         } catch (e: CancellationException) {
                             throw e

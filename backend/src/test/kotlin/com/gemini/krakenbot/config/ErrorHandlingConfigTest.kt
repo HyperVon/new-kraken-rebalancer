@@ -7,6 +7,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
@@ -16,6 +17,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.CancellationException
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
@@ -36,6 +38,23 @@ class ErrorHandlingConfigTest : StringSpec() {
 
         afterTest {
             stopKoin()
+        }
+
+        "should rethrow CancellationException instead of rendering an error response" {
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/cancel") { throw CancellationException("client gone") }
+                    }
+                }
+
+                val body = client.get("/cancel").bodyAsText()
+                // Engine-default handling applies; our JSON error envelope and its
+                // ERROR log must not fire for cancellation.
+                body shouldNotContain "\"error\""
+                body shouldNotContain "\"timestamp\""
+            }
         }
 
         "should return 404 for unknown routes" {

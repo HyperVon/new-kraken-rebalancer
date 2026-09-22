@@ -90,6 +90,20 @@ interface HistoricalOhlcRepository {
     ): HistoricalOhlcSeries?
 
     /**
+     * Returns the newest persisted proof for one exact request `since` plus the candles
+     * inside its proven span — whether or not that span covers any particular window —
+     * so the cache can pace an insufficient same-since request without refetching live.
+     * A null result (no proof, or only legacy rows without coverage) means the caller
+     * must fetch fresh evidence. Truncated-empty marker proofs carry an empty span and
+     * yield no candles; they pace the exact request but never validate a window.
+     */
+    suspend fun loadLatestProofForSince(
+        pair: String,
+        intervalMinutes: Int,
+        sinceEpochSecond: Long,
+    ): HistoricalOhlcSeries?
+
+    /**
      * Persists a completed-candle response and its coverage proof atomically.
      * Returns true if any candle content was added, modified, or removed.
      *

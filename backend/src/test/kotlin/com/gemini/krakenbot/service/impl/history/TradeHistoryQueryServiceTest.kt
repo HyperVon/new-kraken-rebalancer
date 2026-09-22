@@ -42,6 +42,7 @@ import com.gemini.krakenbot.service.AutomaticBaselineStatus
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.SettingsComparisonStatus
 import com.gemini.krakenbot.service.impl.KrakenFundingProvenanceResolver
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -60,13 +61,16 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -6908,6 +6912,78 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 restarted.comparisonAvailability.shouldBeNull()
                 coVerify(exactly = 3) { repository.getSnapshotBefore(any()) }
                 coVerify(exactly = 1) { fixture.fundingProvenanceResolver.prepare(any()) }
+            }
+        }
+
+        "concurrent settings comparison status calls share one evaluation flight" {
+            runTest {
+                val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                val resolutions = AtomicInteger(0)
+                coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } coAnswers {
+                    resolutions.incrementAndGet()
+                    delay(200)
+                    InceptionResolution(
+                        inceptionTime = now,
+                        inceptionSnapshot = null,
+                        isAutoDetected = true,
+                    )
+                }
+                val flightService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = inceptionService,
+                )
+
+                val results = withContext(Dispatchers.IO) {
+                    (1..10).map { async { flightService.getSettingsComparisonStatus(now) } }.awaitAll()
+                }
+
+                resolutions.get() shouldBe 1
+                results.forEach { it shouldBe results.first() }
+            }
+        }
+
+        "a joiner takes over when the flight initiator is cancelled" {
+            runTest {
+                val inceptionService = mockk<InceptionDiscoveryService>(relaxed = true)
+                val resolutions = AtomicInteger(0)
+                val parked = CompletableDeferred<Unit>()
+                var first = true
+                coEvery { inceptionService.resolveInceptionUnderEvidenceLock() } coAnswers {
+                    resolutions.incrementAndGet()
+                    if (first) {
+                        first = false
+                        parked.complete(Unit)
+                        // Initiator parks here until the test cancels it.
+                        awaitCancellation()
+                    }
+                    InceptionResolution(
+                        inceptionTime = now,
+                        inceptionSnapshot = null,
+                        isAutoDetected = true,
+                    )
+                }
+                val flightService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    inceptionDiscoveryService = inceptionService,
+                )
+
+                val initiator = async { flightService.getSettingsComparisonStatus(now) }
+                parked.await()
+                val joiner = async { flightService.getSettingsComparisonStatus(now) }
+                advanceUntilIdle()
+
+                initiator.cancel()
+                val result = joiner.await()
+
+                initiator.isCancelled shouldBe true
+                result shouldBe SettingsComparisonStatus()
+                resolutions.get() shouldBe 2
             }
         }
 

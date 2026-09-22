@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.KrakenApiConstants
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
@@ -613,6 +614,55 @@ class HistoricalPriceResolverTest : StringSpec() {
                     )
                 }
                 failures shouldBe 4
+            }
+        }
+
+        "an unreachable historical window resolves null once and stays quiet across repeated lookups" {
+            runTest {
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSnapshotsInRange(any(), any()) } returns emptyList()
+                val counter = AtomicInteger(0)
+                val wall = Instant.now().epochSecond
+                val pageSize = KrakenApiConstants.OHLC_PAGE_SIZE
+                // Fine tiers return truncated recent pages that never reach January;
+                // the daily tier returns a short recent page (a listing younger than
+                // the valuation instant): no tier can price January 2026.
+                val backing = FakeKrakenService().apply {
+                    ohlcSupplier = { _, interval, _ ->
+                        counter.incrementAndGet()
+                        val duration = interval * 60L
+                        val rows = if (interval >= 1440) 100 else pageSize
+                        val firstStart = wall - (rows + 1) * duration
+                        (0 until rows).map { i -> (firstStart + i * duration) to BigDecimal("1.0") }
+                    }
+                }
+                val cache = HistoricalOhlcCache(backing)
+                val january = Instant.parse("2026-01-15T12:00:00Z")
+
+                val first = HistoricalPriceResolver.resolveHistoricalPrice(
+                    Asset.BTC,
+                    january,
+                    repository,
+                    krakenService,
+                    ohlcCache = cache,
+                )
+                first shouldBe null
+                // One pair times four interval tiers, each attempted exactly once: the
+                // resolver never restarts its candidate search inside one call.
+                counter.get() shouldBe 4
+
+                // Twenty repeated lookups inside the freshness window issue no new
+                // live fetches: each impossible candidate is paced, not retried.
+                repeat(20) {
+                    HistoricalPriceResolver.resolveHistoricalPrice(
+                        Asset.BTC,
+                        january,
+                        repository,
+                        krakenService,
+                        ohlcCache = cache,
+                    ) shouldBe null
+                }
+                counter.get() shouldBe 4
             }
         }
     }

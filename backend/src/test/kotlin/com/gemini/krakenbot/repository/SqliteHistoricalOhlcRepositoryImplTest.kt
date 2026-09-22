@@ -748,7 +748,7 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
             }
         }
 
-        "truncated empty response writes no reusable proof" {
+        "truncated empty response writes a marker that validates no window" {
             runTest {
                 val database = DatabaseConfig.init(
                     "jdbc:sqlite:file:ohlc-trunc-empty-only-${UUID.randomUUID()}?mode=memory&cache=shared",
@@ -763,9 +763,14 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                     mayBeTruncated = true,
                 ) shouldBe false
 
-                // Nothing was proven: no window can be validated from this response.
+                // Nothing was proven: no window can be validated from this response,
+                // but the empty marker persists so the exact request paces its refetch.
                 repository.loadCovered(pair, intervalMinutes, 1_000_000L, 1_100_000L) shouldBe null
-                fetchProofCount(database, pair, intervalMinutes, 1_000_000L) shouldBe 0
+                fetchProofCount(database, pair, intervalMinutes, 1_000_000L) shouldBe 1
+                val marker = repository.loadLatestProofForSince(pair, intervalMinutes, 1_000_000L)
+                checkNotNull(marker).coverageFromEpochSecond shouldBe 1_000_000L
+                marker.coverageUntilEpochSecond shouldBe 1_000_000L
+                marker.candles shouldBe emptyList()
             }
         }
 

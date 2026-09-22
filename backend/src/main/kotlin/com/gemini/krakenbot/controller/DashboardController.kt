@@ -67,6 +67,8 @@ import java.math.BigDecimal
 import java.time.DateTimeException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class DashboardController(
     private val tradeHistoryService: TradeHistoryService,
@@ -79,6 +81,8 @@ class DashboardController(
     private val historyEvidenceCoordinator: HistoryEvidenceCoordinator = HistoryEvidenceCoordinator(),
 ) {
     private val log = LoggerFactory.getLogger(DashboardController::class.java)
+    private val activeProposalRequests = AtomicInteger(0)
+    private val proposalRequestSequence = AtomicLong(0)
 
     fun registerRoutes(routing: Routing) {
         with(routing) {
@@ -526,21 +530,44 @@ class DashboardController(
 
     /** Async slot body: resolves the comparison status without blocking the Settings page. */
     private suspend fun RoutingContext.handleGetSettingsProposalFragment() {
-        val config = configService.getConfig()
-        val status =
-            runCatching { resolveComparisonStatus(config.settings) }
-                .onFailure { log.warn("Comparison baseline status resolution failed in settings fragment", it) }
-                .getOrNull()
-        val html =
-            createHTML(prettyPrint = false).div {
-                id = HtmlIds.COMPARISON_PROPOSAL_SLOT
-                dashboardView.renderSettingsProposalFragment(
-                    this,
-                    status,
-                    config.settings.comparisonStartDate,
+        val requestId = proposalRequestSequence.incrementAndGet()
+        val active = activeProposalRequests.incrementAndGet()
+        val startedNanos = System.nanoTime()
+        try {
+            if (log.isDebugEnabled) {
+                log.debug("settings proposal fragment start; requestId={} active={}", requestId, active)
+            }
+            val config = configService.getConfig()
+            val status =
+                runCatching { resolveComparisonStatus(config.settings) }
+                    .onFailure {
+                        if (it is CancellationException) throw it
+                        log.warn("Comparison baseline status resolution failed in settings fragment", it)
+                    }
+                    .getOrNull()
+            val html =
+                createHTML(prettyPrint = false).div {
+                    id = HtmlIds.COMPARISON_PROPOSAL_SLOT
+                    dashboardView.renderSettingsProposalFragment(
+                        this,
+                        status,
+                        config.settings.comparisonStartDate,
+                    )
+                }
+            call.respondText(html, ContentType.Text.Html)
+            if (log.isDebugEnabled) {
+                log.debug(
+                    "settings proposal fragment done; requestId={} active={} elapsedMs={} availability={} proposal={}",
+                    requestId,
+                    activeProposalRequests.get() - 1,
+                    (System.nanoTime() - startedNanos) / 1_000_000,
+                    status?.comparisonAvailability,
+                    status?.proposal?.status,
                 )
             }
-        call.respondText(html, ContentType.Text.Html)
+        } finally {
+            activeProposalRequests.decrementAndGet()
+        }
     }
 
     /**

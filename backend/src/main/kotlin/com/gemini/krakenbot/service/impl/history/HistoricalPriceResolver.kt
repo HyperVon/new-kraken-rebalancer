@@ -49,6 +49,7 @@ object HistoricalPriceResolver {
         futureTradeUpperBound: Instant? = null,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
         onOhlcSourceFailure: (() -> Unit)? = null,
+        ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): BigDecimal? {
         val normalizedAsset = Asset.normalizeLedgerAsset(asset).uppercase()
         if (normalizedAsset == Asset.USD) {
@@ -152,6 +153,7 @@ object HistoricalPriceResolver {
                             sinceEpochSecond = earliestCandleStart.epochSecond,
                             upTo = eventTime,
                             onDependencyResolved = onOhlcDependencyConsumed,
+                            callOwner = ohlcCallOwner,
                         )
                     } else {
                         krakenService.getOHLC(
@@ -203,6 +205,7 @@ object HistoricalPriceResolver {
                             futureTradeUpperBound = futureTradeUpperBound,
                             onOhlcDependencyConsumed = onOhlcDependencyConsumed,
                             onOhlcSourceFailure = onOhlcSourceFailure,
+                            ohlcCallOwner = ohlcCallOwner,
                         )
                     }
                     if (converted != null) {
@@ -245,6 +248,7 @@ object HistoricalPriceResolver {
         futureTradeUpperBound: Instant?,
         onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)?,
         onOhlcSourceFailure: (() -> Unit)?,
+        ohlcCallOwner: OhlcCallOwner = OhlcCallOwner.OTHER,
     ): BigDecimal? {
         if (quoteConversionDepth >= 1) return null
         val quoteUsdPrice = resolveHistoricalPrice(
@@ -261,6 +265,7 @@ object HistoricalPriceResolver {
             futureTradeUpperBound = futureTradeUpperBound,
             onOhlcDependencyConsumed = onOhlcDependencyConsumed,
             onOhlcSourceFailure = onOhlcSourceFailure,
+            ohlcCallOwner = ohlcCallOwner,
         ) ?: return null
         return quotePrice
             .multiply(quoteUsdPrice)
