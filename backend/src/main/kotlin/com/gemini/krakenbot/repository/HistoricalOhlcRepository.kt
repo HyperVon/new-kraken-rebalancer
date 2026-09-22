@@ -21,12 +21,15 @@ interface HistoricalOhlcRepository {
         upToEpochSecond: Long,
     ): HistoricalOhlcSeries?
 
-    /** Persists a completed-candle response and its coverage proof atomically. */
+    /**
+     * Persists a completed-candle response and its coverage proof atomically.
+     * Returns true if any candle content was added, modified, or removed.
+     */
     suspend fun saveFetch(
         pair: String,
         intervalMinutes: Int,
         sinceEpochSecond: Long,
         fetchedAtEpochSecond: Long,
         candles: List<Pair<Long, BigDecimal>>,
-    )
+    ): Boolean
 }

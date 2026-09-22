@@ -1,8 +1,10 @@
 package com.gemini.krakenbot.repository.impl
 
+import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.RebalancerComparison
+import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheEntry
 import com.gemini.krakenbot.repository.RebalancerComparisonCacheRepository
 import com.gemini.krakenbot.repository.table.RebalancerComparisonCacheTable
@@ -14,6 +16,7 @@ import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
 import java.time.Instant
@@ -23,6 +26,8 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
     private val objectMapper: ObjectMapper,
 ) : RebalancerComparisonCacheRepository {
     private val log = LoggerFactory.getLogger(SqliteRebalancerComparisonCacheRepositoryImpl::class.java)
+
+    private val dependenciesTypeRef = object : TypeReference<List<ConsumedOhlcDependency>>() {}
 
     override suspend fun load(fromEpochMillis: Long, toEpochMillis: Long): RebalancerComparisonCacheEntry? {
         val row = try {
@@ -47,6 +52,11 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
                 row[RebalancerComparisonCacheTable.resultJson],
                 RebalancerComparison::class.java,
             )
+            val ohlcDependencies = runCatching {
+                val raw = row[RebalancerComparisonCacheTable.ohlcDependenciesJson]
+                objectMapper.readValue(raw, dependenciesTypeRef)
+            }.getOrDefault(emptyList())
+
             // Never rehydrate an unavailable result: those outcomes can become valid after a
             // later evidence append or price-provider recovery and are deliberately not cached.
             comparison.takeIf { it.availability == ComparisonAvailability.AVAILABLE }
@@ -54,6 +64,7 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
                     RebalancerComparisonCacheEntry(
                         inputFingerprint = row[RebalancerComparisonCacheTable.inputFingerprint],
                         comparison = it,
+                        ohlcDependencies = ohlcDependencies,
                     )
                 }
         } catch (e: CancellationException) {
@@ -71,14 +82,15 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
         toEpochMillis: Long,
         inputFingerprint: String,
         comparison: RebalancerComparison,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
     ) {
         if (comparison.availability != ComparisonAvailability.AVAILABLE) return
-        val resultJson = try {
-            objectMapper.writeValueAsString(comparison)
+        val (resultJson, dependenciesJson) = try {
+            objectMapper.writeValueAsString(comparison) to objectMapper.writeValueAsString(ohlcDependencies)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            log.warn("Unable to serialize cached comparison result: {}", e.message)
+            log.warn("Unable to serialize cached comparison payload: {}", e.message)
             return
         }
         database.safeTransactionIO(log, "Failed to persist cached comparison result") {
@@ -88,13 +100,46 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
                 it[RebalancerComparisonCacheTable.inputFingerprint] = inputFingerprint
                 it[RebalancerComparisonCacheTable.resultJson] = resultJson
                 it[RebalancerComparisonCacheTable.calculatedAtEpochMillis] = Instant.now().toEpochMilli()
+                it[RebalancerComparisonCacheTable.ohlcDependenciesJson] = dependenciesJson
             }
             pruneSuperseded()
         }
     }
 
+    override suspend fun updateOhlcDependencies(
+        fromEpochMillis: Long,
+        toEpochMillis: Long,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
+    ) {
+        val dependenciesJson = try {
+            objectMapper.writeValueAsString(ohlcDependencies)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Unable to serialize updated comparison cache dependencies: {}", e.message)
+            return
+        }
+        database.safeTransactionIO(log, "Failed to update comparison cache dependencies") {
+            RebalancerComparisonCacheTable.update({
+                (RebalancerComparisonCacheTable.fromEpochMillis eq fromEpochMillis) and
+                    (RebalancerComparisonCacheTable.toEpochMillis eq toEpochMillis)
+            }) {
+                it[RebalancerComparisonCacheTable.ohlcDependenciesJson] = dependenciesJson
+            }
+        }
+    }
+
+    override suspend fun delete(fromEpochMillis: Long, toEpochMillis: Long) {
+        database.safeTransactionIO(log, "Failed to delete invalidated comparison cache entry") {
+            RebalancerComparisonCacheTable.deleteWhere {
+                (RebalancerComparisonCacheTable.fromEpochMillis eq fromEpochMillis) and
+                    (RebalancerComparisonCacheTable.toEpochMillis eq toEpochMillis)
+            }
+        }
+    }
+
     /**
-     * Retains only the newest successful source ranges. Every advancing certified horizon
+     * Retains only the newest 3 successful comparison source ranges total. Every advancing certified horizon
      * would otherwise add a full serialized comparison row that nothing ever reads again;
      * pruning superseded rows in the same transaction as the replacement write guarantees
      * the new entry is durably committed before any old entry is deleted, so a crash can
@@ -129,7 +174,7 @@ class SqliteRebalancerComparisonCacheRepositoryImpl(
     }
 
     private companion object {
-        /** Small bounded set: the newest successful comparison per advancing source range. */
+        /** Small bounded set: the newest 3 successful comparison source ranges total. */
         const val RETAINED_SUCCESSFUL_RANGES = 3
     }
 }

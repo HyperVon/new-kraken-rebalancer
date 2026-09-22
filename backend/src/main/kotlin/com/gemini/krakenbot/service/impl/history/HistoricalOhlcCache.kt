@@ -1,14 +1,21 @@
 package com.gemini.krakenbot.service.impl.history
 
+import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.HistoricalOhlcRepository
 import com.gemini.krakenbot.service.KrakenService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentSkipListMap
+
+sealed interface OhlcRevalidationResult {
+    data class Unchanged(val updatedDependency: ConsumedOhlcDependency) : OhlcRevalidationResult
+    data object ContentChanged : OhlcRevalidationResult
+}
 
 /**
  * Bounded refresh policy for stored OHLC fetches. A covering fetch is trusted only for its
@@ -146,18 +153,33 @@ class HistoricalOhlcCache(
         intervalMinutes: Int,
         sinceEpochSecond: Long,
         upTo: Instant,
+        onDependencyResolved: ((ConsumedOhlcDependency) -> Unit)? = null,
     ): List<Pair<Long, BigDecimal>> {
         val normalizedPair = pair.trim().uppercase()
         val seriesKey = SeriesKey(normalizedPair, intervalMinutes)
         val durationSeconds = intervalMinutes * 60L
 
         memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { covered ->
-            if (!isExpired(covered, intervalMinutes)) return covered.candles
-            return revalidate(seriesKey, covered, normalizedPair, intervalMinutes, sinceEpochSecond, upTo)
+            if (!isExpired(covered, intervalMinutes)) {
+                reportDependency(seriesKey, covered, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+                return covered.candles
+            }
+            val revalidated = revalidate(seriesKey, covered, normalizedPair, intervalMinutes, sinceEpochSecond, upTo)
+            (memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond) ?: covered).let {
+                reportDependency(seriesKey, it, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+            }
+            return revalidated
         }
         loadFromPersistent(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { covered ->
-            if (!isExpired(covered, intervalMinutes)) return covered.candles
-            return revalidate(seriesKey, covered, normalizedPair, intervalMinutes, sinceEpochSecond, upTo)
+            if (!isExpired(covered, intervalMinutes)) {
+                reportDependency(seriesKey, covered, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+                return covered.candles
+            }
+            val revalidated = revalidate(seriesKey, covered, normalizedPair, intervalMinutes, sinceEpochSecond, upTo)
+            (memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond) ?: covered).let {
+                reportDependency(seriesKey, it, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+            }
+            return revalidated
         }
 
         val flightKey = FlightKey(normalizedPair, intervalMinutes.toLong(), sinceEpochSecond)
@@ -173,6 +195,8 @@ class HistoricalOhlcCache(
                 val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
                 val entry = rememberFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed)
                 persistFetch(seriesKey, sinceEpochSecond, fetchWallEpochSecond, completed)
+                val covered = CoveredSeries(FetchRecord(sinceEpochSecond, fetchWallEpochSecond), completed)
+                reportDependency(seriesKey, covered, sinceEpochSecond, intervalMinutes, onDependencyResolved)
                 flight.complete(entry)
                 // An initiator answers with exactly its own completed-candle response.
                 return completed
@@ -185,8 +209,13 @@ class HistoricalOhlcCache(
         }
 
         flight.await()
-        serveFromMemory(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { return it }
-        return getOHLC(normalizedPair, intervalMinutes, sinceEpochSecond, upTo)
+        serveFromMemory(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let {
+            memoryCovered(seriesKey, sinceEpochSecond, upTo.epochSecond)?.let { covered ->
+                reportDependency(seriesKey, covered, sinceEpochSecond, intervalMinutes, onDependencyResolved)
+            }
+            return it
+        }
+        return getOHLC(normalizedPair, intervalMinutes, sinceEpochSecond, upTo, onDependencyResolved)
     }
 
     /**
@@ -262,6 +291,139 @@ class HistoricalOhlcCache(
         return getOHLC(normalizedPair, intervalMinutes, sinceEpochSecond, upTo)
     }
 
+    /**
+     * Revalidates an expired consumed OHLC dependency against the live source without running
+     * price calculations. Returns [OhlcRevalidationResult.ContentChanged] if the newly fetched
+     * candles differ from the dependency's recorded candle content hash; otherwise returns
+     * [OhlcRevalidationResult.Unchanged] with refreshed wall time and freshness deadline.
+     * Concurrent revalidations of the same range share a single flight.
+     */
+    suspend fun revalidateDependency(dependency: ConsumedOhlcDependency): OhlcRevalidationResult {
+        val normalizedPair = dependency.pair.trim().uppercase()
+        val seriesKey = SeriesKey(normalizedPair, dependency.intervalMinutes)
+        val originalSince = dependency.sinceEpochSecond
+        val durationSeconds = dependency.intervalMinutes * 60L
+        val flightKey = FlightKey(normalizedPair, dependency.intervalMinutes.toLong(), originalSince)
+
+        // 1. Check if another concurrent revalidation already refreshed this proof and made it fresh.
+        val covered = memoryCovered(seriesKey, originalSince, originalSince)
+            ?: loadFromPersistent(seriesKey, originalSince, originalSince)
+        if (covered != null && !isExpired(covered, dependency.intervalMinutes)) {
+            val currentHash = computeCandleHash(covered.candles)
+            if (currentHash != dependency.candleContentHash) {
+                return OhlcRevalidationResult.ContentChanged
+            }
+            val updated = dependency.copy(
+                fetchedAtEpochSecond = covered.fetch.fetchWallEpochSecond,
+                freshnessDeadlineEpochSecond = covered.fetch.fetchWallEpochSecond +
+                    refreshPolicy.freshnessSeconds(
+                        covered.candles,
+                        covered.fetch.fetchWallEpochSecond,
+                        dependency.intervalMinutes,
+                    ),
+                candleContentHash = currentHash,
+            )
+            return OhlcRevalidationResult.Unchanged(updated)
+        }
+
+        // 2. Obey failed-revalidation retry pacing without retrying Kraken.
+        if (covered != null && nowProvider().epochSecond < covered.fetch.retryNotBeforeEpochSecond) {
+            return OhlcRevalidationResult.Unchanged(dependency)
+        }
+
+        // 3. Single-flight the live refresh.
+        val (flight, created) = startOrJoinFlight(flightKey)
+        if (created) {
+            try {
+                val fetchWallEpochSecond = nowProvider().epochSecond
+                val fetched = krakenService.getOHLC(
+                    pair = normalizedPair,
+                    interval = dependency.intervalMinutes,
+                    since = originalSince,
+                )
+                val completed = fetched.filter { it.first + durationSeconds < fetchWallEpochSecond }
+                val entry = rememberFetch(seriesKey, originalSince, fetchWallEpochSecond, completed)
+                persistFetch(seriesKey, originalSince, fetchWallEpochSecond, completed)
+                flight.complete(entry)
+                val candles = candlesFrom(entry, originalSince)
+                val newHash = computeCandleHash(candles)
+                return if (newHash != dependency.candleContentHash) {
+                    OhlcRevalidationResult.ContentChanged
+                } else {
+                    val updated = dependency.copy(
+                        fetchedAtEpochSecond = fetchWallEpochSecond,
+                        freshnessDeadlineEpochSecond = fetchWallEpochSecond +
+                            refreshPolicy.freshnessSeconds(candles, fetchWallEpochSecond, dependency.intervalMinutes),
+                        candleContentHash = newHash,
+                    )
+                    OhlcRevalidationResult.Unchanged(updated)
+                }
+            } catch (e: CancellationException) {
+                flight.completeExceptionally(e)
+                throw e
+            } catch (e: Throwable) {
+                flight.completeExceptionally(e)
+                log.warn(
+                    "OHLC revalidation failed; serving stale history for pair {} interval {}: {}",
+                    normalizedPair,
+                    dependency.intervalMinutes,
+                    e.message,
+                )
+                if (covered != null) {
+                    paceFailedRevalidation(covered, dependency.intervalMinutes)
+                }
+                return OhlcRevalidationResult.Unchanged(dependency)
+            } finally {
+                inFlight.remove(flightKey, flight)
+            }
+        }
+
+        // 4. Joiner awaits the shared flight.
+        try {
+            val entry = flight.await()
+            val candles = candlesFrom(entry, originalSince)
+            val newHash = computeCandleHash(candles)
+            val wall = checkNotNull(entry.coveringFetch(originalSince, originalSince)).fetchWallEpochSecond
+            return if (newHash != dependency.candleContentHash) {
+                OhlcRevalidationResult.ContentChanged
+            } else {
+                val updated = dependency.copy(
+                    fetchedAtEpochSecond = wall,
+                    freshnessDeadlineEpochSecond = wall +
+                        refreshPolicy.freshnessSeconds(candles, wall, dependency.intervalMinutes),
+                    candleContentHash = newHash,
+                )
+                OhlcRevalidationResult.Unchanged(updated)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            return OhlcRevalidationResult.Unchanged(dependency)
+        }
+    }
+
+    private fun reportDependency(
+        seriesKey: SeriesKey,
+        covered: CoveredSeries,
+        sinceEpochSecond: Long,
+        intervalMinutes: Int,
+        onDependencyResolved: ((ConsumedOhlcDependency) -> Unit)?,
+    ) {
+        if (onDependencyResolved == null) return
+        val candles = covered.candles
+        val fetch = covered.fetch
+        val freshness = refreshPolicy.freshnessSeconds(candles, fetch.fetchWallEpochSecond, intervalMinutes)
+        val dependency = ConsumedOhlcDependency(
+            pair = seriesKey.pair,
+            intervalMinutes = intervalMinutes,
+            sinceEpochSecond = sinceEpochSecond,
+            fetchedAtEpochSecond = fetch.fetchWallEpochSecond,
+            freshnessDeadlineEpochSecond = fetch.fetchWallEpochSecond + freshness,
+            candleContentHash = computeCandleHash(candles),
+        )
+        onDependencyResolved(dependency)
+    }
+
     private fun paceFailedRevalidation(covered: CoveredSeries, intervalMinutes: Int) {
         covered.fetch.retryNotBeforeEpochSecond = nowProvider().epochSecond +
             refreshPolicy.freshnessSeconds(covered.candles, covered.fetch.fetchWallEpochSecond, intervalMinutes)
@@ -332,7 +494,7 @@ class HistoricalOhlcCache(
             candles = stored.candles,
         )
         // loadCovered only returns a fetch that provably covers the requested window.
-        return CoveredSeries(FetchRecord(stored.sinceEpochSecond, stored.fetchedAtEpochSecond), stored.candles)
+        return memoryCovered(seriesKey, sinceEpochSecond, upToEpochSecond)
     }
 
     private fun rememberFetch(
@@ -404,5 +566,17 @@ class HistoricalOhlcCache(
             }
         }!!
         return deferred to created
+    }
+
+    companion object {
+        fun computeCandleHash(candles: Collection<Pair<Long, BigDecimal>>): String {
+            if (candles.isEmpty()) return "empty"
+            val md = MessageDigest.getInstance("SHA-256")
+            candles.distinctBy { it.first }.sortedBy { it.first }.forEach { (start, close) ->
+                md.update(start.toString().toByteArray())
+                md.update(close.stripTrailingZeros().toPlainString().toByteArray())
+            }
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
     }
 }

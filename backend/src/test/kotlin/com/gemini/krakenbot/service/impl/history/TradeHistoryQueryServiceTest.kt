@@ -25,6 +25,7 @@ import com.gemini.krakenbot.model.SimpleFundingProvenanceResolver
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -54,7 +55,11 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
@@ -510,6 +515,29 @@ class TradeHistoryQueryServiceTest : StringSpec() {
             }
         }
 
+        "loadCachedComparison degrades gracefully when cache throws an exception" {
+            runTest {
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 =
+                    snapshot(now.plusSeconds(3600), "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                val brokenCache = mockk<RebalancerComparisonCacheRepository>()
+                coEvery { brokenCache.load(any(), any()) } throws RuntimeException("sqlite disk failure")
+                val cachedService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    comparisonCacheRepository = brokenCache,
+                )
+                cachedService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+            }
+        }
+
         "persisted comparison is reused across restart via the durable funding identity" {
             runTest {
                 val database = DatabaseConfig.init(":memory:")
@@ -693,8 +721,7 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                         )
                     }
                 }
-                var fundingClock = now
-                var ohlcClock = Instant.now()
+                var clock = now.plusSeconds(36_000)
                 val cache = CountingComparisonCache(durableCache)
                 fun buildService(kraken: FakeKrakenService) = TradeHistoryQueryService(
                     repository = repository,
@@ -703,19 +730,20 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                     orderIntentRepository = orderIntentRepository,
                     fundingProvenanceResolver = KrakenFundingProvenanceResolver(
                         kraken,
-                        nowProvider = { fundingClock },
+                        nowProvider = { clock },
                         durableIdentityStore = identityStore,
                     ),
                     krakenService = kraken,
                     historicalOhlcCache = HistoricalOhlcCache(
                         kraken,
                         persistentRepository = ohlcRepository,
-                        nowProvider = { ohlcClock },
+                        nowProvider = { clock },
                     ),
                     comparisonCacheRepository = cache,
+                    nowProvider = { clock },
                 )
 
-                // 1. Cold start: authoritative replay, funding prepared, OHLC fetched, persisted.
+                // 1. Initial cold load: authoritative replay, funding prepared, OHLC fetched, persisted.
                 val krakenA = fundingKraken()
                 val serviceA = buildService(krakenA)
                 val coldResult = serviceA.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
@@ -727,31 +755,35 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 val coldOhlcCalls = ohlcCalls
                 coldOhlcCalls shouldBeGreaterThan 0
 
-                // 2. Immediate repeat: cache hit.
+                // 2. Immediate repeat: cache hit (0 replays, 0 OHLC, 0 funding).
                 serviceA.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 2
                 cache.saveCount shouldBe 1
+                ohlcCalls shouldBe coldOhlcCalls
+                krakenA.getDepositStatusCallCount shouldBe 1
 
-                // 3. New UNSTABLE snapshot beyond the certified horizon: still a hit.
+                // 3. Append unstable live-tail snapshot: still a hit (0 replays).
                 snapshotRows += liveTailSnap
                 metadata[SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION] = "2"
                 serviceA.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 3
                 cache.saveCount shouldBe 1
+                ohlcCalls shouldBe coldOhlcCalls
 
                 // 4. Five minutes later with unchanged stable evidence: funding TTL expired, the
-                // durable identity still certifies the cached result. Still a hit.
-                fundingClock = now.plusSeconds(300)
+                // durable identity still certifies the cached result. Still a hit (0 replays).
+                clock = clock.plusSeconds(300)
                 serviceA.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
                     ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 4
                 cache.saveCount shouldBe 1
                 krakenA.getDepositStatusCallCount shouldBe 1
+                ohlcCalls shouldBe coldOhlcCalls
 
                 // 5. Process restart: brand-new resolver and OHLC cache over the same durable
-                // stores, no funding or OHLC API calls merely to validate reuse.
+                // stores, no funding or OHLC API calls merely to validate reuse (0 replays, 0 OHLC, 0 funding).
                 val krakenB = fundingKraken()
                 val serviceB = buildService(krakenB)
                 serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
@@ -761,7 +793,53 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 krakenB.getDepositStatusCallCount shouldBe 0
                 ohlcCalls shouldBe coldOhlcCalls
 
-                // 6. The certified horizon advances to cover the tail: exactly one replay.
+                // 6. Advance time past OHLC freshness deadline, provider returns IDENTICAL candles:
+                // Revalidation checks expired OHLC evidence. Since candle content is unchanged,
+                // the cache entry's deadlines are refreshed in the DB and the cached comparison is served.
+                // 0 calculation replays, 1 bounded OHLC refresh.
+                clock = clock.plusSeconds(3601)
+                val ohlcCallsBeforeStep6 = ohlcCalls
+                val updateOhlcBeforeStep6 = cache.updateOhlcCount
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 6
+                cache.saveCount shouldBe 1
+                ohlcCalls shouldBeGreaterThan ohlcCallsBeforeStep6
+                cache.updateOhlcCount shouldBeGreaterThan updateOhlcBeforeStep6
+                val ohlcCallsAfterStep6 = ohlcCalls
+
+                // 7. Immediate repeat after OHLC revalidation:
+                // Fast path: all dependencies are now fresh in DB/memory.
+                // 0 calculation replays, 0 OHLC calls.
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 7
+                cache.saveCount shouldBe 1
+                ohlcCalls shouldBe ohlcCallsAfterStep6
+
+                // 8. Advance time past OHLC freshness deadline, provider returns CORRECTED candles:
+                // Revalidation detects content hash difference, invalidates/deletes the cached comparison,
+                // and executes exactly 1 authoritative calculation replay.
+                clock = clock.plusSeconds(3601)
+                ohlcClose = "51000"
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 8
+                cache.saveCount shouldBe 2
+                ohlcCalls shouldBeGreaterThan ohlcCallsAfterStep6
+                val ohlcCallsAfterStep8 = ohlcCalls
+
+                // 9. Immediate repeat after correction:
+                // Cache hit with newly persisted result and candle hashes.
+                // 0 calculation replays, 0 OHLC calls.
+                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                cache.loadCount shouldBe 9
+                cache.saveCount shouldBe 2
+                ohlcCalls shouldBe ohlcCallsAfterStep8
+
+                // 10. Advance certified horizon:
+                // The certified horizon advances to cover the live tail: exactly one replay.
                 metadata[SyncMetadataKeys.TRADE_COVERAGE_HORIZON_EPOCH_SEC] =
                     (now.epochSecond + 36_060L).toString()
                 ledgerMetadata[SyncMetadataKeys.LEDGER_COVERAGE_HORIZON_EPOCH_SEC] =
@@ -769,41 +847,282 @@ class TradeHistoryQueryServiceTest : StringSpec() {
                 metadata[SyncMetadataKeys.COMPARISON_EVIDENCE_REVISION] = "3"
                 serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
                     ComparisonAvailability.AVAILABLE
-                cache.loadCount shouldBe 6
-                cache.saveCount shouldBe 2
-
-                // 7. Immediate repeat: hit again.
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
-                    ComparisonAvailability.AVAILABLE
-                cache.loadCount shouldBe 7
-                cache.saveCount shouldBe 2
-
-                // 8. Time passes: the persisted OHLC fetches age past their freshness window,
-                // but with no stable evidence change the comparison remains a hit — no replay
-                // and no OHLC access at all.
-                ohlcClock = ohlcClock.plusSeconds(604_801)
-                val ohlcCallsBeforeBackfill = ohlcCalls
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
-                    ComparisonAvailability.AVAILABLE
-                cache.loadCount shouldBe 8
-                cache.saveCount shouldBe 2
-                ohlcCalls shouldBe ohlcCallsBeforeBackfill
-
-                // 9. A provider backfill corrects the consumed candle: the OHLC content
-                // revision advances and the comparison replays exactly once. The replay's
-                // price resolution revalidates the stale persisted fetches in bounded
-                // single-flighted requests, and the corrected result is cached again.
-                ohlcClose = "51000"
-                metadata[SyncMetadataKeys.OHLC_CANDLE_CONTENT_REVISION] = "1"
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
-                    ComparisonAvailability.AVAILABLE
-                cache.loadCount shouldBe 9
-                cache.saveCount shouldBe 3
-                ohlcCalls shouldBeGreaterThan ohlcCallsBeforeBackfill
-                serviceB.getRebalancerComparison(Instant.EPOCH, liveTailSnap.timestamp).availability shouldBe
-                    ComparisonAvailability.AVAILABLE
                 cache.loadCount shouldBe 10
                 cache.saveCount shouldBe 3
+            }
+        }
+
+        "regression: external OHLC correction without local row change revalidates and replays once" {
+            runTest {
+                val database = DatabaseConfig.init(":memory:")
+                val ohlcRepository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val durableCache = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "50000.00", btc = "1.0" to "0.00", usdBalance = "50000.00")
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers
+                    { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    RebalancerOrderIdentities()
+
+                var clock = now.plusSeconds(7200)
+                var ohlcClose = "50000"
+                var ohlcCalls = 0
+                val kraken = FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        ohlcCalls++
+                        listOf((snap2.timestamp.epochSecond - 900L) to BigDecimal(ohlcClose))
+                    }
+                }
+                val countingCache = CountingComparisonCache(durableCache)
+                val queryService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = kraken,
+                    historicalOhlcCache = HistoricalOhlcCache(
+                        kraken,
+                        persistentRepository = ohlcRepository,
+                        nowProvider = { clock },
+                    ),
+                    comparisonCacheRepository = countingCache,
+                    nowProvider = { clock },
+                )
+
+                // Initial calculation
+                val initial = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                initial.availability shouldBe ComparisonAvailability.AVAILABLE
+                countingCache.saveCount shouldBe 1
+                val initialOhlcCalls = ohlcCalls
+
+                // Provider corrects candle without any local row change
+                clock = clock.plusSeconds(3601)
+                ohlcClose = "55000"
+
+                val corrected = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                corrected.availability shouldBe ComparisonAvailability.AVAILABLE
+                countingCache.saveCount shouldBe 2 // exactly 1 replay
+                ohlcCalls shouldBeGreaterThan initialOhlcCalls
+
+                // Subsequent call hits cache
+                val cached = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                cached.availability shouldBe ComparisonAvailability.AVAILABLE
+                countingCache.saveCount shouldBe 2 // 0 additional replays
+            }
+        }
+
+        "regression: empty OHLC backfill promotes unavailable comparison to available without local row edits" {
+            runTest {
+                val database = DatabaseConfig.init(":memory:")
+                val ohlcRepository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val durableCache = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "50000.00", btc = "1.0" to "0.00", usdBalance = "50000.00")
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers
+                    { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    RebalancerOrderIdentities()
+
+                var clock = now.plusSeconds(7200)
+                var returnEmpty = true
+                var ohlcCalls = 0
+                val kraken = FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        ohlcCalls++
+                        if (returnEmpty) {
+                            emptyList()
+                        } else {
+                            listOf((snap2.timestamp.epochSecond - 900L) to BigDecimal("50000"))
+                        }
+                    }
+                }
+                val countingCache = CountingComparisonCache(durableCache)
+                val queryService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = kraken,
+                    historicalOhlcCache = HistoricalOhlcCache(
+                        kraken,
+                        persistentRepository = ohlcRepository,
+                        nowProvider = { clock },
+                    ),
+                    comparisonCacheRepository = countingCache,
+                    nowProvider = { clock },
+                )
+
+                // 1. Initially missing price: comparison is UNAVAILABLE (and NOT cached)
+                val initial = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                initial.availability shouldBe ComparisonAvailability.UNAVAILABLE
+                countingCache.saveCount shouldBe 0
+
+                // 2. Provider backfills candles; clock advances past empty-result freshness (600s)
+                clock = clock.plusSeconds(601)
+                returnEmpty = false
+
+                val backfilled = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                backfilled.availability shouldBe ComparisonAvailability.AVAILABLE
+                countingCache.saveCount shouldBe 1
+
+                // 3. Repeat is a cache hit
+                val cached = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                cached.availability shouldBe ComparisonAvailability.AVAILABLE
+                countingCache.saveCount shouldBe 1
+            }
+        }
+
+        "regression: concurrent expired comparison requests share single OHLC flight with zero replays" {
+            runTest {
+                val database = DatabaseConfig.init(":memory:")
+                val ohlcRepository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val durableCache = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "50000.00", btc = "1.0" to "0.00", usdBalance = "50000.00")
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers
+                    { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    RebalancerOrderIdentities()
+
+                var clock = now.plusSeconds(7200)
+                var ohlcCalls = 0
+                val kraken = FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        ohlcCalls++
+                        Thread.sleep(100)
+                        listOf((snap2.timestamp.epochSecond - 900L) to BigDecimal("50000"))
+                    }
+                }
+                val countingCache = CountingComparisonCache(durableCache)
+                val queryService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = kraken,
+                    historicalOhlcCache = HistoricalOhlcCache(
+                        kraken,
+                        persistentRepository = ohlcRepository,
+                        nowProvider = { clock },
+                    ),
+                    comparisonCacheRepository = countingCache,
+                    nowProvider = { clock },
+                )
+
+                // Initial load
+                queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp).availability shouldBe
+                    ComparisonAvailability.AVAILABLE
+                countingCache.saveCount shouldBe 1
+                val initialOhlcCalls = ohlcCalls
+
+                // Advance clock past freshness deadline
+                clock = clock.plusSeconds(3601)
+
+                // Concurrent queries hit the expired cache
+                val results = withContext(Dispatchers.IO) {
+                    (1..4).map {
+                        async { queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp) }
+                    }.awaitAll()
+                }
+
+                results.forEach { it.availability shouldBe ComparisonAvailability.AVAILABLE }
+                countingCache.saveCount shouldBe 1 // 0 calculation replays
+                ohlcCalls shouldBe initialOhlcCalls + 1 // exactly 1 shared OHLC flight
+            }
+        }
+
+        "regression: expired comparison revalidation on provider error serves stale cache without db update" {
+            runTest {
+                val database = DatabaseConfig.init(":memory:")
+                val ohlcRepository = SqliteHistoricalOhlcRepositoryImpl(database)
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val durableCache = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val snap1 = snapshot(now, "100000.00", btc = "1.0" to "50000.00", usdBalance = "50000.00")
+                val snap2 = snapshot(now.plusSeconds(3600), "50000.00", btc = "1.0" to "0.00", usdBalance = "50000.00")
+                coEvery { repository.getAllSnapshotsInRange(any(), any()) } returns listOf(snap1, snap2)
+                coEvery { repository.getSnapshotBefore(any()) } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(any()) } coAnswers { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { ledgerRepository.getSyncMetadata(any()) } coAnswers
+                    { CERTIFIED_COVERAGE_DEFAULTS[firstArg()] }
+                coEvery { orderIntentRepository.getKnownRebalancerOrderIdentities(any(), any()) } returns
+                    RebalancerOrderIdentities()
+
+                var clock = now.plusSeconds(7200)
+                var ohlcCalls = 0
+                var ohlcShouldFail = false
+                val kraken = FakeKrakenService().apply {
+                    ohlcSupplier = { _, _, _ ->
+                        ohlcCalls++
+                        if (ohlcShouldFail) error("Kraken OHLC outage")
+                        listOf((snap2.timestamp.epochSecond - 900L) to BigDecimal("50000"))
+                    }
+                }
+                val countingCache = CountingComparisonCache(durableCache)
+                val queryService = TradeHistoryQueryService(
+                    repository = repository,
+                    portfolioStatsRepository = statsRepository,
+                    ledgerRepository = ledgerRepository,
+                    orderIntentRepository = orderIntentRepository,
+                    krakenService = kraken,
+                    historicalOhlcCache = HistoricalOhlcCache(
+                        kraken,
+                        persistentRepository = ohlcRepository,
+                        nowProvider = { clock },
+                    ),
+                    comparisonCacheRepository = countingCache,
+                    nowProvider = { clock },
+                )
+
+                // 1. Initial calculation populates cache
+                val initial = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                initial.availability shouldBe ComparisonAvailability.AVAILABLE
+                countingCache.saveCount shouldBe 1
+                countingCache.updateOhlcCount shouldBe 0
+                ohlcCalls shouldBe 1
+
+                // 2. Advance clock past freshness deadline so dependency expires
+                clock = clock.plusSeconds(100_000L)
+                ohlcShouldFail = true
+
+                // 3. Request revalidation when provider fails -> serves stale cached comparison without db update
+                val cached = queryService.getRebalancerComparison(Instant.EPOCH, snap2.timestamp)
+                cached.availability shouldBe ComparisonAvailability.AVAILABLE
+                cached.points shouldBe initial.points
+                countingCache.saveCount shouldBe 1 // 0 replays
+                countingCache.updateOhlcCount shouldBe 0 // no db write on provider failure
+                ohlcCalls shouldBe 2 // attempted revalidation
             }
         }
 
@@ -6489,6 +6808,10 @@ private class CountingComparisonCache(private val delegate: RebalancerComparison
         private set
     var saveCount = 0
         private set
+    var updateOhlcCount = 0
+        private set
+    var deleteCount = 0
+        private set
 
     override suspend fun load(fromEpochMillis: Long, toEpochMillis: Long): RebalancerComparisonCacheEntry? {
         loadCount++
@@ -6500,9 +6823,24 @@ private class CountingComparisonCache(private val delegate: RebalancerComparison
         toEpochMillis: Long,
         inputFingerprint: String,
         comparison: com.gemini.krakenbot.model.RebalancerComparison,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
     ) {
         saveCount++
-        delegate.save(fromEpochMillis, toEpochMillis, inputFingerprint, comparison)
+        delegate.save(fromEpochMillis, toEpochMillis, inputFingerprint, comparison, ohlcDependencies)
+    }
+
+    override suspend fun updateOhlcDependencies(
+        fromEpochMillis: Long,
+        toEpochMillis: Long,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
+    ) {
+        updateOhlcCount++
+        delegate.updateOhlcDependencies(fromEpochMillis, toEpochMillis, ohlcDependencies)
+    }
+
+    override suspend fun delete(fromEpochMillis: Long, toEpochMillis: Long) {
+        deleteCount++
+        delegate.delete(fromEpochMillis, toEpochMillis)
     }
 }
 
@@ -6511,6 +6849,10 @@ private class InMemoryComparisonCache : RebalancerComparisonCacheRepository {
     var loadCount = 0
         private set
     var saveCount = 0
+        private set
+    var updateOhlcCount = 0
+        private set
+    var deleteCount = 0
         private set
     val size: Int
         get() = stored.size
@@ -6525,9 +6867,30 @@ private class InMemoryComparisonCache : RebalancerComparisonCacheRepository {
         toEpochMillis: Long,
         inputFingerprint: String,
         comparison: com.gemini.krakenbot.model.RebalancerComparison,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
     ) {
         saveCount++
-        stored[fromEpochMillis to toEpochMillis] = RebalancerComparisonCacheEntry(inputFingerprint, comparison)
+        stored[fromEpochMillis to toEpochMillis] = RebalancerComparisonCacheEntry(
+            inputFingerprint = inputFingerprint,
+            comparison = comparison,
+            ohlcDependencies = ohlcDependencies,
+        )
+    }
+
+    override suspend fun updateOhlcDependencies(
+        fromEpochMillis: Long,
+        toEpochMillis: Long,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
+    ) {
+        updateOhlcCount++
+        stored[fromEpochMillis to toEpochMillis]?.let { existing ->
+            stored[fromEpochMillis to toEpochMillis] = existing.copy(ohlcDependencies = ohlcDependencies)
+        }
+    }
+
+    override suspend fun delete(fromEpochMillis: Long, toEpochMillis: Long) {
+        deleteCount++
+        stored.remove(fromEpochMillis to toEpochMillis)
     }
 }
 
@@ -6540,7 +6903,20 @@ private class ThrowingComparisonCache : RebalancerComparisonCacheRepository {
         toEpochMillis: Long,
         inputFingerprint: String,
         comparison: com.gemini.krakenbot.model.RebalancerComparison,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
     ) {
         error("cache write failure")
+    }
+
+    override suspend fun updateOhlcDependencies(
+        fromEpochMillis: Long,
+        toEpochMillis: Long,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
+    ) {
+        error("cache update failure")
+    }
+
+    override suspend fun delete(fromEpochMillis: Long, toEpochMillis: Long) {
+        error("cache delete failure")
     }
 }

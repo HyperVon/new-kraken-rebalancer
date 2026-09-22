@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.repository
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -13,6 +14,8 @@ import com.gemini.krakenbot.repository.table.RebalancerComparisonCacheTable
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
@@ -145,6 +148,88 @@ class SqliteRebalancerComparisonCacheRepositoryImplTest : StringSpec() {
                 val restarted = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
                 restarted.load(0L, 5L * hourMillis)?.inputFingerprint shouldBe "fingerprint-5"
                 restarted.load(0L, 1L * hourMillis) shouldBe null
+            }
+        }
+
+        "round trips, updates, and deletes consumed OHLC dependencies" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:comparison-cache-deps-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val repository = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val from = 1000L
+                val to = 2000L
+                val dep1 = ConsumedOhlcDependency(
+                    pair = "XXBTZUSD",
+                    intervalMinutes = 60,
+                    sinceEpochSecond = 500L,
+                    fetchedAtEpochSecond = 600L,
+                    freshnessDeadlineEpochSecond = 700L,
+                    candleContentHash = "hash1",
+                )
+                val comparison = comparison()
+
+                repository.save(from, to, "fp-1", comparison, listOf(dep1))
+                val loaded = repository.load(from, to)
+                loaded shouldBe RebalancerComparisonCacheEntry(
+                    inputFingerprint = "fp-1",
+                    comparison = comparison,
+                    ohlcDependencies = listOf(dep1),
+                )
+
+                val updatedDep = dep1.copy(freshnessDeadlineEpochSecond = 900L)
+                repository.updateOhlcDependencies(from, to, listOf(updatedDep))
+                val loadedAfterUpdate = repository.load(from, to)
+                loadedAfterUpdate?.ohlcDependencies shouldBe listOf(updatedDep)
+
+                repository.delete(from, to)
+                repository.load(from, to) shouldBe null
+            }
+        }
+
+        "handles serialization failure gracefully" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:comparison-cache-err-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val failingMapper = mockk<ObjectMapper>()
+                every { failingMapper.writeValueAsString(any()) } throws RuntimeException("serialization boom")
+                val repository = SqliteRebalancerComparisonCacheRepositoryImpl(database, failingMapper)
+                repository.save(0L, 1L, "fp", comparison(), emptyList())
+                repository.updateOhlcDependencies(0L, 1L, emptyList())
+                repository.load(0L, 1L) shouldBe null
+            }
+        }
+
+        "handles corrupt ohlcDependenciesJson gracefully by defaulting to emptyList" {
+            runTest {
+                val database = DatabaseConfig.init(
+                    "jdbc:sqlite:file:comparison-cache-corrupt-${UUID.randomUUID()}?mode=memory&cache=shared",
+                )
+                val mapper = jacksonObjectMapper().apply {
+                    registerModule(JavaTimeModule())
+                    disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                }
+                val repository = SqliteRebalancerComparisonCacheRepositoryImpl(database, mapper)
+                val comparison = comparison()
+                val comparisonJson = mapper.writeValueAsString(comparison)
+                transaction(database) {
+                    RebalancerComparisonCacheTable.insert {
+                        it[fromEpochMillis] = 100L
+                        it[toEpochMillis] = 200L
+                        it[inputFingerprint] = "fp"
+                        it[resultJson] = comparisonJson
+                        it[ohlcDependenciesJson] = "corrupt json string {"
+                        it[calculatedAtEpochMillis] = 1000L
+                    }
+                }
+                val loaded = repository.load(100L, 200L)
+                loaded?.comparison shouldBe comparison
+                loaded?.ohlcDependencies shouldBe emptyList()
             }
         }
     }

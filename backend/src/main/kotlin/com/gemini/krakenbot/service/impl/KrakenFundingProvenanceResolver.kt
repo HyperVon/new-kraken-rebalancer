@@ -25,6 +25,15 @@ import java.time.Instant
  * Funding (Beta) List Funding Deposits / List Funding Withdrawals are the primary
  * evidence source; the deprecated DepositStatus/WithdrawStatus endpoints are only
  * consulted to enrich records whose modern funding-method metadata is unavailable.
+ *
+ * Funding Provenance Immutability Contract:
+ * Historical Kraken deposits, withdrawals, and transfers represent settled ledger events
+ * whose provenance identity is immutable once observed. Kraken does not mutate the
+ * method, status, or asset classification of a settled historical funding record post-facto;
+ * any subsequent financial event creates a distinct ledger record with a new timestamp and ID,
+ * which advances the local ledger coverage and changes the comparison's consumed evidence digest.
+ * Therefore, durable funding identity survives in-memory TTL expiration and application restarts,
+ * enabling deterministic cached comparison hits with 0 external funding API calls on restart.
  */
 class KrakenFundingProvenanceResolver(
     private val krakenService: KrakenService,

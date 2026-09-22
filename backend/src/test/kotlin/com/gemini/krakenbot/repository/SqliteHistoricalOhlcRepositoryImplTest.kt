@@ -34,7 +34,8 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
                 val repository = SqliteHistoricalOhlcRepositoryImpl(database)
                 val candles = listOf(1_000L to BigDecimal("0.0175"), 1_900L to BigDecimal("0.0179"))
 
-                repository.saveFetch(pair, intervalMinutes, 0L, 5_000L, candles)
+                val changedFirst = repository.saveFetch(pair, intervalMinutes, 0L, 5_000L, candles)
+                changedFirst shouldBe true
                 val revisionAfterFirst = comparisonRevision(database)
                 val ohlcRevisionAfterFirst = ohlcRevision(database)
                 revisionAfterFirst shouldBe "1"
@@ -42,12 +43,14 @@ class SqliteHistoricalOhlcRepositoryImplTest : StringSpec() {
 
                 // A revalidation returning identical candle content must not invalidate any
                 // comparison cache: only the fetch-proof timestamp moves.
-                repository.saveFetch(pair, intervalMinutes, 0L, 9_000L, candles)
+                val changedIdentical = repository.saveFetch(pair, intervalMinutes, 0L, 9_000L, candles)
+                changedIdentical shouldBe false
                 comparisonRevision(database) shouldBe revisionAfterFirst
                 ohlcRevision(database) shouldBe ohlcRevisionAfterFirst
 
                 // An empty revalidation of a window with no candles changes no evidence.
-                repository.saveFetch("DELISTEDUSD", intervalMinutes, 0L, 9_000L, emptyList())
+                val changedEmpty = repository.saveFetch("DELISTEDUSD", intervalMinutes, 0L, 9_000L, emptyList())
+                changedEmpty shouldBe false
                 comparisonRevision(database) shouldBe revisionAfterFirst
                 ohlcRevision(database) shouldBe ohlcRevisionAfterFirst
             }

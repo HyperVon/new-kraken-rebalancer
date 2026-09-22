@@ -9,6 +9,7 @@ import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greaterEq
+import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.notInList
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -44,18 +45,21 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
             .firstOrNull()
             ?: return@readTransactionIO null
 
+        val fetchSince = fetch[HistoricalOhlcFetchTable.sinceEpochSecond]
+        val fetchedAt = fetch[HistoricalOhlcFetchTable.fetchedAtEpochSecond]
         val candles = HistoricalOhlcCandleTable
             .selectAll()
             .where {
                 (HistoricalOhlcCandleTable.pair eq pair) and
                     (HistoricalOhlcCandleTable.intervalMinutes eq intervalMinutes) and
-                    (HistoricalOhlcCandleTable.candleStartEpochSecond greaterEq sinceEpochSecond)
+                    (HistoricalOhlcCandleTable.candleStartEpochSecond greaterEq fetchSince) and
+                    (HistoricalOhlcCandleTable.candleStartEpochSecond less fetchedAt)
             }
             .orderBy(HistoricalOhlcCandleTable.candleStartEpochSecond, SortOrder.ASC)
             .map { it[HistoricalOhlcCandleTable.candleStartEpochSecond] to it[HistoricalOhlcCandleTable.close] }
 
         HistoricalOhlcSeries(
-            sinceEpochSecond = fetch[HistoricalOhlcFetchTable.sinceEpochSecond],
+            sinceEpochSecond = fetchSince,
             fetchedAtEpochSecond = fetch[HistoricalOhlcFetchTable.fetchedAtEpochSecond],
             candles = candles,
         )
@@ -67,28 +71,42 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
         sinceEpochSecond: Long,
         fetchedAtEpochSecond: Long,
         candles: List<Pair<Long, BigDecimal>>,
-    ) {
+    ): Boolean {
+        var contentChanged = false
         database.safeTransactionIO(log, "Failed to persist historical OHLC evidence") {
-            var contentChanged = false
-            candles.distinctBy { it.first }.forEach { (candleStart, close) ->
-                val existing = HistoricalOhlcCandleTable
+            if (candles.isEmpty()) {
+                val existingCount = HistoricalOhlcCandleTable
                     .selectAll()
                     .where {
                         (HistoricalOhlcCandleTable.pair eq pair) and
                             (HistoricalOhlcCandleTable.intervalMinutes eq intervalMinutes) and
-                            (HistoricalOhlcCandleTable.candleStartEpochSecond eq candleStart)
+                            (HistoricalOhlcCandleTable.candleStartEpochSecond greaterEq sinceEpochSecond)
                     }
-                    .limit(1)
-                    .firstOrNull()
-                if (existing == null || existing[HistoricalOhlcCandleTable.close].compareTo(close) != 0) {
+                    .count()
+                if (existingCount > 0L) {
                     contentChanged = true
                 }
-                HistoricalOhlcCandleTable.upsert {
-                    it[HistoricalOhlcCandleTable.pair] = pair
-                    it[HistoricalOhlcCandleTable.intervalMinutes] = intervalMinutes
-                    it[HistoricalOhlcCandleTable.candleStartEpochSecond] = candleStart
-                    it[HistoricalOhlcCandleTable.close] = close
-                    it[HistoricalOhlcCandleTable.fetchedAtEpochSecond] = fetchedAtEpochSecond
+            } else {
+                candles.distinctBy { it.first }.forEach { (candleStart, close) ->
+                    val existing = HistoricalOhlcCandleTable
+                        .selectAll()
+                        .where {
+                            (HistoricalOhlcCandleTable.pair eq pair) and
+                                (HistoricalOhlcCandleTable.intervalMinutes eq intervalMinutes) and
+                                (HistoricalOhlcCandleTable.candleStartEpochSecond eq candleStart)
+                        }
+                        .limit(1)
+                        .firstOrNull()
+                    if (existing == null || existing[HistoricalOhlcCandleTable.close].compareTo(close) != 0) {
+                        contentChanged = true
+                    }
+                    HistoricalOhlcCandleTable.upsert {
+                        it[HistoricalOhlcCandleTable.pair] = pair
+                        it[HistoricalOhlcCandleTable.intervalMinutes] = intervalMinutes
+                        it[HistoricalOhlcCandleTable.candleStartEpochSecond] = candleStart
+                        it[HistoricalOhlcCandleTable.close] = close
+                        it[HistoricalOhlcCandleTable.fetchedAtEpochSecond] = fetchedAtEpochSecond
+                    }
                 }
             }
             HistoricalOhlcFetchTable.upsert {
@@ -106,6 +124,7 @@ class SqliteHistoricalOhlcRepositoryImpl(private val database: Database) : Histo
                 bumpSyncMetadataCounter(SyncMetadataKeys.OHLC_CANDLE_CONTENT_REVISION)
             }
         }
+        return contentChanged
     }
 
     /**

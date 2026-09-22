@@ -15,6 +15,7 @@ import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.hasValidEconomicFields
 import com.gemini.krakenbot.model.isHistoricallyReplayable
+import com.gemini.krakenbot.repository.ConsumedOhlcDependency
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.OrderIntentRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -122,6 +123,24 @@ class TradeHistoryQueryService(
         val revision: String,
         val digest: String,
     )
+
+    private val comparisonInFlight =
+        ConcurrentHashMap<String, CompletableDeferred<RebalancerComparison>>()
+
+    private fun startOrJoinComparisonFlight(
+        flightKey: String,
+    ): Pair<CompletableDeferred<RebalancerComparison>, Boolean> {
+        var created = false
+        val deferred = comparisonInFlight.compute(flightKey) { _, existing ->
+            if (existing == null) {
+                created = true
+                CompletableDeferred()
+            } else {
+                existing
+            }
+        }!!
+        return deferred to created
+    }
 
     private data class ProposalCursor(val epochMillis: Long, val ordinal: Int) {
         fun encode(): String = "$epochMillis:$ordinal"
@@ -464,32 +483,51 @@ class TradeHistoryQueryService(
             }
         }
 
-        val reconciled =
-            calculateComparison(
-                evaluationSnapshots,
-                inceptionResolution,
-                eventUpperBound = certifiedEventUpperBound(stableThrough),
-                suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
-            )
-        // Presentation filtering and sampling are strictly post-reconciliation: the calculator
-        // reconciles the full stable accounting series, then the returned points are restricted
-        // to the requested display range and sampled for payload size. Baseline and contribution
-        // accounting come from the full series; latest differences come from the displayed tail.
+        val flightKey = "${cacheFrom.toEpochMilli()}:${cacheTo.toEpochMilli()}:$cacheFingerprint"
+        val (flight, created) = startOrJoinComparisonFlight(flightKey)
+        val reconciled = if (created) {
+            try {
+                val consumedDependencies = ConcurrentHashMap.newKeySet<ConsumedOhlcDependency>()
+                val calculated = calculateComparison(
+                    evaluationSnapshots,
+                    inceptionResolution,
+                    eventUpperBound = certifiedEventUpperBound(stableThrough),
+                    suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
+                    onOhlcDependencyConsumed = { consumedDependencies.add(it) },
+                )
+                if (calculated.availability == ComparisonAvailability.AVAILABLE) {
+                    persistAutomaticBaselineVerification(
+                        calculated,
+                        inceptionResolution,
+                        evaluationSnapshots,
+                        stableThrough,
+                    )
+                    persistCachedComparison(
+                        from = cacheFrom,
+                        to = cacheTo,
+                        stableThrough = stableThrough,
+                        inceptionResolution = inceptionResolution,
+                        snapshots = evaluationSnapshots,
+                        comparison = calculated,
+                        ohlcDependencies = consumedDependencies.toList(),
+                    )
+                }
+                flight.complete(calculated)
+                calculated
+            } catch (e: CancellationException) {
+                flight.completeExceptionally(e)
+                throw e
+            } catch (e: Throwable) {
+                flight.completeExceptionally(e)
+                throw e
+            } finally {
+                comparisonInFlight.remove(flightKey, flight)
+            }
+        } else {
+            flight.await()
+        }
+
         val result = if (reconciled.availability == ComparisonAvailability.AVAILABLE) {
-            persistAutomaticBaselineVerification(
-                reconciled,
-                inceptionResolution,
-                evaluationSnapshots,
-                stableThrough,
-            )
-            persistCachedComparison(
-                from = cacheFrom,
-                to = cacheTo,
-                stableThrough = stableThrough,
-                inceptionResolution = inceptionResolution,
-                snapshots = evaluationSnapshots,
-                comparison = reconciled,
-            )
             presentComparison(reconciled, from, to)
         } else {
             reconciled
@@ -698,9 +736,48 @@ class TradeHistoryQueryService(
     private suspend fun loadCachedComparison(from: Instant, to: Instant, fingerprint: String): RebalancerComparison? {
         val cache = comparisonCacheRepository ?: return null
         return try {
-            cache.load(from.toEpochMilli(), to.toEpochMilli())
-                ?.takeIf { it.inputFingerprint == fingerprint }
-                ?.comparison
+            val entry = cache.load(from.toEpochMilli(), to.toEpochMilli()) ?: return null
+            if (entry.inputFingerprint != fingerprint) return null
+
+            val ohlc = historicalOhlcCache ?: return entry.comparison
+            val nowEpochSecond = nowProvider().epochSecond
+            val (fresh, expired) = entry.ohlcDependencies.partition { it.isFresh(nowEpochSecond) }
+            if (expired.isEmpty()) {
+                return entry.comparison
+            }
+
+            val updatedDependencies = fresh.toMutableList()
+            var hasUpdates = false
+            for (dep in expired) {
+                when (val result = ohlc.revalidateDependency(dep)) {
+                    is OhlcRevalidationResult.ContentChanged -> {
+                        log.info(
+                            "Comparison cache invalidated by OHLC content change; pair={} interval={} since={}",
+                            dep.pair,
+                            dep.intervalMinutes,
+                            dep.sinceEpochSecond,
+                        )
+                        cache.delete(from.toEpochMilli(), to.toEpochMilli())
+                        return null
+                    }
+
+                    is OhlcRevalidationResult.Unchanged -> {
+                        updatedDependencies.add(result.updatedDependency)
+                        if (result.updatedDependency != dep) {
+                            hasUpdates = true
+                        }
+                    }
+                }
+            }
+
+            if (hasUpdates) {
+                cache.updateOhlcDependencies(
+                    fromEpochMillis = from.toEpochMilli(),
+                    toEpochMillis = to.toEpochMilli(),
+                    ohlcDependencies = updatedDependencies,
+                )
+            }
+            entry.comparison
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -716,9 +793,9 @@ class TradeHistoryQueryService(
         inceptionResolution: InceptionResolution?,
         snapshots: List<PortfolioSnapshot>,
         comparison: RebalancerComparison,
+        ohlcDependencies: List<ConsumedOhlcDependency>,
     ) {
         val cache = comparisonCacheRepository ?: return
-        if (comparison.availability != ComparisonAvailability.AVAILABLE) return
         if (fundingProvenanceResolver !== FundingProvenanceResolver.NONE &&
             fundingProvenanceResolver.preparationFailure != null
         ) {
@@ -742,7 +819,13 @@ class TradeHistoryQueryService(
             snapshots = snapshots,
         ) ?: return
         try {
-            cache.save(from.toEpochMilli(), to.toEpochMilli(), fingerprint, comparison)
+            cache.save(
+                fromEpochMillis = from.toEpochMilli(),
+                toEpochMillis = to.toEpochMilli(),
+                inputFingerprint = fingerprint,
+                comparison = comparison,
+                ohlcDependencies = ohlcDependencies,
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -912,21 +995,47 @@ class TradeHistoryQueryService(
         val cachedSettingsComparison = settingsCacheFingerprint?.let { fingerprint ->
             loadCachedComparison(settingsCacheFrom, settingsCacheTo, fingerprint)
         }
-        val current = cachedSettingsComparison ?: calculateComparison(
-            stableSnapshots,
-            inceptionResolution,
-            eventUpperBound = certifiedEventUpperBound(stableThrough),
-            suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
-        )
-        if (cachedSettingsComparison == null && current.availability == ComparisonAvailability.AVAILABLE) {
-            persistCachedComparison(
-                from = settingsCacheFrom,
-                to = settingsCacheTo,
-                stableThrough = stableThrough,
-                inceptionResolution = inceptionResolution,
-                snapshots = stableSnapshots,
-                comparison = current,
-            )
+        val current = if (cachedSettingsComparison != null) {
+            cachedSettingsComparison
+        } else {
+            val flightKey =
+                "${settingsCacheFrom.toEpochMilli()}:${settingsCacheTo.toEpochMilli()}:$settingsCacheFingerprint"
+            val (flight, created) = startOrJoinComparisonFlight(flightKey)
+            if (created) {
+                try {
+                    val consumedDependencies = ConcurrentHashMap.newKeySet<ConsumedOhlcDependency>()
+                    val calculated = calculateComparison(
+                        stableSnapshots,
+                        inceptionResolution,
+                        eventUpperBound = certifiedEventUpperBound(stableThrough),
+                        suppressPassiveDiscovery = shouldSuppressPassiveDiscovery(inceptionResolution),
+                        onOhlcDependencyConsumed = consumedDependencies::add,
+                    )
+                    if (calculated.availability == ComparisonAvailability.AVAILABLE) {
+                        persistCachedComparison(
+                            from = settingsCacheFrom,
+                            to = settingsCacheTo,
+                            stableThrough = stableThrough,
+                            inceptionResolution = inceptionResolution,
+                            snapshots = stableSnapshots,
+                            comparison = calculated,
+                            ohlcDependencies = consumedDependencies.toList(),
+                        )
+                    }
+                    flight.complete(calculated)
+                    calculated
+                } catch (e: CancellationException) {
+                    flight.completeExceptionally(e)
+                    throw e
+                } catch (e: Throwable) {
+                    flight.completeExceptionally(e)
+                    throw e
+                } finally {
+                    comparisonInFlight.remove(flightKey, flight)
+                }
+            } else {
+                flight.await()
+            }
         }
         val status =
             if (current.availability == ComparisonAvailability.AVAILABLE) {
@@ -1489,6 +1598,7 @@ class TradeHistoryQueryService(
         // verification pivots on discovery re-anchoring at the candidate — suppressing it
         // there would make every trial reconcile the stale predecessor instead.
         suppressPassiveDiscovery: Boolean = false,
+        onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)? = null,
     ): RebalancerComparison {
         val firstSnapshot = orderedSnapshots.first()
         val lastSnapshot = orderedSnapshots.last()
@@ -1683,6 +1793,7 @@ class TradeHistoryQueryService(
         val priceProvider = historicalPriceProvider(
             marketPairsByBase = retainedMarketPairsByBase(retainedMarketTrades + trades),
             eventUpperBound = eventUpperBound,
+            onOhlcDependencyConsumed = onOhlcDependencyConsumed,
         )
         return RebalancerComparisonCalculator.calculate(
             snapshots = orderedSnapshots,
@@ -2787,6 +2898,7 @@ class TradeHistoryQueryService(
     private fun historicalPriceProvider(
         marketPairsByBase: Map<String, List<String>>,
         eventUpperBound: Instant,
+        onOhlcDependencyConsumed: ((ConsumedOhlcDependency) -> Unit)?,
     ): HistoricalPriceProvider {
         val memo = HistoricalPriceMemo()
         return HistoricalPriceProvider { symbol, time ->
@@ -2809,6 +2921,7 @@ class TradeHistoryQueryService(
                                 marketPairsByBase = marketPairsByBase,
                                 ohlcCache = historicalOhlcCache,
                                 futureTradeUpperBound = eventUpperBound,
+                                onOhlcDependencyConsumed = onOhlcDependencyConsumed,
                             )
                         } catch (e: CancellationException) {
                             throw e

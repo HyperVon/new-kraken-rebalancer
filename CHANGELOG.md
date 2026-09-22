@@ -28,9 +28,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   candles weekly — so later provider backfills and corrections become visible without waiting for
   new trade or ledger evidence. Expired fetches revalidate via a single flight; transient provider
   failures serve stale data and are never persisted as successful empty evidence.
+- **External OHLC dependency tracking and comparison cache revalidation**: persisted Buy & Hold
+  comparisons now record their exact consumed external OHLC dependencies (pair, interval, since,
+  wall fetch timestamp, freshness deadline, and candle content hash). Subsequent cache hits revalidate
+  expired OHLC evidence without bypassing provider freshness: identical external candles refresh
+  freshness deadlines in the cache without replaying calculation, while corrected or backfilled
+  candles invalidate the cached comparison and trigger exactly one authoritative replay.
 - **Bounded comparison cache retention**: the comparison cache prunes superseded successful ranges
-  (keeping the newest few) inside the same transaction that persists a replacement, so the table
-  cannot grow without bound and a replacement is durably committed before older rows are removed.
+  (keeping the newest 3 successful comparison source ranges total) inside the same transaction that
+  persists a replacement, so the table cannot grow without bound and a replacement is durably
+  committed before older rows are removed.
 
 ## [6.17.75] - 2026-09-20
 

@@ -9,6 +9,7 @@ object RebalancerComparisonCacheTable : Table("rebalancer_comparison_cache") {
     val inputFingerprint = varchar("input_fingerprint", 64)
     val resultJson = text("result_json")
     val calculatedAtEpochMillis = long("calculated_at_epoch_millis")
+    val ohlcDependenciesJson = text("ohlc_dependencies_json").default("[]")
 
     override val primaryKey = PrimaryKey(fromEpochMillis, toEpochMillis)
 }
